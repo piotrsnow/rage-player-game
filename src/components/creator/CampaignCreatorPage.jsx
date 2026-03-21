@@ -50,7 +50,7 @@ function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, la
 export default function CampaignCreatorPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { generateCampaign } = useAI();
+  const { generateCampaign, generateStoryPrompt } = useAI();
   const { startNewCampaign } = useGameState();
   const { settings } = useSettings();
   const { state } = useGame();
@@ -61,10 +61,29 @@ export default function CampaignCreatorPage() {
     style: 'Hybrid',
     difficulty: 'Normal',
     length: 'Medium',
+    characterName: '',
     storyPrompt: '',
   });
 
+  const [isRandomizing, setIsRandomizing] = useState(false);
   const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
+
+  const handleRandomize = async () => {
+    if (!hasApiKey || isRandomizing) return;
+    setIsRandomizing(true);
+    try {
+      const prompt = await generateStoryPrompt({
+        genre: form.genre,
+        tone: form.tone,
+        style: form.style,
+      });
+      setForm((p) => ({ ...p, storyPrompt: prompt }));
+    } catch {
+      // Error handled via context
+    } finally {
+      setIsRandomizing(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!form.storyPrompt.trim()) return;
@@ -174,6 +193,21 @@ export default function CampaignCreatorPage() {
             </section>
           </div>
 
+          {/* Character Name */}
+          <section>
+            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+              {t('creator.characterNameLabel')}
+            </label>
+            <input
+              type="text"
+              value={form.characterName}
+              onChange={(e) => setForm((p) => ({ ...p, characterName: e.target.value }))}
+              placeholder={t('creator.characterNamePlaceholder')}
+              maxLength={40}
+              className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 placeholder:text-outline/40 font-body"
+            />
+          </section>
+
           {/* Story Prompt */}
           <section>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
@@ -188,6 +222,16 @@ export default function CampaignCreatorPage() {
                 className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar font-body"
               />
             </div>
+            <button
+              onClick={handleRandomize}
+              disabled={!hasApiKey || isRandomizing}
+              className="mt-3 flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+            >
+              <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
+                {isRandomizing ? 'progress_activity' : 'casino'}
+              </span>
+              {isRandomizing ? t('creator.randomizingPrompt') : t('creator.randomizePrompt')}
+            </button>
           </section>
 
           {/* Error */}

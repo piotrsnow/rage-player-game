@@ -28,6 +28,7 @@ const initialState = {
   quests: { active: [], completed: [] },
   scenes: [],
   chatHistory: [],
+  characterVoiceMap: {},
   isLoading: false,
   error: null,
   isGeneratingScene: false,
@@ -226,6 +227,17 @@ function gameReducer(state, action) {
       }
 
       return next;
+    }
+
+    case 'MAP_CHARACTER_VOICE': {
+      const { characterName, voiceId, gender } = action.payload;
+      return {
+        ...state,
+        characterVoiceMap: {
+          ...state.characterVoiceMap,
+          [characterName]: { voiceId, gender },
+        },
+      };
     }
 
     default:

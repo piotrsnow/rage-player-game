@@ -34,6 +34,8 @@ export function useAI() {
         const scene = {
           id: sceneId,
           narrative: result.narrative,
+          dialogueSegments: result.dialogueSegments || [],
+          soundEffect: result.soundEffect || null,
           image: null,
           actions: result.suggestedActions || [],
           chosenAction: playerAction,
@@ -80,6 +82,8 @@ export function useAI() {
             id: `msg_${Date.now()}_dm`,
             role: 'dm',
             content: result.narrative,
+            dialogueSegments: result.dialogueSegments || [],
+            soundEffect: result.soundEffect || null,
             timestamp: Date.now(),
           },
         });
@@ -146,5 +150,42 @@ export function useAI() {
     [aiProvider, apiKey, language, dispatch]
   );
 
-  return { generateScene, generateCampaign };
+  const generateStoryPrompt = useCallback(
+    async ({ genre, tone, style }) => {
+      const result = await aiService.generateStoryPrompt(
+        { genre, tone, style },
+        aiProvider,
+        apiKey,
+        language
+      );
+      return result.prompt;
+    },
+    [aiProvider, apiKey, language]
+  );
+
+  const generateImageForScene = useCallback(
+    async (sceneId, narrative) => {
+      if (!imageGenEnabled || !openaiApiKey || !narrative) return;
+      dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
+      try {
+        const imageUrl = await imageService.generateSceneImage(
+          narrative,
+          state.campaign?.genre,
+          state.campaign?.tone,
+          openaiApiKey
+        );
+        dispatch({
+          type: 'UPDATE_SCENE_IMAGE',
+          payload: { sceneId, image: imageUrl },
+        });
+      } catch (imgErr) {
+        console.warn('Image generation failed:', imgErr.message);
+      } finally {
+        dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
+      }
+    },
+    [state.campaign?.genre, state.campaign?.tone, imageGenEnabled, openaiApiKey, dispatch]
+  );
+
+  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene };
 }

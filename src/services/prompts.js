@@ -54,7 +54,18 @@ INSTRUCTIONS:
 5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone.
 6. Always respond with valid JSON matching the requested format.
 7. Make the story feel like decisions matter—actions have consequences.
-8. Balance challenge with fun based on the difficulty setting.`;
+8. Balance challenge with fun based on the difficulty setting.
+
+DIALOGUE FORMAT:
+In addition to the "narrative" field (full prose), you MUST provide a "dialogueSegments" array that breaks the narrative into ordered chunks. Each chunk is either:
+- {"type": "narration", "text": "Descriptive prose..."} for narrator/environment text
+- {"type": "dialogue", "character": "NPC Name", "gender": "male" or "female", "text": "What they say..."} for NPC speech
+CRITICAL: The narration segments in dialogueSegments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment.
+IMPORTANT: Every dialogue segment MUST include a "gender" field ("male" or "female") matching the speaking character's gender. Be consistent — the same character must always have the same gender across all scenes.
+Use consistent character names across scenes. The player character NEVER appears in dialogueSegments — only NPCs and narrator.
+
+SOUND EFFECTS:
+For impactful moments (combat, magic, environmental events, dramatic reveals), include a "soundEffect" field with a short English description for audio generation (e.g. "sword clashing against shield, metallic ringing"). Use null when no sound effect fits. Don't overuse — only for moments that truly benefit from audio atmosphere.`;
 }
 
 export function buildSceneGenerationPrompt(playerAction, isFirstScene = false) {
@@ -64,10 +75,26 @@ export function buildSceneGenerationPrompt(playerAction, isFirstScene = false) {
 Respond with ONLY valid JSON in this exact format:
 {
   "narrative": "A vivid 2-3 paragraph scene description setting the stage for the adventure...",
+  "dialogueSegments": [
+    {"type": "narration", "text": "Descriptive prose..."},
+    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
+    {"type": "narration", "text": "More prose..."}
+  ],
+  "soundEffect": "Short English description of ambient/atmospheric sound for this scene, or null",
+  "atmosphere": {
+    "weather": "rain | snow | storm | clear | fog | fire",
+    "particles": "magic_dust | sparks | embers | arcane | none",
+    "mood": "mystical | dark | peaceful | tense | chaotic",
+    "transition": "dissolve | fade | arcane_wipe"
+  },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
   "stateChanges": {},
   "diceRoll": null
-}`;
+}
+
+For atmosphere: choose weather, particles, mood, and transition that match the scene's environment and tone. weather describes the environmental condition, particles adds visual flair (magic_dust for mystical places, sparks for forges/tech, embers for fire/destruction, arcane for magical events), mood sets the overall feel, and transition is the visual transition into this scene (use "fade" for the opening scene).
+
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Use consistent NPC names. Every dialogue segment MUST have a "gender" field.`;
   }
 
   return `The player chose: "${playerAction}"
@@ -79,6 +106,18 @@ If a skill check is appropriate for the action, include a dice roll. Roll a D20 
 Respond with ONLY valid JSON in this exact format:
 {
   "narrative": "2-3 paragraphs describing what happens as a result of the player's action and setting up the next beat...",
+  "dialogueSegments": [
+    {"type": "narration", "text": "Descriptive prose..."},
+    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
+    {"type": "narration", "text": "More prose..."}
+  ],
+  "soundEffect": "Short English description of a sound effect for impactful moments, or null",
+  "atmosphere": {
+    "weather": "rain | snow | storm | clear | fog | fire",
+    "particles": "magic_dust | sparks | embers | arcane | none",
+    "mood": "mystical | dark | peaceful | tense | chaotic",
+    "transition": "dissolve | fade | arcane_wipe"
+  },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
   "stateChanges": {
     "hp": 0,
@@ -94,9 +133,13 @@ Respond with ONLY valid JSON in this exact format:
   "diceRoll": null
 }
 
+For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
+
 For diceRoll, use null if no roll needed, or: {"type": "D20", "roll": <number 1-20>, "modifier": <number>, "total": <number>, "skill": "<skill name>", "dc": <number>, "success": <boolean>}
 
-For stateChanges: hp/mana/xp are DELTAS (can be negative). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. Set any field to null/empty to skip it.`;
+For stateChanges: hp/mana/xp are DELTAS (can be negative). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. Set any field to null/empty to skip it.
+
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {
@@ -104,12 +147,17 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? '\n\nIMPORTANT: Write ALL text content (name, worldDescription, hook, character backstory, narrative, quest names, quest descriptions, world facts, suggested actions) in Polish.'
     : '';
 
+  const characterNameLine = settings.characterName?.trim()
+    ? `- Player's character name: "${settings.characterName.trim()}" (use this exact name for the character)`
+    : '- Player\'s character name: not specified (suggest a fitting name)';
+
   return `Create a new RPG campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
 - Difficulty: ${settings.difficulty}
 - Campaign Length: ${settings.length}
+${characterNameLine}
 - Player's story idea: "${settings.storyPrompt}"
 
 Generate the campaign foundation. Respond with ONLY valid JSON:
@@ -118,12 +166,23 @@ Generate the campaign foundation. Respond with ONLY valid JSON:
   "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
-    "name": "A fitting character name",
+    "name": "${settings.characterName?.trim() || 'A fitting character name'}",
     "class": "A character class that fits the genre",
     "backstory": "2-3 sentences of character backstory tied to the world"
   },
   "firstScene": {
     "narrative": "2-3 vivid paragraphs of the opening scene",
+    "dialogueSegments": [
+      {"type": "narration", "text": "Descriptive prose..."},
+      {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."}
+    ],
+    "soundEffect": "Short English ambient sound description or null",
+    "atmosphere": {
+      "weather": "clear | rain | snow | storm | fog | fire",
+      "particles": "magic_dust | sparks | embers | arcane | none",
+      "mood": "mystical | dark | peaceful | tense | chaotic",
+      "transition": "fade"
+    },
     "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"]
   },
   "initialQuest": {

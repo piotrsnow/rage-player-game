@@ -1,13 +1,29 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSettings } from '../../contexts/SettingsContext';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 export default function ActionPanel({ actions = [], onAction, disabled }) {
   const [customAction, setCustomAction] = useState('');
   const { t } = useTranslation();
+  const { settings } = useSettings();
+
+  const onVoiceResult = useCallback((transcript) => {
+    setCustomAction((prev) => {
+      const separator = prev && !prev.endsWith(' ') ? ' ' : '';
+      return prev + separator + transcript;
+    });
+  }, []);
+
+  const { listening, interim, supported, toggle } = useSpeechRecognition({
+    lang: settings.language || 'pl',
+    onResult: onVoiceResult,
+  });
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     if (customAction.trim() && !disabled) {
+      if (listening) toggle();
       onAction(customAction.trim());
       setCustomAction('');
     }
@@ -39,7 +55,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
       {/* Custom Action Input */}
       <form onSubmit={handleCustomSubmit} className="relative">
         <textarea
-          value={customAction}
+          value={customAction + (interim ? (customAction ? ' ' : '') + interim : '')}
           onChange={(e) => setCustomAction(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -47,12 +63,47 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
               handleCustomSubmit(e);
             }
           }}
-          placeholder={t('gameplay.customActionPlaceholder')}
+          placeholder={
+            listening
+              ? t('gameplay.voiceListening')
+              : supported
+                ? t('gameplay.customActionPlaceholderVoice')
+                : t('gameplay.customActionPlaceholder')
+          }
           rows={2}
           disabled={disabled}
-          className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50"
+          readOnly={listening}
+          className={`w-full bg-transparent border-0 border-b focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-colors ${
+            listening
+              ? 'border-primary/60 text-on-surface'
+              : 'border-outline-variant/20 focus:border-primary/50'
+          }`}
         />
-        <div className="flex justify-end mt-2">
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center gap-2">
+            {supported && (
+              <button
+                type="button"
+                onClick={toggle}
+                disabled={disabled}
+                title={listening ? t('gameplay.voiceStop') : t('gameplay.voiceStart')}
+                className={`relative flex items-center justify-center w-8 h-8 rounded-full transition-all duration-300 disabled:opacity-30 ${
+                  listening
+                    ? 'text-error-light bg-error/15 mic-pulse'
+                    : 'text-primary/70 hover:text-primary hover:bg-primary/10'
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">
+                  {listening ? 'mic' : 'mic_none'}
+                </span>
+              </button>
+            )}
+            {listening && (
+              <span className="text-[10px] font-bold uppercase tracking-widest text-primary/70 animate-pulse">
+                {t('gameplay.voiceListening')}
+              </span>
+            )}
+          </div>
           <button
             type="submit"
             disabled={!customAction.trim() || disabled}

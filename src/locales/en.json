@@ -38,7 +38,9 @@
     "apiKeyRequired": "API Key Required",
     "apiKeyDescription": "Configure your OpenAI or Anthropic API key in Settings to start playing.",
     "savedCampaigns": "Saved Campaigns",
-    "noCampaigns": "No campaigns yet. Start a new adventure!"
+    "noCampaigns": "No campaigns yet. Start a new adventure!",
+    "exportLog": "Download Game Log",
+    "exportJson": "Download Backup (JSON)"
   },
   "creator": {
     "title": "Forge a New Campaign",
@@ -48,8 +50,12 @@
     "playStyleLabel": "Play Style",
     "difficultyLabel": "Difficulty",
     "campaignLengthLabel": "Campaign Length",
+    "characterNameLabel": "Your Character's Name",
+    "characterNamePlaceholder": "Leave empty to let the AI suggest a name...",
     "storyPromptLabel": "What should the story be about?",
     "storyPlaceholder": "A lone wanderer discovers an ancient artifact that grants the power to reshape reality, but each use erases a memory...",
+    "randomizePrompt": "Randomize Topic",
+    "randomizingPrompt": "Generating...",
     "beginRitual": "Begin the Ritual",
     "loadingTitle": "The Grimoire stirs... crafting your world",
     "loadingDescription": "The AI is generating your campaign world, story hook, character, and opening scene. This may take a moment.",
@@ -106,7 +112,12 @@
     "conjuringVision": "Conjuring vision...",
     "generatingImage": "Generating Image",
     "customActionPlaceholder": "Or describe your own action...",
-    "send": "Send"
+    "customActionPlaceholderVoice": "Describe your action or click the mic...",
+    "send": "Send",
+    "voiceStart": "Speak your action",
+    "voiceStop": "Stop recording",
+    "voiceListening": "Listening...",
+    "exportLog": "Download Game Log"
   },
   "chat": {
     "dmAi": "DM AI",
@@ -205,7 +216,28 @@
     "loadVoices": "Load Voices",
     "loadingVoices": "Loading voices...",
     "testVoice": "Test",
-    "noVoicesFound": "No voices found"
+    "noVoicesFound": "No voices found",
+    "npcVoicePool": "NPC Voice Pool",
+    "npcVoicePoolDesc": "These voices will be auto-assigned to NPCs as they appear in dialogue",
+    "voicePickerHint": "Click to set narrator voice. Use the group icon to add/remove from NPC pool. Use ♂/♀ to set voice gender.",
+    "toggleGender": "Toggle voice gender (male/female)",
+    "dialogueSpeed": "Dialogue Speed",
+    "dialogueSpeedDesc": "Speed up or slow down narration and dialogue playback",
+    "canvasEffects": "Canvas Effects",
+    "canvasEffectsDesc": "Particles, fog, weather overlays on scenes",
+    "effectIntensityTitle": "Effect Intensity",
+    "effectIntensityDesc": "Controls particle density, fog opacity, and overall visual effect strength",
+    "effectLevels": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "sfxTitle": "Sound Effects",
+    "sfxDesc": "AI-generated sound effects via ElevenLabs for impactful moments",
+    "sfxEnabled": "Enable Sound Effects",
+    "sfxEnabledDesc": "Generate ambient sounds for combat, magic, and events",
+    "sfxVolume": "SFX Volume",
+    "sfxVolumeDesc": "Volume level for generated sound effects"
   },
   "errors": {
     "somethingWentWrong": "Something Went Wrong",

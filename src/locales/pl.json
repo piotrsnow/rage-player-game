@@ -38,7 +38,9 @@
     "apiKeyRequired": "Wymagany Klucz API",
     "apiKeyDescription": "Skonfiguruj klucz API OpenAI lub Anthropic w Ustawieniach, aby rozpocząć grę.",
     "savedCampaigns": "Zapisane Kampanie",
-    "noCampaigns": "Brak kampanii. Rozpocznij nową przygodę!"
+    "noCampaigns": "Brak kampanii. Rozpocznij nową przygodę!",
+    "exportLog": "Pobierz Log Rozgrywki",
+    "exportJson": "Pobierz Kopię (JSON)"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -48,8 +50,12 @@
     "playStyleLabel": "Styl Gry",
     "difficultyLabel": "Trudność",
     "campaignLengthLabel": "Długość Kampanii",
+    "characterNameLabel": "Imię Twojej Postaci",
+    "characterNamePlaceholder": "Zostaw puste, aby AI zasugerowało imię...",
     "storyPromptLabel": "O czym ma być historia?",
     "storyPlaceholder": "Samotny wędrowiec odkrywa starożytny artefakt dający moc przekształcania rzeczywistości, ale każde użycie wymazuje wspomnienie...",
+    "randomizePrompt": "Losuj temat",
+    "randomizingPrompt": "Losowanie...",
     "beginRitual": "Rozpocznij Rytuał",
     "loadingTitle": "Grimuar się budzi... tworzy twój świat",
     "loadingDescription": "AI generuje świat kampanii, hak fabularny, postać i scenę otwierającą. To może chwilę potrwać.",
@@ -106,7 +112,12 @@
     "conjuringVision": "Przywoływanie wizji...",
     "generatingImage": "Generowanie Obrazu",
     "customActionPlaceholder": "Lub opisz własną akcję...",
-    "send": "Wyślij"
+    "customActionPlaceholderVoice": "Opisz własną akcję lub kliknij mikrofon...",
+    "send": "Wyślij",
+    "voiceStart": "Mów swoją akcję",
+    "voiceStop": "Zatrzymaj nagrywanie",
+    "voiceListening": "Słucham...",
+    "exportLog": "Pobierz Log Rozgrywki"
   },
   "chat": {
     "dmAi": "MG AI",
@@ -205,7 +216,28 @@
     "loadVoices": "Załaduj Głosy",
     "loadingVoices": "Ładowanie głosów...",
     "testVoice": "Test",
-    "noVoicesFound": "Nie znaleziono głosów"
+    "noVoicesFound": "Nie znaleziono głosów",
+    "npcVoicePool": "Pula Głosów NPC",
+    "npcVoicePoolDesc": "Te głosy będą automatycznie przypisywane postaciom NPC w dialogach",
+    "voicePickerHint": "Kliknij aby ustawić głos narratora. Użyj ikony grupy aby dodać/usunąć z puli NPC. Użyj ♂/♀ aby ustawić płeć głosu.",
+    "toggleGender": "Przełącz płeć głosu (męski/żeński)",
+    "dialogueSpeed": "Szybkość Dialogów",
+    "dialogueSpeedDesc": "Przyśpieszenie lub spowolnienie odtwarzania narracji i dialogów",
+    "canvasEffects": "Efekty Wizualne",
+    "canvasEffectsDesc": "Cząsteczki, mgła, efekty pogodowe na scenach",
+    "effectIntensityTitle": "Intensywność Efektów",
+    "effectIntensityDesc": "Kontroluje gęstość cząsteczek, przezroczystość mgły i ogólną siłę efektów wizualnych",
+    "effectLevels": {
+      "low": "Niska",
+      "medium": "Średnia",
+      "high": "Wysoka"
+    },
+    "sfxTitle": "Efekty Dźwiękowe",
+    "sfxDesc": "Efekty dźwiękowe generowane przez AI (ElevenLabs) dla klimatycznych momentów",
+    "sfxEnabled": "Włącz Efekty Dźwiękowe",
+    "sfxEnabledDesc": "Generuj dźwięki otoczenia dla walki, magii i wydarzeń",
+    "sfxVolume": "Głośność Efektów",
+    "sfxVolumeDesc": "Poziom głośności generowanych efektów dźwiękowych"
   },
   "errors": {
     "somethingWentWrong": "Coś Poszło Nie Tak",

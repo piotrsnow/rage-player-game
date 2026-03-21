@@ -69,6 +69,36 @@ export default function DMSettingsPage() {
     });
   };
 
+  const handleToggleCharacterVoice = (voice) => {
+    const current = settings.characterVoices || [];
+    const exists = current.some((v) => v.voiceId === voice.voiceId);
+    if (exists) {
+      updateSettings({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
+    } else {
+      updateSettings({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
+    }
+  };
+
+  const handleToggleVoiceGender = (voiceId) => {
+    const current = settings.characterVoices || [];
+    updateSettings({
+      characterVoices: current.map((v) =>
+        v.voiceId === voiceId
+          ? { ...v, gender: v.gender === 'female' ? 'male' : 'female' }
+          : v
+      ),
+    });
+  };
+
+  const getVoiceGender = (voiceId) => {
+    const v = (settings.characterVoices || []).find((v) => v.voiceId === voiceId);
+    return v?.gender || 'male';
+  };
+
+  const isInCharacterPool = (voiceId) => {
+    return (settings.characterVoices || []).some((v) => v.voiceId === voiceId);
+  };
+
   const handleTestVoice = async () => {
     const voiceId = settings.elevenlabsVoiceId;
     const apiKey = settings.elevenlabsApiKey;
@@ -227,7 +257,58 @@ export default function DMSettingsPage() {
                 />
               </button>
             </div>
+
+            <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+              <div>
+                <p className="font-headline text-tertiary">{t('settings.canvasEffects')}</p>
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                  {t('settings.canvasEffectsDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => updateSettings({ canvasEffectsEnabled: !settings.canvasEffectsEnabled })}
+                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                  settings.canvasEffectsEnabled !== false
+                    ? 'bg-primary-dim/20 border-primary/30'
+                    : 'bg-surface-container-highest border-outline-variant/30'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                    settings.canvasEffectsEnabled !== false
+                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                      : 'left-1 bg-on-surface-variant'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
+
+          {/* Effect Intensity */}
+          {settings.canvasEffectsEnabled !== false && (
+            <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-primary/20">
+              <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary-dim">auto_awesome</span>
+                {t('settings.effectIntensityTitle')}
+              </h2>
+              <p className="text-xs text-on-surface-variant mb-6">{t('settings.effectIntensityDesc')}</p>
+              <div className="flex gap-3">
+                {['low', 'medium', 'high'].map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => updateSettings({ effectIntensity: level })}
+                    className={`flex-1 px-4 py-3 rounded-sm border text-center transition-all ${
+                      (settings.effectIntensity || 'medium') === level
+                        ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                    }`}
+                  >
+                    <span className="font-headline text-sm">{t(`settings.effectLevels.${level}`)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Narrator Section */}
           <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
@@ -286,6 +367,17 @@ export default function DMSettingsPage() {
               </button>
             </div>
 
+            {/* Dialogue Speed Slider */}
+            <Slider
+              label={t('settings.dialogueSpeed')}
+              description={t('settings.dialogueSpeedDesc')}
+              min={50}
+              max={200}
+              value={settings.dialogueSpeed ?? 100}
+              onChange={(v) => updateSettings({ dialogueSpeed: v })}
+              displayValue={`${((settings.dialogueSpeed ?? 100) / 100).toFixed(1)}x`}
+            />
+
             {/* ElevenLabs API Key */}
             <div className="mb-6">
               <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
@@ -319,28 +411,67 @@ export default function DMSettingsPage() {
                   {t('settings.voiceSelect')}
                 </label>
                 <div className="max-h-64 overflow-y-auto space-y-2 custom-scrollbar">
-                  {voices.map((voice) => (
-                    <button
-                      key={voice.voiceId}
-                      onClick={() => handleSelectVoice(voice)}
-                      className={`w-full p-3 rounded-sm border text-left flex items-center justify-between transition-all ${
-                        settings.elevenlabsVoiceId === voice.voiceId
-                          ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                          : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                      }`}
-                    >
-                      <div>
-                        <span className="font-headline text-sm">{voice.name}</span>
-                        {voice.category && (
-                          <span className="text-[10px] text-outline ml-2">{voice.category}</span>
-                        )}
+                  {voices.map((voice) => {
+                    const isNarrator = settings.elevenlabsVoiceId === voice.voiceId;
+                    const isNpc = isInCharacterPool(voice.voiceId);
+                    return (
+                      <div
+                        key={voice.voiceId}
+                        className={`w-full p-3 rounded-sm border flex items-center justify-between transition-all ${
+                          isNarrator
+                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                            : isNpc
+                              ? 'bg-tertiary/5 border-tertiary/20 text-tertiary'
+                              : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                        }`}
+                      >
+                        <button
+                          onClick={() => handleSelectVoice(voice)}
+                          className="flex-1 text-left"
+                        >
+                          <span className="font-headline text-sm">{voice.name}</span>
+                          {voice.category && (
+                            <span className="text-[10px] text-outline ml-2">{voice.category}</span>
+                          )}
+                        </button>
+                        <div className="flex items-center gap-2">
+                          {isNarrator && (
+                            <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
+                          )}
+                          {isNpc && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleToggleVoiceGender(voice.voiceId); }}
+                              title={t('settings.toggleGender')}
+                              className={`w-6 h-6 rounded border flex items-center justify-center transition-all text-[11px] font-bold ${
+                                getVoiceGender(voice.voiceId) === 'female'
+                                  ? 'bg-pink-500/20 border-pink-400/40 text-pink-300'
+                                  : 'bg-blue-500/20 border-blue-400/40 text-blue-300'
+                              }`}
+                            >
+                              {getVoiceGender(voice.voiceId) === 'female' ? '♀' : '♂'}
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleToggleCharacterVoice(voice); }}
+                            title={t('settings.npcVoicePool')}
+                            className={`w-6 h-6 rounded border flex items-center justify-center transition-all ${
+                              isNpc
+                                ? 'bg-tertiary/20 border-tertiary/40 text-tertiary'
+                                : 'border-outline-variant/30 text-outline hover:border-tertiary/30'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-xs">
+                              {isNpc ? 'group' : 'group_add'}
+                            </span>
+                          </button>
+                        </div>
                       </div>
-                      {settings.elevenlabsVoiceId === voice.voiceId && (
-                        <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
-                      )}
-                    </button>
-                  ))}
+                    );
+                  })}
                 </div>
+                <p className="text-[10px] text-on-surface-variant mt-2">
+                  {t('settings.voicePickerHint')}
+                </p>
               </div>
             )}
 
@@ -350,7 +481,7 @@ export default function DMSettingsPage() {
 
             {/* Selected Voice + Test */}
             {settings.elevenlabsVoiceName && (
-              <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
+              <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10 mb-4">
                 <div>
                   <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">{t('settings.voiceSelect')}</p>
                   <p className="font-headline text-tertiary text-sm">{settings.elevenlabsVoiceName}</p>
@@ -366,6 +497,87 @@ export default function DMSettingsPage() {
                   {t('settings.testVoice')}
                 </button>
               </div>
+            )}
+
+            {/* NPC Voice Pool Summary */}
+            {(settings.characterVoices || []).length > 0 && (
+              <div className="p-4 bg-surface-container-high/40 rounded-sm border border-tertiary/10">
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                  {t('settings.npcVoicePool')} ({settings.characterVoices.length})
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {settings.characterVoices.map((v) => (
+                    <span
+                      key={v.voiceId}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-sm bg-tertiary/10 border border-tertiary/20 text-tertiary text-xs font-headline"
+                    >
+                      <button
+                        onClick={() => handleToggleVoiceGender(v.voiceId)}
+                        title={t('settings.toggleGender')}
+                        className={`font-bold transition-colors ${
+                          v.gender === 'female'
+                            ? 'text-pink-300 hover:text-pink-200'
+                            : 'text-blue-300 hover:text-blue-200'
+                        }`}
+                      >
+                        {v.gender === 'female' ? '♀' : '♂'}
+                      </button>
+                      {v.voiceName}
+                      <button
+                        onClick={() => handleToggleCharacterVoice(v)}
+                        className="ml-0.5 text-tertiary/60 hover:text-error transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[10px] text-on-surface-variant mt-2">{t('settings.npcVoicePoolDesc')}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Sound Effects Section */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">surround_sound</span>
+              {t('settings.sfxTitle')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.sfxDesc')}</p>
+
+            <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+              <div>
+                <p className="font-headline text-tertiary text-sm">{t('settings.sfxEnabled')}</p>
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                  {t('settings.sfxEnabledDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => updateSettings({ sfxEnabled: !settings.sfxEnabled })}
+                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                  settings.sfxEnabled
+                    ? 'bg-primary-dim/20 border-primary/30'
+                    : 'bg-surface-container-highest border-outline-variant/30'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                    settings.sfxEnabled
+                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                      : 'left-1 bg-on-surface-variant'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.sfxEnabled && (
+              <Slider
+                label={t('settings.sfxVolume')}
+                description={t('settings.sfxVolumeDesc')}
+                value={settings.sfxVolume ?? 70}
+                onChange={(v) => updateSettings({ sfxVolume: v })}
+                displayValue={`${settings.sfxVolume ?? 70}%`}
+              />
             )}
           </div>
         </section>

@@ -7,7 +7,7 @@ const genreIcons = {
   Horror: 'skull',
 };
 
-export default function CampaignCard({ campaign, onLoad, onDelete }) {
+export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, onExportJson }) {
   const { t, i18n } = useTranslation();
   const summary = getCampaignSummary(campaign);
   const lastPlayed = new Date(summary.lastPlayed).toLocaleDateString(i18n.language === 'pl' ? 'pl-PL' : undefined, {
@@ -47,15 +47,37 @@ export default function CampaignCard({ campaign, onLoad, onDelete }) {
       </div>
       <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
         <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="material-symbols-outlined text-sm text-outline hover:text-error transition-colors opacity-0 group-hover:opacity-100"
-        >
-          delete
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onExportLog();
+            }}
+            title={t('lobby.exportLog')}
+            className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+          >
+            description
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onExportJson();
+            }}
+            title={t('lobby.exportJson')}
+            className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+          >
+            download
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="material-symbols-outlined text-sm text-outline hover:text-error transition-colors opacity-0 group-hover:opacity-100"
+          >
+            delete
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,23 +1,26 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAI } from '../../hooks/useAI';
 import { useNarrator } from '../../hooks/useNarrator';
+import { exportAsMarkdown } from '../../services/exportLog';
 import ScenePanel from './ScenePanel';
 import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import DiceRoller from '../../effects/DiceRoller';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
   const { settings } = useSettings();
-  const { generateScene } = useAI();
+  const { generateScene, generateImageForScene } = useAI();
   const narrator = useNarrator();
+  const imageAttemptedRef = useRef(new Set());
 
   const { campaign, character, scenes, chatHistory, isGeneratingScene, isGeneratingImage, error } = state;
   const currentScene = scenes[scenes.length - 1] || null;
@@ -27,6 +30,19 @@ export default function GameplayPage() {
       navigate('/');
     }
   }, [campaign, navigate]);
+
+  useEffect(() => {
+    if (
+      currentScene &&
+      !currentScene.image &&
+      !isGeneratingImage &&
+      !isGeneratingScene &&
+      !imageAttemptedRef.current.has(currentScene.id)
+    ) {
+      imageAttemptedRef.current.add(currentScene.id);
+      generateImageForScene(currentScene.id, currentScene.narrative);
+    }
+  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene]);
 
   const handleAction = async (action) => {
     try {
@@ -56,12 +72,21 @@ export default function GameplayPage() {
               <span className="w-1 h-1 bg-primary/50 rounded-full" />
               <span className="text-[10px] text-outline">{t('common.scene')} {scenes.length}</span>
             </div>
-            {character && (
-              <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
-                <span>{character.name}</span>
-                <span>{t('common.lvl')} {character.level}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-4">
+              {character && (
+                <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
+                  <span>{character.name}</span>
+                  <span>{t('common.lvl')} {character.level}</span>
+                </div>
+              )}
+              <button
+                onClick={() => exportAsMarkdown(state)}
+                title={t('gameplay.exportLog')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                download
+              </button>
+            </div>
           </div>
         )}
 
@@ -123,16 +148,9 @@ export default function GameplayPage() {
         {/* Dice Roll Display */}
         {currentScene?.diceRoll && !isGeneratingScene && (
           <div className="flex items-center justify-center py-4 animate-fade-in">
-            <div className="bg-surface-container/50 border border-outline-variant/10 rounded-xl px-8 py-4 flex items-center gap-6 animate-pulse-glow">
-              <div className="relative">
-                <span className="material-symbols-outlined text-5xl text-tertiary drop-shadow-[0_0_15px_rgba(255,239,213,0.4)]">
-                  casino
-                </span>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="font-headline text-lg font-bold text-on-primary-fixed">
-                    {currentScene.diceRoll.roll}
-                  </span>
-                </div>
+            <div className="bg-surface-container/50 border border-outline-variant/10 rounded-xl px-8 py-4 flex items-center gap-6 animate-pulse-glow max-w-lg w-full">
+              <div className="w-28 shrink-0">
+                <DiceRoller diceRoll={currentScene.diceRoll} />
               </div>
               <div>
                 <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">

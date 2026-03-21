@@ -2,6 +2,53 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 
+function DialogueSegments({ segments, narrator, messageId }) {
+  if (!segments || segments.length === 0) return null;
+
+  const isSegmentActive = (index) => {
+    return narrator?.currentMessageId === messageId && narrator?.currentSegmentIndex === index;
+  };
+
+  return (
+    <div className="space-y-2">
+      {segments.map((seg, i) => {
+        const active = isSegmentActive(i);
+        if (seg.type === 'dialogue' && seg.character) {
+          return (
+            <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                  {seg.character}
+                </span>
+                {active && (
+                  <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
+                    graphic_eq
+                  </span>
+                )}
+              </div>
+              <p className="text-sm text-on-surface leading-relaxed">
+                &ldquo;{seg.text}&rdquo;
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className={`transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
+            <p className="text-sm text-on-surface-variant leading-relaxed italic">
+              {seg.text}
+              {active && (
+                <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
+                  graphic_eq
+                </span>
+              )}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
   const { playbackState, currentMessageId, isNarratorReady, speakSingle, pause, resume, STATES } = narrator || {};
@@ -15,9 +62,14 @@ function DmMessage({ message, narrator }) {
     } else if (isThisPaused) {
       resume();
     } else {
-      speakSingle(message.content, message.id);
+      speakSingle(message, message.id);
     }
   };
+
+  const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
+  const dialogueOnlySegments = hasSegments
+    ? message.dialogueSegments.filter((s) => s.type === 'dialogue' && s.character)
+    : [];
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
@@ -36,10 +88,35 @@ function DmMessage({ message, narrator }) {
           </button>
         )}
       </div>
-      <div className="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg">
+      <div className="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg space-y-3">
         <p className="text-sm text-on-surface-variant leading-relaxed italic">
           {message.content}
         </p>
+        {dialogueOnlySegments.length > 0 && (
+          <div className="space-y-2 pt-1 border-t border-outline-variant/10">
+            {dialogueOnlySegments.map((seg, i) => {
+              const segIdx = message.dialogueSegments.indexOf(seg);
+              const active = narrator?.currentMessageId === message.id && narrator?.currentSegmentIndex === segIdx;
+              return (
+                <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                      {seg.character}
+                    </span>
+                    {active && (
+                      <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
+                        graphic_eq
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-on-surface leading-relaxed">
+                    &ldquo;{seg.text}&rdquo;
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -85,7 +162,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false })
       prevMessageCount.current = messages.length;
       return;
     }
-    const { isNarratorReady, speak } = narrator;
+    const { isNarratorReady, speakScene } = narrator;
     if (!isNarratorReady) {
       prevMessageCount.current = messages.length;
       return;
@@ -95,7 +172,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false })
       const newMessages = messages.slice(prevMessageCount.current);
       const dmMessages = newMessages.filter((m) => m.role === 'dm');
       dmMessages.forEach((msg) => {
-        speak(msg.content, msg.id);
+        speakScene(msg, msg.id);
       });
     }
     prevMessageCount.current = messages.length;

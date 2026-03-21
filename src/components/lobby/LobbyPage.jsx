@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
+import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import Button from '../ui/Button';
@@ -113,6 +114,8 @@ export default function LobbyPage() {
                       ? handleDelete(c.campaign.id)
                       : setShowDeleteConfirm(c.campaign.id)
                   }
+                  onExportLog={() => exportAsMarkdown(c)}
+                  onExportJson={() => exportAsJson(c)}
                 />
               ))}
             </div>

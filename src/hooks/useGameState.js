@@ -22,7 +22,7 @@ export function useGameState() {
       };
 
       const character = {
-        name: aiResult.characterSuggestion?.name || 'Adventurer',
+        name: campaignSettings.characterName?.trim() || aiResult.characterSuggestion?.name || 'Adventurer',
         class: aiResult.characterSuggestion?.class || 'Wanderer',
         level: 1,
         xp: 0,
@@ -40,6 +40,8 @@ export function useGameState() {
       const firstScene = {
         id: createSceneId(),
         narrative: aiResult.firstScene?.narrative || aiResult.hook,
+        dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+        soundEffect: aiResult.firstScene?.soundEffect || null,
         image: null,
         actions: aiResult.firstScene?.suggestedActions || [],
         chosenAction: null,
@@ -52,6 +54,8 @@ export function useGameState() {
           id: `msg_${Date.now()}_dm`,
           role: 'dm',
           content: aiResult.firstScene?.narrative || aiResult.hook,
+          dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+          soundEffect: aiResult.firstScene?.soundEffect || null,
           timestamp: Date.now(),
         },
       ];

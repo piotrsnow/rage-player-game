@@ -87,4 +87,15 @@ export const aiService = {
     const userPrompt = buildRecapPrompt();
     return callAI(provider, apiKey, systemPrompt, userPrompt, 500);
   },
+
+  async generateStoryPrompt({ genre, tone, style }, provider, apiKey, language = 'en') {
+    const systemPrompt = 'You are a creative RPG story idea generator. Invent original, evocative adventure premises. Always respond with valid JSON only.';
+    const userPrompt = [
+      `Generate ONE unique, creative RPG story premise for a ${genre} campaign with a ${tone} tone and ${style} play style.`,
+      `The premise should be 1-2 sentences, intriguing, and specific enough to spark a full campaign.`,
+      `Write the premise in ${language === 'pl' ? 'Polish' : 'English'}.`,
+      `Respond with JSON: { "prompt": "<the story premise>" }`,
+    ].join('\n');
+    return callAI(provider, apiKey, systemPrompt, userPrompt, 300);
+  },
 };
