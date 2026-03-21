@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&amp;family=Manrope:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "tertiary-dim": "#eed198",
+              "inverse-primary": "#7e29df",
+              "secondary": "#e5e2e1",
+              "on-primary-fixed-variant": "#3f007c",
+              "secondary-container": "#474646",
+              "error-dim": "#d73357",
+              "primary-container": "#ba88ff",
+              "error-container": "#a70138",
+              "outline-variant": "#48474a",
+              "tertiary-fixed": "#fddfa5",
+              "surface-variant": "#262529",
+              "surface-tint": "#c59aff",
+              "on-primary": "#420082",
+              "on-secondary-container": "#d2d0cf",
+              "on-primary-fixed": "#000000",
+              "tertiary-container": "#fddfa5",
+              "on-tertiary-fixed-variant": "#6e592b",
+              "secondary-dim": "#d7d4d3",
+              "primary-dim": "#9547f7",
+              "on-surface": "#fffbfe",
+              "surface-bright": "#2c2c2f",
+              "tertiary-fixed-dim": "#eed198",
+              "secondary-fixed": "#e5e2e1",
+              "on-tertiary": "#6c572a",
+              "inverse-on-surface": "#565457",
+              "on-primary-container": "#330066",
+              "secondary-fixed-dim": "#d7d4d3",
+              "outline": "#767578",
+              "on-secondary-fixed-variant": "#5c5b5b",
+              "surface-dim": "#0e0e10",
+              "on-surface-variant": "#adaaad",
+              "on-error-container": "#ffb2b9",
+              "on-error": "#490013",
+              "on-background": "#fffbfe",
+              "on-secondary": "#525151",
+              "background": "#0e0e10",
+              "inverse-surface": "#fcf8fb",
+              "surface": "#0e0e10",
+              "on-secondary-fixed": "#403f3f",
+              "surface-container-high": "#1f1f22",
+              "surface-container": "#19191c",
+              "on-tertiary-fixed": "#4f3d11",
+              "primary": "#c59aff",
+              "primary-fixed-dim": "#b075ff",
+              "tertiary": "#ffefd5",
+              "error": "#ff6e84",
+              "surface-container-highest": "#262529",
+              "surface-container-lowest": "#000000",
+              "primary-fixed": "#ba88ff",
+              "on-tertiary-container": "#634f22",
+              "surface-container-low": "#131316"
+            },
+            fontFamily: {
+              "headline": ["Noto Serif"],
+              "body": ["Manrope"],
+              "label": ["Manrope"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>.material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24
+    }
+.bg-hero-tavern {
+    background-image: linear-gradient(to bottom, rgba(14, 14, 16, 0.4), rgba(14, 14, 16, 1)), url(https://lh3.googleusercontent.com/aida-public/AB6AXuAYiP57yYeDFJEEgsonXZFYmjy0BtZ5NPyP6jm95HNg7AoLIQ2Ns9d28RfpucqUzSja9HTUHPxSU0CBd_tU6mh6YuiFtUzYXI4ldJWGhab09AKC62b3L0naJZtgfEUNMchZpQWyHsS_viX1EE83kRiQCNut8Yy5XKhd0Z7D7tvVofBQBtkmGXJFxjkn3vWryDTyZ69TV0KE5eBFjPVu-GHmJMpEsiS14f4DgXaT7vkum3m1JJklVv3jpq23mfbgQNjFqNFdsEfb2SDZ);
+    background-size: cover;
+    background-position: center
+    }
+.glow-border {
+    box-shadow: 0 0 20px rgba(197, 154, 255, 0.1)
+    }
+.active-glow {
+    box-shadow: 0 0 30px rgba(197, 154, 255, 0.3)
+    }</style>
+</head>
+<body class="bg-surface-dim text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#0e0e10]/80 backdrop-blur-xl border-b border-[#48474a]/15 flex justify-between items-center px-6 h-16 w-full shadow-none">
+<div class="flex items-center gap-4">
+<span class="text-xl font-bold tracking-tighter text-[#ffefd5] drop-shadow-[0_0_8px_rgba(197,154,255,0.3)] font-headline">The Obsidian Grimoire</span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex gap-8 items-center text-[#adaaad] font-label text-sm tracking-widest uppercase">
+<a class="text-[#c59aff] transition-colors duration-300" href="#">Lobby</a>
+<a class="hover:text-[#ffefd5] transition-colors duration-300" href="#">Campaigns</a>
+<a class="hover:text-[#ffefd5] transition-colors duration-300" href="#">Vault</a>
+</div>
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined text-[#adaaad] hover:text-[#ffefd5] transition-colors active:scale-95 duration-200" data-icon="auto_awesome">auto_awesome</button>
+<button class="material-symbols-outlined text-[#adaaad] hover:text-[#ffefd5] transition-colors active:scale-95 duration-200" data-icon="settings">settings</button>
+<div class="w-8 h-8 rounded-full border border-primary/30 overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="User character portrait in gold frame" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJ_ahoQNdCw5_lyLT0qnG3Uo3eQqq8Mhbd_Mrj2GFCBO-AaizG9i1eREkb-UWjsftPvLxOy2_L3osf7Yjls47uUaRDJEVa9jggXe-k6od_hvE9kkLMQr-yA2jOE8KEbNVVLxnRFpkVkAxgSoQ5b2PpL7BYOqionH03kBTeoev-aoYkBo9NxHew-lY6twkZ957z8zaIXCoMrFytGN-qHE944yAkghwUDX7rJyg-XT7toIJAJzFWXX9BYh37rYZ03qFXMl6ItcAUejtU"/>
+</div>
+</div>
+</div>
+</header>
+<!-- SideNavBar (Hidden on Mobile) -->
+<aside class="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 bg-[#131316] shadow-[20px_0_40px_rgba(0,0,0,0.5)] pt-20">
+<div class="px-6 mb-8 flex flex-col gap-1">
+<span class="font-headline font-bold text-[#ffefd5] text-lg">The Archivist</span>
+<span class="text-on-surface-variant text-xs font-label uppercase tracking-widest">Level 42 Warlock</span>
+</div>
+<nav class="flex-1 flex flex-col gap-1">
+<a class="flex items-center gap-4 px-6 py-3 text-[#c59aff] bg-[#1f1f22] border-l-2 border-[#c59aff] transition-all duration-300 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="book_5">book_5</span>
+<span class="font-headline text-md">Grimoire</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="shield">shield</span>
+<span class="font-headline text-md">Armory</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="pets">pets</span>
+<span class="font-headline text-md">Bestiary</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+<span class="font-headline text-md">Almanac</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300 ease-in-out" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-headline text-md">Chronicles</span>
+</a>
+</nav>
+<div class="p-6 mt-auto flex flex-col gap-4">
+<button class="bg-surface-tint text-on-primary font-bold py-3 px-4 rounded-sm flex items-center justify-center gap-2 active:scale-95 transition-transform duration-200">
+<span class="material-symbols-outlined text-sm" data-icon="auto_fix_high">auto_fix_high</span>
+                Cast Ritual
+            </button>
+<div class="pt-4 border-t border-outline-variant/15">
+<a class="flex items-center gap-4 text-[#adaaad] hover:text-[#ffefd5] transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-headline text-sm">Settings</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="lg:pl-64 pt-16 min-h-screen bg-hero-tavern flex flex-col relative" data-alt="Medieval tavern interior with warm flickering candlelight">
+<!-- Center Lobby Area -->
+<div class="flex-1 container mx-auto px-6 py-12 flex flex-col items-center justify-center">
+<!-- Headline -->
+<div class="text-center mb-16 max-w-2xl">
+<h1 class="font-headline text-5xl md:text-7xl text-tertiary mb-4 tracking-tighter drop-shadow-2xl">Vesper's Rest</h1>
+<p class="text-on-surface-variant font-body text-lg max-w-lg mx-auto leading-relaxed">Gather your companions by the hearth. The chronicles of the Shattered Isles await your next chapter.</p>
+</div>
+<!-- Party Slots Grid -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-8 w-full max-w-5xl mb-16">
+<!-- Player 1 (Active/Host) -->
+<div class="flex flex-col items-center gap-4 group">
+<div class="w-full aspect-[3/4] bg-surface-container-highest/60 backdrop-blur-md border border-primary/20 rounded-sm relative overflow-hidden active-glow flex flex-col items-center justify-center transition-all duration-500">
+<img class="w-full h-full object-cover" data-alt="Portrait of a female warlock" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA34t5uZeJ7HZnXN7NZHcfwfayymH6yixMsTyK6vfT4_y4RxnmHj-gZLtRLoejM0WIEZ76VJVctQsHTBs5T82LkqJWd8TmuZSiUuG2yi8Cp9eJpe05VRrZo-ZLkGTQEibjad4y199lTWbghZ6NtNNpVsb6PL5ek4BYjzbEu9eVvS7JLNGa5wcP77AYMrtcExoACZr0RXQw-D-wOTdiJRxqA7BKm0cd7zV_au67fleaUY3LpBp9dtwjWZnfur5MRxdWaxPjC3mgPDWy3"/>
+<div class="absolute bottom-0 left-0 w-full bg-gradient-to-t from-black/80 to-transparent p-4">
+<span class="text-primary font-headline text-sm block">Elara Shadowstep</span>
+<span class="text-tertiary text-[10px] uppercase tracking-widest font-bold">Party Leader</span>
+</div>
+</div>
+</div>
+<!-- Player 2 (Empty/Joining) -->
+<div class="flex flex-col items-center gap-4 group cursor-pointer">
+<div class="w-full aspect-[3/4] bg-surface-container-highest/40 backdrop-blur-md border border-outline-variant/20 rounded-sm flex flex-col items-center justify-center group-hover:bg-surface-container-highest/60 transition-all duration-300 relative overflow-hidden">
+<span class="material-symbols-outlined text-outline text-6xl opacity-20 group-hover:opacity-40 transition-opacity" data-icon="person">person</span>
+<div class="absolute inset-0 border-2 border-dashed border-primary/5 group-hover:border-primary/20 transition-colors"></div>
+<div class="mt-4 text-on-surface-variant text-[10px] uppercase tracking-[0.2em] font-bold">Open Slot</div>
+</div>
+</div>
+<!-- Player 3 (Empty) -->
+<div class="flex flex-col items-center gap-4 group cursor-pointer">
+<div class="w-full aspect-[3/4] bg-surface-container-highest/40 backdrop-blur-md border border-outline-variant/20 rounded-sm flex flex-col items-center justify-center group-hover:bg-surface-container-highest/60 transition-all duration-300 relative overflow-hidden">
+<span class="material-symbols-outlined text-outline text-6xl opacity-20 group-hover:opacity-40 transition-opacity" data-icon="person">person</span>
+<div class="absolute inset-0 border-2 border-dashed border-primary/5 group-hover:border-primary/20 transition-colors"></div>
+<div class="mt-4 text-on-surface-variant text-[10px] uppercase tracking-[0.2em] font-bold">Open Slot</div>
+</div>
+</div>
+<!-- Player 4 (Empty) -->
+<div class="flex flex-col items-center gap-4 group cursor-pointer">
+<div class="w-full aspect-[3/4] bg-surface-container-highest/40 backdrop-blur-md border border-outline-variant/20 rounded-sm flex flex-col items-center justify-center group-hover:bg-surface-container-highest/60 transition-all duration-300 relative overflow-hidden">
+<span class="material-symbols-outlined text-outline text-6xl opacity-20 group-hover:opacity-40 transition-opacity" data-icon="person">person</span>
+<div class="absolute inset-0 border-2 border-dashed border-primary/5 group-hover:border-primary/20 transition-colors"></div>
+<div class="mt-4 text-on-surface-variant text-[10px] uppercase tracking-[0.2em] font-bold">Open Slot</div>
+</div>
+</div>
+</div>
+<!-- Interaction Buttons -->
+<div class="flex flex-col sm:flex-row gap-6 items-center">
+<button class="px-10 py-4 bg-gradient-to-tr from-primary-dim to-primary text-on-primary font-bold font-headline text-xl rounded-sm shadow-[0_0_30px_rgba(197,154,255,0.4)] hover:shadow-[0_0_50px_rgba(197,154,255,0.6)] hover:scale-105 active:scale-95 transition-all duration-300">
+                    Join Party
+                </button>
+<button class="px-10 py-4 bg-surface-container-highest/80 backdrop-blur-xl border border-tertiary/20 text-tertiary font-bold font-headline text-xl rounded-sm hover:border-tertiary/50 hover:bg-surface-container-highest transition-all duration-300">
+                    Character Selection
+                </button>
+</div>
+</div>
+<!-- Sidebar / Right Overlay (World Info) -->
+<div class="lg:fixed lg:right-10 lg:top-32 lg:w-80 w-full px-6 lg:px-0 mb-20 lg:mb-0">
+<div class="bg-surface-container-highest/60 backdrop-blur-2xl p-8 rounded-sm border border-outline-variant/10 shadow-2xl">
+<h3 class="font-headline text-tertiary text-xl mb-6 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-dim" data-icon="map">map</span>
+                    Campaign Brief
+                </h3>
+<div class="space-y-6">
+<div class="space-y-2">
+<label class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Current Setting</label>
+<p class="text-on-surface text-sm font-medium">The Frozen Citadel of Malcor</p>
+</div>
+<div class="space-y-2">
+<label class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Party Alignment</label>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-bright text-tertiary-dim text-[10px] font-bold border border-tertiary/10">Neutral Good</span>
+<span class="px-2 py-1 bg-surface-bright text-primary text-[10px] font-bold border border-primary/10">Arcane Focus</span>
+</div>
+</div>
+<div class="space-y-4 pt-4 border-t border-outline-variant/10">
+<label class="text-[10px] uppercase tracking-widest text-on-surface-variant font-bold">Available Campaigns</label>
+<ul class="space-y-3">
+<li class="p-3 bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer group flex items-center justify-between border-l-2 border-transparent hover:border-primary">
+<span class="text-xs font-headline">Whispers of the Void</span>
+<span class="material-symbols-outlined text-xs text-outline group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</li>
+<li class="p-3 bg-surface-container-low hover:bg-surface-container transition-colors cursor-pointer group flex items-center justify-between border-l-2 border-transparent hover:border-primary">
+<span class="text-xs font-headline">The Serpent's Coil</span>
+<span class="material-symbols-outlined text-xs text-outline group-hover:text-primary transition-colors" data-icon="chevron_right">chevron_right</span>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full h-20 bg-[#0e0e10]/90 backdrop-blur-2xl border-t border-[#c59aff]/10 flex justify-around items-center px-4 pb-2 z-50 shadow-[0_-10px_30px_rgba(149,71,247,0.1)]">
+<button class="flex flex-col items-center justify-center bg-gradient-to-tr from-[#9547f7]/20 to-[#c59aff]/20 text-[#c59aff] rounded-xl p-2 shadow-[0_0_15px_rgba(197,154,255,0.2)] active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="casino">casino</span>
+<span class="font-label text-[10px] uppercase tracking-widest font-medium">Roll Dice</span>
+</button>
+<button class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="font-label text-[10px] uppercase tracking-widest font-medium">AI Oracle</span>
+</button>
+<button class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="videocam">videocam</span>
+<span class="font-label text-[10px] uppercase tracking-widest font-medium">Party Cam</span>
+</button>
+<button class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="backpack">backpack</span>
+<span class="font-label text-[10px] uppercase tracking-widest font-medium">Inventory</span>
+</button>
+</nav>
+</body></html>

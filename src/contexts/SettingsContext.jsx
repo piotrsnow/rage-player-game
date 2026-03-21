@@ -1,0 +1,83 @@
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { storage } from '../services/storage';
+
+const SettingsContext = createContext(null);
+
+const defaultSettings = {
+  aiProvider: 'openai',
+  openaiApiKey: '',
+  anthropicApiKey: '',
+  imageGenEnabled: true,
+  language: 'pl',
+  elevenlabsApiKey: '',
+  elevenlabsVoiceId: '',
+  elevenlabsVoiceName: '',
+  narratorEnabled: false,
+  narratorAutoPlay: true,
+  dmSettings: {
+    narrativeStyle: 50,
+    responseLength: 50,
+    difficulty: 50,
+    testsFrequency: 50,
+    freedom: 50,
+  },
+};
+
+export function SettingsProvider({ children }) {
+  const { i18n } = useTranslation();
+  const [settings, setSettings] = useState(() => {
+    const saved = storage.getSettings();
+    return saved ? { ...defaultSettings, ...saved } : defaultSettings;
+  });
+
+  useEffect(() => {
+    storage.saveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    if (settings.language && i18n.language !== settings.language) {
+      i18n.changeLanguage(settings.language);
+    }
+    document.documentElement.lang = settings.language || 'en';
+  }, [settings.language, i18n]);
+
+  const updateSettings = useCallback((updates) => {
+    setSettings((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const updateDMSettings = useCallback((updates) => {
+    setSettings((prev) => ({
+      ...prev,
+      dmSettings: { ...prev.dmSettings, ...updates },
+    }));
+  }, []);
+
+  const resetSettings = useCallback(() => {
+    setSettings(defaultSettings);
+  }, []);
+
+  const getApiKey = useCallback(() => {
+    return settings.aiProvider === 'openai'
+      ? settings.openaiApiKey
+      : settings.anthropicApiKey;
+  }, [settings]);
+
+  const value = {
+    settings,
+    updateSettings,
+    updateDMSettings,
+    resetSettings,
+    getApiKey,
+  };
+
+  return (
+    <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>
+  );
+}
+
+export function useSettings() {
+  const ctx = useContext(SettingsContext);
+  if (!ctx) throw new Error('useSettings must be used within SettingsProvider');
+  return ctx;
+}

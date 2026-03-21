@@ -1,0 +1,218 @@
+{
+  "common": {
+    "appName": "The Obsidian Grimoire",
+    "level": "Level",
+    "lvl": "Lv.",
+    "scene": "Scene",
+    "health": "Health",
+    "mana": "Mana",
+    "cancel": "Cancel",
+    "save": "Save",
+    "apply": "Apply",
+    "reset": "Reset",
+    "delete": "Delete",
+    "close": "Close",
+    "loading": "Loading...",
+    "online": "Online",
+    "scenes": "scenes",
+    "xp": "XP",
+    "success": "Success!",
+    "failure": "Failure!",
+    "check": "Check",
+    "vs": "vs",
+    "dc": "DC"
+  },
+  "nav": {
+    "lobby": "Lobby",
+    "grimoire": "Grimoire",
+    "armory": "Armory",
+    "settings": "Settings",
+    "play": "Play",
+    "character": "Character"
+  },
+  "lobby": {
+    "title": "The Obsidian Grimoire",
+    "subtitle": "Begin your solo RPG adventure. An AI Dungeon Master awaits to guide you through realms of your own making.",
+    "newCampaign": "New Campaign",
+    "continueCampaign": "Continue Campaign",
+    "apiKeyRequired": "API Key Required",
+    "apiKeyDescription": "Configure your OpenAI or Anthropic API key in Settings to start playing.",
+    "savedCampaigns": "Saved Campaigns",
+    "noCampaigns": "No campaigns yet. Start a new adventure!"
+  },
+  "creator": {
+    "title": "Forge a New Campaign",
+    "subtitle": "Define the parameters of your adventure. The AI Dungeon Master will craft a unique world tailored to your vision.",
+    "genreLabel": "Genre",
+    "toneLabel": "Tone",
+    "playStyleLabel": "Play Style",
+    "difficultyLabel": "Difficulty",
+    "campaignLengthLabel": "Campaign Length",
+    "storyPromptLabel": "What should the story be about?",
+    "storyPlaceholder": "A lone wanderer discovers an ancient artifact that grants the power to reshape reality, but each use erases a memory...",
+    "beginRitual": "Begin the Ritual",
+    "loadingTitle": "The Grimoire stirs... crafting your world",
+    "loadingDescription": "The AI is generating your campaign world, story hook, character, and opening scene. This may take a moment.",
+    "noApiKeyHint": "Configure an API key in Settings before creating a campaign.",
+    "genres": {
+      "Fantasy": "Fantasy",
+      "Sci-Fi": "Sci-Fi",
+      "Horror": "Horror"
+    },
+    "genreDesc": {
+      "Fantasy": "Swords, sorcery, and ancient prophecies",
+      "Sci-Fi": "Starships, AI, and distant galaxies",
+      "Horror": "Dark secrets, eldritch horrors, survival"
+    },
+    "tones": {
+      "Dark": "Dark",
+      "Epic": "Epic",
+      "Humorous": "Humorous"
+    },
+    "toneDesc": {
+      "Dark": "Grim, morally grey, brutal",
+      "Epic": "Grand scale, heroic, dramatic",
+      "Humorous": "Witty, lighthearted, absurd"
+    },
+    "styles": {
+      "Narrative": "Narrative",
+      "Hybrid": "Hybrid",
+      "Mechanical": "Mechanical"
+    },
+    "styleDesc": {
+      "Narrative": "Story-driven, AI decides outcomes",
+      "Hybrid": "Story + dice rolls for key moments",
+      "Mechanical": "Stats-heavy, dice determine everything"
+    },
+    "difficulties": {
+      "Easy": "Easy",
+      "Normal": "Normal",
+      "Hard": "Hard",
+      "Expert": "Expert"
+    },
+    "lengths": {
+      "Short": "Short",
+      "Medium": "Medium",
+      "Long": "Long"
+    }
+  },
+  "gameplay": {
+    "chooseAction": "Choose Your Action",
+    "dmWeavesFate": "The DM weaves fate...",
+    "goToSettings": "Go to Settings",
+    "diceCheck": "{{skill}} Check",
+    "diceResult": "D20 ({{roll}}) + {{modifier}} = {{total}}",
+    "adventureBegins": "Your adventure begins...",
+    "conjuringVision": "Conjuring vision...",
+    "generatingImage": "Generating Image",
+    "customActionPlaceholder": "Or describe your own action...",
+    "send": "Send"
+  },
+  "chat": {
+    "dmAi": "DM AI",
+    "you": "You",
+    "dungeonMasterAi": "Dungeon Master AI",
+    "awaitingFirstMove": "The DM awaits your first move...",
+    "narratorPlaying": "Playing...",
+    "narratorPaused": "Paused"
+  },
+  "character": {
+    "noActiveCharacter": "No Active Character",
+    "noActiveDescription": "Start or load a campaign to view your character sheet.",
+    "goToLobby": "Go to Lobby",
+    "vitals": "Vitals",
+    "healthPoints": "Health Points",
+    "manaPool": "Mana Pool",
+    "inspiration": "Inspiration",
+    "origins": "Origins",
+    "originsEmpty": "The origins of this adventurer remain shrouded in mystery..."
+  },
+  "quests": {
+    "activeChronicles": "Active Chronicles",
+    "noQuests": "No quests discovered yet."
+  },
+  "inventory": {
+    "title": "Armory & Artifacts",
+    "slots": "{{current}}/{{max}} Slots"
+  },
+  "stats": {
+    "strength": "Strength",
+    "dexterity": "Dexterity",
+    "constitution": "Constitution",
+    "intelligence": "Intelligence",
+    "wisdom": "Wisdom",
+    "charisma": "Charisma"
+  },
+  "settings": {
+    "title": "Dungeon Master Settings",
+    "subtitle": "Calibrate the arcane engine. Your choices here will reshape the narrative fabric of the realm.",
+    "narrativeAnchors": "Narrative Anchors",
+    "storyChaos": "Story Chaos Level",
+    "storyChaosDesc": "The entropy of AI plot twists",
+    "responseLength": "Response Length",
+    "responseLengthDesc": "How verbose the DM's narration is",
+    "difficulty": "Difficulty",
+    "difficultyDesc": "Survival probability in encounters",
+    "skillChecks": "Skill Checks Frequency",
+    "skillChecksDesc": "How often dice rolls are required",
+    "playerFreedom": "Player Freedom",
+    "playerFreedomDesc": "How much the AI follows vs leads the story",
+    "imageGeneration": "Image Generation",
+    "imageGenerationDesc": "DALL-E 3 scene images",
+    "aiProvider": "AI Provider",
+    "openaiLabel": "OpenAI (GPT-4o)",
+    "anthropicLabel": "Anthropic (Claude)",
+    "openaiApiKey": "OpenAI API Key",
+    "anthropicApiKey": "Anthropic API Key",
+    "apiKeysTitle": "API Keys",
+    "apiKeysDescription": "Keys are stored locally in your browser and never sent to any server besides the AI provider. You need at least one key to play.",
+    "activeProvider": "Active Provider",
+    "status": "Status",
+    "keyConfigured": "Key Configured",
+    "noKeySet": "No Key Set",
+    "openaiProvider": "OpenAI GPT-4o",
+    "anthropicProvider": "Anthropic Claude",
+    "resetGrimoire": "Reset Grimoire",
+    "applyChanges": "Apply Changes",
+    "saved": "Saved!",
+    "difficultyLabels": {
+      "easy": "Easy",
+      "normal": "Normal",
+      "hard": "Hard",
+      "expert": "Expert"
+    },
+    "chaosLabels": {
+      "stable": "Stable",
+      "balanced": "Balanced",
+      "chaotic": "Chaotic",
+      "wild": "Wild"
+    },
+    "lengthLabels": {
+      "short": "Short",
+      "medium": "Medium",
+      "long": "Long"
+    },
+    "language": "Language",
+    "languageDesc": "Interface and AI narration language",
+    "narrator": "Narrator",
+    "narratorDesc": "ElevenLabs text-to-speech for DM narration",
+    "narratorEnabled": "Enable Narrator",
+    "narratorAutoPlay": "Auto-play DM Messages",
+    "narratorAutoPlayDesc": "Automatically narrate new DM messages",
+    "elevenlabsApiKey": "ElevenLabs API Key",
+    "voiceSelect": "Select Voice",
+    "voiceSelectPlaceholder": "Enter API key to load voices",
+    "loadVoices": "Load Voices",
+    "loadingVoices": "Loading voices...",
+    "testVoice": "Test",
+    "noVoicesFound": "No voices found"
+  },
+  "errors": {
+    "somethingWentWrong": "Something Went Wrong",
+    "unexpectedError": "An unexpected error occurred.",
+    "returnToLobby": "Return to Lobby"
+  },
+  "system": {
+    "diceRollMessage": "{{skill}} check: D20 ({{roll}}) + {{modifier}} = {{total}} vs DC {{dc}} — {{result}}"
+  }
+}

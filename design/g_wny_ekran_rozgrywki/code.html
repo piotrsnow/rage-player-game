@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Obsidian Grimoire - Game Session</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;700&amp;family=Manrope:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "tertiary-dim": "#eed198",
+              "inverse-primary": "#7e29df",
+              "secondary": "#e5e2e1",
+              "on-primary-fixed-variant": "#3f007c",
+              "secondary-container": "#474646",
+              "error-dim": "#d73357",
+              "primary-container": "#ba88ff",
+              "error-container": "#a70138",
+              "outline-variant": "#48474a",
+              "tertiary-fixed": "#fddfa5",
+              "surface-variant": "#262529",
+              "surface-tint": "#c59aff",
+              "on-primary": "#420082",
+              "on-secondary-container": "#d2d0cf",
+              "on-primary-fixed": "#000000",
+              "tertiary-container": "#fddfa5",
+              "on-tertiary-fixed-variant": "#6e592b",
+              "secondary-dim": "#d7d4d3",
+              "primary-dim": "#9547f7",
+              "on-surface": "#fffbfe",
+              "surface-bright": "#2c2c2f",
+              "tertiary-fixed-dim": "#eed198",
+              "secondary-fixed": "#e5e2e1",
+              "on-tertiary": "#6c572a",
+              "inverse-on-surface": "#565457",
+              "on-primary-container": "#330066",
+              "secondary-fixed-dim": "#d7d4d3",
+              "outline": "#767578",
+              "on-secondary-fixed-variant": "#5c5b5b",
+              "surface-dim": "#0e0e10",
+              "on-surface-variant": "#adaaad",
+              "on-error-container": "#ffb2b9",
+              "on-error": "#490013",
+              "on-background": "#fffbfe",
+              "on-secondary": "#525151",
+              "background": "#0e0e10",
+              "inverse-surface": "#fcf8fb",
+              "surface": "#0e0e10",
+              "on-secondary-fixed": "#403f3f",
+              "surface-container-high": "#1f1f22",
+              "surface-container": "#19191c",
+              "on-tertiary-fixed": "#4f3d11",
+              "primary": "#c59aff",
+              "primary-fixed-dim": "#b075ff",
+              "tertiary": "#ffefd5",
+              "error": "#ff6e84",
+              "surface-container-highest": "#262529",
+              "surface-container-lowest": "#000000",
+              "primary-fixed": "#ba88ff",
+              "on-tertiary-container": "#634f22",
+              "surface-container-low": "#131316"
+            },
+            fontFamily: {
+              "headline": ["Noto Serif"],
+              "body": ["Manrope"],
+              "label": ["Manrope"]
+            },
+            borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-panel {
+        background: rgba(31, 31, 34, 0.6);
+        backdrop-filter: blur(16px);
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        width: 4px;
+      }
+      .custom-scrollbar::-webkit-scrollbar-track {
+        background: #0e0e10;
+      }
+      .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #48474a;
+        border-radius: 2px;
+      }
+    </style>
+</head>
+<body class="bg-surface-dim text-on-surface font-body selection:bg-primary/30 selection:text-primary overflow-hidden h-screen">
+<!-- Top Navigation Anchor -->
+<header class="bg-[#0e0e10]/80 backdrop-blur-xl border-b border-[#48474a]/15 fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 w-full">
+<div class="text-xl font-bold tracking-tighter text-[#ffefd5] drop-shadow-[0_0_8px_rgba(197,154,255,0.3)] font-headline">
+            The Obsidian Grimoire
+        </div>
+<div class="flex items-center gap-6">
+<span class="material-symbols-outlined text-[#adaaad] hover:text-[#ffefd5] cursor-pointer transition-colors" data-icon="auto_awesome">auto_awesome</span>
+<span class="material-symbols-outlined text-[#adaaad] hover:text-[#ffefd5] cursor-pointer transition-colors" data-icon="settings">settings</span>
+<div class="w-8 h-8 rounded-full border border-primary/30 overflow-hidden">
+<img alt="User portrait" data-alt="User character portrait in gold frame" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDc8XcHwxAY7iN2kOUYq4PifAfn6SosEBG-VElBRHO7rPhlmU5HIUoSiWUq6VWboHTTElv6pivZH4RC9Zp3gzsDpbsphNHSSE7UBlpcEX9gvFstwmCN9ThFfuFqwKx_hnwrjCkP-MK2fMEYcsl1u0Ra9ByWHIkIO9lneAe_HGuARFE1xSJXPXIK1GqF7Rm13Vr_WAazlJe5OoAft7yBiAfElmq6qpU9cexaZkO8rV6iKVaqnw2N_qcyV84aXSw1JLye0oUhcbGli7uB"/>
+</div>
+</div>
+</header>
+<!-- Sidebar: Stats & Navigation -->
+<aside class="bg-[#131316] h-screen w-64 fixed left-0 top-0 z-40 flex flex-col pt-20 shadow-[20px_0_40px_rgba(0,0,0,0.5)] hidden md:flex">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20">
+<span class="material-symbols-outlined text-tertiary text-xl" data-icon="shield">shield</span>
+</div>
+<div>
+<div class="font-headline text-tertiary text-sm font-bold">The Archivist</div>
+<div class="text-[10px] text-on-surface-variant uppercase tracking-widest">Level 42 Warlock</div>
+</div>
+</div>
+<!-- Quick Stats -->
+<div class="space-y-3">
+<div class="space-y-1">
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant">
+<span>HEALTH</span>
+<span class="text-error">84/120</span>
+</div>
+<div class="h-1 w-full bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-error-dim w-[70%]"></div>
+</div>
+</div>
+<div class="space-y-1">
+<div class="flex justify-between text-[10px] font-bold text-on-surface-variant">
+<span>MANA</span>
+<span class="text-primary">210/250</span>
+</div>
+<div class="h-1 w-full bg-surface-container-highest overflow-hidden">
+<div class="h-full bg-primary-dim w-[84%] shadow-[0_0_8px_rgba(197,154,255,0.5)]"></div>
+</div>
+</div>
+</div>
+</div>
+<nav class="flex-1 space-y-1 px-2">
+<a class="flex items-center gap-4 px-4 py-3 text-[#c59aff] bg-[#1f1f22] border-l-2 border-[#c59aff] group" href="#">
+<span class="material-symbols-outlined" data-icon="book_5">book_5</span>
+<span class="font-headline text-sm">Grimoire</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="shield">shield</span>
+<span class="font-headline text-sm">Armory</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="pets">pets</span>
+<span class="font-headline text-sm">Bestiary</span>
+</a>
+<a class="flex items-center gap-4 px-4 py-3 text-[#adaaad] hover:bg-[#1f1f22] hover:text-[#ffefd5] transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+<span class="font-headline text-sm">Almanac</span>
+</a>
+</nav>
+<div class="p-6">
+<button class="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200">
+                Cast Ritual
+            </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="md:ml-64 pt-16 h-full flex flex-col lg:flex-row overflow-hidden">
+<!-- Center/Left: Game View -->
+<div class="flex-1 flex flex-col p-4 md:p-6 gap-6 overflow-y-auto custom-scrollbar">
+<!-- AI Video Player / Forest View -->
+<div class="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)]">
+<img alt="Dark Forest" class="w-full h-full object-cover" data-alt="Dark forest landscape with thick mystical purple fog" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYnE774JXaIEp7vPo2pnDHBtZY-goCMRilfSflYbth4Ie03UJL4CKzXqfpE6sNtjD9m2LFpDTddyIZkflxlTqgv9z5wf9S_sgt1muj7_yt06fuhkC6BeO-cHQIcErTmgJ2ydyLFcuj02lunyVAMvgsPX-de2QiHPw-BdvKEYCVx-peC1T34cc2-N-yajILKJGE_d3u18yyDk15KaLJSiBxxJLlBUZYb4_uf3mtjkk3XMebAdyq24NciQmjnsuVE9JMvkSUhgXYmQTB"/>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-dim/80 via-transparent to-transparent"></div>
+<div class="absolute top-4 left-4 bg-surface-container-highest/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary/20 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(197,154,255,1)]"></span>
+<span class="text-[10px] font-bold tracking-[0.2em] text-on-surface uppercase">Live AI Visualization</span>
+</div>
+<div class="absolute bottom-6 left-6 max-w-md">
+<h2 class="font-headline text-2xl text-tertiary drop-shadow-md mb-2">The Whispering Glade</h2>
+<p class="text-sm text-on-surface-variant font-body leading-relaxed">The fog thickens as you step deeper. Ancient oaks seem to shift their positions when you aren't looking.</p>
+</div>
+</div>
+<!-- Party Members -->
+<div class="flex flex-wrap items-center justify-center gap-6 py-4">
+<div class="flex flex-col items-center gap-2">
+<div class="w-20 h-20 rounded-full border-2 border-tertiary-dim p-1 bg-surface-container-low shadow-[0_0_15px_rgba(238,209,152,0.2)]">
+<img alt="Kael" class="w-full h-full rounded-full object-cover" data-alt="Portrait of a male elf ranger" src="https://lh3.googleusercontent.com/aida-public/AB6AXuClSIQeW0zryUeSUP-jMYmARmsKbFFj1ENp6gPhPBv0WAzVPsHiZV8FkSTDR3xuZrE73bKFq5sRM_AODvt2UxwcvynwrtWBjbN82Ikllr5nozrfCgvYLAhyi6mJ32cUR7wu80WD_SuNyq5jF1_i_YnNzomFc-aNlu2WEMB7rLyJnTcLrLErbloUcTEBOf072-9ljZyPzIhnBeSMPzJQUZKicJJGfUFiWeBFgBKypWLf9KATV4F8It0yMcGSIGVEmzZLA4o7oHchLe2z"/>
+</div>
+<span class="text-[10px] font-bold text-tertiary uppercase tracking-tighter">Kaelen</span>
+</div>
+<div class="flex flex-col items-center gap-2">
+<div class="w-20 h-20 rounded-full border-2 border-primary/40 p-1 bg-surface-container-low">
+<img alt="Lyra" class="w-full h-full rounded-full object-cover" data-alt="Portrait of a female human mage" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuV3nprUqlehvUCawlHeaOcYDTCtZnE22g261EC7DZaArcaaPocgaux9UGLge-qmhOLjpJwgrOndZk9_vy7TSbg4EQWgwKRDsOe7WnMY954isCglk_TigmvK1PfLVYQgyY9F6Se_WDst4Amqu86p1NbOpwP1HbLb6k8aqj2lPsq1sDG0et6tdiS8NFZ_l8KOxLARprg8Ep1hsEIZEzDGjc9K8pQW03-dqCXPFjquikjVhg9hgPgGdmX8e8rvMTy1UfKngzQDs1d8h1"/>
+</div>
+<span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter">Lyra</span>
+</div>
+<div class="flex flex-col items-center gap-2">
+<div class="w-20 h-20 rounded-full border-2 border-primary/40 p-1 bg-surface-container-low">
+<img alt="Torin" class="w-full h-full rounded-full object-cover" data-alt="Portrait of a dwarf warrior" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNG6mDcGVurPk8hKiGgI3Ptf2NNYT7YU6Fm8E-g4omCRU_1vyylpUuAWIkcOV4PBWdPFXbrdMTW1GmmXTji-4lZCWoeooEKtrrOftRunCKNdSr8YH6OGMGTSldhuI3ikIJSaHoJ1LJ6E9_AjiBC6ophNP0m2vXtKpzB65vP8uZDobxn_628C6ynaqpotdTo3yKxS10R3IVsj9NLezi80R6uKYQGYlfl6eG7mesC47_0PRkX1pTAlAiIMiiaGoC02m1Oh39klHlFj7o"/>
+</div>
+<span class="text-[10px] font-bold text-on-surface-variant uppercase tracking-tighter">Torin</span>
+</div>
+<div class="flex flex-col items-center gap-2 opacity-60 grayscale">
+<div class="w-20 h-20 rounded-full border-2 border-outline/30 p-1 bg-surface-container-low">
+<img alt="Join" class="w-full h-full rounded-full object-cover" data-alt="Empty party slot silhouette" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQUvKKksuNW1l5gxpbk5ZojnsXodkFcGwGWBw8cSGW5cELVPjJvJJDxAk2b7plOiNsEatZA1nUp2C4onzj3fU7a0EZ4LGYEwI35Q_QB1n6NnVJDyujwj7Rp8L8d6v8NIHySQUi6wo_oVCIOAdouez7rpPG3mHxNYUK8GkWF0O48Mj0p6It-PBbL3LQxOUH63UNT8q5p0FJedc1rqTF3qvfjN_CRbA48KOb_3WKp1dwzlNEy74EGtDOVQ7D5KSuzHrzkSXFV6hJBi6N"/>
+</div>
+<span class="text-[10px] font-bold text-outline uppercase tracking-tighter">Empty</span>
+</div>
+</div>
+<!-- Dice Tray (Bottom of main content) -->
+<div class="mt-auto p-8 rounded-xl bg-gradient-to-b from-surface-container/50 to-surface-container-lowest border border-outline-variant/10 relative overflow-hidden h-48 flex items-center justify-center">
+<!-- 3D Dice Placeholder -->
+<div class="relative group cursor-pointer active:scale-95 transition-transform">
+<div class="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 group-hover:bg-primary/30 transition-colors"></div>
+<div class="relative w-24 h-24 flex items-center justify-center">
+<span class="material-symbols-outlined text-8xl text-tertiary drop-shadow-[0_0_20px_rgba(255,239,213,0.5)]" data-icon="casino">casino</span>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="font-headline text-2xl font-bold text-on-primary-fixed mt-1">20</span>
+</div>
+</div>
+</div>
+<div class="absolute bottom-4 text-[10px] tracking-[0.4em] text-on-surface-variant font-bold uppercase">Click to Roll Initiative</div>
+</div>
+</div>
+<!-- Right: DM Chat History -->
+<aside class="w-full lg:w-96 bg-surface-container-low/50 backdrop-blur-md border-l border-[#48474a]/15 flex flex-col h-[512px] lg:h-full">
+<div class="p-6 border-b border-[#48474a]/15 flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-gradient-to-tr from-primary-dim to-primary flex items-center justify-center shadow-[0_0_15px_rgba(149,71,247,0.4)]">
+<span class="material-symbols-outlined text-on-primary" data-icon="psychology">psychology</span>
+</div>
+<div>
+<h3 class="font-headline text-sm font-bold text-tertiary">Dungeon Master AI</h3>
+<div class="text-[10px] text-primary font-bold uppercase tracking-wider flex items-center gap-1">
+<span class="w-1 h-1 rounded-full bg-primary"></span> Online
+                    </div>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+<!-- DM Message -->
+<div class="flex flex-col gap-2">
+<div class="text-[10px] font-bold text-primary uppercase tracking-widest">DM AI • 20:14</div>
+<div class="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg">
+<p class="text-sm text-on-surface-variant leading-relaxed italic">
+                            "As you move through the Whispering Glade, the very ground beneath your boots feels spongy and unnatural. A low hum begins to resonate from the monoliths ahead. What do you do?"
+                        </p>
+</div>
+</div>
+<!-- Player Message -->
+<div class="flex flex-col gap-2 items-end">
+<div class="text-[10px] font-bold text-tertiary-dim uppercase tracking-widest">You • 20:15</div>
+<div class="bg-surface-container-high/40 p-4 border-r-2 border-tertiary-dim rounded-l-lg max-w-[90%]">
+<p class="text-sm text-on-surface leading-relaxed">
+                            "I check for magical traps on the monoliths using my Arcana skill."
+                        </p>
+</div>
+</div>
+<!-- Roll result message -->
+<div class="flex items-center gap-4 py-2 opacity-80">
+<div class="h-px flex-1 bg-gradient-to-r from-transparent to-outline-variant/30"></div>
+<div class="text-[10px] text-outline uppercase font-bold tracking-widest px-2">System: D20 Roll (18 + 5)</div>
+<div class="h-px flex-1 bg-gradient-to-l from-transparent to-outline-variant/30"></div>
+</div>
+<!-- DM Message -->
+<div class="flex flex-col gap-2">
+<div class="text-[10px] font-bold text-primary uppercase tracking-widest">DM AI • 20:16</div>
+<div class="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg">
+<p class="text-sm text-on-surface-variant leading-relaxed">
+                            "The symbols on the stone flare with a faint violet light. You detect a lingering 'Binding Ritual' enchantment. It's stable for now, but sensitive to physical contact."
+                        </p>
+</div>
+</div>
+</div>
+<!-- Chat Input -->
+<div class="p-4 bg-surface-container-lowest/50">
+<div class="relative">
+<textarea class="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-4 resize-none placeholder:text-outline/50 custom-scrollbar" placeholder="Type your action..." rows="2"></textarea>
+<div class="flex justify-between items-center mt-2 px-2">
+<div class="flex gap-2">
+<button class="text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="attachment">attachment</span>
+</button>
+<button class="text-outline hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-lg" data-icon="mic">mic</span>
+</button>
+</div>
+<button class="text-primary hover:text-on-surface transition-all flex items-center gap-1 group">
+<span class="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">Send Ritual</span>
+<span class="material-symbols-outlined text-xl" data-icon="send">send</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</main>
+<!-- Mobile Bottom Navigation -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-2 bg-[#0e0e10]/90 backdrop-blur-2xl border-t border-[#c59aff]/10 z-50 h-20">
+<div class="flex flex-col items-center justify-center bg-gradient-to-tr from-[#9547f7]/20 to-[#c59aff]/20 text-[#c59aff] rounded-xl p-2 shadow-[0_0_15px_rgba(197,154,255,0.2)]">
+<span class="material-symbols-outlined" data-icon="casino">casino</span>
+<span class="font-['Manrope'] font-medium text-[10px] uppercase tracking-widest mt-1">Roll Dice</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="font-['Manrope'] font-medium text-[10px] uppercase tracking-widest mt-1">AI Oracle</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all">
+<span class="material-symbols-outlined" data-icon="videocam">videocam</span>
+<span class="font-['Manrope'] font-medium text-[10px] uppercase tracking-widest mt-1">Party Cam</span>
+</div>
+<div class="flex flex-col items-center justify-center text-[#adaaad] p-2 hover:text-[#ffefd5] transition-all">
+<span class="material-symbols-outlined" data-icon="backpack">backpack</span>
+<span class="font-['Manrope'] font-medium text-[10px] uppercase tracking-widest mt-1">Inventory</span>
+</div>
+</nav>
+<!-- Global Visual Artifacts -->
+<div class="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] mix-blend-overlay">
+<!-- Noise Texture Overlay Placeholder -->
+<div class="absolute inset-0 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]"></div>
+</div>
+</body></html>

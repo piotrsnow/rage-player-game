@@ -1,0 +1,218 @@
+{
+  "common": {
+    "appName": "Obsydianowy Grimuar",
+    "level": "Poziom",
+    "lvl": "Poz.",
+    "scene": "Scena",
+    "health": "Zdrowie",
+    "mana": "Mana",
+    "cancel": "Anuluj",
+    "save": "Zapisz",
+    "apply": "Zastosuj",
+    "reset": "Resetuj",
+    "delete": "Usuń",
+    "close": "Zamknij",
+    "loading": "Ładowanie...",
+    "online": "Online",
+    "scenes": "scen",
+    "xp": "PD",
+    "success": "Sukces!",
+    "failure": "Porażka!",
+    "check": "Test",
+    "vs": "vs",
+    "dc": "ST"
+  },
+  "nav": {
+    "lobby": "Lobby",
+    "grimoire": "Grimuar",
+    "armory": "Zbrojownia",
+    "settings": "Ustawienia",
+    "play": "Graj",
+    "character": "Postać"
+  },
+  "lobby": {
+    "title": "Obsydianowy Grimuar",
+    "subtitle": "Rozpocznij swoją solową przygodę RPG. Mistrz Gry AI czeka, by poprowadzić cię przez krainy twojego własnego tworzenia.",
+    "newCampaign": "Nowa Kampania",
+    "continueCampaign": "Kontynuuj Kampanię",
+    "apiKeyRequired": "Wymagany Klucz API",
+    "apiKeyDescription": "Skonfiguruj klucz API OpenAI lub Anthropic w Ustawieniach, aby rozpocząć grę.",
+    "savedCampaigns": "Zapisane Kampanie",
+    "noCampaigns": "Brak kampanii. Rozpocznij nową przygodę!"
+  },
+  "creator": {
+    "title": "Wykuj Nową Kampanię",
+    "subtitle": "Zdefiniuj parametry swojej przygody. Mistrz Gry AI stworzy unikalny świat dopasowany do twojej wizji.",
+    "genreLabel": "Gatunek",
+    "toneLabel": "Tonacja",
+    "playStyleLabel": "Styl Gry",
+    "difficultyLabel": "Trudność",
+    "campaignLengthLabel": "Długość Kampanii",
+    "storyPromptLabel": "O czym ma być historia?",
+    "storyPlaceholder": "Samotny wędrowiec odkrywa starożytny artefakt dający moc przekształcania rzeczywistości, ale każde użycie wymazuje wspomnienie...",
+    "beginRitual": "Rozpocznij Rytuał",
+    "loadingTitle": "Grimuar się budzi... tworzy twój świat",
+    "loadingDescription": "AI generuje świat kampanii, hak fabularny, postać i scenę otwierającą. To może chwilę potrwać.",
+    "noApiKeyHint": "Skonfiguruj klucz API w Ustawieniach przed utworzeniem kampanii.",
+    "genres": {
+      "Fantasy": "Fantasy",
+      "Sci-Fi": "Sci-Fi",
+      "Horror": "Horror"
+    },
+    "genreDesc": {
+      "Fantasy": "Miecze, czary i pradawne proroctwa",
+      "Sci-Fi": "Statki kosmiczne, SI i dalekie galaktyki",
+      "Horror": "Mroczne sekrety, eldryczne koszmary, przetrwanie"
+    },
+    "tones": {
+      "Dark": "Mroczny",
+      "Epic": "Epicki",
+      "Humorous": "Humorystyczny"
+    },
+    "toneDesc": {
+      "Dark": "Ponury, moralnie szary, brutalny",
+      "Epic": "Wielka skala, heroiczny, dramatyczny",
+      "Humorous": "Dowcipny, lekki, absurdalny"
+    },
+    "styles": {
+      "Narrative": "Narracyjny",
+      "Hybrid": "Hybrydowy",
+      "Mechanical": "Mechaniczny"
+    },
+    "styleDesc": {
+      "Narrative": "Fabuła prowadzi, AI decyduje o wynikach",
+      "Hybrid": "Fabuła + rzuty kośćmi w kluczowych momentach",
+      "Mechanical": "Ciężki na statystyki, kości decydują o wszystkim"
+    },
+    "difficulties": {
+      "Easy": "Łatwy",
+      "Normal": "Normalny",
+      "Hard": "Trudny",
+      "Expert": "Ekspert"
+    },
+    "lengths": {
+      "Short": "Krótka",
+      "Medium": "Średnia",
+      "Long": "Długa"
+    }
+  },
+  "gameplay": {
+    "chooseAction": "Wybierz Akcję",
+    "dmWeavesFate": "MG splata przeznaczenie...",
+    "goToSettings": "Idź do Ustawień",
+    "diceCheck": "Test {{skill}}",
+    "diceResult": "K20 ({{roll}}) + {{modifier}} = {{total}}",
+    "adventureBegins": "Twoja przygoda się zaczyna...",
+    "conjuringVision": "Przywoływanie wizji...",
+    "generatingImage": "Generowanie Obrazu",
+    "customActionPlaceholder": "Lub opisz własną akcję...",
+    "send": "Wyślij"
+  },
+  "chat": {
+    "dmAi": "MG AI",
+    "you": "Ty",
+    "dungeonMasterAi": "Mistrz Gry AI",
+    "awaitingFirstMove": "MG czeka na twój pierwszy ruch...",
+    "narratorPlaying": "Odtwarzanie...",
+    "narratorPaused": "Wstrzymano"
+  },
+  "character": {
+    "noActiveCharacter": "Brak Aktywnej Postaci",
+    "noActiveDescription": "Rozpocznij lub wczytaj kampanię, aby zobaczyć kartę postaci.",
+    "goToLobby": "Idź do Lobby",
+    "vitals": "Parametry Życiowe",
+    "healthPoints": "Punkty Zdrowia",
+    "manaPool": "Zasoby Many",
+    "inspiration": "Inspiracja",
+    "origins": "Pochodzenie",
+    "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica..."
+  },
+  "quests": {
+    "activeChronicles": "Aktywne Kroniki",
+    "noQuests": "Nie odkryto jeszcze żadnych zadań."
+  },
+  "inventory": {
+    "title": "Zbrojownia i Artefakty",
+    "slots": "{{current}}/{{max}} Miejsc"
+  },
+  "stats": {
+    "strength": "Siła",
+    "dexterity": "Zręczność",
+    "constitution": "Kondycja",
+    "intelligence": "Inteligencja",
+    "wisdom": "Mądrość",
+    "charisma": "Charyzma"
+  },
+  "settings": {
+    "title": "Ustawienia Mistrza Gry",
+    "subtitle": "Skalibruj arkaniczną maszynę. Twoje wybory przeformują tkankę narracji krainy.",
+    "narrativeAnchors": "Kotwice Narracji",
+    "storyChaos": "Poziom Chaosu Fabuły",
+    "storyChaosDesc": "Entropia zwrotów akcji AI",
+    "responseLength": "Długość Odpowiedzi",
+    "responseLengthDesc": "Jak rozbudowana jest narracja MG",
+    "difficulty": "Trudność",
+    "difficultyDesc": "Szanse przetrwania w starciach",
+    "skillChecks": "Częstotliwość Testów",
+    "skillChecksDesc": "Jak często wymagane są rzuty kośćmi",
+    "playerFreedom": "Wolność Gracza",
+    "playerFreedomDesc": "Jak bardzo AI podąża za graczem vs prowadzi fabułę",
+    "imageGeneration": "Generowanie Obrazów",
+    "imageGenerationDesc": "Obrazy scen DALL-E 3",
+    "aiProvider": "Dostawca AI",
+    "openaiLabel": "OpenAI (GPT-4o)",
+    "anthropicLabel": "Anthropic (Claude)",
+    "openaiApiKey": "Klucz API OpenAI",
+    "anthropicApiKey": "Klucz API Anthropic",
+    "apiKeysTitle": "Klucze API",
+    "apiKeysDescription": "Klucze są przechowywane lokalnie w przeglądarce i nigdy nie są wysyłane na żaden serwer poza dostawcą AI. Potrzebujesz co najmniej jednego klucza, aby grać.",
+    "activeProvider": "Aktywny Dostawca",
+    "status": "Status",
+    "keyConfigured": "Klucz Skonfigurowany",
+    "noKeySet": "Brak Klucza",
+    "openaiProvider": "OpenAI GPT-4o",
+    "anthropicProvider": "Anthropic Claude",
+    "resetGrimoire": "Resetuj Grimuar",
+    "applyChanges": "Zastosuj Zmiany",
+    "saved": "Zapisano!",
+    "difficultyLabels": {
+      "easy": "Łatwy",
+      "normal": "Normalny",
+      "hard": "Trudny",
+      "expert": "Ekspert"
+    },
+    "chaosLabels": {
+      "stable": "Stabilny",
+      "balanced": "Zbalansowany",
+      "chaotic": "Chaotyczny",
+      "wild": "Dziki"
+    },
+    "lengthLabels": {
+      "short": "Krótka",
+      "medium": "Średnia",
+      "long": "Długa"
+    },
+    "language": "Język",
+    "languageDesc": "Język interfejsu i narracji AI",
+    "narrator": "Narrator",
+    "narratorDesc": "ElevenLabs synteza mowy dla narracji MG",
+    "narratorEnabled": "Włącz Narratora",
+    "narratorAutoPlay": "Auto-odtwarzanie Wiadomości MG",
+    "narratorAutoPlayDesc": "Automatycznie czytaj nowe wiadomości MG",
+    "elevenlabsApiKey": "Klucz API ElevenLabs",
+    "voiceSelect": "Wybierz Głos",
+    "voiceSelectPlaceholder": "Wprowadź klucz API, aby załadować głosy",
+    "loadVoices": "Załaduj Głosy",
+    "loadingVoices": "Ładowanie głosów...",
+    "testVoice": "Test",
+    "noVoicesFound": "Nie znaleziono głosów"
+  },
+  "errors": {
+    "somethingWentWrong": "Coś Poszło Nie Tak",
+    "unexpectedError": "Wystąpił nieoczekiwany błąd.",
+    "returnToLobby": "Wróć do Lobby"
+  },
+  "system": {
+    "diceRollMessage": "Test {{skill}}: K20 ({{roll}}) + {{modifier}} = {{total}} vs ST {{dc}} — {{result}}"
+  }
+}
