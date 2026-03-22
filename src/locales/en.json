@@ -389,6 +389,33 @@
     "sfx": "Sound effects",
     "music": "Music"
   },
+  "multiplayer": {
+    "solo": "Solo",
+    "multiplayer": "Multiplayer",
+    "male": "Male",
+    "female": "Female",
+    "host": "Host",
+    "you": "You",
+    "actionSubmitted": "Action submitted",
+    "roomCode": "Room Code",
+    "codeCopied": "Code copied!",
+    "players": "Players",
+    "leaveRoom": "Leave Room",
+    "pendingActions": "Pending Actions",
+    "backendRequired": "Backend Required",
+    "backendRequiredDesc": "Connect to a backend server in Settings to use multiplayer.",
+    "joinTitle": "Join a Room",
+    "joinSubtitle": "Enter the room code provided by your host.",
+    "join": "Join",
+    "createOrJoin": "Create or join a multiplayer room",
+    "createRoom": "Create Room",
+    "joinRoom": "Join Room",
+    "startGame": "Start Game",
+    "withdrawAction": "Withdraw Action",
+    "waitingForHost": "Waiting for host...",
+    "approveAndSend": "Approve & Send",
+    "submitAction": "Submit Action"
+  },
   "system": {
     "diceRollMessage": "{{skill}} check: D20 ({{roll}}) + {{modifier}} = {{total}} vs DC {{dc}} — {{result}}"
   }

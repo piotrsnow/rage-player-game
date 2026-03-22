@@ -95,6 +95,17 @@ function mpReducer(state, action) {
         players: action.payload.room?.players || state.players,
       };
 
+    case 'UPDATE_SCENE_IMAGE': {
+      if (!state.gameState?.scenes) return state;
+      const scenes = state.gameState.scenes.map((s) =>
+        s.id === action.payload.sceneId ? { ...s, image: action.payload.image } : s
+      );
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes },
+      };
+    }
+
     case 'LEFT_ROOM':
     case 'RESET':
       return initialState;
@@ -127,6 +138,9 @@ export function MultiplayerProvider({ children }) {
       wsService.on('SCENE_UPDATE', (msg) => {
         dispatch({ type: 'SCENE_UPDATE', payload: msg });
         sceneCallbackRef.current?.(msg);
+      }),
+      wsService.on('SCENE_IMAGE_UPDATE', (msg) => {
+        dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image } });
       }),
       wsService.on('LEFT_ROOM', () => dispatch({ type: 'LEFT_ROOM' })),
       wsService.on('ERROR', (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
@@ -186,6 +200,11 @@ export function MultiplayerProvider({ children }) {
     wsService.send('APPROVE_ACTIONS', { language });
   }, []);
 
+  const updateSceneImage = useCallback((sceneId, image) => {
+    dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image } });
+    wsService.send('UPDATE_SCENE_IMAGE', { sceneId, image });
+  }, []);
+
   const onSceneUpdate = useCallback((cb) => {
     sceneCallbackRef.current = cb;
   }, []);
@@ -204,6 +223,7 @@ export function MultiplayerProvider({ children }) {
     submitAction,
     withdrawAction,
     approveActions,
+    updateSceneImage,
     onSceneUpdate,
   };
 

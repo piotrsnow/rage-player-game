@@ -202,6 +202,29 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'UPDATE_SCENE_IMAGE': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            const { sceneId, image } = msg;
+            if (!sceneId || !image) break;
+
+            if (room.gameState?.scenes) {
+              const idx = room.gameState.scenes.findIndex((s) => s.id === sceneId);
+              if (idx >= 0) {
+                room.gameState.scenes[idx] = { ...room.gameState.scenes[idx], image };
+                setGameState(roomCode, room.gameState);
+              }
+            }
+
+            broadcast(room, {
+              type: 'SCENE_IMAGE_UPDATE',
+              sceneId,
+              image,
+            }, odId);
+            break;
+          }
+
           case 'APPROVE_ACTIONS': {
             if (!roomCode || !odId) throw new Error('Not in a room');
             const { room, actions } = approveActions(roomCode, odId);

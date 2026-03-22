@@ -389,6 +389,33 @@
     "sfx": "Efekty dźwiękowe",
     "music": "Muzyka"
   },
+  "multiplayer": {
+    "solo": "Solo",
+    "multiplayer": "Multiplayer",
+    "male": "Mężczyzna",
+    "female": "Kobieta",
+    "host": "Gospodarz",
+    "you": "Ty",
+    "actionSubmitted": "Akcja wysłana",
+    "roomCode": "Kod Pokoju",
+    "codeCopied": "Kod skopiowany!",
+    "players": "Gracze",
+    "leaveRoom": "Opuść Pokój",
+    "pendingActions": "Oczekujące Akcje",
+    "backendRequired": "Wymagany Backend",
+    "backendRequiredDesc": "Połącz się z serwerem backend w Ustawieniach, aby korzystać z trybu multiplayer.",
+    "joinTitle": "Dołącz do Pokoju",
+    "joinSubtitle": "Wpisz kod pokoju otrzymany od gospodarza.",
+    "join": "Dołącz",
+    "createOrJoin": "Utwórz lub dołącz do pokoju multiplayer",
+    "createRoom": "Utwórz Pokój",
+    "joinRoom": "Dołącz do Pokoju",
+    "startGame": "Rozpocznij Grę",
+    "withdrawAction": "Wycofaj Akcję",
+    "waitingForHost": "Oczekiwanie na gospodarza...",
+    "approveAndSend": "Zatwierdź i Wyślij",
+    "submitAction": "Wyślij Akcję"
+  },
   "system": {
     "diceRollMessage": "Test {{skill}}: K20 ({{roll}}) + {{modifier}} = {{total}} vs ST {{dc}} — {{result}}"
   }

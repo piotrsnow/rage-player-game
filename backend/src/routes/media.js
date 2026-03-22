@@ -64,7 +64,6 @@ export async function mediaRoutes(fastify) {
     const asset = await prisma.mediaAsset.findFirst({
       where: {
         key: { contains: key },
-        userId: request.user.id,
       },
     });
     if (!asset) return reply.code(404).send({ error: 'Media not found' });
@@ -86,7 +85,7 @@ export async function mediaRoutes(fastify) {
     const path = request.params['*'];
 
     const asset = await prisma.mediaAsset.findFirst({
-      where: { path, userId: request.user.id },
+      where: { path },
     });
     if (!asset) return reply.code(404).send({ error: 'Media not found' });
 

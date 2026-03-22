@@ -65,10 +65,20 @@ export default function GameplayPage() {
       !isGeneratingScene &&
       !imageAttemptedRef.current.has(currentScene.id)
     ) {
+      if (isMultiplayer && !mp.state.isHost) return;
       imageAttemptedRef.current.add(currentScene.id);
-      generateImageForScene(currentScene.id, currentScene.narrative);
+      generateImageForScene(
+        currentScene.id,
+        currentScene.narrative,
+        currentScene.imagePrompt,
+        isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined
+      ).then((imageUrl) => {
+        if (isMultiplayer && imageUrl) {
+          mp.updateSceneImage(currentScene.id, imageUrl);
+        }
+      });
     }
-  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene]);
+  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign]);
 
   const handleAction = async (action) => {
     try {

@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
   email        String   @unique
   passwordHash String
   apiKeys      String   @default("{}") // Encrypted JSON: { openai, anthropic, elevenlabs, stability, suno }
@@ -21,8 +21,8 @@ model User {
 }
 
 model Campaign {
-  id        String   @id @default(cuid())
-  userId    String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
   name      String   @default("")
   genre     String   @default("")
   tone      String   @default("")
@@ -37,8 +37,8 @@ model Campaign {
 }
 
 model MediaAsset {
-  id             String   @id @default(cuid())
-  userId         String
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
   key            String   @unique // Content-addressable hash key e.g. "images/a1b2c3.png"
   type           String   // "image" | "music" | "sfx" | "tts"
   contentType    String   // MIME type
@@ -53,5 +53,4 @@ model MediaAsset {
 
   @@index([userId])
   @@index([type])
-  @@index([key])
 }

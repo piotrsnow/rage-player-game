@@ -111,16 +111,9 @@ if (!existsSync(prismaClientDir)) {
 
 // ── 4. Database ──────────────────────────────────────────
 console.log('[4/5] Database');
-const dbPath = resolve(BACKEND_ROOT, 'prisma', 'dev.db');
-if (!existsSync(dbPath)) {
-  info('Creating database & pushing schema...');
-  run('npx prisma db push');
-  ok('Database created');
-} else {
-  info('Database exists — syncing schema...');
-  run('npx prisma db push');
-  ok('Schema synced');
-}
+info('Pushing schema to MongoDB...');
+run('npx prisma db push');
+ok('Schema pushed');
 
 // ── 5. Media directory ───────────────────────────────────
 console.log('[5/5] Media storage directory');

@@ -202,15 +202,17 @@ export function useAI() {
   );
 
   const generateImageForScene = useCallback(
-    async (sceneId, narrative, imagePrompt) => {
-      if (!imageGenEnabled || !imageApiKey || !narrative) return;
+    async (sceneId, narrative, imagePrompt, campaignOverride) => {
+      if (!imageGenEnabled || !imageApiKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
       try {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
+        const genre = campaignOverride?.genre ?? state.campaign?.genre;
+        const tone = campaignOverride?.tone ?? state.campaign?.tone;
         const imageUrl = await imageService.generateSceneImage(
           narrative,
-          state.campaign?.genre,
-          state.campaign?.tone,
+          genre,
+          tone,
           imageApiKey,
           imageProvider,
           sceneImagePrompt
@@ -221,8 +223,10 @@ export function useAI() {
           payload: { sceneId, image: imageUrl },
         });
         setTimeout(() => autoSave(), 300);
+        return imageUrl;
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);
+        return null;
       } finally {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
