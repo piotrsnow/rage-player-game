@@ -70,7 +70,7 @@ export function useGameState() {
       const world = {
         locations: [],
         facts: aiResult.initialWorldFacts || [],
-        eventHistory: [],
+        eventHistory: aiResult.firstScene?.journalEntries || [],
       };
 
       dispatch({

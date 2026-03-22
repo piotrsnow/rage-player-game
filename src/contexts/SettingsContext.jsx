@@ -9,6 +9,8 @@ const defaultSettings = {
   openaiApiKey: '',
   anthropicApiKey: '',
   imageGenEnabled: true,
+  imageProvider: 'dalle',
+  stabilityApiKey: '',
   language: 'pl',
   elevenlabsApiKey: '',
   elevenlabsVoiceId: '',
@@ -21,12 +23,21 @@ const defaultSettings = {
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
+  sunoApiKey: '',
+  musicEnabled: false,
+  musicVolume: 40,
+  sunoModel: 'V4_5',
   dmSettings: {
     narrativeStyle: 50,
     responseLength: 50,
     difficulty: 50,
     testsFrequency: 50,
     freedom: 50,
+    narratorPoeticism: 50,
+    narratorGrittiness: 30,
+    narratorDetail: 50,
+    narratorHumor: 20,
+    narratorDrama: 50,
   },
 };
 
@@ -63,6 +74,10 @@ export function SettingsProvider({ children }) {
     setSettings(defaultSettings);
   }, []);
 
+  const importSettings = useCallback((imported) => {
+    setSettings({ ...defaultSettings, ...imported });
+  }, []);
+
   const getApiKey = useCallback(() => {
     return settings.aiProvider === 'openai'
       ? settings.openaiApiKey
@@ -74,6 +89,7 @@ export function SettingsProvider({ children }) {
     updateSettings,
     updateDMSettings,
     resetSettings,
+    importSettings,
     getApiKey,
   };
 

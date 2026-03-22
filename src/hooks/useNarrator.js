@@ -54,14 +54,47 @@ export function useNarrator() {
   const [currentMessageId, setCurrentMessageId] = useState(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
   const [currentCharacter, setCurrentCharacter] = useState(null);
+  const [highlightInfo, setHighlightInfo] = useState(null);
+  const [currentSentence, setCurrentSentence] = useState(null);
 
   const audioRef = useRef(null);
   const sfxAudioRef = useRef(null);
   const queueRef = useRef([]);
   const abortRef = useRef(false);
   const objectUrlsRef = useRef([]);
+  const highlightRafRef = useRef(null);
+
+  const stopHighlightLoop = useCallback(() => {
+    if (highlightRafRef.current) {
+      cancelAnimationFrame(highlightRafRef.current);
+      highlightRafRef.current = null;
+    }
+    setHighlightInfo(null);
+  }, []);
+
+  const startHighlightLoop = useCallback((audio, words, segmentIndex, messageId, wordOffset, fullText, sentence) => {
+    stopHighlightLoop();
+    const tick = () => {
+      if (!audio || audio.paused || audio.ended) {
+        setHighlightInfo(null);
+        return;
+      }
+      const t = audio.currentTime;
+      let activeIdx = -1;
+      for (let i = 0; i < words.length; i++) {
+        if (t >= words[i].start && t <= words[i].end + 0.05) {
+          activeIdx = i;
+        }
+      }
+      const globalIdx = activeIdx >= 0 ? activeIdx + wordOffset : -1;
+      setHighlightInfo({ messageId, segmentIndex, wordIndex: globalIdx, fullText, sentenceWordIndex: activeIdx });
+      highlightRafRef.current = requestAnimationFrame(tick);
+    };
+    highlightRafRef.current = requestAnimationFrame(tick);
+  }, [stopHighlightLoop]);
 
   const cleanup = useCallback(() => {
+    stopHighlightLoop();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute('src');
@@ -74,7 +107,7 @@ export function useNarrator() {
     }
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current = [];
-  }, []);
+  }, [stopHighlightLoop]);
 
   useEffect(() => {
     return () => {
@@ -83,12 +116,67 @@ export function useNarrator() {
     };
   }, [cleanup]);
 
+  const playSentencePipeline = useCallback(async (sentences, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText) => {
+    let prefetchPromise = null;
+    let wordOffset = 0;
+
+    for (let s = 0; s < sentences.length; s++) {
+      if (abortRef.current) break;
+      const sentence = sentences[s].trim();
+      if (!sentence) continue;
+
+      let result;
+      if (prefetchPromise) {
+        result = await prefetchPromise;
+        prefetchPromise = null;
+      } else {
+        setPlaybackState(STATES.LOADING);
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentence);
+      }
+
+      if (!result) {
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentence);
+      }
+
+      objectUrlsRef.current.push(result.audioUrl);
+      if (abortRef.current) break;
+
+      if (s + 1 < sentences.length && sentences[s + 1]?.trim()) {
+        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentences[s + 1].trim())
+          .catch((err) => {
+            console.warn('Prefetch TTS failed:', err.message);
+            return null;
+          });
+      }
+
+      const audio = new Audio(result.audioUrl);
+      audio.playbackRate = Math.max(0.5, Math.min(2, (dialogueSpeed || 100) / 100));
+      audioRef.current = audio;
+      setPlaybackState(STATES.PLAYING);
+      setCurrentSentence(sentence);
+
+      startHighlightLoop(audio, result.words, segmentIndex, messageId, wordOffset, fullText, sentence);
+
+      await new Promise((resolve) => {
+        audio.onended = resolve;
+        audio.onerror = resolve;
+        audio.play().catch(resolve);
+      });
+
+      wordOffset += result.words.length;
+      stopHighlightLoop();
+      audioRef.current = null;
+    }
+  }, [startHighlightLoop, stopHighlightLoop]);
+
   const processQueue = useCallback(async () => {
     if (queueRef.current.length === 0) {
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
       setCurrentSegmentIndex(-1);
       setCurrentCharacter(null);
+      setHighlightInfo(null);
+      setCurrentSentence(null);
       return;
     }
 
@@ -140,19 +228,23 @@ export function useNarrator() {
       if (dialogueSegments && dialogueSegments.length > 0) {
         const hasNarration = dialogueSegments.some((s) => s.type === 'narration');
         if (hasNarration) {
-          const narrationInSegments = dialogueSegments
-            .filter((s) => s.type === 'narration')
+          const allSegmentsText = dialogueSegments
             .map((s) => (s.text || '').trim())
             .join(' ');
           const fullNarrative = (narrative || '').trim();
 
-          if (fullNarrative && narrationInSegments.length < fullNarrative.length * 0.7) {
+          if (fullNarrative && allSegmentsText.length < fullNarrative.length * 0.7) {
+            const narrativeNoQuotes = fullNarrative
+              .replace(/["""„«»][^"""„«»]*["""„«»]/g, '')
+              .replace(/\s{2,}/g, ' ')
+              .trim();
+
             let replaced = false;
             segments = dialogueSegments.map((s) => {
               if (s.type === 'narration') {
                 if (!replaced) {
                   replaced = true;
-                  return { ...s, text: fullNarrative };
+                  return { ...s, text: narrativeNoQuotes || fullNarrative };
                 }
                 return { ...s, text: '' };
               }
@@ -162,10 +254,7 @@ export function useNarrator() {
             segments = dialogueSegments;
           }
         } else {
-          segments = [
-            { type: 'narration', text: narrative || '' },
-            ...dialogueSegments,
-          ];
+          segments = dialogueSegments;
         }
       } else {
         segments = [{ type: 'narration', text: narrative || '' }];
@@ -182,7 +271,6 @@ export function useNarrator() {
 
         setCurrentSegmentIndex(i);
         setCurrentCharacter(seg.type === 'dialogue' ? seg.character : null);
-        setPlaybackState(STATES.LOADING);
 
         let voiceId = elevenlabsVoiceId;
         if (seg.type === 'dialogue' && seg.character && characterVoices?.length > 0) {
@@ -197,27 +285,8 @@ export function useNarrator() {
           if (mapped) voiceId = mapped;
         }
 
-        const audioUrl = await elevenlabsService.textToSpeechStream(
-          elevenlabsApiKey,
-          voiceId,
-          text
-        );
-        objectUrlsRef.current.push(audioUrl);
-
-        if (abortRef.current) break;
-
-        const audio = new Audio(audioUrl);
-        audio.playbackRate = Math.max(0.5, Math.min(2, (dialogueSpeed || 100) / 100));
-        audioRef.current = audio;
-        setPlaybackState(STATES.PLAYING);
-
-        await new Promise((resolve) => {
-          audio.onended = resolve;
-          audio.onerror = resolve;
-          audio.play().catch(resolve);
-        });
-
-        audioRef.current = null;
+        const sentences = elevenlabsService.splitIntoSentences(text);
+        await playSentencePipeline(sentences, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text);
       }
 
       cleanup();
@@ -233,7 +302,7 @@ export function useNarrator() {
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, dispatch, cleanup]);
+  }, [settings, state.characterVoiceMap, dispatch, cleanup, playSentencePipeline]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({
@@ -273,6 +342,8 @@ export function useNarrator() {
     setCurrentMessageId(null);
     setCurrentSegmentIndex(-1);
     setCurrentCharacter(null);
+    setHighlightInfo(null);
+    setCurrentSentence(null);
   }, [cleanup]);
 
   const speakSingle = useCallback((message, messageId) => {
@@ -303,6 +374,8 @@ export function useNarrator() {
     currentMessageId,
     currentSegmentIndex,
     currentCharacter,
+    highlightInfo,
+    currentSentence,
     isNarratorReady: !!(settings.narratorEnabled && settings.elevenlabsApiKey && settings.elevenlabsVoiceId),
     speak,
     speakScene,

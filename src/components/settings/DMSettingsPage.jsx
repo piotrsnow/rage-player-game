@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { elevenlabsService } from '../../services/elevenlabs';
+import { storage } from '../../services/storage';
 import Slider from '../ui/Slider';
 import Button from '../ui/Button';
 
@@ -12,29 +13,62 @@ const providerOptions = [
 
 export default function DMSettingsPage() {
   const { t } = useTranslation();
-  const { settings, updateSettings, updateDMSettings, resetSettings } = useSettings();
+  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings } = useSettings();
   const [localKeys, setLocalKeys] = useState({
     openaiApiKey: settings.openaiApiKey,
     anthropicApiKey: settings.anthropicApiKey,
+    stabilityApiKey: settings.stabilityApiKey,
   });
   const [saved, setSaved] = useState(false);
   const [elevenlabsKey, setElevenlabsKey] = useState(settings.elevenlabsApiKey || '');
+  const [sunoKey, setSunoKey] = useState(settings.sunoApiKey || '');
   const [voices, setVoices] = useState([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [voiceError, setVoiceError] = useState(null);
   const [testingVoice, setTestingVoice] = useState(false);
+  const [importStatus, setImportStatus] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleExportConfig = () => {
+    storage.exportConfig();
+  };
+
+  const handleImportConfig = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const imported = await storage.importConfig(file);
+      if (imported) {
+        importSettings(imported);
+        setLocalKeys({
+          openaiApiKey: imported.openaiApiKey || '',
+          anthropicApiKey: imported.anthropicApiKey || '',
+          stabilityApiKey: imported.stabilityApiKey || '',
+        });
+        setElevenlabsKey(imported.elevenlabsApiKey || '');
+        setSunoKey(imported.sunoApiKey || '');
+      }
+      setImportStatus('success');
+    } catch {
+      setImportStatus('error');
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setTimeout(() => setImportStatus(null), 3000);
+  };
 
   useEffect(() => {
     setLocalKeys({
       openaiApiKey: settings.openaiApiKey,
       anthropicApiKey: settings.anthropicApiKey,
+      stabilityApiKey: settings.stabilityApiKey,
     });
-  }, [settings.openaiApiKey, settings.anthropicApiKey]);
+  }, [settings.openaiApiKey, settings.anthropicApiKey, settings.stabilityApiKey]);
 
   const handleApply = () => {
     updateSettings({
       openaiApiKey: localKeys.openaiApiKey,
       anthropicApiKey: localKeys.anthropicApiKey,
+      stabilityApiKey: localKeys.stabilityApiKey,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -42,8 +76,9 @@ export default function DMSettingsPage() {
 
   const handleReset = () => {
     resetSettings();
-    setLocalKeys({ openaiApiKey: '', anthropicApiKey: '' });
+    setLocalKeys({ openaiApiKey: '', anthropicApiKey: '', stabilityApiKey: '' });
     setElevenlabsKey('');
+    setSunoKey('');
     setVoices([]);
   };
 
@@ -130,6 +165,12 @@ export default function DMSettingsPage() {
   const difficultyLabel = settings.dmSettings.difficulty < 25 ? t('settings.difficultyLabels.easy') : settings.dmSettings.difficulty < 50 ? t('settings.difficultyLabels.normal') : settings.dmSettings.difficulty < 75 ? t('settings.difficultyLabels.hard') : t('settings.difficultyLabels.expert');
   const chaosLabel = settings.dmSettings.narrativeStyle < 25 ? t('settings.chaosLabels.stable') : settings.dmSettings.narrativeStyle < 50 ? t('settings.chaosLabels.balanced') : settings.dmSettings.narrativeStyle < 75 ? t('settings.chaosLabels.chaotic') : t('settings.chaosLabels.wild');
   const lengthLabel = settings.dmSettings.responseLength < 33 ? t('settings.lengthLabels.short') : settings.dmSettings.responseLength < 66 ? t('settings.lengthLabels.medium') : t('settings.lengthLabels.long');
+
+  const poeticismLabel = (settings.dmSettings.narratorPoeticism ?? 50) < 25 ? t('settings.poeticismLabels.prosaic') : (settings.dmSettings.narratorPoeticism ?? 50) < 50 ? t('settings.poeticismLabels.literary') : (settings.dmSettings.narratorPoeticism ?? 50) < 75 ? t('settings.poeticismLabels.poetic') : t('settings.poeticismLabels.lyrical');
+  const grittinessLabel = (settings.dmSettings.narratorGrittiness ?? 30) < 25 ? t('settings.grittinessLabels.light') : (settings.dmSettings.narratorGrittiness ?? 30) < 50 ? t('settings.grittinessLabels.grounded') : (settings.dmSettings.narratorGrittiness ?? 30) < 75 ? t('settings.grittinessLabels.gritty') : t('settings.grittinessLabels.brutal');
+  const detailLevelLabel = (settings.dmSettings.narratorDetail ?? 50) < 25 ? t('settings.detailLabels.minimal') : (settings.dmSettings.narratorDetail ?? 50) < 50 ? t('settings.detailLabels.balanced') : (settings.dmSettings.narratorDetail ?? 50) < 75 ? t('settings.detailLabels.rich') : t('settings.detailLabels.lavish');
+  const humorLabel = (settings.dmSettings.narratorHumor ?? 20) < 25 ? t('settings.humorLabels.serious') : (settings.dmSettings.narratorHumor ?? 20) < 50 ? t('settings.humorLabels.dry') : (settings.dmSettings.narratorHumor ?? 20) < 75 ? t('settings.humorLabels.witty') : t('settings.humorLabels.absurd');
+  const dramaLabel = (settings.dmSettings.narratorDrama ?? 50) < 25 ? t('settings.dramaLabels.subtle') : (settings.dmSettings.narratorDrama ?? 50) < 50 ? t('settings.dramaLabels.measured') : (settings.dmSettings.narratorDrama ?? 50) < 75 ? t('settings.dramaLabels.heightened') : t('settings.dramaLabels.theatrical');
 
   const providerLabels = {
     openai: t('settings.openaiLabel'),
@@ -228,6 +269,55 @@ export default function DMSettingsPage() {
               value={settings.dmSettings.freedom}
               onChange={(v) => updateDMSettings({ freedom: v })}
               displayValue={`${settings.dmSettings.freedom}%`}
+            />
+          </div>
+
+          {/* Narrator Style */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">stylus_note</span>
+              {t('settings.narratorStyle')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-8">{t('settings.narratorStyleDesc')}</p>
+
+            <Slider
+              label={t('settings.poeticism')}
+              description={t('settings.poeticismDesc')}
+              value={settings.dmSettings.narratorPoeticism ?? 50}
+              onChange={(v) => updateDMSettings({ narratorPoeticism: v })}
+              displayValue={`${settings.dmSettings.narratorPoeticism ?? 50}% — ${poeticismLabel}`}
+            />
+
+            <Slider
+              label={t('settings.grittiness')}
+              description={t('settings.grittinessDesc')}
+              value={settings.dmSettings.narratorGrittiness ?? 30}
+              onChange={(v) => updateDMSettings({ narratorGrittiness: v })}
+              displayValue={`${settings.dmSettings.narratorGrittiness ?? 30}% — ${grittinessLabel}`}
+            />
+
+            <Slider
+              label={t('settings.narratorDetail')}
+              description={t('settings.narratorDetailDesc')}
+              value={settings.dmSettings.narratorDetail ?? 50}
+              onChange={(v) => updateDMSettings({ narratorDetail: v })}
+              displayValue={`${settings.dmSettings.narratorDetail ?? 50}% — ${detailLevelLabel}`}
+            />
+
+            <Slider
+              label={t('settings.narratorHumor')}
+              description={t('settings.narratorHumorDesc')}
+              value={settings.dmSettings.narratorHumor ?? 20}
+              onChange={(v) => updateDMSettings({ narratorHumor: v })}
+              displayValue={`${settings.dmSettings.narratorHumor ?? 20}% — ${humorLabel}`}
+            />
+
+            <Slider
+              label={t('settings.narratorDrama')}
+              description={t('settings.narratorDramaDesc')}
+              value={settings.dmSettings.narratorDrama ?? 50}
+              onChange={(v) => updateDMSettings({ narratorDrama: v })}
+              displayValue={`${settings.dmSettings.narratorDrama ?? 50}% — ${dramaLabel}`}
             />
           </div>
 
@@ -580,6 +670,95 @@ export default function DMSettingsPage() {
               />
             )}
           </div>
+
+          {/* Background Music Section */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">music_note</span>
+              {t('settings.musicTitle')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.musicDesc')}</p>
+
+            <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+              <div>
+                <p className="font-headline text-tertiary text-sm">{t('settings.musicEnabled')}</p>
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                  {t('settings.musicEnabledDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => updateSettings({ musicEnabled: !settings.musicEnabled })}
+                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                  settings.musicEnabled
+                    ? 'bg-primary-dim/20 border-primary/30'
+                    : 'bg-surface-container-highest border-outline-variant/30'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                    settings.musicEnabled
+                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                      : 'left-1 bg-on-surface-variant'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.musicEnabled && (
+              <>
+                <div className="mb-6">
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.sunoApiKey')}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={sunoKey}
+                      onChange={(e) => setSunoKey(e.target.value)}
+                      placeholder="Bearer token..."
+                      className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
+                    />
+                    <button
+                      onClick={() => updateSettings({ sunoApiKey: sunoKey })}
+                      disabled={!sunoKey.trim()}
+                      className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
+                    >
+                      {t('common.save')}
+                    </button>
+                  </div>
+                </div>
+
+                <Slider
+                  label={t('settings.musicVolume')}
+                  description={t('settings.musicVolumeDesc')}
+                  value={settings.musicVolume ?? 40}
+                  onChange={(v) => updateSettings({ musicVolume: v })}
+                  displayValue={`${settings.musicVolume ?? 40}%`}
+                />
+
+                <div className="mt-6">
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                    {t('settings.sunoModel')}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {['V4', 'V4_5', 'V4_5ALL', 'V4_5PLUS', 'V5'].map((model) => (
+                      <button
+                        key={model}
+                        onClick={() => updateSettings({ sunoModel: model })}
+                        className={`px-4 py-2 rounded-sm border text-center transition-all text-xs font-headline ${
+                          (settings.sunoModel || 'V4_5') === model
+                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                        }`}
+                      >
+                        {model.replace(/_/g, '.')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </section>
 
         {/* Right Panel: AI Provider & Keys */}
@@ -646,6 +825,59 @@ export default function DMSettingsPage() {
             </div>
           </div>
 
+          {/* Image Provider */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">image</span>
+              {t('settings.imageProvider')}
+            </h2>
+
+            <div className="space-y-3 mb-8">
+              {[
+                { id: 'dalle', icon: 'auto_awesome', label: t('settings.dalleLabel') },
+                { id: 'stability', icon: 'speed', label: t('settings.stabilityLabel') },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => updateSettings({ imageProvider: opt.id })}
+                  className={`w-full p-4 rounded-sm border text-left flex items-center gap-3 transition-all ${
+                    settings.imageProvider === opt.id
+                      ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                      : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                  }`}
+                >
+                  <span className="material-symbols-outlined">{opt.icon}</span>
+                  <span className="font-headline text-sm">{opt.label}</span>
+                  {settings.imageProvider === opt.id && (
+                    <span className="material-symbols-outlined text-primary ml-auto text-sm">
+                      check_circle
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {settings.imageProvider === 'stability' && (
+              <div>
+                <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                  {t('settings.stabilityApiKey')}
+                </label>
+                <input
+                  type="password"
+                  value={localKeys.stabilityApiKey}
+                  onChange={(e) =>
+                    setLocalKeys((p) => ({ ...p, stabilityApiKey: e.target.value }))
+                  }
+                  placeholder="sk-..."
+                  className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
+                />
+                <p className="text-[10px] text-on-surface-variant mt-2">
+                  {t('settings.stabilityApiKeyDesc')}
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Info Card */}
           <div className="bg-surface-container-highest/60 backdrop-blur-md p-6 rounded-sm border-r border-tertiary/10">
             <div className="flex items-start gap-4">
@@ -657,6 +889,61 @@ export default function DMSettingsPage() {
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Export / Import Config */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">settings_backup_restore</span>
+              {t('settings.configBackup')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.configBackupDesc')}</p>
+
+            <div className="space-y-3">
+              <button
+                onClick={handleExportConfig}
+                className="w-full p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary text-left flex items-center gap-3 transition-all"
+              >
+                <span className="material-symbols-outlined">download</span>
+                <div>
+                  <span className="font-headline text-sm block">{t('settings.exportConfig')}</span>
+                  <span className="text-[10px] font-label uppercase tracking-widest">{t('settings.exportConfigDesc')}</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary text-left flex items-center gap-3 transition-all"
+              >
+                <span className="material-symbols-outlined">upload</span>
+                <div>
+                  <span className="font-headline text-sm block">{t('settings.importConfig')}</span>
+                  <span className="text-[10px] font-label uppercase tracking-widest">{t('settings.importConfigDesc')}</span>
+                </div>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportConfig}
+                className="hidden"
+              />
+
+              {importStatus === 'success' && (
+                <div className="flex items-center gap-2 p-3 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs font-headline">
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  {t('settings.importSuccess')}
+                </div>
+              )}
+              {importStatus === 'error' && (
+                <div className="flex items-center gap-2 p-3 rounded-sm bg-error/10 border border-error/20 text-error text-xs font-headline">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  {t('settings.importError')}
+                </div>
+              )}
+            </div>
+
+            <p className="text-[10px] text-on-surface-variant mt-4">{t('settings.configBackupWarning')}</p>
           </div>
         </section>
       </div>

@@ -44,7 +44,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
               <span className="text-primary-dim font-headline text-lg leading-none mt-0.5">
                 {i + 1}
               </span>
-              <p className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
+              <p className="text-base text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
                 {action}
               </p>
             </div>

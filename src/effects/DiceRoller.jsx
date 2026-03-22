@@ -348,7 +348,7 @@ export default function DiceRoller({ diceRoll, onComplete }) {
   if (!diceRoll) return null;
 
   return (
-    <div className="relative w-full" style={{ height: 120 }}>
+    <div className="relative w-full h-full">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"

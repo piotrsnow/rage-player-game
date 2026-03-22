@@ -2,6 +2,39 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 
+function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
+  const hi = highlightInfo;
+  const isActive = hi && hi.messageId === messageId && hi.segmentIndex === segmentIndex && hi.wordIndex >= 0;
+
+  if (!isActive) {
+    return <span className={className}>{text}</span>;
+  }
+
+  const words = text.split(/(\s+)/);
+  let wordIdx = -1;
+
+  return (
+    <span className={className}>
+      {words.map((part, i) => {
+        if (/^\s+$/.test(part)) {
+          return <span key={i}>{part}</span>;
+        }
+        wordIdx++;
+        const isCurrent = wordIdx === hi.wordIndex;
+        return (
+          <span
+            key={i}
+            className={`rounded-sm transition-colors duration-100 ${isCurrent ? 'text-primary bg-primary/15' : ''}`}
+            style={isCurrent ? { boxShadow: '-2px 0 0 0 rgba(197,154,255,0.15), 2px 0 0 0 rgba(197,154,255,0.15)' } : undefined}
+          >
+            {part}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 function DialogueSegments({ segments, narrator, messageId }) {
   if (!segments || segments.length === 0) return null;
 
@@ -27,7 +60,7 @@ function DialogueSegments({ segments, narrator, messageId }) {
                 )}
               </div>
               <p className="text-sm text-on-surface leading-relaxed">
-                &ldquo;{seg.text}&rdquo;
+                &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />&rdquo;
               </p>
             </div>
           );
@@ -35,7 +68,7 @@ function DialogueSegments({ segments, narrator, messageId }) {
         return (
           <div key={i} className={`transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
             <p className="text-sm text-on-surface-variant leading-relaxed italic">
-              {seg.text}
+              <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />
               {active && (
                 <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
                   graphic_eq
@@ -67,9 +100,6 @@ function DmMessage({ message, narrator }) {
   };
 
   const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
-  const dialogueOnlySegments = hasSegments
-    ? message.dialogueSegments.filter((s) => s.type === 'dialogue' && s.character)
-    : [];
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
@@ -89,33 +119,12 @@ function DmMessage({ message, narrator }) {
         )}
       </div>
       <div className="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg space-y-3">
-        <p className="text-sm text-on-surface-variant leading-relaxed italic">
-          {message.content}
-        </p>
-        {dialogueOnlySegments.length > 0 && (
-          <div className="space-y-2 pt-1 border-t border-outline-variant/10">
-            {dialogueOnlySegments.map((seg, i) => {
-              const segIdx = message.dialogueSegments.indexOf(seg);
-              const active = narrator?.currentMessageId === message.id && narrator?.currentSegmentIndex === segIdx;
-              return (
-                <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                      {seg.character}
-                    </span>
-                    {active && (
-                      <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
-                        graphic_eq
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-on-surface leading-relaxed">
-                    &ldquo;{seg.text}&rdquo;
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+        {hasSegments ? (
+          <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
+        ) : (
+          <p className="text-sm text-on-surface-variant leading-relaxed italic">
+            <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+          </p>
         )}
       </div>
     </div>

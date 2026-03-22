@@ -33,6 +33,7 @@ const initialState = {
   error: null,
   isGeneratingScene: false,
   isGeneratingImage: false,
+  isGeneratingMusic: false,
 };
 
 function gameReducer(state, action) {
@@ -158,6 +159,12 @@ function gameReducer(state, action) {
     case 'SET_GENERATING_IMAGE':
       return { ...state, isGeneratingImage: action.payload };
 
+    case 'SET_GENERATING_MUSIC':
+      return { ...state, isGeneratingMusic: action.payload };
+
+    case 'UPDATE_SCENE_MUSIC':
+      return state;
+
     case 'APPLY_STATE_CHANGES': {
       const changes = action.payload;
       let next = { ...state };
@@ -222,6 +229,13 @@ function gameReducer(state, action) {
         };
       }
 
+      if (changes.journalEntries?.length > 0) {
+        next.world = {
+          ...next.world,
+          eventHistory: [...(next.world.eventHistory || []), ...changes.journalEntries],
+        };
+      }
+
       if (changes.statuses) {
         next.character = { ...next.character, statuses: changes.statuses };
       }
@@ -256,7 +270,17 @@ export function GameProvider({ children }) {
   const autoSave = useCallback(() => {
     const current = stateRef.current;
     if (current.campaign) {
-      storage.saveCampaign(current);
+      try {
+        const result = storage.saveCampaign(current);
+        if (result?.pruned) {
+          console.warn('[GameContext] Save required pruning – old scene images were removed to free space');
+        }
+        if (result && !result.saved) {
+          console.error('[GameContext] Campaign could not be saved – localStorage quota full');
+        }
+      } catch (err) {
+        console.error('[GameContext] Unexpected save error:', err);
+      }
     }
   }, []);
 

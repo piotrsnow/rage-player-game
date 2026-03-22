@@ -1,6 +1,9 @@
 const CAMPAIGNS_KEY = 'obsidian_grimoire_campaigns';
 const SETTINGS_KEY = 'obsidian_grimoire_settings';
 const ACTIVE_CAMPAIGN_KEY = 'obsidian_grimoire_active';
+const MUSIC_LIBRARY_KEY = 'obsidian_grimoire_music';
+
+const TRACK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
 export const storage = {
   getCampaigns() {
@@ -24,8 +27,60 @@ export const storage = {
     } else {
       campaigns.unshift(entry);
     }
-    localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
-    localStorage.setItem(ACTIVE_CAMPAIGN_KEY, gameState.campaign.id);
+
+    if (!this._trySave(campaigns, gameState.campaign.id)) {
+      console.warn('[storage] Quota exceeded – pruning old scene images');
+      const pruned = this._pruneForQuota(campaigns, gameState.campaign.id);
+      if (!this._trySave(pruned, gameState.campaign.id)) {
+        console.warn('[storage] Still over quota – stripping all images');
+        const stripped = this._stripAllImages(pruned);
+        if (!this._trySave(stripped, gameState.campaign.id)) {
+          console.error('[storage] Save failed even after full prune');
+          return { saved: false, pruned: true };
+        }
+      }
+      return { saved: true, pruned: true };
+    }
+    return { saved: true, pruned: false };
+  },
+
+  _trySave(campaigns, activeCampaignId) {
+    try {
+      localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+      localStorage.setItem(ACTIVE_CAMPAIGN_KEY, activeCampaignId);
+      return true;
+    } catch (e) {
+      if (e?.name === 'QuotaExceededError' || e?.code === 22 || e?.code === 1014) {
+        return false;
+      }
+      throw e;
+    }
+  },
+
+  _pruneForQuota(campaigns, activeCampaignId) {
+    const KEEP_IMAGES = 3;
+    const MAX_CHAT = 200;
+    return campaigns.map((c) => {
+      const isActive = c.campaign.id === activeCampaignId;
+      const scenes = (c.scenes || []).map((s, i, arr) => {
+        if (i < arr.length - KEEP_IMAGES) {
+          const { image, ...rest } = s;
+          return rest;
+        }
+        return s;
+      });
+      const chatHistory = isActive
+        ? (c.chatHistory || []).slice(-MAX_CHAT)
+        : (c.chatHistory || []).slice(-50);
+      return { ...c, scenes, chatHistory };
+    });
+  },
+
+  _stripAllImages(campaigns) {
+    return campaigns.map((c) => ({
+      ...c,
+      scenes: (c.scenes || []).map(({ image, ...rest }) => rest),
+    }));
   },
 
   loadCampaign(id) {
@@ -57,5 +112,96 @@ export const storage = {
 
   saveSettings(settings) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  },
+
+  getMusicLibrary() {
+    try {
+      const data = localStorage.getItem(MUSIC_LIBRARY_KEY);
+      const lib = data ? JSON.parse(data) : [];
+      const now = Date.now();
+      return lib.filter((t) => now - t.savedAt < TRACK_TTL_MS);
+    } catch {
+      return [];
+    }
+  },
+
+  findMusicTrack(genre, tone, mood) {
+    const lib = this.getMusicLibrary();
+    return lib.find(
+      (t) => t.genre === genre && t.tone === tone && t.mood === mood
+    ) || null;
+  },
+
+  saveMusicTrack({ genre, tone, mood, audioUrl, title, duration, imageUrl, style }) {
+    const lib = this.getMusicLibrary();
+    const idx = lib.findIndex(
+      (t) => t.genre === genre && t.tone === tone && t.mood === mood
+    );
+    const entry = { genre, tone, mood, audioUrl, title, duration, imageUrl, style, savedAt: Date.now() };
+    if (idx >= 0) {
+      lib[idx] = entry;
+    } else {
+      lib.push(entry);
+    }
+    localStorage.setItem(MUSIC_LIBRARY_KEY, JSON.stringify(lib));
+    return entry;
+  },
+
+  exportConfig() {
+    const payload = {
+      _meta: {
+        app: 'obsidian_grimoire',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+      },
+      settings: this.getSettings(),
+      campaigns: this.getCampaigns(),
+      activeCampaignId: this.getActiveCampaignId(),
+      musicLibrary: this.getMusicLibrary(),
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `obsidian-grimoire-config-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  importConfig(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data._meta || data._meta.app !== 'obsidian_grimoire') {
+            reject(new Error('Invalid config file'));
+            return;
+          }
+
+          if (data.settings) {
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+          }
+          if (data.campaigns) {
+            localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(data.campaigns));
+          }
+          if (data.activeCampaignId) {
+            localStorage.setItem(ACTIVE_CAMPAIGN_KEY, data.activeCampaignId);
+          }
+          if (data.musicLibrary) {
+            localStorage.setItem(MUSIC_LIBRARY_KEY, JSON.stringify(data.musicLibrary));
+          }
+
+          resolve(data.settings);
+        } catch {
+          reject(new Error('Failed to parse config file'));
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsText(file);
+    });
   },
 };

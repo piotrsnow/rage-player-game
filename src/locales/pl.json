@@ -117,7 +117,9 @@
     "voiceStart": "Mów swoją akcję",
     "voiceStop": "Zatrzymaj nagrywanie",
     "voiceListening": "Słucham...",
-    "exportLog": "Pobierz Log Rozgrywki"
+    "exportLog": "Pobierz Log Rozgrywki",
+    "generatingMusic": "Generowanie muzyki...",
+    "musicPlaying": "Odtwarzanie"
   },
   "chat": {
     "dmAi": "MG AI",
@@ -169,7 +171,12 @@
     "playerFreedom": "Wolność Gracza",
     "playerFreedomDesc": "Jak bardzo AI podąża za graczem vs prowadzi fabułę",
     "imageGeneration": "Generowanie Obrazów",
-    "imageGenerationDesc": "Obrazy scen DALL-E 3",
+    "imageGenerationDesc": "Ilustracje scen generowane przez AI",
+    "imageProvider": "Dostawca Obrazów",
+    "dalleLabel": "DALL-E 3 (OpenAI) — wysoka jakość, wolniejszy",
+    "stabilityLabel": "Stable Diffusion 3 (Stability AI) — szybki",
+    "stabilityApiKey": "Klucz API Stability AI",
+    "stabilityApiKeyDesc": "Zdobądź klucz na platform.stability.ai",
     "aiProvider": "Dostawca AI",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",
@@ -232,12 +239,71 @@
       "medium": "Średnia",
       "high": "Wysoka"
     },
+    "narratorStyle": "Styl Narratora",
+    "narratorStyleDesc": "Dostosuj głos i styl pisarstwa Mistrza Gry",
+    "poeticism": "Poetyckość",
+    "poeticismDesc": "Od suchej prozy po bogatą, metaforyczną narrację",
+    "poeticismLabels": {
+      "prosaic": "Prozaiczny",
+      "literary": "Literacki",
+      "poetic": "Poetycki",
+      "lyrical": "Liryczny"
+    },
+    "grittiness": "Surowość",
+    "grittinessDesc": "Od lekkiego tonu po mroczny i brutalny realizm",
+    "grittinessLabels": {
+      "light": "Lekki",
+      "grounded": "Uziemiony",
+      "gritty": "Surowy",
+      "brutal": "Brutalny"
+    },
+    "narratorDetail": "Poziom Detali",
+    "narratorDetailDesc": "Ilość szczegółów otoczenia i opisu zmysłowego",
+    "detailLabels": {
+      "minimal": "Minimalne",
+      "balanced": "Zbalansowane",
+      "rich": "Bogate",
+      "lavish": "Wystawne"
+    },
+    "narratorHumor": "Humor",
+    "narratorHumorDesc": "Ilość humoru wplecionego w narrację",
+    "humorLabels": {
+      "serious": "Poważny",
+      "dry": "Suchy Dowcip",
+      "witty": "Dowcipny",
+      "absurd": "Absurdalny"
+    },
+    "narratorDrama": "Dramatyzm",
+    "narratorDramaDesc": "Od subtelnej narracji po teatralny rozmach",
+    "dramaLabels": {
+      "subtle": "Subtelny",
+      "measured": "Wyważony",
+      "heightened": "Wzmożony",
+      "theatrical": "Teatralny"
+    },
     "sfxTitle": "Efekty Dźwiękowe",
     "sfxDesc": "Efekty dźwiękowe generowane przez AI (ElevenLabs) dla klimatycznych momentów",
     "sfxEnabled": "Włącz Efekty Dźwiękowe",
     "sfxEnabledDesc": "Generuj dźwięki otoczenia dla walki, magii i wydarzeń",
     "sfxVolume": "Głośność Efektów",
-    "sfxVolumeDesc": "Poziom głośności generowanych efektów dźwiękowych"
+    "sfxVolumeDesc": "Poziom głośności generowanych efektów dźwiękowych",
+    "musicTitle": "Muzyka w Tle",
+    "musicDesc": "Muzyka instrumentalna generowana przez AI (Suno) dla klimatu scen",
+    "musicEnabled": "Włącz Muzykę w Tle",
+    "musicEnabledDesc": "Generuj unikalną muzykę w tle dla każdej sceny",
+    "musicVolume": "Głośność Muzyki",
+    "musicVolumeDesc": "Poziom głośności odtwarzanej muzyki w tle",
+    "sunoApiKey": "Klucz API Suno",
+    "sunoModel": "Model Suno",
+    "configBackup": "Kopia Konfiguracji",
+    "configBackupDesc": "Eksportuj lub importuj pełną konfigurację wraz z kluczami API, ustawieniami MG i kampaniami.",
+    "exportConfig": "Eksportuj Konfigurację",
+    "exportConfigDesc": "Zapisz wszystkie ustawienia i kampanie do pliku JSON",
+    "importConfig": "Importuj Konfigurację",
+    "importConfigDesc": "Wczytaj ustawienia i kampanie z pliku JSON",
+    "importSuccess": "Konfiguracja zaimportowana pomyślnie! Ustawienia zostały zastosowane.",
+    "importError": "Nie udało się zaimportować konfiguracji. Upewnij się, że plik jest prawidłową kopią Obsydianowego Grimuaru.",
+    "configBackupWarning": "Wyeksportowany plik zawiera Twoje klucze API. Przechowuj go bezpiecznie i nie udostępniaj publicznie."
   },
   "errors": {
     "somethingWentWrong": "Coś Poszło Nie Tak",

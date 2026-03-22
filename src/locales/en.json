@@ -117,7 +117,9 @@
     "voiceStart": "Speak your action",
     "voiceStop": "Stop recording",
     "voiceListening": "Listening...",
-    "exportLog": "Download Game Log"
+    "exportLog": "Download Game Log",
+    "generatingMusic": "Generating music...",
+    "musicPlaying": "Now playing"
   },
   "chat": {
     "dmAi": "DM AI",
@@ -169,7 +171,12 @@
     "playerFreedom": "Player Freedom",
     "playerFreedomDesc": "How much the AI follows vs leads the story",
     "imageGeneration": "Image Generation",
-    "imageGenerationDesc": "DALL-E 3 scene images",
+    "imageGenerationDesc": "AI-generated scene illustrations",
+    "imageProvider": "Image Provider",
+    "dalleLabel": "DALL-E 3 (OpenAI) — high quality, slower",
+    "stabilityLabel": "Stable Diffusion 3 (Stability AI) — fast",
+    "stabilityApiKey": "Stability AI API Key",
+    "stabilityApiKeyDesc": "Get your key at platform.stability.ai",
     "aiProvider": "AI Provider",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",
@@ -232,12 +239,71 @@
       "medium": "Medium",
       "high": "High"
     },
+    "narratorStyle": "Narrator Style",
+    "narratorStyleDesc": "Fine-tune the Dungeon Master's writing voice and style",
+    "poeticism": "Poeticism",
+    "poeticismDesc": "From dry prose to rich, metaphor-laden narration",
+    "poeticismLabels": {
+      "prosaic": "Prosaic",
+      "literary": "Literary",
+      "poetic": "Poetic",
+      "lyrical": "Lyrical"
+    },
+    "grittiness": "Grittiness",
+    "grittinessDesc": "From lighthearted tone to dark, brutal realism",
+    "grittinessLabels": {
+      "light": "Light",
+      "grounded": "Grounded",
+      "gritty": "Gritty",
+      "brutal": "Brutal"
+    },
+    "narratorDetail": "Detail Level",
+    "narratorDetailDesc": "Amount of environmental and sensory description",
+    "detailLabels": {
+      "minimal": "Minimal",
+      "balanced": "Balanced",
+      "rich": "Rich",
+      "lavish": "Lavish"
+    },
+    "narratorHumor": "Humor",
+    "narratorHumorDesc": "Amount of humor woven into narration",
+    "humorLabels": {
+      "serious": "Serious",
+      "dry": "Dry Wit",
+      "witty": "Witty",
+      "absurd": "Absurdist"
+    },
+    "narratorDrama": "Drama",
+    "narratorDramaDesc": "From subtle narration to theatrical grandeur",
+    "dramaLabels": {
+      "subtle": "Subtle",
+      "measured": "Measured",
+      "heightened": "Heightened",
+      "theatrical": "Theatrical"
+    },
     "sfxTitle": "Sound Effects",
     "sfxDesc": "AI-generated sound effects via ElevenLabs for impactful moments",
     "sfxEnabled": "Enable Sound Effects",
     "sfxEnabledDesc": "Generate ambient sounds for combat, magic, and events",
     "sfxVolume": "SFX Volume",
-    "sfxVolumeDesc": "Volume level for generated sound effects"
+    "sfxVolumeDesc": "Volume level for generated sound effects",
+    "musicTitle": "Background Music",
+    "musicDesc": "AI-generated instrumental music via Suno for immersive scene atmosphere",
+    "musicEnabled": "Enable Background Music",
+    "musicEnabledDesc": "Generate unique background music for each scene",
+    "musicVolume": "Music Volume",
+    "musicVolumeDesc": "Volume level for background music playback",
+    "sunoApiKey": "Suno API Key",
+    "sunoModel": "Suno Model",
+    "configBackup": "Configuration Backup",
+    "configBackupDesc": "Export or import your full configuration including API keys, DM settings, and campaigns.",
+    "exportConfig": "Export Configuration",
+    "exportConfigDesc": "Save all settings and campaigns to a JSON file",
+    "importConfig": "Import Configuration",
+    "importConfigDesc": "Load settings and campaigns from a JSON file",
+    "importSuccess": "Configuration imported successfully! Settings have been applied.",
+    "importError": "Failed to import configuration. Make sure the file is a valid Obsidian Grimoire backup.",
+    "configBackupWarning": "The exported file contains your API keys. Keep it safe and do not share it publicly."
   },
   "errors": {
     "somethingWentWrong": "Something Went Wrong",

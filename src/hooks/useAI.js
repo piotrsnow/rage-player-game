@@ -11,8 +11,9 @@ export function useAI() {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, language } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
+  const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : openaiApiKey;
 
   const generateScene = useCallback(
     async (playerAction, isFirstScene = false) => {
@@ -36,6 +37,9 @@ export function useAI() {
           narrative: result.narrative,
           dialogueSegments: result.dialogueSegments || [],
           soundEffect: result.soundEffect || null,
+          musicPrompt: result.musicPrompt || null,
+          imagePrompt: result.imagePrompt || null,
+          musicUrl: null,
           image: null,
           actions: result.suggestedActions || [],
           chosenAction: playerAction,
@@ -98,19 +102,22 @@ export function useAI() {
         setTimeout(() => autoSave(), 300);
 
         // Generate scene image asynchronously
-        if (imageGenEnabled && openaiApiKey) {
+        if (imageGenEnabled && imageApiKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
             const imageUrl = await imageService.generateSceneImage(
               result.narrative,
               state.campaign?.genre,
               state.campaign?.tone,
-              openaiApiKey
+              imageApiKey,
+              imageProvider,
+              result.imagePrompt
             );
             dispatch({
               type: 'UPDATE_SCENE_IMAGE',
               payload: { sceneId, image: imageUrl },
             });
+            setTimeout(() => autoSave(), 300);
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);
           } finally {
@@ -125,7 +132,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, openaiApiKey, imageGenEnabled, language, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, imageApiKey, imageProvider, imageGenEnabled, language, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -164,27 +171,31 @@ export function useAI() {
   );
 
   const generateImageForScene = useCallback(
-    async (sceneId, narrative) => {
-      if (!imageGenEnabled || !openaiApiKey || !narrative) return;
+    async (sceneId, narrative, imagePrompt) => {
+      if (!imageGenEnabled || !imageApiKey || !narrative) return;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
       try {
+        const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
         const imageUrl = await imageService.generateSceneImage(
           narrative,
           state.campaign?.genre,
           state.campaign?.tone,
-          openaiApiKey
+          imageApiKey,
+          imageProvider,
+          sceneImagePrompt
         );
         dispatch({
           type: 'UPDATE_SCENE_IMAGE',
           payload: { sceneId, image: imageUrl },
         });
+        setTimeout(() => autoSave(), 300);
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);
       } finally {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, imageGenEnabled, openaiApiKey, dispatch]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, dispatch, autoSave]
   );
 
   return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene };
