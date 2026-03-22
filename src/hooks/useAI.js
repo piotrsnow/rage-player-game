@@ -5,13 +5,15 @@ import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
 import { createSceneId } from '../services/gameState';
+import { contextManager } from '../services/contextManager';
+import { calculateCost } from '../services/costTracker';
 
 export function useAI() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language, needsSystemEnabled } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : openaiApiKey;
 
@@ -21,15 +23,19 @@ export function useAI() {
       dispatch({ type: 'SET_ERROR', payload: null });
 
       try {
-        const result = await aiService.generateScene(
+        const enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
+        const { result, usage } = await aiService.generateScene(
           state,
           settings.dmSettings,
           playerAction,
           isFirstScene,
           aiProvider,
           apiKey,
-          language
+          language,
+          enhancedContext,
+          { needsSystemEnabled }
         );
+        if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
         const sceneId = createSceneId();
         const scene = {
@@ -92,6 +98,15 @@ export function useAI() {
           },
         });
 
+        if (needsSystemEnabled) {
+          if (!result.stateChanges) result.stateChanges = {};
+          if (!result.stateChanges.timeAdvance) {
+            result.stateChanges.timeAdvance = { hoursElapsed: 0.5 };
+          } else if (!result.stateChanges.timeAdvance.hoursElapsed) {
+            result.stateChanges.timeAdvance.hoursElapsed = 0.5;
+          }
+        }
+
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: result.stateChanges });
         }
@@ -100,6 +115,19 @@ export function useAI() {
 
         // Auto-save after scene resolution (delay for state to settle)
         setTimeout(() => autoSave(), 300);
+
+        // Compress old scenes in the background when threshold exceeded
+        if (contextManager.needsCompression(state)) {
+          contextManager.compressOldScenes(state, aiProvider, apiKey, language).then((compResult) => {
+            if (compResult?.summary) {
+              dispatch({ type: 'UPDATE_WORLD', payload: { compressedHistory: compResult.summary } });
+              setTimeout(() => autoSave(), 300);
+            }
+            if (compResult?.usage) {
+              dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', compResult.usage) });
+            }
+          });
+        }
 
         // Generate scene image asynchronously
         if (imageGenEnabled && imageApiKey) {
@@ -113,6 +141,7 @@ export function useAI() {
               imageProvider,
               result.imagePrompt
             );
+            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
               type: 'UPDATE_SCENE_IMAGE',
               payload: { sceneId, image: imageUrl },
@@ -132,7 +161,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, imageApiKey, imageProvider, imageGenEnabled, language, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -140,12 +169,13 @@ export function useAI() {
       dispatch({ type: 'SET_LOADING', payload: true });
 
       try {
-        const result = await aiService.generateCampaign(
+        const { result, usage } = await aiService.generateCampaign(
           campaignSettings,
           aiProvider,
           apiKey,
           language
         );
+        if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         return result;
       } catch (err) {
         dispatch({ type: 'SET_ERROR', payload: err.message });
@@ -159,15 +189,16 @@ export function useAI() {
 
   const generateStoryPrompt = useCallback(
     async ({ genre, tone, style }) => {
-      const result = await aiService.generateStoryPrompt(
+      const { result, usage } = await aiService.generateStoryPrompt(
         { genre, tone, style },
         aiProvider,
         apiKey,
         language
       );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
       return result.prompt;
     },
-    [aiProvider, apiKey, language]
+    [aiProvider, apiKey, language, dispatch]
   );
 
   const generateImageForScene = useCallback(
@@ -184,6 +215,7 @@ export function useAI() {
           imageProvider,
           sceneImagePrompt
         );
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
           type: 'UPDATE_SCENE_IMAGE',
           payload: { sceneId, image: imageUrl },

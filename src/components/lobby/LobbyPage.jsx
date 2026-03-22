@@ -132,6 +132,7 @@ export default function LobbyPage() {
           <p className="text-sm">{t('lobby.noCampaigns')}</p>
         </div>
       )}
+
     </div>
   );
 }

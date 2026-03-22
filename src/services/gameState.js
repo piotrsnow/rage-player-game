@@ -36,5 +36,6 @@ export function getCampaignSummary(gameState) {
     characterLevel: character?.level || 1,
     sceneCount: scenes?.length || 0,
     lastPlayed: gameState.lastSaved || Date.now(),
+    totalCost: gameState.aiCosts?.total || 0,
   };
 }

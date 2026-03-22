@@ -3,6 +3,28 @@ import { storage } from '../services/storage';
 
 const GameContext = createContext(null);
 
+function createDefaultNeeds() {
+  return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
+}
+
+function hourToPeriod(hour) {
+  if (hour >= 6 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 18) return 'afternoon';
+  if (hour >= 18 && hour < 22) return 'evening';
+  return 'night';
+}
+
+const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
+const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
+
+function decayNeeds(needs, hoursElapsed) {
+  const updated = { ...needs };
+  for (const key of Object.keys(DECAY_PER_HOUR)) {
+    updated[key] = Math.max(0, Math.round(((updated[key] ?? 100) - DECAY_PER_HOUR[key] * hoursElapsed) * 10) / 10);
+  }
+  return updated;
+}
+
 function createDefaultCharacter() {
   return {
     name: 'Adventurer',
@@ -18,19 +40,32 @@ function createDefaultCharacter() {
     statuses: [],
     skills: [],
     backstory: '',
+    needs: createDefaultNeeds(),
   };
 }
 
 const initialState = {
   campaign: null,
   character: null,
-  world: { locations: [], facts: [], eventHistory: [] },
+  world: {
+    locations: [],
+    facts: [],
+    eventHistory: [],
+    npcs: [],
+    mapState: [],
+    mapConnections: [],
+    currentLocation: '',
+    timeState: { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' },
+    activeEffects: [],
+    compressedHistory: '',
+  },
   quests: { active: [], completed: [] },
   scenes: [],
   chatHistory: [],
   characterVoiceMap: {},
   isLoading: false,
   error: null,
+  aiCosts: { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] },
   isGeneratingScene: false,
   isGeneratingImage: false,
   isGeneratingMusic: false,
@@ -38,21 +73,28 @@ const initialState = {
 
 function gameReducer(state, action) {
   switch (action.type) {
-    case 'START_CAMPAIGN':
+    case 'START_CAMPAIGN': {
+      const char = action.payload.character || createDefaultCharacter();
       return {
         ...initialState,
         campaign: action.payload.campaign,
-        character: action.payload.character || createDefaultCharacter(),
+        character: { ...char, needs: char.needs || createDefaultNeeds() },
         world: action.payload.world || initialState.world,
         scenes: action.payload.scenes || [],
         chatHistory: action.payload.chatHistory || [],
+        aiCosts: { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] },
       };
+    }
 
-    case 'LOAD_CAMPAIGN':
-      return {
-        ...initialState,
-        ...action.payload,
-      };
+    case 'LOAD_CAMPAIGN': {
+      const defaultCosts = { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] };
+      const loaded = { ...initialState, ...action.payload };
+      loaded.aiCosts = { ...defaultCosts, ...loaded.aiCosts };
+      if (loaded.character && !loaded.character.needs) {
+        loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
+      }
+      return loaded;
+    }
 
     case 'RESET':
       return initialState;
@@ -240,7 +282,175 @@ function gameReducer(state, action) {
         next.character = { ...next.character, statuses: changes.statuses };
       }
 
+      if (changes.npcs?.length > 0) {
+        const npcs = [...(next.world.npcs || [])];
+        for (const npc of changes.npcs) {
+          const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+          if (npc.action === 'introduce' && idx < 0) {
+            npcs.push({
+              id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              name: npc.name,
+              gender: npc.gender || 'unknown',
+              role: npc.role || '',
+              personality: npc.personality || '',
+              attitude: npc.attitude || 'neutral',
+              lastLocation: npc.location || '',
+              alive: true,
+              notes: npc.notes || '',
+            });
+          } else if (idx >= 0) {
+            npcs[idx] = {
+              ...npcs[idx],
+              ...(npc.gender && { gender: npc.gender }),
+              ...(npc.role && { role: npc.role }),
+              ...(npc.personality && { personality: npc.personality }),
+              ...(npc.attitude && { attitude: npc.attitude }),
+              ...(npc.location && { lastLocation: npc.location }),
+              ...(npc.notes && { notes: npc.notes }),
+              ...(npc.alive !== undefined && { alive: npc.alive }),
+            };
+          }
+        }
+        next.world = { ...next.world, npcs };
+      }
+
+      if (changes.mapChanges?.length > 0) {
+        const mapState = [...(next.world.mapState || [])];
+        for (const change of changes.mapChanges) {
+          const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
+          if (idx >= 0) {
+            mapState[idx] = {
+              ...mapState[idx],
+              modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+            };
+          } else {
+            mapState.push({
+              id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              name: change.location,
+              description: '',
+              modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+            });
+          }
+        }
+        next.world = { ...next.world, mapState };
+      }
+
+      if (changes.timeAdvance) {
+        const ts = next.world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
+        const currentHour = ts.hour ?? 6;
+
+        let hoursElapsed = changes.timeAdvance.hoursElapsed;
+        if (!hoursElapsed && changes.timeAdvance.timeOfDay) {
+          const targetHour = PERIOD_START_HOUR[changes.timeAdvance.timeOfDay] ?? currentHour;
+          hoursElapsed = targetHour > currentHour
+            ? targetHour - currentHour
+            : targetHour < currentHour ? (24 - currentHour + targetHour) : 0;
+        }
+        hoursElapsed = hoursElapsed || 0.5;
+
+        let newHour = currentHour + hoursElapsed;
+        let dayIncrement = 0;
+        while (newHour >= 24) { newHour -= 24; dayIncrement++; }
+        if (changes.timeAdvance.newDay && dayIncrement === 0) dayIncrement = 1;
+
+        next.world = {
+          ...next.world,
+          timeState: {
+            ...ts,
+            hour: Math.round(newHour * 10) / 10,
+            timeOfDay: hourToPeriod(newHour),
+            day: ts.day + dayIncrement,
+            ...(changes.timeAdvance.season && { season: changes.timeAdvance.season }),
+          },
+        };
+
+        if (next.character) {
+          const currentNeeds = next.character.needs || createDefaultNeeds();
+          next.character = {
+            ...next.character,
+            needs: decayNeeds(currentNeeds, hoursElapsed),
+          };
+        }
+      }
+
+      if (changes.needsChanges && next.character) {
+        const needs = { ...(next.character.needs || createDefaultNeeds()) };
+        for (const [key, delta] of Object.entries(changes.needsChanges)) {
+          if (key in needs) {
+            needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + delta));
+          }
+        }
+        next.character = { ...next.character, needs };
+      }
+
+      if (changes.activeEffects?.length > 0) {
+        let effects = [...(next.world.activeEffects || [])];
+        for (const fx of changes.activeEffects) {
+          if (fx.action === 'add') {
+            effects.push({
+              id: fx.id || `fx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              type: fx.type || 'other',
+              location: fx.location || '',
+              description: fx.description || '',
+              placedBy: fx.placedBy || '',
+              active: true,
+            });
+          } else if (fx.action === 'remove') {
+            effects = effects.filter((e) => e.id !== fx.id);
+          } else if (fx.action === 'trigger') {
+            effects = effects.map((e) => (e.id === fx.id ? { ...e, active: false } : e));
+          }
+        }
+        next.world = { ...next.world, activeEffects: effects };
+      }
+
+      if (changes.currentLocation) {
+        const prevLoc = next.world.currentLocation;
+        const newLoc = changes.currentLocation;
+        let mapConns = [...(next.world.mapConnections || [])];
+        let mapSt = [...(next.world.mapState || [])];
+
+        if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
+          const already = mapConns.some(
+            (c) =>
+              (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
+              (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
+          );
+          if (!already) {
+            mapConns.push({ from: prevLoc, to: newLoc });
+          }
+
+          for (const locName of [prevLoc, newLoc]) {
+            if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
+              mapSt.push({
+                id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                name: locName,
+                description: '',
+                modifications: [],
+              });
+            }
+          }
+        }
+
+        next.world = { ...next.world, currentLocation: newLoc, mapConnections: mapConns, mapState: mapSt };
+      }
+
       return next;
+    }
+
+    case 'ADD_AI_COST': {
+      const entry = action.payload;
+      const costs = state.aiCosts || { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] };
+      const cost = entry.cost || 0;
+      const history = costs.history.length >= 200 ? costs.history.slice(-199) : costs.history;
+      return {
+        ...state,
+        aiCosts: {
+          total: costs.total + cost,
+          breakdown: { ...costs.breakdown, [entry.type]: (costs.breakdown[entry.type] || 0) + cost },
+          history: [...history, entry],
+        },
+      };
     }
 
     case 'MAP_CHARACTER_VOICE': {
@@ -298,3 +508,5 @@ export function useGame() {
   if (!ctx) throw new Error('useGame must be used within GameProvider');
   return ctx;
 }
+
+export { createDefaultNeeds, hourToPeriod };

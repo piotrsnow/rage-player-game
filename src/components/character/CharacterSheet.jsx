@@ -1,15 +1,25 @@
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
 import StatusBar from '../ui/StatusBar';
 
+const NEEDS_META = [
+  { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
+  { key: 'thirst', icon: 'water_drop', color: 'primary' },
+  { key: 'bladder', icon: 'wc', color: 'tertiary' },
+  { key: 'hygiene', icon: 'shower', color: 'primary' },
+  { key: 'rest', icon: 'bedtime', color: 'tertiary' },
+];
+
 export default function CharacterSheet() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state } = useGame();
+  const { settings } = useSettings();
   const { character, campaign, quests } = state;
 
   if (!character || !campaign) {
@@ -84,6 +94,26 @@ export default function CharacterSheet() {
               <StatusBar label={t('character.manaPool')} current={character.mana} max={character.maxMana} color="primary" />
             </div>
           </div>
+
+          {settings.needsSystemEnabled && character.needs && (
+            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">self_care</span>
+                {t('needs.title')}
+              </h3>
+              <div className="space-y-4">
+                {NEEDS_META.map(({ key, color }) => (
+                  <StatusBar
+                    key={key}
+                    label={t(`needs.${key}`)}
+                    current={Math.round(character.needs[key] ?? 100)}
+                    max={100}
+                    color={color}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Center: Stats */}

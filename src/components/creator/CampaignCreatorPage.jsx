@@ -5,8 +5,35 @@ import { useAI } from '../../hooks/useAI';
 import { useGameState } from '../../hooks/useGameState';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGame } from '../../contexts/GameContext';
+import { storage } from '../../services/storage';
 import Button from '../ui/Button';
 import LoadingSpinner from '../ui/LoadingSpinner';
+
+const RANDOM_NAMES = {
+  Fantasy: [
+    'Aldric', 'Seraphina', 'Thorn', 'Isolde', 'Kael', 'Miriel', 'Fenris',
+    'Lyra', 'Darian', 'Elowen', 'Grimwald', 'Astrid', 'Rowan', 'Zephyra',
+    'Valen', 'Elara', 'Corvus', 'Nerissa', 'Theron', 'Brynn', 'Oberon',
+    'Ravenna', 'Cedric', 'Fiora', 'Magnus', 'Selene', 'Gareth', 'Ysolde',
+  ],
+  'Sci-Fi': [
+    'Vex', 'Nova', 'Kai-7', 'Orion', 'Lyris', 'Zane', 'Astra', 'Rex',
+    'Ember', 'Cyrus', 'Nyx', 'Jett', 'Solara', 'Axel', 'Io', 'Sable',
+    'Rho', 'Vesper', 'Talon', 'Celeste', 'Dex', 'Mira', 'Kova', 'Zero',
+  ],
+  Horror: [
+    'Ezra', 'Morrigan', 'Silas', 'Lenore', 'Dorian', 'Raven', 'Cassius',
+    'Lilith', 'Ambrose', 'Isolde', 'Damien', 'Vesper', 'Alaric', 'Salem',
+    'Cain', 'Ophelia', 'Lucius', 'Nyx', 'Thane', 'Elspeth', 'Draven',
+    'Carmilla', 'Malachi', 'Rowena', 'Viktor', 'Perdita', 'Alistair',
+  ],
+};
+
+function pickRandomName(genre, currentName) {
+  const pool = RANDOM_NAMES[genre] || RANDOM_NAMES.Fantasy;
+  const filtered = pool.filter((n) => n !== currentName);
+  return filtered[Math.floor(Math.random() * filtered.length)];
+}
 
 const genreIds = ['Fantasy', 'Sci-Fi', 'Horror'];
 const genreIcons = { Fantasy: 'auto_fix_high', 'Sci-Fi': 'rocket_launch', Horror: 'skull' };
@@ -61,7 +88,7 @@ export default function CampaignCreatorPage() {
     style: 'Hybrid',
     difficulty: 'Normal',
     length: 'Medium',
-    characterName: '',
+    characterName: storage.getLastCharacterName(),
     storyPrompt: '',
   });
 
@@ -93,6 +120,7 @@ export default function CampaignCreatorPage() {
     }
 
     try {
+      storage.saveLastCharacterName(form.characterName.trim());
       const result = await generateCampaign(form);
       startNewCampaign(result, form);
       navigate('/play');
@@ -198,14 +226,25 @@ export default function CampaignCreatorPage() {
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
               {t('creator.characterNameLabel')}
             </label>
-            <input
-              type="text"
-              value={form.characterName}
-              onChange={(e) => setForm((p) => ({ ...p, characterName: e.target.value }))}
-              placeholder={t('creator.characterNamePlaceholder')}
-              maxLength={40}
-              className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 placeholder:text-outline/40 font-body"
-            />
+            <div className="flex items-end gap-2">
+              <input
+                type="text"
+                value={form.characterName}
+                onChange={(e) => setForm((p) => ({ ...p, characterName: e.target.value }))}
+                placeholder={t('creator.characterNamePlaceholder')}
+                maxLength={40}
+                className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 placeholder:text-outline/40 font-body"
+              />
+              <button
+                type="button"
+                onClick={() => setForm((p) => ({ ...p, characterName: pickRandomName(p.genre, p.characterName) }))}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary transition-colors duration-200 shrink-0"
+                title={t('creator.randomizeName')}
+              >
+                <span className="material-symbols-outlined text-base">casino</span>
+                {t('creator.randomizeName')}
+              </button>
+            </div>
           </section>
 
           {/* Story Prompt */}

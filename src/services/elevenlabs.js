@@ -1,11 +1,62 @@
+import { apiClient } from './apiClient';
+
 const BASE_URL = 'https://api.elevenlabs.io/v1';
+
+function resolveMediaUrl(url) {
+  if (!url) return null;
+  if (url.startsWith('http') || url.startsWith('blob:')) return url;
+  const base = `${apiClient.getBaseUrl()}${url}`;
+  const token = apiClient.getToken();
+  return token ? `${base}${base.includes('?') ? '&' : '?'}token=${token}` : base;
+}
+
+function parseAlignmentWords(alignment) {
+  const chars = alignment?.characters || [];
+  const startTimes = alignment?.character_start_times_seconds || [];
+  const endTimes = alignment?.character_end_times_seconds || [];
+
+  const words = [];
+  let currentWord = '';
+  let wordStart = null;
+  let wordEnd = null;
+
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === ' ' || ch === '\n' || ch === '\t') {
+      if (currentWord) {
+        words.push({ word: currentWord, start: wordStart, end: wordEnd });
+        currentWord = '';
+        wordStart = null;
+        wordEnd = null;
+      }
+    } else {
+      if (wordStart === null) wordStart = startTimes[i];
+      wordEnd = endTimes[i];
+      currentWord += ch;
+    }
+  }
+  if (currentWord) {
+    words.push({ word: currentWord, start: wordStart, end: wordEnd });
+  }
+
+  return words;
+}
 
 export const elevenlabsService = {
   async getVoices(apiKey) {
+    if (apiClient.isConnected()) {
+      const data = await apiClient.get('/proxy/elevenlabs/voices');
+      return data.voices.map((v) => ({
+        voiceId: v.voice_id,
+        name: v.name,
+        category: v.category,
+        labels: v.labels,
+        previewUrl: v.preview_url,
+      }));
+    }
+
     const response = await fetch(`${BASE_URL}/voices`, {
-      headers: {
-        'xi-api-key': apiKey,
-      },
+      headers: { 'xi-api-key': apiKey },
     });
 
     if (!response.ok) {
@@ -24,6 +75,11 @@ export const elevenlabsService = {
   },
 
   async generateSoundEffect(apiKey, text, durationSeconds = 4) {
+    if (apiClient.isConnected()) {
+      const data = await apiClient.post('/proxy/elevenlabs/sfx', { text, durationSeconds });
+      return resolveMediaUrl(data.url);
+    }
+
     const response = await fetch(`${BASE_URL}/sound-generation`, {
       method: 'POST',
       headers: {
@@ -48,6 +104,11 @@ export const elevenlabsService = {
   },
 
   async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+    if (apiClient.isConnected()) {
+      const data = await apiClient.post('/proxy/elevenlabs/tts-stream', { voiceId, text, modelId });
+      return resolveMediaUrl(data.url);
+    }
+
     const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}/stream`, {
       method: 'POST',
       headers: {
@@ -77,6 +138,13 @@ export const elevenlabsService = {
   },
 
   async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+    if (apiClient.isConnected()) {
+      const data = await apiClient.post('/proxy/elevenlabs/tts', { voiceId, text, modelId });
+      const audioUrl = resolveMediaUrl(data.url);
+      const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
+      return { audioUrl, words };
+    }
+
     const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}/with-timestamps`, {
       method: 'POST',
       headers: {
@@ -109,35 +177,7 @@ export const elevenlabsService = {
     }
     const blob = new Blob([audioArray], { type: 'audio/mpeg' });
     const audioUrl = URL.createObjectURL(blob);
-
-    const alignment = data.alignment || {};
-    const chars = alignment.characters || [];
-    const startTimes = alignment.character_start_times_seconds || [];
-    const endTimes = alignment.character_end_times_seconds || [];
-
-    const words = [];
-    let currentWord = '';
-    let wordStart = null;
-    let wordEnd = null;
-
-    for (let i = 0; i < chars.length; i++) {
-      const ch = chars[i];
-      if (ch === ' ' || ch === '\n' || ch === '\t') {
-        if (currentWord) {
-          words.push({ word: currentWord, start: wordStart, end: wordEnd });
-          currentWord = '';
-          wordStart = null;
-          wordEnd = null;
-        }
-      } else {
-        if (wordStart === null) wordStart = startTimes[i];
-        wordEnd = endTimes[i];
-        currentWord += ch;
-      }
-    }
-    if (currentWord) {
-      words.push({ word: currentWord, start: wordStart, end: wordEnd });
-    }
+    const words = parseAlignmentWords(data.alignment);
 
     return { audioUrl, words };
   },

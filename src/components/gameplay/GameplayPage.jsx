@@ -1,17 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useAI } from '../../hooks/useAI';
 import { useNarrator } from '../../hooks/useNarrator';
-import { useMusic } from '../../hooks/useMusic';
+import { useGlobalMusic } from '../../contexts/MusicContext';
 import { exportAsMarkdown } from '../../services/exportLog';
 import ScenePanel from './ScenePanel';
 import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import WorldStateModal from './WorldStateModal';
+import CostBadge from '../ui/CostBadge';
 export default function GameplayPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -19,10 +21,15 @@ export default function GameplayPage() {
   const { settings } = useSettings();
   const { generateScene, generateImageForScene } = useAI();
   const narrator = useNarrator();
-  const music = useMusic(narrator.playbackState);
+  const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
 
-  const { campaign, character, scenes, chatHistory, isGeneratingScene, isGeneratingImage, error } = state;
+  useEffect(() => {
+    setNarratorState(narrator.playbackState);
+  }, [narrator.playbackState, setNarratorState]);
+  const [worldModalOpen, setWorldModalOpen] = useState(false);
+
+  const { campaign, character, scenes, chatHistory, isGeneratingScene, isGeneratingImage, error, aiCosts } = state;
   const currentScene = scenes[scenes.length - 1] || null;
 
   useEffect(() => {
@@ -43,19 +50,6 @@ export default function GameplayPage() {
       generateImageForScene(currentScene.id, currentScene.narrative);
     }
   }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene]);
-
-  const sceneMood = currentScene?.atmosphere?.mood;
-
-  useEffect(() => {
-    if (sceneMood && settings.musicEnabled && settings.sunoApiKey && !state.isGeneratingMusic) {
-      music.ensureMusicForMood(
-        sceneMood,
-        campaign?.genre,
-        campaign?.tone,
-        currentScene?.musicPrompt
-      );
-    }
-  }, [sceneMood, settings.musicEnabled, settings.sunoApiKey, state.isGeneratingMusic, music.ensureMusicForMood, campaign?.genre, campaign?.tone, currentScene?.musicPrompt]);
 
   const handleAction = async (action) => {
     try {
@@ -86,12 +80,22 @@ export default function GameplayPage() {
               <span className="text-[10px] text-outline">{t('common.scene')} {scenes.length}</span>
             </div>
             <div className="flex items-center gap-4">
+              {aiCosts?.total > 0 && (
+                <CostBadge costs={aiCosts} />
+              )}
               {character && (
                 <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
                   <span>{character.name}</span>
                   <span>{t('common.lvl')} {character.level}</span>
                 </div>
               )}
+              <button
+                onClick={() => setWorldModalOpen(true)}
+                title={t('worldState.title')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                public
+              </button>
               <button
                 onClick={() => exportAsMarkdown(state)}
                 title={t('gameplay.exportLog')}
@@ -103,64 +107,16 @@ export default function GameplayPage() {
           </div>
         )}
 
-        {/* Music Player */}
-        {settings.musicEnabled && settings.sunoApiKey && (music.isGenerating || music.isPlaying || music.currentTrackTitle || music.error) && (
-          <div className={`flex items-center gap-3 px-3 py-2 border rounded-sm mx-2 animate-fade-in ${
-            music.error ? 'bg-error-container/20 border-error/20' : 'bg-surface-container/50 border-outline-variant/10'
-          }`}>
-            {music.error ? (
-              <>
-                <span className="material-symbols-outlined text-lg text-error">error</span>
-                <p className="flex-1 text-[10px] font-label uppercase tracking-widest text-error truncate">
-                  {music.error}
-                </p>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={music.togglePlayPause}
-                  disabled={music.isGenerating && !music.isPlaying}
-                  className="material-symbols-outlined text-lg text-primary hover:text-tertiary transition-colors disabled:opacity-30"
-                >
-                  {music.isPlaying ? 'pause' : 'play_arrow'}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant truncate">
-                    {music.isGenerating
-                      ? t('gameplay.generatingMusic')
-                      : music.currentTrackTitle || t('gameplay.musicPlaying')}
-                  </p>
-                </div>
-                {music.isGenerating && (
-                  <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>
-                )}
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={settings.musicVolume ?? 40}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    music.setVolume(v);
-                  }}
-                  className="w-16 h-1 accent-primary cursor-pointer"
-                />
-                <span className="material-symbols-outlined text-xs text-outline">
-                  {(settings.musicVolume ?? 40) === 0 ? 'volume_off' : 'volume_up'}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-
         {/* Scene Panel */}
         <ScenePanel scene={currentScene} isGeneratingImage={isGeneratingImage} highlightInfo={narrator.highlightInfo} currentSentence={narrator.currentSentence} diceRoll={currentScene?.diceRoll && !isGeneratingScene ? currentScene.diceRoll : null} />
 
-        {/* Character Quick Stats (mobile & in-game) */}
+        {/* Character Quick Stats (HP/Mana inline for mobile) */}
         {character && (
-          <div className="lg:hidden grid grid-cols-2 gap-4 px-2">
-            <StatusBar label={t('common.health')} current={character.hp} max={character.maxHp} color="error" />
-            <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
+          <div className="lg:hidden space-y-3 px-2">
+            <div className="grid grid-cols-2 gap-4">
+              <StatusBar label={t('common.health')} current={character.hp} max={character.maxHp} color="error" />
+              <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
+            </div>
           </div>
         )}
 
@@ -218,6 +174,16 @@ export default function GameplayPage() {
           autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
         />
       </aside>
+
+      {worldModalOpen && (
+        <WorldStateModal
+          world={state.world}
+          characterVoiceMap={state.characterVoiceMap}
+          characterVoices={settings.characterVoices}
+          dispatch={dispatch}
+          onClose={() => setWorldModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

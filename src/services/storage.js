@@ -1,7 +1,10 @@
+import { apiClient } from './apiClient';
+
 const CAMPAIGNS_KEY = 'obsidian_grimoire_campaigns';
 const SETTINGS_KEY = 'obsidian_grimoire_settings';
 const ACTIVE_CAMPAIGN_KEY = 'obsidian_grimoire_active';
 const MUSIC_LIBRARY_KEY = 'obsidian_grimoire_music';
+const LAST_CHARACTER_NAME_KEY = 'obsidian_grimoire_last_character_name';
 
 const TRACK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -15,7 +18,22 @@ export const storage = {
     }
   },
 
+  async getCampaignsAsync() {
+    if (apiClient.isConnected()) {
+      try {
+        return await apiClient.get('/campaigns');
+      } catch (err) {
+        console.warn('[storage] Backend getCampaigns failed, falling back to local:', err.message);
+      }
+    }
+    return this.getCampaigns();
+  },
+
   saveCampaign(gameState) {
+    if (apiClient.isConnected()) {
+      this._saveCampaignToBackend(gameState);
+    }
+
     const campaigns = this.getCampaigns();
     const idx = campaigns.findIndex((c) => c.campaign.id === gameState.campaign.id);
     const entry = {
@@ -44,6 +62,35 @@ export const storage = {
     return { saved: true, pruned: false };
   },
 
+  async _saveCampaignToBackend(gameState) {
+    try {
+      const payload = {
+        name: gameState.campaign?.name || '',
+        genre: gameState.campaign?.genre || '',
+        tone: gameState.campaign?.tone || '',
+        data: gameState,
+      };
+
+      const campaigns = await apiClient.get('/campaigns');
+      const existing = campaigns.find((c) => {
+        try {
+          return c.name === gameState.campaign?.id || c.id === gameState.campaign?.backendId;
+        } catch { return false; }
+      });
+
+      if (existing) {
+        await apiClient.put(`/campaigns/${existing.id}`, payload);
+      } else {
+        const created = await apiClient.post('/campaigns', payload);
+        if (gameState.campaign) {
+          gameState.campaign.backendId = created.id;
+        }
+      }
+    } catch (err) {
+      console.warn('[storage] Backend save failed:', err.message);
+    }
+  },
+
   _trySave(campaigns, activeCampaignId) {
     try {
       localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
@@ -60,6 +107,7 @@ export const storage = {
   _pruneForQuota(campaigns, activeCampaignId) {
     const KEEP_IMAGES = 3;
     const MAX_CHAT = 200;
+    const MAX_COMPRESSED_HISTORY = 3000;
     return campaigns.map((c) => {
       const isActive = c.campaign.id === activeCampaignId;
       const scenes = (c.scenes || []).map((s, i, arr) => {
@@ -72,7 +120,13 @@ export const storage = {
       const chatHistory = isActive
         ? (c.chatHistory || []).slice(-MAX_CHAT)
         : (c.chatHistory || []).slice(-50);
-      return { ...c, scenes, chatHistory };
+
+      let world = c.world;
+      if (world?.compressedHistory && world.compressedHistory.length > MAX_COMPRESSED_HISTORY) {
+        world = { ...world, compressedHistory: world.compressedHistory.substring(0, MAX_COMPRESSED_HISTORY) };
+      }
+
+      return { ...c, scenes, chatHistory, world };
     });
   },
 
@@ -145,6 +199,16 @@ export const storage = {
     }
     localStorage.setItem(MUSIC_LIBRARY_KEY, JSON.stringify(lib));
     return entry;
+  },
+
+  getLastCharacterName() {
+    return localStorage.getItem(LAST_CHARACTER_NAME_KEY) || '';
+  },
+
+  saveLastCharacterName(name) {
+    if (name) {
+      localStorage.setItem(LAST_CHARACTER_NAME_KEY, name);
+    }
   },
 
   exportConfig() {

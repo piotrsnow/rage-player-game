@@ -1,3 +1,5 @@
+import { apiClient } from './apiClient';
+
 const BASE_URL = import.meta.env.DEV ? '/suno-api' : 'https://api.sunoapi.org';
 
 const POLL_INTERVAL_MS = 5000;
@@ -27,6 +29,13 @@ export function buildMusicStyle(genre, tone) {
 
 export const sunoService = {
   async generateMusic(apiKey, { style, title, model = 'V4_5' }) {
+    if (apiClient.isConnected()) {
+      log('generateMusic via proxy →', { style, title, model });
+      const data = await apiClient.post('/proxy/suno/generate', { style, title, model });
+      log('generateMusic via proxy ←', { taskId: data.taskId });
+      return data.taskId;
+    }
+
     const payload = {
       customMode: true,
       instrumental: true,
@@ -70,6 +79,10 @@ export const sunoService = {
   },
 
   async getTaskStatus(apiKey, taskId) {
+    if (apiClient.isConnected()) {
+      return apiClient.get(`/proxy/suno/status/${encodeURIComponent(taskId)}`);
+    }
+
     let response;
     try {
       response = await fetch(
@@ -94,6 +107,23 @@ export const sunoService = {
     }
 
     return data.data;
+  },
+
+  async cacheTrack({ audioUrl, genre, tone, mood, style, title, duration, imageUrl }) {
+    if (!apiClient.isConnected()) return null;
+    try {
+      const data = await apiClient.post('/proxy/suno/cache-track', {
+        audioUrl, genre, tone, mood, style, title, duration, imageUrl,
+      });
+      if (data.url) {
+        const resolved = data.url.startsWith('http') ? data.url : `${apiClient.getBaseUrl()}${data.url}`;
+        return { ...data, url: resolved };
+      }
+      return data;
+    } catch (err) {
+      log('Failed to cache track:', err.message);
+      return null;
+    }
   },
 
   async pollUntilReady(apiKey, taskId, signal) {

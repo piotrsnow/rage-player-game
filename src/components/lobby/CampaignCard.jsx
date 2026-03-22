@@ -42,6 +42,11 @@ export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, 
             <span className="px-2 py-0.5 bg-surface-bright text-tertiary-dim text-[10px] font-bold border border-tertiary/10">
               {summary.tone}
             </span>
+            {summary.totalCost > 0 && (
+              <span className="px-2 py-0.5 bg-surface-bright text-on-surface-variant text-[10px] font-bold border border-outline-variant/10">
+                ${summary.totalCost.toFixed(2)}
+              </span>
+            )}
           </div>
         </div>
       </div>

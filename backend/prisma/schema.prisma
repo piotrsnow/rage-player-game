@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  apiKeys      String   @default("{}") // Encrypted JSON: { openai, anthropic, elevenlabs, stability, suno }
+  settings     String   @default("{}") // JSON blob matching frontend settings shape
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  campaigns  Campaign[]
+  mediaAssets MediaAsset[]
+}
+
+model Campaign {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String   @default("")
+  genre     String   @default("")
+  tone      String   @default("")
+  data      String   // Full game state JSON
+  lastSaved DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MediaAsset {
+  id             String   @id @default(cuid())
+  userId         String
+  key            String   @unique // Content-addressable hash key e.g. "images/a1b2c3.png"
+  type           String   // "image" | "music" | "sfx" | "tts"
+  contentType    String   // MIME type
+  size           Int      @default(0)
+  backend        String   @default("local") // "local" | "gcp"
+  path           String   // Storage path (filesystem path or GCS object name)
+  metadata       String   @default("{}") // JSON: generation params for cache lookups
+  createdAt      DateTime @default(now())
+  lastAccessedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@index([key])
+}

@@ -1,4 +1,5 @@
 import { buildImagePrompt } from './prompts';
+import { apiClient } from './apiClient';
 
 async function generateWithDalle(prompt, apiKey) {
   const response = await fetch('https://api.openai.com/v1/images/generations', {
@@ -59,13 +60,31 @@ async function generateWithStability(prompt, apiKey) {
   return `data:image/jpeg;base64,${data.image}`;
 }
 
+async function generateViaProxy(prompt, provider) {
+  if (provider === 'stability') {
+    const data = await apiClient.post('/proxy/stability/generate', { prompt });
+    return resolveMediaUrl(data.url);
+  }
+  const data = await apiClient.post('/proxy/openai/images', { prompt });
+  return resolveMediaUrl(data.url);
+}
+
+function resolveMediaUrl(url) {
+  if (!url) return null;
+  return url;
+}
+
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null) {
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
+
+    if (apiClient.isConnected()) {
+      return generateViaProxy(prompt, provider);
+    }
+
     if (!apiKey) {
       throw new Error('API key required for image generation.');
     }
-
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
 
     if (provider === 'stability') {
       return generateWithStability(prompt, apiKey);

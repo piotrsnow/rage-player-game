@@ -1,10 +1,9 @@
-export function buildSystemPrompt(gameState, dmSettings, language = 'en') {
-  const { campaign, character, world, quests, scenes } = gameState;
+export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
+  const { campaign, character, world, quests } = gameState;
 
-  const recentScenes = scenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n');
   const activeQuests = quests.active.map((q) => `- ${q.name}: ${q.description}`).join('\n') || 'None';
-  const worldFacts = world.facts.slice(-20).join('\n') || 'No known facts yet.';
-  const journal = world.eventHistory?.length > 0
+  const worldFacts = (world?.facts || []).slice(-20).join('\n') || 'No known facts yet.';
+  const journal = (world?.eventHistory || []).length > 0
     ? world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')
     : 'No entries yet.';
   const inventory = character?.inventory?.map((i) => `${i.name} (${i.type})`).join(', ') || 'Empty';
@@ -19,6 +18,57 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en') {
   const detailLabel = (dmSettings.narratorDetail ?? 50) < 25 ? 'minimal, only essential details' : (dmSettings.narratorDetail ?? 50) < 50 ? 'balanced descriptions' : (dmSettings.narratorDetail ?? 50) < 75 ? 'rich environmental detail' : 'lavishly detailed, painting every sensory element';
   const humorLabel = (dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent humor woven into narration' : 'heavily comedic, irreverent and absurdist';
   const dramaLabel = (dmSettings.narratorDrama ?? 50) < 25 ? 'understated and subtle' : (dmSettings.narratorDrama ?? 50) < 50 ? 'measured dramatic pacing' : (dmSettings.narratorDrama ?? 50) < 75 ? 'heightened drama and tension' : 'maximally theatrical, grandiose and operatic';
+
+  const npcs = world?.npcs || [];
+  const npcSection = npcs.length > 0
+    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown role'}, ${n.gender || '?'}): personality="${n.personality || '?'}", attitude=${n.attitude || 'neutral'}, location="${n.lastLocation || 'unknown'}"${n.alive === false ? ' [DEAD]' : ''}${n.notes ? ` — ${n.notes}` : ''}`).join('\n')
+    : 'No NPCs encountered yet.';
+
+  const currentLoc = world?.currentLocation || 'Unknown';
+  const mapState = world?.mapState || [];
+  const mapSection = mapState.length > 0
+    ? mapState.map((loc) => {
+        const isCurrent = loc.name?.toLowerCase() === currentLoc?.toLowerCase();
+        const mods = (loc.modifications || []).map((m) => `  · [${m.type}] ${m.description}`).join('\n');
+        return `- ${loc.name}${isCurrent ? ' ← CURRENT' : ''}${loc.description ? `: ${loc.description}` : ''}${mods ? '\n' + mods : ''}`;
+      }).join('\n')
+    : 'No locations mapped yet.';
+
+  const timeState = world?.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
+  const hour = timeState.hour ?? 6;
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  const displayHour = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  const timeSection = `Day ${timeState.day}, ${displayHour} (${timeState.timeOfDay}), Season: ${timeState.season}`;
+
+  const activeEffects = (world?.activeEffects || []).filter((e) => e.active !== false);
+  const effectsSection = activeEffects.length > 0
+    ? activeEffects.map((e) => `- [${e.type}] ${e.description} (at ${e.location || 'unknown location'}${e.placedBy ? `, by ${e.placedBy}` : ''})`).join('\n')
+    : 'No active effects.';
+
+  let sceneHistory;
+  if (enhancedContext) {
+    const parts = [];
+    if (enhancedContext.compressedHistory) {
+      parts.push(`ARCHIVED HISTORY (AI summary of earliest scenes):\n${enhancedContext.compressedHistory}`);
+    }
+    if (enhancedContext.mediumScenes?.length > 0) {
+      const medium = enhancedContext.mediumScenes
+        .map((s) => `Scene ${s.index}${s.action ? ` [Player: ${s.action}]` : ''}: ${s.summary}...`)
+        .join('\n');
+      parts.push(`EARLIER SCENES (summaries):\n${medium}`);
+    }
+    if (enhancedContext.fullScenes?.length > 0) {
+      const full = enhancedContext.fullScenes
+        .map((s) => `Scene ${s.index}${s.action ? ` [Player: ${s.action}]` : ''}:\n${s.narrative}`)
+        .join('\n\n');
+      parts.push(`RECENT SCENES (full):\n${full}`);
+    }
+    sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
+  } else {
+    const scenes = gameState.scenes || [];
+    sceneHistory = scenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n') || 'No scenes yet - this is the beginning of the story.';
+  }
 
   return `You are the Dungeon Master AI for "${campaign?.name || 'Unnamed Campaign'}".
 
@@ -50,6 +100,40 @@ CHARACTER STATE:
 - Stats: STR ${character?.stats?.str}, DEX ${character?.stats?.dex}, CON ${character?.stats?.con}, INT ${character?.stats?.int}, WIS ${character?.stats?.wis}, CHA ${character?.stats?.cha}
 - Inventory: ${inventory}
 - Statuses: ${statuses}
+${needsSystemEnabled && character?.needs ? `
+CHARACTER NEEDS (biological/physical needs — scale 0-100, 100=fully satisfied, 0=critical):
+- Hunger: ${character.needs.hunger ?? 100}/100${(character.needs.hunger ?? 100) < 15 ? ' [CRITICAL — weak, dizzy, stomach pains]' : (character.needs.hunger ?? 100) < 30 ? ' [LOW — hungry, distracted]' : ''}
+- Thirst: ${character.needs.thirst ?? 100}/100${(character.needs.thirst ?? 100) < 15 ? ' [CRITICAL — parched, cracked lips, fading]' : (character.needs.thirst ?? 100) < 30 ? ' [LOW — thirsty, dry mouth]' : ''}
+- Bladder: ${character.needs.bladder ?? 100}/100${(character.needs.bladder ?? 100) <= 0 ? ' [ACCIDENT — character has lost control!]' : (character.needs.bladder ?? 100) < 10 ? ' [CRITICAL — desperate, funny walk, about to lose control]' : (character.needs.bladder ?? 100) < 30 ? ' [LOW — uncomfortable, fidgeting]' : ''}
+- Hygiene: ${character.needs.hygiene ?? 100}/100${(character.needs.hygiene ?? 100) < 15 ? ' [CRITICAL — terrible stench, NPCs recoil]' : (character.needs.hygiene ?? 100) < 30 ? ' [LOW — smelly, NPCs wrinkle noses]' : ''}
+- Rest: ${character.needs.rest ?? 100}/100${(character.needs.rest ?? 100) <= 0 ? ' [COLLAPSE — character passes out from exhaustion]' : (character.needs.rest ?? 100) < 15 ? ' [CRITICAL — can barely keep eyes open, stumbling]' : (character.needs.rest ?? 100) < 30 ? ' [LOW — tired, yawning, slower reactions]' : ''}
+
+NEEDS SYSTEM RULES:
+- Needs decay automatically based on hours elapsed. Realistic daily rhythm: ~3 meals, ~4 drinks, ~3 bathroom breaks, ~1 bath, ~8h sleep.
+- Weave need effects naturally into the narrative when they are LOW or CRITICAL. Do NOT ignore them.
+- Below 30: mild mentions (discomfort, distraction, brief references).
+- Below 15: strong effects that actively impact the scene (weakness, funny walking, NPC reactions to smell, drowsiness).
+- At 0 for bladder: the character wets themselves — narrate the embarrassment and NPC reactions.
+- At 0 for rest: the character collapses/falls asleep involuntarily.
+- When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), use stateChanges.needsChanges to restore it.
+  Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, short nap +20-30 rest.
+- Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
+- Always include at least one suggested action related to the most urgent need when any need is below 30.
+- IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal) indicating how many in-game hours this action took (e.g. 0.25 for a quick action = 15 min, 0.5 for a short action = 30 min, 1 for exploration, 8 for sleeping).
+` : ''}
+NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
+${npcSection}
+
+CURRENT LOCATION & MAP:
+Current: ${currentLoc}
+Known locations:
+${mapSection}
+
+TIME:
+${timeSection}
+
+ACTIVE EFFECTS (traps, spells, environmental changes — check before resolving actions in a location):
+${effectsSection}
 
 WORLD KNOWLEDGE:
 ${worldFacts}
@@ -60,8 +144,8 @@ ${journal}
 ACTIVE QUESTS:
 ${activeQuests}
 
-RECENT SCENE HISTORY:
-${recentScenes || 'No scenes yet - this is the beginning of the story.'}
+SCENE HISTORY:
+${sceneHistory}
 
 LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, item names, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
@@ -76,6 +160,11 @@ INSTRUCTIONS:
 7. Make the story feel like decisions matter—actions have consequences.
 8. Balance challenge with fun based on the difficulty setting.
 9. Reference the STORY JOURNAL to recall past events, NPC encounters, unresolved threads, and consequences. Never contradict established journal entries.
+10. Reference the NPC REGISTRY for consistent characterization — use established personalities, speech patterns, and attitudes. Update NPCs via stateChanges.npcs when their status changes.
+11. Check ACTIVE EFFECTS before resolving actions in a location — traps should trigger, ongoing spells should apply their effects.
+12. ALWAYS include stateChanges.timeAdvance with "hoursElapsed" (supports decimals) — every action takes 15 minutes to 1 hour of in-game time. Quick dialogue/interaction: 0.25h (15 min), short action/combat: 0.5h (30 min), exploration/travel: 0.75-1h, resting: 2-4h, sleeping: 6-8h. Time drives the needs system.
+13. Update the player's current location via stateChanges.currentLocation when they move.
+14. If the character needs system is active, reflect low needs in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 
 CHARACTER SPEECH & LINGUISTIC IDENTITY:
 Every NPC MUST have a distinctive, recognizable way of speaking that persists across all scenes. Assign each NPC their own linguistic fingerprint by combining several of these techniques:
@@ -106,7 +195,9 @@ SCENE IMAGE PROMPT:
 Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}) {
+  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", and quest names/descriptions in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
+
   if (isFirstScene) {
     return `Generate the opening scene of this campaign. Set the stage with an atmospheric description that draws the player in.
 
@@ -129,10 +220,17 @@ Respond with ONLY valid JSON in this exact format:
   },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
   "stateChanges": {
-    "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"]
+    "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": ""}],
+    "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
+    "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
+    "activeEffects": [],
+    "currentLocation": "Location Name"${needsSystemEnabled ? ',\n    "needsChanges": null' : ''}
   },
   "diceRoll": null
 }
+${needsSystemEnabled ? '\nFor stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Use null if no needs changed.\n' : ''}
+For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour: quick interaction=0.25, short action/combat=0.5, exploration=0.75-1. Only resting (2-4) and sleeping (6-8) should exceed 1 hour.
 
 For stateChanges.journalEntries: provide 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant player decisions, discoveries, or combat outcomes. Each entry should be a self-contained 1-2 sentence summary. Do NOT log trivial details.
 
@@ -142,7 +240,7 @@ For musicPrompt: describe the ideal instrumental background music — mention in
 
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.${langReminder}`;
   }
 
   return `The player chose: "${playerAction}"
@@ -179,7 +277,12 @@ Respond with ONLY valid JSON in this exact format:
     "completedQuests": [],
     "worldFacts": [],
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
-    "statuses": null
+    "statuses": null,
+    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes"}],
+    "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
+    "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
+    "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
+    "currentLocation": "Current Location Name"${needsSystemEnabled ? ',\n    "needsChanges": null' : ''}
   },
   "diceRoll": null
 }
@@ -190,9 +293,15 @@ For diceRoll, use null if no roll needed, or: {"type": "D20", "roll": <number 1-
 
 For stateChanges: hp/mana/xp are DELTAS (can be negative). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+For stateChanges.mapChanges: log environmental changes to locations (traps set, doors opened, items left, destruction). type is one of: trap, obstacle, discovery, destruction, other.
+For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
+For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
+For stateChanges.currentLocation: update whenever the player moves to a new location.
+${needsSystemEnabled ? 'For stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, using a toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, nap +20-30 rest. Use null if no needs changed.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${langReminder}`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {
@@ -212,6 +321,7 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
 - Campaign Length: ${settings.length}
 ${characterNameLine}
 - Player's story idea: "${settings.storyPrompt}"
+${langInstruction}
 
 Generate the campaign foundation. Respond with ONLY valid JSON:
 {
@@ -246,7 +356,7 @@ Generate the campaign foundation. Respond with ONLY valid JSON:
     "description": "Brief quest description"
   },
   "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"]
-}${langInstruction}`;
+}`;
 }
 
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {
@@ -284,6 +394,7 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildRecapPrompt() {
-  return `Based on the scene history in the system context, generate a brief "Previously on..." recap summarizing the key events, decisions, and their consequences. Write it in a dramatic, narrative style (2-3 sentences). Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
+export function buildRecapPrompt(language = 'en') {
+  const langNote = language === 'pl' ? ' Write the recap in Polish.' : '';
+  return `Based on the scene history in the system context, generate a brief "Previously on..." recap summarizing the key events, decisions, and their consequences. Write it in a dramatic, narrative style (2-3 sentences).${langNote} Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
 }

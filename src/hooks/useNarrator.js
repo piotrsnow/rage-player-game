@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useGame } from '../contexts/GameContext';
 import { elevenlabsService } from '../services/elevenlabs';
+import { calculateCost } from '../services/costTracker';
 
 const STATES = {
   IDLE: 'idle',
@@ -138,6 +139,7 @@ export function useNarrator() {
         result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentence);
       }
 
+      dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: sentence.length }) });
       objectUrlsRef.current.push(result.audioUrl);
       if (abortRef.current) break;
 
@@ -167,7 +169,7 @@ export function useNarrator() {
       stopHighlightLoop();
       audioRef.current = null;
     }
-  }, [startHighlightLoop, stopHighlightLoop]);
+  }, [startHighlightLoop, stopHighlightLoop, dispatch]);
 
   const processQueue = useCallback(async () => {
     if (queueRef.current.length === 0) {
@@ -199,6 +201,7 @@ export function useNarrator() {
       if (sfxEnabled && soundEffect) {
         try {
           const sfxUrl = await elevenlabsService.generateSoundEffect(elevenlabsApiKey, soundEffect, 4);
+          dispatch({ type: 'ADD_AI_COST', payload: calculateCost('sfx', {}) });
           objectUrlsRef.current.push(sfxUrl);
 
           if (!abortRef.current) {

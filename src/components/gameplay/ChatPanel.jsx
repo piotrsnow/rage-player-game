@@ -163,6 +163,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false })
   const prevMessageCount = useRef(messages.length);
 
   useEffect(() => {
+    if (messages.length <= 1) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 

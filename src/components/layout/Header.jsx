@@ -1,15 +1,35 @@
+import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useSettings } from '../../contexts/SettingsContext';
+import { useGlobalMusic } from '../../contexts/MusicContext';
 
 export default function Header() {
   const location = useLocation();
   const { t } = useTranslation();
+  const { settings } = useSettings();
+  const music = useGlobalMusic();
+
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const volumeRef = useRef(null);
+
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (volumeRef.current && !volumeRef.current.contains(e.target)) {
+        setVolumeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const navLinks = [
     { path: '/', label: t('nav.lobby') },
     { path: '/play', label: t('nav.grimoire') },
     { path: '/character', label: t('nav.armory') },
   ];
+
+  const vol = settings.musicVolume ?? 40;
 
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0e0e10]/80 backdrop-blur-xl border-b border-[#48474a]/15 flex justify-between items-center px-6 h-16">
@@ -34,6 +54,54 @@ export default function Header() {
             </Link>
           ))}
         </nav>
+
+        {/* Global Music Controls */}
+        {settings.localMusicEnabled && music.hasMusic && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={music.togglePlayPause}
+              className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+              title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
+            >
+              {music.isPlaying ? 'pause' : 'play_arrow'}
+            </button>
+            <button
+              onClick={music.skip}
+              className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+              title={t('gameplay.musicSkip', 'Next')}
+            >
+              skip_next
+            </button>
+            <div className="relative" ref={volumeRef}>
+              <button
+                onClick={() => setVolumeOpen((v) => !v)}
+                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+                title={t('settings.musicVolume', 'Volume')}
+              >
+                {vol === 0 ? 'volume_off' : vol < 40 ? 'volume_down' : 'volume_up'}
+              </button>
+              {volumeOpen && (
+                <div className="absolute right-0 top-full mt-2 px-3 py-2 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl flex items-center gap-2 animate-fade-in">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={vol}
+                    onChange={(e) => music.setVolume(Number(e.target.value))}
+                    className="w-24 h-1 accent-primary cursor-pointer"
+                  />
+                  <span className="text-[10px] text-on-surface-variant font-mono w-7 text-right">{vol}%</span>
+                </div>
+              )}
+            </div>
+            {music.currentTrack && (
+              <span className="hidden lg:block text-[10px] font-label uppercase tracking-widest text-on-surface-variant/60 truncate max-w-[120px]">
+                {music.currentTrack.name}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <Link
             to="/play"

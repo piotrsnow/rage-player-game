@@ -3,6 +3,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useGame } from '../contexts/GameContext';
 import { sunoService, buildMusicStyle } from '../services/suno';
 import { storage } from '../services/storage';
+import { calculateCost } from '../services/costTracker';
 
 const CROSSFADE_MS = 3000;
 const DUCK_VOLUME_RATIO = 0.2;
@@ -184,9 +185,20 @@ export function useMusic(narratorPlaybackState) {
           duration: result.duration,
           imageUrl: result.imageUrl,
         });
+
+        const cacheResult = await sunoService.cacheTrack({
+          audioUrl: result.audioUrl,
+          genre, tone, mood, style,
+          title: result.title,
+          duration: result.duration,
+          imageUrl: result.imageUrl,
+        });
+
+        const playUrl = cacheResult?.url || result.audioUrl;
         log('Saved to library & playing:', result.title, `(${result.duration}s)`);
-        crossfadeTo(result.audioUrl);
+        crossfadeTo(playUrl);
         setCurrentTrackTitle(result.title || title);
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('music', {}) });
       }
     } catch (err) {
       if (err.name !== 'AbortError') {

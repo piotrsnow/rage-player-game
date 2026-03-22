@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../services/storage';
+import { apiClient } from '../services/apiClient';
 
 const SettingsContext = createContext(null);
 
@@ -27,6 +28,10 @@ const defaultSettings = {
   musicEnabled: false,
   musicVolume: 40,
   sunoModel: 'V4_5',
+  localMusicEnabled: true,
+  needsSystemEnabled: false,
+  backendUrl: '',
+  useBackend: false,
   dmSettings: {
     narrativeStyle: 50,
     responseLength: 50,
@@ -51,6 +56,14 @@ export function SettingsProvider({ children }) {
   useEffect(() => {
     storage.saveSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    if (settings.backendUrl && settings.useBackend) {
+      apiClient.configure({ baseUrl: settings.backendUrl });
+    } else {
+      apiClient.configure({ baseUrl: '', token: '' });
+    }
+  }, [settings.backendUrl, settings.useBackend]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {

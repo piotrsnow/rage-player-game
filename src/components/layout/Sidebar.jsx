@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import StatusBar from '../ui/StatusBar';
+import NeedsPanel from '../gameplay/NeedsPanel';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -34,6 +35,9 @@ export default function Sidebar() {
           <div className="space-y-3">
             <StatusBar label={t('common.health')} current={character.hp} max={character.maxHp} color="error" />
             <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
+          </div>
+          <div className="mt-4">
+            <NeedsPanel needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }} timeState={state.world?.timeState} />
           </div>
         </div>
       )}

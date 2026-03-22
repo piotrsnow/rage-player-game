@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { elevenlabsService } from '../../services/elevenlabs';
+import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import Slider from '../ui/Slider';
 import Button from '../ui/Button';
@@ -28,6 +29,100 @@ export default function DMSettingsPage() {
   const [testingVoice, setTestingVoice] = useState(false);
   const [importStatus, setImportStatus] = useState(null);
   const fileInputRef = useRef(null);
+
+  const [backendUrl, setBackendUrl] = useState(settings.backendUrl || '');
+  const [backendEmail, setBackendEmail] = useState('');
+  const [backendPassword, setBackendPassword] = useState('');
+  const [backendLoading, setBackendLoading] = useState(false);
+  const [backendError, setBackendError] = useState(null);
+  const [backendSuccess, setBackendSuccess] = useState(null);
+  const [backendUser, setBackendUser] = useState(null);
+  const [cacheStats, setCacheStats] = useState(null);
+
+  const loadBackendUser = useCallback(async () => {
+    if (!apiClient.isConnected()) return;
+    try {
+      const user = await apiClient.get('/auth/me');
+      setBackendUser(user);
+    } catch {
+      setBackendUser(null);
+    }
+  }, []);
+
+  const loadCacheStats = useCallback(async () => {
+    if (!apiClient.isConnected()) return;
+    try {
+      const stats = await apiClient.get('/media/stats/summary');
+      setCacheStats(stats);
+    } catch {
+      setCacheStats(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (settings.useBackend && settings.backendUrl) {
+      apiClient.configure({ baseUrl: settings.backendUrl });
+      loadBackendUser();
+      loadCacheStats();
+    }
+  }, [settings.useBackend, settings.backendUrl, loadBackendUser, loadCacheStats]);
+
+  const handleBackendLogin = async () => {
+    setBackendLoading(true);
+    setBackendError(null);
+    setBackendSuccess(null);
+    try {
+      apiClient.configure({ baseUrl: backendUrl });
+      const data = await apiClient.login(backendEmail, backendPassword);
+      updateSettings({ backendUrl: backendUrl, useBackend: true });
+      setBackendUser(data.user);
+      setBackendSuccess(t('settings.backendLoginSuccess'));
+      setBackendPassword('');
+      loadCacheStats();
+    } catch (err) {
+      setBackendError(err.message);
+    } finally {
+      setBackendLoading(false);
+    }
+  };
+
+  const handleBackendRegister = async () => {
+    setBackendError(null);
+    setBackendSuccess(null);
+    if (backendPassword.length < 6) {
+      setBackendError(t('settings.backendPasswordTooShort'));
+      return;
+    }
+    setBackendLoading(true);
+    try {
+      apiClient.configure({ baseUrl: backendUrl });
+      const data = await apiClient.register(backendEmail, backendPassword);
+      updateSettings({ backendUrl: backendUrl, useBackend: true });
+      setBackendUser(data.user);
+      setBackendSuccess(t('settings.backendRegisterSuccess'));
+      setBackendPassword('');
+    } catch (err) {
+      setBackendError(err.message);
+    } finally {
+      setBackendLoading(false);
+    }
+  };
+
+  const handleBackendLogout = () => {
+    apiClient.logout();
+    updateSettings({ useBackend: false });
+    setBackendUser(null);
+    setCacheStats(null);
+    setBackendSuccess(null);
+  };
+
+  const formatBytes = (bytes) => {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  };
 
   const handleExportConfig = () => {
     storage.exportConfig();
@@ -64,12 +159,29 @@ export default function DMSettingsPage() {
     });
   }, [settings.openaiApiKey, settings.anthropicApiKey, settings.stabilityApiKey]);
 
-  const handleApply = () => {
+  const handleApply = async () => {
     updateSettings({
       openaiApiKey: localKeys.openaiApiKey,
       anthropicApiKey: localKeys.anthropicApiKey,
       stabilityApiKey: localKeys.stabilityApiKey,
     });
+
+    if (apiClient.isConnected()) {
+      try {
+        await apiClient.put('/auth/settings', {
+          apiKeys: {
+            openai: localKeys.openaiApiKey || '',
+            anthropic: localKeys.anthropicApiKey || '',
+            stability: localKeys.stabilityApiKey || '',
+            elevenlabs: elevenlabsKey || '',
+            suno: sunoKey || '',
+          },
+        });
+      } catch {
+        // local save still succeeds
+      }
+    }
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -366,6 +478,31 @@ export default function DMSettingsPage() {
                 <div
                   className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
                     settings.canvasEffectsEnabled !== false
+                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                      : 'left-1 bg-on-surface-variant'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+              <div>
+                <p className="font-headline text-tertiary">{t('settings.needsSystem')}</p>
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                  {t('settings.needsSystemDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => updateSettings({ needsSystemEnabled: !settings.needsSystemEnabled })}
+                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                  settings.needsSystemEnabled
+                    ? 'bg-primary-dim/20 border-primary/30'
+                    : 'bg-surface-container-highest border-outline-variant/30'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                    settings.needsSystemEnabled
                       ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
                       : 'left-1 bg-on-surface-variant'
                   }`}
@@ -671,32 +808,32 @@ export default function DMSettingsPage() {
             )}
           </div>
 
-          {/* Background Music Section */}
+          {/* Background Music Section (Local MP3) */}
           <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
             <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
               <span className="material-symbols-outlined text-primary-dim">music_note</span>
               {t('settings.musicTitle')}
             </h2>
-            <p className="text-xs text-on-surface-variant mb-6">{t('settings.musicDesc')}</p>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.localMusicDesc')}</p>
 
             <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
               <div>
-                <p className="font-headline text-tertiary text-sm">{t('settings.musicEnabled')}</p>
+                <p className="font-headline text-tertiary text-sm">{t('settings.localMusicEnabled')}</p>
                 <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                  {t('settings.musicEnabledDesc')}
+                  {t('settings.localMusicEnabledDesc')}
                 </p>
               </div>
               <button
-                onClick={() => updateSettings({ musicEnabled: !settings.musicEnabled })}
+                onClick={() => updateSettings({ localMusicEnabled: !settings.localMusicEnabled })}
                 className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                  settings.musicEnabled
+                  settings.localMusicEnabled
                     ? 'bg-primary-dim/20 border-primary/30'
                     : 'bg-surface-container-highest border-outline-variant/30'
                 }`}
               >
                 <div
                   className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                    settings.musicEnabled
+                    settings.localMusicEnabled
                       ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
                       : 'left-1 bg-on-surface-variant'
                   }`}
@@ -704,59 +841,14 @@ export default function DMSettingsPage() {
               </button>
             </div>
 
-            {settings.musicEnabled && (
-              <>
-                <div className="mb-6">
-                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                    {t('settings.sunoApiKey')}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={sunoKey}
-                      onChange={(e) => setSunoKey(e.target.value)}
-                      placeholder="Bearer token..."
-                      className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
-                    />
-                    <button
-                      onClick={() => updateSettings({ sunoApiKey: sunoKey })}
-                      disabled={!sunoKey.trim()}
-                      className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
-                    >
-                      {t('common.save')}
-                    </button>
-                  </div>
-                </div>
-
-                <Slider
-                  label={t('settings.musicVolume')}
-                  description={t('settings.musicVolumeDesc')}
-                  value={settings.musicVolume ?? 40}
-                  onChange={(v) => updateSettings({ musicVolume: v })}
-                  displayValue={`${settings.musicVolume ?? 40}%`}
-                />
-
-                <div className="mt-6">
-                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                    {t('settings.sunoModel')}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {['V4', 'V4_5', 'V4_5ALL', 'V4_5PLUS', 'V5'].map((model) => (
-                      <button
-                        key={model}
-                        onClick={() => updateSettings({ sunoModel: model })}
-                        className={`px-4 py-2 rounded-sm border text-center transition-all text-xs font-headline ${
-                          (settings.sunoModel || 'V4_5') === model
-                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                        }`}
-                      >
-                        {model.replace(/_/g, '.')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
+            {settings.localMusicEnabled && (
+              <Slider
+                label={t('settings.musicVolume')}
+                description={t('settings.musicVolumeDesc')}
+                value={settings.musicVolume ?? 40}
+                onChange={(v) => updateSettings({ musicVolume: v })}
+                displayValue={`${settings.musicVolume ?? 40}%`}
+              />
             )}
           </div>
         </section>
@@ -874,6 +966,136 @@ export default function DMSettingsPage() {
                 <p className="text-[10px] text-on-surface-variant mt-2">
                   {t('settings.stabilityApiKeyDesc')}
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* Backend Server */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">cloud</span>
+              {t('settings.backendTitle')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.backendDesc')}</p>
+
+            {backendUser ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
+                  <div>
+                    <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                      {t('settings.backendLoggedInAs')}
+                    </p>
+                    <p className="font-headline text-tertiary text-sm">{backendUser.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.8)]" />
+                    <span className="text-xs text-primary font-headline">{t('settings.backendConnected')}</span>
+                  </div>
+                </div>
+
+                {cacheStats && (
+                  <div className="p-4 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
+                    <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                      {t('settings.cacheStats')}
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-on-surface-variant">{t('settings.cacheTotal')}: </span>
+                        <span className="text-tertiary font-headline">{cacheStats.total}</span>
+                      </div>
+                      <div>
+                        <span className="text-on-surface-variant">{t('settings.cacheSize')}: </span>
+                        <span className="text-tertiary font-headline">{formatBytes(cacheStats.totalSize)}</span>
+                      </div>
+                      {cacheStats.byType && Object.entries(cacheStats.byType).map(([type, data]) => (
+                        <div key={type}>
+                          <span className="text-on-surface-variant">
+                            {t(`settings.cache${type.charAt(0).toUpperCase() + type.slice(1)}`, type)}:
+                          </span>{' '}
+                          <span className="text-tertiary font-headline">
+                            {data.count} ({formatBytes(data.size)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleBackendLogout}
+                  className="w-full p-3 rounded-sm border border-error/20 text-error text-xs font-headline uppercase tracking-widest hover:bg-error/10 transition-all"
+                >
+                  {t('settings.backendLogout')}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.backendUrl')}
+                  </label>
+                  <input
+                    type="text"
+                    value={backendUrl}
+                    onChange={(e) => setBackendUrl(e.target.value)}
+                    placeholder={t('settings.backendUrlPlaceholder')}
+                    className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.backendEmail')}
+                  </label>
+                  <input
+                    type="email"
+                    value={backendEmail}
+                    onChange={(e) => setBackendEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.backendPassword')}
+                  </label>
+                  <input
+                    type="password"
+                    value={backendPassword}
+                    onChange={(e) => setBackendPassword(e.target.value)}
+                    placeholder="••••••"
+                    minLength={6}
+                    className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30"
+                  />
+                  <p className="text-[10px] text-on-surface-variant mt-1">{t('settings.backendPasswordHint')}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleBackendLogin}
+                    disabled={backendLoading || !backendUrl || !backendEmail || !backendPassword}
+                    className="flex-1 p-3 rounded-sm border bg-surface-tint/10 border-primary/30 text-primary text-xs font-headline uppercase tracking-widest hover:bg-surface-tint/20 transition-all disabled:opacity-30"
+                  >
+                    {backendLoading ? t('common.loading') : t('settings.backendLogin')}
+                  </button>
+                  <button
+                    onClick={handleBackendRegister}
+                    disabled={backendLoading || !backendUrl || !backendEmail || !backendPassword}
+                    className="flex-1 p-3 rounded-sm border border-outline-variant/15 text-on-surface-variant text-xs font-headline uppercase tracking-widest hover:border-primary/20 hover:text-primary transition-all disabled:opacity-30"
+                  >
+                    {t('settings.backendRegister')}
+                  </button>
+                </div>
+                {backendError && (
+                  <div className="flex items-center gap-2 p-3 rounded-sm bg-error/10 border border-error/20 text-error text-xs font-headline">
+                    <span className="material-symbols-outlined text-sm">error</span>
+                    {backendError}
+                  </div>
+                )}
+                {backendSuccess && (
+                  <div className="flex items-center gap-2 p-3 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs font-headline">
+                    <span className="material-symbols-outlined text-sm">check_circle</span>
+                    {backendSuccess}
+                  </div>
+                )}
               </div>
             )}
           </div>
