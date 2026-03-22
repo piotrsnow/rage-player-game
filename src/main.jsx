@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { GameProvider } from './contexts/GameContext';
 import { SettingsProvider } from './contexts/SettingsContext';
+import { MultiplayerProvider } from './contexts/MultiplayerContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import './i18n';
 import './index.css';
@@ -13,9 +14,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <BrowserRouter>
         <SettingsProvider>
-          <GameProvider>
-            <App />
-          </GameProvider>
+          <MultiplayerProvider>
+            <GameProvider>
+              <App />
+            </GameProvider>
+          </MultiplayerProvider>
         </SettingsProvider>
       </BrowserRouter>
     </ErrorBoundary>

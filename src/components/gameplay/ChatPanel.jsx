@@ -131,14 +131,19 @@ function DmMessage({ message, narrator }) {
   );
 }
 
-function PlayerMessage({ message }) {
+function PlayerMessage({ message, isMe }) {
   const { t } = useTranslation();
+  const displayName = message.playerName || t('chat.you');
   return (
-    <div className="flex flex-col gap-2 items-end animate-fade-in">
+    <div className={`flex flex-col gap-2 animate-fade-in ${isMe !== false ? 'items-end' : 'items-start'}`}>
       <div className="text-[10px] font-bold text-tertiary-dim uppercase tracking-widest">
-        {t('chat.you')} · {formatTimestamp(message.timestamp)}
+        {displayName} · {formatTimestamp(message.timestamp)}
       </div>
-      <div className="bg-surface-container-high/40 p-4 border-r-2 border-tertiary-dim rounded-l-lg max-w-[90%]">
+      <div className={`p-4 max-w-[90%] ${
+        isMe !== false
+          ? 'bg-surface-container-high/40 border-r-2 border-tertiary-dim rounded-l-lg'
+          : 'bg-surface-container-high/25 border-l-2 border-tertiary-dim/50 rounded-r-lg'
+      }`}>
         <p className="text-sm text-on-surface leading-relaxed">{message.content}</p>
       </div>
     </div>
@@ -157,7 +162,7 @@ function SystemMessage({ message }) {
   );
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false }) {
+export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null }) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
   const prevMessageCount = useRef(messages.length);
@@ -226,7 +231,10 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false })
         )}
         {messages.map((msg) => {
           if (msg.role === 'dm') return <DmMessage key={msg.id} message={msg} narrator={narrator} />;
-          if (msg.role === 'player') return <PlayerMessage key={msg.id} message={msg} />;
+          if (msg.role === 'player') {
+            const isMe = myOdId ? msg.odId === myOdId : true;
+            return <PlayerMessage key={msg.id} message={msg} isMe={isMe} />;
+          }
           return <SystemMessage key={msg.id} message={msg} />;
         })}
         <div ref={bottomRef} />

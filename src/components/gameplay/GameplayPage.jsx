@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
@@ -14,29 +15,47 @@ import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import WorldStateModal from './WorldStateModal';
 import CostBadge from '../ui/CostBadge';
+
 export default function GameplayPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
   const { settings } = useSettings();
+  const mp = useMultiplayer();
   const { generateScene, generateImageForScene } = useAI();
   const narrator = useNarrator();
   const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
+
+  const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const mpGameState = mp.state.gameState;
 
   useEffect(() => {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
 
-  const { campaign, character, scenes, chatHistory, isGeneratingScene, isGeneratingImage, error, aiCosts } = state;
+  const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+  const character = isMultiplayer
+    ? mpGameState?.characters?.find((c) => {
+        const myPlayer = mp.state.players?.find((p) => p.odId === mp.state.myOdId);
+        return c.playerName === myPlayer?.name || c.name === myPlayer?.name;
+      }) || mpGameState?.characters?.[0]
+    : state.character;
+  const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
+  const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
+  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
+  const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
+  const isGeneratingImage = state.isGeneratingImage;
+  const error = isMultiplayer ? mp.state.error : state.error;
+  const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
 
   useEffect(() => {
-    if (!campaign) {
+    if (!campaign && !isMultiplayer) {
       navigate('/');
     }
-  }, [campaign, navigate]);
+  }, [campaign, isMultiplayer, navigate]);
 
   useEffect(() => {
     if (
@@ -83,12 +102,18 @@ export default function GameplayPage() {
               {aiCosts?.total > 0 && (
                 <CostBadge costs={aiCosts} />
               )}
-              {character && (
+              {isMultiplayer && allCharacters.length > 0 ? (
+                <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
+                  {allCharacters.map((c) => (
+                    <span key={c.name}>{c.name} HP:{c.hp}/{c.maxHp}</span>
+                  ))}
+                </div>
+              ) : character ? (
                 <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
                   <span>{character.name}</span>
                   <span>{t('common.lvl')} {character.level}</span>
                 </div>
-              )}
+              ) : null}
               <button
                 onClick={() => setWorldModalOpen(true)}
                 title={t('worldState.title')}
@@ -172,6 +197,7 @@ export default function GameplayPage() {
           messages={chatHistory}
           narrator={settings.narratorEnabled ? narrator : null}
           autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
+          myOdId={isMultiplayer ? mp.state.myOdId : null}
         />
       </aside>
 

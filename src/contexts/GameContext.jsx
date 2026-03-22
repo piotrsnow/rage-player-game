@@ -47,6 +47,7 @@ function createDefaultCharacter() {
 const initialState = {
   campaign: null,
   character: null,
+  characters: [],
   world: {
     locations: [],
     facts: [],

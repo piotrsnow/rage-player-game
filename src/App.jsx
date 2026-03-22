@@ -5,6 +5,7 @@ import CampaignCreatorPage from './components/creator/CampaignCreatorPage';
 import GameplayPage from './components/gameplay/GameplayPage';
 import CharacterSheet from './components/character/CharacterSheet';
 import DMSettingsPage from './components/settings/DMSettingsPage';
+import JoinRoomPage from './components/multiplayer/JoinRoomPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/play" element={<GameplayPage />} />
         <Route path="/character" element={<CharacterSheet />} />
         <Route path="/settings" element={<DMSettingsPage />} />
+        <Route path="/join/:code?" element={<JoinRoomPage />} />
       </Route>
     </Routes>
   );

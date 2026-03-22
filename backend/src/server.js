@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import websocket from '@fastify/websocket';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
@@ -11,6 +12,7 @@ import { elevenlabsProxyRoutes } from './routes/proxy/elevenlabs.js';
 import { stabilityProxyRoutes } from './routes/proxy/stability.js';
 import { sunoProxyRoutes } from './routes/proxy/suno.js';
 import { musicRoutes } from './routes/music.js';
+import { multiplayerRoutes } from './routes/multiplayer.js';
 
 const fastify = Fastify({
   logger: true,
@@ -19,6 +21,7 @@ const fastify = Fastify({
 
 await fastify.register(corsPlugin);
 await fastify.register(authPlugin);
+await fastify.register(websocket);
 
 fastify.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
@@ -31,6 +34,7 @@ await fastify.register(elevenlabsProxyRoutes, { prefix: '/proxy/elevenlabs' });
 await fastify.register(stabilityProxyRoutes, { prefix: '/proxy/stability' });
 await fastify.register(sunoProxyRoutes, { prefix: '/proxy/suno' });
 await fastify.register(musicRoutes, { prefix: '/music' });
+await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
 
 try {
   await fastify.listen({ port: config.port, host: config.host });
