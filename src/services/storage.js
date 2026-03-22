@@ -1,11 +1,11 @@
 import { apiClient } from './apiClient';
 
-const CAMPAIGNS_KEY = 'obsidian_grimoire_campaigns';
-const SETTINGS_KEY = 'obsidian_grimoire_settings';
-const ACTIVE_CAMPAIGN_KEY = 'obsidian_grimoire_active';
-const MUSIC_LIBRARY_KEY = 'obsidian_grimoire_music';
-const LAST_CHARACTER_NAME_KEY = 'obsidian_grimoire_last_character_name';
-const CHARACTERS_KEY = 'obsidian_grimoire_characters';
+const CAMPAIGNS_KEY = 'nikczemny_krzemuch_campaigns';
+const SETTINGS_KEY = 'nikczemny_krzemuch_settings';
+const ACTIVE_CAMPAIGN_KEY = 'nikczemny_krzemuch_active';
+const MUSIC_LIBRARY_KEY = 'nikczemny_krzemuch_music';
+const LAST_CHARACTER_NAME_KEY = 'nikczemny_krzemuch_last_character_name';
+const CHARACTERS_KEY = 'nikczemny_krzemuch_characters';
 
 const TRACK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -347,7 +347,7 @@ export const storage = {
   exportConfig() {
     const payload = {
       _meta: {
-        app: 'obsidian_grimoire',
+        app: 'nikczemny_krzemuch',
         version: 1,
         exportedAt: new Date().toISOString(),
       },
@@ -361,7 +361,7 @@ export const storage = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `obsidian-grimoire-config-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `nikczemny-krzemuch-config-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -374,7 +374,7 @@ export const storage = {
       reader.onload = (e) => {
         try {
           const data = JSON.parse(e.target.result);
-          if (!data._meta || data._meta.app !== 'obsidian_grimoire') {
+          if (!data._meta || data._meta.app !== 'nikczemny_krzemuch') {
             reject(new Error('Invalid config file'));
             return;
           }

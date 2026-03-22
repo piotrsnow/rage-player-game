@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-
-const prisma = new PrismaClient();
 
 export async function anthropicProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);

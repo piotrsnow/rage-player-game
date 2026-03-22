@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   CHARACTERISTIC_KEYS,
   SKILLS,
@@ -19,6 +20,7 @@ import {
   getSkillCharacteristic,
 } from '../../data/wfrp';
 import { getBonus } from '../../services/gameState';
+import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
 
 const TABS = ['characteristics', 'skills', 'talents', 'career'];
 
@@ -136,7 +138,7 @@ function SkillsTab({ character, availableXp, dispatch }) {
           >
             <div className="flex items-center gap-2 min-w-0">
               {inCareer && <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0" />}
-              <span className="text-on-surface-variant truncate">{skillName}</span>
+              <span className="text-on-surface-variant truncate">{translateSkill(skillName, t)}</span>
               <span className="text-[9px] text-outline uppercase">({t(`stats.${charKey}`)})</span>
             </div>
             <div className="flex items-center gap-3 shrink-0">
@@ -184,7 +186,7 @@ function TalentsTab({ character, availableXp, dispatch }) {
             <div className="flex items-center gap-2 min-w-0">
               {inCareer && <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0" />}
               <span className={`truncate ${isOwned ? 'text-tertiary' : 'text-on-surface-variant'}`}>
-                {talent}
+                {translateTalent(talent, t)}
               </span>
               {isOwned && (
                 <span className="text-[8px] text-green-400 uppercase font-bold">{t('advancement.owned')}</span>
@@ -262,7 +264,7 @@ function CareerTab({ character, availableXp, dispatch }) {
                   : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/10 hover:border-primary/20'
               }`}
             >
-              {cls}
+              {t(`careerClasses.${cls}`, { defaultValue: cls })}
             </button>
           ))}
         </div>
@@ -317,6 +319,7 @@ export default function AdvancementPanel({ onClose }) {
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
   const [activeTab, setActiveTab] = useState('characteristics');
+  const modalRef = useModalA11y(onClose);
   const character = state.character;
 
   if (!character) return null;
@@ -331,8 +334,8 @@ export default function AdvancementPanel({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface-container-low border border-outline-variant/15 rounded-sm w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl mx-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('advancement.title')}>
+      <div ref={modalRef} className="bg-surface-container-low border border-outline-variant/15 rounded-sm w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
           <div>
@@ -349,6 +352,7 @@ export default function AdvancementPanel({ onClose }) {
           </div>
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors"
           >
             close

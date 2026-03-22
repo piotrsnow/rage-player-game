@@ -10,6 +10,7 @@ import {
   randomizeSkills, randomizeTalents, randomizeFullCharacter,
   generateStartingMoney,
 } from '../../services/gameState';
+import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
 
 function SectionHeader({ icon, label, onRandomize }) {
   return (
@@ -360,7 +361,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 {availableSkills.map((skill) => (
                   <div key={skill} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
-                    <span className="text-xs text-on-surface truncate pr-2">{skill}</span>
+                    <span className="text-xs text-on-surface truncate pr-2">{translateSkill(skill, t)}</span>
                     <input
                       type="number"
                       min={0}
@@ -399,7 +400,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                           : 'bg-surface-container-high/30 border-outline-variant/10 text-on-surface-variant hover:border-primary/20'
                       }`}
                     >
-                      {talent}
+                      {translateTalent(talent, t)}
                     </button>
                   );
                 })}

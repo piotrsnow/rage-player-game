@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import bcrypt from 'bcrypt';
 import { resolveApiKey } from '../services/apiKeyService.js';
-
-const prisma = new PrismaClient();
 const SALT_ROUNDS = 12;
 
 export async function authRoutes(fastify) {

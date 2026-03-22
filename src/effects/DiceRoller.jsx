@@ -195,6 +195,19 @@ const BURST_DURATION = 0.5;
 /*  DiceRoller React component                                         */
 /* ------------------------------------------------------------------ */
 
+const DICE_SOUND_COUNT = 8;
+const diceSounds = Array.from({ length: DICE_SOUND_COUNT }, (_, i) => {
+  const a = new Audio(`/sfx/dice-roll-${i + 1}.mp3`);
+  a.preload = 'auto';
+  return a;
+});
+
+function playRandomDiceSound() {
+  const sound = diceSounds[Math.floor(Math.random() * diceSounds.length)];
+  sound.currentTime = 0;
+  sound.play().catch(() => {});
+}
+
 export default function DiceRoller({ diceRoll, onComplete }) {
   const canvasRef = useRef(null);
   const animRef = useRef(null);
@@ -203,6 +216,8 @@ export default function DiceRoller({ diceRoll, onComplete }) {
   const startAnimation = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !diceRoll) return;
+
+    playRandomDiceSound();
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -358,7 +373,7 @@ export default function DiceRoller({ diceRoll, onComplete }) {
         <div className="absolute bottom-0 left-0 right-0 flex justify-center animate-fade-in pointer-events-none">
           <div className="text-center">
             <p
-              className={`text-xs font-bold tracking-widest uppercase ${
+              className={`text-sm font-bold tracking-widest uppercase ${
                 diceRoll.success ? 'text-primary' : 'text-error'
               }`}
             >

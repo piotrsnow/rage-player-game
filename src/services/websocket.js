@@ -3,9 +3,17 @@ class WebSocketService {
     this._ws = null;
     this._handlers = new Map();
     this._reconnectTimer = null;
+    this._heartbeatTimer = null;
     this._url = null;
     this._token = null;
+    this._baseUrl = null;
     this._intentionalClose = false;
+    this._readyPromise = null;
+    this._readyResolve = null;
+    this._reconnectAttempts = 0;
+    this._maxReconnectAttempts = 10;
+    this._roomCode = null;
+    this._odId = null;
   }
 
   get connected() {
@@ -15,23 +23,33 @@ class WebSocketService {
   connect(baseUrl, token) {
     this.disconnect();
     this._intentionalClose = false;
+    this._reconnectAttempts = 0;
+    this._baseUrl = baseUrl;
+    this._token = token;
     const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
     this._url = `${wsUrl}/multiplayer?token=${encodeURIComponent(token)}`;
-    this._token = token;
-    this._open();
+    return this._open();
   }
 
   _open() {
+    this._readyPromise = new Promise((resolve) => {
+      this._readyResolve = resolve;
+    });
+
     try {
       this._ws = new WebSocket(this._url);
 
       this._ws.onopen = () => {
+        this._reconnectAttempts = 0;
+        this._startHeartbeat();
         this._emit('_connected', {});
+        this._readyResolve?.();
       };
 
       this._ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          if (msg.type === 'PONG') return;
           this._emit(msg.type, msg);
         } catch {
           // ignore malformed messages
@@ -39,29 +57,76 @@ class WebSocketService {
       };
 
       this._ws.onclose = () => {
+        this._stopHeartbeat();
         this._emit('_disconnected', {});
         if (!this._intentionalClose && this._url) {
-          this._reconnectTimer = setTimeout(() => this._open(), 3000);
+          this._scheduleReconnect();
         }
       };
 
       this._ws.onerror = () => {
-        // onclose will fire after onerror
+        this._readyResolve?.();
       };
     } catch {
-      // connection failed
+      this._readyResolve?.();
     }
+
+    return this._readyPromise;
+  }
+
+  _scheduleReconnect() {
+    if (this._reconnectAttempts >= this._maxReconnectAttempts) return;
+    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts), 30000);
+    this._reconnectAttempts++;
+    this._reconnectTimer = setTimeout(() => {
+      this._open().then(() => {
+        if (this.connected && this._roomCode && this._odId) {
+          this.send('REJOIN_ROOM', { roomCode: this._roomCode, odId: this._odId });
+        }
+      });
+    }, delay);
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatTimer = setInterval(() => {
+      if (this.connected) {
+        this._ws.send(JSON.stringify({ type: 'PING' }));
+      }
+    }, 30000);
+  }
+
+  _stopHeartbeat() {
+    clearInterval(this._heartbeatTimer);
+    this._heartbeatTimer = null;
+  }
+
+  whenReady() {
+    if (this.connected) return Promise.resolve();
+    return this._readyPromise || Promise.resolve();
+  }
+
+  setRejoinInfo(roomCode, odId) {
+    this._roomCode = roomCode;
+    this._odId = odId;
   }
 
   disconnect() {
     this._intentionalClose = true;
+    this._stopHeartbeat();
     clearTimeout(this._reconnectTimer);
+    this._roomCode = null;
+    this._odId = null;
     if (this._ws) {
       this._ws.close();
       this._ws = null;
     }
     this._url = null;
     this._token = null;
+    this._baseUrl = null;
+    this._readyResolve?.();
+    this._readyPromise = null;
+    this._readyResolve = null;
   }
 
   send(type, payload = {}) {

@@ -8,7 +8,7 @@
  * fire   – bottom-up orange/red particles with upward acceleration
  * storm  – rain combined with intermittent lightning flashes
  *
- * All colours align with the Obsidian Grimoire design tokens.
+ * All colours align with the Nikczemny Krzemuch design tokens.
  */
 
 /* ------------------------------------------------------------------ */

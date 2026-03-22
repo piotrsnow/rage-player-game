@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useGame } from '../../contexts/GameContext';
 import { apiClient } from '../../services/apiClient';
+import { useModalA11y } from '../../hooks/useModalA11y';
 
 function PlayerRow({ player, myOdId }) {
   const { t } = useTranslation();
@@ -50,6 +51,7 @@ export default function MultiplayerPanel({ onClose }) {
   const [copied, setCopied] = useState(false);
   const [converting, setConverting] = useState(false);
 
+  const modalRef = useModalA11y(onClose);
   const isConnected = apiClient.isConnected();
   const isMultiplayer = mp.state.isMultiplayer;
   const roomCode = mp.state.roomCode;
@@ -93,9 +95,10 @@ export default function MultiplayerPanel({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('multiplayer.multiplayer')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={modalRef}
         className="relative w-full max-w-md max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -104,7 +107,7 @@ export default function MultiplayerPanel({ onClose }) {
             <span className="material-symbols-outlined text-primary text-xl">group</span>
             <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest">{t('multiplayer.multiplayer')}</h2>
           </div>
-          <button onClick={onClose} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
+          <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6 custom-scrollbar">

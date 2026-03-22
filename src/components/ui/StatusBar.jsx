@@ -21,11 +21,16 @@ export default function StatusBar({ label, current, max, color = 'primary' }) {
           {current}/{max}
         </span>
       </div>
-      <div className="h-1 w-full bg-surface-container-highest overflow-hidden rounded-full">
+      <div className="h-1.5 w-full bg-surface-container-highest overflow-hidden rounded-full">
         <div
-          className={`h-full bg-gradient-to-r ${barColors[color]} transition-all duration-500 ease-out`}
+          className={`h-full bg-gradient-to-r ${barColors[color]} rounded-full transition-all duration-500 ease-out relative overflow-hidden`}
           style={{ width: `${pct}%` }}
-        />
+        >
+          <div
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+            style={{ animation: 'barShimmer 2s ease-in-out infinite' }}
+          />
+        </div>
       </div>
     </div>
   );

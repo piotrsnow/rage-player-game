@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { calculateWounds, normalizeMoney } from '../services/gameState';
+import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils';
 import {
   getAdvancementCost,
   ADVANCEMENT_COSTS,
@@ -17,23 +18,7 @@ function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
 }
 
-function hourToPeriod(hour) {
-  if (hour >= 6 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'night';
-}
-
-const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
 const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
-
-function decayNeeds(needs, hoursElapsed) {
-  const updated = { ...needs };
-  for (const key of Object.keys(DECAY_PER_HOUR)) {
-    updated[key] = Math.max(0, Math.round(((updated[key] ?? 100) - DECAY_PER_HOUR[key] * hoursElapsed) * 10) / 10);
-  }
-  return updated;
-}
 
 function createDefaultCharacter() {
   return {
@@ -758,11 +743,14 @@ function gameReducer(state, action) {
 
     case 'LOAD_MULTIPLAYER_STATE': {
       const gs = action.payload;
+      const myOdId = action.payload.myOdId || state.myOdId;
+      const chars = gs.characters || state.characters;
       return {
         ...state,
+        myOdId,
         campaign: gs.campaign || state.campaign,
-        characters: gs.characters || state.characters,
-        character: gs.characters?.[0] || state.character,
+        characters: chars,
+        character: (myOdId && chars?.find((c) => c.odId === myOdId)) || chars?.[0] || state.character,
         world: gs.world || state.world,
         quests: gs.quests || state.quests,
         scenes: gs.scenes || state.scenes,
@@ -779,7 +767,8 @@ function gameReducer(state, action) {
     }
 
     case 'MP_APPLY_STATE_CHANGES': {
-      const { stateChanges } = action.payload;
+      const { stateChanges, myOdId: payloadOdId } = action.payload;
+      const localOdId = payloadOdId || state.myOdId;
       let next = { ...state };
 
       if (stateChanges?.perCharacter && next.characters?.length > 0) {
@@ -803,7 +792,7 @@ function gameReducer(state, action) {
           }
           return updated;
         });
-        next.character = next.characters[0];
+        next.character = (localOdId && next.characters.find((c) => c.odId === localOdId)) || next.characters[0];
       }
 
       if (stateChanges?.worldFacts) {
@@ -868,4 +857,4 @@ export function useGame() {
   return ctx;
 }
 
-export { createDefaultNeeds, hourToPeriod };
+export { createDefaultNeeds };

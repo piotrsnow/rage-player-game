@@ -56,14 +56,6 @@ export function generateStateChangeMessages(stateChanges, state, t) {
 
   if (stateChanges.xp != null && stateChanges.xp > 0) {
     msgs.push({ id: mkId(), role: 'system', subtype: 'xp', content: t('system.xpGained', { name: charName, amount: stateChanges.xp }), timestamp: ts });
-
-    if (character) {
-      const currentXp = (character.xp || 0) + stateChanges.xp;
-      const xpThreshold = (character.level || 1) * 100;
-      if (currentXp >= xpThreshold) {
-        msgs.push({ id: mkId(), role: 'system', subtype: 'level_up', content: t('system.levelUp', { name: charName, level: (character.level || 1) + 1 }), timestamp: ts });
-      }
-    }
   }
 
   if (stateChanges.newQuests?.length > 0) {

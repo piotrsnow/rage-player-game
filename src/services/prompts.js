@@ -1,5 +1,30 @@
 import { getBonus, formatMoney } from './gameState';
 
+const NEEDS_LABELS = {
+  hunger: { low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
+  thirst: { low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
+  bladder: { low: 'uncomfortable, fidgeting', critical: 'desperate, about to lose control', zero: 'lost control!' },
+  hygiene: { low: 'smelly, NPCs wrinkle noses', critical: 'terrible stench, NPCs recoil' },
+  rest: { low: 'tired, yawning, slower reactions', critical: 'can barely keep eyes open, stumbling', zero: 'collapses from exhaustion' },
+};
+
+export function buildUnmetNeedsBlock(needs) {
+  if (!needs) return '';
+  const lines = [];
+  for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
+    const val = needs[key] ?? 100;
+    if (val <= 0 && labels.zero) {
+      lines.push(`- ${key.charAt(0).toUpperCase() + key.slice(1)}: ${val}/100 [${key === 'bladder' ? 'ACCIDENT' : 'COLLAPSE'} — ${labels.zero}]`);
+    } else if (val < 15) {
+      lines.push(`- ${key.charAt(0).toUpperCase() + key.slice(1)}: ${val}/100 [CRITICAL — ${labels.critical}]`);
+    } else if (val < 30) {
+      lines.push(`- ${key.charAt(0).toUpperCase() + key.slice(1)}: ${val}/100 [LOW — ${labels.low}]`);
+    }
+  }
+  if (lines.length === 0) return '';
+  return `UNMET CHARACTER NEEDS (factor these into the scene — affect narration, NPC reactions, and outcomes):\n${lines.join('\n')}\n\n`;
+}
+
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
   const { campaign, character, world, quests } = gameState;
 
@@ -265,7 +290,7 @@ SCENE IMAGE PROMPT:
 Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}, dmSettings = null) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", and quest names/descriptions in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
@@ -314,7 +339,9 @@ For imagePrompt: describe the visual scene composition in ENGLISH — subjects, 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.${langReminder}`;
   }
 
-  return `The player chose: "${playerAction}"
+  const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
+
+  return `${needsReminder}The player chose: "${playerAction}"
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 

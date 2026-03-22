@@ -8,7 +8,7 @@
  * embers      – red slow-rising embers
  * arcane      – violet spiralling orbits
  *
- * Colors are drawn from the Obsidian Grimoire design tokens.
+ * Colors are drawn from the Nikczemny Krzemuch design tokens.
  */
 
 /* ------------------------------------------------------------------ */

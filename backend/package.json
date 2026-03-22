@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-grimoire-backend",
+  "name": "nikczemny-krzemuch-backend",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -16,6 +16,7 @@
     "@fastify/cors": "^10.0.0",
     "@fastify/jwt": "^9.0.0",
     "@fastify/multipart": "^9.0.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^8.0.0",
     "@fastify/websocket": "^11.2.0",
     "@google-cloud/storage": "^7.0.0",

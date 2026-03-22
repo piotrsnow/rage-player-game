@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
+import { translateSkill } from '../../utils/wfrpTranslate';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
   const hi = highlightInfo;
@@ -122,7 +123,7 @@ function DmMessage({ message, narrator }) {
           </button>
         )}
       </div>
-      <div className="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg space-y-3">
+      <div className="glass-panel p-4 border-l-2 border-primary-dim/60 rounded-r-lg space-y-3 hover:border-primary-dim transition-colors duration-300">
         {segmentsComplete ? (
           <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
         ) : (
@@ -168,17 +169,70 @@ const SUBTYPE_STYLES = {
   money_gained:     { icon: 'paid',         color: 'text-yellow-400',  line: 'to-yellow-400/30' },
 };
 
+function DiceRollMessage({ message }) {
+  const { t } = useTranslation();
+  const d = message.diceData;
+
+  if (!d) {
+    return <SystemMessage message={message} />;
+  }
+
+  const success = d.success;
+  const accentColor = success ? 'text-primary' : 'text-error';
+  const bgGlow = success ? 'from-primary/10 via-transparent to-primary/10' : 'from-error/10 via-transparent to-error/10';
+  const borderColor = success ? 'border-primary/40' : 'border-error/40';
+
+  return (
+    <div className="animate-fade-in my-2">
+      <div className={`relative rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} px-5 py-4`}>
+        <div className="flex items-center gap-4">
+          <div className={`flex items-center justify-center w-12 h-12 rounded-lg bg-surface-container-high/60 ${accentColor}`}>
+            <span className="material-symbols-outlined text-2xl">casino</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-1">
+              {t('gameplay.diceCheck', { skill: translateSkill(d.skill, t) })}
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-lg font-bold text-on-surface">
+                🎲 {d.roll}
+              </span>
+              <span className="text-on-surface-variant text-sm">{t('common.vs')}</span>
+              <span className="font-mono text-lg font-bold text-on-surface">
+                {d.target || d.dc}
+              </span>
+              <span className="text-on-surface-variant">·</span>
+              <span className={`text-base font-bold ${accentColor}`}>
+                SL {d.sl ?? 0}
+              </span>
+            </div>
+          </div>
+          <div className={`text-sm font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg ${
+            success
+              ? 'bg-primary/15 text-primary'
+              : 'bg-error/15 text-error'
+          }`}>
+            {success ? t('common.success') : t('common.failure')}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SystemMessage({ message }) {
   const style = SUBTYPE_STYLES[message.subtype];
 
   if (style) {
     const isLevelUp = message.subtype === 'level_up';
     return (
-      <div className={`flex items-center gap-3 py-1.5 animate-fade-in ${isLevelUp ? 'opacity-100' : 'opacity-90'}`}>
+      <div className={`flex items-center gap-3 py-2 animate-fade-in ${isLevelUp ? 'opacity-100' : 'opacity-90'}`}>
         <div className={`h-px flex-1 bg-gradient-to-r from-transparent ${style.line}`} />
-        <span className={`material-symbols-outlined text-sm ${style.color}`}>{style.icon}</span>
-        <div className={`text-[10px] uppercase font-bold tracking-widest ${style.color} ${isLevelUp ? 'text-xs' : ''}`}>
-          {message.content}
+        <div className="flex items-center gap-2">
+          <span className={`material-symbols-outlined text-sm ${style.color} ${isLevelUp ? 'animate-float' : ''}`}>{style.icon}</span>
+          <div className={`text-[10px] uppercase font-bold tracking-widest ${style.color} ${isLevelUp ? 'text-xs' : ''}`}>
+            {message.content}
+          </div>
         </div>
         <div className={`h-px flex-1 bg-gradient-to-l from-transparent ${style.line}`} />
       </div>
@@ -231,8 +285,11 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="p-6 border-b border-outline-variant/15 flex items-center gap-4 shrink-0">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-primary-dim to-primary flex items-center justify-center shadow-[0_0_15px_rgba(149,71,247,0.4)]">
-          <span className="material-symbols-outlined text-on-primary">psychology</span>
+        <div className="relative">
+          <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary rounded-full opacity-40 blur-sm animate-pulse-glow" />
+          <div className="relative w-10 h-10 rounded-full bg-gradient-to-tr from-primary-dim to-primary flex items-center justify-center shadow-[0_0_15px_rgba(149,71,247,0.4)]">
+            <span className="material-symbols-outlined text-on-primary">psychology</span>
+          </div>
         </div>
         <div className="flex-1">
           <h3 className="font-headline text-sm font-bold text-tertiary">{t('chat.dungeonMasterAi')}</h3>
@@ -269,6 +326,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
             const isMe = myOdId ? msg.odId === myOdId : true;
             return <PlayerMessage key={msg.id} message={msg} isMe={isMe} />;
           }
+          if (msg.subtype === 'dice_roll') return <DiceRollMessage key={msg.id} message={msg} />;
           return <SystemMessage key={msg.id} message={msg} />;
         })}
         <div ref={bottomRef} />

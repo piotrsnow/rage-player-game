@@ -43,19 +43,18 @@ export default function NeedsPanel({ needs, timeState }) {
           const isCritical = value <= critical;
           const pct = Math.round(value);
           return (
-            <div key={key} className="flex flex-col items-center gap-1">
+            <div key={key} className="flex flex-col items-center gap-1 group" title={`${t(`needs.${key}`)}: ${pct}%`}>
               <span
-                className={`material-symbols-outlined text-sm ${
-                  isCritical ? 'text-error animate-pulse' : textColor
-                }`}
-                title={t(`needs.${key}`)}
+                className={`material-symbols-outlined text-base ${
+                  isCritical ? 'text-error animate-pulse drop-shadow-[0_0_4px_rgba(255,110,132,0.5)]' : textColor
+                } transition-all group-hover:scale-110`}
               >
                 {icon}
               </span>
-              <div className="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r ${
-                    isCritical ? 'from-error to-error-dim animate-pulse' : color
+                    isCritical ? 'from-error to-error-dim animate-pulse shadow-[0_0_6px_rgba(255,110,132,0.4)]' : color
                   }`}
                   style={{ width: `${pct}%` }}
                 />

@@ -74,6 +74,7 @@ export function useAI() {
             payload: {
               id: `msg_${Date.now()}_roll`,
               role: 'system',
+              subtype: 'dice_roll',
               content: t('system.diceRollMessage', {
                 skill: result.diceRoll.skill,
                 roll: result.diceRoll.roll,
@@ -81,6 +82,7 @@ export function useAI() {
                 sl: result.diceRoll.sl ?? 0,
                 result: result.diceRoll.success ? t('common.success') : t('common.failure'),
               }),
+              diceData: result.diceRoll,
               timestamp: Date.now(),
             },
           });

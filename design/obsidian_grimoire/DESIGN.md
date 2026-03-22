@@ -1,4 +1,4 @@
-# Design System: The Obsidian Grimoire
+# Design System: Nikczemny Krzemuch
 
 ## 1. Overview & Creative North Star
 **Creative North Star: "The Living Manuscript"**

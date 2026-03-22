@@ -38,13 +38,13 @@ export default function Sidebar() {
     <aside className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 bg-surface-container-low shadow-[20px_0_40px_rgba(0,0,0,0.5)] pt-20">
       {character && (
         <div className="px-6 mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20">
+          <div className="flex items-center gap-3 mb-4 p-3 -mx-3 rounded-sm bg-gradient-to-r from-surface-container-high/40 to-transparent hover:from-surface-container-high/60 transition-all duration-300 group">
+            <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
               <span className="material-symbols-outlined text-tertiary text-xl">shield</span>
             </div>
-            <div>
-              <div className="font-headline text-tertiary text-sm font-bold">{character.name}</div>
-              <div className="text-[10px] text-on-surface-variant uppercase tracking-widest">
+            <div className="min-w-0">
+              <div className="font-headline text-tertiary text-sm font-bold truncate">{character.name}</div>
+              <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
                 {character.career?.name} · {character.career?.tierName}
               </div>
             </div>
@@ -62,14 +62,16 @@ export default function Sidebar() {
         </div>
       )}
 
-      <nav className="flex-1 flex flex-col gap-1 px-2">
+      {character && <div className="mx-6 mb-4 h-px bg-gradient-to-r from-transparent via-outline-variant/20 to-transparent" />}
+
+      <nav className="flex-1 flex flex-col gap-0.5 px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           const modalAction = modalActions[item.path];
-          const className = `flex items-center gap-4 px-4 py-3 transition-all duration-300 ease-in-out ${
+          const className = `relative flex items-center gap-4 px-4 py-3 rounded-sm transition-all duration-300 ease-in-out ${
             isActive && !modalAction
-              ? 'text-primary bg-surface-container-high border-l-2 border-primary'
-              : 'text-on-surface-variant hover:bg-surface-container-high hover:text-tertiary border-l-2 border-transparent'
+              ? 'text-primary bg-surface-container-high/80'
+              : 'text-on-surface-variant hover:bg-surface-container-high/40 hover:text-tertiary'
           }`;
           if (modalAction) {
             return (
@@ -81,6 +83,9 @@ export default function Sidebar() {
           }
           return (
             <Link key={item.path} to={item.path} className={className}>
+              {isActive && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-primary rounded-full shadow-[0_0_8px_rgba(197,154,255,0.6)]" />
+              )}
               <span className="material-symbols-outlined">{item.icon}</span>
               <span className="font-headline text-sm">{item.label}</span>
             </Link>
@@ -92,7 +97,7 @@ export default function Sidebar() {
         <div className="p-6">
           <Link
             to="/play"
-            className="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200 flex items-center justify-center gap-2"
+            className="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200 flex items-center justify-center gap-2 animate-pulse-glow hover:shadow-[0_0_25px_rgba(197,154,255,0.5)] transition-shadow"
           >
             <span className="material-symbols-outlined text-sm">auto_fix_high</span>
             {t('nav.play')}

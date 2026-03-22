@@ -3,7 +3,7 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
 import pl from './locales/pl.json';
 
-const savedSettings = JSON.parse(localStorage.getItem('obsidian_grimoire_settings') || '{}');
+const savedSettings = JSON.parse(localStorage.getItem('nikczemny_krzemuch_settings') || '{}');
 const savedLang = savedSettings.language;
 const browserLang = navigator.language?.startsWith('pl') ? 'pl' : 'en';
 

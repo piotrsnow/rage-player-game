@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import MapCanvas from './MapCanvas';
 
 const TABS = ['npcs', 'map', 'time', 'effects', 'journal'];
@@ -8,6 +9,7 @@ const TAB_ICONS = { npcs: 'group', map: 'map', time: 'schedule', effects: 'auto_
 export default function WorldStateModal({ world, characterVoiceMap, characterVoices, dispatch, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
+  const modalRef = useModalA11y(onClose);
 
   const npcs = world?.npcs || [];
   const mapState = world?.mapState || [];
@@ -19,9 +21,10 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
   const compressedHistory = world?.compressedHistory || '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('worldState.title')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={modalRef}
         className="relative w-full max-w-2xl max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -31,7 +34,7 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
             <span className="material-symbols-outlined text-primary text-xl">public</span>
             <h2 className="text-sm font-bold text-on-surface uppercase tracking-widest">{t('worldState.title')}</h2>
           </div>
-          <button onClick={onClose} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
+          <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
         </div>
 
         {/* Tabs */}

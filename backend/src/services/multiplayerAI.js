@@ -2,6 +2,38 @@ import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
 
+const NEEDS_LABELS = {
+  hunger: { low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
+  thirst: { low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
+  bladder: { low: 'uncomfortable, fidgeting', critical: 'desperate, about to lose control', zero: 'lost control!' },
+  hygiene: { low: 'smelly, NPCs wrinkle noses', critical: 'terrible stench, NPCs recoil' },
+  rest: { low: 'tired, yawning, slower reactions', critical: 'can barely keep eyes open, stumbling', zero: 'collapses from exhaustion' },
+};
+
+function buildMultiplayerUnmetNeedsBlock(characters) {
+  if (!characters || characters.length === 0) return '';
+  const charLines = [];
+  for (const c of characters) {
+    if (!c.needs) continue;
+    const parts = [];
+    for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
+      const val = c.needs[key] ?? 100;
+      if (val <= 0 && labels.zero) {
+        parts.push(`${key.charAt(0).toUpperCase() + key.slice(1)} ${val}/100 [${key === 'bladder' ? 'ACCIDENT' : 'COLLAPSE'}]`);
+      } else if (val < 15) {
+        parts.push(`${key.charAt(0).toUpperCase() + key.slice(1)} ${val}/100 [CRITICAL]`);
+      } else if (val < 30) {
+        parts.push(`${key.charAt(0).toUpperCase() + key.slice(1)} ${val}/100 [LOW]`);
+      }
+    }
+    if (parts.length > 0) {
+      charLines.push(`- ${c.name}: ${parts.join(', ')}`);
+    }
+  }
+  if (charLines.length === 0) return '';
+  return `UNMET CHARACTER NEEDS (factor these into the scene — affect narration, NPC reactions, and outcomes):\n${charLines.join('\n')}\n\n`;
+}
+
 function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null) {
   const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
@@ -167,7 +199,7 @@ Services: healer 5 SS, blacksmith repair 3 SS, ferry 2 CP
 Animals: riding horse 50 GC, mule 15 GC`;
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}, dmSettings = null) {
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
   const needsPerCharHint = needsSystemEnabled
     ? ', "needsChanges": {"hunger": 60}'
@@ -226,12 +258,13 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   }
 
   const testsFrequency = dmSettings?.testsFrequency ?? 50;
+  const needsReminder = needsSystemEnabled ? buildMultiplayerUnmetNeedsBlock(characters) : '';
 
   const actionLines = actions
     .map((a) => `- ${a.name} (${a.gender}): "${a.action}"`)
     .join('\n');
 
-  return `The players' actions this round:
+  return `${needsReminder}The players' actions this round:
 ${actionLines}
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
@@ -588,7 +621,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
 export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true }, dmSettings);
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings);
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -629,7 +662,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       chatMessages.push({
         id: `msg_${Date.now()}_roll_${dr.character}`,
         role: 'system',
+        subtype: 'dice_roll',
         content: `🎲 ${dr.character} — ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+        diceData: dr,
         timestamp: Date.now(),
       });
     }
@@ -638,7 +673,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     chatMessages.push({
       id: `msg_${Date.now()}_roll`,
       role: 'system',
+      subtype: 'dice_roll',
       content: `🎲 ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+      diceData: dr,
       timestamp: Date.now(),
     });
   }

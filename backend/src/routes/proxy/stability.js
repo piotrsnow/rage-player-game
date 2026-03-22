@@ -1,10 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
-const prisma = new PrismaClient();
 const store = createMediaStore(config);
 
 export async function stabilityProxyRoutes(fastify) {

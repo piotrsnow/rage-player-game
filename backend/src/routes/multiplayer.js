@@ -1,29 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import {
   createRoom, createRoomWithGameState, joinRoom, leaveRoom, updateCharacter,
   updateSettings, submitAction, withdrawAction, approveActions,
-  setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom,
+  setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom, touchRoom,
 } from '../services/roomManager.js';
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
-
-const prisma = new PrismaClient();
-
-const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
-
-function hourToPeriod(hour) {
-  if (hour >= 6 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'night';
-}
-
-function decayNeeds(needs, hoursElapsed) {
-  const updated = { ...needs };
-  for (const key of Object.keys(DECAY_PER_HOUR)) {
-    updated[key] = Math.max(0, Math.round(((updated[key] ?? 100) - DECAY_PER_HOUR[key] * hoursElapsed) * 10) / 10);
-  }
-  return updated;
-}
+import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 
 function applyTimeAdvance(world, timeAdvance) {
   const ts = world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
@@ -77,7 +59,14 @@ export async function multiplayerRoutes(fastify) {
           await handleMessage(fastify, socket, userId, msg);
         } catch (err) {
           fastify.log.error(err, 'WebSocket message handler error');
-          socket.send(JSON.stringify({ type: 'ERROR', message: err.message }));
+          const safeMessages = ['Room not found', 'Cannot join this room', 'Room is full',
+            'Not in a room', 'Only the host can start the game', 'No actions to approve',
+            'Only the host can kick players', 'Only the host can update settings',
+            'Invalid kick target', 'Player not found', 'Game not in progress',
+            'Game state is required', 'Room no longer exists',
+            'Cannot rejoin: player not found or unauthorized'];
+          const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
+          socket.send(JSON.stringify({ type: 'ERROR', message }));
         }
       });
 
@@ -107,6 +96,7 @@ export async function multiplayerRoutes(fastify) {
       });
 
       async function handleMessage(fastify, ws, uid, msg) {
+        if (roomCode) touchRoom(roomCode);
         switch (msg.type) {
           case 'CREATE_ROOM': {
             const result = createRoom(uid, ws);
@@ -613,8 +603,68 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'PING': {
+            ws.send(JSON.stringify({ type: 'PONG' }));
+            break;
+          }
+
+          case 'REJOIN_ROOM': {
+            const targetRoom = getRoom(msg.roomCode);
+            if (!targetRoom) {
+              ws.send(JSON.stringify({ type: 'ERROR', message: 'Room no longer exists' }));
+              break;
+            }
+            const existingPlayer = targetRoom.players.get(msg.odId);
+            if (!existingPlayer || existingPlayer.userId !== uid) {
+              ws.send(JSON.stringify({ type: 'ERROR', message: 'Cannot rejoin: player not found or unauthorized' }));
+              break;
+            }
+            existingPlayer.ws = ws;
+            odId = msg.odId;
+            roomCode = msg.roomCode;
+            sendTo(targetRoom, odId, {
+              type: 'ROOM_JOINED',
+              roomCode,
+              odId,
+              room: sanitizeRoom(targetRoom),
+            });
+            break;
+          }
+
+          case 'KICK_PLAYER': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            if (room.hostId !== odId) throw new Error('Only the host can kick players');
+            const targetOdId = msg.targetOdId;
+            if (!targetOdId || targetOdId === odId) throw new Error('Invalid kick target');
+            const target = room.players.get(targetOdId);
+            if (!target) throw new Error('Player not found');
+
+            const kickedName = target.name;
+            target.ws.send(JSON.stringify({ type: 'KICKED', message: 'You have been removed from the room' }));
+            target.ws.close();
+
+            const updatedRoom = leaveRoom(roomCode, targetOdId);
+            if (updatedRoom) {
+              if (updatedRoom.gameState) {
+                updatedRoom.gameState.characters = (updatedRoom.gameState.characters || []).filter((c) => c.odId !== targetOdId);
+                const journalEntry = `${kickedName} was removed from the party.`;
+                if (!updatedRoom.gameState.world) updatedRoom.gameState.world = {};
+                updatedRoom.gameState.world.eventHistory = [...(updatedRoom.gameState.world?.eventHistory || []), journalEntry];
+                setGameState(roomCode, updatedRoom.gameState);
+              }
+              broadcast(updatedRoom, {
+                type: 'PLAYER_LEFT',
+                playerId: targetOdId,
+                room: sanitizeRoom(updatedRoom),
+              });
+            }
+            break;
+          }
+
           default:
-            ws.send(JSON.stringify({ type: 'ERROR', message: `Unknown message type: ${msg.type}` }));
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Unknown message type' }));
         }
       }
     } catch (err) {

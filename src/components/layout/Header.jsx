@@ -39,20 +39,23 @@ export default function Header() {
   const vol = settings.musicVolume ?? 40;
 
   return (
-    <header className="fixed top-0 w-full z-50 bg-[#0e0e10]/80 backdrop-blur-xl border-b border-[#48474a]/15 flex justify-between items-center px-6 h-16">
+    <header className="fixed top-0 w-full z-50 bg-[#0e0e10]/80 backdrop-blur-xl border-b border-[#48474a]/10 flex justify-between items-center px-6 h-16">
       <div className="flex items-center gap-4">
-        <Link to="/" className="text-xl font-bold tracking-tighter text-tertiary drop-shadow-[0_0_8px_rgba(197,154,255,0.3)] font-headline">
-          {t('common.appName')}
+        <Link
+          to="/"
+          className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
+        >
+          <img src="/logo.png" alt={t('common.appName')} className="h-9 w-auto" />
         </Link>
       </div>
       <div className="flex items-center gap-6">
-        <nav className="hidden md:flex gap-8 items-center text-on-surface-variant font-label text-sm tracking-widest uppercase">
+        <nav className="hidden md:flex gap-1 items-center text-on-surface-variant font-label text-sm tracking-widest uppercase">
           {navLinks.map((link) =>
             link.action ? (
               <button
                 key={link.path}
                 onClick={link.action}
-                className="transition-colors duration-300 hover:text-tertiary"
+                className="relative px-4 py-2 transition-colors duration-300 hover:text-tertiary rounded-sm hover:bg-surface-container-high/30"
               >
                 {link.label}
               </button>
@@ -60,13 +63,16 @@ export default function Header() {
               <Link
                 key={link.path}
                 to={link.path}
-                className={`transition-colors duration-300 ${
+                className={`relative px-4 py-2 transition-all duration-300 rounded-sm ${
                   location.pathname === link.path
                     ? 'text-primary'
-                    : 'hover:text-tertiary'
+                    : 'hover:text-tertiary hover:bg-surface-container-high/30'
                 }`}
               >
                 {link.label}
+                {location.pathname === link.path && (
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-primary rounded-full shadow-[0_0_8px_rgba(197,154,255,0.6)]" />
+                )}
               </Link>
             )
           )}
@@ -77,14 +83,14 @@ export default function Header() {
           <div className="flex items-center gap-2">
             <button
               onClick={music.togglePlayPause}
-              className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+              className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
               title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
             >
               {music.isPlaying ? 'pause' : 'play_arrow'}
             </button>
             <button
               onClick={music.skip}
-              className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+              className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
               title={t('gameplay.musicSkip', 'Next')}
             >
               skip_next
@@ -92,13 +98,13 @@ export default function Header() {
             <div className="relative" ref={volumeRef}>
               <button
                 onClick={() => setVolumeOpen((v) => !v)}
-                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200"
+                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
                 title={t('settings.musicVolume', 'Volume')}
               >
                 {vol === 0 ? 'volume_off' : vol < 40 ? 'volume_down' : 'volume_up'}
               </button>
               {volumeOpen && (
-                <div className="absolute right-0 top-full mt-2 px-3 py-2 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl flex items-center gap-2 animate-fade-in">
+                <div className="absolute right-0 top-full mt-2 px-3 py-2 rounded-sm bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/15 shadow-xl flex items-center gap-2 animate-scale-in">
                   <input
                     type="range"
                     min="0"
@@ -119,22 +125,25 @@ export default function Header() {
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
           {hasActiveGame && (
             <Link
               to="/play"
-              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors active:scale-95 duration-200 cursor-pointer"
+              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
             >
               auto_awesome
             </Link>
           )}
           <button
             onClick={openSettings}
-            className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors active:scale-95 duration-200 cursor-pointer"
+            className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
           >
             settings
           </button>
-          <button onClick={openCharacterSheet} className="w-8 h-8 rounded-full border border-primary/30 overflow-hidden bg-surface-container-high flex items-center justify-center">
+          <button
+            onClick={openCharacterSheet}
+            className="w-9 h-9 rounded-full border border-primary/20 overflow-hidden bg-surface-container-high flex items-center justify-center hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)] transition-all duration-300"
+          >
             <span className="material-symbols-outlined text-primary text-sm">person</span>
           </button>
         </div>

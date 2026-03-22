@@ -4,6 +4,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { elevenlabsService } from '../../services/elevenlabs';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import Slider from '../ui/Slider';
 import Button from '../ui/Button';
 
@@ -14,6 +15,7 @@ const providerOptions = [
 
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
+  const modalRef = useModalA11y(onClose);
   const { settings, updateSettings, updateDMSettings, resetSettings, importSettings } = useSettings();
   const [localKeys, setLocalKeys] = useState({
     openaiApiKey: settings.openaiApiKey,
@@ -290,9 +292,10 @@ export default function DMSettingsPage({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('settings.title')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={modalRef}
         className="relative w-full max-w-7xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -303,6 +306,7 @@ export default function DMSettingsPage({ onClose }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className="text-on-surface-variant hover:text-primary transition-colors"
           >
             <span className="material-symbols-outlined">close</span>

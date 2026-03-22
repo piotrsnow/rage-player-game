@@ -1,9 +1,7 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { generateKey } from '../services/hashService.js';
 import { config } from '../config.js';
-
-const prisma = new PrismaClient();
 const store = createMediaStore(config);
 
 export async function mediaRoutes(fastify) {
@@ -63,7 +61,8 @@ export async function mediaRoutes(fastify) {
 
     const asset = await prisma.mediaAsset.findFirst({
       where: {
-        key: { contains: key },
+        key,
+        userId: request.user.id,
       },
     });
     if (!asset) return reply.code(404).send({ error: 'Media not found' });
@@ -85,7 +84,7 @@ export async function mediaRoutes(fastify) {
     const path = request.params['*'];
 
     const asset = await prisma.mediaAsset.findFirst({
-      where: { path },
+      where: { path, userId: request.user.id },
     });
     if (!asset) return reply.code(404).send({ error: 'Media not found' });
 
@@ -105,7 +104,7 @@ export async function mediaRoutes(fastify) {
   fastify.delete('/:key', async (request) => {
     const asset = await prisma.mediaAsset.findFirst({
       where: {
-        key: { contains: request.params.key },
+        key: request.params.key,
         userId: request.user.id,
       },
     });

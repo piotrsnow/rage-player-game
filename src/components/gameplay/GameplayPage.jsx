@@ -41,12 +41,11 @@ export default function GameplayPage() {
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [advancementOpen, setAdvancementOpen] = useState(false);
 
-  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
-
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
     ? mpGameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mpGameState?.characters?.[0]
     : state.character;
+  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
   const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
@@ -157,6 +156,7 @@ export default function GameplayPage() {
               <button
                 onClick={() => setMpPanelOpen(true)}
                 title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
+                aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
                 className={`material-symbols-outlined text-sm transition-colors ${
                   isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
                 }`}
@@ -166,6 +166,7 @@ export default function GameplayPage() {
               <button
                 onClick={() => setWorldModalOpen(true)}
                 title={t('worldState.title')}
+                aria-label={t('worldState.title')}
                 className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
               >
                 public
@@ -186,6 +187,7 @@ export default function GameplayPage() {
                   }
                 }}
                 title={t('gameplay.exportLog')}
+                aria-label={t('gameplay.exportLog')}
                 className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
               >
                 download
@@ -225,7 +227,7 @@ export default function GameplayPage() {
                 <span className="material-symbols-outlined text-lg">error</span>
                 {error}
               </p>
-              <button onClick={dismissError} className="text-error/60 hover:text-error transition-colors shrink-0">
+              <button onClick={dismissError} aria-label={t('common.close')} className="text-error/60 hover:text-error transition-colors shrink-0">
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>

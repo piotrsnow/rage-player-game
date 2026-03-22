@@ -6,7 +6,7 @@
  *   2. Dust motes  – very faint, slow-drifting micro-particles
  *   3. Border glow – soft "breathing" pulse of primary colour at edges
  *
- * Colors follow the Obsidian Grimoire design tokens.
+ * Colors follow the Nikczemny Krzemuch design tokens.
  */
 
 const COLORS = {

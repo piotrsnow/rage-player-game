@@ -1,6 +1,8 @@
 import { randomBytes } from 'crypto';
 
 const rooms = new Map();
+const ROOM_INACTIVE_TTL_MS = 30 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -75,6 +77,7 @@ export function createRoom(hostUserId, ws) {
     },
     players: new Map([[odId, player]]),
     gameState: null,
+    lastActivity: Date.now(),
   };
 
   rooms.set(roomCode, room);
@@ -116,6 +119,7 @@ export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
     },
     players: new Map([[odId, player]]),
     gameState,
+    lastActivity: Date.now(),
   };
 
   rooms.set(roomCode, room);
@@ -271,4 +275,32 @@ export function sendTo(room, odId, message) {
   }
 }
 
-export { sanitizeRoom };
+function touchRoom(roomCode) {
+  const room = rooms.get(roomCode);
+  if (room) room.lastActivity = Date.now();
+}
+
+function cleanupInactiveRooms() {
+  const now = Date.now();
+  for (const [code, room] of rooms) {
+    const hasConnectedPlayers = [...room.players.values()].some((p) => p.ws.readyState === 1);
+    if (!hasConnectedPlayers && (now - room.lastActivity) > ROOM_INACTIVE_TTL_MS) {
+      rooms.delete(code);
+    }
+  }
+}
+
+let cleanupTimer = null;
+
+export function startRoomCleanup() {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(cleanupInactiveRooms, CLEANUP_INTERVAL_MS);
+  if (cleanupTimer.unref) cleanupTimer.unref();
+}
+
+export function stopRoomCleanup() {
+  clearInterval(cleanupTimer);
+  cleanupTimer = null;
+}
+
+export { sanitizeRoom, touchRoom };

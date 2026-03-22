@@ -1,25 +1,9 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
 import { wsService } from '../services/websocket';
 import { apiClient } from '../services/apiClient';
+import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 
 const MultiplayerContext = createContext(null);
-
-const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
-
-function hourToPeriod(hour) {
-  if (hour >= 6 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 18) return 'afternoon';
-  if (hour >= 18 && hour < 22) return 'evening';
-  return 'night';
-}
-
-function decayNeeds(needs, hoursElapsed) {
-  const updated = { ...needs };
-  for (const key of Object.keys(DECAY_PER_HOUR)) {
-    updated[key] = Math.max(0, Math.round(((updated[key] ?? 100) - DECAY_PER_HOUR[key] * hoursElapsed) * 10) / 10);
-  }
-  return updated;
-}
 
 const initialState = {
   isMultiplayer: false,
@@ -292,9 +276,18 @@ export function MultiplayerProvider({ children }) {
     const unsubs = [
       wsService.on('_connected', () => dispatch({ type: 'SET_CONNECTED', payload: true })),
       wsService.on('_disconnected', () => dispatch({ type: 'SET_CONNECTED', payload: false })),
-      wsService.on('ROOM_CREATED', (msg) => dispatch({ type: 'ROOM_CREATED', payload: msg })),
-      wsService.on('ROOM_CONVERTED', (msg) => dispatch({ type: 'ROOM_CONVERTED', payload: msg })),
-      wsService.on('ROOM_JOINED', (msg) => dispatch({ type: 'ROOM_JOINED', payload: msg })),
+      wsService.on('ROOM_CREATED', (msg) => {
+        wsService.setRejoinInfo(msg.roomCode, msg.odId);
+        dispatch({ type: 'ROOM_CREATED', payload: msg });
+      }),
+      wsService.on('ROOM_CONVERTED', (msg) => {
+        wsService.setRejoinInfo(msg.roomCode, msg.odId);
+        dispatch({ type: 'ROOM_CONVERTED', payload: msg });
+      }),
+      wsService.on('ROOM_JOINED', (msg) => {
+        wsService.setRejoinInfo(msg.roomCode, msg.odId);
+        dispatch({ type: 'ROOM_JOINED', payload: msg });
+      }),
       wsService.on('ROOM_STATE', (msg) => dispatch({ type: 'ROOM_STATE', payload: msg })),
       wsService.on('PLAYER_JOINED', (msg) => dispatch({ type: 'PLAYER_JOINED', payload: msg })),
       wsService.on('PLAYER_JOINED_MIDGAME', (msg) => dispatch({ type: 'PLAYER_JOINED_MIDGAME', payload: msg })),
@@ -311,6 +304,11 @@ export function MultiplayerProvider({ children }) {
         dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image } });
       }),
       wsService.on('LEFT_ROOM', () => dispatch({ type: 'LEFT_ROOM' })),
+      wsService.on('KICKED', (msg) => {
+        wsService.setRejoinInfo(null, null);
+        dispatch({ type: 'SET_ERROR', payload: msg.message || 'You have been removed from the room' });
+        dispatch({ type: 'RESET' });
+      }),
       wsService.on('ERROR', (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
     ];
     return () => unsubs.forEach((fn) => fn());
@@ -320,8 +318,9 @@ export function MultiplayerProvider({ children }) {
     const baseUrl = apiClient.getBaseUrl();
     const token = apiClient.getToken();
     if (baseUrl && token) {
-      wsService.connect(baseUrl, token);
+      return wsService.connect(baseUrl, token);
     }
+    return Promise.resolve();
   }, []);
 
   const disconnect = useCallback(() => {
@@ -329,20 +328,25 @@ export function MultiplayerProvider({ children }) {
     dispatch({ type: 'RESET' });
   }, []);
 
-  const createRoom = useCallback(() => {
-    if (!wsService.connected) connect();
-    setTimeout(() => wsService.send('CREATE_ROOM'), 100);
+  const ensureConnected = useCallback(async () => {
+    if (!wsService.connected) await connect();
+    await wsService.whenReady();
   }, [connect]);
 
-  const joinRoom = useCallback((code) => {
-    if (!wsService.connected) connect();
-    setTimeout(() => wsService.send('JOIN_ROOM', { roomCode: code.toUpperCase() }), 100);
-  }, [connect]);
+  const createRoom = useCallback(async () => {
+    await ensureConnected();
+    wsService.send('CREATE_ROOM');
+  }, [ensureConnected]);
 
-  const convertToMultiplayer = useCallback((gameState, settings) => {
-    if (!wsService.connected) connect();
-    setTimeout(() => wsService.send('CONVERT_TO_MULTIPLAYER', { gameState, settings }), 100);
-  }, [connect]);
+  const joinRoom = useCallback(async (code) => {
+    await ensureConnected();
+    wsService.send('JOIN_ROOM', { roomCode: code.toUpperCase() });
+  }, [ensureConnected]);
+
+  const convertToMultiplayer = useCallback(async (gameState, settings) => {
+    await ensureConnected();
+    wsService.send('CONVERT_TO_MULTIPLAYER', { gameState, settings });
+  }, [ensureConnected]);
 
   const leaveRoom = useCallback(() => {
     wsService.send('LEAVE_ROOM');
@@ -373,6 +377,10 @@ export function MultiplayerProvider({ children }) {
     wsService.send('APPROVE_ACTIONS', { language, dmSettings });
   }, []);
 
+  const kickPlayer = useCallback((targetOdId) => {
+    wsService.send('KICK_PLAYER', { targetOdId });
+  }, []);
+
   const updateSceneImage = useCallback((sceneId, image) => {
     dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image } });
     wsService.send('UPDATE_SCENE_IMAGE', { sceneId, image });
@@ -391,6 +399,7 @@ export function MultiplayerProvider({ children }) {
     joinRoom,
     convertToMultiplayer,
     leaveRoom,
+    kickPlayer,
     updateMyCharacter,
     updateSettings,
     startGame,

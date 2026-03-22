@@ -69,13 +69,13 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
               key={i}
               onClick={() => handleSuggestedAction(action)}
               disabled={disabled || hasPendingAction}
-              className="text-left p-4 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none"
+              className="text-left p-4 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
             >
               <div className="flex items-start gap-3">
-                <span className="text-primary-dim font-headline text-lg leading-none mt-0.5">
+                <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                   {i + 1}
                 </span>
-                <p className="text-base text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
+                <p className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
                   {action}
                 </p>
               </div>
@@ -135,10 +135,10 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
             rows={2}
             disabled={disabled}
             readOnly={listening}
-            className={`w-full bg-transparent border-0 border-b focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-colors ${
+            className={`w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 ${
               listening
-                ? 'border-primary/60 text-on-surface'
-                : 'border-outline-variant/20 focus:border-primary/50'
+                ? 'border-primary/60 text-on-surface shadow-[0_2px_8px_rgba(197,154,255,0.15)]'
+                : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
             }`}
           />
           <div className="flex items-center justify-between mt-2">
@@ -169,12 +169,12 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
             <button
               type="submit"
               disabled={!customAction.trim() || disabled}
-              className="text-primary hover:text-on-surface transition-all flex items-center gap-1 group disabled:opacity-30"
+              className="text-primary hover:text-on-surface transition-all flex items-center gap-1.5 group disabled:opacity-30 px-3 py-1.5 rounded-sm hover:bg-primary/10"
             >
-              <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
                 {isMultiplayer ? t('multiplayer.submitAction') : t('gameplay.send')}
               </span>
-              <span className="material-symbols-outlined text-xl">send</span>
+              <span className="material-symbols-outlined text-xl group-hover:translate-x-0.5 transition-transform">send</span>
             </button>
           </div>
         </form>

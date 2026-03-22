@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'obsidian_grimoire_auth_token';
+const TOKEN_KEY = 'nikczemny_krzemuch_auth_token';
 
 let _baseUrl = '';
 let _token = '';

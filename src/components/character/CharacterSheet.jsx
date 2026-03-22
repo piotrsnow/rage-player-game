@@ -4,11 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useModalA11y } from '../../hooks/useModalA11y';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
+import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
 
 const NEEDS_META = [
   { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
@@ -136,7 +138,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 {Object.entries(character.skills).map(([name, adv]) => (
                   <div key={name} className="flex justify-between text-on-surface-variant">
-                    <span>{name}</span>
+                    <span>{translateSkill(name, t)}</span>
                     <span className="text-primary-dim font-bold">+{adv}</span>
                   </div>
                 ))}
@@ -153,7 +155,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               <div className="flex flex-wrap gap-2">
                 {character.talents.map((talent) => (
                   <span key={talent} className="px-3 py-1 bg-surface-container-high text-on-surface-variant text-xs rounded-sm border border-outline-variant/10">
-                    {talent}
+                    {translateTalent(talent, t)}
                   </span>
                 ))}
               </div>
@@ -208,6 +210,7 @@ export default function CharacterSheet({ onClose }) {
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAdvancement, setShowAdvancement] = useState(false);
+  const modalRef = useModalA11y(onClose);
   const displayCharacter = isMultiplayer && allCharacters.length > 0
     ? allCharacters[selectedIdx] || allCharacters[0]
     : myCharacter;
@@ -215,9 +218,10 @@ export default function CharacterSheet({ onClose }) {
   const availableXp = (displayCharacter?.xp || 0) - (displayCharacter?.xpSpent || 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('nav.armory')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
+        ref={modalRef}
         className="relative w-full max-w-7xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -228,6 +232,7 @@ export default function CharacterSheet({ onClose }) {
           </h2>
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className="text-on-surface-variant hover:text-primary transition-colors"
           >
             <span className="material-symbols-outlined">close</span>
