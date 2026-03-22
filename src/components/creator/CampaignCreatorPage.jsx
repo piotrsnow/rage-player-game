@@ -11,33 +11,9 @@ import { storage } from '../../services/storage';
 import Button from '../ui/Button';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import PlayerLobby from '../multiplayer/PlayerLobby';
-import { SPECIES_LIST, CAREER_CLASSES } from '../../data/wfrp';
-
-const RANDOM_NAMES = {
-  Fantasy: [
-    'Aldric', 'Seraphina', 'Thorn', 'Isolde', 'Kael', 'Miriel', 'Fenris',
-    'Lyra', 'Darian', 'Elowen', 'Grimwald', 'Astrid', 'Rowan', 'Zephyra',
-    'Valen', 'Elara', 'Corvus', 'Nerissa', 'Theron', 'Brynn', 'Oberon',
-    'Ravenna', 'Cedric', 'Fiora', 'Magnus', 'Selene', 'Gareth', 'Ysolde',
-  ],
-  'Sci-Fi': [
-    'Vex', 'Nova', 'Kai-7', 'Orion', 'Lyris', 'Zane', 'Astra', 'Rex',
-    'Ember', 'Cyrus', 'Nyx', 'Jett', 'Solara', 'Axel', 'Io', 'Sable',
-    'Rho', 'Vesper', 'Talon', 'Celeste', 'Dex', 'Mira', 'Kova', 'Zero',
-  ],
-  Horror: [
-    'Ezra', 'Morrigan', 'Silas', 'Lenore', 'Dorian', 'Raven', 'Cassius',
-    'Lilith', 'Ambrose', 'Isolde', 'Damien', 'Vesper', 'Alaric', 'Salem',
-    'Cain', 'Ophelia', 'Lucius', 'Nyx', 'Thane', 'Elspeth', 'Draven',
-    'Carmilla', 'Malachi', 'Rowena', 'Viktor', 'Perdita', 'Alistair',
-  ],
-};
-
-function pickRandomName(genre, currentName) {
-  const pool = RANDOM_NAMES[genre] || RANDOM_NAMES.Fantasy;
-  const filtered = pool.filter((n) => n !== currentName);
-  return filtered[Math.floor(Math.random() * filtered.length)];
-}
+import CharacterCreationModal from '../character/CharacterCreationModal';
+import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
+import { useModals } from '../../contexts/ModalContext';
 
 const genreIds = ['Fantasy', 'Sci-Fi', 'Horror'];
 const genreIcons = { Fantasy: 'auto_fix_high', 'Sci-Fi': 'rocket_launch', Horror: 'skull' };
@@ -91,6 +67,7 @@ export default function CampaignCreatorPage() {
   const { settings } = useSettings();
   const { state } = useGame();
   const mp = useMultiplayer();
+  const { openSettings } = useModals();
 
   const [mode, setMode] = useState(mp.state.isMultiplayer ? 'multiplayer' : 'solo');
   const isMultiplayer = mode === 'multiplayer';
@@ -103,9 +80,6 @@ export default function CampaignCreatorPage() {
     style: 'Hybrid',
     difficulty: 'Normal',
     length: 'Medium',
-    species: 'Human',
-    careerClass: '',
-    characterName: storage.getLastCharacterName(),
     storyPrompt: '',
   });
 
@@ -114,6 +88,8 @@ export default function CampaignCreatorPage() {
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [charsLoaded, setCharsLoaded] = useState(false);
+  const [showCharModal, setShowCharModal] = useState(false);
+  const [createdCharacter, setCreatedCharacter] = useState(null);
 
   useEffect(() => {
     if (charsLoaded) return;
@@ -219,15 +195,19 @@ export default function CampaignCreatorPage() {
   const handleSubmit = async () => {
     if (!form.storyPrompt.trim()) return;
     if (!hasApiKey) {
-      navigate('/settings');
+      openSettings();
       return;
     }
 
     try {
-      storage.saveLastCharacterName(form.characterName.trim());
       const formWithChar = selectedCharacter
         ? { ...form, existingCharacter: selectedCharacter }
-        : form;
+        : createdCharacter
+          ? { ...form, createdCharacter, characterName: createdCharacter.name, species: createdCharacter.species }
+          : form;
+      if (createdCharacter) {
+        storage.saveLastCharacterName(createdCharacter.name);
+      }
       const result = await generateCampaign(formWithChar);
       startNewCampaign(result, formWithChar);
       navigate('/play');
@@ -343,11 +323,12 @@ export default function CampaignCreatorPage() {
           </section>
 
           {/* Character Picker */}
-          {!isMultiplayer && (
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                {t('characterPicker.title')}
-              </label>
+          <section>
+            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+              {t('characterPicker.title')}
+            </label>
+
+            {!isMultiplayer && (
               <div className="flex gap-3 mb-6">
                 <button
                   onClick={() => { setCharMode('new'); setSelectedCharacter(null); }}
@@ -378,135 +359,127 @@ export default function CampaignCreatorPage() {
                   <p className="text-[10px] opacity-70">{t('characterPicker.useExistingDesc')}</p>
                 </button>
               </div>
+            )}
 
-              {charMode === 'existing' && (
-                <div className="animate-fade-in">
-                  {savedCharacters.length === 0 ? (
-                    <p className="text-on-surface-variant text-sm text-center py-6 border border-outline-variant/10 rounded-sm bg-surface-container-high/20">
-                      {t('characterPicker.noCharacters')}
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {savedCharacters.map((ch) => {
-                        const career = ch.careerData || ch.career || {};
-                        const charId = ch.backendId || ch.localId || ch.id;
-                        const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
-                        return (
-                          <div
-                            key={charId}
-                            className={`p-4 rounded-sm border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)]'
-                                : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60'
-                            }`}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedCharacter(null);
-                              } else {
-                                const normalized = {
-                                  ...ch,
-                                  career: career,
-                                  backendId: ch.backendId || ch.id,
-                                  localId: ch.localId || ch.id,
-                                };
-                                setSelectedCharacter(normalized);
-                                setForm((p) => ({
-                                  ...p,
-                                  characterName: ch.name,
-                                  species: ch.species || 'Human',
-                                }));
-                              }
-                            }}
-                          >
-                            <div className="flex items-start gap-3">
-                              <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
-                                <span className="material-symbols-outlined text-xl text-outline/40">person</span>
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <p className={`font-headline text-sm truncate ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
-                                  {ch.name}
-                                </p>
-                                <p className="text-[10px] text-on-surface-variant truncate">
-                                  {ch.species} · {career.name || '—'}
-                                </p>
-                                <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
-                                  <span>{t('characterPicker.tierLabel')} {career.tier || 1}</span>
-                                  <span>·</span>
-                                  <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
-                                </div>
-                              </div>
-                              {isSelected && (
-                                <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Species (only for new characters) */}
-          {!isMultiplayer && charMode === 'new' && (
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                {t('creator.speciesLabel')}
-              </label>
-              <div className="flex flex-wrap gap-3">
-                {SPECIES_LIST.map((sp) => {
-                  const isActive = form.species === sp;
-                  return (
-                    <button
-                      key={sp}
-                      onClick={() => setForm((p) => ({ ...p, species: sp }))}
-                      className={`px-4 py-3 rounded-sm font-label text-sm transition-all duration-300 border ${
-                        isActive
-                          ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-                          : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-                      }`}
-                    >
-                      <div className="text-left">
-                        <div className="font-bold">{t(`species.${sp}`)}</div>
-                        <div className="text-[10px] opacity-70 mt-0.5">{t(`species.${sp.replace(' ', '')}Desc`)}</div>
+            {/* New character: modal trigger + summary */}
+            {charMode === 'new' && (
+              <div className="animate-fade-in">
+                {createdCharacter ? (
+                  <div className="p-4 bg-surface-container-high/30 border border-primary/20 rounded-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary">check_circle</span>
+                        <span className="text-xs font-bold text-primary uppercase tracking-wider">{t('charCreator.characterReady')}</span>
                       </div>
-                    </button>
-                  );
-                })}
+                      <button
+                        onClick={() => setShowCharModal(true)}
+                        className="flex items-center gap-1 text-xs text-tertiary hover:text-primary transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">edit</span>
+                        {t('charCreator.editCharacter')}
+                      </button>
+                    </div>
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-2xl text-primary/60">person</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-headline text-lg text-tertiary">{createdCharacter.name}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {t(`species.${createdCharacter.species}`)} · {createdCharacter.career?.name}
+                          <span className="mx-1 opacity-50">·</span>
+                          {createdCharacter.career?.tierName}
+                        </p>
+                        <div className="flex flex-wrap gap-3 mt-2">
+                          {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (
+                            <span key={key} className="text-[10px] text-on-surface-variant">
+                              {short}: <strong className="text-tertiary">{createdCharacter.characteristics?.[key]}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowCharModal(true)}
+                    className="w-full p-6 border border-dashed border-outline-variant/30 rounded-sm hover:border-primary/40 hover:bg-surface-tint/5 transition-all group"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="material-symbols-outlined text-3xl text-outline group-hover:text-primary transition-colors">person_add</span>
+                      <span className="text-sm font-label text-on-surface-variant group-hover:text-primary transition-colors">
+                        {t('charCreator.createCharacter')}
+                      </span>
+                    </div>
+                  </button>
+                )}
               </div>
-            </section>
-          )}
+            )}
 
-          {/* Career Class (only for new characters) */}
-          {!isMultiplayer && charMode === 'new' && (
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                {t('creator.careerClassLabel')}
-              </label>
-              <p className="text-[10px] text-outline mb-4">{t('creator.careerClassHint')}</p>
-              <div className="flex flex-wrap gap-2">
-                {['', ...CAREER_CLASSES].map((cls) => {
-                  const isActive = form.careerClass === cls;
-                  const label = cls === '' ? t('careerClasses.any') : t(`careerClasses.${cls}`);
-                  return (
-                    <button
-                      key={cls}
-                      onClick={() => setForm((p) => ({ ...p, careerClass: cls }))}
-                      className={`px-3 py-2 rounded-sm font-label text-xs transition-all duration-300 border ${
-                        isActive
-                          ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)]'
-                          : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+            {/* Existing character picker */}
+            {!isMultiplayer && charMode === 'existing' && (
+              <div className="animate-fade-in">
+                {savedCharacters.length === 0 ? (
+                  <p className="text-on-surface-variant text-sm text-center py-6 border border-outline-variant/10 rounded-sm bg-surface-container-high/20">
+                    {t('characterPicker.noCharacters')}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {savedCharacters.map((ch) => {
+                      const career = ch.careerData || ch.career || {};
+                      const charId = ch.backendId || ch.localId || ch.id;
+                      const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
+                      return (
+                        <div
+                          key={charId}
+                          className={`p-4 rounded-sm border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)]'
+                              : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60'
+                          }`}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedCharacter(null);
+                            } else {
+                              const normalized = {
+                                ...ch,
+                                career: career,
+                                backendId: ch.backendId || ch.id,
+                                localId: ch.localId || ch.id,
+                              };
+                              setSelectedCharacter(normalized);
+                            }
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
+                              <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-headline text-sm truncate ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
+                                {ch.name}
+                              </p>
+                              <p className="text-[10px] text-on-surface-variant truncate">
+                                {ch.species} · {career.name || '—'}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
+                                <span>{t('characterPicker.tierLabel')} {career.tier || 1}</span>
+                                <span>·</span>
+                                <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
+                              </div>
+                            </div>
+                            {isSelected && (
+                              <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </section>
-          )}
+            )}
+          </section>
 
           {/* Play Style */}
           <section>
@@ -586,7 +559,7 @@ export default function CampaignCreatorPage() {
           {isMultiplayer && (
             <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
               {inMpRoom ? (
-                <PlayerLobby />
+                <PlayerLobby genre={form.genre} />
               ) : (
                 <div className="text-center space-y-4">
                   <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
@@ -602,34 +575,6 @@ export default function CampaignCreatorPage() {
                   </div>
                 </div>
               )}
-            </section>
-          )}
-
-          {/* Character Name (solo, new character only) */}
-          {!isMultiplayer && charMode === 'new' && (
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                {t('creator.characterNameLabel')}
-              </label>
-              <div className="flex items-end gap-2">
-                <input
-                  type="text"
-                  value={form.characterName}
-                  onChange={(e) => updateForm((p) => ({ ...p, characterName: e.target.value }))}
-                  placeholder={t('creator.characterNamePlaceholder')}
-                  maxLength={40}
-                  className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 placeholder:text-outline/40 font-body"
-                />
-                <button
-                  type="button"
-                  onClick={() => updateForm((p) => ({ ...p, characterName: pickRandomName(p.genre, p.characterName) }))}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary transition-colors duration-200 shrink-0"
-                  title={t('creator.randomizeName')}
-                >
-                  <span className="material-symbols-outlined text-base">casino</span>
-                  {t('creator.randomizeName')}
-                </button>
-              </div>
             </section>
           )}
 
@@ -681,6 +626,18 @@ export default function CampaignCreatorPage() {
             </p>
           )}
         </div>
+      )}
+
+      {showCharModal && (
+        <CharacterCreationModal
+          genre={form.genre}
+          initialCharacter={createdCharacter}
+          onClose={() => setShowCharModal(false)}
+          onConfirm={(char) => {
+            setCreatedCharacter(char);
+            setShowCharModal(false);
+          }}
+        />
       )}
     </div>
   );

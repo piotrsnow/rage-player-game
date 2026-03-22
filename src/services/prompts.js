@@ -1,4 +1,4 @@
-import { getBonus } from './gameState';
+import { getBonus, formatMoney } from './gameState';
 
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
   const { campaign, character, world, quests } = gameState;
@@ -9,11 +9,23 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     ? world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')
     : 'No entries yet.';
   const inventory = character?.inventory?.map((i) => `${i.name} (${i.type})`).join(', ') || 'Empty';
+  const moneyDisplay = character?.money ? formatMoney(character.money) : '0 CP';
   const statuses = character?.statuses?.join(', ') || 'None';
 
   const difficultyLabel = dmSettings.difficulty < 25 ? 'Easy' : dmSettings.difficulty < 50 ? 'Normal' : dmSettings.difficulty < 75 ? 'Hard' : 'Expert';
   const narrativeLabel = dmSettings.narrativeStyle < 25 ? 'Predictable' : dmSettings.narrativeStyle < 50 ? 'Balanced' : dmSettings.narrativeStyle < 75 ? 'Chaotic' : 'Wild';
   const responseLabel = dmSettings.responseLength < 33 ? 'short (2-3 sentences)' : dmSettings.responseLength < 66 ? 'medium (1-2 paragraphs)' : 'long (3+ paragraphs)';
+
+  const testsFrequency = dmSettings.testsFrequency ?? 50;
+  const testsLabel = testsFrequency < 20
+    ? 'rarely (only critical moments)'
+    : testsFrequency < 40
+    ? 'occasionally (important actions only)'
+    : testsFrequency < 60
+    ? 'regularly (most meaningful actions)'
+    : testsFrequency < 80
+    ? 'frequently (most actions, including minor ones)'
+    : 'almost always (even trivial actions like stepping over a threshold)';
 
   const poeticismLabel = (dmSettings.narratorPoeticism ?? 50) < 25 ? 'dry and prosaic' : (dmSettings.narratorPoeticism ?? 50) < 50 ? 'moderately literary' : (dmSettings.narratorPoeticism ?? 50) < 75 ? 'poetic and evocative' : 'lushly lyrical, rich in metaphor and imagery';
   const grittinessLabel = (dmSettings.narratorGrittiness ?? 30) < 25 ? 'lighthearted and clean' : (dmSettings.narratorGrittiness ?? 30) < 50 ? 'moderately grounded' : (dmSettings.narratorGrittiness ?? 30) < 75 ? 'gritty and raw' : 'brutally dark, visceral and unflinching';
@@ -102,6 +114,7 @@ CAMPAIGN SETTINGS:
 - Difficulty: ${difficultyLabel}
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
+- Dice roll frequency: ${testsLabel} (~${testsFrequency}% of actions should require a roll)
 
 NARRATOR VOICE & STYLE:
 - Poeticism: ${poeticismLabel}
@@ -128,6 +141,7 @@ CHARACTER STATE (WFRP 4e):
 - Skills: ${skillList}
 - Talents: ${talentList}
 - Inventory: ${inventory}
+- Money: ${moneyDisplay}
 - Statuses: ${statuses}
 ${needsSystemEnabled && character?.needs ? `
 CHARACTER NEEDS (biological/physical needs — scale 0-100, 100=fully satisfied, 0=critical):
@@ -205,6 +219,23 @@ INSTRUCTIONS:
 13. Update the player's current location via stateChanges.currentLocation when they move.
 14. If the character needs system is active, reflect low needs in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 
+CURRENCY SYSTEM (WFRP):
+The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
+- When the player BUYS or PAYS for anything, ALWAYS deduct the cost via stateChanges.moneyChange (use negative deltas, e.g. {"gold": 0, "silver": -2, "copper": -5} to spend 2 SS 5 CP).
+- If the player cannot afford the purchase (not enough money), the purchase MUST FAIL — narrate the merchant refusing or the character realizing they lack funds.
+- When the player RECEIVES money (loot, payment, selling items, rewards), use positive deltas in stateChanges.moneyChange.
+- The system auto-normalizes coins (e.g. 15 CP becomes 1 SS 5 CP), so you can use any denomination in the delta.
+- ALWAYS check the character's current Money above before allowing purchases.
+
+REFERENCE PRICE LIST (adjust contextually — remote areas cost more, black markets may cost less):
+Food/Drink: bread 2 CP, ale 3 CP, hot meal 8 CP, fine wine 3 SS
+Lodging: common room 5 CP/night, private room 2 SS/night
+Weapons: dagger 1 SS, hand weapon (sword/axe) 1 GC, crossbow 2 GC 5 SS, longbow 1 GC 5 SS
+Armor: leather jerkin 1 GC 2 SS, mail shirt 6 GC, plate piece 15 GC
+Gear: rope 10m 4 CP, torch 1 CP, lantern 5 SS, healing draught 3 SS, antidote 5 SS, lockpicks 5 SS
+Services: healer visit 5 SS, blacksmith repair 3 SS, ferry crossing 2 CP, horse stabling 5 CP/night
+Animals: riding horse 50 GC, mule 15 GC, war horse 500 GC
+
 CHARACTER SPEECH & LINGUISTIC IDENTITY:
 Every NPC MUST have a distinctive, recognizable way of speaking that persists across all scenes. Assign each NPC their own linguistic fingerprint by combining several of these techniques:
 - Signature phrases, greetings, or verbal tics they repeat (e.g. "mark my words", "by the old gods", ending sentences with "...yes?")
@@ -234,7 +265,7 @@ SCENE IMAGE PROMPT:
 Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", and quest names/descriptions in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
@@ -264,6 +295,7 @@ Respond with ONLY valid JSON in this exact format:
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [],
+    "moneyChange": null,
     "currentLocation": "Location Name"${needsSystemEnabled ? ',\n    "needsChanges": null' : ''}
   },
   "diceRoll": null
@@ -286,7 +318,7 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
-If a skill test is appropriate for the action, use the WFRP d100 system: roll d100, compare to target number (characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-05 always succeed, 96-00 always fail.
+DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system: roll d100, compare to target number (characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-05 always succeed, 96-00 always fail.
 
 Respond with ONLY valid JSON in this exact format:
 {
@@ -325,6 +357,7 @@ Respond with ONLY valid JSON in this exact format:
     "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
+    "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
     "currentLocation": "Current Location Name"${needsSystemEnabled ? ',\n    "needsChanges": null' : ''}
   },
   "diceRoll": null
@@ -332,9 +365,11 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll, use null if no roll needed, or: {"type": "d100", "roll": <number 1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
+For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
 For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
 For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Mighty Blow"]. Use null if none.
 For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
@@ -405,7 +440,8 @@ Respond with ONLY valid JSON:
     "fate": 2,
     "resilience": 1,
     "backstory": "2-3 sentences of character backstory tied to the world and the Old World setting",
-    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}]
+    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}],
+    "money": {"gold": 0, "silver": 5, "copper": 0}
   },
   "firstScene": {
     "narrative": "2-3 vivid paragraphs of the opening scene",
@@ -437,7 +473,8 @@ IMPORTANT for characterSuggestion:
 - Skills object maps skill name to number of advances (typically 3-10 for starting character). Include 6-10 career-appropriate skills.
 - Include 1-3 starting talents from the career's tier 1 talent list.
 - Set fate/resilience based on species (Human: fate 2, resilience 1; Dwarf: fate 0, resilience 2; Halfling: fate 0, resilience 2; Elves: fate 0, resilience 0).
-- Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).`;
+- Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).
+- Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.`;
 }
 
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {

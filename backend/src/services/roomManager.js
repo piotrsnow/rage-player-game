@@ -30,6 +30,7 @@ function sanitizeRoom(room) {
       pendingAction: p.pendingAction,
       voiceId: p.voiceId || null,
       voiceName: p.voiceName || null,
+      characterData: p.characterData || null,
     });
   }
   return {
@@ -57,6 +58,7 @@ export function createRoom(hostUserId, ws) {
     pendingAction: null,
     voiceId: null,
     voiceName: null,
+    characterData: null,
   };
 
   const room = {
@@ -138,6 +140,7 @@ export function joinRoom(roomCode, userId, ws) {
     pendingAction: null,
     voiceId: null,
     voiceName: null,
+    characterData: null,
   };
 
   room.players.set(odId, player);
@@ -164,7 +167,7 @@ export function leaveRoom(roomCode, odId) {
   return room;
 }
 
-export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName }) {
+export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName, characterData }) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
   const player = room.players.get(odId);
@@ -175,6 +178,7 @@ export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, 
   if (photo !== undefined) player.photo = photo;
   if (voiceId !== undefined) player.voiceId = voiceId;
   if (voiceName !== undefined) player.voiceName = voiceName;
+  if (characterData !== undefined) player.characterData = characterData;
 
   return room;
 }

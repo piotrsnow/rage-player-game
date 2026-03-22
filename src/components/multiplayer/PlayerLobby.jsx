@@ -4,6 +4,8 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
 import Button from '../ui/Button';
+import CharacterCreationModal from '../character/CharacterCreationModal';
+import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 
 function PastCharacterPicker({ onSelect, onClose }) {
   const { t } = useTranslation();
@@ -54,10 +56,37 @@ function PastCharacterPicker({ onSelect, onClose }) {
   );
 }
 
-function PlayerCard({ player, isMe, onUpdate, characterVoices }) {
+function CharacterSummaryBadge({ characterData, t }) {
+  if (!characterData) return null;
+  return (
+    <div className="mt-2 p-2.5 bg-surface-container-high/20 border border-primary/15 rounded-sm">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="material-symbols-outlined text-xs text-primary">check_circle</span>
+        <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{t('charCreator.characterReady')}</span>
+      </div>
+      <div className="text-xs text-on-surface">
+        <span className="font-bold">{characterData.name}</span>
+        <span className="mx-1 text-outline">·</span>
+        <span className="text-on-surface-variant">{characterData.species}</span>
+        <span className="mx-1 text-outline">·</span>
+        <span className="text-on-surface-variant">{characterData.career?.name}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-1">
+        {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (
+          <span key={key} className="text-[9px] text-on-surface-variant">
+            {short}: <strong className="text-tertiary">{characterData.characteristics?.[key]}</strong>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PlayerCard({ player, isMe, onUpdate, characterVoices, genre }) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [showPastPicker, setShowPastPicker] = useState(false);
+  const [showCharModal, setShowCharModal] = useState(false);
   const [name, setName] = useState(player.name);
   const [gender, setGender] = useState(player.gender);
   const [voiceId, setVoiceId] = useState(player.voiceId || '');
@@ -73,6 +102,20 @@ function PlayerCard({ player, isMe, onUpdate, characterVoices }) {
     const selectedVoice = characterVoices?.find((v) => v.voiceId === voiceId);
     onUpdate({ name: character.name, gender, voiceId: voiceId || null, voiceName: selectedVoice?.voiceName || null });
     setShowPastPicker(false);
+    setEditing(false);
+  };
+
+  const handleCharacterCreated = (charData) => {
+    setName(charData.name);
+    setGender(charData.gender);
+    onUpdate({
+      name: charData.name,
+      gender: charData.gender,
+      voiceId: voiceId || null,
+      voiceName: characterVoices?.find((v) => v.voiceId === voiceId)?.voiceName || null,
+      characterData: charData,
+    });
+    setShowCharModal(false);
     setEditing(false);
   };
 
@@ -140,9 +183,16 @@ function PlayerCard({ player, isMe, onUpdate, characterVoices }) {
                   </select>
                 </div>
               )}
-              <div className="flex gap-2 mt-1">
+              <div className="flex flex-wrap gap-2 mt-1">
                 <button onClick={handleSave} className="text-xs text-primary hover:text-on-surface transition-colors">
                   {t('common.save')}
+                </button>
+                <button
+                  onClick={() => setShowCharModal(true)}
+                  className="text-xs text-tertiary hover:text-primary transition-colors flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-xs">person_add</span>
+                  {t('charCreator.createCharacter')}
                 </button>
                 <button onClick={() => setShowPastPicker(true)} className="text-xs text-tertiary hover:text-on-surface transition-colors flex items-center gap-1">
                   <span className="material-symbols-outlined text-xs">history</span>
@@ -197,17 +247,44 @@ function PlayerCard({ player, isMe, onUpdate, characterVoices }) {
         )}
       </div>
 
+      {/* Character summary badge */}
+      {player.characterData && (
+        <CharacterSummaryBadge characterData={player.characterData} t={t} />
+      )}
+
+      {/* Quick create character button for current player without character */}
+      {isMe && !editing && !player.characterData && (
+        <button
+          onClick={() => setShowCharModal(true)}
+          className="mt-2 w-full py-2 border border-dashed border-outline-variant/25 rounded-sm hover:border-primary/40 hover:bg-surface-tint/5 transition-all flex items-center justify-center gap-1.5 group"
+        >
+          <span className="material-symbols-outlined text-sm text-outline group-hover:text-primary transition-colors">person_add</span>
+          <span className="text-[10px] font-label text-on-surface-variant group-hover:text-primary transition-colors">
+            {t('charCreator.createCharacter')}
+          </span>
+        </button>
+      )}
+
       {showPastPicker && isMe && (
         <PastCharacterPicker
           onSelect={handleSelectPast}
           onClose={() => setShowPastPicker(false)}
         />
       )}
+
+      {showCharModal && isMe && (
+        <CharacterCreationModal
+          genre={genre || 'Fantasy'}
+          initialCharacter={player.characterData || null}
+          onClose={() => setShowCharModal(false)}
+          onConfirm={handleCharacterCreated}
+        />
+      )}
     </div>
   );
 }
 
-export default function PlayerLobby() {
+export default function PlayerLobby({ genre }) {
   const { t } = useTranslation();
   const { state, updateMyCharacter, leaveRoom } = useMultiplayer();
   const { settings } = useSettings();
@@ -260,6 +337,7 @@ export default function PlayerLobby() {
               isMe={player.odId === myOdId}
               onUpdate={(data) => updateMyCharacter(data)}
               characterVoices={settings.characterVoices}
+              genre={genre}
             />
           ))}
         </div>

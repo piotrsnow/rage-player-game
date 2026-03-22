@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useModals } from '../../contexts/ModalContext';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 
@@ -10,8 +11,10 @@ export default function Sidebar() {
   const { t } = useTranslation();
   const { state } = useGame();
   const mp = useMultiplayer();
+  const { openCharacterSheet, openSettings } = useModals();
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const hasActiveGame = !!state.campaign || isMultiplayer;
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
     : state.character;
@@ -19,12 +22,17 @@ export default function Sidebar() {
     ? mp.state.gameState?.world?.timeState
     : state.world?.timeState;
 
+  const modalActions = {
+    '/character': openCharacterSheet,
+    '/settings': openSettings,
+  };
+
   const navItems = [
-    { path: '/play', icon: 'book_5', label: t('nav.grimoire') },
+    hasActiveGame && { path: '/play', icon: 'book_5', label: t('nav.grimoire') },
     { path: '/character', icon: 'shield', label: t('nav.armory') },
     { path: '/settings', icon: 'settings', label: t('nav.settings') },
     { path: '/', icon: 'home', label: t('nav.lobby') },
-  ];
+  ].filter(Boolean);
 
   return (
     <aside className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 bg-surface-container-low shadow-[20px_0_40px_rgba(0,0,0,0.5)] pt-20">
@@ -57,16 +65,22 @@ export default function Sidebar() {
       <nav className="flex-1 flex flex-col gap-1 px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
+          const modalAction = modalActions[item.path];
+          const className = `flex items-center gap-4 px-4 py-3 transition-all duration-300 ease-in-out ${
+            isActive && !modalAction
+              ? 'text-primary bg-surface-container-high border-l-2 border-primary'
+              : 'text-on-surface-variant hover:bg-surface-container-high hover:text-tertiary border-l-2 border-transparent'
+          }`;
+          if (modalAction) {
+            return (
+              <button key={item.path} onClick={modalAction} className={className}>
+                <span className="material-symbols-outlined">{item.icon}</span>
+                <span className="font-headline text-sm">{item.label}</span>
+              </button>
+            );
+          }
           return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center gap-4 px-4 py-3 transition-all duration-300 ease-in-out ${
-                isActive
-                  ? 'text-primary bg-surface-container-high border-l-2 border-primary'
-                  : 'text-on-surface-variant hover:bg-surface-container-high hover:text-tertiary border-l-2 border-transparent'
-              }`}
-            >
+            <Link key={item.path} to={item.path} className={className}>
               <span className="material-symbols-outlined">{item.icon}</span>
               <span className="font-headline text-sm">{item.label}</span>
             </Link>
@@ -74,15 +88,17 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-6">
-        <Link
-          to="/play"
-          className="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200 flex items-center justify-center gap-2"
-        >
-          <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-          {t('nav.play')}
-        </Link>
-      </div>
+      {hasActiveGame && (
+        <div className="p-6">
+          <Link
+            to="/play"
+            className="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200 flex items-center justify-center gap-2"
+          >
+            <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+            {t('nav.play')}
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }

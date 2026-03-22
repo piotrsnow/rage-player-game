@@ -1,16 +1,41 @@
 import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
+import { generateStateChangeMessages } from './stateChangeMessages.js';
 
-function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en') {
+function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null) {
   const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
     .map((p) => `- ${p.name} (${p.gender}, ${p.isHost ? 'host' : 'player'})`)
     .join('\n');
 
-  const sceneHistory = (gameState.scenes || [])
-    .slice(-10)
-    .map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`)
-    .join('\n') || 'No scenes yet - this is the beginning of the story.';
+  const scenes = gameState.scenes || [];
+  const total = scenes.length;
+  const FULL_COUNT = 3;
+  const MEDIUM_COUNT = 5;
+  const parts = [];
+  const compressedHistory = (gameState.world || {}).compressedHistory;
+  if (compressedHistory) {
+    parts.push(`ARCHIVED HISTORY (summary of earliest scenes):\n${compressedHistory}`);
+  }
+  const medStart = Math.max(0, total - FULL_COUNT - MEDIUM_COUNT);
+  const medEnd = Math.max(0, total - FULL_COUNT);
+  const medScenes = scenes.slice(medStart, medEnd);
+  if (medScenes.length > 0) {
+    parts.push('EARLIER SCENES (summaries):\n' + medScenes.map((s, i) => {
+      const idx = medStart + i + 1;
+      const actions = (s.playerActions || []).map((a) => a.action).join('; ');
+      return `Scene ${idx}${actions ? ` [Actions: ${actions}]` : ''}: ${(s.narrative || '').substring(0, 500)}...`;
+    }).join('\n'));
+  }
+  const fullScenes = scenes.slice(-FULL_COUNT);
+  if (fullScenes.length > 0) {
+    parts.push('RECENT SCENES (full):\n' + fullScenes.map((s, i) => {
+      const idx = total - FULL_COUNT + i + 1;
+      const actions = (s.playerActions || []).map((a) => a.action).join('; ');
+      return `Scene ${idx}${actions ? ` [Actions: ${actions}]` : ''}:\n${s.narrative}`;
+    }).join('\n\n'));
+  }
+  const sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
 
   const campaign = gameState.campaign || {};
   const world = gameState.world || {};
@@ -22,9 +47,34 @@ function buildMultiplayerSystemPrompt(gameState, settings, players, language = '
     : 'No NPCs encountered yet.';
 
   const currentLoc = world.currentLocation || 'Unknown';
+  const mapState = world.mapState || [];
+  const mapSection = mapState.length > 0
+    ? mapState.map((loc) => {
+        const isCurrent = loc.name?.toLowerCase() === currentLoc?.toLowerCase();
+        const mods = (loc.modifications || []).map((m) => `  · [${m.type}] ${m.description}`).join('\n');
+        return `- ${loc.name}${isCurrent ? ' ← CURRENT' : ''}${loc.description ? `: ${loc.description}` : ''}${mods ? '\n' + mods : ''}`;
+      }).join('\n')
+    : 'No locations mapped yet.';
 
   const charLines = (gameState.characters || []).map((c) => {
-    let line = `- ${c.name} (${c.class || 'Adventurer'} Lv.${c.level || 1}): HP ${c.hp}/${c.maxHp}, Mana ${c.mana}/${c.maxMana}`;
+    const career = c.career || {};
+    const chars = c.characteristics || {};
+    const charStr = Object.entries(chars).map(([k, v]) => `${k.toUpperCase()}:${v}`).join(' ');
+    let line = `- ${c.name} (${c.species || 'Human'} ${career.name || 'Adventurer'}, Tier ${career.tier || 1}): Wounds ${c.wounds}/${c.maxWounds}, Move ${c.movement || 4}`;
+    line += `\n  Characteristics: ${charStr || 'unknown'}`;
+    line += `\n  Fate/Fortune: ${c.fate ?? 0}/${c.fortune ?? 0}, Resilience/Resolve: ${c.resilience ?? 0}/${c.resolve ?? 0}`;
+    const skillStr = Object.entries(c.skills || {}).map(([s, v]) => `${s}:${v}`).join(', ');
+    if (skillStr) line += `\n  Skills: ${skillStr}`;
+    const talentStr = (c.talents || []).join(', ');
+    if (talentStr) line += `\n  Talents: ${talentStr}`;
+    const inv = (c.inventory || []).map((i) => (typeof i === 'string' ? i : i.name)).join(', ');
+    line += `\n  Inventory: ${inv || 'Empty'}`;
+    const m = c.money || { gold: 0, silver: 0, copper: 0 };
+    const moneyParts = [];
+    if (m.gold) moneyParts.push(`${m.gold} GC`);
+    if (m.silver) moneyParts.push(`${m.silver} SS`);
+    if (m.copper) moneyParts.push(`${m.copper} CP`);
+    line += `\n  Money: ${moneyParts.length > 0 ? moneyParts.join(' ') : '0 CP'}`;
     if (needsEnabled && c.needs) {
       const n = c.needs;
       const fmt = (k, v) => `${k}: ${v ?? 100}/100${(v ?? 100) < 15 ? ' [CRITICAL]' : (v ?? 100) < 30 ? ' [LOW]' : ''}`;
@@ -41,8 +91,19 @@ NEEDS SYSTEM: ENABLED. Each character has biological needs (hunger, thirst, blad
 CAMPAIGN SETTINGS:
 - Genre: ${settings.genre || 'Fantasy'}
 - Tone: ${settings.tone || 'Epic'}
-- Play Style: ${settings.style || 'Hybrid'}
-- Difficulty: ${settings.difficulty || 'Normal'}
+- Play Style: ${settings.style || 'Hybrid'} (narrative + optional dice rolls)
+- Difficulty: ${dmSettings ? (dmSettings.difficulty < 25 ? 'Easy' : dmSettings.difficulty < 50 ? 'Normal' : dmSettings.difficulty < 75 ? 'Hard' : 'Expert') : (settings.difficulty || 'Normal')}
+- Dice roll frequency: ${(() => { const tf = dmSettings?.testsFrequency ?? 50; return tf < 20 ? 'rarely (only critical moments)' : tf < 40 ? 'occasionally (important actions only)' : tf < 60 ? 'regularly (most meaningful actions)' : tf < 80 ? 'frequently (most actions, including minor ones)' : 'almost always (even trivial actions)'; })() } (~${dmSettings?.testsFrequency ?? 50}% of actions should require a roll)
+${dmSettings ? `- Narrative chaos: ${dmSettings.narrativeStyle < 25 ? 'Predictable' : dmSettings.narrativeStyle < 50 ? 'Balanced' : dmSettings.narrativeStyle < 75 ? 'Chaotic' : 'Wild'}
+- Response length: ${dmSettings.responseLength < 33 ? 'short (2-3 sentences)' : dmSettings.responseLength < 66 ? 'medium (1-2 paragraphs)' : 'long (3+ paragraphs)'}
+
+NARRATOR VOICE & STYLE:
+- Poeticism: ${(dmSettings.narratorPoeticism ?? 50) < 25 ? 'dry and prosaic' : (dmSettings.narratorPoeticism ?? 50) < 50 ? 'moderately literary' : (dmSettings.narratorPoeticism ?? 50) < 75 ? 'poetic and evocative' : 'lushly lyrical, rich in metaphor and imagery'}
+- Grittiness: ${(dmSettings.narratorGrittiness ?? 30) < 25 ? 'lighthearted and clean' : (dmSettings.narratorGrittiness ?? 30) < 50 ? 'moderately grounded' : (dmSettings.narratorGrittiness ?? 30) < 75 ? 'gritty and raw' : 'brutally dark, visceral and unflinching'}
+- Environmental detail: ${(dmSettings.narratorDetail ?? 50) < 25 ? 'minimal, only essential details' : (dmSettings.narratorDetail ?? 50) < 50 ? 'balanced descriptions' : (dmSettings.narratorDetail ?? 50) < 75 ? 'rich environmental detail' : 'lavishly detailed, painting every sensory element'}
+- Humor: ${(dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent humor woven into narration' : 'heavily comedic, irreverent and absurdist'}
+- Drama: ${(dmSettings.narratorDrama ?? 50) < 25 ? 'understated and subtle' : (dmSettings.narratorDrama ?? 50) < 50 ? 'measured dramatic pacing' : (dmSettings.narratorDrama ?? 50) < 75 ? 'heightened drama and tension' : 'maximally theatrical, grandiose and operatic'}
+Adapt your narration prose style to match ALL of the above parameters simultaneously.` : ''}
 
 PLAYERS IN THIS SESSION:
 ${playerList}
@@ -61,6 +122,15 @@ ${npcSection}
 
 CURRENT LOCATION: ${currentLoc}
 
+MAP STATE (explored locations):
+${mapSection}
+
+ACTIVE EFFECTS (traps, spells, environmental changes — check before resolving actions in a location):
+${(world.activeEffects || []).filter((e) => e.active !== false).map((e) => `- [${e.type}] ${e.description} at ${e.location || 'unknown'}${e.placedBy ? ` (by ${e.placedBy})` : ''}`).join('\n') || 'None'}
+
+ACTIVE QUESTS:
+${(gameState.quests?.active || []).map((q) => `- ${q.name}: ${q.description}`).join('\n') || 'None'}
+
 WORLD KNOWLEDGE:
 ${worldFacts}
 
@@ -70,17 +140,34 @@ ${sceneHistory}
 LANGUAGE: Write all narrative in ${language === 'pl' ? 'Polish' : 'English'}.
 ${needsBlock}
 MULTIPLAYER INSTRUCTIONS:
-1. You are running a MULTIPLAYER session. Multiple players act simultaneously each round.
+1. You are running a MULTIPLAYER session using the WFRP 4th Edition system. Multiple players act simultaneously each round.
 2. When resolving actions, consider ALL submitted actions together and resolve them simultaneously.
 3. Describe what happens to each character individually.
-4. Include per-character stateChanges so each player's HP/mana/XP/inventory can be updated independently.
+4. Include per-character stateChanges so each player's wounds/XP/inventory/skills can be updated independently. Use WFRP mechanics (wounds, characteristics, career skills).
 5. All players see the same scene narrative.
 6. Maintain fairness — give each player meaningful consequences for their actions.
 7. Generate suggested actions that are generic enough for any player to take.
-8. Always respond with valid JSON.`;
+8. Update stateChanges.currentLocation when the party moves to a new location.
+9. Always respond with valid JSON.
+10. ITEM VALIDATION: Characters can ONLY use items currently listed in their inventory above. If a player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that the character actually has in their inventory.
+
+CURRENCY SYSTEM (WFRP):
+The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
+- When a character BUYS or PAYS, deduct via perCharacter moneyChange (negative deltas). If a character cannot afford the purchase, it MUST FAIL.
+- When a character RECEIVES money (loot, payment, selling, rewards), use positive deltas.
+- The system auto-normalizes coins.
+
+REFERENCE PRICE LIST (adjust contextually):
+Food/Drink: bread 2 CP, ale 3 CP, hot meal 8 CP, fine wine 3 SS
+Lodging: common room 5 CP/night, private room 2 SS/night
+Weapons: dagger 1 SS, hand weapon 1 GC, crossbow 2 GC 5 SS
+Armor: leather jerkin 1 GC 2 SS, mail shirt 6 GC
+Gear: rope 4 CP, torch 1 CP, lantern 5 SS, healing draught 3 SS, lockpicks 5 SS
+Services: healer 5 SS, blacksmith repair 3 SS, ferry 2 CP
+Animals: riding horse 50 GC, mule 15 GC`;
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}) {
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
   const needsPerCharHint = needsSystemEnabled
     ? ', "needsChanges": {"hunger": 60}'
@@ -88,6 +175,7 @@ function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = '
   const needsPerCharDoc = needsSystemEnabled
     ? '\nFor perCharacter needsChanges: use when a character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger, +40 thirst. Typical: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full sleep +70-90 rest, nap +20-30 rest. Omit needsChanges if no needs changed for that character.'
     : '';
+  const perCharExample = `"wounds": -3, "xp": 10, "newItems": [], "removeItems": [], "moneyChange": {"gold": 0, "silver": -2, "copper": 0}${needsPerCharHint}`;
 
   if (isFirstScene) {
     return `Generate the opening scene of this multiplayer campaign. Introduce all player characters and set the stage.
@@ -113,16 +201,31 @@ Respond with ONLY valid JSON:
     "perCharacter": {},
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Starting Location",
-    "npcs": [],
+    "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": ""}],
     "worldFacts": [],
-    "journalEntries": ["Opening scene summary"]
+    "journalEntries": ["Opening scene summary"],
+    "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}],
+    "completedQuests": [],
+    "activeEffects": [{"action": "add", "type": "trap|spell|environmental", "location": "Location", "description": "Effect description", "placedBy": "who"}]
   }
 }
 
-For stateChanges.perCharacter: an object keyed by character name, each containing {hp, mana, xp, newItems, removeItems${needsPerCharHint ? ', needsChanges' : ''}} deltas. Example: {"Aldric": {"hp": -5, "xp": 10}, "Lyra": {"mana": -15, "xp": 10}}. Use empty object {} if no per-character changes.${needsPerCharDoc}
+For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
+For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
+
+For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
+
+For stateChanges.perCharacter: an object keyed by character name, each containing {wounds, xp, newItems, removeItems, moneyChange${needsPerCharHint ? ', needsChanges' : ''}} deltas. "wounds" is a delta (negative = damage taken, positive = healing). "moneyChange" is {gold, silver, copper} deltas (negative = spending, positive = receiving). Example: {"Aldric": {"wounds": -3, "xp": 10, "moneyChange": {"silver": -2}}, "Lyra": {"xp": 10, "moneyChange": {"gold": 1}}}. Use empty object {} if no per-character changes.${needsPerCharDoc}
+
+For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
+
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
   }
+
+  const testsFrequency = dmSettings?.testsFrequency ?? 50;
 
   const actionLines = actions
     .map((a) => `- ${a.name} (${a.gender}): "${a.action}"`)
@@ -132,6 +235,8 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
 ${actionLines}
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
+
+DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array.
 
 Respond with ONLY valid JSON:
 {
@@ -152,18 +257,31 @@ Respond with ONLY valid JSON:
   "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
   "stateChanges": {
     "perCharacter": {
-      "CharacterName": {"hp": 0, "mana": 0, "xp": 0, "newItems": [], "removeItems": []${needsPerCharHint}}
+      "CharacterName": {${perCharExample}}
     },
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Location Name",
-    "npcs": [],
+    "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
+    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes"}],
     "worldFacts": [],
-    "journalEntries": ["Summary of key events"]
+    "journalEntries": ["Summary of key events"],
+    "newQuests": [],
+    "completedQuests": [],
+    "activeEffects": []
   },
-  "diceRoll": null
+  "diceRolls": [{"character": "CharacterName", "type": "d100", "roll": 42, "target": 65, "sl": 2, "skill": "Athletics", "success": true}]
 }
 
-For perCharacter: include an entry for each character that is affected. hp/mana/xp are deltas.${needsPerCharDoc}
+For perCharacter: include an entry for each character that is affected. wounds/xp are deltas (wounds negative = damage, positive = healing). moneyChange is {gold, silver, copper} deltas (negative = spending, positive = receiving). Check each character's Money before allowing purchases.${needsPerCharDoc}
+
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+
+For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
+For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
+
+For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
+
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }
@@ -227,9 +345,16 @@ async function callAI(messages, encryptedApiKeys) {
 }
 
 export async function generateMultiplayerCampaign(settings, players, encryptedApiKeys, language = 'en') {
-  const playerList = players.map((p) => `- ${p.name} (${p.gender})`).join('\n');
+  const playerCharList = players.map((p) => {
+    if (p.characterData) {
+      const cd = p.characterData;
+      const career = cd.career || {};
+      return `- ${cd.name} (${cd.species || 'Human'} ${career.name || 'Adventurer'}, ${p.gender})`;
+    }
+    return `- ${p.name} (${p.gender})`;
+  }).join('\n');
 
-  const prompt = `Create a new MULTIPLAYER RPG campaign with these parameters:
+  const prompt = `Create a new MULTIPLAYER WFRP 4th Edition campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
@@ -237,29 +362,14 @@ export async function generateMultiplayerCampaign(settings, players, encryptedAp
 - Campaign Length: ${settings.length}
 - Story prompt: "${settings.storyPrompt}"
 
-PLAYERS:
-${playerList}
+PLAYERS (characters already created by players):
+${playerCharList}
 
-Generate the campaign foundation with characters for each player. Respond with ONLY valid JSON:
+Generate the campaign foundation. The characters are already pre-created by the players — do NOT generate new characters. Respond with ONLY valid JSON:
 {
   "name": "Campaign name (3-5 words)",
   "worldDescription": "2-3 paragraphs describing the world",
   "hook": "1-2 paragraphs story hook",
-  "characters": [
-    {
-      "playerName": "Player name from the list above",
-      "name": "Same as playerName",
-      "class": "A fitting character class",
-      "level": 1,
-      "hp": 100, "maxHp": 100,
-      "mana": 50, "maxMana": 50,
-      "xp": 0,
-      "stats": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
-      "inventory": [],
-      "statuses": [],
-      "backstory": "2-3 sentences backstory"
-    }
-  ],
   "firstScene": {
     "narrative": "2-3 paragraphs of the opening scene introducing all characters",
     "dialogueSegments": [{"type": "narration", "text": "..."}],
@@ -277,26 +387,38 @@ Generate the campaign foundation with characters for each player. Respond with O
 ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
   const messages = [
-    { role: 'system', content: `You are a creative RPG campaign designer. Create immersive multiplayer campaigns. Always respond with valid JSON. Write in ${language === 'pl' ? 'Polish' : 'English'}.` },
+    { role: 'system', content: `You are a creative WFRP 4th Edition campaign designer. Create immersive multiplayer campaigns. Players already have pre-created characters — do not generate characters. Always respond with valid JSON. Write in ${language === 'pl' ? 'Polish' : 'English'}.` },
     { role: 'user', content: prompt },
   ];
 
   const result = await callAI(messages, encryptedApiKeys);
 
-  const characters = (result.characters || []).map((c) => {
-    const matchedPlayer = players.find((p) => p.name === c.playerName) || players.find((p) => p.name === c.name);
+  const characters = players.map((p) => {
+    const cd = p.characterData || {};
     return {
-      ...c,
-      odId: matchedPlayer?.odId || null,
-      hp: c.hp ?? 100,
-      maxHp: c.maxHp ?? 100,
-      mana: c.mana ?? 50,
-      maxMana: c.maxMana ?? 50,
-      level: c.level ?? 1,
-      xp: c.xp ?? 0,
-      stats: c.stats ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-      inventory: c.inventory ?? [],
-      statuses: c.statuses ?? [],
+      playerName: p.name,
+      odId: p.odId,
+      name: cd.name || p.name,
+      gender: cd.gender || p.gender || 'male',
+      species: cd.species || 'Human',
+      career: cd.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
+      characteristics: cd.characteristics || { ws: 31, bs: 25, s: 34, t: 28, i: 30, ag: 33, dex: 27, int: 35, wp: 29, fel: 32 },
+      advances: cd.advances || { ws: 0, bs: 0, s: 0, t: 0, i: 0, ag: 0, dex: 0, int: 0, wp: 0, fel: 0 },
+      wounds: cd.wounds ?? cd.maxWounds ?? 12,
+      maxWounds: cd.maxWounds ?? 12,
+      movement: cd.movement ?? 4,
+      fate: cd.fate ?? 2,
+      fortune: cd.fortune ?? cd.fate ?? 2,
+      resilience: cd.resilience ?? 1,
+      resolve: cd.resolve ?? cd.resilience ?? 1,
+      skills: cd.skills || {},
+      talents: cd.talents || [],
+      inventory: cd.inventory || [],
+      money: cd.money || { gold: 0, silver: 5, copper: 0 },
+      statuses: cd.statuses || [],
+      backstory: cd.backstory || '',
+      xp: cd.xp ?? 0,
+      xpSpent: cd.xpSpent ?? 0,
       needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
     };
   });
@@ -355,18 +477,47 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   };
 }
 
-export async function generateMidGameCharacter(gameState, settings, playerName, playerGender, encryptedApiKeys, language = 'en') {
-  const existingChars = (gameState.characters || [])
-    .map((c) => `- ${c.name} (${c.class} Lv.${c.level}, HP ${c.hp}/${c.maxHp})`)
-    .join('\n') || 'None';
+export async function generateMidGameCharacter(gameState, settings, playerName, playerGender, encryptedApiKeys, language = 'en', playerCharacterData = null) {
+  // If the player already created a character via the modal, use it directly
+  if (playerCharacterData) {
+    const cd = playerCharacterData;
+    return {
+      character: {
+        playerName,
+        name: cd.name || playerName,
+        gender: cd.gender || playerGender || 'male',
+        species: cd.species || 'Human',
+        career: cd.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
+        characteristics: cd.characteristics || {},
+        advances: cd.advances || {},
+        wounds: cd.wounds ?? cd.maxWounds ?? 12,
+        maxWounds: cd.maxWounds ?? 12,
+        movement: cd.movement ?? 4,
+        fate: cd.fate ?? 2,
+        fortune: cd.fortune ?? cd.fate ?? 2,
+        resilience: cd.resilience ?? 1,
+        resolve: cd.resolve ?? cd.resilience ?? 1,
+        skills: cd.skills || {},
+        talents: cd.talents || [],
+        inventory: cd.inventory || [],
+        money: cd.money || { gold: 0, silver: 5, copper: 0 },
+        statuses: cd.statuses || [],
+        backstory: cd.backstory || '',
+        xp: cd.xp ?? 0,
+        xpSpent: cd.xpSpent ?? 0,
+        needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+      },
+      arrivalNarrative: `${cd.name || playerName} joins the adventure.`,
+    };
+  }
 
-  const avgLevel = gameState.characters?.length
-    ? Math.round(gameState.characters.reduce((s, c) => s + (c.level || 1), 0) / gameState.characters.length)
-    : 1;
+  const existingChars = (gameState.characters || [])
+    .map((c) => `- ${c.name} (${c.species || 'Human'} ${c.career?.name || 'Adventurer'}, Wounds ${c.wounds}/${c.maxWounds})`)
+    .join('\n') || 'None';
 
   const campaign = gameState.campaign || {};
 
-  const prompt = `A new player is joining a MULTIPLAYER RPG campaign mid-game.
+  const prompt = `A new player is joining a MULTIPLAYER WFRP 4th Edition campaign mid-game.
 
 CAMPAIGN: "${campaign.name || 'Unnamed'}"
 - Genre: ${settings.genre || 'Fantasy'}
@@ -379,19 +530,19 @@ ${existingChars}
 
 NEW PLAYER: ${playerName} (${playerGender})
 
-Create a character for this new player that fits the campaign. The character should be at level ${avgLevel} to match existing party members.
+Create a WFRP character for this new player that fits the campaign.
 
 Respond with ONLY valid JSON:
 {
   "name": "${playerName}",
-  "class": "A fitting class different from existing characters if possible",
-  "level": ${avgLevel},
-  "hp": 100, "maxHp": 100,
-  "mana": 50, "maxMana": 50,
-  "xp": 0,
-  "stats": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
+  "species": "Human",
+  "career": {"class": "Warriors", "name": "Soldier", "tier": 1, "tierName": "Recruit", "status": "Silver 1"},
+  "characteristics": {"ws": 31, "bs": 25, "s": 34, "t": 28, "i": 30, "ag": 33, "dex": 27, "int": 35, "wp": 29, "fel": 32},
+  "skills": {"Melee (Basic)": 5, "Dodge": 5},
+  "talents": ["Warrior Born", "Drilled"],
+  "wounds": 12, "maxWounds": 12,
+  "movement": 4, "fate": 2, "resilience": 1,
   "inventory": [],
-  "statuses": [],
   "backstory": "2-3 sentences explaining how they arrive mid-adventure",
   "arrivalNarrative": "1-2 sentences describing the character appearing/arriving in the current scene"
 }
@@ -399,7 +550,7 @@ Respond with ONLY valid JSON:
 ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
   const messages = [
-    { role: 'system', content: `You are an RPG character designer. Create balanced characters that fit existing campaigns. Write in ${language === 'pl' ? 'Polish' : 'English'}. Always respond with valid JSON.` },
+    { role: 'system', content: `You are a WFRP 4th Edition character designer. Create balanced characters that fit existing campaigns. Write in ${language === 'pl' ? 'Polish' : 'English'}. Always respond with valid JSON.` },
     { role: 'user', content: prompt },
   ];
 
@@ -409,25 +560,35 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
     character: {
       playerName,
       name: result.name || playerName,
-      class: result.class || 'Adventurer',
-      level: result.level ?? avgLevel,
-      hp: result.hp ?? 100,
-      maxHp: result.maxHp ?? 100,
-      mana: result.mana ?? 50,
-      maxMana: result.maxMana ?? 50,
-      xp: result.xp ?? 0,
-      stats: result.stats ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      gender: playerGender || 'male',
+      species: result.species || 'Human',
+      career: result.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
+      characteristics: result.characteristics || { ws: 31, bs: 25, s: 34, t: 28, i: 30, ag: 33, dex: 27, int: 35, wp: 29, fel: 32 },
+      advances: { ws: 0, bs: 0, s: 0, t: 0, i: 0, ag: 0, dex: 0, int: 0, wp: 0, fel: 0 },
+      wounds: result.wounds ?? result.maxWounds ?? 12,
+      maxWounds: result.maxWounds ?? 12,
+      movement: result.movement ?? 4,
+      fate: result.fate ?? 2,
+      fortune: result.fate ?? 2,
+      resilience: result.resilience ?? 1,
+      resolve: result.resilience ?? 1,
+      skills: result.skills || {},
+      talents: result.talents || [],
       inventory: result.inventory ?? [],
-      statuses: result.statuses ?? [],
+      money: { gold: 0, silver: 5, copper: 0 },
+      statuses: [],
       backstory: result.backstory || '',
+      xp: 0,
+      xpSpent: 0,
+      needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
     },
     arrivalNarrative: result.arrivalNarrative || `${playerName} joins the adventure.`,
   };
 }
 
-export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en') {
-  const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language);
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true });
+export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null) {
+  const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true }, dmSettings);
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -447,6 +608,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     imagePrompt: result.imagePrompt || null,
     atmosphere: result.atmosphere || {},
     diceRoll: result.diceRoll || null,
+    diceRolls: result.diceRolls || [],
     playerActions: actions.map((a) => ({ name: a.name, action: a.action })),
     timestamp: Date.now(),
   };
@@ -457,21 +619,86 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       id: `msg_${Date.now()}_${a.odId}`,
       role: 'player',
       playerName: a.name,
+      odId: a.odId,
       content: a.action,
       timestamp: Date.now(),
     });
   }
+  if (result.diceRolls?.length) {
+    for (const dr of result.diceRolls) {
+      chatMessages.push({
+        id: `msg_${Date.now()}_roll_${dr.character}`,
+        role: 'system',
+        content: `🎲 ${dr.character} — ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+        timestamp: Date.now(),
+      });
+    }
+  } else if (result.diceRoll) {
+    const dr = result.diceRoll;
+    chatMessages.push({
+      id: `msg_${Date.now()}_roll`,
+      role: 'system',
+      content: `🎲 ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+      timestamp: Date.now(),
+    });
+  }
+
   chatMessages.push({
     id: `msg_dm_${Date.now()}`,
     role: 'dm',
     content: scene.narrative,
     dialogueSegments: scene.dialogueSegments,
+    soundEffect: scene.soundEffect,
     timestamp: Date.now(),
   });
+
+  const scMessages = generateStateChangeMessages(
+    result.stateChanges || {},
+    gameState.characters || [],
+    language,
+    gameState.quests,
+  );
+  chatMessages.push(...scMessages);
 
   return {
     scene,
     chatMessages,
     stateChanges: result.stateChanges || {},
   };
+}
+
+const COMPRESSION_THRESHOLD = 15;
+const FULL_SCENE_KEEP = 3;
+const MEDIUM_SCENE_KEEP = 5;
+
+export function needsCompression(gameState) {
+  return (gameState.scenes || []).length > COMPRESSION_THRESHOLD && !gameState.world?.compressedHistory;
+}
+
+export async function compressOldScenes(gameState, encryptedApiKeys, language = 'en') {
+  const scenes = gameState.scenes || [];
+  const scenesToCompress = scenes.slice(0, -FULL_SCENE_KEEP - MEDIUM_SCENE_KEEP);
+  if (scenesToCompress.length === 0) return null;
+
+  const scenesText = scenesToCompress
+    .map((s, i) => {
+      const actions = (s.playerActions || []).map((a) => `${a.name}: ${a.action}`).join('; ');
+      return `Scene ${i + 1}${actions ? ` [${actions}]` : ''}: ${s.narrative}`;
+    })
+    .join('\n\n');
+
+  const langNote = language === 'pl' ? ' Write the summary in Polish, matching the language of the source scenes.' : '';
+  const systemPrompt = `You are a narrative summarizer for a multiplayer RPG game. Compress scene histories into concise but complete summaries that preserve all important details: character names, NPC names, locations, player decisions, consequences, combat outcomes, items found, and plot developments. Always respond with valid JSON only.${langNote}`;
+  const userPrompt = `Summarize the following multiplayer RPG scene history into a concise narrative summary (max 2000 characters). Preserve key facts: character names and actions, NPC names and fates, locations visited, items acquired/lost, major decisions and their consequences, combat outcomes, and unresolved plot threads.\n\nSCENES:\n${scenesText}\n\nRespond with JSON: {"summary": "Your compressed summary here..."}`;
+
+  try {
+    const result = await callAI(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+      encryptedApiKeys,
+    );
+    return result?.summary || null;
+  } catch (err) {
+    console.warn('[multiplayerAI] Scene compression failed:', err.message);
+    return null;
+  }
 }

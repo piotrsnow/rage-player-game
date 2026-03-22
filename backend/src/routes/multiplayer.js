@@ -4,7 +4,7 @@ import {
   updateSettings, submitAction, withdrawAction, approveActions,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom,
 } from '../services/roomManager.js';
-import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter } from '../services/multiplayerAI.js';
+import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 
 const prisma = new PrismaClient();
 
@@ -159,12 +159,14 @@ export async function multiplayerRoutes(fastify) {
                 player.gender,
                 dbUser?.apiKeys || '{}',
                 msg.language || 'en',
+                player.characterData || null,
               );
 
               const newChar = { ...charResult.character, odId };
               result.room.gameState.characters = [...(result.room.gameState.characters || []), newChar];
 
-              const journalEntry = `${newChar.name} (${newChar.class}) joined the party.`;
+              const careerName = newChar.career?.name || newChar.class || 'Adventurer';
+              const journalEntry = `${newChar.name} (${careerName}) joined the party.`;
               if (!result.room.gameState.world) result.room.gameState.world = {};
               result.room.gameState.world.eventHistory = [...(result.room.gameState.world?.eventHistory || []), journalEntry];
 
@@ -261,6 +263,7 @@ export async function multiplayerRoutes(fastify) {
               photo: msg.photo,
               voiceId: msg.voiceId,
               voiceName: msg.voiceName,
+              characterData: msg.characterData,
             });
             broadcast(room, {
               type: 'ROOM_STATE',
@@ -295,7 +298,7 @@ export async function multiplayerRoutes(fastify) {
 
             const players = [];
             for (const [, p] of currentRoom.players) {
-              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
+              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost, characterData: p.characterData || null });
             }
 
             const campaignResult = await generateMultiplayerCampaign(
@@ -385,6 +388,7 @@ export async function multiplayerRoutes(fastify) {
               actions,
               dbUser?.apiKeys || '{}',
               msg.language || 'en',
+              msg.dmSettings || null,
             );
 
             const stateChanges = sceneResult.stateChanges || {};
@@ -399,15 +403,29 @@ export async function multiplayerRoutes(fastify) {
                 const delta = perChar[c.name] || perChar[c.playerName];
                 if (!delta) return c;
                 const updated = { ...c };
-                if (delta.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp, updated.hp + delta.hp));
-                if (delta.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana, updated.mana + delta.mana));
+                if (delta.wounds != null) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
                 if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
+                // Legacy D&D fields for backward compat with convert-to-multiplayer
+                if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
+                if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
                 if (Array.isArray(delta.newItems)) {
                   updated.inventory = [...(updated.inventory || []), ...delta.newItems];
                 }
                 if (Array.isArray(delta.removeItems)) {
                   const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
                   updated.inventory = (updated.inventory || []).filter((i) => !removeSet.has(typeof i === 'string' ? i : i.name));
+                }
+                if (delta.moneyChange) {
+                  const cur = updated.money || { gold: 0, silver: 0, copper: 0 };
+                  let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
+                    + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
+                    + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
+                  if (total < 0) total = 0;
+                  updated.money = {
+                    gold: Math.floor(total / 100),
+                    silver: Math.floor((total % 100) / 10),
+                    copper: total % 10,
+                  };
                 }
                 if (needsEnabled && delta.needsChanges) {
                   const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }) };
@@ -434,7 +452,56 @@ export async function multiplayerRoutes(fastify) {
               updatedWorld.timeState = applyTimeAdvance(updatedWorld, timeAdvance);
             }
             if (stateChanges.currentLocation) {
-              updatedWorld.currentLocation = stateChanges.currentLocation;
+              const prevLoc = updatedWorld.currentLocation;
+              const newLoc = stateChanges.currentLocation;
+              let mapConns = [...(updatedWorld.mapConnections || [])];
+              let mapSt = [...(updatedWorld.mapState || [])];
+
+              if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
+                const already = mapConns.some(
+                  (c) =>
+                    (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
+                    (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
+                );
+                if (!already) {
+                  mapConns.push({ from: prevLoc, to: newLoc });
+                }
+
+                for (const locName of [prevLoc, newLoc]) {
+                  if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
+                    mapSt.push({
+                      id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                      name: locName,
+                      description: '',
+                      modifications: [],
+                    });
+                  }
+                }
+              }
+
+              updatedWorld.currentLocation = newLoc;
+              updatedWorld.mapConnections = mapConns;
+              updatedWorld.mapState = mapSt;
+            }
+            if (Array.isArray(stateChanges.mapChanges) && stateChanges.mapChanges.length > 0) {
+              const mapState = [...(updatedWorld.mapState || [])];
+              for (const change of stateChanges.mapChanges) {
+                const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
+                if (idx >= 0) {
+                  mapState[idx] = {
+                    ...mapState[idx],
+                    modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+                  };
+                } else {
+                  mapState.push({
+                    id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    name: change.location,
+                    description: '',
+                    modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+                  });
+                }
+              }
+              updatedWorld.mapState = mapState;
             }
             if (Array.isArray(stateChanges.worldFacts) && stateChanges.worldFacts.length > 0) {
               updatedWorld.facts = [...(updatedWorld.facts || []), ...stateChanges.worldFacts];
@@ -446,19 +513,73 @@ export async function multiplayerRoutes(fastify) {
               const npcs = [...(updatedWorld.npcs || [])];
               for (const npc of stateChanges.npcs) {
                 const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
-                if (idx >= 0) {
-                  npcs[idx] = { ...npcs[idx], ...npc };
-                } else {
-                  npcs.push(npc);
+                if (npc.action === 'introduce' && idx < 0) {
+                  npcs.push({
+                    id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    name: npc.name,
+                    gender: npc.gender || 'unknown',
+                    role: npc.role || '',
+                    personality: npc.personality || '',
+                    attitude: npc.attitude || 'neutral',
+                    lastLocation: npc.location || '',
+                    alive: true,
+                    notes: npc.notes || '',
+                  });
+                } else if (idx >= 0) {
+                  npcs[idx] = {
+                    ...npcs[idx],
+                    ...(npc.gender && { gender: npc.gender }),
+                    ...(npc.role && { role: npc.role }),
+                    ...(npc.personality && { personality: npc.personality }),
+                    ...(npc.attitude && { attitude: npc.attitude }),
+                    ...(npc.location && { lastLocation: npc.location }),
+                    ...(npc.notes && { notes: npc.notes }),
+                    ...(npc.alive !== undefined && { alive: npc.alive }),
+                  };
                 }
               }
               updatedWorld.npcs = npcs;
+            }
+
+            if (Array.isArray(stateChanges.activeEffects) && stateChanges.activeEffects.length > 0) {
+              let effects = [...(updatedWorld.activeEffects || [])];
+              for (const fx of stateChanges.activeEffects) {
+                if (fx.action === 'add') {
+                  effects.push({
+                    id: fx.id || `fx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    type: fx.type || 'other',
+                    location: fx.location || '',
+                    description: fx.description || '',
+                    placedBy: fx.placedBy || '',
+                    active: true,
+                  });
+                } else if (fx.action === 'remove') {
+                  effects = effects.filter((e) => e.id !== fx.id);
+                } else if (fx.action === 'trigger') {
+                  effects = effects.map((e) => (e.id === fx.id ? { ...e, active: false } : e));
+                }
+              }
+              updatedWorld.activeEffects = effects;
+            }
+
+            let updatedQuests = { ...(room.gameState.quests || { active: [], completed: [] }) };
+            if (Array.isArray(stateChanges.newQuests) && stateChanges.newQuests.length > 0) {
+              updatedQuests.active = [...(updatedQuests.active || []), ...stateChanges.newQuests];
+            }
+            if (Array.isArray(stateChanges.completedQuests) && stateChanges.completedQuests.length > 0) {
+              const completedIds = new Set(stateChanges.completedQuests);
+              const completed = (updatedQuests.active || []).filter((q) => completedIds.has(q.id));
+              updatedQuests = {
+                active: (updatedQuests.active || []).filter((q) => !completedIds.has(q.id)),
+                completed: [...(updatedQuests.completed || []), ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
+              };
             }
 
             const updatedGameState = {
               ...room.gameState,
               characters: updatedCharacters,
               world: updatedWorld,
+              quests: updatedQuests,
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
             };
@@ -472,6 +593,23 @@ export async function multiplayerRoutes(fastify) {
               stateChanges: sceneResult.stateChanges,
               room: sanitizeRoom(updatedRoom),
             });
+
+            if (needsCompression(updatedGameState)) {
+              compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                .then((summary) => {
+                  if (summary) {
+                    const currentRoom = getRoom(roomCode);
+                    if (currentRoom?.gameState) {
+                      currentRoom.gameState.world = {
+                        ...(currentRoom.gameState.world || {}),
+                        compressedHistory: summary,
+                      };
+                      setGameState(roomCode, currentRoom.gameState);
+                    }
+                  }
+                })
+                .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+            }
             break;
           }
 

@@ -7,6 +7,7 @@ import { imageService } from '../services/imageGen';
 import { createSceneId } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
+import { generateStateChangeMessages } from '../services/stateChangeMessages';
 
 export function useAI() {
   const { t } = useTranslation();
@@ -108,6 +109,11 @@ export function useAI() {
 
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: result.stateChanges });
+
+          const scMessages = generateStateChangeMessages(result.stateChanges, state, t);
+          for (const msg of scMessages) {
+            dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
+          }
         }
 
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });

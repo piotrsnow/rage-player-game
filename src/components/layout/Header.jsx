@@ -3,12 +3,19 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGlobalMusic } from '../../contexts/MusicContext';
+import { useModals } from '../../contexts/ModalContext';
+import { useGame } from '../../contexts/GameContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
 
 export default function Header() {
   const location = useLocation();
   const { t } = useTranslation();
   const { settings } = useSettings();
   const music = useGlobalMusic();
+  const { openCharacterSheet, openSettings } = useModals();
+  const { state } = useGame();
+  const mp = useMultiplayer();
+  const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
 
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
@@ -25,9 +32,9 @@ export default function Header() {
 
   const navLinks = [
     { path: '/', label: t('nav.lobby') },
-    { path: '/play', label: t('nav.grimoire') },
-    { path: '/character', label: t('nav.armory') },
-  ];
+    hasActiveGame && { path: '/play', label: t('nav.grimoire') },
+    { path: '/character', label: t('nav.armory'), action: openCharacterSheet },
+  ].filter(Boolean);
 
   const vol = settings.musicVolume ?? 40;
 
@@ -40,19 +47,29 @@ export default function Header() {
       </div>
       <div className="flex items-center gap-6">
         <nav className="hidden md:flex gap-8 items-center text-on-surface-variant font-label text-sm tracking-widest uppercase">
-          {navLinks.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              className={`transition-colors duration-300 ${
-                location.pathname === link.path
-                  ? 'text-primary'
-                  : 'hover:text-tertiary'
-              }`}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) =>
+            link.action ? (
+              <button
+                key={link.path}
+                onClick={link.action}
+                className="transition-colors duration-300 hover:text-tertiary"
+              >
+                {link.label}
+              </button>
+            ) : (
+              <Link
+                key={link.path}
+                to={link.path}
+                className={`transition-colors duration-300 ${
+                  location.pathname === link.path
+                    ? 'text-primary'
+                    : 'hover:text-tertiary'
+                }`}
+              >
+                {link.label}
+              </Link>
+            )
+          )}
         </nav>
 
         {/* Global Music Controls */}
@@ -103,21 +120,23 @@ export default function Header() {
         )}
 
         <div className="flex items-center gap-3">
-          <Link
-            to="/play"
-            className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors active:scale-95 duration-200 cursor-pointer"
-          >
-            auto_awesome
-          </Link>
-          <Link
-            to="/settings"
+          {hasActiveGame && (
+            <Link
+              to="/play"
+              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors active:scale-95 duration-200 cursor-pointer"
+            >
+              auto_awesome
+            </Link>
+          )}
+          <button
+            onClick={openSettings}
             className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-colors active:scale-95 duration-200 cursor-pointer"
           >
             settings
-          </Link>
-          <Link to="/character" className="w-8 h-8 rounded-full border border-primary/30 overflow-hidden bg-surface-container-high flex items-center justify-center">
+          </button>
+          <button onClick={openCharacterSheet} className="w-8 h-8 rounded-full border border-primary/30 overflow-hidden bg-surface-container-high flex items-center justify-center">
             <span className="material-symbols-outlined text-primary text-sm">person</span>
-          </Link>
+          </button>
         </div>
       </div>
     </header>

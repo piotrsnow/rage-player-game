@@ -5,6 +5,7 @@ import { storage } from '../../services/storage';
 import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useModals } from '../../contexts/ModalContext';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
@@ -13,6 +14,7 @@ export default function LobbyPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { dispatch } = useGame();
+  const { openSettings } = useModals();
   const { settings } = useSettings();
   const [campaigns, setCampaigns] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
@@ -79,7 +81,7 @@ export default function LobbyPage() {
       {!hasApiKey && (
         <div className="mb-8 max-w-md w-full animate-fade-in">
           <div
-            onClick={() => navigate('/settings')}
+            onClick={openSettings}
             className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm border-l-2 border-tertiary cursor-pointer hover:bg-surface-container-highest/60 transition-colors"
           >
             <div className="flex items-start gap-3">

@@ -12,7 +12,7 @@ const providerOptions = [
   { id: 'anthropic', icon: 'psychology' },
 ];
 
-export default function DMSettingsPage() {
+export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
   const { settings, updateSettings, updateDMSettings, resetSettings, importSettings } = useSettings();
   const [localKeys, setLocalKeys] = useState({
@@ -290,12 +290,28 @@ export default function DMSettingsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 lg:px-12 py-12">
-      {/* Header */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-7xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
+          <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary-dim">settings</span>
+            {t('settings.title')}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-on-surface-variant hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
+
+        <div className="overflow-y-auto custom-scrollbar flex-1">
+    <div className="max-w-7xl mx-auto px-6 lg:px-12 py-8">
       <header className="mb-12 animate-fade-in">
-        <h1 className="font-headline text-4xl lg:text-5xl font-bold text-tertiary tracking-tight mb-2 drop-shadow-[0_0_10px_rgba(149,71,247,0.15)]">
-          {t('settings.title')}
-        </h1>
         <p className="text-on-surface-variant max-w-2xl font-body leading-relaxed">
           {t('settings.subtitle')}
         </p>
@@ -1200,6 +1216,9 @@ export default function DMSettingsPage() {
           </Button>
         </div>
       </footer>
+    </div>
+        </div>
+      </div>
     </div>
   );
 }

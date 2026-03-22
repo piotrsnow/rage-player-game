@@ -1,6 +1,6 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
-import { calculateWounds } from '../services/gameState';
+import { calculateWounds, normalizeMoney } from '../services/gameState';
 import {
   getAdvancementCost,
   ADVANCEMENT_COSTS,
@@ -525,6 +525,18 @@ function gameReducer(state, action) {
         };
       }
 
+      if (changes.moneyChange) {
+        const cur = next.character.money || { gold: 0, silver: 0, copper: 0 };
+        next.character = {
+          ...next.character,
+          money: normalizeMoney({
+            gold: (cur.gold || 0) + (changes.moneyChange.gold || 0),
+            silver: (cur.silver || 0) + (changes.moneyChange.silver || 0),
+            copper: (cur.copper || 0) + (changes.moneyChange.copper || 0),
+          }),
+        };
+      }
+
       if (changes.newQuests) {
         next.quests = {
           ...next.quests,
@@ -781,6 +793,14 @@ function gameReducer(state, action) {
           if (changes.resolveChange !== undefined) updated.resolve = Math.max(0, Math.min(updated.resilience, updated.resolve + changes.resolveChange));
           if (changes.newItems) updated.inventory = [...(updated.inventory || []), ...changes.newItems];
           if (changes.removeItems) updated.inventory = (updated.inventory || []).filter((i) => !changes.removeItems.includes(i.id));
+          if (changes.moneyChange) {
+            const cur = updated.money || { gold: 0, silver: 0, copper: 0 };
+            updated.money = normalizeMoney({
+              gold: (cur.gold || 0) + (changes.moneyChange.gold || 0),
+              silver: (cur.silver || 0) + (changes.moneyChange.silver || 0),
+              copper: (cur.copper || 0) + (changes.moneyChange.copper || 0),
+            });
+          }
           return updated;
         });
         next.character = next.characters[0];

@@ -162,7 +162,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
         </div>
 
         <div className="lg:col-span-4 animate-fade-in">
-          <Inventory items={character.inventory} />
+          <Inventory items={character.inventory} money={character.money} />
         </div>
       </div>
 
@@ -189,7 +189,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
   );
 }
 
-export default function CharacterSheet() {
+export default function CharacterSheet({ onClose }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
@@ -214,101 +214,122 @@ export default function CharacterSheet() {
 
   const availableXp = (displayCharacter?.xp || 0) - (displayCharacter?.xpSpent || 0);
 
-  if (!displayCharacter || !campaign) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6">
-        <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
-        <h2 className="font-headline text-2xl text-tertiary mb-2">{t('character.noActiveCharacter')}</h2>
-        <p className="text-on-surface-variant text-sm mb-8">
-          {t('character.noActiveDescription')}
-        </p>
-        <button
-          onClick={() => navigate('/')}
-          className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
-        >
-          {t('character.goToLobby')}
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="px-4 md:px-10 py-12 max-w-7xl mx-auto">
-      {isMultiplayer && allCharacters.length > 1 && (
-        <div className="flex gap-2 mb-8 overflow-x-auto animate-fade-in">
-          {allCharacters.map((c, idx) => {
-            const isMe = c.odId === mp.state.myOdId;
-            const isSelected = idx === selectedIdx;
-            return (
-              <button
-                key={c.odId || c.name}
-                onClick={() => setSelectedIdx(idx)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-sm border text-sm font-label transition-all whitespace-nowrap ${
-                  isSelected
-                    ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)]'
-                    : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base">
-                  {isMe ? 'shield' : 'person'}
-                </span>
-                {c.name}
-                {isMe && (
-                  <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                    {t('multiplayer.you')}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="mb-12 relative animate-fade-in">
-        <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
-          {displayCharacter.name}
-        </h1>
-        <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em]">
-          <span>{displayCharacter.species}</span>
-          <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{displayCharacter.career?.name} ({displayCharacter.career?.tierName})</span>
-          <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{displayCharacter.career?.status}</span>
-          <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{displayCharacter.xp} {t('common.xp')}</span>
-        </div>
-        {availableXp > 0 && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-7xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
+          <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary-dim">shield</span>
+            {t('nav.armory')}
+          </h2>
           <button
-            onClick={() => setShowAdvancement(true)}
-            className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary/15 text-primary text-xs font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
+            onClick={onClose}
+            className="text-on-surface-variant hover:text-primary transition-colors"
           >
-            <span className="material-symbols-outlined text-sm">upgrade</span>
-            {availableXp} {t('common.xp')} — {t('advancement.title')}
+            <span className="material-symbols-outlined">close</span>
           </button>
-        )}
-      </div>
-
-      <CharacterPanel
-        character={displayCharacter}
-        settings={settings}
-        t={t}
-        characterVoiceMap={state.characterVoiceMap}
-        characterVoices={settings.characterVoices}
-        showAdvancement={showAdvancement}
-        setShowAdvancement={setShowAdvancement}
-        onVoiceChange={(charName, voiceId, gender) => {
-          dispatch({
-            type: 'MAP_CHARACTER_VOICE',
-            payload: { characterName: charName, voiceId, gender },
-          });
-        }}
-      />
-
-      {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
-        <div className="mt-8 animate-fade-in">
-          <QuestLog active={quests.active} completed={quests.completed} />
         </div>
-      )}
+
+        <div className="overflow-y-auto custom-scrollbar flex-1">
+          {!displayCharacter || !campaign ? (
+            <div className="flex flex-col items-center justify-center py-20 px-6">
+              <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
+              <h2 className="font-headline text-2xl text-tertiary mb-2">{t('character.noActiveCharacter')}</h2>
+              <p className="text-on-surface-variant text-sm mb-8">
+                {t('character.noActiveDescription')}
+              </p>
+              <button
+                onClick={() => { onClose(); navigate('/'); }}
+                className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
+              >
+                {t('character.goToLobby')}
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 md:px-10 py-8">
+              {isMultiplayer && allCharacters.length > 1 && (
+                <div className="flex gap-2 mb-8 overflow-x-auto animate-fade-in">
+                  {allCharacters.map((c, idx) => {
+                    const isMe = c.odId === mp.state.myOdId;
+                    const isSelected = idx === selectedIdx;
+                    return (
+                      <button
+                        key={c.odId || c.name}
+                        onClick={() => setSelectedIdx(idx)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-sm border text-sm font-label transition-all whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)]'
+                            : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-base">
+                          {isMe ? 'shield' : 'person'}
+                        </span>
+                        {c.name}
+                        {isMe && (
+                          <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                            {t('multiplayer.you')}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mb-12 relative animate-fade-in">
+                <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
+                  {displayCharacter.name}
+                </h1>
+                <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
+                  <span>{displayCharacter.species}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{displayCharacter.career?.name} ({displayCharacter.career?.tierName})</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{displayCharacter.career?.status}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{displayCharacter.xp} {t('common.xp')}</span>
+                </div>
+                {availableXp > 0 && (
+                  <button
+                    onClick={() => setShowAdvancement(true)}
+                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary/15 text-primary text-xs font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
+                  >
+                    <span className="material-symbols-outlined text-sm">upgrade</span>
+                    {availableXp} {t('common.xp')} — {t('advancement.title')}
+                  </button>
+                )}
+              </div>
+
+              <CharacterPanel
+                character={displayCharacter}
+                settings={settings}
+                t={t}
+                characterVoiceMap={state.characterVoiceMap}
+                characterVoices={settings.characterVoices}
+                showAdvancement={showAdvancement}
+                setShowAdvancement={setShowAdvancement}
+                onVoiceChange={(charName, voiceId, gender) => {
+                  dispatch({
+                    type: 'MAP_CHARACTER_VOICE',
+                    payload: { characterName: charName, voiceId, gender },
+                  });
+                }}
+              />
+
+              {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
+                <div className="mt-8 animate-fade-in">
+                  <QuestLog active={quests.active} completed={quests.completed} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

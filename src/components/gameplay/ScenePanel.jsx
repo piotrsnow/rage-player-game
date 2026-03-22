@@ -52,7 +52,7 @@ function HighlightedNarrative({ text, highlightInfo }) {
   );
 }
 
-export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentSentence, diceRoll }) {
+export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentSentence, diceRoll, diceRolls }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { state, dispatch } = useGame();
@@ -216,27 +216,46 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         </div>
       )}
 
-      {/* Dice Roll Overlay */}
-      {diceRoll && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center animate-fade-in" style={{ zIndex: 4 }}>
-          <div className="bg-surface-dim/70 backdrop-blur-sm rounded-xl px-6 py-4 flex flex-col items-center gap-2 max-w-[260px]">
-            <div className="w-24 h-24">
-              <DiceRoller diceRoll={diceRoll} />
+      {/* Dice Roll Overlay — top-right, compact */}
+      {(diceRoll || (diceRolls && diceRolls.length > 0)) && (
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 animate-fade-in" style={{ zIndex: 4 }}>
+          {diceRolls && diceRolls.length > 0 ? (
+            diceRolls.map((dr, idx) => (
+              <div key={idx} className="bg-surface-dim/70 backdrop-blur-sm rounded-lg px-3 py-2 flex items-center gap-2 max-w-[200px]">
+                <div className="w-10 h-10 shrink-0">
+                  <DiceRoller diceRoll={dr} />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <p className="text-[8px] font-bold text-on-surface uppercase tracking-widest truncate">
+                    {dr.character}
+                  </p>
+                  <p className="text-[9px] text-on-surface-variant truncate">
+                    {dr.skill}: {dr.roll} {t('common.vs')} {dr.target || dr.dc}
+                  </p>
+                  <p className={`text-[9px] font-bold ${dr.success ? 'text-primary' : 'text-error'}`}>
+                    SL {dr.sl ?? 0} — {dr.success ? t('common.success') : t('common.failure')}
+                  </p>
+                </div>
+              </div>
+            ))
+          ) : diceRoll ? (
+            <div className="bg-surface-dim/70 backdrop-blur-sm rounded-lg px-3 py-2 flex items-center gap-2 max-w-[200px]">
+              <div className="w-10 h-10 shrink-0">
+                <DiceRoller diceRoll={diceRoll} />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <p className="text-[9px] font-bold text-on-surface-variant uppercase tracking-widest truncate">
+                  {t('gameplay.diceCheck', { skill: diceRoll.skill })}
+                </p>
+                <p className="text-[9px] text-on-surface-variant">
+                  {diceRoll.roll} {t('common.vs')} {diceRoll.target || diceRoll.dc} (SL {diceRoll.sl ?? 0})
+                </p>
+                <p className={`text-[9px] font-bold ${diceRoll.success ? 'text-primary' : 'text-error'}`}>
+                  {diceRoll.success ? t('common.success') : t('common.failure')}
+                </p>
+              </div>
             </div>
-            <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-center">
-              {t('gameplay.diceCheck', { skill: diceRoll.skill })}
-            </p>
-            <p className="text-sm font-headline text-tertiary text-center">
-              {t('gameplay.diceResult', {
-                roll: diceRoll.roll,
-                target: diceRoll.target || diceRoll.dc,
-                sl: diceRoll.sl ?? 0,
-              })}
-            </p>
-            <p className={`text-xs font-bold ${diceRoll.success ? 'text-primary' : 'text-error'}`}>
-              {diceRoll.success ? t('common.success') : t('common.failure')}
-            </p>
-          </div>
+          ) : null}
         </div>
       )}
     </div>

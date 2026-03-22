@@ -17,12 +17,14 @@ import WorldStateModal from './WorldStateModal';
 import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
 import AdvancementPanel from '../character/AdvancementPanel';
+import { useModals } from '../../contexts/ModalContext';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state, dispatch } = useGame();
   const { settings } = useSettings();
+  const { openSettings } = useModals();
   const mp = useMultiplayer();
   const { generateScene, generateImageForScene } = useAI();
   const narrator = useNarrator();
@@ -169,7 +171,20 @@ export default function GameplayPage() {
                 public
               </button>
               <button
-                onClick={() => exportAsMarkdown(state)}
+                onClick={() => {
+                  if (isMultiplayer && mpGameState) {
+                    exportAsMarkdown({
+                      campaign: mpGameState.campaign,
+                      character: character,
+                      scenes: mpGameState.scenes,
+                      chatHistory: mpGameState.chatHistory,
+                      quests: mpGameState.quests,
+                      world: mpGameState.world,
+                    });
+                  } else {
+                    exportAsMarkdown(state);
+                  }
+                }}
                 title={t('gameplay.exportLog')}
                 className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
               >
@@ -180,7 +195,7 @@ export default function GameplayPage() {
         )}
 
         {/* Scene Panel */}
-        <ScenePanel scene={currentScene} isGeneratingImage={isGeneratingImage} highlightInfo={narrator.highlightInfo} currentSentence={narrator.currentSentence} diceRoll={currentScene?.diceRoll && !isGeneratingScene ? currentScene.diceRoll : null} />
+        <ScenePanel scene={currentScene} isGeneratingImage={isGeneratingImage} highlightInfo={narrator.highlightInfo} currentSentence={narrator.currentSentence} diceRoll={currentScene?.diceRoll && !isGeneratingScene ? currentScene.diceRoll : null} diceRolls={currentScene?.diceRolls?.length && !isGeneratingScene ? currentScene.diceRolls : null} />
 
         {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {character && (
@@ -216,7 +231,7 @@ export default function GameplayPage() {
             </div>
             {error.includes('API key') && (
               <button
-                onClick={() => navigate('/settings')}
+                onClick={openSettings}
                 className="mt-2 text-xs text-primary hover:text-tertiary transition-colors underline"
               >
                 {t('gameplay.goToSettings')}

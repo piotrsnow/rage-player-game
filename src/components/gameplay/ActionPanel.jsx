@@ -53,7 +53,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
   };
 
   const handleApprove = () => {
-    mp.approveActions(settings.language || 'en');
+    mp.approveActions(settings.language || 'en', settings.dmSettings);
   };
 
   return (

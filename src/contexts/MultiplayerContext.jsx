@@ -145,9 +145,11 @@ function mpReducer(state, action) {
             const delta = perChar[c.name] || perChar[c.playerName];
             if (!delta) return c;
             const u = { ...c };
-            if (delta.hp != null) u.hp = Math.max(0, Math.min(u.maxHp, u.hp + delta.hp));
-            if (delta.mana != null) u.mana = Math.max(0, Math.min(u.maxMana, u.mana + delta.mana));
+            if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
             if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
+            // Legacy D&D fields for backward compat
+            if (delta.hp != null && u.hp != null) u.hp = Math.max(0, Math.min(u.maxHp || 100, u.hp + delta.hp));
+            if (delta.mana != null && u.mana != null) u.mana = Math.max(0, Math.min(u.maxMana || 50, u.mana + delta.mana));
             if (Array.isArray(delta.newItems)) u.inventory = [...(u.inventory || []), ...delta.newItems];
             if (Array.isArray(delta.removeItems)) {
               const rm = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
@@ -190,6 +192,63 @@ function mpReducer(state, action) {
             };
           }
 
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.currentLocation) {
+          const world = { ...(newGameState.world || {}) };
+          const prevLoc = world.currentLocation;
+          const newLoc = stateChanges.currentLocation;
+          let mapConns = [...(world.mapConnections || [])];
+          let mapSt = [...(world.mapState || [])];
+
+          if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
+            const already = mapConns.some(
+              (c) =>
+                (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
+                (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
+            );
+            if (!already) {
+              mapConns.push({ from: prevLoc, to: newLoc });
+            }
+            for (const locName of [prevLoc, newLoc]) {
+              if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
+                mapSt.push({
+                  id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                  name: locName,
+                  description: '',
+                  modifications: [],
+                });
+              }
+            }
+          }
+
+          world.currentLocation = newLoc;
+          world.mapConnections = mapConns;
+          world.mapState = mapSt;
+          newGameState = { ...newGameState, world };
+        }
+
+        if (Array.isArray(stateChanges.mapChanges) && stateChanges.mapChanges.length > 0) {
+          const world = { ...(newGameState.world || {}) };
+          const mapState = [...(world.mapState || [])];
+          for (const change of stateChanges.mapChanges) {
+            const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
+            if (idx >= 0) {
+              mapState[idx] = {
+                ...mapState[idx],
+                modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+              };
+            } else {
+              mapState.push({
+                id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                name: change.location,
+                description: '',
+                modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+              });
+            }
+          }
+          world.mapState = mapState;
           newGameState = { ...newGameState, world };
         }
       }
@@ -310,8 +369,8 @@ export function MultiplayerProvider({ children }) {
     wsService.send('WITHDRAW_ACTION');
   }, []);
 
-  const approveActions = useCallback((language) => {
-    wsService.send('APPROVE_ACTIONS', { language });
+  const approveActions = useCallback((language, dmSettings) => {
+    wsService.send('APPROVE_ACTIONS', { language, dmSettings });
   }, []);
 
   const updateSceneImage = useCallback((sceneId, image) => {

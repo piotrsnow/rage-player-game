@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useModals } from '../../contexts/ModalContext';
 import { apiClient } from '../../services/apiClient';
 import Button from '../ui/Button';
 
@@ -10,6 +11,7 @@ export default function JoinRoomPage() {
   const { code } = useParams();
   const { t } = useTranslation();
   const mp = useMultiplayer();
+  const { openSettings } = useModals();
 
   const [roomCode, setRoomCode] = useState(code || '');
   const [error, setError] = useState(null);
@@ -44,7 +46,7 @@ export default function JoinRoomPage() {
         <span className="material-symbols-outlined text-5xl text-outline/30 block mb-4">cloud_off</span>
         <h2 className="font-headline text-xl text-on-surface mb-2">{t('multiplayer.backendRequired')}</h2>
         <p className="text-on-surface-variant text-sm mb-6">{t('multiplayer.backendRequiredDesc')}</p>
-        <Button variant="ghost" onClick={() => navigate('/settings')}>
+        <Button variant="ghost" onClick={openSettings}>
           {t('gameplay.goToSettings')}
         </Button>
       </div>

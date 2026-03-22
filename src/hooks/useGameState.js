@@ -1,10 +1,19 @@
 import { useCallback } from 'react';
 import { useGame, createDefaultNeeds } from '../contexts/GameContext';
 import { storage } from '../services/storage';
-import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds } from '../services/gameState';
+import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds, generateStartingMoney } from '../services/gameState';
 import { SPECIES, CHARACTERISTIC_KEYS, getCareerByName } from '../data/wfrp';
 
 function buildWfrpCharacter(aiResult, campaignSettings) {
+  // If a fully pre-built character was created via the CharacterCreationModal, use it directly
+  if (campaignSettings.createdCharacter) {
+    const cc = campaignSettings.createdCharacter;
+    return {
+      ...cc,
+      needs: cc.needs || createDefaultNeeds(),
+    };
+  }
+
   const speciesName = campaignSettings.species || aiResult.characterSuggestion?.species || 'Human';
   const species = SPECIES[speciesName] || SPECIES.Human;
 
@@ -61,6 +70,7 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
     skills,
     talents,
     inventory: aiChar.inventory || [],
+    money: aiChar.money || generateStartingMoney(career.status),
     statuses: [],
     backstory: aiChar.backstory || '',
     needs: createDefaultNeeds(),

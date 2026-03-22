@@ -154,7 +154,37 @@ function PlayerMessage({ message, isMe }) {
   );
 }
 
+const SUBTYPE_STYLES = {
+  item_gained:      { icon: 'inventory_2',   color: 'text-green-400',  line: 'to-green-400/30' },
+  item_lost:        { icon: 'remove_circle', color: 'text-orange-400', line: 'to-orange-400/30' },
+  damage:           { icon: 'heart_broken',  color: 'text-red-400',    line: 'to-red-400/30' },
+  healing:          { icon: 'favorite',      color: 'text-green-400',  line: 'to-green-400/30' },
+  mana:             { icon: 'auto_fix_high', color: 'text-purple-400', line: 'to-purple-400/30' },
+  xp:               { icon: 'star',          color: 'text-yellow-400', line: 'to-yellow-400/30' },
+  level_up:         { icon: 'military_tech', color: 'text-amber-300',  line: 'to-amber-300/40' },
+  quest_new:        { icon: 'assignment',    color: 'text-blue-400',   line: 'to-blue-400/30' },
+  quest_completed:  { icon: 'task_alt',      color: 'text-emerald-400', line: 'to-emerald-400/30' },
+  money_spent:      { icon: 'payments',     color: 'text-orange-400',  line: 'to-orange-400/30' },
+  money_gained:     { icon: 'paid',         color: 'text-yellow-400',  line: 'to-yellow-400/30' },
+};
+
 function SystemMessage({ message }) {
+  const style = SUBTYPE_STYLES[message.subtype];
+
+  if (style) {
+    const isLevelUp = message.subtype === 'level_up';
+    return (
+      <div className={`flex items-center gap-3 py-1.5 animate-fade-in ${isLevelUp ? 'opacity-100' : 'opacity-90'}`}>
+        <div className={`h-px flex-1 bg-gradient-to-r from-transparent ${style.line}`} />
+        <span className={`material-symbols-outlined text-sm ${style.color}`}>{style.icon}</span>
+        <div className={`text-[10px] uppercase font-bold tracking-widest ${style.color} ${isLevelUp ? 'text-xs' : ''}`}>
+          {message.content}
+        </div>
+        <div className={`h-px flex-1 bg-gradient-to-l from-transparent ${style.line}`} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex items-center gap-4 py-2 opacity-80 animate-fade-in">
       <div className="h-px flex-1 bg-gradient-to-r from-transparent to-outline-variant/30" />
