@@ -8,6 +8,7 @@ import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
 import StatusBar from '../ui/StatusBar';
+import AdvancementPanel from './AdvancementPanel';
 
 const NEEDS_META = [
   { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
@@ -17,7 +18,7 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime', color: 'tertiary' },
 ];
 
-function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices }) {
+function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement }) {
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -37,20 +38,46 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                       <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
                     </div>
                   </div>
-                  <p className="text-primary font-headline text-2xl">LVL {character.level}</p>
+                  <p className="text-primary font-headline text-2xl">{t('common.tier')} {character.career?.tier}</p>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
-            <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
-              <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-              {t('character.vitals')}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-tertiary font-headline flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">auto_fix_high</span>
+                {t('character.vitals')}
+              </h3>
+              <button
+                onClick={() => setShowAdvancement(true)}
+                className="flex items-center gap-1 text-[10px] text-primary-dim hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">upgrade</span>
+                {t('advancement.title')}
+              </button>
+            </div>
             <div className="space-y-4">
-              <StatusBar label={t('character.healthPoints')} current={character.hp} max={character.maxHp} color="error" />
-              <StatusBar label={t('character.manaPool')} current={character.mana} max={character.maxMana} color="primary" />
+              <StatusBar label={t('character.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <div className="text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.fate')}</span>
+                  <p className="text-tertiary font-headline text-lg">{character.fate}</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.fortune')}</span>
+                  <p className="text-primary font-headline text-lg">{character.fortune}</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.resilience')}</span>
+                  <p className="text-tertiary font-headline text-lg">{character.resilience}</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.resolve')}</span>
+                  <p className="text-primary font-headline text-lg">{character.resolve}</p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -97,8 +124,41 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           )}
         </div>
 
-        <div className="lg:col-span-5 animate-fade-in">
-          <StatsGrid stats={character.stats} />
+        <div className="lg:col-span-5 space-y-6 animate-fade-in">
+          <StatsGrid characteristics={character.characteristics} advances={character.advances} />
+
+          {character.skills && Object.keys(character.skills).length > 0 && (
+            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">school</span>
+                {t('character.skills')}
+              </h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                {Object.entries(character.skills).map(([name, adv]) => (
+                  <div key={name} className="flex justify-between text-on-surface-variant">
+                    <span>{name}</span>
+                    <span className="text-primary-dim font-bold">+{adv}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {character.talents?.length > 0 && (
+            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">star</span>
+                {t('character.talents')}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {character.talents.map((talent) => (
+                  <span key={talent} className="px-3 py-1 bg-surface-container-high text-on-surface-variant text-xs rounded-sm border border-outline-variant/10">
+                    {talent}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-4 animate-fade-in">
@@ -123,6 +183,8 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           </div>
         </section>
       </div>
+
+      {showAdvancement && <AdvancementPanel onClose={() => setShowAdvancement(false)} />}
     </>
   );
 }
@@ -145,9 +207,12 @@ export default function CharacterSheet() {
   const quests = isMultiplayer ? (mpGameState?.quests || { active: [], completed: [] }) : state.quests;
 
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [showAdvancement, setShowAdvancement] = useState(false);
   const displayCharacter = isMultiplayer && allCharacters.length > 0
     ? allCharacters[selectedIdx] || allCharacters[0]
     : myCharacter;
+
+  const availableXp = (displayCharacter?.xp || 0) - (displayCharacter?.xpSpent || 0);
 
   if (!displayCharacter || !campaign) {
     return (
@@ -204,12 +269,23 @@ export default function CharacterSheet() {
           {displayCharacter.name}
         </h1>
         <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em]">
-          <span>{displayCharacter.class}</span>
+          <span>{displayCharacter.species}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{t('common.level')} {displayCharacter.level}</span>
+          <span>{displayCharacter.career?.name} ({displayCharacter.career?.tierName})</span>
+          <span className="w-1 h-1 bg-primary rounded-full" />
+          <span>{displayCharacter.career?.status}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
           <span>{displayCharacter.xp} {t('common.xp')}</span>
         </div>
+        {availableXp > 0 && (
+          <button
+            onClick={() => setShowAdvancement(true)}
+            className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary/15 text-primary text-xs font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
+          >
+            <span className="material-symbols-outlined text-sm">upgrade</span>
+            {availableXp} {t('common.xp')} — {t('advancement.title')}
+          </button>
+        )}
       </div>
 
       <CharacterPanel
@@ -218,6 +294,8 @@ export default function CharacterSheet() {
         t={t}
         characterVoiceMap={state.characterVoiceMap}
         characterVoices={settings.characterVoices}
+        showAdvancement={showAdvancement}
+        setShowAdvancement={setShowAdvancement}
         onVoiceChange={(charName, voiceId, gender) => {
           dispatch({
             type: 'MAP_CHARACTER_VOICE',

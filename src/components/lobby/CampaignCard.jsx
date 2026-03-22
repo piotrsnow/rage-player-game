@@ -33,7 +33,7 @@ export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, 
             {summary.name}
           </p>
           <p className="text-on-surface-variant text-xs mt-1">
-            {summary.characterName} · {t('common.level')} {summary.characterLevel} · {summary.sceneCount} {t('common.scenes')}
+            {summary.characterName} · {summary.characterCareer} ({t('common.tier')} {summary.characterTier}) · {summary.sceneCount} {t('common.scenes')}
           </p>
           <div className="flex gap-2 mt-2">
             <span className="px-2 py-0.5 bg-surface-bright text-primary text-[10px] font-bold border border-primary/10">

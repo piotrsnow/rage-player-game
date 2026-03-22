@@ -1,3 +1,5 @@
+import { getBonus } from './gameState';
+
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
   const { campaign, character, world, quests } = gameState;
 
@@ -46,6 +48,27 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     ? activeEffects.map((e) => `- [${e.type}] ${e.description} (at ${e.location || 'unknown location'}${e.placedBy ? `, by ${e.placedBy}` : ''})`).join('\n')
     : 'No active effects.';
 
+  // WFRP character state
+  const chars = character?.characteristics || {};
+  const adv = character?.advances || {};
+  const charLines = ['WS', 'BS', 'S', 'T', 'I', 'Ag', 'Dex', 'Int', 'WP', 'Fel'].map((label, idx) => {
+    const key = ['ws', 'bs', 's', 't', 'i', 'ag', 'dex', 'int', 'wp', 'fel'][idx];
+    const val = chars[key] || 0;
+    const bonus = getBonus(val);
+    const advances = adv[key] || 0;
+    return `${label}: ${val} (Bonus ${bonus}${advances > 0 ? `, +${advances} advances` : ''})`;
+  }).join(', ');
+
+  const skillList = character?.skills && Object.keys(character.skills).length > 0
+    ? Object.entries(character.skills).map(([name, advances]) => `${name} +${advances}`).join(', ')
+    : 'None';
+
+  const talentList = character?.talents?.length > 0 ? character.talents.join(', ') : 'None';
+
+  const careerInfo = character?.career
+    ? `${character.career.name} (${character.career.class}), Tier ${character.career.tier}: ${character.career.tierName}, Status: ${character.career.status}`
+    : 'Unknown';
+
   let sceneHistory;
   if (enhancedContext) {
     const parts = [];
@@ -70,12 +93,12 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     sceneHistory = scenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n') || 'No scenes yet - this is the beginning of the story.';
   }
 
-  return `You are the Dungeon Master AI for "${campaign?.name || 'Unnamed Campaign'}".
+  return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under the Warhammer Fantasy Roleplay 4th Edition (WFRP 4e) rules system.
 
 CAMPAIGN SETTINGS:
 - Genre: ${campaign?.genre || 'Fantasy'}
 - Tone: ${campaign?.tone || 'Epic'}
-- Play Style: ${campaign?.style || 'Hybrid'} (narrative + optional dice rolls)
+- Play Style: ${campaign?.style || 'Hybrid'} (narrative + d100 skill tests)
 - Difficulty: ${difficultyLabel}
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
@@ -89,15 +112,21 @@ NARRATOR VOICE & STYLE:
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
 
 WORLD DESCRIPTION:
-${campaign?.worldDescription || 'A mysterious world awaits discovery.'}
+${campaign?.worldDescription || 'The Old World awaits — a grim and perilous realm of dark fantasy.'}
 
 STORY HOOK:
 ${campaign?.hook || 'An adventure begins...'}
 
-CHARACTER STATE:
-- Name: ${character?.name || 'Unknown'}, ${character?.class || 'Adventurer'} Level ${character?.level || 1}
-- HP: ${character?.hp}/${character?.maxHp}, Mana: ${character?.mana}/${character?.maxMana}
-- Stats: STR ${character?.stats?.str}, DEX ${character?.stats?.dex}, CON ${character?.stats?.con}, INT ${character?.stats?.int}, WIS ${character?.stats?.wis}, CHA ${character?.stats?.cha}
+CHARACTER STATE (WFRP 4e):
+- Name: ${character?.name || 'Unknown'}, ${character?.species || 'Human'}
+- Career: ${careerInfo}
+- XP: ${character?.xp || 0} total, ${character?.xpSpent || 0} spent (${(character?.xp || 0) - (character?.xpSpent || 0)} available)
+- Characteristics: ${charLines}
+- Wounds: ${character?.wounds ?? 0}/${character?.maxWounds ?? 0}, Movement: ${character?.movement ?? 4}
+- Fate: ${character?.fate ?? 0}, Fortune: ${character?.fortune ?? 0}
+- Resilience: ${character?.resilience ?? 0}, Resolve: ${character?.resolve ?? 0}
+- Skills: ${skillList}
+- Talents: ${talentList}
 - Inventory: ${inventory}
 - Statuses: ${statuses}
 ${needsSystemEnabled && character?.needs ? `
@@ -121,6 +150,16 @@ NEEDS SYSTEM RULES:
 - Always include at least one suggested action related to the most urgent need when any need is below 30.
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal) indicating how many in-game hours this action took (e.g. 0.25 for a quick action = 15 min, 0.5 for a short action = 30 min, 1 for exploration, 8 for sleeping).
 ` : ''}
+WFRP 4e RULES FOR THE GM:
+- Use the d100 percentile system. When a skill test is needed, the target number = characteristic + skill advances.
+- Success Levels (SL) = (target - roll) ÷ 10, rounded toward 0. Positive SL = degrees of success, negative = degrees of failure.
+- A roll of 01-05 always succeeds; 96-00 always fails.
+- Fortune points can be spent to reroll or add +1 SL. Fate points cheat death. Resolve replenishes Resilience.
+- Wounds represent physical damage. At 0 Wounds, the character takes Critical Wounds.
+- Award XP (typically 20-50 per scene) via stateChanges.xp for good roleplay, clever solutions, and combat.
+- When the character uses Fortune/Resolve, reflect it in stateChanges (fortuneChange/resolveChange as negative deltas).
+- Fortune resets to Fate value after a night's rest.
+
 NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
 ${npcSection}
 
@@ -151,11 +190,11 @@ LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, item names, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
 INSTRUCTIONS:
-1. Stay in character as a skilled, atmospheric Dungeon Master.
+1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
 2. Maintain narrative consistency with established world facts and events.
-3. In hybrid mode, suggest dice rolls for uncertain outcomes (D20 + modifier).
+3. In hybrid mode, suggest d100 skill tests for uncertain outcomes. State the skill, target number, and resolve with SL.
 4. Track consequences of player decisions across scenes.
-5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone.
+5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The Old World is grim and perilous.
 6. Always respond with valid JSON matching the requested format.
 7. Make the story feel like decisions matter—actions have consequences.
 8. Balance challenge with fun based on the difficulty setting.
@@ -247,7 +286,7 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
-If a skill check is appropriate for the action, include a dice roll. Roll a D20 and add the relevant modifier from the character's stats.
+If a skill test is appropriate for the action, use the WFRP d100 system: roll d100, compare to target number (characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-05 always succeed, 96-00 always fail.
 
 Respond with ONLY valid JSON in this exact format:
 {
@@ -268,9 +307,10 @@ Respond with ONLY valid JSON in this exact format:
   },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
   "stateChanges": {
-    "hp": 0,
-    "mana": 0,
+    "woundsChange": 0,
     "xp": 0,
+    "fortuneChange": 0,
+    "resolveChange": 0,
     "newItems": [],
     "removeItems": [],
     "newQuests": [],
@@ -278,6 +318,9 @@ Respond with ONLY valid JSON in this exact format:
     "worldFacts": [],
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "statuses": null,
+    "skillAdvances": null,
+    "newTalents": null,
+    "careerAdvance": null,
     "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes"}],
     "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
@@ -289,9 +332,12 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll, use null if no roll needed, or: {"type": "D20", "roll": <number 1-20>, "modifier": <number>, "total": <number>, "skill": "<skill name>", "dc": <number>, "success": <boolean>}
+For diceRoll, use null if no roll needed, or: {"type": "d100", "roll": <number 1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}
 
-For stateChanges: hp/mana/xp are DELTAS (can be negative). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
+For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Mighty Blow"]. Use null if none.
+For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 For stateChanges.mapChanges: log environmental changes to locations (traps set, doors opened, items left, destruction). type is one of: trap, obstacle, discovery, destruction, other.
@@ -313,25 +359,53 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `- Player's character name: "${settings.characterName.trim()}" (use this exact name for the character)`
     : '- Player\'s character name: not specified (suggest a fitting name)';
 
-  return `Create a new RPG campaign with these parameters:
+  const speciesLine = settings.species
+    ? `- Character species: ${settings.species}`
+    : '- Character species: not specified (suggest a fitting species — Human, Halfling, Dwarf, High Elf, or Wood Elf)';
+
+  const careerLine = settings.careerPreference
+    ? `- Preferred career: ${settings.careerPreference}`
+    : '- Career: not specified (suggest a career fitting the story and species)';
+
+  return `Create a new WFRP 4th Edition campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
 - Difficulty: ${settings.difficulty}
 - Campaign Length: ${settings.length}
 ${characterNameLine}
+${speciesLine}
+${careerLine}
 - Player's story idea: "${settings.storyPrompt}"
 ${langInstruction}
 
-Generate the campaign foundation. Respond with ONLY valid JSON:
+Generate the campaign foundation. The game uses Warhammer Fantasy Roleplay 4th Edition rules. The 10 characteristics are: WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), I (Initiative), Ag (Agility), Dex (Dexterity), Int (Intelligence), WP (Willpower), Fel (Fellowship). Each characteristic is generated as 2d10 + species base modifier (typically 20 for Humans).
+
+Respond with ONLY valid JSON:
 {
   "name": "A compelling campaign name (3-5 words)",
-  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
+  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state of the Old World",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "name": "${settings.characterName?.trim() || 'A fitting character name'}",
-    "class": "A character class that fits the genre",
-    "backstory": "2-3 sentences of character backstory tied to the world"
+    "species": "${settings.species || 'Human'}",
+    "career": {
+      "class": "Career class (Academics/Burghers/Courtiers/Peasants/Rangers/Riverfolk/Rogues/Warriors)",
+      "name": "Career name (e.g. Soldier, Wizard, Rat Catcher)",
+      "tier": 1,
+      "tierName": "Tier 1 name of the career",
+      "status": "Social status (e.g. Silver 1, Brass 3)"
+    },
+    "characteristics": {
+      "ws": 31, "bs": 25, "s": 34, "t": 28, "i": 30,
+      "ag": 33, "dex": 27, "int": 35, "wp": 29, "fel": 32
+    },
+    "skills": {"Melee (Basic)": 5, "Dodge": 3, "Cool": 3, "Endurance": 5, "Perception": 3, "Athletics": 3, "Gossip": 3, "Ranged (Bow)": 3},
+    "talents": ["Warrior Born", "Drilled"],
+    "fate": 2,
+    "resilience": 1,
+    "backstory": "2-3 sentences of character backstory tied to the world and the Old World setting",
+    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}]
   },
   "firstScene": {
     "narrative": "2-3 vivid paragraphs of the opening scene",
@@ -356,7 +430,14 @@ Generate the campaign foundation. Respond with ONLY valid JSON:
     "description": "Brief quest description"
   },
   "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"]
-}`;
+}
+
+IMPORTANT for characterSuggestion:
+- Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.
+- Skills object maps skill name to number of advances (typically 3-10 for starting character). Include 6-10 career-appropriate skills.
+- Include 1-3 starting talents from the career's tier 1 talent list.
+- Set fate/resilience based on species (Human: fate 2, resilience 1; Dwarf: fate 0, resilience 2; Halfling: fate 0, resilience 2; Elves: fate 0, resilience 0).
+- Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).`;
 }
 
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {

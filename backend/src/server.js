@@ -5,6 +5,7 @@ import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
+import { characterRoutes } from './routes/characters.js';
 import { mediaRoutes } from './routes/media.js';
 import { openaiProxyRoutes } from './routes/proxy/openai.js';
 import { anthropicProxyRoutes } from './routes/proxy/anthropic.js';
@@ -27,6 +28,7 @@ fastify.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
 
 await fastify.register(authRoutes, { prefix: '/auth' });
 await fastify.register(campaignRoutes, { prefix: '/campaigns' });
+await fastify.register(characterRoutes, { prefix: '/characters' });
 await fastify.register(mediaRoutes, { prefix: '/media' });
 await fastify.register(openaiProxyRoutes, { prefix: '/proxy/openai' });
 await fastify.register(anthropicProxyRoutes, { prefix: '/proxy/anthropic' });

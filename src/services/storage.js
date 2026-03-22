@@ -5,6 +5,7 @@ const SETTINGS_KEY = 'obsidian_grimoire_settings';
 const ACTIVE_CAMPAIGN_KEY = 'obsidian_grimoire_active';
 const MUSIC_LIBRARY_KEY = 'obsidian_grimoire_music';
 const LAST_CHARACTER_NAME_KEY = 'obsidian_grimoire_last_character_name';
+const CHARACTERS_KEY = 'obsidian_grimoire_characters';
 
 const TRACK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -208,6 +209,138 @@ export const storage = {
   saveLastCharacterName(name) {
     if (name) {
       localStorage.setItem(LAST_CHARACTER_NAME_KEY, name);
+    }
+  },
+
+  getCharacters() {
+    try {
+      const data = localStorage.getItem(CHARACTERS_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getCharactersAsync() {
+    if (apiClient.isConnected()) {
+      try {
+        return await apiClient.get('/characters');
+      } catch (err) {
+        console.warn('[storage] Backend getCharacters failed, falling back to local:', err.message);
+      }
+    }
+    return this.getCharacters();
+  },
+
+  async saveCharacter(character) {
+    if (apiClient.isConnected()) {
+      try {
+        const payload = {
+          name: character.name,
+          species: character.species,
+          careerData: character.career,
+          characteristics: character.characteristics,
+          advances: character.advances,
+          skills: character.skills,
+          talents: character.talents,
+          wounds: character.wounds,
+          maxWounds: character.maxWounds,
+          movement: character.movement,
+          fate: character.fate,
+          resilience: character.resilience,
+          xp: character.xp,
+          xpSpent: character.xpSpent,
+          backstory: character.backstory,
+          inventory: character.inventory,
+          portraitUrl: character.portraitUrl || '',
+          campaignCount: character.campaignCount || 0,
+        };
+
+        let saved;
+        if (character.backendId) {
+          saved = await apiClient.put(`/characters/${character.backendId}`, payload);
+        } else {
+          saved = await apiClient.post('/characters', payload);
+        }
+
+        character.backendId = saved.id;
+      } catch (err) {
+        console.warn('[storage] Backend saveCharacter failed:', err.message);
+      }
+    }
+
+    const characters = this.getCharacters();
+    const localId = character.localId || character.backendId || `char_${Date.now()}`;
+    character.localId = localId;
+    const idx = characters.findIndex(
+      (c) => c.localId === localId || (c.backendId && c.backendId === character.backendId)
+    );
+    const entry = { ...character, updatedAt: Date.now() };
+    if (idx >= 0) {
+      characters[idx] = entry;
+    } else {
+      characters.unshift(entry);
+    }
+    try {
+      localStorage.setItem(CHARACTERS_KEY, JSON.stringify(characters));
+    } catch (e) {
+      console.warn('[storage] Failed to save characters to localStorage:', e.message);
+    }
+    return entry;
+  },
+
+  async deleteCharacter(id) {
+    if (apiClient.isConnected()) {
+      try {
+        await apiClient.del(`/characters/${id}`);
+      } catch (err) {
+        console.warn('[storage] Backend deleteCharacter failed:', err.message);
+      }
+    }
+
+    const characters = this.getCharacters().filter(
+      (c) => c.localId !== id && c.backendId !== id
+    );
+    localStorage.setItem(CHARACTERS_KEY, JSON.stringify(characters));
+  },
+
+  async loadCharacter(id) {
+    if (apiClient.isConnected()) {
+      try {
+        const char = await apiClient.get(`/characters/${id}`);
+        return {
+          ...char,
+          career: char.careerData,
+          backendId: char.id,
+        };
+      } catch (err) {
+        console.warn('[storage] Backend loadCharacter failed, falling back to local:', err.message);
+      }
+    }
+    const characters = this.getCharacters();
+    return characters.find((c) => c.localId === id || c.backendId === id) || null;
+  },
+
+  async syncCharacterFromGame(character) {
+    if (!character?.backendId || !apiClient.isConnected()) return;
+    try {
+      await apiClient.put(`/characters/${character.backendId}`, {
+        careerData: character.career,
+        characteristics: character.characteristics,
+        advances: character.advances,
+        skills: character.skills,
+        talents: character.talents,
+        wounds: character.wounds,
+        maxWounds: character.maxWounds,
+        fate: character.fate,
+        resilience: character.resilience,
+        xp: character.xp,
+        xpSpent: character.xpSpent,
+        inventory: character.inventory,
+        backstory: character.backstory,
+      });
+    } catch (err) {
+      console.warn('[storage] Character sync failed:', err.message);
     }
   },
 

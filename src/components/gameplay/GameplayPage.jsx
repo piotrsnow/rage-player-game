@@ -16,6 +16,7 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 import WorldStateModal from './WorldStateModal';
 import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
+import AdvancementPanel from '../character/AdvancementPanel';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
@@ -36,6 +37,9 @@ export default function GameplayPage() {
   }, [narrator.playbackState, setNarratorState]);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
+  const [advancementOpen, setAdvancementOpen] = useState(false);
+
+  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -127,16 +131,25 @@ export default function GameplayPage() {
               {aiCosts?.total > 0 && (
                 <CostBadge costs={aiCosts} />
               )}
+              {availableXp > 0 && (
+                <button
+                  onClick={() => setAdvancementOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
+                >
+                  <span className="material-symbols-outlined text-xs">upgrade</span>
+                  {availableXp} {t('common.xp')}
+                </button>
+              )}
               {isMultiplayer && allCharacters.length > 0 ? (
                 <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
                   {allCharacters.map((c) => (
-                    <span key={c.name}>{c.name} HP:{c.hp}/{c.maxHp}</span>
+                    <span key={c.name}>{c.name} W:{c.wounds}/{c.maxWounds}</span>
                   ))}
                 </div>
               ) : character ? (
                 <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
                   <span>{character.name}</span>
-                  <span>{t('common.lvl')} {character.level}</span>
+                  <span>{character.career?.name}</span>
                 </div>
               ) : null}
               <button
@@ -169,12 +182,15 @@ export default function GameplayPage() {
         {/* Scene Panel */}
         <ScenePanel scene={currentScene} isGeneratingImage={isGeneratingImage} highlightInfo={narrator.highlightInfo} currentSentence={narrator.currentSentence} diceRoll={currentScene?.diceRoll && !isGeneratingScene ? currentScene.diceRoll : null} />
 
-        {/* Character Quick Stats (HP/Mana inline for mobile) */}
+        {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {character && (
           <div className="lg:hidden space-y-3 px-2">
             <div className="grid grid-cols-2 gap-4">
-              <StatusBar label={t('common.health')} current={character.hp} max={character.maxHp} color="error" />
-              <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
+              <StatusBar label={t('common.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
+              <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant uppercase tracking-widest">
+                <span>{t('common.fortune')} {character.fortune}/{character.fate}</span>
+                <span>{t('common.resolve')} {character.resolve}/{character.resilience}</span>
+              </div>
             </div>
           </div>
         )}
@@ -247,6 +263,10 @@ export default function GameplayPage() {
 
       {mpPanelOpen && (
         <MultiplayerPanel onClose={() => setMpPanelOpen(false)} />
+      )}
+
+      {advancementOpen && (
+        <AdvancementPanel onClose={() => setAdvancementOpen(false)} />
       )}
     </div>
   );

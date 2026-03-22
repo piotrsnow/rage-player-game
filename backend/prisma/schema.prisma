@@ -17,6 +17,7 @@ model User {
   updatedAt    DateTime @updatedAt
 
   campaigns  Campaign[]
+  characters Character[]
   mediaAssets MediaAsset[]
 }
 
@@ -30,6 +31,35 @@ model Campaign {
   lastSaved DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Character {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @db.ObjectId
+  name            String
+  species         String
+  careerData      String   @default("{}") // JSON: { class, name, tier, tierName, status }
+  characteristics String   @default("{}") // JSON: { ws, bs, s, t, i, ag, dex, int, wp, fel }
+  advances        String   @default("{}") // JSON: { ws:0, bs:0, ... }
+  skills          String   @default("{}") // JSON: { "Melee (Basic)": 5, ... }
+  talents         String   @default("[]") // JSON array
+  wounds          Int      @default(0)
+  maxWounds       Int      @default(0)
+  movement        Int      @default(4)
+  fate            Int      @default(0)
+  resilience      Int      @default(0)
+  xp              Int      @default(0)
+  xpSpent         Int      @default(0)
+  backstory       String   @default("")
+  inventory       String   @default("[]") // JSON array
+  portraitUrl     String   @default("")
+  campaignCount   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

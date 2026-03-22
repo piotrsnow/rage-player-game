@@ -229,10 +229,9 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
             <p className="text-sm font-headline text-tertiary text-center">
               {t('gameplay.diceResult', {
                 roll: diceRoll.roll,
-                modifier: diceRoll.modifier,
-                total: diceRoll.total,
+                target: diceRoll.target || diceRoll.dc,
+                sl: diceRoll.sl ?? 0,
               })}
-              <span className="text-on-surface-variant"> {t('common.vs')} {t('common.dc')} {diceRoll.dc}</span>
             </p>
             <p className={`text-xs font-bold ${diceRoll.success ? 'text-primary' : 'text-error'}`}>
               {diceRoll.success ? t('common.success') : t('common.failure')}

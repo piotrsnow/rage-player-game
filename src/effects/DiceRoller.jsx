@@ -363,7 +363,7 @@ export default function DiceRoller({ diceRoll, onComplete }) {
               }`}
             >
               {diceRoll.success ? '✦ ' : '✧ '}
-              {diceRoll.total}
+              {diceRoll.sl !== undefined ? `SL ${diceRoll.sl}` : diceRoll.roll}
               {diceRoll.success ? ' ✦' : ' ✧'}
             </p>
           </div>

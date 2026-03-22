@@ -76,9 +76,8 @@ export function useAI() {
               content: t('system.diceRollMessage', {
                 skill: result.diceRoll.skill,
                 roll: result.diceRoll.roll,
-                modifier: result.diceRoll.modifier,
-                total: result.diceRoll.total,
-                dc: result.diceRoll.dc,
+                target: result.diceRoll.target || result.diceRoll.dc,
+                sl: result.diceRoll.sl ?? 0,
                 result: result.diceRoll.success ? t('common.success') : t('common.failure'),
               }),
               timestamp: Date.now(),

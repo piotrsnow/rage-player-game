@@ -1,5 +1,15 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
+import { calculateWounds } from '../services/gameState';
+import {
+  getAdvancementCost,
+  ADVANCEMENT_COSTS,
+  isCharacteristicInCareer,
+  isSkillInCareer,
+  isTalentInCareer,
+  getCareerByName,
+  canAdvanceTier,
+} from '../data/wfrp';
 
 const GameContext = createContext(null);
 
@@ -28,17 +38,37 @@ function decayNeeds(needs, hoursElapsed) {
 function createDefaultCharacter() {
   return {
     name: 'Adventurer',
-    class: 'Wanderer',
-    level: 1,
+    species: 'Human',
+    career: {
+      class: 'Warriors',
+      name: 'Soldier',
+      tier: 1,
+      tierName: 'Recruit',
+      status: 'Silver 1',
+    },
     xp: 0,
-    hp: 100,
-    maxHp: 100,
-    mana: 50,
-    maxMana: 50,
-    stats: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+    xpSpent: 0,
+    characteristics: {
+      ws: 31, bs: 25, s: 34, t: 28,
+      i: 30, ag: 33, dex: 27, int: 35,
+      wp: 29, fel: 32,
+    },
+    advances: {
+      ws: 0, bs: 0, s: 0, t: 0,
+      i: 0, ag: 0, dex: 0, int: 0,
+      wp: 0, fel: 0,
+    },
+    wounds: 12,
+    maxWounds: 12,
+    movement: 4,
+    fate: 2,
+    fortune: 2,
+    resilience: 1,
+    resolve: 1,
+    skills: {},
+    talents: [],
     inventory: [],
     statuses: [],
-    skills: [],
     backstory: '',
     needs: createDefaultNeeds(),
   };
@@ -132,9 +162,204 @@ function gameReducer(state, action) {
         ...state,
         character: {
           ...state.character,
-          stats: { ...state.character.stats, ...action.payload },
+          characteristics: { ...state.character.characteristics, ...action.payload },
         },
       };
+
+    case 'UPDATE_CAREER': {
+      const { career } = action.payload;
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          career: { ...state.character.career, ...career },
+        },
+      };
+    }
+
+    case 'SPEND_FORTUNE': {
+      if (state.character.fortune <= 0) return state;
+      return {
+        ...state,
+        character: { ...state.character, fortune: state.character.fortune - 1 },
+      };
+    }
+
+    case 'SPEND_FATE': {
+      if (state.character.fate <= 0) return state;
+      return {
+        ...state,
+        character: { ...state.character, fate: state.character.fate - 1 },
+      };
+    }
+
+    case 'SPEND_RESOLVE': {
+      if (state.character.resolve <= 0) return state;
+      return {
+        ...state,
+        character: { ...state.character, resolve: state.character.resolve - 1 },
+      };
+    }
+
+    case 'SPEND_RESILIENCE': {
+      if (state.character.resilience <= 0) return state;
+      return {
+        ...state,
+        character: { ...state.character, resilience: state.character.resilience - 1 },
+      };
+    }
+
+    case 'UPDATE_SKILLS': {
+      const { skills } = action.payload;
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          skills: { ...state.character.skills, ...skills },
+        },
+      };
+    }
+
+    case 'ADD_TALENT': {
+      const { talent } = action.payload;
+      if (state.character.talents.includes(talent)) return state;
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          talents: [...state.character.talents, talent],
+        },
+      };
+    }
+
+    case 'SPEND_XP': {
+      const { cost } = action.payload;
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          xpSpent: state.character.xpSpent + cost,
+        },
+      };
+    }
+
+    case 'SPEND_XP_CHARACTERISTIC': {
+      const { key } = action.payload;
+      const char = state.character;
+      if (!char) return state;
+      const currentAdv = char.advances?.[key] || 0;
+      const inCareer = isCharacteristicInCareer(key, char.career?.name, char.career?.tier);
+      const cost = getAdvancementCost(currentAdv, inCareer);
+      const available = (char.xp || 0) - (char.xpSpent || 0);
+      if (cost > available) return state;
+
+      const newAdvances = { ...char.advances, [key]: currentAdv + 1 };
+      const newChars = { ...char.characteristics, [key]: (char.characteristics[key] || 0) + 1 };
+      const newMaxWounds = calculateWounds(newChars);
+      return {
+        ...state,
+        character: {
+          ...char,
+          xpSpent: char.xpSpent + cost,
+          advances: newAdvances,
+          characteristics: newChars,
+          maxWounds: newMaxWounds,
+          wounds: Math.min(char.wounds, newMaxWounds),
+        },
+      };
+    }
+
+    case 'SPEND_XP_SKILL': {
+      const { skill } = action.payload;
+      const char = state.character;
+      if (!char) return state;
+      const currentAdv = char.skills?.[skill] || 0;
+      const inCareer = isSkillInCareer(skill, char.career?.name, char.career?.tier);
+      const cost = getAdvancementCost(currentAdv, inCareer);
+      const available = (char.xp || 0) - (char.xpSpent || 0);
+      if (cost > available) return state;
+
+      return {
+        ...state,
+        character: {
+          ...char,
+          xpSpent: char.xpSpent + cost,
+          skills: { ...char.skills, [skill]: currentAdv + 1 },
+        },
+      };
+    }
+
+    case 'SPEND_XP_TALENT': {
+      const { talent } = action.payload;
+      const char = state.character;
+      if (!char) return state;
+      if (char.talents?.includes(talent)) return state;
+      const inCareer = isTalentInCareer(talent, char.career?.name, char.career?.tier);
+      const cost = inCareer ? ADVANCEMENT_COSTS.talentInCareer : ADVANCEMENT_COSTS.talentOutOfCareer;
+      const available = (char.xp || 0) - (char.xpSpent || 0);
+      if (cost > available) return state;
+
+      return {
+        ...state,
+        character: {
+          ...char,
+          xpSpent: char.xpSpent + cost,
+          talents: [...(char.talents || []), talent],
+        },
+      };
+    }
+
+    case 'CHANGE_CAREER': {
+      const { careerName } = action.payload;
+      const char = state.character;
+      if (!char) return state;
+      const newCareer = getCareerByName(careerName);
+      if (!newCareer) return state;
+      const sameClass = newCareer.class === char.career?.class;
+      const cost = sameClass
+        ? ADVANCEMENT_COSTS.careerChangeSameClass
+        : ADVANCEMENT_COSTS.careerChangeDifferentClass;
+      const available = (char.xp || 0) - (char.xpSpent || 0);
+      if (cost > available) return state;
+
+      const tierData = newCareer.tiers[0];
+      return {
+        ...state,
+        character: {
+          ...char,
+          xpSpent: char.xpSpent + cost,
+          career: {
+            class: newCareer.class,
+            name: newCareer.name,
+            tier: 1,
+            tierName: tierData?.name || newCareer.name,
+            status: tierData?.status || 'Silver 1',
+          },
+        },
+      };
+    }
+
+    case 'ADVANCE_CAREER_TIER': {
+      const char = state.character;
+      if (!char || !canAdvanceTier(char)) return state;
+      const career = getCareerByName(char.career?.name);
+      if (!career) return state;
+      const nextTier = (char.career?.tier || 1) + 1;
+      if (nextTier > 4) return state;
+      const tierData = career.tiers[nextTier - 1];
+      return {
+        ...state,
+        character: {
+          ...char,
+          career: {
+            ...char.career,
+            tier: nextTier,
+            tierName: tierData?.name || char.career.tierName,
+            status: tierData?.status || char.career.status,
+          },
+        },
+      };
+    }
 
     case 'ADD_INVENTORY_ITEM':
       return {
@@ -212,22 +437,76 @@ function gameReducer(state, action) {
       const changes = action.payload;
       let next = { ...state };
 
-      if (changes.hp !== undefined || changes.mana !== undefined || changes.xp !== undefined) {
+      if (changes.woundsChange !== undefined || changes.xp !== undefined) {
         next.character = { ...next.character };
-        if (changes.hp !== undefined) next.character.hp = Math.max(0, Math.min(next.character.maxHp, next.character.hp + changes.hp));
-        if (changes.mana !== undefined) next.character.mana = Math.max(0, Math.min(next.character.maxMana, next.character.mana + changes.mana));
+        if (changes.woundsChange !== undefined) {
+          next.character.wounds = Math.max(0, Math.min(next.character.maxWounds, next.character.wounds + changes.woundsChange));
+        }
         if (changes.xp !== undefined) {
           next.character.xp = next.character.xp + changes.xp;
-          const xpThreshold = next.character.level * 100;
-          if (next.character.xp >= xpThreshold) {
-            next.character.level += 1;
-            next.character.xp -= xpThreshold;
-            next.character.maxHp += 10;
-            next.character.hp = next.character.maxHp;
-            next.character.maxMana += 5;
-            next.character.mana = next.character.maxMana;
-          }
         }
+      }
+
+      if (changes.fortuneChange !== undefined && next.character) {
+        next.character = { ...next.character };
+        next.character.fortune = Math.max(0, Math.min(next.character.fate, next.character.fortune + changes.fortuneChange));
+      }
+
+      if (changes.resolveChange !== undefined && next.character) {
+        next.character = { ...next.character };
+        next.character.resolve = Math.max(0, Math.min(next.character.resilience, next.character.resolve + changes.resolveChange));
+      }
+
+      if (changes.fateChange !== undefined && next.character) {
+        next.character = { ...next.character };
+        next.character.fate = Math.max(0, next.character.fate + changes.fateChange);
+        next.character.fortune = Math.min(next.character.fortune, next.character.fate);
+      }
+
+      if (changes.resilienceChange !== undefined && next.character) {
+        next.character = { ...next.character };
+        next.character.resilience = Math.max(0, next.character.resilience + changes.resilienceChange);
+        next.character.resolve = Math.min(next.character.resolve, next.character.resilience);
+      }
+
+      if (changes.careerAdvance && next.character) {
+        next.character = {
+          ...next.character,
+          career: { ...next.character.career, ...changes.careerAdvance },
+        };
+      }
+
+      if (changes.skillAdvances && next.character) {
+        const skills = { ...next.character.skills };
+        for (const [skillName, advanceAmount] of Object.entries(changes.skillAdvances)) {
+          skills[skillName] = (skills[skillName] || 0) + advanceAmount;
+        }
+        next.character = { ...next.character, skills };
+      }
+
+      if (changes.newTalents?.length > 0 && next.character) {
+        const talents = [...next.character.talents];
+        for (const t of changes.newTalents) {
+          if (!talents.includes(t)) talents.push(t);
+        }
+        next.character = { ...next.character, talents };
+      }
+
+      if (changes.characteristicAdvances && next.character) {
+        const advances = { ...next.character.advances };
+        const chars = { ...next.character.characteristics };
+        for (const [key, amount] of Object.entries(changes.characteristicAdvances)) {
+          advances[key] = (advances[key] || 0) + amount;
+          chars[key] = (chars[key] || 0) + amount;
+        }
+        const newMaxWounds = calculateWounds(chars);
+        next.character = {
+          ...next.character,
+          advances,
+          characteristics: chars,
+          maxWounds: newMaxWounds,
+          wounds: Math.min(next.character.wounds, newMaxWounds),
+        };
       }
 
       if (changes.newItems) {
@@ -465,6 +744,61 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'LOAD_MULTIPLAYER_STATE': {
+      const gs = action.payload;
+      return {
+        ...state,
+        campaign: gs.campaign || state.campaign,
+        characters: gs.characters || state.characters,
+        character: gs.characters?.[0] || state.character,
+        world: gs.world || state.world,
+        quests: gs.quests || state.quests,
+        scenes: gs.scenes || state.scenes,
+        chatHistory: gs.chatHistory || state.chatHistory,
+      };
+    }
+
+    case 'MP_ADD_SCENE': {
+      return {
+        ...state,
+        scenes: [...state.scenes, action.payload.scene],
+        chatHistory: [...state.chatHistory, ...(action.payload.chatMessages || [])],
+      };
+    }
+
+    case 'MP_APPLY_STATE_CHANGES': {
+      const { stateChanges } = action.payload;
+      let next = { ...state };
+
+      if (stateChanges?.perCharacter && next.characters?.length > 0) {
+        next.characters = next.characters.map((c) => {
+          const changes = stateChanges.perCharacter[c.name];
+          if (!changes) return c;
+          const updated = { ...c };
+          if (changes.woundsChange !== undefined) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + changes.woundsChange));
+          if (changes.xp !== undefined) updated.xp = updated.xp + changes.xp;
+          if (changes.fortuneChange !== undefined) updated.fortune = Math.max(0, Math.min(updated.fate, updated.fortune + changes.fortuneChange));
+          if (changes.resolveChange !== undefined) updated.resolve = Math.max(0, Math.min(updated.resilience, updated.resolve + changes.resolveChange));
+          if (changes.newItems) updated.inventory = [...(updated.inventory || []), ...changes.newItems];
+          if (changes.removeItems) updated.inventory = (updated.inventory || []).filter((i) => !changes.removeItems.includes(i.id));
+          return updated;
+        });
+        next.character = next.characters[0];
+      }
+
+      if (stateChanges?.worldFacts) {
+        next.world = { ...next.world, facts: [...(next.world.facts || []), ...stateChanges.worldFacts] };
+      }
+      if (stateChanges?.journalEntries) {
+        next.world = { ...next.world, eventHistory: [...(next.world.eventHistory || []), ...stateChanges.journalEntries] };
+      }
+      if (stateChanges?.currentLocation) {
+        next.world = { ...next.world, currentLocation: stateChanges.currentLocation };
+      }
+
+      return next;
+    }
+
     default:
       return state;
   }
@@ -491,6 +825,10 @@ export function GameProvider({ children }) {
         }
       } catch (err) {
         console.error('[GameContext] Unexpected save error:', err);
+      }
+
+      if (current.character) {
+        storage.syncCharacterFromGame(current.character);
       }
     }
   }, []);

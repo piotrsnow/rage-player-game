@@ -55,13 +55,14 @@ export function exportAsMarkdown(campaignState) {
     lines.push('## Character');
     lines.push('');
     lines.push(`- **Name:** ${character.name}`);
-    lines.push(`- **Class:** ${character.class}`);
-    lines.push(`- **Level:** ${character.level} (XP: ${character.xp})`);
-    lines.push(`- **HP:** ${character.hp}/${character.maxHp}`);
-    lines.push(`- **Mana:** ${character.mana}/${character.maxMana}`);
-    if (character.stats) {
-      const s = character.stats;
-      lines.push(`- **Stats:** STR ${s.str} | DEX ${s.dex} | CON ${s.con} | INT ${s.int} | WIS ${s.wis} | CHA ${s.cha}`);
+    lines.push(`- **Species:** ${character.species || 'Human'}`);
+    lines.push(`- **Career:** ${character.career?.name || 'Unknown'} (${character.career?.tierName || 'Tier 1'}), ${character.career?.status || ''}`);
+    lines.push(`- **XP:** ${character.xp || 0} total, ${character.xpSpent || 0} spent`);
+    lines.push(`- **Wounds:** ${character.wounds}/${character.maxWounds}`);
+    lines.push(`- **Fate/Fortune:** ${character.fate}/${character.fortune}, **Resilience/Resolve:** ${character.resilience}/${character.resolve}`);
+    if (character.characteristics) {
+      const c = character.characteristics;
+      lines.push(`- **Characteristics:** WS ${c.ws} | BS ${c.bs} | S ${c.s} | T ${c.t} | I ${c.i} | Ag ${c.ag} | Dex ${c.dex} | Int ${c.int} | WP ${c.wp} | Fel ${c.fel}`);
     }
     if (character.inventory?.length) {
       lines.push('');
@@ -100,7 +101,7 @@ export function exportAsMarkdown(campaignState) {
       if (scene.diceRoll) {
         const d = scene.diceRoll;
         const outcome = d.success ? 'Success' : 'Failure';
-        lines.push(`**Dice Roll:** ${d.skill} — D20 (${d.roll}) + ${d.modifier} = ${d.total} vs DC ${d.dc} — ${outcome}`);
+        lines.push(`**Dice Roll:** ${d.skill} — d100 roll ${d.roll} vs target ${d.target || d.dc} — SL ${d.sl ?? 0} — ${outcome}`);
         lines.push('');
       }
       if (scene.narrative) {

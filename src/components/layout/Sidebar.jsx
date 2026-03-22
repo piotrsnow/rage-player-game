@@ -37,13 +37,16 @@ export default function Sidebar() {
             <div>
               <div className="font-headline text-tertiary text-sm font-bold">{character.name}</div>
               <div className="text-[10px] text-on-surface-variant uppercase tracking-widest">
-                {t('common.level')} {character.level} {character.class}
+                {character.career?.name} · {character.career?.tierName}
               </div>
             </div>
           </div>
           <div className="space-y-3">
-            <StatusBar label={t('common.health')} current={character.hp} max={character.maxHp} color="error" />
-            <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
+            <StatusBar label={t('common.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
+            <div className="flex justify-between text-[10px] uppercase tracking-widest text-on-surface-variant mt-2">
+              <span>{t('common.fortune')} {character.fortune}/{character.fate}</span>
+              <span>{t('common.resolve')} {character.resolve}/{character.resilience}</span>
+            </div>
           </div>
           <div className="mt-4">
             <NeedsPanel needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }} timeState={timeState} />

@@ -1,7 +1,71 @@
 import { useCallback } from 'react';
-import { useGame } from '../contexts/GameContext';
+import { useGame, createDefaultNeeds } from '../contexts/GameContext';
 import { storage } from '../services/storage';
-import { createCampaignId, createSceneId, createQuestId } from '../services/gameState';
+import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds } from '../services/gameState';
+import { SPECIES, CHARACTERISTIC_KEYS, getCareerByName } from '../data/wfrp';
+
+function buildWfrpCharacter(aiResult, campaignSettings) {
+  const speciesName = campaignSettings.species || aiResult.characterSuggestion?.species || 'Human';
+  const species = SPECIES[speciesName] || SPECIES.Human;
+
+  const aiChar = aiResult.characterSuggestion || {};
+  const characteristics = aiChar.characteristics || generateCharacteristics(speciesName);
+
+  const advances = {};
+  for (const key of CHARACTERISTIC_KEYS) {
+    advances[key] = 0;
+  }
+
+  const careerName = aiChar.career?.name || campaignSettings.careerPreference || 'Soldier';
+  const careerDef = getCareerByName(careerName);
+  const careerClass = careerDef?.class || aiChar.career?.class || 'Warriors';
+  const tier = aiChar.career?.tier || 1;
+  const tierData = careerDef?.tiers?.[tier - 1];
+
+  const career = {
+    class: careerClass,
+    name: careerName,
+    tier,
+    tierName: tierData?.name || aiChar.career?.tierName || careerName,
+    status: tierData?.status || aiChar.career?.status || 'Silver 1',
+  };
+
+  const maxWounds = calculateWounds(characteristics);
+
+  const skills = {};
+  if (aiChar.skills && typeof aiChar.skills === 'object' && !Array.isArray(aiChar.skills)) {
+    Object.assign(skills, aiChar.skills);
+  } else if (tierData?.skills) {
+    for (const skill of tierData.skills) {
+      skills[skill] = 5;
+    }
+  }
+
+  const talents = aiChar.talents || tierData?.talents?.slice(0, 2) || [];
+
+  return {
+    name: campaignSettings.characterName?.trim() || aiChar.name || 'Adventurer',
+    species: speciesName,
+    career,
+    xp: 0,
+    xpSpent: 0,
+    characteristics,
+    advances,
+    wounds: maxWounds,
+    maxWounds,
+    movement: species.movement,
+    fate: aiChar.fate ?? species.fate,
+    fortune: aiChar.fate ?? species.fate,
+    resilience: aiChar.resilience ?? species.resilience,
+    resolve: aiChar.resilience ?? species.resilience,
+    skills,
+    talents,
+    inventory: aiChar.inventory || [],
+    statuses: [],
+    backstory: aiChar.backstory || '',
+    needs: createDefaultNeeds(),
+  };
+}
 
 export function useGameState() {
   const { state, dispatch, autoSave } = useGame();
@@ -21,21 +85,12 @@ export function useGameState() {
         hook: aiResult.hook,
       };
 
-      const character = {
-        name: campaignSettings.characterName?.trim() || aiResult.characterSuggestion?.name || 'Adventurer',
-        class: aiResult.characterSuggestion?.class || 'Wanderer',
-        level: 1,
-        xp: 0,
-        hp: 100,
-        maxHp: 100,
-        mana: 50,
-        maxMana: 50,
-        stats: { str: 10, dex: 12, con: 10, int: 14, wis: 12, cha: 10 },
-        inventory: [],
-        statuses: [],
-        skills: [],
-        backstory: aiResult.characterSuggestion?.backstory || '',
-      };
+      const character = campaignSettings.existingCharacter
+        ? {
+            ...campaignSettings.existingCharacter,
+            needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
+          }
+        : buildWfrpCharacter(aiResult, campaignSettings);
 
       const firstScene = {
         id: createSceneId(),
@@ -78,7 +133,6 @@ export function useGameState() {
         payload: { campaign, character, world, scenes: [firstScene], chatHistory },
       });
 
-      // Also set quests via separate dispatch
       if (quests.active.length > 0) {
         quests.active.forEach((q) => dispatch({ type: 'ADD_QUEST', payload: q }));
       }
