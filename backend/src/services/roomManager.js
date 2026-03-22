@@ -28,6 +28,8 @@ function sanitizeRoom(room) {
       photo: p.photo,
       isHost: p.isHost,
       pendingAction: p.pendingAction,
+      voiceId: p.voiceId || null,
+      voiceName: p.voiceName || null,
     });
   }
   return {
@@ -53,6 +55,8 @@ export function createRoom(hostUserId, ws) {
     isHost: true,
     ws,
     pendingAction: null,
+    voiceId: null,
+    voiceName: null,
   };
 
   const room = {
@@ -75,10 +79,51 @@ export function createRoom(hostUserId, ws) {
   return { room, odId };
 }
 
+export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
+  const roomCode = generateRoomCode();
+  const odId = generateOdId();
+
+  const player = {
+    odId,
+    userId: hostUserId,
+    name: gameState.characters?.[0]?.name || 'Host',
+    gender: gameState.characters?.[0]?.gender || 'male',
+    photo: null,
+    isHost: true,
+    ws,
+    pendingAction: null,
+    voiceId: null,
+    voiceName: null,
+  };
+
+  if (gameState.characters?.length > 0) {
+    gameState.characters[0].odId = odId;
+  }
+
+  const room = {
+    roomCode,
+    hostId: odId,
+    phase: 'playing',
+    settings: settings || {
+      genre: 'Fantasy',
+      tone: 'Epic',
+      style: 'Hybrid',
+      difficulty: 'Normal',
+      length: 'Medium',
+      storyPrompt: '',
+    },
+    players: new Map([[odId, player]]),
+    gameState,
+  };
+
+  rooms.set(roomCode, room);
+  return { room, odId };
+}
+
 export function joinRoom(roomCode, userId, ws) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
-  if (room.phase !== 'lobby') throw new Error('Game already in progress');
+  if (room.phase !== 'lobby' && room.phase !== 'playing') throw new Error('Cannot join this room');
   if (room.players.size >= 6) throw new Error('Room is full');
 
   const odId = generateOdId();
@@ -91,6 +136,8 @@ export function joinRoom(roomCode, userId, ws) {
     isHost: false,
     ws,
     pendingAction: null,
+    voiceId: null,
+    voiceName: null,
   };
 
   room.players.set(odId, player);
@@ -117,7 +164,7 @@ export function leaveRoom(roomCode, odId) {
   return room;
 }
 
-export function updateCharacter(roomCode, odId, { name, gender, photo }) {
+export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName }) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
   const player = room.players.get(odId);
@@ -126,6 +173,8 @@ export function updateCharacter(roomCode, odId, { name, gender, photo }) {
   if (name !== undefined) player.name = name;
   if (gender !== undefined) player.gender = gender;
   if (photo !== undefined) player.photo = photo;
+  if (voiceId !== undefined) player.voiceId = voiceId;
+  if (voiceName !== undefined) player.voiceName = voiceName;
 
   return room;
 }

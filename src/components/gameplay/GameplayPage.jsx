@@ -14,6 +14,7 @@ import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import WorldStateModal from './WorldStateModal';
+import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
 
 export default function GameplayPage() {
@@ -34,13 +35,11 @@ export default function GameplayPage() {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
+  const [mpPanelOpen, setMpPanelOpen] = useState(false);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
-    ? mpGameState?.characters?.find((c) => {
-        const myPlayer = mp.state.players?.find((p) => p.odId === mp.state.myOdId);
-        return c.playerName === myPlayer?.name || c.name === myPlayer?.name;
-      }) || mpGameState?.characters?.[0]
+    ? mpGameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mpGameState?.characters?.[0]
     : state.character;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
@@ -79,6 +78,22 @@ export default function GameplayPage() {
       });
     }
   }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign]);
+
+  useEffect(() => {
+    if (!isMultiplayer) return;
+    const players = mp.state.players || [];
+    for (const p of players) {
+      if (p.voiceId && p.name) {
+        const existing = state.characterVoiceMap?.[p.name];
+        if (!existing || existing.voiceId !== p.voiceId) {
+          dispatch({
+            type: 'MAP_CHARACTER_VOICE',
+            payload: { characterName: p.name, voiceId: p.voiceId, gender: p.gender || null },
+          });
+        }
+      }
+    }
+  }, [isMultiplayer, mp.state.players, state.characterVoiceMap, dispatch]);
 
   const handleAction = async (action) => {
     try {
@@ -124,6 +139,15 @@ export default function GameplayPage() {
                   <span>{t('common.lvl')} {character.level}</span>
                 </div>
               ) : null}
+              <button
+                onClick={() => setMpPanelOpen(true)}
+                title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
+                className={`material-symbols-outlined text-sm transition-colors ${
+                  isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
+                }`}
+              >
+                {isMultiplayer ? 'group' : 'group_add'}
+              </button>
               <button
                 onClick={() => setWorldModalOpen(true)}
                 title={t('worldState.title')}
@@ -213,12 +237,16 @@ export default function GameplayPage() {
 
       {worldModalOpen && (
         <WorldStateModal
-          world={state.world}
+          world={isMultiplayer ? mpGameState?.world : state.world}
           characterVoiceMap={state.characterVoiceMap}
           characterVoices={settings.characterVoices}
           dispatch={dispatch}
           onClose={() => setWorldModalOpen(false)}
         />
+      )}
+
+      {mpPanelOpen && (
+        <MultiplayerPanel onClose={() => setMpPanelOpen(false)} />
       )}
     </div>
   );

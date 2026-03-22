@@ -2,6 +2,7 @@ import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 
 function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en') {
+  const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
     .map((p) => `- ${p.name} (${p.gender}, ${p.isHost ? 'host' : 'player'})`)
     .join('\n');
@@ -22,6 +23,19 @@ function buildMultiplayerSystemPrompt(gameState, settings, players, language = '
 
   const currentLoc = world.currentLocation || 'Unknown';
 
+  const charLines = (gameState.characters || []).map((c) => {
+    let line = `- ${c.name} (${c.class || 'Adventurer'} Lv.${c.level || 1}): HP ${c.hp}/${c.maxHp}, Mana ${c.mana}/${c.maxMana}`;
+    if (needsEnabled && c.needs) {
+      const n = c.needs;
+      const fmt = (k, v) => `${k}: ${v ?? 100}/100${(v ?? 100) < 15 ? ' [CRITICAL]' : (v ?? 100) < 30 ? ' [LOW]' : ''}`;
+      line += `\n  Needs: ${fmt('Hunger', n.hunger)}, ${fmt('Thirst', n.thirst)}, ${fmt('Bladder', n.bladder)}, ${fmt('Hygiene', n.hygiene)}, ${fmt('Rest', n.rest)}`;
+    }
+    return line;
+  }).join('\n') || 'No characters defined yet.';
+
+  const needsBlock = needsEnabled ? `
+NEEDS SYSTEM: ENABLED. Each character has biological needs (hunger, thirst, bladder, hygiene, rest) on a 0-100 scale (100=fully satisfied, 0=critical). Low needs should affect narrative and character behavior. When characters eat, drink, rest, bathe, or use a toilet, include needsChanges in their perCharacter entry.` : '';
+
   return `You are the Dungeon Master AI for a MULTIPLAYER campaign: "${campaign.name || 'Unnamed Campaign'}".
 
 CAMPAIGN SETTINGS:
@@ -40,7 +54,7 @@ STORY HOOK:
 ${campaign.hook || 'An adventure begins...'}
 
 CHARACTERS:
-${(gameState.characters || []).map((c) => `- ${c.name} (${c.class || 'Adventurer'} Lv.${c.level || 1}): HP ${c.hp}/${c.maxHp}, Mana ${c.mana}/${c.maxMana}`).join('\n') || 'No characters defined yet.'}
+${charLines}
 
 NPC REGISTRY:
 ${npcSection}
@@ -54,7 +68,7 @@ SCENE HISTORY:
 ${sceneHistory}
 
 LANGUAGE: Write all narrative in ${language === 'pl' ? 'Polish' : 'English'}.
-
+${needsBlock}
 MULTIPLAYER INSTRUCTIONS:
 1. You are running a MULTIPLAYER session. Multiple players act simultaneously each round.
 2. When resolving actions, consider ALL submitted actions together and resolve them simultaneously.
@@ -66,8 +80,14 @@ MULTIPLAYER INSTRUCTIONS:
 8. Always respond with valid JSON.`;
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en') {
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false } = {}) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
+  const needsPerCharHint = needsSystemEnabled
+    ? ', "needsChanges": {"hunger": 60}'
+    : '';
+  const needsPerCharDoc = needsSystemEnabled
+    ? '\nFor perCharacter needsChanges: use when a character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger, +40 thirst. Typical: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full sleep +70-90 rest, nap +20-30 rest. Omit needsChanges if no needs changed for that character.'
+    : '';
 
   if (isFirstScene) {
     return `Generate the opening scene of this multiplayer campaign. Introduce all player characters and set the stage.
@@ -77,7 +97,7 @@ Respond with ONLY valid JSON:
   "narrative": "2-3 paragraphs setting the stage, introducing all characters...",
   "dialogueSegments": [
     {"type": "narration", "text": "Prose..."},
-    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "..."}
+    {"type": "dialogue", "character": "NPC or Player Name", "gender": "male", "text": "..."}
   ],
   "soundEffect": "ambient sound or null",
   "musicPrompt": "background music description or null",
@@ -99,7 +119,9 @@ Respond with ONLY valid JSON:
   }
 }
 
-For stateChanges.perCharacter: an object keyed by character name, each containing {hp, mana, xp, newItems, removeItems} deltas. Example: {"Aldric": {"hp": -5, "xp": 10}, "Lyra": {"mana": -15, "xp": 10}}. Use empty object {} if no per-character changes.${langReminder}`;
+For stateChanges.perCharacter: an object keyed by character name, each containing {hp, mana, xp, newItems, removeItems${needsPerCharHint ? ', needsChanges' : ''}} deltas. Example: {"Aldric": {"hp": -5, "xp": 10}, "Lyra": {"mana": -15, "xp": 10}}. Use empty object {} if no per-character changes.${needsPerCharDoc}
+
+CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
   }
 
   const actionLines = actions
@@ -116,7 +138,7 @@ Respond with ONLY valid JSON:
   "narrative": "2-3 paragraphs resolving all actions and setting up the next decision...",
   "dialogueSegments": [
     {"type": "narration", "text": "Prose..."},
-    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "..."}
+    {"type": "dialogue", "character": "NPC or Player Name", "gender": "male", "text": "..."}
   ],
   "soundEffect": "sound description or null",
   "musicPrompt": "music description or null",
@@ -130,7 +152,7 @@ Respond with ONLY valid JSON:
   "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
   "stateChanges": {
     "perCharacter": {
-      "CharacterName": {"hp": 0, "mana": 0, "xp": 0, "newItems": [], "removeItems": []}
+      "CharacterName": {"hp": 0, "mana": 0, "xp": 0, "newItems": [], "removeItems": []${needsPerCharHint}}
     },
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Location Name",
@@ -141,7 +163,9 @@ Respond with ONLY valid JSON:
   "diceRoll": null
 }
 
-For perCharacter: include an entry for each character that is affected. hp/mana/xp are deltas.${langReminder}`;
+For perCharacter: include an entry for each character that is affected. hp/mana/xp are deltas.${needsPerCharDoc}
+
+CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }
 
 async function callAI(messages, encryptedApiKeys) {
@@ -259,18 +283,23 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
   const result = await callAI(messages, encryptedApiKeys);
 
-  const characters = (result.characters || []).map((c) => ({
-    ...c,
-    hp: c.hp ?? 100,
-    maxHp: c.maxHp ?? 100,
-    mana: c.mana ?? 50,
-    maxMana: c.maxMana ?? 50,
-    level: c.level ?? 1,
-    xp: c.xp ?? 0,
-    stats: c.stats ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
-    inventory: c.inventory ?? [],
-    statuses: c.statuses ?? [],
-  }));
+  const characters = (result.characters || []).map((c) => {
+    const matchedPlayer = players.find((p) => p.name === c.playerName) || players.find((p) => p.name === c.name);
+    return {
+      ...c,
+      odId: matchedPlayer?.odId || null,
+      hp: c.hp ?? 100,
+      maxHp: c.maxHp ?? 100,
+      mana: c.mana ?? 50,
+      maxMana: c.maxMana ?? 50,
+      level: c.level ?? 1,
+      xp: c.xp ?? 0,
+      stats: c.stats ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      inventory: c.inventory ?? [],
+      statuses: c.statuses ?? [],
+      needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+    };
+  });
 
   const sceneId = `scene_mp_${Date.now()}`;
   const firstScene = {
@@ -326,9 +355,79 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   };
 }
 
+export async function generateMidGameCharacter(gameState, settings, playerName, playerGender, encryptedApiKeys, language = 'en') {
+  const existingChars = (gameState.characters || [])
+    .map((c) => `- ${c.name} (${c.class} Lv.${c.level}, HP ${c.hp}/${c.maxHp})`)
+    .join('\n') || 'None';
+
+  const avgLevel = gameState.characters?.length
+    ? Math.round(gameState.characters.reduce((s, c) => s + (c.level || 1), 0) / gameState.characters.length)
+    : 1;
+
+  const campaign = gameState.campaign || {};
+
+  const prompt = `A new player is joining a MULTIPLAYER RPG campaign mid-game.
+
+CAMPAIGN: "${campaign.name || 'Unnamed'}"
+- Genre: ${settings.genre || 'Fantasy'}
+- Tone: ${settings.tone || 'Epic'}
+- Difficulty: ${settings.difficulty || 'Normal'}
+- World: ${campaign.worldDescription?.substring(0, 300) || 'A mysterious world'}
+
+EXISTING CHARACTERS:
+${existingChars}
+
+NEW PLAYER: ${playerName} (${playerGender})
+
+Create a character for this new player that fits the campaign. The character should be at level ${avgLevel} to match existing party members.
+
+Respond with ONLY valid JSON:
+{
+  "name": "${playerName}",
+  "class": "A fitting class different from existing characters if possible",
+  "level": ${avgLevel},
+  "hp": 100, "maxHp": 100,
+  "mana": 50, "maxMana": 50,
+  "xp": 0,
+  "stats": {"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
+  "inventory": [],
+  "statuses": [],
+  "backstory": "2-3 sentences explaining how they arrive mid-adventure",
+  "arrivalNarrative": "1-2 sentences describing the character appearing/arriving in the current scene"
+}
+
+${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
+
+  const messages = [
+    { role: 'system', content: `You are an RPG character designer. Create balanced characters that fit existing campaigns. Write in ${language === 'pl' ? 'Polish' : 'English'}. Always respond with valid JSON.` },
+    { role: 'user', content: prompt },
+  ];
+
+  const result = await callAI(messages, encryptedApiKeys);
+
+  return {
+    character: {
+      playerName,
+      name: result.name || playerName,
+      class: result.class || 'Adventurer',
+      level: result.level ?? avgLevel,
+      hp: result.hp ?? 100,
+      maxHp: result.maxHp ?? 100,
+      mana: result.mana ?? 50,
+      maxMana: result.maxMana ?? 50,
+      xp: result.xp ?? 0,
+      stats: result.stats ?? { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
+      inventory: result.inventory ?? [],
+      statuses: result.statuses ?? [],
+      backstory: result.backstory || '',
+    },
+    arrivalNarrative: result.arrivalNarrative || `${playerName} joins the adventure.`,
+  };
+}
+
 export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en') {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language);
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language);
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true });
 
   const messages = [
     { role: 'system', content: systemPrompt },

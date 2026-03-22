@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 
@@ -8,7 +9,15 @@ export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
   const { state } = useGame();
-  const { character } = state;
+  const mp = useMultiplayer();
+
+  const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const character = isMultiplayer
+    ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
+    : state.character;
+  const timeState = isMultiplayer
+    ? mp.state.gameState?.world?.timeState
+    : state.world?.timeState;
 
   const navItems = [
     { path: '/play', icon: 'book_5', label: t('nav.grimoire') },
@@ -37,7 +46,7 @@ export default function Sidebar() {
             <StatusBar label={t('common.mana')} current={character.mana} max={character.maxMana} color="primary" />
           </div>
           <div className="mt-4">
-            <NeedsPanel needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }} timeState={state.world?.timeState} />
+            <NeedsPanel needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }} timeState={timeState} />
           </div>
         </div>
       )}

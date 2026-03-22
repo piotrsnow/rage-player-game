@@ -140,7 +140,9 @@
     "manaPool": "Zasoby Many",
     "inspiration": "Inspiracja",
     "origins": "Pochodzenie",
-    "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica..."
+    "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica...",
+    "voice": "Głos Postaci",
+    "noVoice": "Brak głosu"
   },
   "quests": {
     "activeChronicles": "Aktywne Kroniki",
@@ -413,8 +415,19 @@
     "startGame": "Rozpocznij Grę",
     "withdrawAction": "Wycofaj Akcję",
     "waitingForHost": "Oczekiwanie na gospodarza...",
+    "waitingForHostStart": "Oczekiwanie na rozpoczęcie gry przez gospodarza...",
+    "guestSettingsNotice": "Gospodarz konfiguruje ustawienia kampanii. Zmiany widzisz na bieżąco.",
     "approveAndSend": "Zatwierdź i Wyślij",
-    "submitAction": "Wyślij Akcję"
+    "submitAction": "Wyślij Akcję",
+    "pastCharacters": "Poprzednie Postacie",
+    "usePastCharacter": "Użyj Poprzedniej Postaci",
+    "noPastCharacters": "Nie znaleziono poprzednich postaci. Zagraj najpierw w kampanię solo, aby zapisać postacie.",
+    "invitePlayers": "Zaproś Graczy",
+    "openMultiplayer": "Otwórz Multiplayer",
+    "openMultiplayerDesc": "Przekonwertuj tę kampanię solo na multiplayer, aby inni gracze mogli dołączyć w trakcie gry.",
+    "converting": "Konwertowanie...",
+    "playerJoinedMidGame": "{{name}} dołączył/a do przygody!",
+    "noVoice": "Brak głosu"
   },
   "system": {
     "diceRollMessage": "Test {{skill}}: K20 ({{roll}}) + {{modifier}} = {{total}} vs ST {{dc}} — {{result}}"

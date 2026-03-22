@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
@@ -15,52 +17,10 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime', color: 'tertiary' },
 ];
 
-export default function CharacterSheet() {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
-  const { state } = useGame();
-  const { settings } = useSettings();
-  const { character, campaign, quests } = state;
-
-  if (!character || !campaign) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6">
-        <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
-        <h2 className="font-headline text-2xl text-tertiary mb-2">{t('character.noActiveCharacter')}</h2>
-        <p className="text-on-surface-variant text-sm mb-8">
-          {t('character.noActiveDescription')}
-        </p>
-        <button
-          onClick={() => navigate('/')}
-          className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
-        >
-          {t('character.goToLobby')}
-        </button>
-      </div>
-    );
-  }
-
+function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices }) {
   return (
-    <div className="px-4 md:px-10 py-12 max-w-7xl mx-auto">
-      {/* Character Header */}
-      <div className="mb-12 relative animate-fade-in">
-        <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
-          {character.name}
-        </h1>
-        <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em]">
-          <span>
-            {character.class}
-          </span>
-          <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{t('common.level')} {character.level}</span>
-          <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{character.xp} {t('common.xp')}</span>
-        </div>
-      </div>
-
-      {/* Main Grid */}
+    <>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left: Portrait & Vitals */}
         <div className="lg:col-span-3 space-y-6 animate-fade-in">
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
@@ -83,7 +43,6 @@ export default function CharacterSheet() {
             </div>
           </div>
 
-          {/* Vitals */}
           <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
             <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">auto_fix_high</span>
@@ -114,22 +73,40 @@ export default function CharacterSheet() {
               </div>
             </div>
           )}
+
+          {characterVoices && characterVoices.length > 0 && onVoiceChange && (
+            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+              <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">record_voice_over</span>
+                {t('character.voice')}
+              </h3>
+              <select
+                value={characterVoiceMap?.[character.name]?.voiceId || ''}
+                onChange={(e) => {
+                  const voice = characterVoices.find((v) => v.voiceId === e.target.value);
+                  onVoiceChange(character.name, e.target.value || null, voice?.gender || null);
+                }}
+                className="w-full bg-surface-container-high/60 border border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-3 rounded-sm font-body"
+              >
+                <option value="">{t('character.noVoice')}</option>
+                {characterVoices.map((v) => (
+                  <option key={v.voiceId} value={v.voiceId}>{v.voiceName}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* Center: Stats */}
         <div className="lg:col-span-5 animate-fade-in">
           <StatsGrid stats={character.stats} />
         </div>
 
-        {/* Right: Inventory */}
         <div className="lg:col-span-4 animate-fade-in">
           <Inventory items={character.inventory} />
         </div>
       </div>
 
-      {/* Bottom: Backstory & Quests */}
       <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
-        {/* Backstory */}
         <section className="bg-surface-container-low p-8 rounded-sm border border-outline-variant/15 relative">
           <div className="absolute top-0 right-0 p-4">
             <span className="material-symbols-outlined text-primary-dim text-sm opacity-50">
@@ -145,10 +122,115 @@ export default function CharacterSheet() {
             )}
           </div>
         </section>
-
-        {/* Quest Log */}
-        <QuestLog active={quests.active} completed={quests.completed} />
       </div>
+    </>
+  );
+}
+
+export default function CharacterSheet() {
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { state, dispatch } = useGame();
+  const { settings } = useSettings();
+  const mp = useMultiplayer();
+
+  const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const mpGameState = mp.state.gameState;
+
+  const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : [];
+  const myCharacter = isMultiplayer
+    ? allCharacters.find((c) => c.odId === mp.state.myOdId) || allCharacters[0]
+    : state.character;
+  const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+  const quests = isMultiplayer ? (mpGameState?.quests || { active: [], completed: [] }) : state.quests;
+
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const displayCharacter = isMultiplayer && allCharacters.length > 0
+    ? allCharacters[selectedIdx] || allCharacters[0]
+    : myCharacter;
+
+  if (!displayCharacter || !campaign) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6">
+        <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
+        <h2 className="font-headline text-2xl text-tertiary mb-2">{t('character.noActiveCharacter')}</h2>
+        <p className="text-on-surface-variant text-sm mb-8">
+          {t('character.noActiveDescription')}
+        </p>
+        <button
+          onClick={() => navigate('/')}
+          className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
+        >
+          {t('character.goToLobby')}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 md:px-10 py-12 max-w-7xl mx-auto">
+      {isMultiplayer && allCharacters.length > 1 && (
+        <div className="flex gap-2 mb-8 overflow-x-auto animate-fade-in">
+          {allCharacters.map((c, idx) => {
+            const isMe = c.odId === mp.state.myOdId;
+            const isSelected = idx === selectedIdx;
+            return (
+              <button
+                key={c.odId || c.name}
+                onClick={() => setSelectedIdx(idx)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-sm border text-sm font-label transition-all whitespace-nowrap ${
+                  isSelected
+                    ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)]'
+                    : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary'
+                }`}
+              >
+                <span className="material-symbols-outlined text-base">
+                  {isMe ? 'shield' : 'person'}
+                </span>
+                {c.name}
+                {isMe && (
+                  <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                    {t('multiplayer.you')}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mb-12 relative animate-fade-in">
+        <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
+          {displayCharacter.name}
+        </h1>
+        <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em]">
+          <span>{displayCharacter.class}</span>
+          <span className="w-1 h-1 bg-primary rounded-full" />
+          <span>{t('common.level')} {displayCharacter.level}</span>
+          <span className="w-1 h-1 bg-primary rounded-full" />
+          <span>{displayCharacter.xp} {t('common.xp')}</span>
+        </div>
+      </div>
+
+      <CharacterPanel
+        character={displayCharacter}
+        settings={settings}
+        t={t}
+        characterVoiceMap={state.characterVoiceMap}
+        characterVoices={settings.characterVoices}
+        onVoiceChange={(charName, voiceId, gender) => {
+          dispatch({
+            type: 'MAP_CHARACTER_VOICE',
+            payload: { characterName: charName, voiceId, gender },
+          });
+        }}
+      />
+
+      {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
+        <div className="mt-8 animate-fade-in">
+          <QuestLog active={quests.active} completed={quests.completed} />
+        </div>
+      )}
     </div>
   );
 }

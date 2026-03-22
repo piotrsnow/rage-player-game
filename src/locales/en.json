@@ -140,7 +140,9 @@
     "manaPool": "Mana Pool",
     "inspiration": "Inspiration",
     "origins": "Origins",
-    "originsEmpty": "The origins of this adventurer remain shrouded in mystery..."
+    "originsEmpty": "The origins of this adventurer remain shrouded in mystery...",
+    "voice": "Character Voice",
+    "noVoice": "No voice"
   },
   "quests": {
     "activeChronicles": "Active Chronicles",
@@ -413,8 +415,19 @@
     "startGame": "Start Game",
     "withdrawAction": "Withdraw Action",
     "waitingForHost": "Waiting for host...",
+    "waitingForHostStart": "Waiting for the host to start the game...",
+    "guestSettingsNotice": "The host is configuring the campaign settings. You can see changes in real-time.",
     "approveAndSend": "Approve & Send",
-    "submitAction": "Submit Action"
+    "submitAction": "Submit Action",
+    "pastCharacters": "Past Characters",
+    "usePastCharacter": "Use Past Character",
+    "noPastCharacters": "No past characters found. Play a solo campaign first to save characters.",
+    "invitePlayers": "Invite Players",
+    "openMultiplayer": "Open Multiplayer",
+    "openMultiplayerDesc": "Convert this solo campaign to multiplayer so other players can join mid-game.",
+    "converting": "Converting...",
+    "playerJoinedMidGame": "{{name}} has joined the adventure!",
+    "noVoice": "No voice"
   },
   "system": {
     "diceRollMessage": "{{skill}} check: D20 ({{roll}}) + {{modifier}} = {{total}} vs DC {{dc}} — {{result}}"

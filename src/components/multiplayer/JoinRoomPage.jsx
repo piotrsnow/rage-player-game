@@ -17,9 +17,9 @@ export default function JoinRoomPage() {
 
   useEffect(() => {
     if (mp.state.isMultiplayer && mp.state.roomCode) {
-      navigate('/create');
+      navigate(mp.state.phase === 'playing' ? '/play' : '/create');
     }
-  }, [mp.state.isMultiplayer, mp.state.roomCode, navigate]);
+  }, [mp.state.isMultiplayer, mp.state.roomCode, mp.state.phase, navigate]);
 
   useEffect(() => {
     if (mp.state.error) {

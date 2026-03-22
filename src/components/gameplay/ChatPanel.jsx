@@ -100,6 +100,10 @@ function DmMessage({ message, narrator }) {
   };
 
   const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
+  const segmentsComplete = hasSegments && (() => {
+    const segText = message.dialogueSegments.map(s => s.text || '').join('');
+    return segText.length >= (message.content || '').length * 0.8;
+  })();
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
@@ -119,7 +123,7 @@ function DmMessage({ message, narrator }) {
         )}
       </div>
       <div className="glass-panel p-4 border-l-2 border-primary-dim rounded-r-lg space-y-3">
-        {hasSegments ? (
+        {segmentsComplete ? (
           <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
         ) : (
           <p className="text-sm text-on-surface-variant leading-relaxed italic">

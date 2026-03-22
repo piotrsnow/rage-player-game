@@ -179,11 +179,11 @@ The player should be able to identify WHO is speaking purely from how they talk,
 DIALOGUE FORMAT:
 In addition to the "narrative" field (full prose), you MUST provide a "dialogueSegments" array that breaks the narrative into ordered chunks. Each chunk is either:
 - {"type": "narration", "text": "Descriptive prose..."} for narrator/environment text
-- {"type": "dialogue", "character": "NPC Name", "gender": "male" or "female", "text": "What they say..."} for NPC speech
+- {"type": "dialogue", "character": "NPC Name", "gender": "male" or "female", "text": "What they say..."} for NPC or player character speech
 CRITICAL: The narration segments in dialogueSegments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment.
-CRITICAL: Narration segments must NEVER contain dialogue or quoted speech. Any spoken words by NPCs must ALWAYS be placed in a separate "dialogue" segment. Do NOT embed dialogue within narration text — split it out into its own dialogue segment every time.
+CRITICAL: Narration segments must NEVER contain dialogue or quoted speech. Any spoken words by NPCs or the player character must ALWAYS be placed in a separate "dialogue" segment. Do NOT embed dialogue within narration text — split it out into its own dialogue segment every time.
 IMPORTANT: Every dialogue segment MUST include a "gender" field ("male" or "female") matching the speaking character's gender. Be consistent — the same character must always have the same gender across all scenes.
-Use consistent character names across scenes. The player character NEVER appears in dialogueSegments — only NPCs and narrator.
+Use consistent character names across scenes. When the player character speaks, include their dialogue as a dialogue segment with the player character's name and gender.
 
 SOUND EFFECTS:
 For impactful moments (combat, magic, environmental events, dramatic reveals), include a "soundEffect" field with a short English description for audio generation (e.g. "sword clashing against shield, metallic ringing"). Use null when no sound effect fits. Don't overuse — only for moments that truly benefit from audio atmosphere.

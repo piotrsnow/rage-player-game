@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAI } from '../../hooks/useAI';
@@ -46,7 +46,7 @@ const styleIds = ['Narrative', 'Hybrid', 'Mechanical'];
 const difficultyIds = ['Easy', 'Normal', 'Hard', 'Expert'];
 const lengthIds = ['Short', 'Medium', 'Long'];
 
-function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, labels = {}, descriptions = {} }) {
+function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, labels = {}, descriptions = {}, disabled = false }) {
   return (
     <div className="flex flex-wrap gap-3">
       {options.map((id) => {
@@ -54,11 +54,16 @@ function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, la
         return (
           <button
             key={id}
-            onClick={() => onChange(id)}
+            onClick={() => !disabled && onChange(id)}
+            disabled={disabled}
             className={`px-4 py-3 rounded-sm font-label text-sm transition-all duration-300 border ${
-              isActive
-                ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-                : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
+              disabled
+                ? isActive
+                  ? 'bg-surface-tint/60 text-on-primary/70 border-primary/40 cursor-default'
+                  : 'bg-surface-container-high/20 text-on-surface-variant/40 border-outline-variant/10 cursor-default'
+                : isActive
+                  ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
+                  : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -89,6 +94,7 @@ export default function CampaignCreatorPage() {
   const [mode, setMode] = useState(mp.state.isMultiplayer ? 'multiplayer' : 'solo');
   const isMultiplayer = mode === 'multiplayer';
   const inMpRoom = mp.state.isMultiplayer && mp.state.roomCode;
+  const isGuest = inMpRoom && !mp.state.isHost;
 
   const [form, setForm] = useState({
     genre: 'Fantasy',
@@ -104,6 +110,54 @@ export default function CampaignCreatorPage() {
   const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
   const isBackendConnected = apiClient.isConnected();
 
+  // Guest: sync local form from host's room settings
+  const roomSettings = mp.state.roomSettings;
+  useEffect(() => {
+    if (!isGuest || !roomSettings) return;
+    setForm((prev) => ({
+      ...prev,
+      genre: roomSettings.genre ?? prev.genre,
+      tone: roomSettings.tone ?? prev.tone,
+      style: roomSettings.style ?? prev.style,
+      difficulty: roomSettings.difficulty ?? prev.difficulty,
+      length: roomSettings.length ?? prev.length,
+      storyPrompt: roomSettings.storyPrompt ?? prev.storyPrompt,
+    }));
+  }, [isGuest, roomSettings]);
+
+  // Host: broadcast settings to server on each change (debounced for storyPrompt)
+  const debounceRef = useRef(null);
+  const broadcastSettings = useCallback(
+    (updated) => {
+      if (!inMpRoom || !mp.state.isHost) return;
+      clearTimeout(debounceRef.current);
+      const send = () => {
+        mp.updateSettings({
+          genre: updated.genre,
+          tone: updated.tone,
+          style: updated.style,
+          difficulty: updated.difficulty,
+          length: updated.length,
+          storyPrompt: updated.storyPrompt,
+          needsSystemEnabled: settings.needsSystemEnabled ?? false,
+        });
+      };
+      debounceRef.current = setTimeout(send, 300);
+    },
+    [inMpRoom, mp.state.isHost, mp],
+  );
+
+  const updateForm = useCallback(
+    (updater) => {
+      setForm((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+        broadcastSettings(next);
+        return next;
+      });
+    },
+    [broadcastSettings],
+  );
+
   const handleRandomize = async () => {
     if (!hasApiKey || isRandomizing) return;
     setIsRandomizing(true);
@@ -113,7 +167,7 @@ export default function CampaignCreatorPage() {
         tone: form.tone,
         style: form.style,
       });
-      setForm((p) => ({ ...p, storyPrompt: prompt }));
+      updateForm((p) => ({ ...p, storyPrompt: prompt }));
     } catch {
       // Error handled via context
     } finally {
@@ -128,6 +182,8 @@ export default function CampaignCreatorPage() {
 
   const handleStartMultiplayerGame = () => {
     if (!form.storyPrompt.trim()) return;
+    // Final sync before starting (in case debounce hasn't fired yet)
+    clearTimeout(debounceRef.current);
     mp.updateSettings({
       genre: form.genre,
       tone: form.tone,
@@ -135,6 +191,7 @@ export default function CampaignCreatorPage() {
       difficulty: form.difficulty,
       length: form.length,
       storyPrompt: form.storyPrompt,
+      needsSystemEnabled: settings.needsSystemEnabled ?? false,
     });
     setTimeout(() => mp.startGame(settings.language || 'en'), 200);
   };
@@ -175,8 +232,9 @@ export default function CampaignCreatorPage() {
       {/* Solo / Multiplayer Toggle */}
       <div className="flex gap-3 mb-10 animate-fade-in">
         <button
-          onClick={() => setMode('solo')}
-          className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 ${
+          onClick={() => !inMpRoom && setMode('solo')}
+          disabled={inMpRoom}
+          className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
             mode === 'solo'
               ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
               : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high'
@@ -217,6 +275,16 @@ export default function CampaignCreatorPage() {
         </div>
       ) : (
         <div className="space-y-12 animate-fade-in">
+          {/* Guest notice */}
+          {isGuest && (
+            <div className="bg-surface-container-high/30 border border-outline-variant/15 p-4 rounded-sm flex items-center gap-3">
+              <span className="material-symbols-outlined text-tertiary text-lg">visibility</span>
+              <p className="text-on-surface-variant text-sm">
+                {t('multiplayer.guestSettingsNotice', 'The host is configuring the campaign settings. You can see changes in real-time.')}
+              </p>
+            </div>
+          )}
+
           {/* Genre */}
           <section>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
@@ -225,11 +293,12 @@ export default function CampaignCreatorPage() {
             <ChipGroup
               options={genreIds}
               value={form.genre}
-              onChange={(v) => setForm((p) => ({ ...p, genre: v }))}
+              onChange={(v) => updateForm((p) => ({ ...p, genre: v }))}
               showIcons
               icons={genreIcons}
               labels={Object.fromEntries(genreIds.map((id) => [id, t(`creator.genres.${id}`)]))}
               descriptions={Object.fromEntries(genreIds.map((id) => [id, t(`creator.genreDesc.${id}`)]))}
+              disabled={isGuest}
             />
           </section>
 
@@ -241,11 +310,12 @@ export default function CampaignCreatorPage() {
             <ChipGroup
               options={toneIds}
               value={form.tone}
-              onChange={(v) => setForm((p) => ({ ...p, tone: v }))}
+              onChange={(v) => updateForm((p) => ({ ...p, tone: v }))}
               showIcons
               icons={toneIcons}
               labels={Object.fromEntries(toneIds.map((id) => [id, t(`creator.tones.${id}`)]))}
               descriptions={Object.fromEntries(toneIds.map((id) => [id, t(`creator.toneDesc.${id}`)]))}
+              disabled={isGuest}
             />
           </section>
 
@@ -257,9 +327,10 @@ export default function CampaignCreatorPage() {
             <ChipGroup
               options={styleIds}
               value={form.style}
-              onChange={(v) => setForm((p) => ({ ...p, style: v }))}
+              onChange={(v) => updateForm((p) => ({ ...p, style: v }))}
               labels={Object.fromEntries(styleIds.map((id) => [id, t(`creator.styles.${id}`)]))}
               descriptions={Object.fromEntries(styleIds.map((id) => [id, t(`creator.styleDesc.${id}`)]))}
+              disabled={isGuest}
             />
           </section>
 
@@ -272,8 +343,9 @@ export default function CampaignCreatorPage() {
               <ChipGroup
                 options={difficultyIds}
                 value={form.difficulty}
-                onChange={(v) => setForm((p) => ({ ...p, difficulty: v }))}
+                onChange={(v) => updateForm((p) => ({ ...p, difficulty: v }))}
                 labels={Object.fromEntries(difficultyIds.map((id) => [id, t(`creator.difficulties.${id}`)]))}
+                disabled={isGuest}
               />
             </section>
             <section>
@@ -283,8 +355,9 @@ export default function CampaignCreatorPage() {
               <ChipGroup
                 options={lengthIds}
                 value={form.length}
-                onChange={(v) => setForm((p) => ({ ...p, length: v }))}
+                onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
                 labels={Object.fromEntries(lengthIds.map((id) => [id, t(`creator.lengths.${id}`)]))}
+                disabled={isGuest}
               />
             </section>
           </div>
@@ -297,22 +370,27 @@ export default function CampaignCreatorPage() {
             <div className="relative">
               <textarea
                 value={form.storyPrompt}
-                onChange={(e) => setForm((p) => ({ ...p, storyPrompt: e.target.value }))}
-                placeholder={t('creator.storyPlaceholder')}
+                onChange={(e) => updateForm((p) => ({ ...p, storyPrompt: e.target.value }))}
+                placeholder={isGuest ? t('multiplayer.waitingForHost', 'Waiting for host to set the story...') : t('creator.storyPlaceholder')}
                 rows={4}
-                className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar font-body"
+                readOnly={isGuest}
+                className={`w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar font-body ${
+                  isGuest ? 'opacity-70 cursor-default' : ''
+                }`}
               />
             </div>
-            <button
-              onClick={handleRandomize}
-              disabled={!hasApiKey || isRandomizing}
-              className="mt-3 flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
-            >
-              <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
-                {isRandomizing ? 'progress_activity' : 'casino'}
-              </span>
-              {isRandomizing ? t('creator.randomizingPrompt') : t('creator.randomizePrompt')}
-            </button>
+            {!isGuest && (
+              <button
+                onClick={handleRandomize}
+                disabled={!hasApiKey || isRandomizing}
+                className="mt-3 flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+              >
+                <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
+                  {isRandomizing ? 'progress_activity' : 'casino'}
+                </span>
+                {isRandomizing ? t('creator.randomizingPrompt') : t('creator.randomizePrompt')}
+              </button>
+            )}
           </section>
 
           {/* Multiplayer Lobby */}
@@ -348,14 +426,14 @@ export default function CampaignCreatorPage() {
                 <input
                   type="text"
                   value={form.characterName}
-                  onChange={(e) => setForm((p) => ({ ...p, characterName: e.target.value }))}
+                  onChange={(e) => updateForm((p) => ({ ...p, characterName: e.target.value }))}
                   placeholder={t('creator.characterNamePlaceholder')}
                   maxLength={40}
                   className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-3 px-1 placeholder:text-outline/40 font-body"
                 />
                 <button
                   type="button"
-                  onClick={() => setForm((p) => ({ ...p, characterName: pickRandomName(p.genre, p.characterName) }))}
+                  onClick={() => updateForm((p) => ({ ...p, characterName: pickRandomName(p.genre, p.characterName) }))}
                   className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary transition-colors duration-200 shrink-0"
                   title={t('creator.randomizeName')}
                 >
@@ -387,6 +465,11 @@ export default function CampaignCreatorPage() {
                 <span className="material-symbols-outlined text-sm">swords</span>
                 {t('multiplayer.startGame')}
               </Button>
+            ) : isMultiplayer && inMpRoom && isGuest ? (
+              <div className="flex items-center gap-2 text-on-surface-variant text-sm py-3">
+                <span className="material-symbols-outlined text-base animate-pulse">hourglass_top</span>
+                {t('multiplayer.waitingForHostStart', 'Waiting for the host to start the game...')}
+              </div>
             ) : !isMultiplayer ? (
               <Button
                 onClick={handleSubmit}

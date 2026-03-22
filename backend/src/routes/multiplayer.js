@@ -1,12 +1,45 @@
 import { PrismaClient } from '@prisma/client';
 import {
-  createRoom, joinRoom, leaveRoom, updateCharacter,
+  createRoom, createRoomWithGameState, joinRoom, leaveRoom, updateCharacter,
   updateSettings, submitAction, withdrawAction, approveActions,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom,
 } from '../services/roomManager.js';
-import { generateMultiplayerScene, generateMultiplayerCampaign } from '../services/multiplayerAI.js';
+import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter } from '../services/multiplayerAI.js';
 
 const prisma = new PrismaClient();
+
+const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
+
+function hourToPeriod(hour) {
+  if (hour >= 6 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 18) return 'afternoon';
+  if (hour >= 18 && hour < 22) return 'evening';
+  return 'night';
+}
+
+function decayNeeds(needs, hoursElapsed) {
+  const updated = { ...needs };
+  for (const key of Object.keys(DECAY_PER_HOUR)) {
+    updated[key] = Math.max(0, Math.round(((updated[key] ?? 100) - DECAY_PER_HOUR[key] * hoursElapsed) * 10) / 10);
+  }
+  return updated;
+}
+
+function applyTimeAdvance(world, timeAdvance) {
+  const ts = world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
+  const hoursElapsed = timeAdvance.hoursElapsed || 0.5;
+  let newHour = (ts.hour ?? 6) + hoursElapsed;
+  let dayIncrement = 0;
+  while (newHour >= 24) { newHour -= 24; dayIncrement++; }
+  if (timeAdvance.newDay && dayIncrement === 0) dayIncrement = 1;
+  return {
+    ...ts,
+    hour: Math.round(newHour * 10) / 10,
+    timeOfDay: hourToPeriod(newHour),
+    day: ts.day + dayIncrement,
+    ...(timeAdvance.season && { season: timeAdvance.season }),
+  };
+}
 
 export async function multiplayerRoutes(fastify) {
   fastify.get('/', { websocket: true }, async (socket, request) => {
@@ -50,8 +83,20 @@ export async function multiplayerRoutes(fastify) {
 
       socket.on('close', () => {
         if (roomCode && odId) {
+          const currentRoom = getRoom(roomCode);
+          const leavingPlayer = currentRoom?.players.get(odId);
+          const playerName = leavingPlayer?.name || 'A player';
+          const wasPlaying = currentRoom?.phase === 'playing' && currentRoom?.gameState;
+
           const room = leaveRoom(roomCode, odId);
           if (room) {
+            if (wasPlaying && room.gameState) {
+              room.gameState.characters = (room.gameState.characters || []).filter((c) => c.odId !== odId);
+              const journalEntry = `${playerName} left the party.`;
+              if (!room.gameState.world) room.gameState.world = {};
+              room.gameState.world.eventHistory = [...(room.gameState.world?.eventHistory || []), journalEntry];
+              setGameState(roomCode, room.gameState);
+            }
             broadcast(room, {
               type: 'PLAYER_LEFT',
               playerId: odId,
@@ -76,38 +121,126 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'CONVERT_TO_MULTIPLAYER': {
+            const gameState = msg.gameState;
+            const settings = msg.settings;
+            if (!gameState) throw new Error('Game state is required');
+
+            const result = createRoomWithGameState(uid, ws, gameState, settings);
+            odId = result.odId;
+            roomCode = result.room.roomCode;
+
+            sendTo(result.room, odId, {
+              type: 'ROOM_CONVERTED',
+              roomCode,
+              odId,
+              room: sanitizeRoom(result.room),
+            });
+            break;
+          }
+
           case 'JOIN_ROOM': {
             const result = joinRoom(msg.roomCode, uid, ws);
             odId = result.odId;
             roomCode = result.room.roomCode;
 
-            sendTo(result.room, odId, {
-              type: 'ROOM_JOINED',
-              roomCode,
-              odId,
-              room: sanitizeRoom(result.room),
-            });
+            if (result.room.phase === 'playing' && result.room.gameState) {
+              const hostPlayer = result.room.players.get(result.room.hostId);
+              const dbUser = await prisma.user.findUnique({
+                where: { id: hostPlayer.userId },
+                select: { apiKeys: true },
+              });
 
-            broadcast(result.room, {
-              type: 'PLAYER_JOINED',
-              player: {
+              const player = result.room.players.get(odId);
+              const charResult = await generateMidGameCharacter(
+                result.room.gameState,
+                result.room.settings,
+                player.name,
+                player.gender,
+                dbUser?.apiKeys || '{}',
+                msg.language || 'en',
+              );
+
+              const newChar = { ...charResult.character, odId };
+              result.room.gameState.characters = [...(result.room.gameState.characters || []), newChar];
+
+              const journalEntry = `${newChar.name} (${newChar.class}) joined the party.`;
+              if (!result.room.gameState.world) result.room.gameState.world = {};
+              result.room.gameState.world.eventHistory = [...(result.room.gameState.world?.eventHistory || []), journalEntry];
+
+              const arrivalMsg = {
+                id: `msg_arrival_${Date.now()}`,
+                role: 'dm',
+                content: charResult.arrivalNarrative,
+                dialogueSegments: [{ type: 'narration', text: charResult.arrivalNarrative }],
+                timestamp: Date.now(),
+              };
+              result.room.gameState.chatHistory = [...(result.room.gameState.chatHistory || []), arrivalMsg];
+              setGameState(roomCode, result.room.gameState);
+
+              sendTo(result.room, odId, {
+                type: 'ROOM_JOINED',
+                roomCode,
                 odId,
-                userId: uid,
-                name: 'Adventurer',
-                gender: 'male',
-                photo: null,
-                isHost: false,
-                pendingAction: null,
-              },
-              room: sanitizeRoom(result.room),
-            }, odId);
+                room: sanitizeRoom(result.room),
+              });
+
+              broadcast(result.room, {
+                type: 'PLAYER_JOINED_MIDGAME',
+                player: {
+                  odId,
+                  userId: uid,
+                  name: player.name,
+                  gender: player.gender,
+                  photo: null,
+                  isHost: false,
+                  pendingAction: null,
+                },
+                newCharacter: newChar,
+                arrivalMessage: arrivalMsg,
+                room: sanitizeRoom(result.room),
+              }, odId);
+            } else {
+              sendTo(result.room, odId, {
+                type: 'ROOM_JOINED',
+                roomCode,
+                odId,
+                room: sanitizeRoom(result.room),
+              });
+
+              broadcast(result.room, {
+                type: 'PLAYER_JOINED',
+                player: {
+                  odId,
+                  userId: uid,
+                  name: 'Adventurer',
+                  gender: 'male',
+                  photo: null,
+                  isHost: false,
+                  pendingAction: null,
+                },
+                room: sanitizeRoom(result.room),
+              }, odId);
+            }
             break;
           }
 
           case 'LEAVE_ROOM': {
             if (!roomCode || !odId) break;
+            const currentRoom = getRoom(roomCode);
+            const leavingPlayer = currentRoom?.players.get(odId);
+            const playerName = leavingPlayer?.name || 'A player';
+            const wasPlaying = currentRoom?.phase === 'playing' && currentRoom?.gameState;
+
             const room = leaveRoom(roomCode, odId);
             if (room) {
+              if (wasPlaying && room.gameState) {
+                room.gameState.characters = (room.gameState.characters || []).filter((c) => c.odId !== odId);
+                const journalEntry = `${playerName} left the party.`;
+                if (!room.gameState.world) room.gameState.world = {};
+                room.gameState.world.eventHistory = [...(room.gameState.world?.eventHistory || []), journalEntry];
+                setGameState(roomCode, room.gameState);
+              }
               broadcast(room, {
                 type: 'PLAYER_LEFT',
                 playerId: odId,
@@ -126,6 +259,8 @@ export async function multiplayerRoutes(fastify) {
               name: msg.name,
               gender: msg.gender,
               photo: msg.photo,
+              voiceId: msg.voiceId,
+              voiceName: msg.voiceName,
             });
             broadcast(room, {
               type: 'ROOM_STATE',
@@ -252,8 +387,78 @@ export async function multiplayerRoutes(fastify) {
               msg.language || 'en',
             );
 
+            const stateChanges = sceneResult.stateChanges || {};
+            const needsEnabled = room.settings?.needsSystemEnabled === true;
+            const timeAdvance = stateChanges.timeAdvance;
+            const hoursElapsed = timeAdvance?.hoursElapsed || 0.5;
+
+            let updatedCharacters = [...(room.gameState.characters || [])];
+            const perChar = stateChanges.perCharacter;
+            if (perChar) {
+              updatedCharacters = updatedCharacters.map((c) => {
+                const delta = perChar[c.name] || perChar[c.playerName];
+                if (!delta) return c;
+                const updated = { ...c };
+                if (delta.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp, updated.hp + delta.hp));
+                if (delta.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana, updated.mana + delta.mana));
+                if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
+                if (Array.isArray(delta.newItems)) {
+                  updated.inventory = [...(updated.inventory || []), ...delta.newItems];
+                }
+                if (Array.isArray(delta.removeItems)) {
+                  const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
+                  updated.inventory = (updated.inventory || []).filter((i) => !removeSet.has(typeof i === 'string' ? i : i.name));
+                }
+                if (needsEnabled && delta.needsChanges) {
+                  const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }) };
+                  for (const [key, val] of Object.entries(delta.needsChanges)) {
+                    if (key in needs) {
+                      needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
+                    }
+                  }
+                  updated.needs = needs;
+                }
+                return updated;
+              });
+            }
+
+            if (needsEnabled && timeAdvance) {
+              updatedCharacters = updatedCharacters.map((c) => {
+                if (!c.needs) return c;
+                return { ...c, needs: decayNeeds(c.needs, hoursElapsed) };
+              });
+            }
+
+            let updatedWorld = { ...(room.gameState.world || {}) };
+            if (timeAdvance) {
+              updatedWorld.timeState = applyTimeAdvance(updatedWorld, timeAdvance);
+            }
+            if (stateChanges.currentLocation) {
+              updatedWorld.currentLocation = stateChanges.currentLocation;
+            }
+            if (Array.isArray(stateChanges.worldFacts) && stateChanges.worldFacts.length > 0) {
+              updatedWorld.facts = [...(updatedWorld.facts || []), ...stateChanges.worldFacts];
+            }
+            if (Array.isArray(stateChanges.journalEntries) && stateChanges.journalEntries.length > 0) {
+              updatedWorld.eventHistory = [...(updatedWorld.eventHistory || []), ...stateChanges.journalEntries];
+            }
+            if (Array.isArray(stateChanges.npcs) && stateChanges.npcs.length > 0) {
+              const npcs = [...(updatedWorld.npcs || [])];
+              for (const npc of stateChanges.npcs) {
+                const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+                if (idx >= 0) {
+                  npcs[idx] = { ...npcs[idx], ...npc };
+                } else {
+                  npcs.push(npc);
+                }
+              }
+              updatedWorld.npcs = npcs;
+            }
+
             const updatedGameState = {
               ...room.gameState,
+              characters: updatedCharacters,
+              world: updatedWorld,
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
             };
