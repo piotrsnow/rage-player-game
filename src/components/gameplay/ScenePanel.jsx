@@ -11,6 +11,13 @@ import { translateSkill } from '../../utils/wfrpTranslate';
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
+function splitIntoSentences(text) {
+  if (!text) return [];
+  const parts = text.split(/(?<=[.!?…])\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ"„«»—\-(])/);
+  const result = parts.map((s) => s.trim()).filter(Boolean);
+  return result.length > 0 ? result : [text];
+}
+
 function HighlightedNarrative({ text, highlightInfo }) {
   const isActive = highlightInfo && highlightInfo.wordIndex >= 0 && highlightInfo.fullText;
 
@@ -57,6 +64,47 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { state, dispatch } = useGame();
+
+  const lastSentenceRef = useRef(null);
+  const lastOffsetRef = useRef(0);
+
+  const displayedSentence = useMemo(() => {
+    if (!currentChunk) {
+      lastSentenceRef.current = null;
+      lastOffsetRef.current = 0;
+      return null;
+    }
+
+    const sentences = splitIntoSentences(currentChunk);
+    if (sentences.length <= 1) {
+      lastSentenceRef.current = currentChunk;
+      lastOffsetRef.current = 0;
+      return currentChunk;
+    }
+
+    const wordIdx = highlightInfo?.sentenceWordIndex ?? -1;
+    if (wordIdx < 0) {
+      return lastSentenceRef.current || sentences[0];
+    }
+
+    let total = 0;
+    for (const s of sentences) {
+      const wc = s.split(/\s+/).filter(Boolean).length;
+      if (wordIdx < total + wc) {
+        lastSentenceRef.current = s;
+        lastOffsetRef.current = total;
+        return s;
+      }
+      total += wc;
+    }
+
+    const last = sentences[sentences.length - 1];
+    lastSentenceRef.current = last;
+    lastOffsetRef.current = total - last.split(/\s+/).filter(Boolean).length;
+    return last;
+  }, [currentChunk, highlightInfo]);
+
+  const sentenceWordOffset = lastOffsetRef.current;
 
   const imageSrc = useMemo(
     () => apiClient.resolveMediaUrl(scene?.image),
@@ -202,16 +250,18 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         </div>
       )}
 
-      {/* Subtitle overlay – only while narrator is reading */}
-      {currentChunk && (
+      {/* Subtitle overlay – only the current sentence while narrator is reading */}
+      {displayedSentence && (
         <div className="absolute bottom-0 left-0 right-0 pb-6 px-8 flex justify-center" style={{ zIndex: 3 }}>
           <p className="text-xl md:text-2xl text-on-surface font-body leading-relaxed drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)] text-center max-w-[85%] bg-black/60 backdrop-blur-sm rounded-lg px-6 py-3 border border-white/[0.05]">
             <HighlightedNarrative
-              text={currentChunk}
+              text={displayedSentence}
               highlightInfo={highlightInfo ? {
                 ...highlightInfo,
-                fullText: currentChunk,
-                wordIndex: highlightInfo.sentenceWordIndex ?? -1,
+                fullText: displayedSentence,
+                wordIndex: (highlightInfo.sentenceWordIndex ?? -1) >= 0
+                  ? highlightInfo.sentenceWordIndex - sentenceWordOffset
+                  : -1,
               } : null}
             />
           </p>

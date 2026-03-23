@@ -119,6 +119,28 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     });
   }
 
+  if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
+    const MAX_CODEX_PER_SCENE = 3;
+    const MAX_FRAGMENT_LENGTH = 1000;
+    if (validated.codexUpdates.length > MAX_CODEX_PER_SCENE) {
+      corrections.push(`Codex updates capped from ${validated.codexUpdates.length} to ${MAX_CODEX_PER_SCENE}`);
+      validated.codexUpdates = validated.codexUpdates.slice(0, MAX_CODEX_PER_SCENE);
+    }
+    validated.codexUpdates = validated.codexUpdates.filter((u) => {
+      if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
+        corrections.push(`Invalid codex update removed (missing required fields)`);
+        return false;
+      }
+      return true;
+    });
+    for (const update of validated.codexUpdates) {
+      if (update.fragment.content.length > MAX_FRAGMENT_LENGTH) {
+        update.fragment.content = update.fragment.content.substring(0, MAX_FRAGMENT_LENGTH);
+        corrections.push(`Codex fragment for "${update.name}" truncated to ${MAX_FRAGMENT_LENGTH} chars`);
+      }
+    }
+  }
+
   return { validated, warnings, corrections };
 }
 

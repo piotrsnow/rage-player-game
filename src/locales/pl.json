@@ -180,6 +180,33 @@
     "savedToLibrary": "Zapisano!",
     "saveError": "Błąd zapisu"
   },
+  "codex": {
+    "title": "Kodeks",
+    "entries": "wpisów",
+    "fragment": "fragment",
+    "fragments": "fragmenty",
+    "searchPlaceholder": "Przeszukaj kodeks...",
+    "all": "Wszystkie",
+    "noResults": "Nie znaleziono pasujących wpisów.",
+    "categories": {
+      "artifact": "Artefakty",
+      "person": "Postacie",
+      "place": "Miejsca",
+      "event": "Wydarzenia",
+      "faction": "Frakcje",
+      "creature": "Stworzenia",
+      "concept": "Koncepcje"
+    },
+    "aspects": {
+      "history": "Historia",
+      "description": "Opis",
+      "location": "Lokalizacja",
+      "weakness": "Słabość",
+      "rumor": "Plotka",
+      "technical": "Szczegóły techniczne",
+      "political": "Polityka"
+    }
+  },
   "quests": {
     "activeChronicles": "Aktywne Kroniki",
     "noQuests": "Nie odkryto jeszcze żadnych zadań.",

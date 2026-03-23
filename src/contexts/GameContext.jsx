@@ -99,6 +99,7 @@ const initialState = {
       decisions: [],
       plotThreads: [],
     },
+    codex: {},
   },
   quests: { active: [], completed: [] },
   scenes: [],
@@ -150,6 +151,9 @@ function gameReducer(state, action) {
       if (loaded.world && !loaded.world.weather) loaded.world.weather = null;
       if (loaded.world && !loaded.world.knowledgeBase) {
         loaded.world.knowledgeBase = { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] };
+      }
+      if (loaded.world && !loaded.world.codex) {
+        loaded.world.codex = {};
       }
       if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
       return loaded;
@@ -811,6 +815,54 @@ function gameReducer(state, action) {
         next.world = { ...next.world, knowledgeBase: kb };
       }
 
+      if (changes.codexUpdates?.length > 0 && next.world) {
+        const codex = { ...(next.world.codex || {}) };
+        const MAX_CODEX_ENTRIES = 100;
+        const MAX_FRAGMENTS_PER_ENTRY = 10;
+
+        for (const update of changes.codexUpdates) {
+          if (!update.id || !update.fragment?.content) continue;
+          const existing = codex[update.id];
+          if (existing) {
+            const isDuplicate = existing.fragments.some(
+              (f) => f.content === update.fragment.content
+            );
+            if (!isDuplicate && existing.fragments.length < MAX_FRAGMENTS_PER_ENTRY) {
+              codex[update.id] = {
+                ...existing,
+                fragments: [
+                  ...existing.fragments,
+                  {
+                    id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    ...update.fragment,
+                    sceneIndex: next.scenes?.length || 0,
+                    timestamp: Date.now(),
+                  },
+                ],
+                tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
+                relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
+              };
+            }
+          } else if (Object.keys(codex).length < MAX_CODEX_ENTRIES) {
+            codex[update.id] = {
+              id: update.id,
+              name: update.name,
+              category: update.category || 'concept',
+              fragments: [{
+                id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                ...update.fragment,
+                sceneIndex: next.scenes?.length || 0,
+                timestamp: Date.now(),
+              }],
+              tags: update.tags || [],
+              relatedEntries: update.relatedEntries || [],
+              firstDiscovered: Date.now(),
+            };
+          }
+        }
+        next.world = { ...next.world, codex };
+      }
+
       if (next.character?.needs) {
         const needs = next.character.needs;
         const hasRestCrisis = (needs.rest ?? 100) === 0;
@@ -1120,6 +1172,31 @@ function gameReducer(state, action) {
       }
       if (stateChanges?.currentLocation) {
         next.world = { ...next.world, currentLocation: stateChanges.currentLocation };
+      }
+      if (stateChanges?.codexUpdates?.length > 0) {
+        const codex = { ...(next.world.codex || {}) };
+        for (const update of stateChanges.codexUpdates) {
+          if (!update.id || !update.fragment?.content) continue;
+          const existing = codex[update.id];
+          if (existing) {
+            const isDuplicate = existing.fragments.some((f) => f.content === update.fragment.content);
+            if (!isDuplicate && existing.fragments.length < 10) {
+              codex[update.id] = {
+                ...existing,
+                fragments: [...existing.fragments, { id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: next.scenes?.length || 0, timestamp: Date.now() }],
+                tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
+                relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
+              };
+            }
+          } else if (Object.keys(codex).length < 100) {
+            codex[update.id] = {
+              id: update.id, name: update.name, category: update.category || 'concept',
+              fragments: [{ id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: next.scenes?.length || 0, timestamp: Date.now() }],
+              tags: update.tags || [], relatedEntries: update.relatedEntries || [], firstDiscovered: Date.now(),
+            };
+          }
+        }
+        next.world = { ...next.world, codex };
       }
 
       return next;

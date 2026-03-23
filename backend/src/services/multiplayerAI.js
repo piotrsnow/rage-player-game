@@ -175,7 +175,16 @@ ${(gameState.quests?.active || []).map((q) => {
 
 WORLD KNOWLEDGE:
 ${worldFacts}
-
+${(() => {
+  const codex = world.codex;
+  if (!codex || Object.keys(codex).length === 0) return '';
+  const entries = Object.values(codex).slice(0, 10);
+  const lines = entries.map((e) => {
+    const frags = e.fragments.map((f) => `  - [${f.aspect || 'info'}] ${f.content} (source: ${f.source})`).join('\n');
+    return `* ${e.name} [${e.category}]:\n${frags}`;
+  });
+  return `\nPLAYER CODEX (knowledge already discovered — do NOT repeat, reveal NEW information):\n${lines.join('\n')}\n`;
+})()}
 SCENE HISTORY:
 ${sceneHistory}
 
@@ -193,6 +202,10 @@ MULTIPLAYER INSTRUCTIONS:
 9. Always respond with valid JSON.
 10. ITEM VALIDATION: Characters can ONLY use items currently listed in their inventory above. If a player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that the character actually has in their inventory.
 11. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
+
+CODEX SYSTEM (detailed lore and knowledge discovery):
+When any player asks about, investigates, or learns about something specific, generate a detailed codex fragment via stateChanges.codexUpdates. Each NPC reveals only ONE fragment per interaction based on their role (scholars know history, peasants know rumors, soldiers know weaknesses/locations). Check the PLAYER CODEX above — never repeat known information. Format:
+{"codexUpdates": [{"id": "unique-slug", "name": "Subject Name", "category": "artifact|person|place|event|faction|creature|concept", "fragment": {"content": "2-4 sentences of specific detail...", "source": "Who revealed this", "aspect": "history|description|location|weakness|rumor|technical|political"}, "tags": ["relevant", "tags"], "relatedEntries": []}]}
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -260,7 +273,8 @@ Respond with ONLY valid JSON:
     "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal", "objectives": [{"id": "obj_1", "description": "First milestone"}]}],
     "completedQuests": [],
     "questUpdates": [],
-    "activeEffects": [{"action": "add", "type": "trap|spell|environmental", "location": "Location", "description": "Effect description", "placedBy": "who"}]
+    "activeEffects": [{"action": "add", "type": "trap|spell|environmental", "location": "Location", "description": "Effect description", "placedBy": "who"}],
+    "codexUpdates": []
   }
 }
 
@@ -295,6 +309,8 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
 
   return `${needsReminder}The players' actions this round:
 ${actionLines}
+
+PLAYER SPEECH: When a player's action contains text in quotation marks (e.g. "some words"), that is the player character speaking those exact words in-character. You MUST include those words as a "dialogue" segment with that player character's name and gender in dialogueSegments. Do NOT merely narrate or paraphrase what the character said — present the quoted words as actual spoken dialogue. The rest of the action (outside quotes) describes what the character does and should be narrated normally.
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
 
@@ -354,7 +370,8 @@ Respond with ONLY valid JSON:
     "newQuests": [],
     "completedQuests": [],
     "questUpdates": [],
-    "activeEffects": []
+    "activeEffects": [],
+    "codexUpdates": []
   }
 }
 
@@ -586,6 +603,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       timeState: { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' },
       activeEffects: [],
       compressedHistory: '',
+      codex: {},
     },
     quests: {
       active: result.initialQuest ? [{
@@ -600,6 +618,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
     },
     scenes: [firstScene],
     chatHistory: [dmMessage],
+    characterMomentum: {},
   };
 }
 
@@ -736,7 +755,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       const momentum = dr.momentumBonus || 0;
       const effectiveTarget = dr.target;
 
-      if (!dr.baseTarget && (bonus > 0 || momentum > 0)) {
+      if (!dr.baseTarget && (bonus > 0 || momentum !== 0)) {
         dr.baseTarget = effectiveTarget - bonus - momentum;
       }
 

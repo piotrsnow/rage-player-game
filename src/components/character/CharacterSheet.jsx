@@ -9,6 +9,7 @@ import { storage } from '../../services/storage';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
+import CodexPanel from './CodexPanel';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
 import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
@@ -258,6 +259,7 @@ export default function CharacterSheet({ onClose }) {
     : state.character;
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const quests = isMultiplayer ? (mpGameState?.quests || { active: [], completed: [] }) : state.quests;
+  const world = isMultiplayer ? (mpGameState?.world || {}) : (state.world || {});
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAdvancement, setShowAdvancement] = useState(false);
@@ -575,6 +577,12 @@ export default function CharacterSheet({ onClose }) {
               {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
                 <div className="mt-8 animate-fade-in">
                   <QuestLog active={quests.active} completed={quests.completed} />
+                </div>
+              )}
+
+              {world.codex && Object.keys(world.codex).length > 0 && (
+                <div className="mt-8 animate-fade-in">
+                  <CodexPanel codex={world.codex} />
                 </div>
               )}
             </div>

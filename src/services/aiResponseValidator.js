@@ -36,6 +36,21 @@ const TimeAdvanceSchema = z.object({
   newDay: z.boolean().optional().default(false),
 }).passthrough().nullable().optional();
 
+const CodexFragmentSchema = z.object({
+  content: z.string().min(1),
+  source: z.string().min(1),
+  aspect: z.enum(['history', 'description', 'location', 'weakness', 'rumor', 'technical', 'political']).default('description'),
+}).passthrough();
+
+const CodexUpdateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  category: z.enum(['artifact', 'person', 'place', 'event', 'faction', 'creature', 'concept']).default('concept'),
+  fragment: CodexFragmentSchema,
+  tags: z.array(z.string()).default([]),
+  relatedEntries: z.array(z.string()).default([]),
+}).passthrough();
+
 const StateChangesSchema = z.object({
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
@@ -62,6 +77,7 @@ const StateChangesSchema = z.object({
   combatUpdate: z.any().nullable().optional(),
   needsChanges: z.any().nullable().optional(),
   knowledgeUpdates: z.any().nullable().optional(),
+  codexUpdates: z.array(CodexUpdateSchema).optional().default([]),
   campaignEnd: z.any().nullable().optional(),
 }).passthrough().optional().default({});
 

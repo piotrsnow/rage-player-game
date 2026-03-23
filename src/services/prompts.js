@@ -160,6 +160,9 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
         .join('\n\n');
       parts.push(`RECENT SCENES (full):\n${full}`);
     }
+    if (enhancedContext.relevantCodex) {
+      parts.unshift(enhancedContext.relevantCodex);
+    }
     if (enhancedContext.relevantMemories) {
       parts.unshift(enhancedContext.relevantMemories);
     }
@@ -422,6 +425,38 @@ After each scene, you may include "knowledgeUpdates" in stateChanges to record i
 }}
 Use events for key happenings, decisions for player choices with consequences, and plotThreads for ongoing narrative arcs.
 
+CODEX SYSTEM (detailed lore and knowledge discovery):
+When the player asks about, investigates, or learns about something specific (an artifact, person, place, event, faction, creature, or concept), you MUST generate a detailed codex fragment via stateChanges.codexUpdates. This is how the player builds up knowledge about the world.
+
+CODEX RULES:
+1. When the player inquires about something, generate SPECIFIC, VIVID details (2-4 sentences) — never vague statements like "they tell you more". Describe actual history, characteristics, mechanics, origins, or current state.
+2. Each NPC reveals only ONE fragment per interaction. Different NPCs know different aspects based on their role:
+   - Scholars/wizards: "history", "technical", "political" aspects
+   - Common folk/peasants: "rumor" aspects (may be partially inaccurate)
+   - Soldiers/guards: "location", "weakness" aspects
+   - Merchants/craftsmen: "technical", "description" aspects
+   - Nobles/officials: "political", "history" aspects
+3. Check the PLAYER CODEX above (if present) — NEVER repeat information the player already has. Always reveal something NEW.
+4. Use "relatedEntries" to link codex items that are connected (e.g., a weapon linked to its creator).
+5. Some knowledge (especially "weakness" aspects) should require finding the RIGHT source — not everyone knows everything.
+
+CODEX UPDATE FORMAT in stateChanges:
+{"codexUpdates": [
+  {
+    "id": "unique-slug-id",
+    "name": "Display Name of the Subject",
+    "category": "artifact|person|place|event|faction|creature|concept",
+    "fragment": {
+      "content": "2-4 sentences of specific, detailed information about this subject...",
+      "source": "Who or what revealed this information (e.g. 'Elven scholar in Altdorf', 'Ancient tome', 'Local innkeeper')",
+      "aspect": "history|description|location|weakness|rumor|technical|political"
+    },
+    "tags": ["relevant", "search", "tags"],
+    "relatedEntries": ["id-of-related-codex-entry"]
+  }
+]}
+Use the same "id" when adding new fragments to an existing codex entry. Use empty array [] when no new knowledge is discovered.
+
 SCENE IMAGE PROMPT:
 Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".
 
@@ -473,7 +508,8 @@ Respond with ONLY valid JSON in this exact format:
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [],
     "moneyChange": null,
-    "currentLocation": "Location Name"${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
+    "currentLocation": "Location Name",
+    "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   },
   "diceRoll": null
 }
@@ -567,6 +603,7 @@ Respond with ONLY valid JSON in this exact format:
     "factionChanges": null,
     "combatUpdate": null,
     "knowledgeUpdates": null,
+    "codexUpdates": [],
     "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }

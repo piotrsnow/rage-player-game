@@ -38,6 +38,15 @@ export function useAI() {
             enhancedContext = { ...enhancedContext, relevantMemories };
           }
         }
+        if (enhancedContext && state.world?.codex) {
+          const lastScene = state.scenes?.[state.scenes.length - 1];
+          const relevantCodex = contextManager.retrieveRelevantCodex(
+            state.world.codex, lastScene?.narrative, playerAction
+          );
+          if (relevantCodex) {
+            enhancedContext = { ...enhancedContext, relevantCodex };
+          }
+        }
         const preRolledDice = !isFirstScene ? rollD100() : null;
         const momentumBonus = state.momentumBonus || 0;
         const { result, usage } = await aiService.generateScene(

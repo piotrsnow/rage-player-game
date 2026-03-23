@@ -81,6 +81,34 @@ export const contextManager = {
       top.map((e) => `- [${e.type}] ${e.text}`).join('\n');
   },
 
+  retrieveRelevantCodex(codex, currentScene, playerAction, maxEntries = 6) {
+    if (!codex || Object.keys(codex).length === 0) return '';
+    const searchText = `${currentScene || ''} ${playerAction || ''}`;
+    const keywords = extractKeywords(searchText);
+    if (keywords.length === 0) return '';
+
+    const scored = [];
+    for (const entry of Object.values(codex)) {
+      const nameWords = extractKeywords(entry.name);
+      let score = scoreTags(entry.tags, keywords);
+      score += nameWords.reduce((s, w) => s + (keywords.some((kw) => w.includes(kw) || kw.includes(w)) ? 2 : 0), 0);
+      if (score > 0) scored.push({ entry, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, maxEntries);
+    if (top.length === 0) return '';
+
+    const lines = top.map(({ entry }) => {
+      const frags = entry.fragments
+        .map((f) => `  - [${f.aspect || 'info'}] ${f.content} (source: ${f.source})`)
+        .join('\n');
+      return `* ${entry.name} [${entry.category}]:\n${frags}`;
+    });
+
+    return 'PLAYER CODEX (knowledge the player has already discovered — do NOT repeat, reveal NEW information):\n' + lines.join('\n');
+  },
+
   formatSceneHistory(context) {
     const parts = [];
 

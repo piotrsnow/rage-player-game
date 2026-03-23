@@ -180,6 +180,33 @@
     "savedToLibrary": "Saved!",
     "saveError": "Save failed"
   },
+  "codex": {
+    "title": "Codex",
+    "entries": "entries",
+    "fragment": "fragment",
+    "fragments": "fragments",
+    "searchPlaceholder": "Search the codex...",
+    "all": "All",
+    "noResults": "No matching entries found.",
+    "categories": {
+      "artifact": "Artifacts",
+      "person": "People",
+      "place": "Places",
+      "event": "Events",
+      "faction": "Factions",
+      "creature": "Creatures",
+      "concept": "Concepts"
+    },
+    "aspects": {
+      "history": "History",
+      "description": "Description",
+      "location": "Location",
+      "weakness": "Weakness",
+      "rumor": "Rumor",
+      "technical": "Technical",
+      "political": "Political"
+    }
+  },
   "quests": {
     "activeChronicles": "Active Chronicles",
     "noQuests": "No quests discovered yet.",

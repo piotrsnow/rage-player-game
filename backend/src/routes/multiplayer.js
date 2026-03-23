@@ -176,6 +176,32 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
     }
     updatedWorld.npcs = npcs;
   }
+  if (Array.isArray(stateChanges.codexUpdates) && stateChanges.codexUpdates.length > 0) {
+    const codex = { ...(updatedWorld.codex || {}) };
+    for (const update of stateChanges.codexUpdates) {
+      if (!update.id || !update.fragment?.content) continue;
+      const existing = codex[update.id];
+      if (existing) {
+        const isDuplicate = existing.fragments.some((f) => f.content === update.fragment.content);
+        if (!isDuplicate && existing.fragments.length < 10) {
+          codex[update.id] = {
+            ...existing,
+            fragments: [...existing.fragments, { id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: (gameState.scenes || []).length, timestamp: Date.now() }],
+            tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
+            relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
+          };
+        }
+      } else if (Object.keys(codex).length < 100) {
+        codex[update.id] = {
+          id: update.id, name: update.name, category: update.category || 'concept',
+          fragments: [{ id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: (gameState.scenes || []).length, timestamp: Date.now() }],
+          tags: update.tags || [], relatedEntries: update.relatedEntries || [], firstDiscovered: Date.now(),
+        };
+      }
+    }
+    updatedWorld.codex = codex;
+  }
+
   if (Array.isArray(stateChanges.activeEffects) && stateChanges.activeEffects.length > 0) {
     let effects = [...(updatedWorld.activeEffects || [])];
     for (const fx of stateChanges.activeEffects) {
@@ -585,6 +611,8 @@ export async function multiplayerRoutes(fastify) {
               players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
             }
 
+            const characterMomentum = room.gameState.characterMomentum || {};
+
             const sceneResult = await generateMultiplayerScene(
               room.gameState,
               room.settings,
@@ -593,12 +621,22 @@ export async function multiplayerRoutes(fastify) {
               dbUser?.apiKeys || '{}',
               msg.language || 'en',
               msg.dmSettings || null,
+              characterMomentum,
             );
 
             const { validated: validatedChanges } = validateMultiplayerStateChanges(
               sceneResult.stateChanges, room.gameState
             );
             sceneResult.stateChanges = validatedChanges;
+
+            const newMomentum = {};
+            if (sceneResult.scene.diceRolls?.length) {
+              for (const dr of sceneResult.scene.diceRolls) {
+                if (dr.character && dr.sl != null) {
+                  newMomentum[dr.character] = dr.sl * 5;
+                }
+              }
+            }
 
             const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
             const updatedGameState = {
@@ -608,6 +646,7 @@ export async function multiplayerRoutes(fastify) {
               quests: applied.quests,
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
+              characterMomentum: newMomentum,
             };
             setGameState(roomCode, updatedGameState);
 
@@ -663,6 +702,8 @@ export async function multiplayerRoutes(fastify) {
               players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
             }
 
+            const soloMomentum = room.gameState.characterMomentum || {};
+
             const sceneResult = await generateMultiplayerScene(
               room.gameState,
               room.settings,
@@ -671,12 +712,24 @@ export async function multiplayerRoutes(fastify) {
               dbUser?.apiKeys || '{}',
               msg.language || 'en',
               msg.dmSettings || null,
+              soloMomentum,
             );
 
             const { validated: validatedSoloChanges } = validateMultiplayerStateChanges(
               sceneResult.stateChanges, room.gameState
             );
             sceneResult.stateChanges = validatedSoloChanges;
+
+            const newSoloMomentum = { ...soloMomentum };
+            if (sceneResult.scene.diceRolls?.length) {
+              for (const dr of sceneResult.scene.diceRolls) {
+                if (dr.character && dr.sl != null) {
+                  newSoloMomentum[dr.character] = dr.sl * 5;
+                }
+              }
+            } else if (sceneResult.scene.diceRoll?.sl != null) {
+              newSoloMomentum[action.name] = sceneResult.scene.diceRoll.sl * 5;
+            }
 
             const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
             const updatedGameState = {
@@ -686,6 +739,7 @@ export async function multiplayerRoutes(fastify) {
               quests: applied.quests,
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
+              characterMomentum: newSoloMomentum,
             };
             setGameState(roomCode, updatedGameState);
 
