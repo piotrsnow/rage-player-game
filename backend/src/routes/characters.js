@@ -6,25 +6,17 @@ export async function characterRoutes(fastify) {
   fastify.get('/', async (request) => {
     const characters = await prisma.character.findMany({
       where: { userId: request.user.id },
-      select: {
-        id: true,
-        name: true,
-        species: true,
-        careerData: true,
-        xp: true,
-        xpSpent: true,
-        wounds: true,
-        maxWounds: true,
-        portraitUrl: true,
-        campaignCount: true,
-        updatedAt: true,
-      },
       orderBy: { updatedAt: 'desc' },
     });
 
     return characters.map((c) => ({
       ...c,
       careerData: JSON.parse(c.careerData),
+      characteristics: JSON.parse(c.characteristics),
+      advances: JSON.parse(c.advances),
+      skills: JSON.parse(c.skills),
+      talents: JSON.parse(c.talents),
+      inventory: JSON.parse(c.inventory),
     }));
   });
 

@@ -97,6 +97,20 @@ export function useGameState() {
 
       const character = campaignSettings.existingCharacter
         ? {
+            characteristics: generateCharacteristics(campaignSettings.existingCharacter.species || 'Human'),
+            advances: Object.fromEntries(CHARACTERISTIC_KEYS.map((k) => [k, 0])),
+            skills: {},
+            talents: [],
+            inventory: [],
+            money: { gc: 0, ss: 0, cp: 0 },
+            movement: 4,
+            fate: 2,
+            fortune: 2,
+            resilience: 1,
+            resolve: 1,
+            statuses: [],
+            backstory: '',
+            criticalWounds: [],
             ...campaignSettings.existingCharacter,
             needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
           }
