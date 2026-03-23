@@ -6,6 +6,12 @@ const ACTIVE_CAMPAIGN_KEY = 'nikczemny_krzemuch_active';
 const MUSIC_LIBRARY_KEY = 'nikczemny_krzemuch_music';
 const LAST_CHARACTER_NAME_KEY = 'nikczemny_krzemuch_last_character_name';
 const CHARACTERS_KEY = 'nikczemny_krzemuch_characters';
+const MIGRATION_PREFIX = 'nikczemny_krzemuch_migrated_';
+
+const LOCAL_ONLY_SETTINGS_KEYS = [
+  'backendUrl', 'useBackend',
+  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'sunoApiKey',
+];
 
 const TRACK_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -221,15 +227,49 @@ export const storage = {
     }
   },
 
-  async getCharactersAsync() {
-    if (apiClient.isConnected()) {
-      try {
-        return await apiClient.get('/characters');
-      } catch (err) {
-        console.warn('[storage] Backend getCharacters failed, falling back to local:', err.message);
+  async _findBackendCharacterByName(name) {
+    if (!name || !apiClient.isConnected()) return null;
+    try {
+      const all = await apiClient.get('/characters');
+      return all.find((c) => c.name === name) || null;
+    } catch {
+      return null;
+    }
+  },
+
+  _deduplicateCharacters(chars) {
+    if (!Array.isArray(chars) || chars.length === 0) return chars;
+    const seen = new Map();
+    for (const ch of chars) {
+      const key = (ch.name || '').trim().toLowerCase();
+      if (!key) { seen.set(`__unnamed_${seen.size}`, ch); continue; }
+      const existing = seen.get(key);
+      if (!existing) {
+        seen.set(key, ch);
+      } else {
+        const existingTime = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+        const currentTime = ch.updatedAt ? new Date(ch.updatedAt).getTime() : 0;
+        if (currentTime > existingTime) {
+          seen.set(key, ch);
+        }
       }
     }
-    return this.getCharacters();
+    return Array.from(seen.values());
+  },
+
+  async getCharactersAsync() {
+    let chars;
+    if (apiClient.isConnected()) {
+      try {
+        chars = await apiClient.get('/characters');
+      } catch (err) {
+        console.warn('[storage] Backend getCharacters failed, falling back to local:', err.message);
+        chars = this.getCharacters();
+      }
+    } else {
+      chars = this.getCharacters();
+    }
+    return this._deduplicateCharacters(chars);
   },
 
   async saveCharacter(character) {
@@ -238,7 +278,7 @@ export const storage = {
         const payload = {
           name: character.name,
           species: character.species,
-          careerData: character.career,
+          careerData: character.career || character.careerData,
           characteristics: character.characteristics,
           advances: character.advances,
           skills: character.skills,
@@ -260,12 +300,22 @@ export const storage = {
         if (character.backendId) {
           saved = await apiClient.put(`/characters/${character.backendId}`, payload);
         } else {
-          saved = await apiClient.post('/characters', payload);
+          const existing = await this._findBackendCharacterByName(character.name);
+          if (existing) {
+            saved = await apiClient.put(`/characters/${existing.id}`, payload);
+          } else {
+            saved = await apiClient.post('/characters', payload);
+          }
         }
 
-        character.backendId = saved.id;
+        return {
+          ...character,
+          backendId: saved.id,
+          career: saved.careerData || character.career,
+          updatedAt: saved.updatedAt ? new Date(saved.updatedAt).getTime() : Date.now(),
+        };
       } catch (err) {
-        console.warn('[storage] Backend saveCharacter failed:', err.message);
+        console.warn('[storage] Backend saveCharacter failed, falling back to local:', err.message);
       }
     }
 
@@ -293,8 +343,9 @@ export const storage = {
     if (apiClient.isConnected()) {
       try {
         await apiClient.del(`/characters/${id}`);
+        return;
       } catch (err) {
-        console.warn('[storage] Backend deleteCharacter failed:', err.message);
+        console.warn('[storage] Backend deleteCharacter failed, falling back to local:', err.message);
       }
     }
 
@@ -341,6 +392,101 @@ export const storage = {
       });
     } catch (err) {
       console.warn('[storage] Character sync failed:', err.message);
+    }
+  },
+
+  async getSettingsFromAccount() {
+    if (!apiClient.isConnected()) return null;
+    try {
+      const data = await apiClient.get('/auth/me');
+      return data.settings || null;
+    } catch (err) {
+      console.warn('[storage] Failed to load settings from account:', err.message);
+      return null;
+    }
+  },
+
+  async saveSettingsToAccount(settings) {
+    if (!apiClient.isConnected()) return false;
+    try {
+      const uiSettings = { ...settings };
+      for (const key of LOCAL_ONLY_SETTINGS_KEYS) {
+        delete uiSettings[key];
+      }
+      await apiClient.put('/auth/settings', { settings: uiSettings });
+      return true;
+    } catch (err) {
+      console.warn('[storage] Failed to save settings to account:', err.message);
+      return false;
+    }
+  },
+
+  async migrateLocalDataToAccount(userId) {
+    const markerKey = `${MIGRATION_PREFIX}${userId}`;
+    if (localStorage.getItem(markerKey)) return;
+
+    try {
+      const localChars = this.getCharacters();
+      if (localChars.length > 0) {
+        let backendChars;
+        try {
+          backendChars = await apiClient.get('/characters');
+        } catch {
+          backendChars = [];
+        }
+        const backendNames = new Set(
+          backendChars.map((c) => (c.name || '').trim().toLowerCase())
+        );
+
+        for (const char of localChars) {
+          const nameKey = (char.name || '').trim().toLowerCase();
+          if (nameKey && backendNames.has(nameKey)) continue;
+
+          try {
+            await apiClient.post('/characters', {
+              name: char.name,
+              species: char.species,
+              careerData: char.career || char.careerData,
+              characteristics: char.characteristics,
+              advances: char.advances,
+              skills: char.skills,
+              talents: char.talents,
+              wounds: char.wounds ?? 0,
+              maxWounds: char.maxWounds ?? 0,
+              movement: char.movement ?? 4,
+              fate: char.fate ?? 0,
+              resilience: char.resilience ?? 0,
+              xp: char.xp ?? 0,
+              xpSpent: char.xpSpent ?? 0,
+              backstory: char.backstory || '',
+              inventory: char.inventory || [],
+              portraitUrl: char.portraitUrl || '',
+              campaignCount: char.campaignCount ?? 0,
+            });
+          } catch (err) {
+            console.warn(`[storage] Failed to migrate character "${char.name}":`, err.message);
+          }
+        }
+      }
+
+      const localSettings = this.getSettings();
+      if (localSettings) {
+        const accountData = await apiClient.get('/auth/me');
+        const accountSettings = accountData.settings || {};
+        const hasAccountSettings = Object.keys(accountSettings).length > 2;
+
+        if (!hasAccountSettings) {
+          const uiSettings = { ...localSettings };
+          for (const key of LOCAL_ONLY_SETTINGS_KEYS) {
+            delete uiSettings[key];
+          }
+          await apiClient.put('/auth/settings', { settings: uiSettings });
+        }
+      }
+
+      localStorage.setItem(markerKey, Date.now().toString());
+    } catch (err) {
+      console.warn('[storage] Migration failed:', err.message);
     }
   },
 

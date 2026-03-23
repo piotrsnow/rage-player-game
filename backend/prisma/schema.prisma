@@ -16,9 +16,25 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  campaigns  Campaign[]
-  characters Character[]
-  mediaAssets MediaAsset[]
+  campaigns             Campaign[]
+  characters            Character[]
+  mediaAssets           MediaAsset[]
+  achievements          Achievement[]
+  multiplayerSessions   MultiplayerSession[]
+}
+
+model Achievement {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @db.ObjectId
+  achievementId  String   // Frontend achievement key e.g. "first_campaign"
+  unlockedAt     DateTime @default(now())
+  campaignId     String?  @db.ObjectId
+  metadata       String   @default("{}") // JSON: extra context about unlock
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
 }
 
 model Campaign {
@@ -28,6 +44,9 @@ model Campaign {
   genre     String   @default("")
   tone      String   @default("")
   data      String   // Full game state JSON
+  isPublic  Boolean  @default(false)
+  rating    Float    @default(0)
+  playCount Int      @default(0)
   lastSaved DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -35,6 +54,7 @@ model Campaign {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([isPublic])
 }
 
 model Character {
@@ -64,6 +84,20 @@ model Character {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model MultiplayerSession {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  roomCode  String   @unique
+  hostId    String   @db.ObjectId
+  phase     String
+  players   String   // JSON array of player data (without ws)
+  gameState String   // JSON full game state
+  settings  String   // JSON room settings
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  host User @relation(fields: [hostId], references: [id])
 }
 
 model MediaAsset {

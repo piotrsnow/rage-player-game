@@ -56,7 +56,7 @@ export function useNarrator() {
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
   const [currentCharacter, setCurrentCharacter] = useState(null);
   const [highlightInfo, setHighlightInfo] = useState(null);
-  const [currentSentence, setCurrentSentence] = useState(null);
+  const [currentChunk, setCurrentChunk] = useState(null);
 
   const audioRef = useRef(null);
   const sfxAudioRef = useRef(null);
@@ -117,14 +117,14 @@ export function useNarrator() {
     };
   }, [cleanup]);
 
-  const playSentencePipeline = useCallback(async (sentences, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText) => {
     let prefetchPromise = null;
     let wordOffset = 0;
 
-    for (let s = 0; s < sentences.length; s++) {
+    for (let s = 0; s < chunks.length; s++) {
       if (abortRef.current) break;
-      const sentence = sentences[s].trim();
-      if (!sentence) continue;
+      const chunk = chunks[s].trim();
+      if (!chunk) continue;
 
       let result;
       if (prefetchPromise) {
@@ -132,19 +132,19 @@ export function useNarrator() {
         prefetchPromise = null;
       } else {
         setPlaybackState(STATES.LOADING);
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentence);
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk);
       }
 
       if (!result) {
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentence);
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk);
       }
 
-      dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: sentence.length }) });
+      dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
       objectUrlsRef.current.push(result.audioUrl);
       if (abortRef.current) break;
 
-      if (s + 1 < sentences.length && sentences[s + 1]?.trim()) {
-        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, sentences[s + 1].trim())
+      if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
+        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunks[s + 1].trim())
           .catch((err) => {
             console.warn('Prefetch TTS failed:', err.message);
             return null;
@@ -155,9 +155,9 @@ export function useNarrator() {
       audio.playbackRate = Math.max(0.5, Math.min(2, (dialogueSpeed || 100) / 100));
       audioRef.current = audio;
       setPlaybackState(STATES.PLAYING);
-      setCurrentSentence(sentence);
+      setCurrentChunk(chunk);
 
-      startHighlightLoop(audio, result.words, segmentIndex, messageId, wordOffset, fullText, sentence);
+      startHighlightLoop(audio, result.words, segmentIndex, messageId, wordOffset, fullText, chunk);
 
       await new Promise((resolve) => {
         audio.onended = resolve;
@@ -178,7 +178,7 @@ export function useNarrator() {
       setCurrentSegmentIndex(-1);
       setCurrentCharacter(null);
       setHighlightInfo(null);
-      setCurrentSentence(null);
+      setCurrentChunk(null);
       return;
     }
 
@@ -288,8 +288,8 @@ export function useNarrator() {
           if (mapped) voiceId = mapped;
         }
 
-        const sentences = elevenlabsService.splitIntoSentences(text);
-        await playSentencePipeline(sentences, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text);
+        const chunks = elevenlabsService.splitIntoParagraphs(text);
+        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text);
       }
 
       cleanup();
@@ -305,7 +305,7 @@ export function useNarrator() {
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, dispatch, cleanup, playSentencePipeline]);
+  }, [settings, state.characterVoiceMap, dispatch, cleanup, playChunkPipeline]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({
@@ -346,7 +346,7 @@ export function useNarrator() {
     setCurrentSegmentIndex(-1);
     setCurrentCharacter(null);
     setHighlightInfo(null);
-    setCurrentSentence(null);
+    setCurrentChunk(null);
   }, [cleanup]);
 
   const speakSingle = useCallback((message, messageId) => {
@@ -378,7 +378,7 @@ export function useNarrator() {
     currentSegmentIndex,
     currentCharacter,
     highlightInfo,
-    currentSentence,
+    currentChunk,
     isNarratorReady: !!(settings.narratorEnabled && settings.elevenlabsApiKey && settings.elevenlabsVoiceId),
     speak,
     speakScene,

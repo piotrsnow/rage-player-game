@@ -73,12 +73,20 @@ export async function authRoutes(fastify) {
     };
   });
 
-  fastify.put('/settings', { onRequest: [fastify.authenticate] }, async (request) => {
+  fastify.put('/settings', { onRequest: [fastify.authenticate] }, async (request, reply) => {
     const { settings, apiKeys } = request.body;
     const data = {};
 
     if (settings !== undefined) {
-      data.settings = JSON.stringify(settings);
+      if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
+        return reply.code(400).send({ error: 'Settings must be a JSON object' });
+      }
+      const MAX_SETTINGS_SIZE = 64 * 1024;
+      const serialized = JSON.stringify(settings);
+      if (serialized.length > MAX_SETTINGS_SIZE) {
+        return reply.code(400).send({ error: 'Settings payload too large' });
+      }
+      data.settings = serialized;
     }
 
     if (apiKeys !== undefined) {

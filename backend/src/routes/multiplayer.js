@@ -3,9 +3,11 @@ import {
   createRoom, createRoomWithGameState, joinRoom, leaveRoom, updateCharacter,
   updateSettings, submitAction, withdrawAction, approveActions, executeSoloAction,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom, touchRoom,
+  saveRoomToDB, deleteRoomFromDB, loadActiveSessionsFromDB, findSessionInDB, restoreRoom,
 } from '../services/roomManager.js';
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
+import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
 
 function applyTimeAdvance(world, timeAdvance) {
   const ts = world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
@@ -334,6 +336,8 @@ export async function multiplayerRoutes(fastify) {
               odId,
               room: sanitizeRoom(result.room),
             });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save on convert failed'));
             break;
           }
 
@@ -515,6 +519,8 @@ export async function multiplayerRoutes(fastify) {
               gameState: campaignResult,
               room: sanitizeRoom(updatedRoom),
             });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
             break;
           }
 
@@ -589,6 +595,11 @@ export async function multiplayerRoutes(fastify) {
               msg.dmSettings || null,
             );
 
+            const { validated: validatedChanges } = validateMultiplayerStateChanges(
+              sceneResult.stateChanges, room.gameState
+            );
+            sceneResult.stateChanges = validatedChanges;
+
             const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
             const updatedGameState = {
               ...room.gameState,
@@ -609,6 +620,8 @@ export async function multiplayerRoutes(fastify) {
               room: sanitizeRoom(updatedRoom),
             });
 
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+
             if (needsCompression(updatedGameState)) {
               compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
                 .then((summary) => {
@@ -620,6 +633,7 @@ export async function multiplayerRoutes(fastify) {
                         compressedHistory: summary,
                       };
                       setGameState(roomCode, currentRoom.gameState);
+                      saveRoomToDB(roomCode).catch(() => {});
                     }
                   }
                 })
@@ -659,6 +673,11 @@ export async function multiplayerRoutes(fastify) {
               msg.dmSettings || null,
             );
 
+            const { validated: validatedSoloChanges } = validateMultiplayerStateChanges(
+              sceneResult.stateChanges, room.gameState
+            );
+            sceneResult.stateChanges = validatedSoloChanges;
+
             const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
             const updatedGameState = {
               ...room.gameState,
@@ -679,6 +698,8 @@ export async function multiplayerRoutes(fastify) {
               room: sanitizeRoom(updatedRoom),
             });
 
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+
             if (needsCompression(updatedGameState)) {
               compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
                 .then((summary) => {
@@ -690,6 +711,7 @@ export async function multiplayerRoutes(fastify) {
                         compressedHistory: summary,
                       };
                       setGameState(roomCode, currentRoom.gameState);
+                      saveRoomToDB(roomCode).catch(() => {});
                     }
                   }
                 })
@@ -704,7 +726,29 @@ export async function multiplayerRoutes(fastify) {
           }
 
           case 'REJOIN_ROOM': {
-            const targetRoom = getRoom(msg.roomCode);
+            let targetRoom = getRoom(msg.roomCode);
+
+            if (!targetRoom) {
+              const dbSession = await findSessionInDB(msg.roomCode);
+              if (dbSession && dbSession.gameState) {
+                const players = dbSession.players || [];
+                const playerMap = new Map();
+                for (const p of players) {
+                  playerMap.set(p.odId, { ...p, ws: null, pendingAction: null, lastSoloActionAt: null });
+                }
+                const hostOdId = players.find((p) => p.isHost)?.odId || players[0]?.odId;
+                targetRoom = restoreRoom(msg.roomCode, {
+                  roomCode: dbSession.roomCode,
+                  hostId: hostOdId,
+                  phase: dbSession.phase,
+                  settings: dbSession.settings,
+                  players: playerMap,
+                  gameState: dbSession.gameState,
+                  lastActivity: Date.now(),
+                });
+              }
+            }
+
             if (!targetRoom) {
               ws.send(JSON.stringify({ type: 'ERROR', message: 'Room no longer exists' }));
               break;
@@ -737,8 +781,10 @@ export async function multiplayerRoutes(fastify) {
             if (!target) throw new Error('Player not found');
 
             const kickedName = target.name;
-            target.ws.send(JSON.stringify({ type: 'KICKED', message: 'You have been removed from the room' }));
-            target.ws.close();
+            if (target.ws?.readyState === 1) {
+              target.ws.send(JSON.stringify({ type: 'KICKED', message: 'You have been removed from the room' }));
+              target.ws.close();
+            }
 
             const updatedRoom = leaveRoom(roomCode, targetOdId);
             if (updatedRoom) {

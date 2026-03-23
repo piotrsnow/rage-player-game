@@ -38,7 +38,8 @@
     "armory": "Zbrojownia",
     "settings": "Ustawienia",
     "play": "Graj",
-    "character": "Postać"
+    "character": "Postać",
+    "gallery": "Galeria"
   },
   "lobby": {
     "title": "Nikczemny Krzemuch",
@@ -152,6 +153,14 @@
     "noActiveCharacter": "Brak Aktywnej Postaci",
     "noActiveDescription": "Rozpocznij lub wczytaj kampanię, aby zobaczyć kartę postaci.",
     "goToLobby": "Idź do Lobby",
+    "library": "Twoje Postacie",
+    "libraryDescription": "Przeglądaj zapisane postacie ze swoich kampanii.",
+    "noSavedCharacters": "Brak zapisanych postaci. Zagraj w kampanię, aby zapisać postacie.",
+    "backToList": "Powrót do listy",
+    "deleteCharacter": "Usuń postać",
+    "deleteConfirm": "Czy na pewno chcesz usunąć tę postać?",
+    "characterDeleted": "Postać usunięta",
+    "readOnly": "Podgląd",
     "vitals": "Parametry Życiowe",
     "healthPoints": "Żywotność",
     "manaPool": "Szczęście i Determinacja",
@@ -258,6 +267,13 @@
     "anthropicLabel": "Anthropic (Claude)",
     "openaiApiKey": "Klucz API OpenAI",
     "anthropicApiKey": "Klucz API Anthropic",
+    "modelTier": "Poziom modelu AI",
+    "modelTierDesc": "Modele standardowe są tańsze i szybsze. Modele premium generują bogatsze narracje. Kreacja kampanii zawsze używa premium.",
+    "modelTierStandard": "Standardowy",
+    "modelTierStandardDesc": "GPT-4o Mini / Haiku — tańszy, szybszy",
+    "modelTierPremium": "Premium",
+    "modelTierPremiumDesc": "GPT-4o / Claude Sonnet — bogatsza narracja",
+    "modelTierCostHint": "Szac. ~$0.01/scena (standard) vs ~$0.05/scena (premium)",
     "apiKeysTitle": "Klucze API",
     "apiKeysDescription": "Klucze są przechowywane lokalnie w przeglądarce i nigdy nie są wysyłane na żaden serwer poza dostawcą AI. Potrzebujesz co najmniej jednego klucza, aby grać.",
     "activeProvider": "Aktywny Dostawca",
@@ -431,10 +447,12 @@
     "tabs": {
       "npcs": "BN-y",
       "map": "Mapa",
+      "factions": "Frakcje",
       "time": "Czas",
       "effects": "Efekty",
       "journal": "Dziennik"
     },
+    "emptyFactions": "Brak interakcji z frakcjami",
     "emptyNpcs": "Nie napotkano jeszcze żadnych BN-ów",
     "emptyMap": "Nie zmapowano jeszcze żadnych lokacji",
     "emptyEffects": "Brak aktywnych efektów",
@@ -578,6 +596,13 @@
     "goldShort": "ZK",
     "silverShort": "SS",
     "copperShort": "MP"
+  },
+  "achievements": {
+    "title": "Osiągnięcia",
+    "unlocked": "Odblokowano osiągnięcie",
+    "progress": "Postęp",
+    "locked": "Zablokowane",
+    "noAchievements": "Brak odblokowanych osiągnięć"
   },
   "wfrpSkills": {
     "Art": "Sztuka",

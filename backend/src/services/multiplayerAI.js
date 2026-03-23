@@ -374,62 +374,89 @@ NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }
 
+function safeParseJSONContent(raw) {
+  if (typeof raw === 'object' && raw !== null) return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const jsonMatch = String(raw).match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try { return JSON.parse(jsonMatch[0]); } catch { /* fall through */ }
+    }
+    throw new Error('Failed to parse AI response as JSON');
+  }
+}
+
+const RETRY_DELAYS = [1000, 3000];
+
 async function callAI(messages, encryptedApiKeys) {
   const openaiKey = resolveApiKey(encryptedApiKeys, 'openai');
   const anthropicKey = resolveApiKey(encryptedApiKeys, 'anthropic');
 
-  if (openaiKey) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages,
-        temperature: 0.8,
-        response_format: { type: 'json_object' },
-      }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
-    }
-    const data = await response.json();
-    return JSON.parse(data.choices[0].message.content);
+  if (!openaiKey && !anthropicKey) {
+    throw new Error('No API key configured. The host must have an OpenAI or Anthropic API key.');
   }
 
-  if (anthropicKey) {
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const userMsgs = messages.filter((m) => m.role !== 'system');
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: systemMsg?.content || '',
-        messages: userMsgs,
-        temperature: 0.8,
-      }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Anthropic API error: ${response.status}`);
-    }
-    const data = await response.json();
-    const text = data.content[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Failed to parse AI response as JSON');
-    return JSON.parse(jsonMatch[0]);
-  }
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      if (openaiKey && (attempt < 2 || !anthropicKey)) {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${openaiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o',
+            messages,
+            temperature: 0.8,
+            response_format: { type: 'json_object' },
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return safeParseJSONContent(data.choices[0].message.content);
+      }
 
-  throw new Error('No API key configured. The host must have an OpenAI or Anthropic API key.');
+      if (anthropicKey) {
+        const systemMsg = messages.find((m) => m.role === 'system');
+        const userMsgs = messages.filter((m) => m.role !== 'system');
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4096,
+            system: systemMsg?.content || '',
+            messages: userMsgs,
+            temperature: 0.8,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error?.message || `Anthropic API error: ${response.status}`);
+        }
+        const data = await response.json();
+        return safeParseJSONContent(data.content[0].text);
+      }
+    } catch (err) {
+      lastError = err;
+      if (attempt < 2) {
+        const delay = RETRY_DELAYS[attempt] || 3000;
+        console.warn(`[multiplayerAI] Retry ${attempt + 1} after ${delay}ms:`, err.message);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
 }
 
 export async function generateMultiplayerCampaign(settings, players, encryptedApiKeys, language = 'en') {

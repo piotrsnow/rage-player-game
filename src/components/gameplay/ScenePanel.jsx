@@ -53,7 +53,7 @@ function HighlightedNarrative({ text, highlightInfo }) {
   );
 }
 
-export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentSentence, diceRoll, diceRolls }) {
+export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentChunk, diceRoll, diceRolls }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { state, dispatch } = useGame();
@@ -203,14 +203,14 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
       )}
 
       {/* Subtitle overlay – only while narrator is reading */}
-      {currentSentence && (
+      {currentChunk && (
         <div className="absolute bottom-0 left-0 right-0 pb-6 px-8 flex justify-center" style={{ zIndex: 3 }}>
           <p className="text-xl md:text-2xl text-on-surface font-body leading-relaxed drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)] text-center max-w-[85%] bg-black/60 backdrop-blur-sm rounded-lg px-6 py-3 border border-white/[0.05]">
             <HighlightedNarrative
-              text={currentSentence}
+              text={currentChunk}
               highlightInfo={highlightInfo ? {
                 ...highlightInfo,
-                fullText: currentSentence,
+                fullText: currentChunk,
                 wordIndex: highlightInfo.sentenceWordIndex ?? -1,
               } : null}
             />

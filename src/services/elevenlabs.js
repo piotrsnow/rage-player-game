@@ -182,12 +182,9 @@ export const elevenlabsService = {
     return { audioUrl, words };
   },
 
-  splitIntoSentences(text) {
-    const sentences = text.match(/[^.!?…]+[.!?…]+[\s]*/g);
-    if (!sentences) return [text.trim()].filter(Boolean);
-    const remaining = text.replace(/[^.!?…]+[.!?…]+[\s]*/g, '').trim();
-    const result = sentences.map((s) => s.trim()).filter(Boolean);
-    if (remaining) result.push(remaining);
-    return result;
+  splitIntoParagraphs(text) {
+    const paragraphs = text.split(/\n\s*\n/);
+    const result = paragraphs.map((p) => p.trim()).filter(Boolean);
+    return result.length > 0 ? result : [text.trim()].filter(Boolean);
   },
 };

@@ -38,7 +38,8 @@
     "armory": "Armory",
     "settings": "Settings",
     "play": "Play",
-    "character": "Character"
+    "character": "Character",
+    "gallery": "Gallery"
   },
   "lobby": {
     "title": "Nikczemny Krzemuch",
@@ -152,6 +153,14 @@
     "noActiveCharacter": "No Active Character",
     "noActiveDescription": "Start or load a campaign to view your character sheet.",
     "goToLobby": "Go to Lobby",
+    "library": "Your Characters",
+    "libraryDescription": "Browse saved characters from your campaigns.",
+    "noSavedCharacters": "No saved characters. Play a campaign to save characters.",
+    "backToList": "Back to list",
+    "deleteCharacter": "Delete character",
+    "deleteConfirm": "Are you sure you want to delete this character?",
+    "characterDeleted": "Character deleted",
+    "readOnly": "Preview",
     "vitals": "Vitals",
     "healthPoints": "Wounds",
     "manaPool": "Fortune & Resolve",
@@ -258,6 +267,13 @@
     "anthropicLabel": "Anthropic (Claude)",
     "openaiApiKey": "OpenAI API Key",
     "anthropicApiKey": "Anthropic API Key",
+    "modelTier": "AI Model Tier",
+    "modelTierDesc": "Standard models are cheaper and faster. Premium models produce richer narratives. Campaign creation always uses premium.",
+    "modelTierStandard": "Standard",
+    "modelTierStandardDesc": "GPT-4o Mini / Haiku — cheaper, faster",
+    "modelTierPremium": "Premium",
+    "modelTierPremiumDesc": "GPT-4o / Claude Sonnet — richer output",
+    "modelTierCostHint": "Est. ~$0.01/scene (standard) vs ~$0.05/scene (premium)",
     "apiKeysTitle": "API Keys",
     "apiKeysDescription": "Keys are stored locally in your browser and never sent to any server besides the AI provider. You need at least one key to play.",
     "activeProvider": "Active Provider",
@@ -431,10 +447,12 @@
     "tabs": {
       "npcs": "NPCs",
       "map": "Map",
+      "factions": "Factions",
       "time": "Time",
       "effects": "Effects",
       "journal": "Journal"
     },
+    "emptyFactions": "No faction interactions yet",
     "emptyNpcs": "No NPCs encountered yet",
     "emptyMap": "No locations mapped yet",
     "emptyEffects": "No active effects",
@@ -578,6 +596,13 @@
     "goldShort": "GC",
     "silverShort": "SS",
     "copperShort": "CP"
+  },
+  "achievements": {
+    "title": "Achievements",
+    "unlocked": "Achievement unlocked",
+    "progress": "Progress",
+    "locked": "Locked",
+    "noAchievements": "No achievements unlocked yet"
   },
   "multiplayer": {
     "solo": "Solo",

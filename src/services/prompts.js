@@ -1,4 +1,10 @@
 import { getBonus, formatMoney } from './gameState';
+import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
+import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
+import { formatMagicForPrompt } from '../data/wfrpMagic';
+import { formatWeatherForPrompt } from './weatherEngine';
+import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 
 const NEEDS_LABELS = {
   hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
@@ -13,32 +19,27 @@ export function buildUnmetNeedsBlock(needs) {
   const lines = [];
   for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
     const val = needs[key] ?? 100;
+    if (val >= 10) continue;
     const name = key.charAt(0).toUpperCase() + key.slice(1);
     if (val <= 0 && labels.zero) {
       lines.push(`- ${name}: ${val}/100 [ZERO — ${key === 'bladder' ? 'ACCIDENT' : 'COLLAPSE'} — ${labels.zero}]`);
-    } else if (val < 15) {
-      lines.push(`- ${name}: ${val}/100 [CRITICAL — ${labels.critical}]`);
-    } else if (val < 30) {
-      lines.push(`- ${name}: ${val}/100 [LOW — ${labels.low}]`);
-    } else if (val < 50) {
-      lines.push(`- ${name}: ${val}/100 [MODERATE — ${labels.moderate}]`);
     } else {
-      lines.push(`- ${name}: ${val}/100 [OK]`);
+      lines.push(`- ${name}: ${val}/100 [CRITICAL — ${labels.critical}]`);
     }
   }
+  if (lines.length === 0) return '';
   return `CHARACTER NEEDS STATUS (always factor these into narration, NPC reactions, and outcomes):\n${lines.join('\n')}\n\n`;
 }
 
 export function buildNeedsEnforcementReminder(needs) {
   if (!needs) return '';
   const urgent = [];
-  for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
+  for (const [key] of Object.entries(NEEDS_LABELS)) {
     const val = needs[key] ?? 100;
+    if (val >= 10) continue;
     const name = key.charAt(0).toUpperCase() + key.slice(1);
     if (val <= 0) urgent.push(`${name}: ${val}/100 — ZERO`);
-    else if (val < 15) urgent.push(`${name}: ${val}/100 — CRITICAL`);
-    else if (val < 30) urgent.push(`${name}: ${val}/100 — LOW`);
-    else if (val < 50) urgent.push(`${name}: ${val}/100 — MODERATE`);
+    else urgent.push(`${name}: ${val}/100 — CRITICAL`);
   }
   if (urgent.length === 0) return '';
   return `\nNEEDS ENFORCEMENT (MANDATORY — do NOT skip):
@@ -47,7 +48,7 @@ YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
 3. At least ONE of the four suggestedActions MUST address the most urgent unmet need (e.g. "Find food", "Look for a well", "Find a place to rest").
-4. For needs below 30: apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
+4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
@@ -159,6 +160,9 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
         .join('\n\n');
       parts.push(`RECENT SCENES (full):\n${full}`);
     }
+    if (enhancedContext.relevantMemories) {
+      parts.unshift(enhancedContext.relevantMemories);
+    }
     sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
   } else {
     const scenes = gameState.scenes || [];
@@ -203,29 +207,43 @@ CHARACTER STATE (WFRP 4e):
 - Inventory: ${inventory}
 - Money: ${moneyDisplay}
 - Statuses: ${statuses}
-${needsSystemEnabled && character?.needs ? `
-CHARACTER NEEDS (biological/physical needs — scale 0-100, 100=fully satisfied, 0=critical):
-- Hunger: ${character.needs.hunger ?? 100}/100${(character.needs.hunger ?? 100) < 15 ? ' [CRITICAL — weak, dizzy, stomach pains]' : (character.needs.hunger ?? 100) < 30 ? ' [LOW — hungry, distracted]' : ''}
-- Thirst: ${character.needs.thirst ?? 100}/100${(character.needs.thirst ?? 100) < 15 ? ' [CRITICAL — parched, cracked lips, fading]' : (character.needs.thirst ?? 100) < 30 ? ' [LOW — thirsty, dry mouth]' : ''}
-- Bladder: ${character.needs.bladder ?? 100}/100${(character.needs.bladder ?? 100) <= 0 ? ' [ACCIDENT — character has lost control!]' : (character.needs.bladder ?? 100) < 10 ? ' [CRITICAL — desperate, funny walk, about to lose control]' : (character.needs.bladder ?? 100) < 30 ? ' [LOW — uncomfortable, fidgeting]' : ''}
-- Hygiene: ${character.needs.hygiene ?? 100}/100${(character.needs.hygiene ?? 100) < 15 ? ' [CRITICAL — terrible stench, NPCs recoil]' : (character.needs.hygiene ?? 100) < 30 ? ' [LOW — smelly, NPCs wrinkle noses]' : ''}
-- Rest: ${character.needs.rest ?? 100}/100${(character.needs.rest ?? 100) <= 0 ? ' [COLLAPSE — character passes out from exhaustion]' : (character.needs.rest ?? 100) < 15 ? ' [CRITICAL — can barely keep eyes open, stumbling]' : (character.needs.rest ?? 100) < 30 ? ' [LOW — tired, yawning, slower reactions]' : ''}
+${character?.criticalWounds?.length > 0 ? `\n${formatCriticalWoundsForPrompt(character.criticalWounds)}\nCRITICAL WOUND RULES: Active critical wounds impose penalties on the character's tests and movement. When narrating, reflect the character's injuries — limping, pain, restricted movement, bleeding. Critical wounds that require surgery can only be healed by a trained healer/surgeon. Bleeding wounds worsen over time without treatment. Include "healCriticalWound" in stateChanges (string: wound name) when a critical wound is successfully treated.\n` : ''}${(() => {
+  if (!needsSystemEnabled || !character?.needs) return '';
+  const needsDefs = [
+    { key: 'hunger', zeroLabel: null, critLabel: 'weak, dizzy, stomach pains' },
+    { key: 'thirst', zeroLabel: null, critLabel: 'parched, cracked lips, fading' },
+    { key: 'bladder', zeroLabel: 'ACCIDENT — character has lost control!', critLabel: 'desperate, funny walk, about to lose control' },
+    { key: 'hygiene', zeroLabel: null, critLabel: 'terrible stench, NPCs recoil' },
+    { key: 'rest', zeroLabel: 'COLLAPSE — character passes out from exhaustion', critLabel: 'can barely keep eyes open, stumbling' },
+  ];
+  const critLines = [];
+  for (const { key, zeroLabel, critLabel } of needsDefs) {
+    const val = character.needs[key] ?? 100;
+    if (val >= 10) continue;
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    if (val <= 0 && zeroLabel) critLines.push(`- ${name}: ${val}/100 [ZERO — ${zeroLabel}]`);
+    else critLines.push(`- ${name}: ${val}/100 [CRITICAL — ${critLabel}]`);
+  }
+  if (critLines.length === 0) return `
+NEEDS SYSTEM: Active. All needs currently above threshold (>=10). When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), use stateChanges.needsChanges as DELTAS. Always include stateChanges.timeAdvance with "hoursElapsed".
+`;
+  return `
+CHARACTER NEEDS — CRITICAL (biological/physical needs — scale 0-100, below 10 = crisis):
+${critLines.join('\n')}
 
-NEEDS SYSTEM RULES (CRITICAL — these MUST be respected every scene):
-- Needs decay automatically based on hours elapsed. Realistic daily rhythm: ~3 meals, ~4 drinks, ~3 bathroom breaks, ~1 bath, ~8h sleep.
-- ALWAYS weave need effects into the narrative. Do NOT ignore them. The character is a living being with physical needs.
-- Below 50 [MODERATE]: subtle mentions — the character notices growing discomfort, briefly thinks about food/water/rest, shifts uncomfortably. Light narrative flavor.
-- Below 30 [LOW]: noticeable effects — distraction, discomfort, brief NPC reactions. The character's performance is impaired.
-- Below 15 [CRITICAL]: strong effects that actively dominate the scene — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
+NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - At 0 for bladder: the character wets themselves — narrate the embarrassment and NPC reactions.
 - At 0 for rest: the character collapses/falls asleep involuntarily.
-- MECHANICAL PENALTIES: When a need is below 30, apply -10 to related skill test targets: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple low needs stack.
+- ALWAYS weave these critical need effects into the narrative — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
+- MECHANICAL PENALTIES: Apply -10 to related skill test targets for each critical need: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple critical needs stack.
 - When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), you MUST use stateChanges.needsChanges to restore it. Never narrate eating/drinking/resting without updating the corresponding need.
-  Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, short nap +20-30 rest.
+  Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
+- SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: When ANY need is below 40, at least ONE of the four suggestedActions MUST directly address that need (e.g. "Search for food", "Find a stream to drink from", "Look for a place to sleep"). When multiple needs are low, prioritize the most critical.
-- IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal) indicating how many in-game hours this action took (e.g. 0.25 for a quick action = 15 min, 0.5 for a short action = 30 min, 1 for exploration, 8 for sleeping).
-` : ''}
+- MANDATORY: At least ONE of the four suggestedActions MUST directly address the most urgent unmet need (e.g. "Search for food", "Find a stream to drink from", "Look for a place to sleep").
+- IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
+`;
+})()}
 WFRP 4e RULES FOR THE GM:
 - Use the d100 percentile system. When a skill test is needed, the target number = characteristic + skill advances.
 - Success Levels (SL) = (target - roll) ÷ 10, rounded toward 0. Positive SL = degrees of success, negative = degrees of failure.
@@ -264,7 +282,25 @@ ${activeQuests}
 
 SCENE HISTORY:
 ${sceneHistory}
-
+${(() => {
+  const kb = world?.knowledgeBase;
+  if (!kb) return '';
+  const activeThreads = (kb.plotThreads || []).filter((t) => t.status === 'active');
+  const recentEvents = (kb.events || []).filter((e) => e.importance === 'critical' || e.importance === 'major').slice(-10);
+  const recentDecisions = (kb.decisions || []).slice(-5);
+  if (activeThreads.length === 0 && recentEvents.length === 0 && recentDecisions.length === 0) return '';
+  const lines = [];
+  if (activeThreads.length > 0) {
+    lines.push('Active plot threads: ' + activeThreads.map((t) => t.name).join(', '));
+  }
+  if (recentEvents.length > 0) {
+    lines.push('Key events: ' + recentEvents.map((e) => e.summary).join('; '));
+  }
+  if (recentDecisions.length > 0) {
+    lines.push('Recent decisions: ' + recentDecisions.map((d) => `${d.choice} → ${d.consequence}`).join('; '));
+  }
+  return `\nKNOWLEDGE BASE (long-term memory — reference for consistency):\n${lines.join('\n')}\n`;
+})()}
 LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
@@ -282,7 +318,7 @@ INSTRUCTIONS:
 11. Check ACTIVE EFFECTS before resolving actions in a location — traps should trigger, ongoing spells should apply their effects.
 12. ALWAYS include stateChanges.timeAdvance with "hoursElapsed" (supports decimals) — every action takes 15 minutes to 1 hour of in-game time. Quick dialogue/interaction: 0.25h (15 min), short action/combat: 0.5h (30 min), exploration/travel: 0.75-1h, resting: 2-4h, sleeping: 6-8h. Time drives the needs system.
 13. Update the player's current location via stateChanges.currentLocation when they move.
-14. If the character needs system is active, reflect low needs in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
+14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
 
 CURRENCY SYSTEM (WFRP):
@@ -327,8 +363,83 @@ For impactful moments (combat, magic, environmental events, dramatic reveals), i
 BACKGROUND MUSIC:
 Include a "musicPrompt" field with a short English description of the ideal instrumental background music for the scene (e.g. "tense orchestral strings with low brass, dark dungeon atmosphere" or "peaceful acoustic guitar with birdsong, sunny meadow"). Focus on instruments, tempo, and emotional tone. Keep it under 200 characters. Use null only if the scene should be silent.
 
+${(() => {
+  const hasCombat = !!gameState?.combat;
+  const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
+  const combatLikely = hasCombat || /\b(attack|fight|combat|ambush|hostile|enemy|enemies|bandits?|creatures?|wolves|monsters?)\b/.test(recentNarrative);
+  if (!combatLikely) return 'BESTIARY: Available on demand — when combat starts, creature stats will be referenced automatically.\n';
+  return `BESTIARY REFERENCE (use these stats for combat encounters instead of inventing stats):\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 15))}\nUse the stats above for known creature types. For creatures not listed, create comparable stats.\n`;
+})()}
+${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
+${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
+The character can cast spells using Channelling (WP) and Language (Magick) tests. Casting Number (CN) is the SL required. Doubles on casting rolls cause Miscasts. When the character attempts magic, describe the wind of magic flowing and the spell's visual effects.
+` : ''}${gameState?.world?.weather ? `CURRENT WEATHER:
+${formatWeatherForPrompt(gameState.world.weather)}
+Factor weather conditions into outdoor scenes — visibility, movement, NPC behavior, and test modifiers.
+` : ''}${(() => {
+  const loc = (currentLoc || '').toLowerCase();
+  const inSettlement = /\b(town|city|village|market|shop|tavern|inn|port|harbor|harbour|forge|smithy|store|emporium|bazaar)\b/.test(loc);
+  const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
+  const tradeLikely = inSettlement || /\b(buy|sell|trade|shop|merchant|vendor|barter|purchase|haggle)\b/.test(recentNarrative);
+  if (!tradeLikely) return '';
+  return `EQUIPMENT & TRADE REFERENCE:\n${formatEquipmentForPrompt('weapons')}\n${formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
+})()}
+
+${(() => {
+  const factions = gameState?.world?.factions;
+  if (!factions || Object.keys(factions).length === 0) return '';
+  const lines = Object.entries(factions).map(([id, rep]) => {
+    const def = FACTION_DEFINITIONS[id];
+    const tier = getReputationTier(rep);
+    return `- ${def?.name || id}: ${rep} (${tier})`;
+  });
+  return `FACTION REPUTATION (affects NPC attitudes, prices, quest availability):\n${lines.join('\n')}\nAdjust NPC behavior based on faction standing: Hostile factions refuse service, Allied factions offer discounts and special quests.\n`;
+})()}CAMPAIGN END:
+When the main quest is fully resolved (completed or catastrophically failed), or all player characters are dead (TPK), you MAY include "campaignEnd" in stateChanges:
+{"campaignEnd": {"status": "completed" or "failed", "epilogue": "A 2-3 paragraph epilogue summarizing the aftermath..."}}
+Only use this for dramatic, definitive campaign conclusions — not mid-story setbacks.
+${(() => {
+  const structure = campaign?.structure;
+  if (!structure?.acts?.length) return '';
+  const currentAct = structure.acts.find((a) => a.number === structure.currentAct) || structure.acts[0];
+  const scenesInAct = (gameState.scenes?.length || 0) - (structure.acts.slice(0, structure.currentAct - 1).reduce((sum, a) => sum + (a.targetScenes || 0), 0));
+  const remaining = Math.max(0, (currentAct.targetScenes || 10) - scenesInAct);
+  return `
+CAMPAIGN PACING:
+Current Act: ${currentAct.number} — "${currentAct.name}" (${currentAct.description || ''})
+Scenes in this act: ${scenesInAct}/${currentAct.targetScenes || '?'}
+Scenes remaining in act: ~${remaining}
+Total campaign progress: Scene ${gameState.scenes?.length || 0} / ~${structure.totalTargetScenes || '?'}
+${remaining <= 3 ? 'IMPORTANT: This act is nearing its end. Build toward the act\'s climax/turning point. If this is the final act, prepare for the campaign conclusion.' : 'Continue developing the act\'s themes and building toward its turning point.'}
+`;
+})()}
+KNOWLEDGE BASE UPDATES:
+After each scene, you may include "knowledgeUpdates" in stateChanges to record important story information:
+{"knowledgeUpdates": {
+  "events": [{"summary": "Brief event description", "importance": "minor|major|critical", "tags": ["combat", "npc_name"]}],
+  "decisions": [{"choice": "What the player decided", "consequence": "What happened as a result", "tags": []}],
+  "plotThreads": [{"id": "thread_unique_id", "name": "Thread Name", "status": "active|resolved|abandoned"}]
+}}
+Use events for key happenings, decisions for player choices with consequences, and plotThreads for ongoing narrative arcs.
+
 SCENE IMAGE PROMPT:
-Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
+Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".
+
+COMBAT ENCOUNTERS:
+When generating a combat encounter, include "combatUpdate" in stateChanges with enemy data:
+{
+  "combatUpdate": {
+    "active": true,
+    "enemies": [
+      {"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
+    ],
+    "reason": "Short description of why combat started"
+  }
+}
+Only include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+
+FACTION & REPUTATION:
+When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.`;
 }
 
 export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, momentumBonus = 0 } = {}, dmSettings = null) {
@@ -452,7 +563,11 @@ Respond with ONLY valid JSON in this exact format:
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
     "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
-    "currentLocation": "Current Location Name"${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
+    "currentLocation": "Current Location Name",
+    "factionChanges": null,
+    "combatUpdate": null,
+    "knowledgeUpdates": null,
+    "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
 
@@ -474,7 +589,7 @@ For stateChanges.mapChanges: log environmental changes to locations (traps set, 
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
 For stateChanges.currentLocation: update whenever the player moves to a new location.
-${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, nap +20-30 rest. Set all values to 0 only when no need was satisfied in this scene.\n' : ''}
+${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${langReminder}`;
@@ -570,8 +685,22 @@ Respond with ONLY valid JSON:
       {"id": "obj_3", "description": "${language === 'pl' ? 'Trzeci etap' : 'Third milestone'}"}
     ]
   },
-  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"]
+  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"],
+  "campaignStructure": {
+    "acts": [
+      {"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},
+      {"number": 2, "name": "Confrontation", "targetScenes": 12, "description": "Escalate the conflict, raise the stakes"},
+      {"number": 3, "name": "Climax", "targetScenes": 5, "description": "Final confrontation and resolution"}
+    ],
+    "currentAct": 1,
+    "totalTargetScenes": 25
+  }
 }
+
+IMPORTANT for campaignStructure:
+- Base the act structure on the campaign length: Short (~15 scenes, 3 acts: 5/7/3), Medium (~25 scenes, 3 acts: 8/12/5), Long (~40 scenes, 3 acts: 12/18/10), Epic (~60+ scenes, 4 acts: 15/20/15/10).
+- Each act needs a name, target scene count, and brief description of its narrative purpose.
+- totalTargetScenes should be the sum of all act target scenes.
 
 IMPORTANT for characterSuggestion:
 - Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.
@@ -584,6 +713,26 @@ IMPORTANT for characterSuggestion:
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
 }
 
+const SANITIZE_PATTERNS = [
+  /\b(blood|bloody|bleeding|bloodied|bloodstain(ed)?)\b/gi,
+  /\b(gore|gory|guts|entrails|viscera|dismember(ed|ment)?)\b/gi,
+  /\b(corpse|dead\s+bod(y|ies)|severed|decapitat(ed|ion)|mutilat(ed|ion))\b/gi,
+  /\b(murder(ed|ing)?|kill(ed|ing)|slaughter(ed|ing)?|massacre)\b/gi,
+  /\b(torture(d|ing)?|torment(ed|ing)?)\b/gi,
+  /\b(naked|nude|undress(ed)?)\b/gi,
+  /\b(slave(ry|s)?|rape|assault(ed|ing)?)\b/gi,
+  /\b(suicide|self-harm)\b/gi,
+  /\b(drug|narcotic|opium|warpstone)\b/gi,
+];
+
+function sanitizeForImageGen(text) {
+  let sanitized = text;
+  for (const pattern of SANITIZE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '');
+  }
+  return sanitized.replace(/\s{2,}/g, ' ').trim();
+}
+
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {
   const isSD = provider === 'stability';
 
@@ -594,9 +743,9 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
         Horror: 'photorealistic horror scene, cinematic photograph, eerie realistic lighting, RAW photo, 8k uhd',
       }
     : {
-        Fantasy: 'dark fantasy oil painting, medieval, magical atmosphere',
+        Fantasy: 'fantasy oil painting, medieval, magical atmosphere',
         'Sci-Fi': 'cinematic sci-fi concept art, futuristic, neon-lit',
-        Horror: 'dark horror illustration, atmospheric, eerie lighting',
+        Horror: 'gothic illustration, atmospheric, eerie lighting',
       };
 
   const toneMap = isSD
@@ -614,7 +763,8 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   const style = styleMap[genre] || styleMap.Fantasy;
   const mood = toneMap[tone] || toneMap.Epic;
 
-  const sceneDesc = imagePrompt || narrative.substring(0, 300);
+  const rawDesc = imagePrompt || narrative.substring(0, 300);
+  const sceneDesc = sanitizeForImageGen(rawDesc);
 
   return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }

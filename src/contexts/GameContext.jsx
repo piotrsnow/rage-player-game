@@ -56,6 +56,19 @@ function createDefaultCharacter() {
     statuses: [],
     backstory: '',
     needs: createDefaultNeeds(),
+    criticalWounds: [],
+  };
+}
+
+function createDefaultAchievementState() {
+  return {
+    unlocked: [],
+    stats: {
+      scenesPlayed: 0, combatWins: 0, enemiesDefeated: 0,
+      locationsVisited: [], hagglesSucceeded: 0,
+      spellsCast: 0, miscasts: 0, spellsByLore: {},
+      lowestWounds: 999, npcDispositions: {},
+    },
   };
 }
 
@@ -63,6 +76,8 @@ const initialState = {
   campaign: null,
   character: null,
   characters: [],
+  party: [],
+  activeCharacterId: null,
   world: {
     locations: [],
     facts: [],
@@ -74,6 +89,16 @@ const initialState = {
     timeState: { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' },
     activeEffects: [],
     compressedHistory: '',
+    factions: {},
+    exploredLocations: [],
+    weather: null,
+    knowledgeBase: {
+      characters: {},
+      locations: {},
+      events: [],
+      decisions: [],
+      plotThreads: [],
+    },
   },
   quests: { active: [], completed: [] },
   scenes: [],
@@ -86,15 +111,23 @@ const initialState = {
   isGeneratingScene: false,
   isGeneratingImage: false,
   isGeneratingMusic: false,
+  combat: null,
+  undoStack: [],
+  achievements: createDefaultAchievementState(),
+  magic: { storedWindPoints: 0, activeSpells: [], knownSpells: [] },
 };
 
 function gameReducer(state, action) {
   switch (action.type) {
     case 'START_CAMPAIGN': {
       const char = action.payload.character || createDefaultCharacter();
+      const campaignData = {
+        ...action.payload.campaign,
+        status: 'active',
+      };
       return {
         ...initialState,
-        campaign: action.payload.campaign,
+        campaign: campaignData,
         character: { ...char, needs: char.needs || createDefaultNeeds() },
         world: action.payload.world || initialState.world,
         scenes: action.payload.scenes || [],
@@ -110,6 +143,15 @@ function gameReducer(state, action) {
       if (loaded.character && !loaded.character.needs) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
       }
+      if (!loaded.achievements) loaded.achievements = createDefaultAchievementState();
+      if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };
+      if (!loaded.party) loaded.party = [];
+      if (loaded.world && !loaded.world.exploredLocations) loaded.world.exploredLocations = [];
+      if (loaded.world && !loaded.world.weather) loaded.world.weather = null;
+      if (loaded.world && !loaded.world.knowledgeBase) {
+        loaded.world.knowledgeBase = { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] };
+      }
+      if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
       return loaded;
     }
 
@@ -422,14 +464,53 @@ function gameReducer(state, action) {
     case 'UPDATE_SCENE_MUSIC':
       return state;
 
+    case 'END_CAMPAIGN': {
+      const { status, epilogue } = action.payload;
+      return {
+        ...state,
+        campaign: {
+          ...state.campaign,
+          status: status || 'completed',
+          epilogue: epilogue || '',
+        },
+      };
+    }
+
     case 'APPLY_STATE_CHANGES': {
       const changes = action.payload;
       let next = { ...state };
 
+      // --- Campaign end from AI ---
+      if (changes.campaignEnd && next.campaign) {
+        next.campaign = {
+          ...next.campaign,
+          status: changes.campaignEnd.status || 'completed',
+          epilogue: changes.campaignEnd.epilogue || '',
+        };
+      }
+
       if (changes.woundsChange !== undefined || changes.xp !== undefined) {
         next.character = { ...next.character };
         if (changes.woundsChange !== undefined) {
-          next.character.wounds = Math.max(0, Math.min(next.character.maxWounds, next.character.wounds + changes.woundsChange));
+          const newWounds = Math.max(0, Math.min(next.character.maxWounds, next.character.wounds + changes.woundsChange));
+          next.character.wounds = newWounds;
+
+          // Critical wounds & death mechanics
+          if (newWounds === 0 && changes.woundsChange < 0) {
+            const currentCritCount = next.character.criticalWoundCount || 0;
+            next.character.criticalWoundCount = currentCritCount + 1;
+
+            if (next.character.criticalWoundCount >= 3) {
+              if (next.character.fate > 0) {
+                next.character.fate = next.character.fate - 1;
+                next.character.fortune = Math.min(next.character.fortune, next.character.fate);
+                next.character.criticalWoundCount = 2;
+                next.character.wounds = 1;
+              } else {
+                next.character.status = 'dead';
+              }
+            }
+          }
         }
         if (changes.xp !== undefined) {
           next.character.xp = next.character.xp + changes.xp;
@@ -501,14 +582,14 @@ function gameReducer(state, action) {
       if (changes.newItems) {
         next.character = {
           ...next.character,
-          inventory: [...next.character.inventory, ...changes.newItems],
+          inventory: [...(next.character.inventory || []), ...changes.newItems],
         };
       }
 
       if (changes.removeItems) {
         next.character = {
           ...next.character,
-          inventory: next.character.inventory.filter(
+          inventory: (next.character.inventory || []).filter(
             (i) => !changes.removeItems.includes(i.id)
           ),
         };
@@ -538,15 +619,16 @@ function gameReducer(state, action) {
       }
 
       if (changes.completedQuests) {
-        const completed = next.quests.active.filter((q) =>
-          changes.completedQuests.includes(q.id)
-        );
-        next.quests = {
-          active: next.quests.active.filter(
-            (q) => !changes.completedQuests.includes(q.id)
-          ),
-          completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
-        };
+        // State consistency: only complete quests that exist in active
+        const activeIds = new Set(next.quests.active.map((q) => q.id));
+        const validIds = changes.completedQuests.filter((id) => activeIds.has(id));
+        if (validIds.length > 0) {
+          const completed = next.quests.active.filter((q) => validIds.includes(q.id));
+          next.quests = {
+            active: next.quests.active.filter((q) => !validIds.includes(q.id)),
+            completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
+          };
+        }
       }
 
       if (changes.questUpdates?.length > 0) {
@@ -598,6 +680,17 @@ function gameReducer(state, action) {
               notes: npc.notes || '',
               disposition: 0,
             });
+          } else if (npc.action === 'introduce' && idx >= 0) {
+            // State consistency: "introduce" for existing NPC -> merge instead of duplicate
+            npcs[idx] = {
+              ...npcs[idx],
+              ...(npc.gender && { gender: npc.gender }),
+              ...(npc.role && { role: npc.role }),
+              ...(npc.personality && { personality: npc.personality }),
+              ...(npc.attitude && { attitude: npc.attitude }),
+              ...(npc.location && { lastLocation: npc.location }),
+              ...(npc.notes && { notes: npc.notes }),
+            };
           } else if (idx >= 0) {
             npcs[idx] = {
               ...npcs[idx],
@@ -686,6 +779,48 @@ function gameReducer(state, action) {
         next.character = { ...next.character, needs };
       }
 
+      // --- Knowledge Base updates (memory system) ---
+      if (changes.knowledgeUpdates && next.world) {
+        const kb = { ...(next.world.knowledgeBase || { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] }) };
+        const ku = changes.knowledgeUpdates;
+
+        if (ku.events?.length > 0) {
+          kb.events = [...kb.events, ...ku.events.map((e) => ({
+            ...e,
+            sceneIndex: (next.scenes?.length || 0),
+          }))].slice(-50);
+        }
+        if (ku.decisions?.length > 0) {
+          kb.decisions = [...kb.decisions, ...ku.decisions.map((d) => ({
+            ...d,
+            sceneIndex: (next.scenes?.length || 0),
+          }))].slice(-50);
+        }
+        if (ku.plotThreads?.length > 0) {
+          const threads = [...kb.plotThreads];
+          for (const pt of ku.plotThreads) {
+            const idx = threads.findIndex((t) => t.id === pt.id);
+            if (idx >= 0) {
+              threads[idx] = { ...threads[idx], ...pt };
+            } else {
+              threads.push({ ...pt, relatedScenes: [next.scenes?.length || 0] });
+            }
+          }
+          kb.plotThreads = threads;
+        }
+        next.world = { ...next.world, knowledgeBase: kb };
+      }
+
+      if (next.character?.needs) {
+        const needs = next.character.needs;
+        const hasRestCrisis = (needs.rest ?? 100) === 0;
+        if (hasRestCrisis && !next.character.needsPenalty) {
+          next.character = { ...next.character, needsPenalty: -10 };
+        } else if (!hasRestCrisis && next.character.needsPenalty) {
+          next.character = { ...next.character, needsPenalty: 0 };
+        }
+      }
+
       if (changes.activeEffects?.length > 0) {
         let effects = [...(next.world.activeEffects || [])];
         for (const fx of changes.activeEffects) {
@@ -707,7 +842,62 @@ function gameReducer(state, action) {
         next.world = { ...next.world, activeEffects: effects };
       }
 
+      if (changes.criticalWounds && Array.isArray(changes.criticalWounds) && next.character) {
+        next.character = {
+          ...next.character,
+          criticalWounds: [...(next.character.criticalWounds || []), ...changes.criticalWounds],
+        };
+      }
+
+      if (changes.healCriticalWound && next.character) {
+        next.character = {
+          ...next.character,
+          criticalWounds: (next.character.criticalWounds || []).filter(
+            (cw) => cw.name !== changes.healCriticalWound
+          ),
+        };
+      }
+
+      if (changes.factionChanges && typeof changes.factionChanges === 'object') {
+        const factions = { ...(next.world.factions || {}) };
+        for (const [factionId, delta] of Object.entries(changes.factionChanges)) {
+          const current = factions[factionId] || 0;
+          factions[factionId] = Math.max(-100, Math.min(100, current + delta));
+        }
+        next.world = { ...next.world, factions };
+      }
+
+      if (changes.combatUpdate) {
+        next.combat = changes.combatUpdate;
+      }
+
+      if (changes.weatherUpdate) {
+        next.world = { ...next.world, weather: changes.weatherUpdate };
+      }
+
+      // --- Act progression ---
+      if (next.campaign?.structure?.acts?.length > 0) {
+        const structure = { ...next.campaign.structure };
+        const currentAct = structure.acts.find((a) => a.number === structure.currentAct);
+        if (currentAct) {
+          const scenesBeforeAct = structure.acts
+            .filter((a) => a.number < structure.currentAct)
+            .reduce((sum, a) => sum + (a.targetScenes || 0), 0);
+          const scenesInAct = (next.scenes?.length || 0) - scenesBeforeAct;
+          if (scenesInAct >= (currentAct.targetScenes || 999)) {
+            const nextActNum = structure.currentAct + 1;
+            if (structure.acts.some((a) => a.number === nextActNum)) {
+              structure.currentAct = nextActNum;
+              next.campaign = { ...next.campaign, structure };
+            }
+          }
+        }
+      }
+
       if (changes.currentLocation) {
+        const explored = new Set(next.world.exploredLocations || []);
+        explored.add(changes.currentLocation);
+        next.world = { ...next.world, exploredLocations: [...explored] };
         const prevLoc = next.world.currentLocation;
         const newLoc = changes.currentLocation;
         let mapConns = [...(next.world.mapConnections || [])];
@@ -767,6 +957,104 @@ function gameReducer(state, action) {
           ...state.characterVoiceMap,
           [characterName]: { voiceId, gender },
         },
+      };
+    }
+
+    case 'PUSH_UNDO': {
+      const MAX_UNDO = 10;
+      const snapshot = {
+        timestamp: Date.now(),
+        character: state.character ? structuredClone(state.character) : null,
+        world: state.world ? structuredClone(state.world) : null,
+        quests: state.quests ? structuredClone(state.quests) : null,
+      };
+      const stack = [...(state.undoStack || []), snapshot];
+      return { ...state, undoStack: stack.length > MAX_UNDO ? stack.slice(-MAX_UNDO) : stack };
+    }
+
+    case 'UNDO_STATE_CHANGES': {
+      const stack = state.undoStack || [];
+      if (stack.length === 0) return state;
+      const last = stack[stack.length - 1];
+      return {
+        ...state,
+        character: last.character || state.character,
+        world: last.world || state.world,
+        quests: last.quests || state.quests,
+        undoStack: stack.slice(0, -1),
+      };
+    }
+
+    case 'START_COMBAT': {
+      return { ...state, combat: action.payload };
+    }
+
+    case 'UPDATE_COMBAT': {
+      if (!state.combat) return state;
+      return { ...state, combat: { ...state.combat, ...action.payload } };
+    }
+
+    case 'END_COMBAT': {
+      return { ...state, combat: null };
+    }
+
+    case 'UPDATE_FACTIONS': {
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          factions: { ...(state.world.factions || {}), ...action.payload },
+        },
+      };
+    }
+
+    case 'ADD_PARTY_COMPANION': {
+      const companion = { ...action.payload, type: 'companion' };
+      return { ...state, party: [...(state.party || []), companion] };
+    }
+
+    case 'UPDATE_PARTY_MEMBER': {
+      const { id, updates } = action.payload;
+      return {
+        ...state,
+        party: (state.party || []).map((m) =>
+          (m.id || m.name) === id ? { ...m, ...updates } : m
+        ),
+      };
+    }
+
+    case 'REMOVE_PARTY_COMPANION': {
+      return {
+        ...state,
+        party: (state.party || []).filter((m) => (m.id || m.name) !== action.payload),
+      };
+    }
+
+    case 'SET_ACTIVE_CHARACTER': {
+      return { ...state, activeCharacterId: action.payload };
+    }
+
+    case 'UPDATE_ACHIEVEMENTS': {
+      return { ...state, achievements: { ...state.achievements, ...action.payload } };
+    }
+
+    case 'UPDATE_MAGIC': {
+      return { ...state, magic: { ...(state.magic || {}), ...action.payload } };
+    }
+
+    case 'UPDATE_WEATHER': {
+      return {
+        ...state,
+        world: { ...state.world, weather: action.payload },
+      };
+    }
+
+    case 'ADD_EXPLORED_LOCATION': {
+      const explored = new Set(state.world.exploredLocations || []);
+      explored.add(action.payload);
+      return {
+        ...state,
+        world: { ...state.world, exploredLocations: [...explored] },
       };
     }
 
@@ -891,4 +1179,4 @@ export function useGame() {
   return ctx;
 }
 
-export { createDefaultNeeds };
+export { createDefaultNeeds, createDefaultAchievementState };

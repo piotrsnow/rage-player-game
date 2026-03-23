@@ -31,6 +31,7 @@ export default function Sidebar() {
   const navItems = [
     hasActiveGame && { path: '/play', icon: 'book_5', label: t('nav.grimoire') },
     { path: '/character', icon: 'shield', label: t('nav.armory') },
+    { path: '/gallery', icon: 'photo_library', label: t('nav.gallery') },
     { path: '/settings', icon: 'settings', label: t('nav.settings') },
     { path: '/', icon: 'home', label: t('nav.lobby') },
   ].filter(Boolean);

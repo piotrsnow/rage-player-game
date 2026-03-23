@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import MapCanvas from './MapCanvas';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../data/wfrpFactions';
 
-const TABS = ['npcs', 'map', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', map: 'map', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+const TABS = ['npcs', 'map', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { npcs: 'group', map: 'map', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
 export default function WorldStateModal({ world, characterVoiceMap, characterVoices, dispatch, onClose }) {
   const { t } = useTranslation();
@@ -19,6 +20,8 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
   const activeEffects = (world?.activeEffects || []).filter((e) => e.active !== false);
   const eventHistory = world?.eventHistory || [];
   const compressedHistory = world?.compressedHistory || '';
+  const factions = world?.factions || {};
+  const exploredLocations = world?.exploredLocations || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('worldState.title')} onClick={onClose}>
@@ -61,7 +64,10 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
             <NpcTab npcs={npcs} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} t={t} />
           )}
           {activeTab === 'map' && (
-            <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} t={t} />
+            <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} t={t} />
+          )}
+          {activeTab === 'factions' && (
+            <FactionsTab factions={factions} t={t} />
           )}
           {activeTab === 'time' && (
             <TimeTab timeState={timeState} t={t} />
@@ -161,7 +167,7 @@ function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
   );
 }
 
-function MapTab({ mapState, currentLocation, connections, t }) {
+function MapTab({ mapState, currentLocation, connections, exploredLocations, t }) {
   if (mapState.length === 0 && !currentLocation) {
     return <EmptyState icon="map" text={t('worldState.emptyMap')} />;
   }
@@ -180,7 +186,7 @@ function MapTab({ mapState, currentLocation, connections, t }) {
 
       {hasGraph && (
         <div className="h-[280px]">
-          <MapCanvas mapState={mapState} currentLocation={currentLocation} connections={connections} />
+          <MapCanvas mapState={mapState} currentLocation={currentLocation} connections={connections} exploredLocations={exploredLocations} />
         </div>
       )}
 
@@ -292,6 +298,58 @@ function JournalTab({ eventHistory, compressedHistory, t }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function FactionsTab({ factions, t }) {
+  const entries = Object.entries(FACTION_DEFINITIONS);
+  const hasFactions = Object.keys(factions).length > 0;
+
+  if (!hasFactions) {
+    return <EmptyState icon="groups" text={t('worldState.emptyFactions', 'No faction interactions yet')} />;
+  }
+
+  return (
+    <div className="grid gap-3">
+      {entries.map(([id, def]) => {
+        const rep = factions[id];
+        if (rep === undefined) return null;
+        const tierData = getReputationTierData(rep);
+        const pct = ((rep + 100) / 200) * 100;
+        const colorClass = tierData.color === 'error' ? 'text-error bg-error'
+          : tierData.color === 'primary' ? 'text-primary bg-primary'
+          : tierData.color === 'tertiary' ? 'text-tertiary bg-tertiary'
+          : 'text-outline bg-outline';
+        const textColor = colorClass.split(' ')[0];
+        const bgColor = colorClass.split(' ')[1];
+
+        return (
+          <div key={id} className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className={`material-symbols-outlined text-sm ${textColor}`}>{def.icon}</span>
+                <span className="text-sm font-bold text-on-surface">{def.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-sm ${bgColor}/15 ${textColor}`}>
+                  {tierData.label}
+                </span>
+                <span className={`text-[10px] font-bold tabular-nums ${textColor}`}>
+                  {rep > 0 ? '+' : ''}{rep}
+                </span>
+              </div>
+            </div>
+            <div className="h-1.5 bg-surface-container rounded-full overflow-hidden mb-2">
+              <div
+                className={`h-full ${bgColor} transition-all duration-300 rounded-full`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-on-surface-variant">{def.effects[tierData.tier]}</p>
+          </div>
+        );
+      }).filter(Boolean)}
     </div>
   );
 }
