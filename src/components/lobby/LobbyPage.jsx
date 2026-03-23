@@ -79,7 +79,7 @@ export default function LobbyPage() {
 
       {/* Hero Section */}
       <div className="text-center mb-16 max-w-2xl animate-slide-up relative z-10">
-        <img src="/logo.png" alt={t('lobby.title')} className="h-28 md:h-40 w-auto mx-auto mb-6 drop-shadow-2xl" />
+        <img src="/nikczemnu_logo.png" alt={t('lobby.title')} className="h-56 md:h-80 w-auto mx-auto mb-6 drop-shadow-2xl" />
 
         {/* Ornamental divider */}
         <div className="flex items-center justify-center gap-3 mb-6">

@@ -45,7 +45,7 @@ export default function Header() {
           to="/"
           className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
         >
-          <img src="/logo.png" alt={t('common.appName')} className="h-9 w-auto" />
+          <img src="/nikczemnu_logo.png" alt={t('common.appName')} className="h-24 w-auto" />
         </Link>
       </div>
       <div className="flex items-center gap-6">
