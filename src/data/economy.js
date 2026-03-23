@@ -306,6 +306,16 @@ export const ARMOUR = [
     availability: 'Common',
   },
 
+  {
+    name: 'Gambeson',
+    locations: ['body'],
+    ap: 1,
+    penalties: { stealth: 0, agility: 0 },
+    encumbrance: 1,
+    price: { gold: 0, silver: 5, copper: 0 },
+    availability: 'Common',
+  },
+
   // Mail
   {
     name: 'Mail Coif',

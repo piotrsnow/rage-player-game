@@ -1,6 +1,14 @@
 // Bestiary - Creature database for WFRP 4e encounters
 // Each creature has characteristics, combat stats, and encounter metadata
 
+import { WEAPONS, ARMOUR } from './economy.js';
+import { SPELLS } from './magic.js';
+
+// Lookup helpers
+const W = name => WEAPONS.find(w => w.name === name);
+const A = name => ARMOUR.find(a => a.name === name);
+const S = name => SPELLS.find(s => s.name === name);
+
 export const LOCATION_CREATURE_WEIGHTS = {
   forest: { beasts: 3, greenskins: 1 },
   ruins: { undead: 3, chaos: 1 },
@@ -107,10 +115,10 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Animosity (Greenskins)', 'Afraid (Elves)', 'Night Vision', 'Size (Small)'],
     skills: { 'Dodge': 15, 'Stealth (Any)': 30, 'Perception': 20, 'Melee (Basic)': 15, 'Ranged (Bow)': 15 },
-    armourPoints: { head: 0, body: 1, arms: 0, legs: 0 },
+    armour: [A('Gambeson')],
     weapons: [
       { name: 'Shortsword', damage: 3, qualities: [] },
-      { name: 'Shortbow', damage: 3, qualities: [] },
+      W('Shortbow'),
     ],
     dangerLevel: 1,
     encounterWeight: 9,
@@ -124,9 +132,9 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Animosity (Greenskins)', 'Night Vision', 'Afraid (Daylight)', 'Stealthy', 'Size (Small)'],
     skills: { 'Dodge': 20, 'Stealth (Underground)': 40, 'Perception': 25, 'Set Trap': 25, 'Melee (Basic)': 20 },
-    armourPoints: { head: 1, body: 1, arms: 0, legs: 0 },
+    armour: [A('Leather Skullcap'), A('Gambeson')],
     weapons: [
-      { name: 'Spear', damage: 4, qualities: ['Impale'] },
+      W('Spear'),
       { name: 'Net', damage: 0, qualities: ['Entangle'] },
     ],
     dangerLevel: 2,
@@ -141,7 +149,7 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Animosity (Greenskins)', 'Night Vision', 'Frenzy', 'Weapon (Choppa)'],
     skills: { 'Endurance': 20, 'Intimidate': 25, 'Melee (Basic)': 25, 'Cool': 15 },
-    armourPoints: { head: 1, body: 2, arms: 1, legs: 1 },
+    armour: [A('Leather Skullcap'), A('Gambeson'), A('Leather Jack'), A('Leather Leggings')],
     weapons: [{ name: 'Choppa', damage: 5, qualities: ['Hack'] }],
     dangerLevel: 3,
     encounterWeight: 6,
@@ -155,7 +163,7 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Night Vision', 'Frenzy', 'Weapon (Great Choppa)', 'Size (Large)', 'Elite'],
     skills: { 'Endurance': 35, 'Intimidate': 45, 'Melee (Two-Handed)': 40, 'Cool': 30, 'Leadership': 25 },
-    armourPoints: { head: 3, body: 4, arms: 3, legs: 3 },
+    armour: [A('Plate Helm'), A('Plate Breastplate'), A('Shield'), A('Plate Bracers'), A('Plate Leggings')],
     weapons: [{ name: 'Great Choppa', damage: 8, qualities: ['Hack', 'Slow'] }],
     dangerLevel: 5,
     encounterWeight: 2,
@@ -202,7 +210,7 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Undead', 'Unstable', 'Fear (1)', 'Dark Vision', 'Construct'],
     skills: { 'Melee (Basic)': 20, 'Dodge': 10 },
-    armourPoints: { head: 1, body: 2, arms: 1, legs: 1 },
+    armour: [A('Leather Skullcap'), A('Gambeson'), A('Leather Jack'), A('Leather Leggings')],
     weapons: [{ name: 'Rusty Sword', damage: 4, qualities: ['Infected'] }],
     dangerLevel: 3,
     encounterWeight: 7,
@@ -230,7 +238,7 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Undead', 'Unstable', 'Fear (3)', 'Dark Vision', 'Armour (Ancient)', 'Weapon (Ancient Blade)'],
     skills: { 'Melee (Basic)': 35, 'Dodge': 20, 'Cool': 30, 'Intimidate': 35 },
-    armourPoints: { head: 2, body: 3, arms: 2, legs: 2 },
+    armour: [A('Mail Coif'), A('Gambeson'), A('Mail Shirt'), A('Mail Chausses')],
     weapons: [{ name: 'Ancient Blade', damage: 6, qualities: ['Magical'] }],
     dangerLevel: 4,
     encounterWeight: 3,
@@ -243,12 +251,17 @@ export const BESTIARY = [
     wounds: 35,
     movement: 6,
     traits: ['Undead', 'Fear (3)', 'Terror (1)', 'Dark Vision', 'Night Vision', 'Regeneration', 'Vampiric', 'Hungry', 'Weakness (Sigmar)', 'Weakness (Garlic)'],
-    skills: { 'Melee (Basic)': 40, 'Dodge': 35, 'Cool': 40, 'Charm': 45, 'Intimidate': 50, 'Leadership': 35, 'Perception': 40 },
+    skills: { 'Melee (Basic)': 40, 'Dodge': 35, 'Cool': 40, 'Charm': 45, 'Intimidate': 50, 'Leadership': 35, 'Perception': 40, 'Channelling (Shyish)': 35, 'Language (Magick)': 40 },
     armourPoints: { head: 0, body: 2, arms: 0, legs: 0 },
     weapons: [
       { name: 'Claws', damage: 6, qualities: [] },
       { name: 'Bite', damage: 5, qualities: ['Draining'] },
     ],
+    spellcasting: {
+      lores: ['death'],
+      spells: [S('Life Drain'), S('Doom and Darkness'), S('Spirit Leech')],
+      castingSkill: 45,
+    },
     dangerLevel: 5,
     encounterWeight: 1,
   },
@@ -338,7 +351,7 @@ export const BESTIARY = [
     movement: 5,
     traits: ['Night Vision', 'Afraid (Bright Light)', 'Weapon (Rusty Blade)', 'Skaven'],
     skills: { 'Dodge': 20, 'Stealth (Underground)': 30, 'Melee (Basic)': 20, 'Perception': 25 },
-    armourPoints: { head: 0, body: 1, arms: 0, legs: 0 },
+    armour: [A('Gambeson')],
     weapons: [{ name: 'Rusty Blade', damage: 4, qualities: ['Infected'] }],
     dangerLevel: 2,
     encounterWeight: 8,
@@ -352,8 +365,8 @@ export const BESTIARY = [
     movement: 5,
     traits: ['Night Vision', 'Elite', 'Drilled', 'Skaven'],
     skills: { 'Dodge': 25, 'Melee (Polearm)': 30, 'Cool': 20, 'Intimidate': 20, 'Perception': 25 },
-    armourPoints: { head: 2, body: 3, arms: 2, legs: 2 },
-    weapons: [{ name: 'Halberd', damage: 6, qualities: ['Hack'] }],
+    armour: [A('Mail Coif'), A('Gambeson'), A('Mail Shirt'), A('Mail Chausses')],
+    weapons: [W('Halberd')],
     dangerLevel: 3,
     encounterWeight: 4,
   },
@@ -366,7 +379,7 @@ export const BESTIARY = [
     movement: 5,
     traits: ['Night Vision', 'Disease', 'Frenzy', 'Plague', 'Skaven'],
     skills: { 'Melee (Flail)': 25, 'Endurance': 35, 'Pray': 20 },
-    armourPoints: { head: 0, body: 1, arms: 0, legs: 0 },
+    armour: [A('Gambeson')],
     weapons: [{ name: 'Plague Censer Flail', damage: 5, qualities: ['Infected', 'Poisoned'] }],
     dangerLevel: 3,
     encounterWeight: 4,
@@ -380,7 +393,7 @@ export const BESTIARY = [
     movement: 6,
     traits: ['Night Vision', 'Stealthy', 'Assassin', 'Skaven'],
     skills: { 'Dodge': 40, 'Stealth (Any)': 45, 'Melee (Basic)': 30, 'Ranged (Throwing)': 30, 'Climb': 35, 'Perception': 35 },
-    armourPoints: { head: 0, body: 1, arms: 0, legs: 0 },
+    armour: [A('Gambeson')],
     weapons: [
       { name: 'Weeping Blade', damage: 4, qualities: ['Poisoned'] },
       { name: 'Throwing Stars', damage: 3, qualities: ['Poisoned'] },
@@ -413,10 +426,10 @@ export const BESTIARY = [
     movement: 4,
     traits: [],
     skills: { 'Melee (Basic)': 20, 'Ranged (Crossbow)': 15, 'Dodge': 15, 'Cool': 10, 'Outdoor Survival': 20, 'Stealth (Rural)': 20, 'Intimidate': 15 },
-    armourPoints: { head: 0, body: 2, arms: 1, legs: 1 },
+    armour: [A('Gambeson'), A('Leather Jack'), A('Leather Leggings')],
     weapons: [
       { name: 'Hand Weapon', damage: 4, qualities: [] },
-      { name: 'Crossbow', damage: 5, qualities: ['Reload 1'] },
+      { ...W('Light Crossbow'), name: 'Crossbow' },
     ],
     dangerLevel: 2,
     encounterWeight: 8,
@@ -429,9 +442,14 @@ export const BESTIARY = [
     wounds: 11,
     movement: 4,
     traits: ['Corruption (Minor)'],
-    skills: { 'Melee (Basic)': 10, 'Cool': 15, 'Dodge': 10, 'Pray': 15, 'Lore (Chaos)': 15, 'Stealth (Urban)': 15 },
-    armourPoints: { head: 0, body: 1, arms: 0, legs: 0 },
-    weapons: [{ name: 'Dagger', damage: 3, qualities: [] }],
+    skills: { 'Melee (Basic)': 10, 'Cool': 15, 'Dodge': 10, 'Pray': 15, 'Lore (Chaos)': 15, 'Stealth (Urban)': 15, 'Language (Magick)': 15 },
+    armour: [A('Gambeson')],
+    weapons: [W('Dagger')],
+    spellcasting: {
+      lores: ['petty'],
+      spells: [S('Dart'), S('Drop')],
+      castingSkill: 20,
+    },
     dangerLevel: 2,
     encounterWeight: 5,
   },
@@ -444,10 +462,10 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Drilled'],
     skills: { 'Melee (Basic)': 25, 'Ranged (Blackpowder)': 20, 'Dodge': 20, 'Cool': 20, 'Endurance': 20, 'Gamble': 15, 'Consume Alcohol': 15 },
-    armourPoints: { head: 2, body: 3, arms: 2, legs: 2 },
+    armour: [A('Mail Coif'), A('Gambeson'), A('Mail Shirt'), A('Mail Chausses')],
     weapons: [
-      { name: 'Sword', damage: 5, qualities: [] },
-      { name: 'Handgun', damage: 7, qualities: ['Reload 2'] },
+      W('Sword'),
+      W('Handgun'),
     ],
     dangerLevel: 3,
     encounterWeight: 5,
@@ -461,10 +479,10 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Leader'],
     skills: { 'Melee (Basic)': 30, 'Ranged (Blackpowder)': 25, 'Dodge': 25, 'Cool': 25, 'Leadership': 30, 'Intimidate': 25, 'Charm': 20 },
-    armourPoints: { head: 1, body: 3, arms: 2, legs: 2 },
+    armour: [A('Leather Skullcap'), A('Gambeson'), A('Mail Shirt'), A('Mail Chausses')],
     weapons: [
       { name: 'Quality Hand Weapon', damage: 5, qualities: ['Fine'] },
-      { name: 'Pistol', damage: 6, qualities: ['Reload 2'] },
+      W('Pistol'),
     ],
     dangerLevel: 4,
     encounterWeight: 2,
@@ -478,10 +496,10 @@ export const BESTIARY = [
     movement: 4,
     traits: ['Fearless (Witches)', 'Hatred (Chaos)'],
     skills: { 'Melee (Fencing)': 30, 'Ranged (Blackpowder)': 25, 'Dodge': 25, 'Cool': 35, 'Intimidate': 35, 'Perception': 30, 'Lore (Chaos)': 25, 'Intuition': 25 },
-    armourPoints: { head: 1, body: 3, arms: 2, legs: 2 },
+    armour: [A('Leather Skullcap'), A('Gambeson'), A('Mail Shirt'), A('Mail Chausses')],
     weapons: [
-      { name: 'Rapier', damage: 5, qualities: ['Fast'] },
-      { name: 'Pistol', damage: 6, qualities: ['Reload 2'] },
+      W('Rapier'),
+      W('Pistol'),
     ],
     dangerLevel: 4,
     encounterWeight: 2,
@@ -525,4 +543,35 @@ export function rollRandomEncounter(location = 'road', timeOfDay = 'day', danger
   }
 
   return weighted[weighted.length - 1].creature;
+}
+
+/**
+ * Get creature's effective AP per location.
+ * Stacks from armour pieces + optional baseArmourPoints (for traits/features).
+ * Falls back to armourPoints for creatures with natural/no armour.
+ */
+export function getCreatureAP(creature) {
+  if (creature.armour) {
+    const base = creature.baseArmourPoints || {};
+    const ap = {
+      head: base.head || 0,
+      body: base.body || 0,
+      arms: base.arms || 0,
+      legs: base.legs || 0,
+    };
+    for (const piece of creature.armour) {
+      for (const loc of piece.locations) {
+        ap[loc] += piece.ap;
+      }
+    }
+    return ap;
+  }
+  return creature.armourPoints || { head: 0, body: 0, arms: 0, legs: 0 };
+}
+
+/**
+ * Check if a weapon is natural (no economy data) vs equipped (has price/category from economy).
+ */
+export function isNaturalWeapon(weapon) {
+  return !weapon.price;
 }
