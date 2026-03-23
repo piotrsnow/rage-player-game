@@ -51,7 +51,11 @@
     "savedCampaigns": "Zapisane Kampanie",
     "noCampaigns": "Brak kampanii. Rozpocznij nową przygodę!",
     "exportLog": "Pobierz Log Rozgrywki",
-    "exportJson": "Pobierz Kopię (JSON)"
+    "exportJson": "Pobierz Kopię (JSON)",
+    "syncing": "Synchronizacja...",
+    "synced": "Zsynchronizowano",
+    "localOnly": "Tylko lokalnie",
+    "syncError": "Synchronizacja nie powiodła się"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",

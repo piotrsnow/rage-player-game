@@ -117,7 +117,7 @@ export function useNarrator() {
     };
   }, [cleanup]);
 
-  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId) => {
     let prefetchPromise = null;
     let wordOffset = 0;
 
@@ -132,11 +132,11 @@ export function useNarrator() {
         prefetchPromise = null;
       } else {
         setPlaybackState(STATES.LOADING);
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk);
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
       }
 
       if (!result) {
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk);
+        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
       }
 
       dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
@@ -144,7 +144,7 @@ export function useNarrator() {
       if (abortRef.current) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
-        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunks[s + 1].trim())
+        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunks[s + 1].trim(), undefined, campaignId)
           .catch((err) => {
             console.warn('Prefetch TTS failed:', err.message);
             return null;
@@ -198,9 +198,10 @@ export function useNarrator() {
     try {
       abortRef.current = false;
 
+      const campaignId = state.campaign?.backendId || null;
       if (sfxEnabled && soundEffect) {
         try {
-          const sfxUrl = await elevenlabsService.generateSoundEffect(elevenlabsApiKey, soundEffect, 4);
+          const sfxUrl = await elevenlabsService.generateSoundEffect(elevenlabsApiKey, soundEffect, 4, campaignId);
           dispatch({ type: 'ADD_AI_COST', payload: calculateCost('sfx', {}) });
           objectUrlsRef.current.push(sfxUrl);
 
@@ -289,7 +290,7 @@ export function useNarrator() {
         }
 
         const chunks = elevenlabsService.splitIntoParagraphs(text);
-        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text);
+        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text, campaignId);
       }
 
       cleanup();
@@ -305,7 +306,7 @@ export function useNarrator() {
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, dispatch, cleanup, playChunkPipeline]);
+  }, [settings, state.characterVoiceMap, state.campaign, dispatch, cleanup, playChunkPipeline]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({

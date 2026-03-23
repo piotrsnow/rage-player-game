@@ -60,12 +60,15 @@ async function generateWithStability(prompt, apiKey) {
   return `data:image/jpeg;base64,${data.image}`;
 }
 
-async function generateViaProxy(prompt, provider) {
+async function generateViaProxy(prompt, provider, campaignId) {
+  const body = { prompt };
+  if (campaignId) body.campaignId = campaignId;
+
   if (provider === 'stability') {
-    const data = await apiClient.post('/proxy/stability/generate', { prompt });
+    const data = await apiClient.post('/proxy/stability/generate', body);
     return resolveMediaUrl(data.url);
   }
-  const data = await apiClient.post('/proxy/openai/images', { prompt });
+  const data = await apiClient.post('/proxy/openai/images', body);
   return resolveMediaUrl(data.url);
 }
 
@@ -75,11 +78,11 @@ function resolveMediaUrl(url) {
 }
 
 export const imageService = {
-  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null) {
+  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null) {
     const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
 
     if (apiClient.isConnected()) {
-      return generateViaProxy(prompt, provider);
+      return generateViaProxy(prompt, provider, campaignId);
     }
 
     if (!apiKey) {

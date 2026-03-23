@@ -192,6 +192,7 @@ export function useMusic(narratorPlaybackState) {
           title: result.title,
           duration: result.duration,
           imageUrl: result.imageUrl,
+          campaignId: state.campaign?.backendId || null,
         });
 
         const playUrl = cacheResult?.url || result.audioUrl;

@@ -205,7 +205,13 @@ export default function CampaignCreatorPage() {
 
     try {
       const formWithChar = selectedCharacter
-        ? { ...form, existingCharacter: selectedCharacter }
+        ? {
+            ...form,
+            existingCharacter: selectedCharacter,
+            characterName: selectedCharacter.name,
+            species: selectedCharacter.species,
+            careerPreference: selectedCharacter.career?.name,
+          }
         : createdCharacter
           ? { ...form, createdCharacter, characterName: createdCharacter.name, species: createdCharacter.species }
           : form;

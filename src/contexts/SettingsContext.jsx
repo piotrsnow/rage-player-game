@@ -117,6 +117,10 @@ export function SettingsProvider({ children }) {
       return merged;
     });
     setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
+
+    storage.syncCampaigns().catch((err) => {
+      console.warn('[SettingsContext] Campaign sync after login failed:', err.message);
+    });
   }, []);
 
   const updateSettings = useCallback((updates) => {

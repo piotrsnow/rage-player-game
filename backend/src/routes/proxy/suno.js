@@ -84,11 +84,11 @@ export async function sunoProxyRoutes(fastify) {
   });
 
   fastify.post('/cache-track', async (request, reply) => {
-    const { audioUrl, genre, tone, mood, style, title, duration, imageUrl } = request.body;
+    const { audioUrl, genre, tone, mood, style, title, duration, imageUrl, campaignId } = request.body;
     if (!audioUrl) return reply.code(400).send({ error: 'audioUrl is required' });
 
     const cacheParams = { genre, tone, mood, style };
-    const cacheKey = generateKey('music', cacheParams);
+    const cacheKey = generateKey('music', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
@@ -110,6 +110,7 @@ export async function sunoProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
+        campaignId: campaignId || undefined,
         key: cacheKey,
         type: 'music',
         contentType: 'audio/mpeg',

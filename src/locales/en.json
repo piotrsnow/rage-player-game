@@ -51,7 +51,11 @@
     "savedCampaigns": "Saved Campaigns",
     "noCampaigns": "No campaigns yet. Start a new adventure!",
     "exportLog": "Download Game Log",
-    "exportJson": "Download Backup (JSON)"
+    "exportJson": "Download Backup (JSON)",
+    "syncing": "Syncing...",
+    "synced": "Synced",
+    "localOnly": "Local only",
+    "syncError": "Sync failed"
   },
   "creator": {
     "title": "Forge a New Campaign",

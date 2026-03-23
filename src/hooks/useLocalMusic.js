@@ -7,7 +7,7 @@ const DUCK_VOLUME_RATIO = 0.2;
 
 const log = (...args) => console.log('%c[LocalMusic]', 'color:#34d399;font-weight:bold', ...args);
 
-export function useLocalMusic(narratorPlaybackState, { folder } = {}) {
+export function useLocalMusic(narratorPlaybackState, { folder, active = true } = {}) {
   const { settings } = useSettings();
 
   const [tracks, setTracks] = useState([]);
@@ -220,10 +220,10 @@ export function useLocalMusic(narratorPlaybackState, { folder } = {}) {
   }, []);
 
   useEffect(() => {
-    if (settings.localMusicEnabled && loaded && tracks.length > 0 && !isPlaying && !currentTrack) {
+    if (active && settings.localMusicEnabled && loaded && tracks.length > 0 && !isPlaying && !currentTrack) {
       startPlaying();
     }
-  }, [settings.localMusicEnabled, loaded, tracks.length]);
+  }, [active, settings.localMusicEnabled, loaded, tracks.length]);
 
   useEffect(() => {
     return () => {

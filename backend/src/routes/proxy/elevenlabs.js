@@ -40,10 +40,10 @@ export async function elevenlabsProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'elevenlabs');
     if (!apiKey) return reply.code(400).send({ error: 'ElevenLabs API key not configured' });
 
-    const { voiceId, text, modelId } = request.body;
+    const { voiceId, text, modelId, campaignId } = request.body;
 
     const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2' };
-    const cacheKey = generateKey('tts', cacheParams);
+    const cacheKey = generateKey('tts', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
@@ -81,11 +81,13 @@ export async function elevenlabsProxyRoutes(fastify) {
     const data = await response.json();
 
     const audioBytes = Buffer.from(data.audio_base64, 'base64');
-    const storeResult = await store.put(cacheKey, audioBytes, 'audio/mpeg');
+    await store.put(cacheKey, audioBytes, 'audio/mpeg');
+    const responseUrl = await store.getUrl(cacheKey);
 
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
+        campaignId: campaignId || undefined,
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
@@ -98,7 +100,7 @@ export async function elevenlabsProxyRoutes(fastify) {
 
     return {
       cached: false,
-      url: storeResult.url,
+      url: responseUrl,
       key: cacheKey,
       alignment: data.alignment,
     };
@@ -112,10 +114,10 @@ export async function elevenlabsProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'elevenlabs');
     if (!apiKey) return reply.code(400).send({ error: 'ElevenLabs API key not configured' });
 
-    const { voiceId, text, modelId } = request.body;
+    const { voiceId, text, modelId, campaignId: streamCampaignId } = request.body;
 
     const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2', stream: true };
-    const cacheKey = generateKey('tts', cacheParams);
+    const cacheKey = generateKey('tts', cacheParams, streamCampaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
@@ -150,11 +152,13 @@ export async function elevenlabsProxyRoutes(fastify) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    const storeResult = await store.put(cacheKey, buffer, 'audio/mpeg');
+    await store.put(cacheKey, buffer, 'audio/mpeg');
+    const responseUrl = await store.getUrl(cacheKey);
 
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
+        campaignId: streamCampaignId || undefined,
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
@@ -165,7 +169,7 @@ export async function elevenlabsProxyRoutes(fastify) {
       },
     });
 
-    return { cached: false, url: storeResult.url, key: cacheKey };
+    return { cached: false, url: responseUrl, key: cacheKey };
   });
 
   fastify.post('/sfx', async (request, reply) => {
@@ -176,10 +180,10 @@ export async function elevenlabsProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'elevenlabs');
     if (!apiKey) return reply.code(400).send({ error: 'ElevenLabs API key not configured' });
 
-    const { text, durationSeconds } = request.body;
+    const { text, durationSeconds, campaignId: sfxCampaignId } = request.body;
 
     const cacheParams = { text, durationSeconds: durationSeconds || 4 };
-    const cacheKey = generateKey('sfx', cacheParams);
+    const cacheKey = generateKey('sfx', cacheParams, sfxCampaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
@@ -209,11 +213,13 @@ export async function elevenlabsProxyRoutes(fastify) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    const storeResult = await store.put(cacheKey, buffer, 'audio/mpeg');
+    await store.put(cacheKey, buffer, 'audio/mpeg');
+    const responseUrl = await store.getUrl(cacheKey);
 
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
+        campaignId: sfxCampaignId || undefined,
         key: cacheKey,
         type: 'sfx',
         contentType: 'audio/mpeg',
@@ -224,6 +230,6 @@ export async function elevenlabsProxyRoutes(fastify) {
       },
     });
 
-    return { cached: false, url: storeResult.url, key: cacheKey };
+    return { cached: false, url: responseUrl, key: cacheKey };
   });
 }

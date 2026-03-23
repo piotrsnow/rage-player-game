@@ -252,7 +252,8 @@ export function useAI() {
               state.campaign?.tone,
               imageApiKey,
               imageProvider,
-              result.imagePrompt
+              result.imagePrompt,
+              state.campaign?.backendId
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -332,7 +333,8 @@ export function useAI() {
           tone,
           imageApiKey,
           imageProvider,
-          sceneImagePrompt
+          sceneImagePrompt,
+          state.campaign?.backendId
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({

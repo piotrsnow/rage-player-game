@@ -667,6 +667,10 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `- Preferred career: ${settings.careerPreference}`
     : '- Career: not specified (suggest a career fitting the story and species)';
 
+  const existingCharNote = settings.existingCharacter
+    ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene narrative and dialogueSegments. The characterSuggestion stats will be ignored — focus on making the firstScene narrative fit this character's identity.`
+    : '';
+
   const humorousToneGuidance = settings.tone === 'Humorous'
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Instead, ground the campaign in a believable world and derive comedy from 1-2 genuinely controversial, provocative, or morally ambiguous elements — corrupt institutions, taboo customs, ethically questionable practices, morally grey factions, or politically charged conflicts. Comedy should emerge from how characters earnestly navigate these uncomfortable realities: dark irony, social satire, awkward moral dilemmas, characters taking absurd stances on serious issues. Sharp wit about real controversies, not random nonsense.`
     : '';
@@ -681,7 +685,7 @@ ${characterNameLine}
 ${speciesLine}
 ${careerLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${humorousToneGuidance}
+${langInstruction}${existingCharNote}${humorousToneGuidance}
 
 Generate the campaign foundation. The game uses Warhammer Fantasy Roleplay 4th Edition rules. The 10 characteristics are: WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), I (Initiative), Ag (Agility), Dex (Dexterity), Int (Intelligence), WP (Willpower), Fel (Fellowship). Each characteristic is generated as 2d10 + species base modifier (typically 20 for Humans).
 

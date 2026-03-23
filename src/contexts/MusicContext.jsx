@@ -14,8 +14,8 @@ export function MusicProvider({ children }) {
   const isGameplay = location.pathname === '/play';
   const prevIsGameplayRef = useRef(isGameplay);
 
-  const ambient = useLocalMusic(null, { folder: 'lobby' });
-  const campaign = useLocalMusic(isGameplay ? narratorState : null);
+  const ambient = useLocalMusic(null, { folder: 'lobby', active: !isGameplay });
+  const campaign = useLocalMusic(isGameplay ? narratorState : null, { active: isGameplay });
 
   useEffect(() => {
     const wasGameplay = prevIsGameplayRef.current;

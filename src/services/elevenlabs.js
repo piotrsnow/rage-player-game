@@ -74,9 +74,11 @@ export const elevenlabsService = {
     }));
   },
 
-  async generateSoundEffect(apiKey, text, durationSeconds = 4) {
+  async generateSoundEffect(apiKey, text, durationSeconds = 4, campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/sfx', { text, durationSeconds });
+      const body = { text, durationSeconds };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/sfx', body);
       return resolveMediaUrl(data.url);
     }
 
@@ -103,9 +105,11 @@ export const elevenlabsService = {
     return URL.createObjectURL(blob);
   },
 
-  async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+  async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/tts-stream', { voiceId, text, modelId });
+      const body = { voiceId, text, modelId };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/tts-stream', body);
       return resolveMediaUrl(data.url);
     }
 
@@ -137,9 +141,11 @@ export const elevenlabsService = {
     return URL.createObjectURL(blob);
   },
 
-  async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+  async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/tts', { voiceId, text, modelId });
+      const body = { voiceId, text, modelId };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/tts', body);
       const audioUrl = resolveMediaUrl(data.url);
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
       return { audioUrl, words };

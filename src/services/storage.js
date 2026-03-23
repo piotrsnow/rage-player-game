@@ -79,23 +79,34 @@ export const storage = {
         data: gameState,
       };
 
-      const campaigns = await apiClient.get('/campaigns');
-      const existing = campaigns.find((c) => {
-        try {
-          return c.name === gameState.campaign?.id || c.id === gameState.campaign?.backendId;
-        } catch { return false; }
-      });
-
-      if (existing) {
-        await apiClient.put(`/campaigns/${existing.id}`, payload);
+      const backendId = gameState.campaign?.backendId;
+      if (backendId) {
+        await apiClient.put(`/campaigns/${backendId}`, payload);
       } else {
         const created = await apiClient.post('/campaigns', payload);
         if (gameState.campaign) {
           gameState.campaign.backendId = created.id;
+          this._persistBackendId(gameState.campaign.id, created.id);
         }
       }
     } catch (err) {
       console.warn('[storage] Backend save failed:', err.message);
+    }
+  },
+
+  _persistBackendId(campaignId, backendId) {
+    try {
+      const campaigns = this.getCampaigns();
+      const idx = campaigns.findIndex((c) => c.campaign?.id === campaignId);
+      if (idx >= 0) {
+        campaigns[idx] = {
+          ...campaigns[idx],
+          campaign: { ...campaigns[idx].campaign, backendId },
+        };
+        localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
+      }
+    } catch (err) {
+      console.warn('[storage] Failed to persist backendId:', err.message);
     }
   },
 
@@ -150,12 +161,125 @@ export const storage = {
     return campaigns.find((c) => c.campaign.id === id) || null;
   },
 
-  deleteCampaign(id) {
+  async deleteCampaign(id) {
+    const removed = this.getCampaigns().find((c) => c.campaign.id === id);
     const campaigns = this.getCampaigns().filter((c) => c.campaign.id !== id);
     localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(campaigns));
     const activeId = localStorage.getItem(ACTIVE_CAMPAIGN_KEY);
     if (activeId === id) {
       localStorage.removeItem(ACTIVE_CAMPAIGN_KEY);
+    }
+
+    const backendId = removed?.campaign?.backendId;
+    if (backendId && apiClient.isConnected()) {
+      try {
+        await apiClient.del(`/campaigns/${backendId}`);
+      } catch (err) {
+        console.warn('[storage] Backend delete failed:', err.message);
+      }
+    }
+  },
+
+  async syncCampaigns() {
+    if (!apiClient.isConnected()) return this.getCampaigns();
+
+    try {
+      const local = this.getCampaigns();
+      const backendList = await apiClient.get('/campaigns');
+
+      const merged = [];
+      const localByBackendId = new Map();
+      const localByCampaignId = new Map();
+
+      for (const lc of local) {
+        if (lc.campaign?.backendId) {
+          localByBackendId.set(lc.campaign.backendId, lc);
+        }
+        if (lc.campaign?.id) {
+          localByCampaignId.set(lc.campaign.id, lc);
+        }
+      }
+
+      const matchedLocalCampaignIds = new Set();
+      const seenBackendCampaignIds = new Map();
+      const duplicateBackendIds = [];
+
+      for (const bc of backendList) {
+        const full = await apiClient.get(`/campaigns/${bc.id}`);
+        const data = full.data || full;
+        const frontendId = data.campaign?.id;
+        const backendTime = new Date(bc.lastSaved).getTime();
+
+        if (frontendId && seenBackendCampaignIds.has(frontendId)) {
+          const prev = seenBackendCampaignIds.get(frontendId);
+          if (backendTime > prev.time) {
+            duplicateBackendIds.push(prev.backendId);
+            seenBackendCampaignIds.set(frontendId, { backendId: bc.id, time: backendTime, data });
+          } else {
+            duplicateBackendIds.push(bc.id);
+            continue;
+          }
+        } else if (frontendId) {
+          seenBackendCampaignIds.set(frontendId, { backendId: bc.id, time: backendTime, data });
+        }
+
+        let localMatch = localByBackendId.get(bc.id)
+          || (frontendId ? localByCampaignId.get(frontendId) : null);
+
+        if (localMatch) {
+          matchedLocalCampaignIds.add(localMatch.campaign?.id);
+          const localTime = localMatch.lastSaved || 0;
+          if (backendTime > localTime) {
+            merged.push({
+              ...data,
+              campaign: { ...data.campaign, backendId: bc.id },
+              lastSaved: backendTime,
+            });
+          } else {
+            const linked = {
+              ...localMatch,
+              campaign: { ...localMatch.campaign, backendId: bc.id },
+            };
+            merged.push(linked);
+            this._saveCampaignToBackend(linked);
+          }
+        } else {
+          merged.push({
+            ...data,
+            campaign: { ...data.campaign, backendId: bc.id },
+            lastSaved: backendTime,
+          });
+        }
+      }
+
+      for (const dupId of duplicateBackendIds) {
+        apiClient.del(`/campaigns/${dupId}`).catch(() => {});
+      }
+
+      for (const lc of local) {
+        if (!matchedLocalCampaignIds.has(lc.campaign?.id)) {
+          merged.push(lc);
+          if (!lc.campaign?.backendId) {
+            this._saveCampaignToBackend(lc);
+          }
+        }
+      }
+
+      const deduped = [];
+      const seenCampaignIds = new Set();
+      for (const entry of merged) {
+        const cid = entry.campaign?.id;
+        if (!cid || !seenCampaignIds.has(cid)) {
+          if (cid) seenCampaignIds.add(cid);
+          deduped.push(entry);
+        }
+      }
+
+      this._trySave(deduped, localStorage.getItem(ACTIVE_CAMPAIGN_KEY) || '');
+      return deduped;
+    } catch (err) {
+      console.warn('[storage] Campaign sync failed:', err.message);
+      return this.getCampaigns();
     }
   },
 

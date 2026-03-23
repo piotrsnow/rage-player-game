@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
+import { apiClient } from '../../services/apiClient';
 import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -29,9 +30,18 @@ export default function LobbyPage() {
   const { settings } = useSettings();
   const [campaigns, setCampaigns] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     setCampaigns(storage.getCampaigns());
+
+    if (apiClient.isConnected()) {
+      setSyncing(true);
+      storage.syncCampaigns()
+        .then((synced) => setCampaigns(synced))
+        .catch(() => {})
+        .finally(() => setSyncing(false));
+    }
   }, []);
 
   const handleLoad = (campaign) => {
@@ -39,8 +49,8 @@ export default function LobbyPage() {
     navigate('/play');
   };
 
-  const handleDelete = (id) => {
-    storage.deleteCampaign(id);
+  const handleDelete = async (id) => {
+    await storage.deleteCampaign(id);
     setCampaigns(storage.getCampaigns());
     setShowDeleteConfirm(null);
   };
@@ -135,6 +145,12 @@ export default function LobbyPage() {
             <h3 className="font-headline text-tertiary text-xl mb-6 flex items-center gap-3">
               <span className="material-symbols-outlined text-primary-dim">save</span>
               {t('lobby.savedCampaigns')}
+              {syncing && (
+                <span className="text-xs text-outline font-label flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                  {t('lobby.syncing', 'Syncing...')}
+                </span>
+              )}
               <span className="ml-auto text-xs text-outline font-label">{campaigns.length}</span>
             </h3>
             <div className="space-y-1">
