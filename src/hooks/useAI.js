@@ -10,7 +10,7 @@ import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
 import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
-import { repairDialogueSegments } from '../services/aiResponseValidator';
+import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 
 export function useAI() {
   const { t } = useTranslation();
@@ -95,6 +95,11 @@ export function useAI() {
           [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])]
         );
 
+        const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
+        const finalSegments = !isFirstScene
+          ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
+          : repairedSegments;
+
         const sceneId = createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
           ...offer,
@@ -104,7 +109,7 @@ export function useAI() {
         const scene = {
           id: sceneId,
           narrative: result.narrative,
-          dialogueSegments: repairedSegments,
+          dialogueSegments: finalSegments,
           soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null,
           imagePrompt: result.imagePrompt || null,
@@ -160,8 +165,9 @@ export function useAI() {
           payload: {
             id: `msg_${Date.now()}_dm`,
             role: 'dm',
+            sceneId,
             content: result.narrative,
-            dialogueSegments: repairedSegments,
+            dialogueSegments: finalSegments,
             soundEffect: result.soundEffect || null,
             timestamp: Date.now(),
           },

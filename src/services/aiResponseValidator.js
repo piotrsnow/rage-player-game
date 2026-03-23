@@ -365,6 +365,34 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
   return repaired;
 }
 
+export function ensurePlayerDialogue(segments, playerAction, characterName, characterGender) {
+  if (!playerAction || !characterName) return segments;
+
+  QUOTE_PATTERN.lastIndex = 0;
+  const playerQuotes = [];
+  let match;
+  while ((match = QUOTE_PATTERN.exec(playerAction)) !== null) {
+    const text = match[1].trim();
+    if (text) playerQuotes.push(text);
+  }
+  if (playerQuotes.length === 0) return segments;
+
+  const charLower = characterName.toLowerCase();
+  const hasPlayerDialogue = (segments || []).some(
+    s => s.type === 'dialogue' && s.character && s.character.toLowerCase() === charLower
+  );
+  if (hasPlayerDialogue) return segments;
+
+  const playerSegments = playerQuotes.map(text => ({
+    type: 'dialogue',
+    character: characterName,
+    text,
+    gender: characterGender || undefined,
+  }));
+
+  return [...playerSegments, ...(segments || [])];
+}
+
 const RETRY_DELAYS = [1000, 3000];
 
 export async function withRetry(fn, { retries = 2, onRetry } = {}) {

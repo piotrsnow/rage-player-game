@@ -48,6 +48,7 @@ export default function GameplayPage() {
   const [advancementOpen, setAdvancementOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
+  const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const prevScenesLenRef = useRef(0);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
@@ -133,6 +134,28 @@ export default function GameplayPage() {
     }
   }, [isMultiplayer, mp.state.players, state.characterVoiceMap, dispatch]);
 
+  const handleSceneNavigation = (sceneIndex) => {
+    const scene = scenes[sceneIndex];
+    if (!scene) return;
+
+    const targetMsg = chatHistory.find((m) => m.sceneId === scene.id);
+    if (targetMsg) {
+      setScrollTargetMessageId(targetMsg.id);
+    } else {
+      const dmMessages = chatHistory.filter((m) => m.role === 'dm');
+      const fallback = dmMessages[sceneIndex];
+      if (fallback) setScrollTargetMessageId(fallback.id);
+    }
+
+    if (settings.narratorEnabled && narrator.isNarratorReady) {
+      narrator.speakSingle({
+        content: scene.narrative,
+        dialogueSegments: scene.dialogueSegments || [],
+        soundEffect: scene.soundEffect || null,
+      }, `nav_${scene.id}`);
+    }
+  };
+
   const handleAction = async (action, isCustomAction = false) => {
     try {
       await generateScene(action, false, isCustomAction);
@@ -182,7 +205,11 @@ export default function GameplayPage() {
               <span className="w-1 h-1 bg-primary/50 rounded-full" />
               <span className="flex items-center gap-1">
                 <button
-                  onClick={() => setViewingSceneIndex(Math.max(0, displayedSceneIndex - 1))}
+                  onClick={() => {
+                    const newIndex = Math.max(0, displayedSceneIndex - 1);
+                    setViewingSceneIndex(newIndex);
+                    handleSceneNavigation(newIndex);
+                  }}
                   disabled={displayedSceneIndex <= 0}
                   title={t('gameplay.previousScene', 'Previous scene')}
                   aria-label={t('gameplay.previousScene', 'Previous scene')}
@@ -196,7 +223,9 @@ export default function GameplayPage() {
                 <button
                   onClick={() => {
                     const next = displayedSceneIndex + 1;
-                    setViewingSceneIndex(next >= scenes.length - 1 ? null : next);
+                    const newIndex = next >= scenes.length - 1 ? null : next;
+                    setViewingSceneIndex(newIndex);
+                    handleSceneNavigation(next);
                   }}
                   disabled={displayedSceneIndex >= scenes.length - 1}
                   title={t('gameplay.nextScene', 'Next scene')}
@@ -343,7 +372,10 @@ export default function GameplayPage() {
               <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{viewedScene.narrative}</p>
             </div>
             <button
-              onClick={() => setViewingSceneIndex(null)}
+              onClick={() => {
+                setViewingSceneIndex(null);
+                handleSceneNavigation(scenes.length - 1);
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-primary/15 border border-primary/30 rounded-sm text-[10px] font-label uppercase tracking-widest text-primary hover:bg-primary/25 transition-all"
             >
               <span className="material-symbols-outlined text-sm">skip_next</span>
@@ -530,6 +562,7 @@ export default function GameplayPage() {
           autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={state.momentumBonus || 0}
+          scrollToMessageId={scrollTargetMessageId}
         />
       </aside>
 

@@ -122,6 +122,34 @@ function repairDialogueSegments(narrative, segments, knownNpcs = []) {
   return repaired;
 }
 
+function ensurePlayerDialogue(segments, playerAction, characterName, characterGender) {
+  if (!playerAction || !characterName) return segments;
+
+  QUOTE_RE.lastIndex = 0;
+  const playerQuotes = [];
+  let match;
+  while ((match = QUOTE_RE.exec(playerAction)) !== null) {
+    const text = match[1].trim();
+    if (text) playerQuotes.push(text);
+  }
+  if (playerQuotes.length === 0) return segments;
+
+  const charLower = characterName.toLowerCase();
+  const hasPlayerDialogue = (segments || []).some(
+    s => s.type === 'dialogue' && s.character && s.character.toLowerCase() === charLower
+  );
+  if (hasPlayerDialogue) return segments;
+
+  const playerSegments = playerQuotes.map(text => ({
+    type: 'dialogue',
+    character: characterName,
+    text,
+    gender: characterGender || undefined,
+  }));
+
+  return [...playerSegments, ...(segments || [])];
+}
+
 function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null) {
   const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
@@ -690,6 +718,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   const dmMessage = {
     id: `msg_${Date.now()}`,
     role: 'dm',
+    sceneId: firstScene.id,
     content: firstScene.narrative,
     dialogueSegments: firstScene.dialogueSegments,
     timestamp: Date.now(),
@@ -906,6 +935,12 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     [...worldNpcs, ...stateNpcs]
   );
 
+  let finalSegments = repairedSegments;
+  for (const a of actions) {
+    const player = players.find(p => p.name === a.name);
+    finalSegments = ensurePlayerDialogue(finalSegments, a.action, a.name, player?.gender);
+  }
+
   const sceneId = `scene_mp_${Date.now()}`;
   const questOffers = (result.questOffers || []).map((offer) => ({
     ...offer,
@@ -915,7 +950,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   const scene = {
     id: sceneId,
     narrative: result.narrative || '',
-    dialogueSegments: repairedSegments,
+    dialogueSegments: finalSegments,
     actions: result.suggestedActions || [],
     questOffers,
     soundEffect: result.soundEffect || null,
@@ -965,6 +1000,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   chatMessages.push({
     id: `msg_dm_${Date.now()}`,
     role: 'dm',
+    sceneId: scene.id,
     content: scene.narrative,
     dialogueSegments: scene.dialogueSegments,
     soundEffect: scene.soundEffect,

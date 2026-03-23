@@ -132,6 +132,7 @@ export function useGameState() {
         {
           id: `msg_${Date.now()}_dm`,
           role: 'dm',
+          sceneId: firstScene.id,
           content: aiResult.firstScene?.narrative || aiResult.hook,
           dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
           soundEffect: aiResult.firstScene?.soundEffect || null,

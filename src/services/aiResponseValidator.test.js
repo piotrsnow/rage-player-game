@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { repairDialogueSegments } from './aiResponseValidator.js';
+import { repairDialogueSegments, ensurePlayerDialogue } from './aiResponseValidator.js';
 
 describe('repairDialogueSegments', () => {
   it('passes through segments with no quoted text in narration', () => {
@@ -179,5 +179,92 @@ describe('repairDialogueSegments', () => {
     const dialogues = result.filter(s => s.type === 'dialogue');
     expect(dialogues).toHaveLength(1);
     expect(dialogues[0].text).toBe('Idźmy w stronę gór.');
+  });
+});
+
+describe('ensurePlayerDialogue', () => {
+  it('prepends player dialogue when action has quotes and no segment exists', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba zaproponował wspólne picie.' },
+      { type: 'dialogue', character: 'Kazik', text: 'Oczywiście!', gender: 'male' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Zagaduję Kazika: „Kaziu może byśmy się napili?"',
+      'Barnaba',
+      'male'
+    );
+
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('dialogue');
+    expect(result[0].character).toBe('Barnaba');
+    expect(result[0].text).toBe('Kaziu może byśmy się napili?');
+    expect(result[0].gender).toBe('male');
+    expect(result[1]).toEqual(segments[0]);
+    expect(result[2]).toEqual(segments[1]);
+  });
+
+  it('does not add if player dialogue segment already exists', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Barnaba', text: 'Cześć Kaziku!', gender: 'male' },
+      { type: 'narration', text: 'Kazik uśmiechnął się.' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Mówię: „Cześć Kaziku!"',
+      'Barnaba',
+      'male'
+    );
+
+    expect(result).toEqual(segments);
+  });
+
+  it('returns segments unchanged when action has no quotes', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba rozglądał się.' },
+    ];
+    const result = ensurePlayerDialogue(segments, 'Rozglądam się po okolicy.', 'Barnaba', 'male');
+
+    expect(result).toEqual(segments);
+  });
+
+  it('handles multiple quoted phrases in player action', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba krzyknął do tłumu.' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Krzyczę: „Hej!" a potem dodaję: „Chodźcie tu!"',
+      'Barnaba',
+      'male'
+    );
+
+    expect(result.length).toBe(3);
+    expect(result[0].type).toBe('dialogue');
+    expect(result[0].text).toBe('Hej!');
+    expect(result[1].type).toBe('dialogue');
+    expect(result[1].text).toBe('Chodźcie tu!');
+    expect(result[2]).toEqual(segments[0]);
+  });
+
+  it('returns segments unchanged when playerAction or characterName is missing', () => {
+    const segments = [{ type: 'narration', text: 'Coś się stało.' }];
+    expect(ensurePlayerDialogue(segments, null, 'Barnaba', 'male')).toEqual(segments);
+    expect(ensurePlayerDialogue(segments, '„Hej!"', null, 'male')).toEqual(segments);
+    expect(ensurePlayerDialogue(segments, '', 'Barnaba', 'male')).toEqual(segments);
+  });
+
+  it('matches player character name case-insensitively', () => {
+    const segments = [
+      { type: 'dialogue', character: 'barnaba', text: 'Cześć!', gender: 'male' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Mówię: „Hej!"',
+      'Barnaba',
+      'male'
+    );
+
+    expect(result).toEqual(segments);
   });
 });

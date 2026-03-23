@@ -116,6 +116,7 @@ function forkPlayFromStart(sourceState) {
           {
             id: `msg_${Date.now()}_dm`,
             role: 'dm',
+            sceneId: newScenes[0]?.id,
             content: first.narrative || '',
             dialogueSegments: first.dialogueSegments || [],
             soundEffect: first.soundEffect ?? null,

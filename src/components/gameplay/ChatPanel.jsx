@@ -265,15 +265,24 @@ function SystemMessage({ message }) {
   );
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0 }) {
+export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null }) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
+  const containerRef = useRef(null);
   const prevMessageCount = useRef(messages.length);
 
   useEffect(() => {
     if (messages.length <= 1) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!scrollToMessageId || !containerRef.current) return;
+    const el = containerRef.current.querySelector(`[data-message-id="${scrollToMessageId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [scrollToMessageId]);
 
   useEffect(() => {
     if (!narrator || !autoPlay) {
@@ -338,7 +347,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
         {messages.length === 0 && (
           <div className="text-center py-12">
             <span className="material-symbols-outlined text-4xl text-outline/20 block mb-2">
@@ -350,13 +359,13 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
           </div>
         )}
         {messages.map((msg) => {
-          if (msg.role === 'dm') return <DmMessage key={msg.id} message={msg} narrator={narrator} />;
+          if (msg.role === 'dm') return <div key={msg.id} data-message-id={msg.id}><DmMessage message={msg} narrator={narrator} /></div>;
           if (msg.role === 'player') {
             const isMe = myOdId ? msg.odId === myOdId : true;
-            return <PlayerMessage key={msg.id} message={msg} isMe={isMe} />;
+            return <div key={msg.id} data-message-id={msg.id}><PlayerMessage message={msg} isMe={isMe} /></div>;
           }
-          if (msg.subtype === 'dice_roll') return <DiceRollMessage key={msg.id} message={msg} />;
-          return <SystemMessage key={msg.id} message={msg} />;
+          if (msg.subtype === 'dice_roll') return <div key={msg.id} data-message-id={msg.id}><DiceRollMessage message={msg} /></div>;
+          return <div key={msg.id} data-message-id={msg.id}><SystemMessage message={msg} /></div>;
         })}
         <div ref={bottomRef} />
       </div>
