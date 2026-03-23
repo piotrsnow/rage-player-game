@@ -774,6 +774,82 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'ACCEPT_QUEST_OFFER': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            const { sceneId: aqSceneId, questOffer } = msg;
+            if (!aqSceneId || !questOffer?.id) break;
+
+            const quest = {
+              id: questOffer.id,
+              name: questOffer.name,
+              description: questOffer.description,
+              completionCondition: questOffer.completionCondition,
+              objectives: (questOffer.objectives || []).map((obj) => ({ ...obj, completed: false })),
+            };
+            if (!room.gameState.quests) room.gameState.quests = { active: [], completed: [] };
+            room.gameState.quests.active.push(quest);
+
+            if (room.gameState?.scenes) {
+              const sIdx = room.gameState.scenes.findIndex((s) => s.id === aqSceneId);
+              if (sIdx >= 0 && room.gameState.scenes[sIdx].questOffers) {
+                room.gameState.scenes[sIdx].questOffers = room.gameState.scenes[sIdx].questOffers.map((o) =>
+                  o.id === questOffer.id ? { ...o, status: 'accepted' } : o
+                );
+              }
+            }
+
+            const acceptMsg = {
+              id: `msg_${Date.now()}_quest_accept`,
+              role: 'system',
+              subtype: 'quest_new',
+              content: `New quest: ${quest.name}`,
+              timestamp: Date.now(),
+            };
+            room.gameState.chatHistory = [...(room.gameState.chatHistory || []), acceptMsg];
+            setGameState(roomCode, room.gameState);
+
+            broadcast(room, {
+              type: 'QUEST_OFFER_UPDATE',
+              sceneId: aqSceneId,
+              offerId: questOffer.id,
+              status: 'accepted',
+              quest,
+              chatMessage: acceptMsg,
+              room: sanitizeRoom(room),
+            });
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+            break;
+          }
+
+          case 'DECLINE_QUEST_OFFER': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            const { sceneId: dqSceneId, offerId: dqOfferId } = msg;
+            if (!dqSceneId || !dqOfferId) break;
+
+            if (room.gameState?.scenes) {
+              const sIdx = room.gameState.scenes.findIndex((s) => s.id === dqSceneId);
+              if (sIdx >= 0 && room.gameState.scenes[sIdx].questOffers) {
+                room.gameState.scenes[sIdx].questOffers = room.gameState.scenes[sIdx].questOffers.map((o) =>
+                  o.id === dqOfferId ? { ...o, status: 'declined' } : o
+                );
+              }
+            }
+            setGameState(roomCode, room.gameState);
+
+            broadcast(room, {
+              type: 'QUEST_OFFER_UPDATE',
+              sceneId: dqSceneId,
+              offerId: dqOfferId,
+              status: 'declined',
+              room: sanitizeRoom(room),
+            });
+            break;
+          }
+
           case 'PING': {
             ws.send(JSON.stringify({ type: 'PONG' }));
             break;

@@ -256,6 +256,28 @@ function mpReducer(state, action) {
       };
     }
 
+    case 'QUEST_OFFER_UPDATE': {
+      if (!state.gameState) return state;
+      const { sceneId, offerId, status, quest, chatMessage } = action.payload;
+      const updatedScenes = (state.gameState.scenes || []).map((s) =>
+        s.id === sceneId
+          ? { ...s, questOffers: (s.questOffers || []).map((o) => o.id === offerId ? { ...o, status } : o) }
+          : s
+      );
+      let updatedQuests = state.gameState.quests || { active: [], completed: [] };
+      if (status === 'accepted' && quest) {
+        updatedQuests = { ...updatedQuests, active: [...updatedQuests.active, quest] };
+      }
+      const updatedChat = chatMessage
+        ? [...(state.gameState.chatHistory || []), chatMessage]
+        : state.gameState.chatHistory;
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes: updatedScenes, quests: updatedQuests, chatHistory: updatedChat },
+        players: action.payload.room?.players || state.players,
+      };
+    }
+
     case 'LEFT_ROOM':
     case 'RESET':
       return initialState;
@@ -302,6 +324,9 @@ export function MultiplayerProvider({ children }) {
       }),
       wsService.on('SCENE_IMAGE_UPDATE', (msg) => {
         dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image } });
+      }),
+      wsService.on('QUEST_OFFER_UPDATE', (msg) => {
+        dispatch({ type: 'QUEST_OFFER_UPDATE', payload: msg });
       }),
       wsService.on('LEFT_ROOM', () => dispatch({ type: 'LEFT_ROOM' })),
       wsService.on('KICKED', (msg) => {
@@ -394,6 +419,14 @@ export function MultiplayerProvider({ children }) {
     sceneCallbackRef.current = cb;
   }, []);
 
+  const acceptMpQuestOffer = useCallback((sceneId, questOffer) => {
+    wsService.send({ type: 'ACCEPT_QUEST_OFFER', sceneId, questOffer });
+  }, []);
+
+  const declineMpQuestOffer = useCallback((sceneId, offerId) => {
+    wsService.send({ type: 'DECLINE_QUEST_OFFER', sceneId, offerId });
+  }, []);
+
   const value = {
     state,
     dispatch,
@@ -413,6 +446,8 @@ export function MultiplayerProvider({ children }) {
     soloAction,
     updateSceneImage,
     onSceneUpdate,
+    acceptMpQuestOffer,
+    declineMpQuestOffer,
   };
 
   return (

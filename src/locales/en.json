@@ -139,7 +139,19 @@
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",
     "musicPlaying": "Now playing",
-    "musicSkip": "Next track"
+    "musicSkip": "Next track",
+    "searchForQuests": "Search for quests",
+    "searchForQuestsAction": "I look around for available work, quests, or tasks — I ask locals, check notice boards, and listen for rumors",
+    "questOffers": "Available Quests",
+    "questOfferAccept": "Accept",
+    "questOfferDecline": "Decline",
+    "questOfferAccepted": "Accepted",
+    "questOfferDeclined": "Declined",
+    "questOfferReward": "Reward",
+    "questOfferFrom": "From",
+    "questType_main": "Main",
+    "questType_side": "Side",
+    "questType_personal": "Personal"
   },
   "chat": {
     "dmAi": "DM AI",

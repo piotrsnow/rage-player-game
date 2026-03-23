@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { calculateWounds, normalizeMoney } from '../services/gameState';
+import { createCombatState } from '../services/combatEngine';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils';
 import {
   getAdvancementCost,
@@ -434,6 +435,23 @@ function gameReducer(state, action) {
           active: state.quests.active.filter((q) => q.id !== action.payload),
           completed: [...state.quests.completed, { ...quest, completedAt: Date.now() }],
         },
+      };
+    }
+
+    case 'UPDATE_SCENE_QUEST_OFFER': {
+      const { sceneId, offerId, status } = action.payload;
+      return {
+        ...state,
+        scenes: state.scenes.map((s) =>
+          s.id === sceneId
+            ? {
+                ...s,
+                questOffers: (s.questOffers || []).map((offer) =>
+                  offer.id === offerId ? { ...offer, status } : offer
+                ),
+              }
+            : s
+        ),
       };
     }
 
@@ -924,8 +942,12 @@ function gameReducer(state, action) {
         next.world = { ...next.world, factions };
       }
 
-      if (changes.combatUpdate) {
-        next.combat = changes.combatUpdate;
+      if (changes.combatUpdate && changes.combatUpdate.active) {
+        const allies = (next.party || []).filter((c) => c.id !== next.activeCharacterId);
+        next.combat = createCombatState(next.character, changes.combatUpdate.enemies || [], allies);
+        next.combat.reason = changes.combatUpdate.reason;
+      } else if (changes.combatUpdate && !changes.combatUpdate.active) {
+        next.combat = null;
       }
 
       if (changes.weatherUpdate) {

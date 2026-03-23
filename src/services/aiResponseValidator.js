@@ -52,6 +52,31 @@ const CodexUpdateSchema = z.object({
   relatedEntries: z.array(z.string()).default([]),
 }).passthrough();
 
+const QuestObjectiveSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+}).passthrough();
+
+const QuestSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  completionCondition: z.string().optional(),
+  objectives: z.array(QuestObjectiveSchema).optional().default([]),
+}).passthrough();
+
+const QuestOfferSchema = QuestSchema.extend({
+  offeredBy: z.string().optional(),
+  reward: z.string().optional(),
+  type: z.enum(['main', 'side', 'personal']).optional().default('side'),
+});
+
+const QuestUpdateSchema = z.object({
+  questId: z.string(),
+  objectiveId: z.string(),
+  completed: z.boolean(),
+}).passthrough();
+
 const StateChangesSchema = z.object({
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
@@ -59,9 +84,9 @@ const StateChangesSchema = z.object({
   resolveChange: z.number().optional(),
   newItems: z.array(z.any()).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
-  newQuests: z.array(z.any()).optional().default([]),
-  completedQuests: z.array(z.any()).optional().default([]),
-  questUpdates: z.array(z.any()).optional().default([]),
+  newQuests: z.array(QuestSchema).optional().default([]),
+  completedQuests: z.array(z.string()).optional().default([]),
+  questUpdates: z.array(QuestUpdateSchema).optional().default([]),
   worldFacts: z.array(z.string()).optional().default([]),
   journalEntries: z.array(z.string()).optional().default([]),
   statuses: z.any().nullable().optional(),
@@ -90,6 +115,7 @@ export const SceneResponseSchema = z.object({
   imagePrompt: z.string().nullable().optional(),
   atmosphere: AtmosphereSchema,
   suggestedActions: z.array(z.string()).min(1).max(8).default(['Look around', 'Talk to someone nearby', 'Move on', 'Investigate']),
+  questOffers: z.array(QuestOfferSchema).optional().default([]),
   stateChanges: StateChangesSchema,
   diceRoll: DiceRollSchema,
 }).passthrough();
@@ -188,6 +214,7 @@ function getSchemaDefaults(schema) {
       narrative: '',
       dialogueSegments: [],
       suggestedActions: ['Look around', 'Talk to someone nearby', 'Move on', 'Investigate'],
+      questOffers: [],
       stateChanges: {},
       atmosphere: {},
     };
@@ -202,6 +229,122 @@ function getSchemaDefaults(schema) {
     };
   }
   return {};
+}
+
+const QUOTE_OPEN = '„"«"';
+const QUOTE_CLOSE = '""»"';
+const QUOTE_PATTERN = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
+
+function findSpeakerInText(textBefore, knownNames) {
+  const nameLower = knownNames.map(n => n.toLowerCase());
+  const words = textBefore.trim().split(/\s+/);
+
+  for (let i = words.length - 1; i >= 0; i--) {
+    const raw = words[i].replace(/[,:;.!?…\-—]+$/, '');
+    if (raw.length < 2) continue;
+
+    for (let j = 0; j < knownNames.length; j++) {
+      const parts = knownNames[j].split(/\s+/);
+      if (parts.some(p => p.toLowerCase() === raw.toLowerCase())) {
+        return knownNames[j];
+      }
+    }
+
+    if (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase()) {
+      const isFirstWord = i === 0 || /[.!?…]$/.test(words[i - 1] || '');
+      if (!isFirstWord) return raw;
+    }
+  }
+  return null;
+}
+
+function lookupGender(name, knownNpcs, existingDialogueSegments) {
+  if (!name) return undefined;
+  const lower = name.toLowerCase();
+
+  for (const npc of knownNpcs) {
+    if (!npc.name) continue;
+    const npcParts = npc.name.toLowerCase().split(/\s+/);
+    if (npc.name.toLowerCase() === lower || npcParts.includes(lower)) {
+      return npc.gender || undefined;
+    }
+  }
+
+  for (const seg of existingDialogueSegments) {
+    if (!seg.character) continue;
+    const segParts = seg.character.toLowerCase().split(/\s+/);
+    if (seg.character.toLowerCase() === lower || segParts.includes(lower)) {
+      return seg.gender || undefined;
+    }
+  }
+  return undefined;
+}
+
+export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
+  if (!segments || segments.length === 0) return segments || [];
+
+  const existingDialogueSegments = segments.filter(s => s.type === 'dialogue' && s.character);
+  const knownNames = [
+    ...new Set([
+      ...knownNpcs.map(n => n.name).filter(Boolean),
+      ...existingDialogueSegments.map(s => s.character).filter(Boolean),
+    ])
+  ];
+
+  const repaired = [];
+  for (const seg of segments) {
+    if (seg.type !== 'narration' || !seg.text) {
+      repaired.push(seg);
+      continue;
+    }
+
+    QUOTE_PATTERN.lastIndex = 0;
+    if (!QUOTE_PATTERN.test(seg.text)) {
+      repaired.push(seg);
+      continue;
+    }
+
+    QUOTE_PATTERN.lastIndex = 0;
+    let lastIndex = 0;
+    let match;
+    const parts = [];
+
+    while ((match = QUOTE_PATTERN.exec(seg.text)) !== null) {
+      const before = seg.text.slice(lastIndex, match.index);
+      if (before.trim()) {
+        parts.push({ type: 'narration', text: before.trimEnd() });
+      }
+
+      const spokenText = match[1].trim();
+      const speakerName = findSpeakerInText(
+        seg.text.slice(0, match.index),
+        knownNames
+      );
+      const gender = lookupGender(speakerName, knownNpcs, existingDialogueSegments);
+
+      parts.push({
+        type: 'dialogue',
+        character: speakerName || 'NPC',
+        text: spokenText,
+        ...(gender ? { gender } : {}),
+      });
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    const trailing = seg.text.slice(lastIndex);
+    if (trailing.trim()) {
+      parts.push({ type: 'narration', text: trailing.trimStart() });
+    }
+
+    if (parts.length > 0) {
+      repaired.push(...parts);
+    } else {
+      repaired.push(seg);
+    }
+  }
+
+  return repaired;
 }
 
 const RETRY_DELAYS = [1000, 3000];

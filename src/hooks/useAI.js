@@ -10,6 +10,7 @@ import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
 import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
+import { repairDialogueSegments } from '../services/aiResponseValidator';
 
 export function useAI() {
   const { t } = useTranslation();
@@ -88,17 +89,29 @@ export function useAI() {
           dispatch({ type: 'SET_MOMENTUM', payload: sl * 5 });
         }
 
+        const repairedSegments = repairDialogueSegments(
+          result.narrative,
+          result.dialogueSegments || [],
+          [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])]
+        );
+
         const sceneId = createSceneId();
+        const questOffers = (result.questOffers || []).map((offer) => ({
+          ...offer,
+          objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })),
+          status: 'pending',
+        }));
         const scene = {
           id: sceneId,
           narrative: result.narrative,
-          dialogueSegments: result.dialogueSegments || [],
+          dialogueSegments: repairedSegments,
           soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null,
           imagePrompt: result.imagePrompt || null,
           musicUrl: null,
           image: null,
           actions: result.suggestedActions || [],
+          questOffers,
           chosenAction: playerAction,
           diceRoll: result.diceRoll || null,
           timestamp: Date.now(),
@@ -148,7 +161,7 @@ export function useAI() {
             id: `msg_${Date.now()}_dm`,
             role: 'dm',
             content: result.narrative,
-            dialogueSegments: result.dialogueSegments || [],
+            dialogueSegments: repairedSegments,
             soundEffect: result.soundEffect || null,
             timestamp: Date.now(),
           },
@@ -388,5 +401,47 @@ export function useAI() {
     [state, aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch, autoSave, t]
   );
 
-  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene, verifyQuestObjective };
+  const acceptQuestOffer = useCallback(
+    (sceneId, questOffer) => {
+      const quest = {
+        id: questOffer.id,
+        name: questOffer.name,
+        description: questOffer.description,
+        completionCondition: questOffer.completionCondition,
+        objectives: (questOffer.objectives || []).map((obj) => ({
+          ...obj,
+          completed: false,
+        })),
+      };
+      dispatch({ type: 'ADD_QUEST', payload: quest });
+      dispatch({
+        type: 'UPDATE_SCENE_QUEST_OFFER',
+        payload: { sceneId, offerId: questOffer.id, status: 'accepted' },
+      });
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${Date.now()}_quest_accept`,
+          role: 'system',
+          subtype: 'quest_new',
+          content: t('system.questNew', { quest: questOffer.name }),
+          timestamp: Date.now(),
+        },
+      });
+      setTimeout(() => autoSave(), 300);
+    },
+    [dispatch, autoSave, t]
+  );
+
+  const declineQuestOffer = useCallback(
+    (sceneId, offerId) => {
+      dispatch({
+        type: 'UPDATE_SCENE_QUEST_OFFER',
+        payload: { sceneId, offerId, status: 'declined' },
+      });
+    },
+    [dispatch]
+  );
+
+  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene, verifyQuestObjective, acceptQuestOffer, declineQuestOffer };
 }

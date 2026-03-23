@@ -139,7 +139,19 @@
     "exportLog": "Pobierz Log Rozgrywki",
     "generatingMusic": "Generowanie muzyki...",
     "musicPlaying": "Odtwarzanie",
-    "musicSkip": "Następny utwór"
+    "musicSkip": "Następny utwór",
+    "searchForQuests": "Szukaj zadań",
+    "searchForQuestsAction": "Rozglądam się za dostępnymi zleceniami, zadaniami lub pracą — pytam okolicznych mieszkańców, sprawdzam tablice ogłoszeń i nasłuchuję plotek",
+    "questOffers": "Dostępne Zadania",
+    "questOfferAccept": "Przyjmij",
+    "questOfferDecline": "Odrzuć",
+    "questOfferAccepted": "Przyjęto",
+    "questOfferDeclined": "Odrzucono",
+    "questOfferReward": "Nagroda",
+    "questOfferFrom": "Od",
+    "questType_main": "Główne",
+    "questType_side": "Poboczne",
+    "questType_personal": "Osobiste"
   },
   "chat": {
     "dmAi": "MG AI",

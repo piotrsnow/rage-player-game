@@ -21,6 +21,7 @@ import CombatPanel from './CombatPanel';
 import MagicPanel from './MagicPanel';
 import PartyPanel from './PartyPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
+import QuestOffersPanel from './QuestOffersPanel';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
 
@@ -31,7 +32,7 @@ export default function GameplayPage() {
   const { settings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene } = useAI();
+  const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
   const narrator = useNarrator();
   const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
@@ -397,6 +398,17 @@ export default function GameplayPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Quest Offers */}
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && (!campaign?.status || campaign.status === 'active') && (
+          <div className="px-2 animate-fade-in">
+            <QuestOffersPanel
+              offers={currentScene.questOffers}
+              onAccept={(offer) => isMultiplayer ? mp.acceptMpQuestOffer(currentScene.id, offer) : acceptQuestOffer(currentScene.id, offer)}
+              onDecline={(offerId) => isMultiplayer ? mp.declineMpQuestOffer(currentScene.id, offerId) : declineQuestOffer(currentScene.id, offerId)}
+            />
           </div>
         )}
 

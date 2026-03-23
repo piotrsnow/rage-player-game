@@ -34,6 +34,75 @@ function buildMultiplayerUnmetNeedsBlock(characters) {
   return `UNMET CHARACTER NEEDS (factor these into the scene — affect narration, NPC reactions, and outcomes):\n${charLines.join('\n')}\n\n`;
 }
 
+const QUOTE_OPEN = '„"«"';
+const QUOTE_CLOSE = '""»"';
+const QUOTE_RE = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
+
+function findSpeakerInText(textBefore, knownNames) {
+  const words = textBefore.trim().split(/\s+/);
+  for (let i = words.length - 1; i >= 0; i--) {
+    const raw = words[i].replace(/[,:;.!?…\-—]+$/, '');
+    if (raw.length < 2) continue;
+    for (const name of knownNames) {
+      if (name.split(/\s+/).some(p => p.toLowerCase() === raw.toLowerCase())) return name;
+    }
+    if (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase()) {
+      const isFirstWord = i === 0 || /[.!?…]$/.test(words[i - 1] || '');
+      if (!isFirstWord) return raw;
+    }
+  }
+  return null;
+}
+
+function lookupGender(name, knownNpcs, existingDialogueSegs) {
+  if (!name) return undefined;
+  const lower = name.toLowerCase();
+  for (const npc of knownNpcs) {
+    if (!npc.name) continue;
+    if (npc.name.toLowerCase() === lower || npc.name.toLowerCase().split(/\s+/).includes(lower)) {
+      return npc.gender || undefined;
+    }
+  }
+  for (const seg of existingDialogueSegs) {
+    if (!seg.character) continue;
+    if (seg.character.toLowerCase() === lower || seg.character.toLowerCase().split(/\s+/).includes(lower)) {
+      return seg.gender || undefined;
+    }
+  }
+  return undefined;
+}
+
+function repairDialogueSegments(narrative, segments, knownNpcs = []) {
+  if (!segments || segments.length === 0) return segments || [];
+  const existingDialogue = segments.filter(s => s.type === 'dialogue' && s.character);
+  const knownNames = [...new Set([
+    ...knownNpcs.map(n => n.name).filter(Boolean),
+    ...existingDialogue.map(s => s.character).filter(Boolean),
+  ])];
+  const repaired = [];
+  for (const seg of segments) {
+    if (seg.type !== 'narration' || !seg.text) { repaired.push(seg); continue; }
+    QUOTE_RE.lastIndex = 0;
+    if (!QUOTE_RE.test(seg.text)) { repaired.push(seg); continue; }
+    QUOTE_RE.lastIndex = 0;
+    let lastIndex = 0;
+    let match;
+    const parts = [];
+    while ((match = QUOTE_RE.exec(seg.text)) !== null) {
+      const before = seg.text.slice(lastIndex, match.index);
+      if (before.trim()) parts.push({ type: 'narration', text: before.trimEnd() });
+      const speaker = findSpeakerInText(seg.text.slice(0, match.index), knownNames);
+      const gender = lookupGender(speaker, knownNpcs, existingDialogue);
+      parts.push({ type: 'dialogue', character: speaker || 'NPC', text: match[1].trim(), ...(gender ? { gender } : {}) });
+      lastIndex = match.index + match[0].length;
+    }
+    const trailing = seg.text.slice(lastIndex);
+    if (trailing.trim()) parts.push({ type: 'narration', text: trailing.trimStart() });
+    repaired.push(...(parts.length > 0 ? parts : [seg]));
+  }
+  return repaired;
+}
+
 function buildMultiplayerSystemPrompt(gameState, settings, players, language = 'en', dmSettings = null) {
   const needsEnabled = settings.needsSystemEnabled === true;
   const playerList = players
@@ -376,6 +445,7 @@ Respond with ONLY valid JSON:
     "transition": "dissolve"
   },
   "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
+  "questOffers": [],
   "stateChanges": {
     "perCharacter": {
       "CharacterName": {${perCharExample}}
@@ -401,6 +471,7 @@ For diceRolls: an array of per-character dice roll results. Each entry: {"charac
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. Separate from completedQuests.
+QUEST DISCOVERY: When any player explicitly asks about available work, tasks, quests, jobs, or missions, populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "offeredBy": "NPC name or source", "reward": "Narrative reward hint", "type": "main|side|personal"}. Narrate quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts. Use "questOffers" for quests players can accept or decline. Use "stateChanges.newQuests" only for quests forced by story events. When not asked about quests, leave "questOffers" as [].
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
@@ -579,10 +650,16 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   });
 
   const sceneId = `scene_mp_${Date.now()}`;
+  const firstSceneNarrative = result.firstScene?.narrative || 'The adventure begins...';
+  const firstSceneSegments = repairDialogueSegments(
+    firstSceneNarrative,
+    result.firstScene?.dialogueSegments || [],
+    []
+  );
   const firstScene = {
     id: sceneId,
-    narrative: result.firstScene?.narrative || 'The adventure begins...',
-    dialogueSegments: result.firstScene?.dialogueSegments || [],
+    narrative: firstSceneNarrative,
+    dialogueSegments: firstSceneSegments,
     actions: result.firstScene?.suggestedActions || [],
     soundEffect: result.firstScene?.soundEffect || null,
     musicPrompt: result.firstScene?.musicPrompt || null,
@@ -802,12 +879,26 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     recalcDiceRoll(result.diceRoll);
   }
 
+  const worldNpcs = gameState?.world?.npcs || [];
+  const stateNpcs = result.stateChanges?.npcs || [];
+  const repairedSegments = repairDialogueSegments(
+    result.narrative || '',
+    result.dialogueSegments || [],
+    [...worldNpcs, ...stateNpcs]
+  );
+
   const sceneId = `scene_mp_${Date.now()}`;
+  const questOffers = (result.questOffers || []).map((offer) => ({
+    ...offer,
+    objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })),
+    status: 'pending',
+  }));
   const scene = {
     id: sceneId,
     narrative: result.narrative || '',
-    dialogueSegments: result.dialogueSegments || [],
+    dialogueSegments: repairedSegments,
     actions: result.suggestedActions || [],
+    questOffers,
     soundEffect: result.soundEffect || null,
     musicPrompt: result.musicPrompt || null,
     imagePrompt: result.imagePrompt || null,
