@@ -46,7 +46,7 @@ export function useAI() {
           const momentum = result.diceRoll.momentumBonus || 0;
           const effectiveTarget = result.diceRoll.target;
 
-          if (!result.diceRoll.baseTarget && (bonus > 0 || momentum > 0)) {
+          if (!result.diceRoll.baseTarget && (bonus > 0 || momentum !== 0)) {
             result.diceRoll.baseTarget = effectiveTarget - bonus - momentum;
           }
 
@@ -60,7 +60,7 @@ export function useAI() {
           result.diceRoll.sl = calculateSL(roll, effectiveTarget);
 
           const sl = result.diceRoll.sl;
-          dispatch({ type: 'SET_MOMENTUM', payload: (sl >= 3 && isSuccess) ? sl * 5 : 0 });
+          dispatch({ type: 'SET_MOMENTUM', payload: sl * 5 });
         }
 
         const sceneId = createSceneId();
@@ -270,5 +270,55 @@ export function useAI() {
     [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, dispatch, autoSave]
   );
 
-  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene };
+  const verifyQuestObjective = useCallback(
+    async (questId, objectiveId) => {
+      const quest = state.quests?.active?.find((q) => q.id === questId);
+      if (!quest) throw new Error('Quest not found');
+      const objective = quest.objectives?.find((o) => o.id === objectiveId);
+      if (!objective) throw new Error('Objective not found');
+
+      const world = state.world || {};
+      const parts = [];
+      if (world.compressedHistory) {
+        parts.push(`ARCHIVED HISTORY:\n${world.compressedHistory}`);
+      }
+      if (world.eventHistory?.length > 0) {
+        parts.push(`STORY JOURNAL:\n${world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')}`);
+      }
+      const enhancedContext = contextManager.buildEnhancedContext(state);
+      const sceneText = contextManager.formatSceneHistory(enhancedContext);
+      if (sceneText) parts.push(`SCENE HISTORY:\n${sceneText}`);
+
+      const storyContext = parts.join('\n\n') || 'No story events yet.';
+
+      const { result, usage } = await aiService.verifyObjective(
+        storyContext, quest.name, quest.description, objective.description,
+        aiProvider, apiKey, language
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+
+      if (result.fulfilled) {
+        dispatch({
+          type: 'APPLY_STATE_CHANGES',
+          payload: { questUpdates: [{ questId, objectiveId, completed: true }] },
+        });
+        dispatch({
+          type: 'ADD_CHAT_MESSAGE',
+          payload: {
+            id: `msg_${Date.now()}_verify`,
+            role: 'system',
+            subtype: 'quest_objective_completed',
+            content: t('system.questObjectiveVerified', { quest: quest.name, objective: objective.description }),
+            timestamp: Date.now(),
+          },
+        });
+        setTimeout(() => autoSave(), 300);
+      }
+
+      return result;
+    },
+    [state, aiProvider, apiKey, language, dispatch, autoSave, t]
+  );
+
+  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene, verifyQuestObjective };
 }

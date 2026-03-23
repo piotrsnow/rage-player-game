@@ -596,6 +596,7 @@ function gameReducer(state, action) {
               lastLocation: npc.location || '',
               alive: true,
               notes: npc.notes || '',
+              disposition: 0,
             });
           } else if (idx >= 0) {
             npcs[idx] = {
@@ -607,6 +608,9 @@ function gameReducer(state, action) {
               ...(npc.location && { lastLocation: npc.location }),
               ...(npc.notes && { notes: npc.notes }),
               ...(npc.alive !== undefined && { alive: npc.alive }),
+              ...(typeof npc.dispositionChange === 'number' && {
+                disposition: (npcs[idx].disposition || 0) + npc.dispositionChange,
+              }),
             };
           }
         }

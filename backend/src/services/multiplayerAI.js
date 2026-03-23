@@ -75,7 +75,7 @@ function buildMultiplayerSystemPrompt(gameState, settings, players, language = '
 
   const npcs = world.npcs || [];
   const npcSection = npcs.length > 0
-    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown'}, ${n.gender || '?'}): ${n.personality || '?'}, attitude=${n.attitude || 'neutral'}`).join('\n')
+    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown'}, ${n.gender || '?'}): ${n.personality || '?'}, attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}`).join('\n')
     : 'No NPCs encountered yet.';
 
   const currentLoc = world.currentLocation || 'Unknown';
@@ -192,6 +192,7 @@ MULTIPLAYER INSTRUCTIONS:
 8. Update stateChanges.currentLocation when the party moves to a new location.
 9. Always respond with valid JSON.
 10. ITEM VALIDATION: Characters can ONLY use items currently listed in their inventory above. If a player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that the character actually has in their inventory.
+11. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -253,7 +254,7 @@ Respond with ONLY valid JSON:
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Starting Location",
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
-    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": ""}],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "dispositionChange": 5}],
     "worldFacts": [],
     "journalEntries": ["Opening scene summary"],
     "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal", "objectives": [{"id": "obj_1", "description": "First milestone"}]}],
@@ -265,7 +266,7 @@ Respond with ONLY valid JSON:
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
-For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. When players fulfill a quest objective, mark it here. Separate from completedQuests.
+QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. Separate from completedQuests.
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
@@ -274,6 +275,7 @@ For stateChanges.perCharacter: an object keyed by character name, each containin
 For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
   }
@@ -282,11 +284,11 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const needsReminder = needsSystemEnabled ? buildMultiplayerUnmetNeedsBlock(characters) : '';
 
   const hasCustomActions = actions.some((a) => a.isCustom);
-  const hasMomentum = characterMomentum && Object.values(characterMomentum).some((v) => v > 0);
+  const hasMomentum = characterMomentum && Object.values(characterMomentum).some((v) => v !== 0);
   const actionLines = actions
     .map((a) => {
       const diceInfo = preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
-      const momInfo = characterMomentum?.[a.name] > 0 ? ` [MOMENTUM +${characterMomentum[a.name]}]` : '';
+      const momInfo = characterMomentum?.[a.name] !== 0 && characterMomentum?.[a.name] != null ? ` [MOMENTUM ${characterMomentum[a.name] > 0 ? '+' : ''}${characterMomentum[a.name]}]` : '';
       return `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${momInfo}`;
     })
     .join('\n');
@@ -313,9 +315,10 @@ Output the diceRoll fields as follows for custom actions:
 - "success": whether roll <= target (the effective value)
 Example: baseTarget=31, creativityBonus=20, target=51, roll=45 → 45 ≤ 51 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}${hasMomentum ? `
-MOMENTUM BONUS: Some characters have momentum from a previous excellent roll (shown as [MOMENTUM +N] above).
-Add their momentum bonus to the target: target = baseTarget + creativityBonus + momentumBonus.
-Output "momentumBonus": N in the diceRoll entry for that character.
+MOMENTUM: Some characters have momentum from a previous roll (shown as [MOMENTUM +N] or [MOMENTUM -N] above).
+Positive momentum is a bonus — add it to the target: target = baseTarget + creativityBonus + momentumBonus.
+Negative momentum is a penalty — it reduces the target (momentumBonus is negative, so adding it lowers the target).
+Output "momentumBonus": N in the diceRoll entry for that character (N can be positive or negative).
 Momentum is consumed after this roll regardless of outcome.
 ` : ''}
 IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrative consistent with ALL outcomes.
@@ -345,7 +348,7 @@ Respond with ONLY valid JSON:
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Location Name",
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
-    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes"}],
+    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5}],
     "worldFacts": [],
     "journalEntries": ["Summary of key events"],
     "newQuests": [],
@@ -361,11 +364,12 @@ For diceRolls: an array of per-character dice roll results. Each entry: {"charac
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
-For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. When players fulfill a quest objective, mark it here. Separate from completedQuests.
+QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. Separate from completedQuests.
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }

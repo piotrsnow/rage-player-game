@@ -95,7 +95,7 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
 
   const npcs = world?.npcs || [];
   const npcSection = npcs.length > 0
-    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown role'}, ${n.gender || '?'}): personality="${n.personality || '?'}", attitude=${n.attitude || 'neutral'}, location="${n.lastLocation || 'unknown'}"${n.alive === false ? ' [DEAD]' : ''}${n.notes ? ` — ${n.notes}` : ''}`).join('\n')
+    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown role'}, ${n.gender || '?'}): personality="${n.personality || '?'}", attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}, location="${n.lastLocation || 'unknown'}"${n.alive === false ? ' [DEAD]' : ''}${n.notes ? ` — ${n.notes}` : ''}`).join('\n')
     : 'No NPCs encountered yet.';
 
   const currentLoc = world?.currentLocation || 'Unknown';
@@ -283,6 +283,7 @@ INSTRUCTIONS:
 12. ALWAYS include stateChanges.timeAdvance with "hoursElapsed" (supports decimals) — every action takes 15 minutes to 1 hour of in-game time. Quick dialogue/interaction: 0.25h (15 min), short action/combat: 0.5h (30 min), exploration/travel: 0.75-1h, resting: 2-4h, sleeping: 6-8h. Time drives the needs system.
 13. Update the player's current location via stateChanges.currentLocation when they move.
 14. If the character needs system is active, reflect low needs in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
+15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -403,11 +404,11 @@ Output the diceRoll fields as follows:
 - "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
 Example: baseTarget=31, creativityBonus=20, target=51, roll=45 → 45 ≤ 51 → success=true. The narrative MUST describe a successful outcome.
-` : ''}${momentumBonus > 0 ? `
-MOMENTUM BONUS: The player earned +${momentumBonus} momentum from a previous excellent roll.
-Add this to the target: target = baseTarget + creativityBonus + momentumBonus.
+` : ''}${momentumBonus !== 0 ? `
+MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from a previous roll.
+${momentumBonus > 0 ? 'Add this to the target: target = baseTarget + creativityBonus + momentumBonus.' : 'Subtract this from the target: target = baseTarget + creativityBonus + momentumBonus (momentumBonus is negative, so it reduces the target).'}
 Output "momentumBonus": ${momentumBonus} in the diceRoll.
-This bonus is consumed after this roll regardless of outcome.
+This ${momentumBonus > 0 ? 'bonus' : 'penalty'} is consumed after this roll regardless of outcome.
 ` : ''}
 IMPORTANT: Resolve the dice check FIRST, then write the narrative consistent with the outcome.
 
@@ -446,7 +447,7 @@ Respond with ONLY valid JSON in this exact format:
     "skillAdvances": null,
     "newTalents": null,
     "careerAdvance": null,
-    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes"}],
+    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5}],
     "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
@@ -457,10 +458,10 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus > 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''}). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''}.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''}). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''}.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}]}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story (not mandatory but trackable). worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
-For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. When a player's actions fulfill a quest objective (even partially or indirectly), mark it completed here. This is separate from completedQuests which finishes the entire quest.
+QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
 For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
 For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
@@ -468,6 +469,7 @@ For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Migh
 For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player. Only include dispositionChange when the interaction is direct and personal.
 For stateChanges.mapChanges: log environmental changes to locations (traps set, doors opened, items left, destruction). type is one of: trap, obstacle, discovery, destruction, other.
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
@@ -620,4 +622,25 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
 export function buildRecapPrompt(language = 'en') {
   const langNote = language === 'pl' ? ' Write the recap in Polish.' : '';
   return `Based on the scene history in the system context, generate a brief "Previously on..." recap summarizing the key events, decisions, and their consequences. Write it in a dramatic, narrative style (2-3 sentences).${langNote} Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
+}
+
+export function buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language = 'en') {
+  const lang = language === 'pl' ? 'Polish' : 'English';
+  return {
+    system: `You are an impartial story analyst for a tabletop RPG game. Your job is to determine whether a specific quest objective has been fulfilled based on the events that occurred in the story. Analyze the provided story context carefully and objectively. Respond with ONLY valid JSON.`,
+    user: `Analyze the following story to determine if the quest objective has been fulfilled.
+
+STORY CONTEXT:
+${storyContext}
+
+QUEST: ${questName}
+Quest description: ${questDescription}
+
+OBJECTIVE TO VERIFY: "${objectiveDescription}"
+
+Has this specific objective been fulfilled based on the story events? Consider partial or indirect fulfillment as well — if the spirit of the objective has been met, it counts as fulfilled.
+
+Respond with ONLY valid JSON:
+{"fulfilled": true or false, "reasoning": "A brief 1-2 sentence explanation in ${lang} of why the objective is or is not fulfilled based on story events."}`
+  };
 }

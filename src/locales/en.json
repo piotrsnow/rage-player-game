@@ -133,8 +133,8 @@
     "voiceStop": "Stop recording",
     "voiceListening": "Listening...",
     "creativityBonus": "Creativity +{{bonus}}",
-    "momentumBonus": "Momentum +{{bonus}}",
-    "momentumActive": "Momentum +{{bonus}} on next roll",
+    "momentumBonus": "Momentum {{bonus}}",
+    "momentumActive": "Momentum {{bonus}} on next roll",
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",
     "musicPlaying": "Now playing",
@@ -176,7 +176,11 @@
     "noQuests": "No quests discovered yet.",
     "completionCondition": "Completion Condition",
     "objectives": "Objectives",
-    "selectQuest": "Select a quest to view details"
+    "selectQuest": "Select a quest to view details",
+    "verifyObjective": "Check if completed",
+    "objectiveVerified": "Objective verified as completed",
+    "objectiveNotFulfilled": "Objective not yet fulfilled",
+    "verifyError": "Failed to verify objective"
   },
   "inventory": {
     "title": "Armory & Artifacts",
@@ -448,6 +452,7 @@
     "season": "Season",
     "voice": "Voice",
     "noVoice": "No voice assigned",
+    "disposition": "Disposition",
     "archivedHistory": "Archived History",
     "eventLog": "Event Log"
   },
@@ -561,6 +566,7 @@
     "questNew": "New quest: {{quest}}",
     "questCompleted": "Quest completed: {{quest}}",
     "questObjectiveCompleted": "Objective completed: {{quest}} — {{objective}}",
+    "questObjectiveVerified": "Objective verified: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",
     "moneyGained": "{{name}} received {{amount}}"
   },

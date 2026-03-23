@@ -133,8 +133,8 @@
     "voiceStop": "Zatrzymaj nagrywanie",
     "voiceListening": "Słucham...",
     "creativityBonus": "Kreatywność +{{bonus}}",
-    "momentumBonus": "Momentum +{{bonus}}",
-    "momentumActive": "Momentum +{{bonus}} w następnym rzucie",
+    "momentumBonus": "Momentum {{bonus}}",
+    "momentumActive": "Momentum {{bonus}} w następnym rzucie",
     "exportLog": "Pobierz Log Rozgrywki",
     "generatingMusic": "Generowanie muzyki...",
     "musicPlaying": "Odtwarzanie",
@@ -176,7 +176,11 @@
     "noQuests": "Nie odkryto jeszcze żadnych zadań.",
     "completionCondition": "Warunek Ukończenia",
     "objectives": "Cele",
-    "selectQuest": "Wybierz zadanie, aby zobaczyć szczegóły"
+    "selectQuest": "Wybierz zadanie, aby zobaczyć szczegóły",
+    "verifyObjective": "Sprawdź czy ukończone",
+    "objectiveVerified": "Cel zweryfikowany jako ukończony",
+    "objectiveNotFulfilled": "Cel jeszcze nie spełniony",
+    "verifyError": "Nie udało się zweryfikować celu"
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
@@ -448,6 +452,7 @@
     "season": "Pora roku",
     "voice": "Głos",
     "noVoice": "Brak przypisanego głosu",
+    "disposition": "Przychylność",
     "archivedHistory": "Zarchiwizowana Historia",
     "eventLog": "Dziennik Wydarzeń"
   },
@@ -561,6 +566,7 @@
     "questNew": "Nowe zadanie: {{quest}}",
     "questCompleted": "Zadanie ukończone: {{quest}}",
     "questObjectiveCompleted": "Cel ukończony: {{quest}} — {{objective}}",
+    "questObjectiveVerified": "Cel zweryfikowany: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",
     "moneyGained": "{{name}} otrzymał/a {{amount}}"
   },

@@ -1,4 +1,4 @@
-import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt } from './prompts';
+import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildObjectiveVerificationPrompt } from './prompts';
 import { apiClient } from './apiClient';
 
 async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000) {
@@ -154,5 +154,10 @@ export const aiService = {
       `Respond with JSON: { "prompt": "<the story premise>" }`,
     ].join('\n');
     return callAI(provider, apiKey, systemPrompt, userPrompt, 300);
+  },
+
+  async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, apiKey, language = 'en') {
+    const prompts = buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language);
+    return callAI(provider, apiKey, prompts.system, prompts.user, 500);
   },
 };

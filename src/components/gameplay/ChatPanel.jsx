@@ -207,9 +207,13 @@ function DiceRollMessage({ message }) {
                   {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
                 </span>
               )}
-              {d.momentumBonus > 0 && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-400/15 text-blue-300 border border-blue-400/30">
-                  {t('gameplay.momentumBonus', { bonus: d.momentumBonus })}
+              {d.momentumBonus != null && d.momentumBonus !== 0 && (
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                  d.momentumBonus > 0
+                    ? 'bg-blue-400/15 text-blue-300 border-blue-400/30'
+                    : 'bg-red-400/15 text-red-300 border-red-400/30'
+                }`}>
+                  {t('gameplay.momentumBonus', { bonus: (d.momentumBonus > 0 ? '+' : '') + d.momentumBonus })}
                 </span>
               )}
               <span className="text-on-surface-variant">·</span>
@@ -317,11 +321,17 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
             <span className="material-symbols-outlined text-sm">stop</span>
           </button>
         )}
-        {momentumBonus > 0 && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-400/10 border border-blue-400/30 animate-pulse-glow">
-            <span className="material-symbols-outlined text-blue-300 text-sm">bolt</span>
-            <span className="text-xs font-bold text-blue-300">
-              {t('gameplay.momentumActive', { bonus: momentumBonus })}
+        {momentumBonus !== 0 && (
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg animate-pulse-glow ${
+            momentumBonus > 0
+              ? 'bg-blue-400/10 border border-blue-400/30'
+              : 'bg-red-400/10 border border-red-400/30'
+          }`}>
+            <span className={`material-symbols-outlined text-sm ${momentumBonus > 0 ? 'text-blue-300' : 'text-red-300'}`}>
+              {momentumBonus > 0 ? 'bolt' : 'trending_down'}
+            </span>
+            <span className={`text-xs font-bold ${momentumBonus > 0 ? 'text-blue-300' : 'text-red-300'}`}>
+              {t('gameplay.momentumActive', { bonus: (momentumBonus > 0 ? '+' : '') + momentumBonus })}
             </span>
           </div>
         )}

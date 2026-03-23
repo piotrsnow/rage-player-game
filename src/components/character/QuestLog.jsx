@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAI } from '../../hooks/useAI';
 
 export default function QuestLog({ active = [], completed = [] }) {
   const { t } = useTranslation();
+  const { verifyQuestObjective } = useAI();
   const [selectedId, setSelectedId] = useState(null);
+  const [verifyingId, setVerifyingId] = useState(null);
+  const [verifyResult, setVerifyResult] = useState(null);
 
   const allQuests = [
     ...active.map((q) => ({ ...q, _status: 'active' })),
@@ -141,16 +145,63 @@ export default function QuestLog({ active = [], completed = [] }) {
                   <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-2">
                     {t('quests.objectives')}
                   </p>
-                  {selected.objectives.map((obj) => (
-                    <div key={obj.id} className="flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
-                      <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline/30'}`}>
-                        {obj.completed ? 'check_box' : 'check_box_outline_blank'}
-                      </span>
-                      <p className={`text-xs leading-relaxed ${obj.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                        {obj.description}
-                      </p>
+                  {selected.objectives.map((obj) => {
+                    const isVerifying = verifyingId === obj.id;
+                    const result = verifyResult?.objectiveId === obj.id ? verifyResult : null;
+                    return (
+                      <div key={obj.id} className="group flex items-start gap-2 py-1 px-2 rounded-sm hover:bg-surface-container-highest/60 transition-colors">
+                        <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline/30'}`}>
+                          {obj.completed ? 'check_box' : 'check_box_outline_blank'}
+                        </span>
+                        <p className={`text-xs leading-relaxed flex-1 ${obj.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                          {obj.description}
+                        </p>
+                        {!obj.completed && selected._status === 'active' && (
+                          isVerifying ? (
+                            <span className="material-symbols-outlined text-sm text-primary animate-spin shrink-0 mt-0.5">progress_activity</span>
+                          ) : (
+                            <button
+                              type="button"
+                              title={t('quests.verifyObjective')}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setVerifyingId(obj.id);
+                                setVerifyResult(null);
+                                try {
+                                  const res = await verifyQuestObjective(selected.id, obj.id);
+                                  setVerifyResult({ objectiveId: obj.id, fulfilled: res.fulfilled, reasoning: res.reasoning });
+                                } catch {
+                                  setVerifyResult({ objectiveId: obj.id, fulfilled: false, reasoning: t('quests.verifyError') });
+                                } finally {
+                                  setVerifyingId(null);
+                                }
+                              }}
+                              className="material-symbols-outlined text-sm text-outline/40 hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5 cursor-pointer"
+                            >
+                              manage_search
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                  {verifyResult && (
+                    <div className={`mt-2 px-3 py-2 rounded-sm text-xs leading-relaxed border ${
+                      verifyResult.fulfilled
+                        ? 'bg-primary/5 border-primary/15 text-primary'
+                        : 'bg-outline/5 border-outline-variant/15 text-on-surface-variant'
+                    }`}>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="material-symbols-outlined text-xs">
+                          {verifyResult.fulfilled ? 'check_circle' : 'info'}
+                        </span>
+                        <span className="font-label text-[10px] uppercase tracking-widest">
+                          {verifyResult.fulfilled ? t('quests.objectiveVerified') : t('quests.objectiveNotFulfilled')}
+                        </span>
+                      </div>
+                      {verifyResult.reasoning && <p className="ml-5">{verifyResult.reasoning}</p>}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </div>

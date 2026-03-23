@@ -111,13 +111,24 @@ function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
                 {npc.gender && <span className="text-[10px] text-outline">({npc.gender})</span>}
                 {npc.alive === false && <span className="text-[10px] text-error font-bold uppercase">{t('worldState.dead')}</span>}
               </div>
-              {npc.attitude && (
-                <span className={`text-[10px] font-label uppercase tracking-wider px-2 py-0.5 rounded-sm ${
-                  npc.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
-                  npc.attitude === 'hostile' ? 'bg-error/15 text-error' :
-                  'bg-outline/10 text-outline'
-                }`}>{npc.attitude}</span>
-              )}
+              <div className="flex items-center gap-1.5">
+                {npc.disposition != null && npc.disposition !== 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-sm ${
+                    npc.disposition > 0
+                      ? 'bg-primary/15 text-primary'
+                      : 'bg-error/15 text-error'
+                  }`}>
+                    {npc.disposition > 0 ? '+' : ''}{npc.disposition}
+                  </span>
+                )}
+                {npc.attitude && (
+                  <span className={`text-[10px] font-label uppercase tracking-wider px-2 py-0.5 rounded-sm ${
+                    npc.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
+                    npc.attitude === 'hostile' ? 'bg-error/15 text-error' :
+                    'bg-outline/10 text-outline'
+                  }`}>{npc.attitude}</span>
+                )}
+              </div>
             </div>
             <div className="text-[11px] text-on-surface-variant space-y-0.5">
               {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
