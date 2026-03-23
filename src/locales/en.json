@@ -74,6 +74,7 @@
     "loadingTitle": "The Grimoire stirs... crafting your world",
     "loadingDescription": "The AI is generating your campaign world, story hook, character, and opening scene. This may take a moment.",
     "noApiKeyHint": "Configure an API key in Settings before creating a campaign.",
+    "noCharacterHint": "Create or select a character before starting the campaign.",
     "genres": {
       "Fantasy": "Fantasy",
       "Sci-Fi": "Sci-Fi",

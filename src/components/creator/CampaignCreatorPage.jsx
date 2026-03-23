@@ -92,6 +92,8 @@ export default function CampaignCreatorPage() {
   const [showCharModal, setShowCharModal] = useState(false);
   const [createdCharacter, setCreatedCharacter] = useState(null);
 
+  const hasCharacter = charMode === 'new' ? !!createdCharacter : !!selectedCharacter;
+
   useEffect(() => {
     if (charsLoaded) return;
     (async () => {
@@ -195,6 +197,7 @@ export default function CampaignCreatorPage() {
 
   const handleSubmit = async () => {
     if (!form.storyPrompt.trim()) return;
+    if (!selectedCharacter && !createdCharacter) return;
     if (!hasApiKey) {
       openSettings();
       return;
@@ -608,7 +611,7 @@ export default function CampaignCreatorPage() {
             ) : !isMultiplayer ? (
               <Button
                 onClick={handleSubmit}
-                disabled={!form.storyPrompt.trim() || !hasApiKey}
+                disabled={!form.storyPrompt.trim() || !hasApiKey || !hasCharacter}
                 size="lg"
               >
                 <span className="material-symbols-outlined text-sm">auto_awesome</span>
@@ -624,6 +627,12 @@ export default function CampaignCreatorPage() {
             <p className="text-tertiary-dim text-xs flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">info</span>
               {t('creator.noApiKeyHint')}
+            </p>
+          )}
+          {!hasCharacter && !isMultiplayer && hasApiKey && (
+            <p className="text-tertiary-dim text-xs flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm">info</span>
+              {t('creator.noCharacterHint')}
             </p>
           )}
         </div>

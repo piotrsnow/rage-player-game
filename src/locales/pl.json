@@ -74,6 +74,7 @@
     "loadingTitle": "Grimuar się budzi... tworzy twój świat",
     "loadingDescription": "AI generuje świat kampanii, hak fabularny, postać i scenę otwierającą. To może chwilę potrwać.",
     "noApiKeyHint": "Skonfiguruj klucz API w Ustawieniach przed utworzeniem kampanii.",
+    "noCharacterHint": "Stwórz lub wybierz postać przed rozpoczęciem kampanii.",
     "genres": {
       "Fantasy": "Fantasy",
       "Sci-Fi": "Sci-Fi",
