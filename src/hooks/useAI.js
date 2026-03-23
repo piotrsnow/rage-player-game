@@ -4,7 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
-import { createSceneId, calculateSL } from '../services/gameState';
+import { createSceneId, calculateSL, rollD100 } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -25,6 +25,7 @@ export function useAI() {
 
       try {
         const enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
+        const preRolledDice = !isFirstScene ? rollD100() : null;
         const { result, usage } = await aiService.generateScene(
           state,
           settings.dmSettings,
@@ -34,21 +35,27 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction }
+          { needsSystemEnabled, isCustomAction, preRolledDice }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
           const roll = result.diceRoll.roll;
-          const target = result.diceRoll.target;
+          const bonus = result.diceRoll.creativityBonus || 0;
+          const effectiveTarget = result.diceRoll.target;
+
+          if (!result.diceRoll.baseTarget && bonus > 0) {
+            result.diceRoll.baseTarget = effectiveTarget - bonus;
+          }
+
           const isCriticalSuccess = roll >= 1 && roll <= 4;
           const isCriticalFailure = roll >= 96 && roll <= 100;
-          const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= target);
+          const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
 
           result.diceRoll.success = isSuccess;
           result.diceRoll.criticalSuccess = isCriticalSuccess;
           result.diceRoll.criticalFailure = isCriticalFailure;
-          result.diceRoll.sl = calculateSL(roll, target);
+          result.diceRoll.sl = calculateSL(roll, effectiveTarget);
         }
 
         const sceneId = createSceneId();

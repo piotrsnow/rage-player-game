@@ -199,7 +199,16 @@ Services: healer 5 SS, blacksmith repair 3 SS, ferry 2 CP
 Animals: riding horse 50 GC, mule 15 GC`;
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null) {
+function rollD100() {
+  return Math.floor(Math.random() * 100) + 1;
+}
+
+function calculateSL(roll, target) {
+  const diff = target - roll;
+  return diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
+}
+
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
   const needsPerCharHint = needsSystemEnabled
     ? ', "needsChanges": {"hunger": 60}'
@@ -262,7 +271,10 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
 
   const hasCustomActions = actions.some((a) => a.isCustom);
   const actionLines = actions
-    .map((a) => `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}`)
+    .map((a) => {
+      const diceInfo = preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
+      return `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}`;
+    })
     .join('\n');
 
   return `${needsReminder}The players' actions this round:
@@ -270,19 +282,29 @@ ${actionLines}
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
 
-DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array.
+DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. The "target" number in each diceRoll is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances).
+${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
 ${hasCustomActions ? `
-CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action and add a bonus to that character's dice target number:
+CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action.
 - +10: Mundane custom action, just a basic alternative to the suggestions
 - +20: Somewhat creative, shows some thought or personality
 - +30: Creative and clever, good use of environment or character abilities
 - +40: Highly creative, unexpected approach that makes narrative sense
 - +50: Brilliantly creative, exceptionally imaginative action that surprises even the GM
-The target number should be: characteristic + skill advances + creativityBonus. Include the bonus in the diceRolls entry as "creativityBonus": <number 10-50>. Always award at least +10 for any custom action.
+Always award at least +10 for any custom action.
+Output the diceRoll fields as follows for custom actions:
+- "baseTarget": the BASE value (characteristic + skill advances only)
+- "creativityBonus": the bonus (10-50)
+- "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
+- "success": whether roll <= target (the effective value)
+Example: baseTarget=31, creativityBonus=40, target=71, roll=59 → 59 ≤ 71 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}
+
+IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrative consistent with ALL outcomes.
 
 Respond with ONLY valid JSON:
 {
+  "diceRolls": [{"character": "CharacterName", "type": "d100", "roll": 42, "target": 65, "sl": 2, "skill": "Athletics", "success": true}],
   "narrative": "2-3 paragraphs resolving all actions and setting up the next decision...",
   "dialogueSegments": [
     {"type": "narration", "text": "Prose..."},
@@ -311,13 +333,12 @@ Respond with ONLY valid JSON:
     "newQuests": [],
     "completedQuests": [],
     "activeEffects": []
-  },
-  "diceRolls": [{"character": "CharacterName", "type": "d100", "roll": 42, "target": 65, "sl": 2, "skill": "Athletics", "success": true}]
+  }
 }
 
 For perCharacter: include an entry for each character that is affected. wounds/xp are deltas (wounds negative = damage, positive = healing). moneyChange is {gold, silver, copper} deltas (negative = spending, positive = receiving). Check each character's Money before allowing purchases.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "creativityBonus": <number or null>}. Include "creativityBonus" (10-50) only for characters whose action was marked [CUSTOM ACTION]. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-50>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + creativityBonus (the effective target). For normal actions: "target" = characteristic + skill advances. Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
@@ -631,7 +652,13 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
 export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings);
+
+  const preRolledDice = {};
+  for (const a of actions) {
+    preRolledDice[a.name] = rollD100();
+  }
+
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings, preRolledDice);
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -639,6 +666,34 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   ];
 
   const result = await callAI(messages, encryptedApiKeys);
+
+  function recalcDiceRoll(dr) {
+    if (dr && dr.roll != null && dr.target != null) {
+      const roll = dr.roll;
+      const bonus = dr.creativityBonus || 0;
+      const effectiveTarget = dr.target;
+
+      if (!dr.baseTarget && bonus > 0) {
+        dr.baseTarget = effectiveTarget - bonus;
+      }
+
+      const isCriticalSuccess = roll >= 1 && roll <= 4;
+      const isCriticalFailure = roll >= 96 && roll <= 100;
+      dr.success = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
+      dr.criticalSuccess = isCriticalSuccess;
+      dr.criticalFailure = isCriticalFailure;
+      dr.sl = calculateSL(roll, effectiveTarget);
+    }
+  }
+
+  if (result.diceRolls?.length) {
+    for (const dr of result.diceRolls) {
+      recalcDiceRoll(dr);
+    }
+  }
+  if (result.diceRoll) {
+    recalcDiceRoll(result.diceRoll);
+  }
 
   const sceneId = `scene_mp_${Date.now()}`;
   const scene = {

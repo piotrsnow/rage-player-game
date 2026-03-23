@@ -192,10 +192,10 @@ NEEDS SYSTEM RULES:
 WFRP 4e RULES FOR THE GM:
 - Use the d100 percentile system. When a skill test is needed, the target number = characteristic + skill advances.
 - Success Levels (SL) = (target - roll) ÷ 10, rounded toward 0. Positive SL = degrees of success, negative = degrees of failure.
-- A roll of 01-05 always succeeds; 96-00 always fails.
+- A roll of 01-04 always succeeds (critical); 96-00 always fails (critical).
 - CRITICAL SUCCESS (roll 01-04): automatic success regardless of target number. Award bonus SL (+1 to +3 extra). Narrate an exceptionally favorable outcome — extra benefits, impressive feats, awed NPCs, found bonus loot, etc.
 - CRITICAL FAILURE (roll 96-100): automatic failure regardless of target number. Apply penalty SL (-1 to -3 extra). Narrate a disastrous outcome — additional negative consequences such as injury (woundsChange), broken equipment (removeItems), angered NPCs, environmental hazards triggered, embarrassing mishaps, etc.
-- IMPORTANT: When a dice roll results in FAILURE (roll > target and not 01-04), the action MUST FAIL in the narrative. The character does NOT achieve what they attempted. Never let a failed roll lead to a successful outcome. Describe how and why the action fails, then present new options.
+- IMPORTANT: When a dice roll results in FAILURE (roll > effective target and not 01-04), the action MUST FAIL in the narrative. The character does NOT achieve what they attempted. Never let a failed roll lead to a successful outcome. Describe how and why the action fails, then present new options. Conversely, when the roll indicates SUCCESS, the narrative MUST describe a successful outcome.
 - Fortune points can be spent to reroll or add +1 SL. Fate points cheat death. Resolve replenishes Resilience.
 - Wounds represent physical damage. At 0 Wounds, the character takes Critical Wounds.
 - Award XP (typically 20-50 per scene) via stateChanges.xp for good roleplay, clever solutions, and combat.
@@ -293,7 +293,7 @@ SCENE IMAGE PROMPT:
 Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false } = {}, dmSettings = null) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", and quest names/descriptions in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
@@ -348,18 +348,28 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
-DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system: roll d100, compare to target number (characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed.
+DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. The "target" number in the diceRoll output is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
+${preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).'}
 ${isCustomAction ? `
-CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus to the dice target number:
+CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus.
 - +10: Mundane custom action, just a basic alternative to the suggestions
 - +20: Somewhat creative, shows some thought or personality
 - +30: Creative and clever, good use of environment or character abilities
 - +40: Highly creative, unexpected approach that makes narrative sense
 - +50: Brilliantly creative, exceptionally imaginative action that surprises even the GM
-The target number should be: characteristic + skill advances + creativityBonus. Include the bonus in diceRoll as "creativityBonus": <number 10-50>. Always award at least +10 for any custom action.
+Always award at least +10 for any custom action.
+Output the diceRoll fields as follows:
+- "baseTarget": the BASE value (characteristic + skill advances only)
+- "creativityBonus": the bonus (10-50)
+- "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
+- "success": whether roll <= target (the effective value)
+Example: baseTarget=31, creativityBonus=40, target=71, roll=59 → 59 ≤ 71 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}
+IMPORTANT: Resolve the dice check FIRST, then write the narrative consistent with the outcome.
+
 Respond with ONLY valid JSON in this exact format:
 {
+  "diceRoll": null,
   "narrative": "2-3 paragraphs describing what happens as a result of the player's action and setting up the next beat...",
   "dialogueSegments": [
     {"type": "narration", "text": "Descriptive prose..."},
@@ -397,13 +407,12 @@ Respond with ONLY valid JSON in this exact format:
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
     "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
     "currentLocation": "Current Location Name"${needsSystemEnabled ? ',\n    "needsChanges": null' : ''}
-  },
-  "diceRoll": null
+  }
 }
 
 For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>${isCustomAction ? ', "creativityBonus": <number 10-50>' : ''}}. Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-100 (automatic failure with extra penalties). When success is false, the narrative MUST describe the action failing — never let a failed roll produce a successful outcome. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-50>, ' : ''}"sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? '"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus). "baseTarget" is the base value (characteristic + skill advances only) for display.' : '"target" is the characteristic + skill advances.'} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description}. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
