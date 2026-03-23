@@ -11,10 +11,11 @@ describe('repairDialogueSegments', () => {
     expect(result).toEqual(segments);
   });
 
-  it('returns empty array for empty input', () => {
-    expect(repairDialogueSegments('...', [])).toEqual([]);
-    expect(repairDialogueSegments('...', null)).toEqual([]);
-    expect(repairDialogueSegments('...', undefined)).toEqual([]);
+  it('returns empty array when both narrative and segments are empty', () => {
+    expect(repairDialogueSegments('', [])).toEqual([]);
+    expect(repairDialogueSegments('', null)).toEqual([]);
+    expect(repairDialogueSegments(null, undefined)).toEqual([]);
+    expect(repairDialogueSegments('   ', [])).toEqual([]);
   });
 
   it('splits a narration segment containing a quoted dialogue', () => {
@@ -143,5 +144,40 @@ describe('repairDialogueSegments', () => {
     ];
     const result = repairDialogueSegments('...', segments);
     expect(result).toEqual(segments);
+  });
+
+  it('generates segments from narrative when segments are empty and narrative has quotes', () => {
+    const narrative = 'Kazik uśmiechnął się. „Ach, Mścichuj! Życie, jak to życie." Słońce wschodziło za plecami Kazika.';
+    const result = repairDialogueSegments(narrative, [], [{ name: 'Kazik', gender: 'male' }]);
+
+    expect(result.length).toBeGreaterThanOrEqual(3);
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].text).toBe('Ach, Mścichuj! Życie, jak to życie.');
+    expect(dialogues[0].character).toBe('Kazik');
+    expect(dialogues[0].gender).toBe('male');
+    const narrations = result.filter(s => s.type === 'narration');
+    expect(narrations.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('generates single narration segment from narrative without quotes when segments are empty', () => {
+    const narrative = 'Wiatr wiał przez drzewa. Barnaba szedł drogą w stronę karczmy.';
+    const result = repairDialogueSegments(narrative, []);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('narration');
+    expect(result[0].text).toBe(narrative);
+  });
+
+  it('regenerates from narrative when segments cover too little text', () => {
+    const narrative = 'Mag Zefiryn odwrócił się i rzekł: „Idźmy w stronę gór." Droga była kręta i pełna niebezpieczeństw. Noc zapadła szybko.';
+    const shortSegments = [
+      { type: 'narration', text: 'Mag się odwrócił.' },
+    ];
+    const result = repairDialogueSegments(narrative, shortSegments, [{ name: 'Zefiryn', gender: 'male' }]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].text).toBe('Idźmy w stronę gór.');
   });
 });

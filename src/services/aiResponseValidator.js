@@ -281,7 +281,13 @@ function lookupGender(name, knownNpcs, existingDialogueSegments) {
 }
 
 export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
-  if (!segments || segments.length === 0) return segments || [];
+  if (!segments || segments.length === 0) {
+    if (narrative && narrative.trim()) {
+      segments = [{ type: 'narration', text: narrative }];
+    } else {
+      return [];
+    }
+  }
 
   const existingDialogueSegments = segments.filter(s => s.type === 'dialogue' && s.character);
   const knownNames = [
@@ -341,6 +347,18 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
       repaired.push(...parts);
     } else {
       repaired.push(seg);
+    }
+  }
+
+  if (narrative && narrative.trim()) {
+    const repairedText = repaired.map(s => (s.text || '').trim()).join('');
+    if (repairedText.length < narrative.trim().length * 0.7) {
+      const alreadySynthetic = segments.length === 1
+        && segments[0].type === 'narration'
+        && segments[0].text === narrative;
+      if (!alreadySynthetic) {
+        return repairDialogueSegments(narrative, [{ type: 'narration', text: narrative }], knownNpcs);
+      }
     }
   }
 

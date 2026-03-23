@@ -155,7 +155,12 @@
     "questOfferFrom": "From",
     "questType_main": "Main",
     "questType_side": "Side",
-    "questType_personal": "Personal"
+    "questType_personal": "Personal",
+    "previousScene": "Previous scene",
+    "nextScene": "Next scene",
+    "backToCurrent": "Back to current scene",
+    "replayNarration": "Replay narration",
+    "sceneReview": "Scene review"
   },
   "chat": {
     "dmAi": "DM AI",

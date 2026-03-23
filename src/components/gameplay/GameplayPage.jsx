@@ -47,6 +47,8 @@ export default function GameplayPage() {
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [advancementOpen, setAdvancementOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
+  const prevScenesLenRef = useRef(0);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -74,6 +76,17 @@ export default function GameplayPage() {
   const error = isMultiplayer ? mp.state.error : state.error;
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
+
+  useEffect(() => {
+    if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
+      setViewingSceneIndex(null);
+    }
+    prevScenesLenRef.current = scenes.length;
+  }, [scenes.length]);
+
+  const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
+  const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
+  const viewedScene = scenes[displayedSceneIndex] || currentScene;
 
   useEffect(() => {
     if (!campaign && !isMultiplayer) {
@@ -167,7 +180,51 @@ export default function GameplayPage() {
                 {campaign.name}
               </span>
               <span className="w-1 h-1 bg-primary/50 rounded-full" />
-              <span className="text-[10px] text-outline">{t('common.scene')} {scenes.length}</span>
+              <span className="flex items-center gap-1">
+                <button
+                  onClick={() => setViewingSceneIndex(Math.max(0, displayedSceneIndex - 1))}
+                  disabled={displayedSceneIndex <= 0}
+                  title={t('gameplay.previousScene', 'Previous scene')}
+                  aria-label={t('gameplay.previousScene', 'Previous scene')}
+                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                >
+                  chevron_left
+                </button>
+                <span className={`text-[10px] ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
+                  {t('common.scene')} {displayedSceneIndex + 1} / {scenes.length}
+                </span>
+                <button
+                  onClick={() => {
+                    const next = displayedSceneIndex + 1;
+                    setViewingSceneIndex(next >= scenes.length - 1 ? null : next);
+                  }}
+                  disabled={displayedSceneIndex >= scenes.length - 1}
+                  title={t('gameplay.nextScene', 'Next scene')}
+                  aria-label={t('gameplay.nextScene', 'Next scene')}
+                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                >
+                  chevron_right
+                </button>
+                {isReviewingPastScene && settings.narratorEnabled && narrator.isNarratorReady && (
+                  <button
+                    onClick={() => {
+                      const sceneToReplay = scenes[displayedSceneIndex];
+                      if (sceneToReplay) {
+                        narrator.speakSingle({
+                          content: sceneToReplay.narrative,
+                          dialogueSegments: sceneToReplay.dialogueSegments || [],
+                          soundEffect: sceneToReplay.soundEffect || null,
+                        }, `replay_${sceneToReplay.id}`);
+                      }
+                    }}
+                    title={t('gameplay.replayNarration', 'Replay narration')}
+                    aria-label={t('gameplay.replayNarration', 'Replay narration')}
+                    className="material-symbols-outlined text-xs text-primary hover:text-tertiary transition-colors ml-1"
+                  >
+                    volume_up
+                  </button>
+                )}
+              </span>
               {campaign?.structure?.acts?.length > 0 && (
                 <>
                   <span className="w-1 h-1 bg-primary/50 rounded-full" />
@@ -267,7 +324,33 @@ export default function GameplayPage() {
         )}
 
         {/* Scene Panel */}
-        <ScenePanel scene={currentScene} isGeneratingImage={isGeneratingImage} highlightInfo={narrator.highlightInfo} currentChunk={narrator.currentChunk} diceRoll={currentScene?.diceRoll && !isGeneratingScene ? currentScene.diceRoll : null} diceRolls={currentScene?.diceRolls?.length && !isGeneratingScene ? currentScene.diceRolls : null} />
+        <ScenePanel
+          scene={viewedScene}
+          isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
+          highlightInfo={isReviewingPastScene ? null : narrator.highlightInfo}
+          currentChunk={isReviewingPastScene ? null : narrator.currentChunk}
+          diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
+          diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
+        />
+
+        {/* Past Scene Narrative Review */}
+        {isReviewingPastScene && viewedScene?.narrative && (
+          <div className="px-2 animate-fade-in space-y-3">
+            <div className="bg-surface-container-low/60 backdrop-blur-md border border-outline-variant/15 rounded-sm p-5 max-h-60 overflow-y-auto custom-scrollbar">
+              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                {t('gameplay.sceneReview', 'Scene review')} — {t('common.scene')} {displayedSceneIndex + 1}
+              </label>
+              <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">{viewedScene.narrative}</p>
+            </div>
+            <button
+              onClick={() => setViewingSceneIndex(null)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary/15 border border-primary/30 rounded-sm text-[10px] font-label uppercase tracking-widest text-primary hover:bg-primary/25 transition-all"
+            >
+              <span className="material-symbols-outlined text-sm">skip_next</span>
+              {t('gameplay.backToCurrent', 'Back to current scene')}
+            </button>
+          </div>
+        )}
 
         {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {displayCharacter && (
@@ -313,7 +396,7 @@ export default function GameplayPage() {
         )}
 
         {/* Party Panel */}
-        {hasParty && !isMultiplayer && (
+        {hasParty && !isMultiplayer && !isReviewingPastScene && (
           <div className="px-2 animate-fade-in">
             <PartyPanel
               party={[{ ...character, type: 'player', id: character?.name }, ...party]}
@@ -326,7 +409,7 @@ export default function GameplayPage() {
         )}
 
         {/* Combat Panel */}
-        {state.combat?.active && !isMultiplayer && !isViewingCompanion && (
+        {state.combat?.active && !isMultiplayer && !isViewingCompanion && !isReviewingPastScene && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={state.combat}
@@ -338,7 +421,7 @@ export default function GameplayPage() {
         )}
 
         {/* Magic Panel */}
-        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && (
+        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (
           <div className="px-2 animate-fade-in">
             <MagicPanel
               character={character}
@@ -402,7 +485,7 @@ export default function GameplayPage() {
         )}
 
         {/* Quest Offers */}
-        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && (!campaign?.status || campaign.status === 'active') && (
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && (
           <div className="px-2 animate-fade-in">
             <QuestOffersPanel
               offers={currentScene.questOffers}
@@ -413,7 +496,7 @@ export default function GameplayPage() {
         )}
 
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
+        {currentScene && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
           <div className="px-2 animate-fade-in">
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {t('gameplay.chooseAction')}

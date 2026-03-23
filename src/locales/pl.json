@@ -155,7 +155,12 @@
     "questOfferFrom": "Od",
     "questType_main": "Główne",
     "questType_side": "Poboczne",
-    "questType_personal": "Osobiste"
+    "questType_personal": "Osobiste",
+    "previousScene": "Poprzednia scena",
+    "nextScene": "Następna scena",
+    "backToCurrent": "Wróć do aktualnej sceny",
+    "replayNarration": "Odtwórz narrację",
+    "sceneReview": "Przegląd sceny"
   },
   "chat": {
     "dmAi": "MG AI",
