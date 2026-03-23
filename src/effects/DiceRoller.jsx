@@ -12,6 +12,11 @@ const COLORS = {
   surface:    [ 14,  14,  16],
   white:      [255, 251, 254],
   orange:     [255, 180,  80],
+  gold:       [255, 215,   0],
+  goldDim:    [218, 165,  32],
+  goldLight:  [255, 245, 157],
+  darkRed:    [180,  30,  30],
+  crimson:    [220,  20,  60],
 };
 
 /* ------------------------------------------------------------------ */
@@ -46,24 +51,34 @@ function easeOutCubic(t) {
 /*  Burst particle system                                              */
 /* ------------------------------------------------------------------ */
 
-function createBurstParticles(cx, cy, count, success) {
+function createBurstParticles(cx, cy, count, success, isCritical = false) {
   const particles = [];
-  const baseColors = success
-    ? [COLORS.primary, COLORS.tertiary, COLORS.primaryDim]
-    : [COLORS.error, COLORS.orange];
+  let baseColors;
+  if (isCritical && success) {
+    baseColors = [COLORS.gold, COLORS.goldLight, COLORS.goldDim, COLORS.white];
+  } else if (isCritical && !success) {
+    baseColors = [COLORS.crimson, COLORS.darkRed, COLORS.error, COLORS.orange];
+  } else if (success) {
+    baseColors = [COLORS.primary, COLORS.tertiary, COLORS.primaryDim];
+  } else {
+    baseColors = [COLORS.error, COLORS.orange];
+  }
 
-  for (let i = 0; i < count; i++) {
+  const actualCount = isCritical ? Math.round(count * 1.8) : count;
+  const speedMul = isCritical ? 1.4 : 1;
+
+  for (let i = 0; i < actualCount; i++) {
     const angle = rand(0, Math.PI * 2);
-    const speed = rand(60, 180);
+    const speed = rand(60, 180) * speedMul;
     particles.push({
       x: cx,
       y: cy,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      size: rand(1.5, 4),
+      size: rand(isCritical ? 2 : 1.5, isCritical ? 5.5 : 4),
       color: pick(baseColors),
       alpha: 1,
-      life: rand(0.5, 1.2),
+      life: rand(0.5, isCritical ? 1.6 : 1.2),
       age: 0,
     });
   }
@@ -244,6 +259,13 @@ export default function DiceRoller({ diceRoll, onComplete }) {
     let glowRadius = 0;
     let lastTime = performance.now();
 
+    const isCritical = diceRoll.criticalSuccess || diceRoll.criticalFailure;
+    const glowColor = diceRoll.criticalSuccess
+      ? COLORS.gold
+      : diceRoll.criticalFailure
+        ? COLORS.crimson
+        : diceRoll.success ? COLORS.primary : COLORS.error;
+
     const fov = 300;
     const cubeSize = Math.min(w, h) * 0.32;
 
@@ -300,7 +322,7 @@ export default function DiceRoller({ diceRoll, onComplete }) {
         if (t >= 1) {
           phase = PHASE_BURST;
           elapsed = 0;
-          burstParticles = createBurstParticles(cx, cy, 50, diceRoll.success);
+          burstParticles = createBurstParticles(cx, cy, 50, diceRoll.success, isCritical);
           setShowResult(true);
         }
       } else if (phase === PHASE_BURST) {
@@ -313,9 +335,9 @@ export default function DiceRoller({ diceRoll, onComplete }) {
         burstParticles = updateBurstParticles(burstParticles, dt);
         drawBurstParticles(ctx, burstParticles);
 
-        glowRadius = easeOutCubic(t) * Math.max(w, h) * 0.5;
-        const [gr, gg, gb] = diceRoll.success ? COLORS.primary : COLORS.error;
-        const glowAlpha = (1 - t) * 0.25;
+        glowRadius = easeOutCubic(t) * Math.max(w, h) * (isCritical ? 0.7 : 0.5);
+        const [gr, gg, gb] = glowColor;
+        const glowAlpha = (1 - t) * (isCritical ? 0.4 : 0.25);
         const grd = ctx.createRadialGradient(cx, cy, cubeSize * 0.3, cx, cy, glowRadius);
         grd.addColorStop(0, `rgba(${gr},${gg},${gb},${glowAlpha})`);
         grd.addColorStop(1, `rgba(${gr},${gg},${gb},0)`);
@@ -332,10 +354,10 @@ export default function DiceRoller({ diceRoll, onComplete }) {
           drawCubeFace(ctx, cx, cy, cubeSize, 0.3, -0.2, i, String(diceRoll.roll), fov);
         }
 
-        const pulse = 0.5 + Math.sin(elapsed * 2) * 0.5;
-        const [gr, gg, gb] = diceRoll.success ? COLORS.primary : COLORS.error;
+        const pulse = 0.5 + Math.sin(elapsed * (isCritical ? 3 : 2)) * 0.5;
+        const [gr, gg, gb] = glowColor;
         const grd = ctx.createRadialGradient(cx, cy, cubeSize * 0.3, cx, cy, cubeSize * 1.5);
-        grd.addColorStop(0, `rgba(${gr},${gg},${gb},${pulse * 0.08})`);
+        grd.addColorStop(0, `rgba(${gr},${gg},${gb},${pulse * (isCritical ? 0.14 : 0.08)})`);
         grd.addColorStop(1, `rgba(${gr},${gg},${gb},0)`);
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, w, h);
@@ -374,12 +396,21 @@ export default function DiceRoller({ diceRoll, onComplete }) {
           <div className="text-center">
             <p
               className={`text-sm font-bold tracking-widest uppercase ${
-                diceRoll.success ? 'text-primary' : 'text-error'
+                diceRoll.criticalSuccess
+                  ? 'text-amber-400'
+                  : diceRoll.criticalFailure
+                    ? 'text-red-700'
+                    : diceRoll.success ? 'text-primary' : 'text-error'
               }`}
+              style={diceRoll.criticalSuccess || diceRoll.criticalFailure ? {
+                textShadow: diceRoll.criticalSuccess
+                  ? '0 0 8px rgba(255,215,0,0.6)'
+                  : '0 0 8px rgba(220,20,60,0.6)',
+              } : undefined}
             >
-              {diceRoll.success ? '✦ ' : '✧ '}
+              {diceRoll.criticalSuccess ? '★ ' : diceRoll.criticalFailure ? '✘ ' : diceRoll.success ? '✦ ' : '✧ '}
               {diceRoll.sl !== undefined ? `SL ${diceRoll.sl}` : diceRoll.roll}
-              {diceRoll.success ? ' ✦' : ' ✧'}
+              {diceRoll.criticalSuccess ? ' ★' : diceRoll.criticalFailure ? ' ✘' : diceRoll.success ? ' ✦' : ' ✧'}
             </p>
           </div>
         </div>

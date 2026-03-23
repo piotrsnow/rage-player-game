@@ -260,8 +260,9 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const testsFrequency = dmSettings?.testsFrequency ?? 50;
   const needsReminder = needsSystemEnabled ? buildMultiplayerUnmetNeedsBlock(characters) : '';
 
+  const hasCustomActions = actions.some((a) => a.isCustom);
   const actionLines = actions
-    .map((a) => `- ${a.name} (${a.gender}): "${a.action}"`)
+    .map((a) => `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}`)
     .join('\n');
 
   return `${needsReminder}The players' actions this round:
@@ -270,6 +271,15 @@ ${actionLines}
 Resolve ALL player actions simultaneously. Describe what happens to each character.
 
 DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array.
+${hasCustomActions ? `
+CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action and add a bonus to that character's dice target number:
+- +10: Mundane custom action, just a basic alternative to the suggestions
+- +20: Somewhat creative, shows some thought or personality
+- +30: Creative and clever, good use of environment or character abilities
+- +40: Highly creative, unexpected approach that makes narrative sense
+- +50: Brilliantly creative, exceptionally imaginative action that surprises even the GM
+The target number should be: characteristic + skill advances + creativityBonus. Include the bonus in the diceRolls entry as "creativityBonus": <number 10-50>. Always award at least +10 for any custom action.
+` : ''}
 
 Respond with ONLY valid JSON:
 {
@@ -307,7 +317,7 @@ Respond with ONLY valid JSON:
 
 For perCharacter: include an entry for each character that is affected. wounds/xp are deltas (wounds negative = damage, positive = healing). moneyChange is {gold, silver, copper} deltas (negative = spending, positive = receiving). Check each character's Money before allowing purchases.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "creativityBonus": <number or null>}. Include "creativityBonus" (10-50) only for characters whose action was marked [CUSTOM ACTION]. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.

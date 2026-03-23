@@ -20,6 +20,12 @@ export const CHARACTERISTIC_SHORT = {
 
 export const CHARACTERISTIC_KEYS = ['ws', 'bs', 's', 't', 'i', 'ag', 'dex', 'int', 'wp', 'fel'];
 
+export const CREATION_LIMITS = {
+  skillPoints: 60,
+  maxPerSkill: 10,
+  maxTalents: 3,
+};
+
 // Species definitions: base modifier is added to 2d10 for each characteristic
 export const SPECIES = {
   Human: {

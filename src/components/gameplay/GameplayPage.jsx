@@ -100,9 +100,9 @@ export default function GameplayPage() {
     }
   }, [isMultiplayer, mp.state.players, state.characterVoiceMap, dispatch]);
 
-  const handleAction = async (action) => {
+  const handleAction = async (action, isCustomAction = false) => {
     try {
-      await generateScene(action, false);
+      await generateScene(action, false, isCustomAction);
     } catch {
       // Error displayed in UI via context
     }

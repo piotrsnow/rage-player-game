@@ -365,8 +365,8 @@ export function MultiplayerProvider({ children }) {
     wsService.send('START_GAME', { language });
   }, []);
 
-  const submitAction = useCallback((text) => {
-    wsService.send('SUBMIT_ACTION', { text });
+  const submitAction = useCallback((text, isCustom = false) => {
+    wsService.send('SUBMIT_ACTION', { text, isCustom });
   }, []);
 
   const withdrawAction = useCallback(() => {

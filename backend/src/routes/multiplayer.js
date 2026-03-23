@@ -312,7 +312,7 @@ export async function multiplayerRoutes(fastify) {
 
           case 'SUBMIT_ACTION': {
             if (!roomCode || !odId) throw new Error('Not in a room');
-            const room = submitAction(roomCode, odId, msg.text);
+            const room = submitAction(roomCode, odId, msg.text, msg.isCustom);
             broadcast(room, {
               type: 'ACTIONS_UPDATED',
               room: sanitizeRoom(room),

@@ -210,7 +210,7 @@ export function setGameState(roomCode, gameState) {
   return room;
 }
 
-export function submitAction(roomCode, odId, actionText) {
+export function submitAction(roomCode, odId, actionText, isCustom = false) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
   if (room.phase !== 'playing') throw new Error('Game not in progress');
@@ -218,6 +218,7 @@ export function submitAction(roomCode, odId, actionText) {
   if (!player) throw new Error('Player not found');
 
   player.pendingAction = actionText;
+  player.pendingActionIsCustom = isCustom;
   return room;
 }
 
@@ -244,12 +245,14 @@ export function approveActions(roomCode, odId) {
         name: p.name,
         gender: p.gender,
         action: p.pendingAction,
+        isCustom: p.pendingActionIsCustom || false,
       });
     }
   }
 
   for (const [, p] of room.players) {
     p.pendingAction = null;
+    p.pendingActionIsCustom = false;
   }
 
   return { room, actions };

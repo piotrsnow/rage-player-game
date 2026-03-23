@@ -1,4 +1,4 @@
-import { SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS, CAREERS, CAREER_CLASSES } from '../data/wfrp';
+import { SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS, CAREERS, CAREER_CLASSES, CREATION_LIMITS } from '../data/wfrp';
 
 const RANDOM_NAMES = {
   Fantasy: [
@@ -42,14 +42,23 @@ export function randomizeSkills(careerDef, speciesName) {
   const tier1 = careerDef?.tiers?.[0];
   const careerSkills = tier1?.skills || [];
   const speciesSkills = species.skills || [];
+  const { skillPoints, maxPerSkill } = CREATION_LIMITS;
 
   const skills = {};
+  let remaining = skillPoints;
+
   for (const skill of careerSkills) {
-    skills[skill] = Math.floor(Math.random() * 8) + 3;
+    if (remaining <= 0) break;
+    const val = Math.min(maxPerSkill, remaining, Math.floor(Math.random() * 8) + 3);
+    skills[skill] = val;
+    remaining -= val;
   }
   for (const skill of speciesSkills) {
+    if (remaining <= 0) break;
     if (!skills[skill]) {
-      skills[skill] = Math.floor(Math.random() * 6) + 3;
+      const val = Math.min(maxPerSkill, remaining, Math.floor(Math.random() * 6) + 3);
+      skills[skill] = val;
+      remaining -= val;
     }
   }
   return skills;
@@ -62,7 +71,7 @@ export function randomizeTalents(careerDef, speciesName) {
   const speciesTalents = species.talents || [];
 
   const pool = [...new Set([...careerTalents, ...speciesTalents])];
-  const count = Math.min(pool.length, 2 + Math.floor(Math.random() * 2));
+  const count = Math.min(pool.length, CREATION_LIMITS.maxTalents, 2 + Math.floor(Math.random() * 2));
   const shuffled = pool.sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }

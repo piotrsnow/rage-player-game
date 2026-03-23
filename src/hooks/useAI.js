@@ -4,7 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
-import { createSceneId } from '../services/gameState';
+import { createSceneId, calculateSL } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -19,7 +19,7 @@ export function useAI() {
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : openaiApiKey;
 
   const generateScene = useCallback(
-    async (playerAction, isFirstScene = false) => {
+    async (playerAction, isFirstScene = false, isCustomAction = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
 
@@ -34,9 +34,22 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled }
+          { needsSystemEnabled, isCustomAction }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+
+        if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
+          const roll = result.diceRoll.roll;
+          const target = result.diceRoll.target;
+          const isCriticalSuccess = roll >= 1 && roll <= 4;
+          const isCriticalFailure = roll >= 96 && roll <= 100;
+          const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= target);
+
+          result.diceRoll.success = isSuccess;
+          result.diceRoll.criticalSuccess = isCriticalSuccess;
+          result.diceRoll.criticalFailure = isCriticalFailure;
+          result.diceRoll.sl = calculateSL(roll, target);
+        }
 
         const sceneId = createSceneId();
         const scene = {
@@ -80,7 +93,11 @@ export function useAI() {
                 roll: result.diceRoll.roll,
                 target: result.diceRoll.target || result.diceRoll.dc,
                 sl: result.diceRoll.sl ?? 0,
-                result: result.diceRoll.success ? t('common.success') : t('common.failure'),
+                result: result.diceRoll.criticalSuccess
+                  ? t('common.criticalSuccess')
+                  : result.diceRoll.criticalFailure
+                    ? t('common.criticalFailure')
+                    : result.diceRoll.success ? t('common.success') : t('common.failure'),
               }),
               diceData: result.diceRoll,
               timestamp: Date.now(),

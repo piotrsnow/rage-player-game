@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS, CHARACTERISTIC_SHORT,
-  CAREERS, CAREER_CLASSES, getCareerByName,
+  SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS,
+  CAREERS, CAREER_CLASSES, getCareerByName, CREATION_LIMITS,
 } from '../../data/wfrp';
 import {
   generateCharacteristics, calculateWounds, roll2d10,
@@ -17,13 +17,13 @@ function SectionHeader({ icon, label, onRandomize }) {
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
         <span className="material-symbols-outlined text-primary text-lg">{icon}</span>
-        <h3 className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">{label}</h3>
+        <h3 className="text-xs text-on-surface-variant font-label uppercase tracking-widest">{label}</h3>
       </div>
       {onRandomize && (
         <button
           type="button"
           onClick={onRandomize}
-          className="flex items-center gap-1 px-2 py-1 text-[10px] font-label text-tertiary hover:text-primary transition-colors rounded-sm hover:bg-surface-tint/10"
+          className="flex items-center gap-1 px-2 py-1 text-xs font-label text-tertiary hover:text-primary transition-colors rounded-sm hover:bg-surface-tint/10"
           title={label}
         >
           <span className="material-symbols-outlined text-sm">casino</span>
@@ -36,9 +36,9 @@ function SectionHeader({ icon, label, onRandomize }) {
 function StatBox({ label, shortLabel, value, onReroll }) {
   return (
     <div className="flex flex-col items-center gap-1 p-2 bg-surface-container-high/40 border border-outline-variant/10 rounded-sm min-w-[60px]">
-      <span className="text-[9px] text-on-surface-variant uppercase tracking-wider">{shortLabel}</span>
+      <span className="text-[11px] text-on-surface-variant uppercase tracking-wider">{shortLabel}</span>
       <span className="text-lg font-headline text-tertiary">{value}</span>
-      <span className="text-[8px] text-outline truncate max-w-full">{label}</span>
+      <span className="text-[10px] text-outline truncate max-w-full">{label}</span>
       {onReroll && (
         <button
           type="button"
@@ -188,6 +188,27 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     return [...new Set([...careerSkills, ...speciesSkills])];
   }, [tier1, speciesData]);
 
+  const usedSkillPoints = useMemo(
+    () => Object.values(skills).reduce((sum, v) => sum + (v || 0), 0),
+    [skills],
+  );
+  const remainingSkillPoints = CREATION_LIMITS.skillPoints - usedSkillPoints;
+  const skillPointsPct = Math.min(100, (usedSkillPoints / CREATION_LIMITS.skillPoints) * 100);
+
+  const handleSkillChange = useCallback((skill, raw) => {
+    const value = Math.max(0, Math.min(CREATION_LIMITS.maxPerSkill, parseInt(raw) || 0));
+    setSkills((prev) => {
+      const oldVal = prev[skill] || 0;
+      const delta = value - oldVal;
+      const currentUsed = Object.values(prev).reduce((s, v) => s + (v || 0), 0);
+      if (delta > 0 && currentUsed + delta > CREATION_LIMITS.skillPoints) {
+        const clamped = oldVal + (CREATION_LIMITS.skillPoints - currentUsed);
+        return { ...prev, [skill]: Math.max(0, clamped) };
+      }
+      return { ...prev, [skill]: value };
+    });
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -268,7 +289,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                   }`}
                 >
                   <div className="font-bold">{t(`species.${sp}`)}</div>
-                  <div className="text-[9px] opacity-70 mt-0.5">{t(`species.${sp.replace(' ', '')}Desc`)}</div>
+                  <div className="text-[11px] opacity-70 mt-0.5">{t(`species.${sp.replace(' ', '')}Desc`)}</div>
                 </button>
               ))}
             </div>
@@ -283,13 +304,13 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                   key={cls}
                   type="button"
                   onClick={() => setCareerClassFilter(cls)}
-                  className={`px-2.5 py-1.5 rounded-sm font-label text-[10px] transition-all border ${
+                  className={`px-2.5 py-1.5 rounded-sm font-label text-xs transition-all border ${
                     careerClassFilter === cls
                       ? 'bg-surface-tint text-on-primary border-primary'
                       : 'bg-surface-container-high/30 text-on-surface-variant border-outline-variant/10 hover:border-primary/20'
                   }`}
                 >
-                  {cls || t('careerClasses.any')}
+                  {cls ? t(`careerClasses.${cls}`) : t('careerClasses.any')}
                 </button>
               ))}
             </div>
@@ -312,19 +333,19 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                     }`}
                   >
                     <div className={`text-xs font-bold truncate ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
-                      {career.name}
+                      {t(`careers.${career.name}`, career.name)}
                     </div>
-                    <div className="text-[9px] text-on-surface-variant">{career.class}</div>
+                    <div className="text-[11px] text-on-surface-variant">{t(`careerClasses.${career.class}`)}</div>
                   </button>
                 );
               })}
             </div>
             {selectedCareer && tier1 && (
               <div className="mt-3 p-3 bg-surface-container-high/20 border border-outline-variant/10 rounded-sm">
-                <div className="text-[10px] text-on-surface-variant mb-1">
-                  <span className="text-tertiary font-bold">{tier1.name}</span>
+                <div className="text-xs text-on-surface-variant mb-1">
+                  <span className="text-tertiary font-bold">{t(`tierNames.${tier1.name}`, tier1.name)}</span>
                   <span className="mx-1.5 opacity-50">&middot;</span>
-                  <span>{tier1.status}</span>
+                  <span>{tier1.status.replace(/^(Brass|Silver|Gold)/, (m) => t(`statusTier.${m}`))}</span>
                 </div>
               </div>
             )}
@@ -338,13 +359,13 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 <StatBox
                   key={key}
                   label={t(`stats.${key}Long`)}
-                  shortLabel={CHARACTERISTIC_SHORT[key]}
+                  shortLabel={t(`stats.${key}`)}
                   value={characteristics[key]}
                   onReroll={() => handleRerollStat(key)}
                 />
               ))}
             </div>
-            <div className="flex flex-wrap gap-4 mt-3 text-[10px] text-on-surface-variant">
+            <div className="flex flex-wrap gap-4 mt-3 text-xs text-on-surface-variant">
               <span>{t('charCreator.derivedWounds')}: <strong className="text-tertiary">{maxWounds}</strong></span>
               <span>{t('charCreator.derivedMovement')}: <strong className="text-tertiary">{speciesData.movement}</strong></span>
               <span>{t('charCreator.derivedFate')}: <strong className="text-tertiary">{speciesData.fate}</strong></span>
@@ -358,21 +379,43 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             {availableSkills.length === 0 ? (
               <p className="text-xs text-on-surface-variant">{t('charCreator.selectCareerFirst')}</p>
             ) : (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                {availableSkills.map((skill) => (
-                  <div key={skill} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
-                    <span className="text-xs text-on-surface truncate pr-2">{translateSkill(skill, t)}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      value={skills[skill] || 0}
-                      onChange={(e) => setSkills((prev) => ({ ...prev, [skill]: Math.max(0, Math.min(20, parseInt(e.target.value) || 0)) }))}
-                      className="w-12 text-center bg-transparent border border-outline-variant/15 rounded-sm text-xs text-tertiary py-0.5 focus:border-primary/50 focus:ring-0"
+              <>
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+                      {t('charCreator.skillPointsRemaining')}
+                    </span>
+                    <span className={`text-xs font-bold tabular-nums ${
+                      remainingSkillPoints <= 0 ? 'text-error' : remainingSkillPoints <= 10 ? 'text-tertiary' : 'text-primary'
+                    }`}>
+                      {remainingSkillPoints} / {CREATION_LIMITS.skillPoints}
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-surface-container-high/60 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        remainingSkillPoints <= 0 ? 'bg-error' : remainingSkillPoints <= 10 ? 'bg-tertiary' : 'bg-primary'
+                      }`}
+                      style={{ width: `${skillPointsPct}%` }}
                     />
                   </div>
-                ))}
-              </div>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {availableSkills.map((skill) => (
+                    <div key={skill} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
+                      <span className="text-xs text-on-surface truncate pr-2">{translateSkill(skill, t)}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={CREATION_LIMITS.maxPerSkill}
+                        value={skills[skill] || 0}
+                        onChange={(e) => handleSkillChange(skill, e.target.value)}
+                        className="w-12 text-center bg-transparent border border-outline-variant/15 rounded-sm text-xs text-tertiary py-0.5 focus:border-primary/50 focus:ring-0"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </section>
 
@@ -382,29 +425,45 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             {availableTalents.length === 0 ? (
               <p className="text-xs text-on-surface-variant">{t('charCreator.selectCareerFirst')}</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {availableTalents.map((talent) => {
-                  const isSelected = talents.includes(talent);
-                  return (
-                    <button
-                      key={talent}
-                      type="button"
-                      onClick={() => {
-                        setTalents((prev) =>
-                          isSelected ? prev.filter((t) => t !== talent) : [...prev, talent],
-                        );
-                      }}
-                      className={`px-2.5 py-1.5 rounded-sm text-[10px] font-label border transition-all ${
-                        isSelected
-                          ? 'bg-primary/15 border-primary/30 text-primary'
-                          : 'bg-surface-container-high/30 border-outline-variant/10 text-on-surface-variant hover:border-primary/20'
-                      }`}
-                    >
-                      {translateTalent(talent, t)}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+                    {t('charCreator.talentSlots')}
+                  </span>
+                  <span className={`text-xs font-bold tabular-nums ${
+                    talents.length >= CREATION_LIMITS.maxTalents ? 'text-error' : 'text-primary'
+                  }`}>
+                    {talents.length} / {CREATION_LIMITS.maxTalents}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableTalents.map((talent) => {
+                    const isSelected = talents.includes(talent);
+                    const atLimit = !isSelected && talents.length >= CREATION_LIMITS.maxTalents;
+                    return (
+                      <button
+                        key={talent}
+                        type="button"
+                        disabled={atLimit}
+                        onClick={() => {
+                          setTalents((prev) =>
+                            isSelected ? prev.filter((t) => t !== talent) : [...prev, talent],
+                          );
+                        }}
+                        className={`px-2.5 py-1.5 rounded-sm text-xs font-label border transition-all ${
+                          isSelected
+                            ? 'bg-primary/15 border-primary/30 text-primary'
+                            : atLimit
+                              ? 'bg-surface-container-high/20 border-outline-variant/5 text-outline/40 cursor-not-allowed'
+                              : 'bg-surface-container-high/30 border-outline-variant/10 text-on-surface-variant hover:border-primary/20'
+                        }`}
+                      >
+                        {translateTalent(talent, t)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </section>
 

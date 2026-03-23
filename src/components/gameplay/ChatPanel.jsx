@@ -193,7 +193,7 @@ function DiceRollMessage({ message }) {
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-1">
               {t('gameplay.diceCheck', { skill: translateSkill(d.skill, t) })}
             </p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="font-mono text-lg font-bold text-on-surface">
                 🎲 {d.roll}
               </span>
@@ -201,6 +201,11 @@ function DiceRollMessage({ message }) {
               <span className="font-mono text-lg font-bold text-on-surface">
                 {d.target || d.dc}
               </span>
+              {d.creativityBonus > 0 && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
+                  {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
+                </span>
+              )}
               <span className="text-on-surface-variant">·</span>
               <span className={`text-base font-bold ${accentColor}`}>
                 SL {d.sl ?? 0}

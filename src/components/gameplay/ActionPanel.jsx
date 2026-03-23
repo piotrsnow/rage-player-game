@@ -32,9 +32,9 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
     if (customAction.trim() && !disabled) {
       if (listening) toggle();
       if (isMultiplayer) {
-        mp.submitAction(customAction.trim());
+        mp.submitAction(customAction.trim(), true);
       } else {
-        onAction(customAction.trim());
+        onAction(customAction.trim(), true);
       }
       setCustomAction('');
     }
@@ -42,9 +42,9 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
 
   const handleSuggestedAction = (action) => {
     if (isMultiplayer) {
-      mp.submitAction(action);
+      mp.submitAction(action, false);
     } else {
-      onAction(action);
+      onAction(action, false);
     }
   };
 

@@ -234,8 +234,10 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                   <p className="text-xs text-on-surface-variant truncate">
                     {translateSkill(dr.skill, t)}: {dr.roll} {t('common.vs')} {dr.target || dr.dc}
                   </p>
-                  <p className={`text-xs font-bold ${dr.success ? 'text-primary' : 'text-error'}`}>
-                    SL {dr.sl ?? 0} — {dr.success ? t('common.success') : t('common.failure')}
+                  <p className={`text-xs font-bold ${
+                    dr.criticalSuccess ? 'text-amber-400' : dr.criticalFailure ? 'text-red-700' : dr.success ? 'text-primary' : 'text-error'
+                  }`}>
+                    SL {dr.sl ?? 0} — {dr.criticalSuccess ? t('common.criticalSuccess') : dr.criticalFailure ? t('common.criticalFailure') : dr.success ? t('common.success') : t('common.failure')}
                   </p>
                 </div>
               </div>
@@ -252,8 +254,10 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                 <p className="text-xs text-on-surface-variant">
                   {diceRoll.roll} {t('common.vs')} {diceRoll.target || diceRoll.dc} (SL {diceRoll.sl ?? 0})
                 </p>
-                <p className={`text-xs font-bold ${diceRoll.success ? 'text-primary' : 'text-error'}`}>
-                  {diceRoll.success ? t('common.success') : t('common.failure')}
+                <p className={`text-xs font-bold ${
+                  diceRoll.criticalSuccess ? 'text-amber-400' : diceRoll.criticalFailure ? 'text-red-700' : diceRoll.success ? 'text-primary' : 'text-error'
+                }`}>
+                  {diceRoll.criticalSuccess ? t('common.criticalSuccess') : diceRoll.criticalFailure ? t('common.criticalFailure') : diceRoll.success ? t('common.success') : t('common.failure')}
                 </p>
               </div>
             </div>
