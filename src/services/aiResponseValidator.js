@@ -23,6 +23,7 @@ const DiceRollSchema = z.object({
   success: z.boolean().optional(),
   criticalSuccess: z.boolean().optional().default(false),
   criticalFailure: z.boolean().optional().default(false),
+  dispositionBonus: z.number().optional(),
 }).passthrough().nullable().optional();
 
 const NpcChangeSchema = z.object({

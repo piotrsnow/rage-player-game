@@ -43,8 +43,9 @@ export const storage = {
 
     const campaigns = this.getCampaigns();
     const idx = campaigns.findIndex((c) => c.campaign.id === gameState.campaign.id);
+    const { isLoading, isGeneratingScene, isGeneratingImage, isGeneratingMusic, error, ...persistable } = gameState;
     const entry = {
-      ...gameState,
+      ...persistable,
       lastSaved: Date.now(),
     };
     if (idx >= 0) {

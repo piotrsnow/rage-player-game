@@ -5,7 +5,7 @@ const DEFAULTS = {
   maxItemsPerScene: 3,
   maxWoundsDelta: 20,
   needsDeltaMin: -30,
-  needsDeltaMax: 50,
+  needsDeltaMax: 100,
   maxMoneyGainCopper: 500, // 5 GC equivalent
 };
 

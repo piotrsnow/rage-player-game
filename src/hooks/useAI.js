@@ -47,7 +47,10 @@ export function useAI() {
             enhancedContext = { ...enhancedContext, relevantCodex };
           }
         }
-        const preRolledDice = !isFirstScene ? rollD100() : null;
+        const testsFrequency = settings.dmSettings?.testsFrequency ?? 50;
+        const shouldRollDice = Math.random() * 100 < testsFrequency;
+        const preRolledDice = (!isFirstScene && shouldRollDice) ? rollD100() : null;
+        const skipDiceRoll = !isFirstScene && !shouldRollDice;
         const momentumBonus = state.momentumBonus || 0;
         const { result, usage } = await aiService.generateScene(
           state,
@@ -58,7 +61,7 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, preRolledDice, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
+          { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 

@@ -140,6 +140,11 @@ function gameReducer(state, action) {
     case 'LOAD_CAMPAIGN': {
       const defaultCosts = { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] };
       const loaded = { ...initialState, ...action.payload };
+      loaded.isLoading = false;
+      loaded.isGeneratingScene = false;
+      loaded.isGeneratingImage = false;
+      loaded.isGeneratingMusic = false;
+      loaded.error = null;
       loaded.aiCosts = { ...defaultCosts, ...loaded.aiCosts };
       if (loaded.character && !loaded.character.needs) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };

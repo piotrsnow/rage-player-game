@@ -190,6 +190,17 @@ ${sceneHistory}
 
 LANGUAGE: Write all narrative in ${language === 'pl' ? 'Polish' : 'English'}.
 ${needsBlock}
+NPC DISPOSITION MODIFIERS (apply when a dice roll involves direct interaction with a known NPC):
+When a player attempts a social, trade, persuasion, or other interpersonal skill test involving a known NPC, look up that NPC's disposition value from the NPC REGISTRY and apply the corresponding modifier to the dice target:
+  disposition >= 30 (strong ally): +15 to target
+  disposition >= 15 (friendly): +10 to target
+  disposition >= 5 (warm): +5 to target
+  disposition -5 to +5 (neutral): no modifier
+  disposition <= -5 (cool): -5 to target
+  disposition <= -15 (hostile): -10 to target
+  disposition <= -30 (enemy): -15 to target
+When this modifier applies, include "dispositionBonus" in the diceRoll entry with the modifier value.
+
 MULTIPLAYER INSTRUCTIONS:
 1. You are running a MULTIPLAYER session using the WFRP 4th Edition system. Multiple players act simultaneously each round.
 2. When resolving actions, consider ALL submitted actions together and resolve them simultaneously.
@@ -232,7 +243,7 @@ function calculateSL(roll, target) {
   return diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null, characterMomentum = null) {
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null, characterMomentum = null, skipDiceRolls = null) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
   const needsPerCharHint = needsSystemEnabled
     ? ', "needsChanges": {"hunger": 60}'
@@ -301,21 +312,29 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const hasMomentum = characterMomentum && Object.values(characterMomentum).some((v) => v !== 0);
   const actionLines = actions
     .map((a) => {
-      const diceInfo = preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
-      const momInfo = characterMomentum?.[a.name] !== 0 && characterMomentum?.[a.name] != null ? ` [MOMENTUM ${characterMomentum[a.name] > 0 ? '+' : ''}${characterMomentum[a.name]}]` : '';
-      return `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${momInfo}`;
+      const skipRoll = skipDiceRolls?.[a.name];
+      const diceInfo = !skipRoll && preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
+      const skipInfo = skipRoll ? ' [NO DICE ROLL]' : '';
+      const momInfo = !skipRoll && characterMomentum?.[a.name] !== 0 && characterMomentum?.[a.name] != null ? ` [MOMENTUM ${characterMomentum[a.name] > 0 ? '+' : ''}${characterMomentum[a.name]}]` : '';
+      return `- ${a.name} (${a.gender}): ${a.action}${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${skipInfo}${momInfo}`;
     })
     .join('\n');
 
   return `${needsReminder}The players' actions this round:
 ${actionLines}
 
-PLAYER SPEECH: When a player's action contains text in quotation marks (e.g. "some words"), that is the player character speaking those exact words in-character. You MUST include those words as a "dialogue" segment with that player character's name and gender in dialogueSegments. Do NOT merely narrate or paraphrase what the character said — present the quoted words as actual spoken dialogue. The rest of the action (outside quotes) describes what the character does and should be narrated normally.
+ACTION VS SPEECH (CRITICAL — read both rules carefully):
+RULE 1 — ACTION PARTS: The non-quoted parts of each player's input describe what their character DOES — narrate them as action in prose. Never turn unquoted action text into spoken dialogue (e.g. the character must NOT announce their own action aloud).
+RULE 2 — SPEECH PARTS (MANDATORY): When the input contains text inside quotation marks ("..."), that is the character speaking those exact words in-character. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with that player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
+Example: input [I encourage everyone to celebrate. "Party on!" I shout.] → narrate the encouraging as action, then include "Party on!" as a dialogue segment.
+If the input has NO quotation marks at all, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's input text verbatim).
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
 
 DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. The "target" number in each diceRoll is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances).
+NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.
 ${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
+${skipDiceRolls && Object.keys(skipDiceRolls).length > 0 ? `DICE ROLL OVERRIDE: Characters marked [NO DICE ROLL] above do NOT require a dice roll this round. Do NOT include them in the diceRolls array. Resolve their actions narratively without mechanical dice resolution.` : ''}
 ${hasCustomActions ? `
 CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action.
 - +10: Mundane custom action — a basic alternative to the suggestions, nothing special
@@ -734,12 +753,18 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
 
+  const testsFrequency = dmSettings?.testsFrequency ?? 50;
   const preRolledDice = {};
+  const skipDiceRolls = {};
   for (const a of actions) {
-    preRolledDice[a.name] = rollD100();
+    if (Math.random() * 100 < testsFrequency) {
+      preRolledDice[a.name] = rollD100();
+    } else {
+      skipDiceRolls[a.name] = true;
+    }
   }
 
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings, preRolledDice, characterMomentum);
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings, preRolledDice, characterMomentum, skipDiceRolls);
 
   const messages = [
     { role: 'system', content: systemPrompt },

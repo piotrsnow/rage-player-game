@@ -298,6 +298,7 @@ ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
 Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts.
+NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
 Bestiary sample:\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 5))}
 
@@ -308,7 +309,7 @@ export function buildReducedScenePrompt(
   playerAction,
   isFirstScene = false,
   language = 'en',
-  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, momentumBonus = 0 } = {},
+  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {},
   dmSettings = null,
 ) {
   const lang = language === 'pl' ? 'Polish' : 'English';
@@ -347,7 +348,7 @@ Write narrative and suggestedActions in ${lang}.`;
 Quoted text in the action = PC speech (work into narrative).
 
 Resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
-${preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : ''}
+${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}
 ${isCustomAction ? 'Custom action: add creativityBonus 10–40 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : ''}
 ${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}
 
