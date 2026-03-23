@@ -161,7 +161,17 @@ ACTIVE EFFECTS (traps, spells, environmental changes — check before resolving 
 ${(world.activeEffects || []).filter((e) => e.active !== false).map((e) => `- [${e.type}] ${e.description} at ${e.location || 'unknown'}${e.placedBy ? ` (by ${e.placedBy})` : ''}`).join('\n') || 'None'}
 
 ACTIVE QUESTS:
-${(gameState.quests?.active || []).map((q) => `- ${q.name}: ${q.description}`).join('\n') || 'None'}
+${(gameState.quests?.active || []).map((q) => {
+    let line = `- ${q.name}: ${q.description}`;
+    if (q.completionCondition) line += `\n  Goal: ${q.completionCondition}`;
+    if (q.objectives?.length > 0) {
+      line += '\n  Objectives:';
+      for (const obj of q.objectives) {
+        line += `\n    [${obj.completed ? 'X' : ' '}] ${obj.description}`;
+      }
+    }
+    return line;
+  }).join('\n') || 'None'}
 
 WORLD KNOWLEDGE:
 ${worldFacts}
@@ -208,7 +218,7 @@ function calculateSL(roll, target) {
   return diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
 }
 
-function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null) {
+function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null, characterMomentum = null) {
   const langReminder = `\n\nLANGUAGE: Write narrative, dialogueSegments, suggestedActions in ${language === 'pl' ? 'Polish' : 'English'}. soundEffect, musicPrompt, imagePrompt stay in English.`;
   const needsPerCharHint = needsSystemEnabled
     ? ', "needsChanges": {"hunger": 60}'
@@ -246,14 +256,16 @@ Respond with ONLY valid JSON:
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": ""}],
     "worldFacts": [],
     "journalEntries": ["Opening scene summary"],
-    "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}],
+    "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal", "objectives": [{"id": "obj_1", "description": "First milestone"}]}],
     "completedQuests": [],
+    "questUpdates": [],
     "activeEffects": [{"action": "add", "type": "trap|spell|environmental", "location": "Location", "description": "Effect description", "placedBy": "who"}]
   }
 }
 
-For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
+For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
+For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. When players fulfill a quest objective, mark it here. Separate from completedQuests.
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
@@ -270,10 +282,12 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const needsReminder = needsSystemEnabled ? buildMultiplayerUnmetNeedsBlock(characters) : '';
 
   const hasCustomActions = actions.some((a) => a.isCustom);
+  const hasMomentum = characterMomentum && Object.values(characterMomentum).some((v) => v > 0);
   const actionLines = actions
     .map((a) => {
       const diceInfo = preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
-      return `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}`;
+      const momInfo = characterMomentum?.[a.name] > 0 ? ` [MOMENTUM +${characterMomentum[a.name]}]` : '';
+      return `- ${a.name} (${a.gender}): "${a.action}"${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${momInfo}`;
     })
     .join('\n');
 
@@ -286,20 +300,24 @@ DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each pl
 ${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
 ${hasCustomActions ? `
 CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action.
-- +10: Mundane custom action, just a basic alternative to the suggestions
-- +20: Somewhat creative, shows some thought or personality
-- +30: Creative and clever, good use of environment or character abilities
-- +40: Highly creative, unexpected approach that makes narrative sense
-- +50: Brilliantly creative, exceptionally imaginative action that surprises even the GM
+- +10: Mundane custom action — a basic alternative to the suggestions, nothing special
+- +15: Slightly creative — shows some thought or personality but still straightforward
+- +20: Moderately creative — good use of environment or character abilities
+- +30: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
+- +40: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE
 Always award at least +10 for any custom action.
 Output the diceRoll fields as follows for custom actions:
 - "baseTarget": the BASE value (characteristic + skill advances only)
-- "creativityBonus": the bonus (10-50)
+- "creativityBonus": the bonus (10-40)
 - "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
-Example: baseTarget=31, creativityBonus=40, target=71, roll=59 → 59 ≤ 71 → success=true. The narrative MUST describe a successful outcome.
+Example: baseTarget=31, creativityBonus=20, target=51, roll=45 → 45 ≤ 51 → success=true. The narrative MUST describe a successful outcome.
+` : ''}${hasMomentum ? `
+MOMENTUM BONUS: Some characters have momentum from a previous excellent roll (shown as [MOMENTUM +N] above).
+Add their momentum bonus to the target: target = baseTarget + creativityBonus + momentumBonus.
+Output "momentumBonus": N in the diceRoll entry for that character.
+Momentum is consumed after this roll regardless of outcome.
 ` : ''}
-
 IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrative consistent with ALL outcomes.
 
 Respond with ONLY valid JSON:
@@ -332,16 +350,18 @@ Respond with ONLY valid JSON:
     "journalEntries": ["Summary of key events"],
     "newQuests": [],
     "completedQuests": [],
+    "questUpdates": [],
     "activeEffects": []
   }
 }
 
 For perCharacter: include an entry for each character that is affected. wounds/xp are deltas (wounds negative = damage, positive = healing). moneyChange is {gold, silver, copper} deltas (negative = spending, positive = receiving). Check each character's Money before allowing purchases.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-50>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + creativityBonus (the effective target). For normal actions: "target" = characteristic + skill advances. Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + creativityBonus (the effective target). For normal actions: "target" = characteristic + skill advances. Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
-For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description"}. Use empty array [] if no new quests.
+For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
+For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. When players fulfill a quest objective, mark it here. Separate from completedQuests.
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
@@ -448,7 +468,7 @@ Generate the campaign foundation. The characters are already pre-created by the 
     "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
     "journalEntries": ["Opening scene summary"]
   },
-  "initialQuest": {"name": "Quest name", "description": "Quest description"},
+  "initialQuest": {"name": "Quest name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "First milestone"}, {"id": "obj_2", "description": "Second milestone"}]},
   "initialWorldFacts": ["Fact 1", "Fact 2", "Fact 3"]
 }
 
@@ -537,7 +557,14 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       compressedHistory: '',
     },
     quests: {
-      active: result.initialQuest ? [{ id: `quest_${Date.now()}`, ...result.initialQuest }] : [],
+      active: result.initialQuest ? [{
+        id: `quest_${Date.now()}`,
+        ...result.initialQuest,
+        objectives: (result.initialQuest.objectives || []).map((obj) => ({
+          ...obj,
+          completed: obj.completed ?? false,
+        })),
+      }] : [],
       completed: [],
     },
     scenes: [firstScene],
@@ -654,7 +681,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   };
 }
 
-export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null) {
+export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
 
   const preRolledDice = {};
@@ -662,7 +689,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     preRolledDice[a.name] = rollD100();
   }
 
-  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings, preRolledDice);
+  const scenePrompt = buildMultiplayerScenePrompt(actions, false, language, { needsSystemEnabled: settings.needsSystemEnabled === true, characters: gameState.characters || [] }, dmSettings, preRolledDice, characterMomentum);
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -675,10 +702,11 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     if (dr && dr.roll != null && dr.target != null) {
       const roll = dr.roll;
       const bonus = dr.creativityBonus || 0;
+      const momentum = dr.momentumBonus || 0;
       const effectiveTarget = dr.target;
 
-      if (!dr.baseTarget && bonus > 0) {
-        dr.baseTarget = effectiveTarget - bonus;
+      if (!dr.baseTarget && (bonus > 0 || momentum > 0)) {
+        dr.baseTarget = effectiveTarget - bonus - momentum;
       }
 
       const isCriticalSuccess = roll >= 1 && roll <= 4;

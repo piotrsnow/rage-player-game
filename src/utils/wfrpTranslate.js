@@ -25,3 +25,19 @@ export function translateTalent(name, t) {
   }
   return t(`wfrpTalents.${name}`, { defaultValue: name });
 }
+
+export function translateCareer(name, t) {
+  return t(`careers.${name}`, { defaultValue: name });
+}
+
+export function translateTierName(name, t) {
+  return t(`tierNames.${name}`, { defaultValue: name });
+}
+
+export function translateStatus(status, t) {
+  const match = status?.match(/^(\w+)\s+(.+)$/);
+  if (match) {
+    return `${t(`statusTier.${match[1]}`, { defaultValue: match[1] })} ${match[2]}`;
+  }
+  return status;
+}

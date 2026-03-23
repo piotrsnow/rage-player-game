@@ -30,6 +30,7 @@ function sanitizeRoom(room) {
       photo: p.photo,
       isHost: p.isHost,
       pendingAction: p.pendingAction,
+      lastSoloActionAt: p.lastSoloActionAt || null,
       voiceId: p.voiceId || null,
       voiceName: p.voiceName || null,
       characterData: p.characterData || null,
@@ -58,6 +59,7 @@ export function createRoom(hostUserId, ws) {
     isHost: true,
     ws,
     pendingAction: null,
+    lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
     characterData: null,
@@ -97,6 +99,7 @@ export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
     isHost: true,
     ws,
     pendingAction: null,
+    lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
   };
@@ -142,6 +145,7 @@ export function joinRoom(roomCode, userId, ws) {
     isHost: false,
     ws,
     pendingAction: null,
+    lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
     characterData: null,
@@ -256,6 +260,38 @@ export function approveActions(roomCode, odId) {
   }
 
   return { room, actions };
+}
+
+const SOLO_ACTION_COOLDOWN_MS = 3 * 60 * 1000;
+
+export function executeSoloAction(roomCode, odId, actionText, isCustom = false) {
+  const room = rooms.get(roomCode);
+  if (!room) throw new Error('Room not found');
+  if (room.phase !== 'playing') throw new Error('Game not in progress');
+  const player = room.players.get(odId);
+  if (!player) throw new Error('Player not found');
+
+  const now = Date.now();
+  if (player.lastSoloActionAt && (now - player.lastSoloActionAt) < SOLO_ACTION_COOLDOWN_MS) {
+    const remainingMs = SOLO_ACTION_COOLDOWN_MS - (now - player.lastSoloActionAt);
+    const err = new Error('Solo action on cooldown');
+    err.remainingMs = remainingMs;
+    throw err;
+  }
+
+  player.lastSoloActionAt = now;
+  player.pendingAction = null;
+  player.pendingActionIsCustom = false;
+
+  const action = {
+    odId: player.odId,
+    name: player.name,
+    gender: player.gender,
+    action: actionText,
+    isCustom,
+  };
+
+  return { room, action };
 }
 
 export function getRoom(roomCode) {

@@ -18,6 +18,7 @@ import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
 import AdvancementPanel from '../character/AdvancementPanel';
 import { useModals } from '../../contexts/ModalContext';
+import { translateCareer } from '../../utils/wfrpTranslate';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
@@ -150,7 +151,7 @@ export default function GameplayPage() {
               ) : character ? (
                 <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
                   <span>{character.name}</span>
-                  <span>{character.career?.name}</span>
+                  <span>{translateCareer(character.career?.name, t)}</span>
                 </div>
               ) : null}
               <button
@@ -265,6 +266,7 @@ export default function GameplayPage() {
           narrator={settings.narratorEnabled ? narrator : null}
           autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
+          momentumBonus={state.momentumBonus || 0}
         />
       </aside>
 

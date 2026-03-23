@@ -18,6 +18,7 @@ const templates = {
     levelUp: (name, level) => `${name} leveled up to Lv.${level}!`,
     questNew: (quest) => `New quest: ${quest}`,
     questCompleted: (quest) => `Quest completed: ${quest}`,
+    questObjectiveCompleted: (quest, objective) => `Objective completed: ${quest} — ${objective}`,
     moneySpent: (name, amount) => `${name} spent ${amount}`,
     moneyGained: (name, amount) => `${name} received ${amount}`,
   },
@@ -32,6 +33,7 @@ const templates = {
     levelUp: (name, level) => `${name} awansował/a na poz. ${level}!`,
     questNew: (quest) => `Nowe zadanie: ${quest}`,
     questCompleted: (quest) => `Zadanie ukończone: ${quest}`,
+    questObjectiveCompleted: (quest, objective) => `Cel ukończony: ${quest} — ${objective}`,
     moneySpent: (name, amount) => `${name} wydał/a ${amount}`,
     moneyGained: (name, amount) => `${name} otrzymał/a ${amount}`,
   },
@@ -113,6 +115,18 @@ export function generateStateChangeMessages(stateChanges, characters, language =
       const quest = activeQuests.find((q) => q.id === qId);
       const name = quest?.name || qId;
       msgs.push({ id: mkId(), role: 'system', subtype: 'quest_completed', content: t.questCompleted(name), timestamp: ts });
+    }
+  }
+
+  if (Array.isArray(stateChanges.questUpdates) && stateChanges.questUpdates.length > 0) {
+    const activeQuests = quests?.active || [];
+    for (const update of stateChanges.questUpdates) {
+      if (!update.completed) continue;
+      const quest = activeQuests.find((q) => q.id === update.questId);
+      const questName = quest?.name || update.questId;
+      const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
+      const objDesc = obj?.description || update.objectiveId;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t.questObjectiveCompleted(questName, objDesc), timestamp: ts });
     }
   }
 

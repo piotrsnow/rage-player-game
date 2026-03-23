@@ -5,12 +5,13 @@ import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { storage } from '../../services/storage';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
-import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
+import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
 
 const NEEDS_META = [
   { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
@@ -163,27 +164,28 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           )}
         </div>
 
-        <div className="lg:col-span-4 animate-fade-in">
+        <div className="lg:col-span-4 space-y-6 animate-fade-in">
           <Inventory items={character.inventory} money={character.money} />
-        </div>
-      </div>
 
-      <div className="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
-        <section className="bg-surface-container-low p-8 rounded-sm border border-outline-variant/15 relative">
-          <div className="absolute top-0 right-0 p-4">
-            <span className="material-symbols-outlined text-primary-dim text-sm opacity-50">
-              psychology
-            </span>
+          <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">
+            <div className="absolute top-0 right-0 p-4">
+              <span className="material-symbols-outlined text-primary-dim text-sm opacity-50">
+                psychology
+              </span>
+            </div>
+            <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">auto_stories</span>
+              {t('character.origins')}
+            </h3>
+            <div className="text-on-surface-variant font-body leading-relaxed text-sm">
+              {character.backstory || (
+                <p className="italic text-outline">
+                  {t('character.originsEmpty')}
+                </p>
+              )}
+            </div>
           </div>
-          <h3 className="text-2xl font-headline text-tertiary mb-6">{t('character.origins')}</h3>
-          <div className="text-on-surface-variant font-body leading-relaxed text-sm">
-            {character.backstory || (
-              <p className="italic text-outline">
-                {t('character.originsEmpty')}
-              </p>
-            )}
-          </div>
-        </section>
+        </div>
       </div>
 
       {showAdvancement && <AdvancementPanel onClose={() => setShowAdvancement(false)} />}
@@ -210,7 +212,21 @@ export default function CharacterSheet({ onClose }) {
 
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [showAdvancement, setShowAdvancement] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null);
   const modalRef = useModalA11y(onClose);
+
+  const handleSaveToLibrary = async () => {
+    if (!displayCharacter) return;
+    setSaveStatus('saving');
+    try {
+      await storage.saveCharacter({ ...displayCharacter });
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2500);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus(null), 3000);
+    }
+  };
   const displayCharacter = isMultiplayer && allCharacters.length > 0
     ? allCharacters[selectedIdx] || allCharacters[0]
     : myCharacter;
@@ -230,13 +246,37 @@ export default function CharacterSheet({ onClose }) {
             <span className="material-symbols-outlined text-primary-dim">shield</span>
             {t('nav.armory')}
           </h2>
-          <button
-            onClick={onClose}
-            aria-label={t('common.close')}
-            className="text-on-surface-variant hover:text-primary transition-colors"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {displayCharacter && campaign && (
+              <button
+                onClick={handleSaveToLibrary}
+                disabled={saveStatus === 'saving'}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-label uppercase tracking-wider border transition-all duration-300 ${
+                  saveStatus === 'saved'
+                    ? 'bg-primary/15 text-primary border-primary/30'
+                    : saveStatus === 'error'
+                      ? 'bg-error-container/20 text-error border-error/20'
+                      : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:text-primary hover:border-primary/20'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">
+                  {saveStatus === 'saved' ? 'check_circle' : saveStatus === 'error' ? 'error' : 'save'}
+                </span>
+                {saveStatus === 'saved'
+                  ? t('character.savedToLibrary')
+                  : saveStatus === 'error'
+                    ? t('character.saveError')
+                    : t('character.saveToLibrary')}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              aria-label={t('common.close')}
+              className="text-on-surface-variant hover:text-primary transition-colors"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="overflow-y-auto custom-scrollbar flex-1">
@@ -291,11 +331,11 @@ export default function CharacterSheet({ onClose }) {
                   {displayCharacter.name}
                 </h1>
                 <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
-                  <span>{displayCharacter.species}</span>
+                  <span>{t(`species.${displayCharacter.species}`, { defaultValue: displayCharacter.species })}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
-                  <span>{displayCharacter.career?.name} ({displayCharacter.career?.tierName})</span>
+                  <span>{translateCareer(displayCharacter.career?.name, t)} ({translateTierName(displayCharacter.career?.tierName, t)})</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
-                  <span>{displayCharacter.career?.status}</span>
+                  <span>{translateStatus(displayCharacter.career?.status, t)}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{displayCharacter.xp} {t('common.xp')}</span>
                 </div>

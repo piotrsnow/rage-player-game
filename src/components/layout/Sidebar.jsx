@@ -5,6 +5,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
+import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -45,7 +46,7 @@ export default function Sidebar() {
             <div className="min-w-0">
               <div className="font-headline text-tertiary text-sm font-bold truncate">{character.name}</div>
               <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
-                {character.career?.name} · {character.career?.tierName}
+                {translateCareer(character.career?.name, t)} · {translateTierName(character.career?.tierName, t)}
               </div>
             </div>
           </div>

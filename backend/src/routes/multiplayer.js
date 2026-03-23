@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import {
   createRoom, createRoomWithGameState, joinRoom, leaveRoom, updateCharacter,
-  updateSettings, submitAction, withdrawAction, approveActions,
+  updateSettings, submitAction, withdrawAction, approveActions, executeSoloAction,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom, touchRoom,
 } from '../services/roomManager.js';
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
@@ -20,6 +20,209 @@ function applyTimeAdvance(world, timeAdvance) {
     timeOfDay: hourToPeriod(newHour),
     day: ts.day + dayIncrement,
     ...(timeAdvance.season && { season: timeAdvance.season }),
+  };
+}
+
+function applySceneStateChanges(gameState, sceneResult, settings) {
+  const stateChanges = sceneResult.stateChanges || {};
+  const needsEnabled = settings?.needsSystemEnabled === true;
+  const timeAdvance = stateChanges.timeAdvance;
+  const hoursElapsed = timeAdvance?.hoursElapsed || 0.5;
+
+  let updatedCharacters = [...(gameState.characters || [])];
+  const perChar = stateChanges.perCharacter;
+  if (perChar) {
+    updatedCharacters = updatedCharacters.map((c) => {
+      const delta = perChar[c.name] || perChar[c.playerName];
+      if (!delta) return c;
+      const updated = { ...c };
+      if (delta.wounds != null) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
+      if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
+      if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
+      if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
+      if (Array.isArray(delta.newItems)) {
+        updated.inventory = [...(updated.inventory || []), ...delta.newItems];
+      }
+      if (Array.isArray(delta.removeItems)) {
+        const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
+        updated.inventory = (updated.inventory || []).filter((i) => !removeSet.has(typeof i === 'string' ? i : i.name));
+      }
+      if (delta.moneyChange) {
+        const cur = updated.money || { gold: 0, silver: 0, copper: 0 };
+        let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
+          + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
+          + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
+        if (total < 0) total = 0;
+        updated.money = {
+          gold: Math.floor(total / 100),
+          silver: Math.floor((total % 100) / 10),
+          copper: total % 10,
+        };
+      }
+      if (needsEnabled && delta.needsChanges) {
+        const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }) };
+        for (const [key, val] of Object.entries(delta.needsChanges)) {
+          if (key in needs) {
+            needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
+          }
+        }
+        updated.needs = needs;
+      }
+      return updated;
+    });
+  }
+
+  if (needsEnabled && timeAdvance) {
+    updatedCharacters = updatedCharacters.map((c) => {
+      if (!c.needs) return c;
+      return { ...c, needs: decayNeeds(c.needs, hoursElapsed) };
+    });
+  }
+
+  let updatedWorld = { ...(gameState.world || {}) };
+  if (timeAdvance) {
+    updatedWorld.timeState = applyTimeAdvance(updatedWorld, timeAdvance);
+  }
+  if (stateChanges.currentLocation) {
+    const prevLoc = updatedWorld.currentLocation;
+    const newLoc = stateChanges.currentLocation;
+    let mapConns = [...(updatedWorld.mapConnections || [])];
+    let mapSt = [...(updatedWorld.mapState || [])];
+
+    if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
+      const already = mapConns.some(
+        (c) =>
+          (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
+          (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
+      );
+      if (!already) {
+        mapConns.push({ from: prevLoc, to: newLoc });
+      }
+      for (const locName of [prevLoc, newLoc]) {
+        if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
+          mapSt.push({
+            id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: locName,
+            description: '',
+            modifications: [],
+          });
+        }
+      }
+    }
+    updatedWorld.currentLocation = newLoc;
+    updatedWorld.mapConnections = mapConns;
+    updatedWorld.mapState = mapSt;
+  }
+  if (Array.isArray(stateChanges.mapChanges) && stateChanges.mapChanges.length > 0) {
+    const mapState = [...(updatedWorld.mapState || [])];
+    for (const change of stateChanges.mapChanges) {
+      const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
+      if (idx >= 0) {
+        mapState[idx] = {
+          ...mapState[idx],
+          modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+        };
+      } else {
+        mapState.push({
+          id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          name: change.location,
+          description: '',
+          modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+        });
+      }
+    }
+    updatedWorld.mapState = mapState;
+  }
+  if (Array.isArray(stateChanges.worldFacts) && stateChanges.worldFacts.length > 0) {
+    updatedWorld.facts = [...(updatedWorld.facts || []), ...stateChanges.worldFacts];
+  }
+  if (Array.isArray(stateChanges.journalEntries) && stateChanges.journalEntries.length > 0) {
+    updatedWorld.eventHistory = [...(updatedWorld.eventHistory || []), ...stateChanges.journalEntries];
+  }
+  if (Array.isArray(stateChanges.npcs) && stateChanges.npcs.length > 0) {
+    const npcs = [...(updatedWorld.npcs || [])];
+    for (const npc of stateChanges.npcs) {
+      const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+      if (npc.action === 'introduce' && idx < 0) {
+        npcs.push({
+          id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          name: npc.name,
+          gender: npc.gender || 'unknown',
+          role: npc.role || '',
+          personality: npc.personality || '',
+          attitude: npc.attitude || 'neutral',
+          lastLocation: npc.location || '',
+          alive: true,
+          notes: npc.notes || '',
+        });
+      } else if (idx >= 0) {
+        npcs[idx] = {
+          ...npcs[idx],
+          ...(npc.gender && { gender: npc.gender }),
+          ...(npc.role && { role: npc.role }),
+          ...(npc.personality && { personality: npc.personality }),
+          ...(npc.attitude && { attitude: npc.attitude }),
+          ...(npc.location && { lastLocation: npc.location }),
+          ...(npc.notes && { notes: npc.notes }),
+          ...(npc.alive !== undefined && { alive: npc.alive }),
+        };
+      }
+    }
+    updatedWorld.npcs = npcs;
+  }
+  if (Array.isArray(stateChanges.activeEffects) && stateChanges.activeEffects.length > 0) {
+    let effects = [...(updatedWorld.activeEffects || [])];
+    for (const fx of stateChanges.activeEffects) {
+      if (fx.action === 'add') {
+        effects.push({
+          id: fx.id || `fx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          type: fx.type || 'other',
+          location: fx.location || '',
+          description: fx.description || '',
+          placedBy: fx.placedBy || '',
+          active: true,
+        });
+      } else if (fx.action === 'remove') {
+        effects = effects.filter((e) => e.id !== fx.id);
+      } else if (fx.action === 'trigger') {
+        effects = effects.map((e) => (e.id === fx.id ? { ...e, active: false } : e));
+      }
+    }
+    updatedWorld.activeEffects = effects;
+  }
+
+  let updatedQuests = { ...(gameState.quests || { active: [], completed: [] }) };
+  if (Array.isArray(stateChanges.newQuests) && stateChanges.newQuests.length > 0) {
+    const normalized = stateChanges.newQuests.map((q) => ({
+      ...q,
+      objectives: (q.objectives || []).map((obj) => ({ ...obj, completed: obj.completed ?? false })),
+    }));
+    updatedQuests.active = [...(updatedQuests.active || []), ...normalized];
+  }
+  if (Array.isArray(stateChanges.completedQuests) && stateChanges.completedQuests.length > 0) {
+    const completedIds = new Set(stateChanges.completedQuests);
+    const completed = (updatedQuests.active || []).filter((q) => completedIds.has(q.id));
+    updatedQuests = {
+      active: (updatedQuests.active || []).filter((q) => !completedIds.has(q.id)),
+      completed: [...(updatedQuests.completed || []), ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
+    };
+  }
+  if (Array.isArray(stateChanges.questUpdates) && stateChanges.questUpdates.length > 0) {
+    updatedQuests.active = (updatedQuests.active || []).map((quest) => {
+      const updates = stateChanges.questUpdates.filter((u) => u.questId === quest.id);
+      if (updates.length === 0 || !quest.objectives) return quest;
+      const objectives = quest.objectives.map((obj) => {
+        const upd = updates.find((u) => u.objectiveId === obj.id);
+        return upd ? { ...obj, completed: !!upd.completed } : obj;
+      });
+      return { ...quest, objectives };
+    });
+  }
+
+  return {
+    characters: updatedCharacters,
+    world: updatedWorld,
+    quests: updatedQuests,
   };
 }
 
@@ -64,7 +267,8 @@ export async function multiplayerRoutes(fastify) {
             'Only the host can kick players', 'Only the host can update settings',
             'Invalid kick target', 'Player not found', 'Game not in progress',
             'Game state is required', 'Room no longer exists',
-            'Cannot rejoin: player not found or unauthorized'];
+            'Cannot rejoin: player not found or unauthorized',
+            'Solo action on cooldown'];
           const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
           socket.send(JSON.stringify({ type: 'ERROR', message }));
         }
@@ -381,195 +585,82 @@ export async function multiplayerRoutes(fastify) {
               msg.dmSettings || null,
             );
 
-            const stateChanges = sceneResult.stateChanges || {};
-            const needsEnabled = room.settings?.needsSystemEnabled === true;
-            const timeAdvance = stateChanges.timeAdvance;
-            const hoursElapsed = timeAdvance?.hoursElapsed || 0.5;
-
-            let updatedCharacters = [...(room.gameState.characters || [])];
-            const perChar = stateChanges.perCharacter;
-            if (perChar) {
-              updatedCharacters = updatedCharacters.map((c) => {
-                const delta = perChar[c.name] || perChar[c.playerName];
-                if (!delta) return c;
-                const updated = { ...c };
-                if (delta.wounds != null) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
-                if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
-                // Legacy D&D fields for backward compat with convert-to-multiplayer
-                if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
-                if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
-                if (Array.isArray(delta.newItems)) {
-                  updated.inventory = [...(updated.inventory || []), ...delta.newItems];
-                }
-                if (Array.isArray(delta.removeItems)) {
-                  const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
-                  updated.inventory = (updated.inventory || []).filter((i) => !removeSet.has(typeof i === 'string' ? i : i.name));
-                }
-                if (delta.moneyChange) {
-                  const cur = updated.money || { gold: 0, silver: 0, copper: 0 };
-                  let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
-                    + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
-                    + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
-                  if (total < 0) total = 0;
-                  updated.money = {
-                    gold: Math.floor(total / 100),
-                    silver: Math.floor((total % 100) / 10),
-                    copper: total % 10,
-                  };
-                }
-                if (needsEnabled && delta.needsChanges) {
-                  const needs = { ...(updated.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }) };
-                  for (const [key, val] of Object.entries(delta.needsChanges)) {
-                    if (key in needs) {
-                      needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
-                    }
-                  }
-                  updated.needs = needs;
-                }
-                return updated;
-              });
-            }
-
-            if (needsEnabled && timeAdvance) {
-              updatedCharacters = updatedCharacters.map((c) => {
-                if (!c.needs) return c;
-                return { ...c, needs: decayNeeds(c.needs, hoursElapsed) };
-              });
-            }
-
-            let updatedWorld = { ...(room.gameState.world || {}) };
-            if (timeAdvance) {
-              updatedWorld.timeState = applyTimeAdvance(updatedWorld, timeAdvance);
-            }
-            if (stateChanges.currentLocation) {
-              const prevLoc = updatedWorld.currentLocation;
-              const newLoc = stateChanges.currentLocation;
-              let mapConns = [...(updatedWorld.mapConnections || [])];
-              let mapSt = [...(updatedWorld.mapState || [])];
-
-              if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
-                const already = mapConns.some(
-                  (c) =>
-                    (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
-                    (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
-                );
-                if (!already) {
-                  mapConns.push({ from: prevLoc, to: newLoc });
-                }
-
-                for (const locName of [prevLoc, newLoc]) {
-                  if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
-                    mapSt.push({
-                      id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                      name: locName,
-                      description: '',
-                      modifications: [],
-                    });
-                  }
-                }
-              }
-
-              updatedWorld.currentLocation = newLoc;
-              updatedWorld.mapConnections = mapConns;
-              updatedWorld.mapState = mapSt;
-            }
-            if (Array.isArray(stateChanges.mapChanges) && stateChanges.mapChanges.length > 0) {
-              const mapState = [...(updatedWorld.mapState || [])];
-              for (const change of stateChanges.mapChanges) {
-                const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
-                if (idx >= 0) {
-                  mapState[idx] = {
-                    ...mapState[idx],
-                    modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
-                  };
-                } else {
-                  mapState.push({
-                    id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    name: change.location,
-                    description: '',
-                    modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
-                  });
-                }
-              }
-              updatedWorld.mapState = mapState;
-            }
-            if (Array.isArray(stateChanges.worldFacts) && stateChanges.worldFacts.length > 0) {
-              updatedWorld.facts = [...(updatedWorld.facts || []), ...stateChanges.worldFacts];
-            }
-            if (Array.isArray(stateChanges.journalEntries) && stateChanges.journalEntries.length > 0) {
-              updatedWorld.eventHistory = [...(updatedWorld.eventHistory || []), ...stateChanges.journalEntries];
-            }
-            if (Array.isArray(stateChanges.npcs) && stateChanges.npcs.length > 0) {
-              const npcs = [...(updatedWorld.npcs || [])];
-              for (const npc of stateChanges.npcs) {
-                const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
-                if (npc.action === 'introduce' && idx < 0) {
-                  npcs.push({
-                    id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    name: npc.name,
-                    gender: npc.gender || 'unknown',
-                    role: npc.role || '',
-                    personality: npc.personality || '',
-                    attitude: npc.attitude || 'neutral',
-                    lastLocation: npc.location || '',
-                    alive: true,
-                    notes: npc.notes || '',
-                  });
-                } else if (idx >= 0) {
-                  npcs[idx] = {
-                    ...npcs[idx],
-                    ...(npc.gender && { gender: npc.gender }),
-                    ...(npc.role && { role: npc.role }),
-                    ...(npc.personality && { personality: npc.personality }),
-                    ...(npc.attitude && { attitude: npc.attitude }),
-                    ...(npc.location && { lastLocation: npc.location }),
-                    ...(npc.notes && { notes: npc.notes }),
-                    ...(npc.alive !== undefined && { alive: npc.alive }),
-                  };
-                }
-              }
-              updatedWorld.npcs = npcs;
-            }
-
-            if (Array.isArray(stateChanges.activeEffects) && stateChanges.activeEffects.length > 0) {
-              let effects = [...(updatedWorld.activeEffects || [])];
-              for (const fx of stateChanges.activeEffects) {
-                if (fx.action === 'add') {
-                  effects.push({
-                    id: fx.id || `fx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    type: fx.type || 'other',
-                    location: fx.location || '',
-                    description: fx.description || '',
-                    placedBy: fx.placedBy || '',
-                    active: true,
-                  });
-                } else if (fx.action === 'remove') {
-                  effects = effects.filter((e) => e.id !== fx.id);
-                } else if (fx.action === 'trigger') {
-                  effects = effects.map((e) => (e.id === fx.id ? { ...e, active: false } : e));
-                }
-              }
-              updatedWorld.activeEffects = effects;
-            }
-
-            let updatedQuests = { ...(room.gameState.quests || { active: [], completed: [] }) };
-            if (Array.isArray(stateChanges.newQuests) && stateChanges.newQuests.length > 0) {
-              updatedQuests.active = [...(updatedQuests.active || []), ...stateChanges.newQuests];
-            }
-            if (Array.isArray(stateChanges.completedQuests) && stateChanges.completedQuests.length > 0) {
-              const completedIds = new Set(stateChanges.completedQuests);
-              const completed = (updatedQuests.active || []).filter((q) => completedIds.has(q.id));
-              updatedQuests = {
-                active: (updatedQuests.active || []).filter((q) => !completedIds.has(q.id)),
-                completed: [...(updatedQuests.completed || []), ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
-              };
-            }
-
+            const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
             const updatedGameState = {
               ...room.gameState,
-              characters: updatedCharacters,
-              world: updatedWorld,
-              quests: updatedQuests,
+              characters: applied.characters,
+              world: applied.world,
+              quests: applied.quests,
+              scenes: [...(room.gameState.scenes || []), sceneResult.scene],
+              chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
+            };
+            setGameState(roomCode, updatedGameState);
+
+            const updatedRoom = getRoom(roomCode);
+            broadcast(updatedRoom, {
+              type: 'SCENE_UPDATE',
+              scene: sceneResult.scene,
+              chatMessages: sceneResult.chatMessages,
+              stateChanges: sceneResult.stateChanges,
+              room: sanitizeRoom(updatedRoom),
+            });
+
+            if (needsCompression(updatedGameState)) {
+              compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                .then((summary) => {
+                  if (summary) {
+                    const currentRoom = getRoom(roomCode);
+                    if (currentRoom?.gameState) {
+                      currentRoom.gameState.world = {
+                        ...(currentRoom.gameState.world || {}),
+                        compressedHistory: summary,
+                      };
+                      setGameState(roomCode, currentRoom.gameState);
+                    }
+                  }
+                })
+                .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+            }
+            break;
+          }
+
+          case 'SOLO_ACTION': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const { room, action } = executeSoloAction(roomCode, odId, msg.text, msg.isCustom);
+
+            broadcast(room, { type: 'SCENE_GENERATING' });
+            broadcast(room, {
+              type: 'ACTIONS_UPDATED',
+              room: sanitizeRoom(room),
+            });
+
+            const hostPlayer = room.players.get(room.hostId);
+            const dbUser = await prisma.user.findUnique({
+              where: { id: hostPlayer.userId },
+              select: { apiKeys: true },
+            });
+
+            const players = [];
+            for (const [, p] of room.players) {
+              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
+            }
+
+            const sceneResult = await generateMultiplayerScene(
+              room.gameState,
+              room.settings,
+              players,
+              [action],
+              dbUser?.apiKeys || '{}',
+              msg.language || 'en',
+              msg.dmSettings || null,
+            );
+
+            const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
+            const updatedGameState = {
+              ...room.gameState,
+              characters: applied.characters,
+              world: applied.world,
+              quests: applied.quests,
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
             };

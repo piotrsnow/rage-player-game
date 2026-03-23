@@ -132,6 +132,8 @@
     "voiceStop": "Stop recording",
     "voiceListening": "Listening...",
     "creativityBonus": "Creativity +{{bonus}}",
+    "momentumBonus": "Momentum +{{bonus}}",
+    "momentumActive": "Momentum +{{bonus}} on next roll",
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",
     "musicPlaying": "Now playing",
@@ -163,15 +165,45 @@
     "origins": "Origins",
     "originsEmpty": "The origins of this adventurer remain shrouded in mystery...",
     "voice": "Character Voice",
-    "noVoice": "No voice"
+    "noVoice": "No voice",
+    "saveToLibrary": "Save Character",
+    "savedToLibrary": "Saved!",
+    "saveError": "Save failed"
   },
   "quests": {
     "activeChronicles": "Active Chronicles",
-    "noQuests": "No quests discovered yet."
+    "noQuests": "No quests discovered yet.",
+    "completionCondition": "Completion Condition",
+    "objectives": "Objectives",
+    "selectQuest": "Select a quest to view details"
   },
   "inventory": {
     "title": "Armory & Artifacts",
-    "slots": "{{current}}/{{max}} Slots"
+    "slots": "{{current}}/{{max}} Slots",
+    "type": "Type:",
+    "rarityCommon": "Common",
+    "rarityUncommon": "Uncommon",
+    "rarityRare": "Rare",
+    "rarityEpic": "Epic",
+    "rarityLegendary": "Legendary",
+    "types": {
+      "weapon": "Weapon",
+      "armor": "Armor",
+      "potion": "Potion",
+      "scroll": "Scroll",
+      "artifact": "Artifact",
+      "tool": "Tool",
+      "food": "Food",
+      "clothing": "Clothing",
+      "key": "Key",
+      "book": "Book",
+      "ring": "Ring",
+      "ammunition": "Ammunition",
+      "trinket": "Trinket",
+      "currency": "Currency",
+      "shield": "Shield",
+      "misc": "Miscellaneous"
+    }
   },
   "stats": {
     "ws": "WS",
@@ -472,6 +504,11 @@
     "sameClass": "Same class",
     "differentClass": "Different class",
     "requirementsNotMet": "Requirements not met",
+    "tierRequirements": "Tier Advance Requirements",
+    "skillsRequired": "Skills at 5+ advances",
+    "talentRequired": "Career talent owned",
+    "met": "Met",
+    "notMet": "Not met",
     "addSkill": "Add Skill",
     "owned": "Owned"
   },
@@ -522,6 +559,7 @@
     "xpGained": "{{name}} gained {{amount}} XP",
     "questNew": "New quest: {{quest}}",
     "questCompleted": "Quest completed: {{quest}}",
+    "questObjectiveCompleted": "Objective completed: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",
     "moneyGained": "{{name}} received {{amount}}"
   },
@@ -573,7 +611,12 @@
     "noVoice": "No voice",
     "sceneGenerating": "The DM resolves all actions...",
     "noActionsYet": "No actions submitted yet",
-    "waitingForPlayers": "Waiting for players to submit actions..."
+    "waitingForPlayers": "Waiting for players to submit actions...",
+    "soloAction": "Solo",
+    "soloActionSend": "Send Solo",
+    "soloActionReady": "Solo action available",
+    "soloActionCooldown": "Solo in {{time}}",
+    "soloActionTooltip": "Send only your action without waiting for others (3 min cooldown)"
   },
   "statusTier": {
     "Brass": "Brass",

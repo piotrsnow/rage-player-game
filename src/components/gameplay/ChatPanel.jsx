@@ -165,6 +165,7 @@ const SUBTYPE_STYLES = {
   level_up:         { icon: 'military_tech', color: 'text-amber-300',  line: 'to-amber-300/40' },
   quest_new:        { icon: 'assignment',    color: 'text-blue-400',   line: 'to-blue-400/30' },
   quest_completed:  { icon: 'task_alt',      color: 'text-emerald-400', line: 'to-emerald-400/30' },
+  quest_objective_completed: { icon: 'checklist', color: 'text-teal-400', line: 'to-teal-400/30' },
   money_spent:      { icon: 'payments',     color: 'text-orange-400',  line: 'to-orange-400/30' },
   money_gained:     { icon: 'paid',         color: 'text-yellow-400',  line: 'to-yellow-400/30' },
 };
@@ -204,6 +205,11 @@ function DiceRollMessage({ message }) {
               {d.creativityBonus > 0 && (
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
                   {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
+                </span>
+              )}
+              {d.momentumBonus > 0 && (
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-400/15 text-blue-300 border border-blue-400/30">
+                  {t('gameplay.momentumBonus', { bonus: d.momentumBonus })}
                 </span>
               )}
               <span className="text-on-surface-variant">·</span>
@@ -255,7 +261,7 @@ function SystemMessage({ message }) {
   );
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null }) {
+export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0 }) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
   const prevMessageCount = useRef(messages.length);
@@ -310,6 +316,14 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
           >
             <span className="material-symbols-outlined text-sm">stop</span>
           </button>
+        )}
+        {momentumBonus > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-400/10 border border-blue-400/30 animate-pulse-glow">
+            <span className="material-symbols-outlined text-blue-300 text-sm">bolt</span>
+            <span className="text-xs font-bold text-blue-300">
+              {t('gameplay.momentumActive', { bonus: momentumBonus })}
+            </span>
+          </div>
         )}
       </div>
 

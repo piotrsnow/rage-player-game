@@ -377,6 +377,10 @@ export function MultiplayerProvider({ children }) {
     wsService.send('APPROVE_ACTIONS', { language, dmSettings });
   }, []);
 
+  const soloAction = useCallback((text, isCustom = false, language, dmSettings) => {
+    wsService.send('SOLO_ACTION', { text, isCustom, language, dmSettings });
+  }, []);
+
   const kickPlayer = useCallback((targetOdId) => {
     wsService.send('KICK_PLAYER', { targetOdId });
   }, []);
@@ -406,6 +410,7 @@ export function MultiplayerProvider({ children }) {
     submitAction,
     withdrawAction,
     approveActions,
+    soloAction,
     updateSceneImage,
     onSceneUpdate,
   };

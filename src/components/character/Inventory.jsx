@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const rarityColors = {
@@ -38,8 +39,93 @@ function CoinDisplay({ value, label, color }) {
   );
 }
 
+const rarityLabels = {
+  common: 'inventory.rarityCommon',
+  uncommon: 'inventory.rarityUncommon',
+  rare: 'inventory.rarityRare',
+  epic: 'inventory.rarityEpic',
+  legendary: 'inventory.rarityLegendary',
+};
+
+const rarityBadgeColors = {
+  common: 'bg-on-surface-variant/10 text-on-surface-variant',
+  uncommon: 'bg-primary/10 text-primary-dim',
+  rare: 'bg-primary/20 text-primary',
+  epic: 'bg-tertiary/15 text-tertiary-dim',
+  legendary: 'bg-tertiary/25 text-tertiary',
+};
+
+function ItemDetailBox({ item, onClose }) {
+  const { t } = useTranslation();
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.key === 'Escape') onClose();
+    }
+    function handleClickOutside(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
+
+  const rarity = item.rarity || 'common';
+  const rarityColor = rarityColors[rarity] || rarityColors.common;
+  const badgeColor = rarityBadgeColors[rarity] || rarityBadgeColors.common;
+  const icon = typeIcons[item.type] || typeIcons.misc;
+
+  return (
+    <div
+      ref={boxRef}
+      className={`absolute z-50 left-1/2 -translate-x-1/2 top-full mt-2 w-56 bg-surface-container border ${rarityColor} rounded-sm shadow-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-150`}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-on-surface-variant/50 hover:text-on-surface transition-colors"
+        aria-label={t('common.close')}
+      >
+        <span className="material-symbols-outlined text-sm">close</span>
+      </button>
+
+      <div className="flex items-center gap-2 mb-3">
+        <span
+          className={`material-symbols-outlined text-2xl ${rarityColor.split(' ').find(c => c.startsWith('text-')) || 'text-on-surface'}`}
+          style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h4 className="font-headline text-sm text-on-surface leading-tight truncate">{item.name}</h4>
+          <span className={`inline-block text-[9px] font-label uppercase tracking-wider mt-0.5 px-1.5 py-0.5 rounded-sm ${badgeColor}`}>
+            {t(rarityLabels[rarity] || rarityLabels.common)}
+          </span>
+        </div>
+      </div>
+
+      {item.type && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/60">{t('inventory.type')}</span>
+          <span className="text-[10px] font-label text-on-surface-variant capitalize">{t(`inventory.types.${item.type}`, item.type)}</span>
+        </div>
+      )}
+
+      {item.description && (
+        <p className="text-xs text-on-surface-variant/80 leading-relaxed border-t border-outline-variant/10 pt-2 mt-1">
+          {item.description}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Inventory({ items = [], money }) {
   const { t } = useTranslation();
+  const [selectedItemId, setSelectedItemId] = useState(null);
   const maxSlots = 12;
   const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
@@ -65,11 +151,12 @@ export default function Inventory({ items = [], money }) {
         {items.map((item) => {
           const rarity = rarityColors[item.rarity] || rarityColors.common;
           const icon = typeIcons[item.type] || typeIcons.misc;
+          const isSelected = selectedItemId === item.id;
           return (
             <div
               key={item.id}
-              title={`${item.name}\n${item.description}`}
-              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform`}
+              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''}`}
+              onClick={(e) => { e.stopPropagation(); setSelectedItemId(isSelected ? null : item.id); }}
             >
               <span
                 className="material-symbols-outlined group-hover:scale-110 transition-transform text-xl"
@@ -85,6 +172,9 @@ export default function Inventory({ items = [], money }) {
               )}
               {item.rarity === 'epic' && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+              )}
+              {isSelected && (
+                <ItemDetailBox item={item} onClose={() => setSelectedItemId(null)} />
               )}
             </div>
           );

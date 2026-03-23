@@ -14,6 +14,7 @@ import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 import { useModals } from '../../contexts/ModalContext';
+import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
 
 const genreIds = ['Fantasy', 'Sci-Fi', 'Horror'];
 const genreIcons = { Fantasy: 'auto_fix_high', 'Sci-Fi': 'rocket_launch', Horror: 'skull' };
@@ -386,9 +387,9 @@ export default function CampaignCreatorPage() {
                       <div className="min-w-0 flex-1">
                         <p className="font-headline text-lg text-tertiary">{createdCharacter.name}</p>
                         <p className="text-xs text-on-surface-variant">
-                          {t(`species.${createdCharacter.species}`)} · {createdCharacter.career?.name}
+                          {t(`species.${createdCharacter.species}`)} · {translateCareer(createdCharacter.career?.name, t)}
                           <span className="mx-1 opacity-50">·</span>
-                          {createdCharacter.career?.tierName}
+                          {translateTierName(createdCharacter.career?.tierName, t)}
                         </p>
                         <div className="flex flex-wrap gap-3 mt-2">
                           {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (
@@ -460,7 +461,7 @@ export default function CampaignCreatorPage() {
                                 {ch.name}
                               </p>
                               <p className="text-[10px] text-on-surface-variant truncate">
-                                {ch.species} · {career.name || '—'}
+                                {t(`species.${ch.species}`, { defaultValue: ch.species })} · {career.name ? translateCareer(career.name, t) : '—'}
                               </p>
                               <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
                                 <span>{t('characterPicker.tierLabel')} {career.tier || 1}</span>

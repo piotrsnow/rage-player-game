@@ -125,10 +125,19 @@ export function useGameState() {
         },
       ];
 
+      const initialQuest = aiResult.initialQuest
+        ? {
+            id: createQuestId(),
+            ...aiResult.initialQuest,
+            objectives: (aiResult.initialQuest.objectives || []).map((obj) => ({
+              ...obj,
+              completed: obj.completed ?? false,
+            })),
+          }
+        : null;
+
       const quests = {
-        active: aiResult.initialQuest
-          ? [{ id: createQuestId(), ...aiResult.initialQuest }]
-          : [],
+        active: initialQuest ? [initialQuest] : [],
         completed: [],
       };
 

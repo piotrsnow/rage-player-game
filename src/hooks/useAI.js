@@ -26,6 +26,7 @@ export function useAI() {
       try {
         const enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
         const preRolledDice = !isFirstScene ? rollD100() : null;
+        const momentumBonus = state.momentumBonus || 0;
         const { result, usage } = await aiService.generateScene(
           state,
           settings.dmSettings,
@@ -35,17 +36,18 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, preRolledDice }
+          { needsSystemEnabled, isCustomAction, preRolledDice, momentumBonus }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
           const roll = result.diceRoll.roll;
           const bonus = result.diceRoll.creativityBonus || 0;
+          const momentum = result.diceRoll.momentumBonus || 0;
           const effectiveTarget = result.diceRoll.target;
 
-          if (!result.diceRoll.baseTarget && bonus > 0) {
-            result.diceRoll.baseTarget = effectiveTarget - bonus;
+          if (!result.diceRoll.baseTarget && (bonus > 0 || momentum > 0)) {
+            result.diceRoll.baseTarget = effectiveTarget - bonus - momentum;
           }
 
           const isCriticalSuccess = roll >= 1 && roll <= 4;
@@ -56,6 +58,9 @@ export function useAI() {
           result.diceRoll.criticalSuccess = isCriticalSuccess;
           result.diceRoll.criticalFailure = isCriticalFailure;
           result.diceRoll.sl = calculateSL(roll, effectiveTarget);
+
+          const sl = result.diceRoll.sl;
+          dispatch({ type: 'SET_MOMENTUM', payload: (sl >= 3 && isSuccess) ? sl * 5 : 0 });
         }
 
         const sceneId = createSceneId();

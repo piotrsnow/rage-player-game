@@ -119,11 +119,11 @@ export const aiService = {
   async generateCampaign(settings, provider, apiKey, language = 'en') {
     const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
     const userPrompt = buildCampaignCreationPrompt(settings, language);
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 3000);
+    return callAI(provider, apiKey, systemPrompt, userPrompt, 4000);
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null } = {}) {
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice };
+  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, momentumBonus = 0 } = {}) {
+    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice, momentumBonus };
     const systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
     const userPrompt = buildSceneGenerationPrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
     return callAI(provider, apiKey, systemPrompt, userPrompt, 2000);

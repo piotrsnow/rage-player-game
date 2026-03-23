@@ -82,6 +82,7 @@ const initialState = {
   isLoading: false,
   error: null,
   aiCosts: { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] },
+  momentumBonus: 0,
   isGeneratingScene: false,
   isGeneratingImage: false,
   isGeneratingMusic: false,
@@ -415,6 +416,9 @@ function gameReducer(state, action) {
     case 'SET_GENERATING_MUSIC':
       return { ...state, isGeneratingMusic: action.payload };
 
+    case 'SET_MOMENTUM':
+      return { ...state, momentumBonus: action.payload };
+
     case 'UPDATE_SCENE_MUSIC':
       return state;
 
@@ -523,9 +527,13 @@ function gameReducer(state, action) {
       }
 
       if (changes.newQuests) {
+        const normalized = changes.newQuests.map((q) => ({
+          ...q,
+          objectives: (q.objectives || []).map((obj) => ({ ...obj, completed: obj.completed ?? false })),
+        }));
         next.quests = {
           ...next.quests,
-          active: [...next.quests.active, ...changes.newQuests],
+          active: [...next.quests.active, ...normalized],
         };
       }
 
@@ -539,6 +547,20 @@ function gameReducer(state, action) {
           ),
           completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
         };
+      }
+
+      if (changes.questUpdates?.length > 0) {
+        const activeQuests = [...next.quests.active];
+        for (const update of changes.questUpdates) {
+          const qIdx = activeQuests.findIndex((q) => q.id === update.questId);
+          if (qIdx >= 0 && activeQuests[qIdx].objectives) {
+            const objectives = activeQuests[qIdx].objectives.map((obj) =>
+              obj.id === update.objectiveId ? { ...obj, completed: !!update.completed } : obj
+            );
+            activeQuests[qIdx] = { ...activeQuests[qIdx], objectives };
+          }
+        }
+        next.quests = { ...next.quests, active: activeQuests };
       }
 
       if (changes.worldFacts) {
@@ -730,6 +752,9 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'SET_CHARACTER_LOCAL_ID':
+      return { ...state, character: { ...state.character, localId: action.payload } };
+
     case 'MAP_CHARACTER_VOICE': {
       const { characterName, voiceId, gender } = action.payload;
       return {
@@ -837,7 +862,12 @@ export function GameProvider({ children }) {
       }
 
       if (current.character) {
-        storage.syncCharacterFromGame(current.character);
+        const charCopy = { ...current.character };
+        storage.saveCharacter(charCopy).then(() => {
+          if (!current.character.localId && charCopy.localId) {
+            dispatch({ type: 'SET_CHARACTER_LOCAL_ID', payload: charCopy.localId });
+          }
+        });
       }
     }
   }, []);

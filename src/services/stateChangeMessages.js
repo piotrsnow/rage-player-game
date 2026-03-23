@@ -74,5 +74,17 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     }
   }
 
+  if (stateChanges.questUpdates?.length > 0) {
+    const activeQuests = state.quests?.active || [];
+    for (const update of stateChanges.questUpdates) {
+      if (!update.completed) continue;
+      const quest = activeQuests.find((q) => q.id === update.questId);
+      const questName = quest?.name || update.questId;
+      const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
+      const objDesc = obj?.description || update.objectiveId;
+      msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }), timestamp: ts });
+    }
+  }
+
   return msgs;
 }

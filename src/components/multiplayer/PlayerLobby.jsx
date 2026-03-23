@@ -6,6 +6,7 @@ import { storage } from '../../services/storage';
 import Button from '../ui/Button';
 import CharacterCreationModal from '../character/CharacterCreationModal';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
+import { translateCareer } from '../../utils/wfrpTranslate';
 
 function PastCharacterPicker({ onSelect, onClose }) {
   const { t } = useTranslation();
@@ -67,9 +68,9 @@ function CharacterSummaryBadge({ characterData, t }) {
       <div className="text-xs text-on-surface">
         <span className="font-bold">{characterData.name}</span>
         <span className="mx-1 text-outline">·</span>
-        <span className="text-on-surface-variant">{characterData.species}</span>
+        <span className="text-on-surface-variant">{t(`species.${characterData.species}`, { defaultValue: characterData.species })}</span>
         <span className="mx-1 text-outline">·</span>
-        <span className="text-on-surface-variant">{characterData.career?.name}</span>
+        <span className="text-on-surface-variant">{translateCareer(characterData.career?.name, t)}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-1">
         {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (

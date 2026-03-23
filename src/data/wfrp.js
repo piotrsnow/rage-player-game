@@ -865,15 +865,30 @@ export function isTalentInCareer(talentName, careerName, tier) {
   });
 }
 
+export function getCurrentTierOnlySkills(careerName, tier) {
+  const career = getCareerByName(careerName);
+  if (!career) return [];
+  const idx = Math.min(tier - 1, 3);
+  return career.tiers[idx]?.skills || [];
+}
+
+export function getCurrentTierOnlyTalents(careerName, tier) {
+  const career = getCareerByName(careerName);
+  if (!career) return [];
+  const idx = Math.min(tier - 1, 3);
+  return career.tiers[idx]?.talents || [];
+}
+
 export function canAdvanceTier(character) {
   const { career, skills } = character;
   if (!career || career.tier >= 4) return false;
-  const tierSkills = getCareerTierSkills(career.name, career.tier);
+  const tierSkills = getCurrentTierOnlySkills(career.name, career.tier);
   let qualifiedSkills = 0;
   for (const sk of tierSkills) {
     if ((skills[sk] || 0) >= 5) qualifiedSkills++;
   }
-  const tierTalents = getCareerTierTalents(career.name, career.tier);
+  const requiredSkills = Math.min(tierSkills.length, 8);
+  const tierTalents = getCurrentTierOnlyTalents(career.name, career.tier);
   const hasTalent = tierTalents.some((t) => character.talents?.includes(t));
-  return qualifiedSkills >= 8 && hasTalent;
+  return qualifiedSkills >= requiredSkills && hasTalent;
 }

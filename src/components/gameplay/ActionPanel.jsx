@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import PendingActions from '../multiplayer/PendingActions';
 
 export default function ActionPanel({ actions = [], onAction, disabled }) {
@@ -14,6 +15,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
   const isHost = mp.state.isHost;
   const myPlayer = mp.state.players?.find((p) => p.odId === mp.state.myOdId);
   const hasPendingAction = isMultiplayer && myPlayer?.pendingAction;
+  const { isAvailable: soloAvailable, formattedTime: soloCooldownTime } = useSoloActionCooldown(myPlayer?.lastSoloActionAt);
 
   const onVoiceResult = useCallback((transcript) => {
     setCustomAction((prev) => {
@@ -56,8 +58,44 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
     mp.approveActions(settings.language || 'en', settings.dmSettings);
   };
 
+  const handleSoloSuggestedAction = (action) => {
+    mp.soloAction(action, false, settings.language || 'en', settings.dmSettings);
+  };
+
+  const handleSoloCustomSubmit = () => {
+    if (customAction.trim()) {
+      if (listening) toggle();
+      mp.soloAction(customAction.trim(), true, settings.language || 'en', settings.dmSettings);
+      setCustomAction('');
+    }
+  };
+
+  const handleSoloPendingAction = () => {
+    if (myPlayer?.pendingAction) {
+      mp.soloAction(myPlayer.pendingAction, false, settings.language || 'en', settings.dmSettings);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Multiplayer: Solo Action Cooldown Indicator */}
+      {isMultiplayer && !soloAvailable && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-tertiary/5 border border-tertiary/15 rounded-sm">
+          <span className="material-symbols-outlined text-tertiary text-base">timer</span>
+          <span className="text-xs text-tertiary font-label">
+            {t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+          </span>
+        </div>
+      )}
+      {isMultiplayer && soloAvailable && (
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <span className="material-symbols-outlined text-tertiary/60 text-sm">bolt</span>
+          <span className="text-[10px] text-tertiary/60 font-label uppercase tracking-widest">
+            {t('multiplayer.soloActionReady')}
+          </span>
+        </div>
+      )}
+
       {/* Multiplayer: Pending Actions */}
       {isMultiplayer && <PendingActions />}
 
@@ -65,28 +103,39 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {actions.map((action, i) => (
-            <button
-              key={i}
-              onClick={() => handleSuggestedAction(action)}
-              disabled={disabled || hasPendingAction}
-              className="text-left p-4 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
-            >
-              <div className="flex items-start gap-3">
-                <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
-                  {i + 1}
-                </span>
-                <p className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
-                  {action}
-                </p>
-              </div>
-            </button>
+            <div key={i} className="flex gap-1.5">
+              <button
+                onClick={() => handleSuggestedAction(action)}
+                disabled={disabled || hasPendingAction}
+                className="flex-1 text-left p-4 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-sm leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors leading-relaxed">
+                    {action}
+                  </p>
+                </div>
+              </button>
+              {isMultiplayer && (
+                <button
+                  onClick={() => handleSoloSuggestedAction(action)}
+                  disabled={disabled || !soloAvailable || mp.state.isGenerating}
+                  title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+                  className="shrink-0 w-10 flex items-center justify-center bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 hover:border-tertiary/40 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-tertiary text-base">bolt</span>
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
 
-      {/* Multiplayer: Withdraw / Approve buttons */}
+      {/* Multiplayer: Withdraw / Solo Send / Approve buttons */}
       {isMultiplayer && hasPendingAction && (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleWithdraw}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-on-surface-variant hover:text-error transition-colors"
@@ -94,11 +143,18 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
             <span className="material-symbols-outlined text-sm">undo</span>
             {t('multiplayer.withdrawAction')}
           </button>
-          {!isMultiplayer || !hasPendingAction ? null : (
-            <span className="text-[10px] text-on-surface-variant italic">
-              {t('multiplayer.waitingForHost')}
-            </span>
-          )}
+          <button
+            onClick={handleSoloPendingAction}
+            disabled={!soloAvailable || mp.state.isGenerating}
+            title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-on-surface bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm">bolt</span>
+            {soloAvailable ? t('multiplayer.soloActionSend') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+          </button>
+          <span className="text-[10px] text-on-surface-variant italic">
+            {t('multiplayer.waitingForHost')}
+          </span>
         </div>
       )}
 
@@ -166,16 +222,32 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
                 </span>
               )}
             </div>
-            <button
-              type="submit"
-              disabled={!customAction.trim() || disabled}
-              className="text-primary hover:text-on-surface transition-all flex items-center gap-1.5 group disabled:opacity-30 px-3 py-1.5 rounded-sm hover:bg-primary/10"
-            >
-              <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
-                {isMultiplayer ? t('multiplayer.submitAction') : t('gameplay.send')}
-              </span>
-              <span className="material-symbols-outlined text-xl group-hover:translate-x-0.5 transition-transform">send</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              {isMultiplayer && (
+                <button
+                  type="button"
+                  onClick={handleSoloCustomSubmit}
+                  disabled={!customAction.trim() || disabled || !soloAvailable || mp.state.isGenerating}
+                  title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
+                  className="flex items-center gap-1 px-2 py-1.5 text-tertiary hover:text-on-surface bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-base">bolt</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">
+                    {soloAvailable ? t('multiplayer.soloAction') : soloCooldownTime}
+                  </span>
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!customAction.trim() || disabled}
+                className="text-primary hover:text-on-surface transition-all flex items-center gap-1.5 group disabled:opacity-30 px-3 py-1.5 rounded-sm hover:bg-primary/10"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0">
+                  {isMultiplayer ? t('multiplayer.submitAction') : t('gameplay.send')}
+                </span>
+                <span className="material-symbols-outlined text-xl group-hover:translate-x-0.5 transition-transform">send</span>
+              </button>
+            </div>
           </div>
         </form>
       )}

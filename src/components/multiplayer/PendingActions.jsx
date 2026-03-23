@@ -1,5 +1,25 @@
 import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
+
+function SoloBadge({ lastSoloActionAt }) {
+  const { t } = useTranslation();
+  const { isAvailable, formattedTime } = useSoloActionCooldown(lastSoloActionAt);
+  if (!lastSoloActionAt) return null;
+  if (isAvailable) {
+    return (
+      <span className="ml-auto flex items-center gap-0.5 text-tertiary/60" title={t('multiplayer.soloActionReady')}>
+        <span className="material-symbols-outlined text-xs">bolt</span>
+      </span>
+    );
+  }
+  return (
+    <span className="ml-auto flex items-center gap-0.5 text-tertiary/50 text-[10px] font-label" title={t('multiplayer.soloActionCooldown', { time: formattedTime })}>
+      <span className="material-symbols-outlined text-xs">timer</span>
+      {formattedTime}
+    </span>
+  );
+}
 
 export default function PendingActions() {
   const { t } = useTranslation();
@@ -32,6 +52,7 @@ export default function PendingActions() {
                 {p.odId === myOdId && (
                   <span className="text-[10px] text-tertiary">({t('multiplayer.you')})</span>
                 )}
+                <SoloBadge lastSoloActionAt={p.lastSoloActionAt} />
               </div>
               <p className="text-sm text-on-surface-variant pl-6 italic">
                 &ldquo;{p.pendingAction}&rdquo;
@@ -50,6 +71,7 @@ export default function PendingActions() {
             >
               <span className="material-symbols-outlined text-sm text-outline">hourglass_top</span>
               {p.name}
+              <SoloBadge lastSoloActionAt={p.lastSoloActionAt} />
             </div>
           ))}
         </div>

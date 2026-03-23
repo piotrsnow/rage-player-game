@@ -12,6 +12,8 @@ import {
   ADVANCEMENT_COSTS,
   getCareerTierSkills,
   getCareerTierTalents,
+  getCurrentTierOnlySkills,
+  getCurrentTierOnlyTalents,
   isCharacteristicInCareer,
   isSkillInCareer,
   isTalentInCareer,
@@ -20,7 +22,7 @@ import {
   getSkillCharacteristic,
 } from '../../data/wfrp';
 import { getBonus } from '../../services/gameState';
-import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
+import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
 
 const TABS = ['characteristics', 'skills', 'talents', 'career'];
 
@@ -210,6 +212,86 @@ function TalentsTab({ character, availableXp, dispatch }) {
   );
 }
 
+function TierRequirements({ character }) {
+  const { t } = useTranslation();
+  const careerName = character.career?.name;
+  const careerTier = character.career?.tier || 1;
+
+  const tierSkills = getCurrentTierOnlySkills(careerName, careerTier);
+  const tierTalents = getCurrentTierOnlyTalents(careerName, careerTier);
+  const ownedTalents = new Set(character.talents || []);
+
+  const skillEntries = tierSkills.map((sk) => ({
+    name: sk,
+    advances: character.skills?.[sk] || 0,
+    qualified: (character.skills?.[sk] || 0) >= 5,
+  }));
+  const qualifiedCount = skillEntries.filter((e) => e.qualified).length;
+  const requiredSkills = Math.min(tierSkills.length, 8);
+  const skillsMet = qualifiedCount >= requiredSkills;
+
+  const talentEntries = tierTalents.map((tal) => ({
+    name: tal,
+    owned: ownedTalents.has(tal),
+  }));
+  const talentMet = talentEntries.some((e) => e.owned);
+
+  return (
+    <div className="bg-surface-container-high/40 p-4 rounded-sm border border-outline-variant/10 space-y-4">
+      <span className="text-[9px] text-on-surface-variant uppercase tracking-widest">
+        {t('advancement.tierRequirements')}
+      </span>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-on-surface-variant">{t('advancement.skillsRequired')}</span>
+          <span className={`text-xs font-bold ${skillsMet ? 'text-green-400' : 'text-outline'}`}>
+            {qualifiedCount} / {requiredSkills}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+          {skillEntries.map((entry) => (
+            <div key={entry.name} className="flex items-center justify-between text-[11px] py-0.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className={`material-symbols-outlined text-[12px] ${entry.qualified ? 'text-green-400' : 'text-outline/30'}`}>
+                  {entry.qualified ? 'check_circle' : 'radio_button_unchecked'}
+                </span>
+                <span className={`truncate ${entry.qualified ? 'text-tertiary' : 'text-on-surface-variant/60'}`}>
+                  {translateSkill(entry.name, t)}
+                </span>
+              </div>
+              <span className={`shrink-0 font-bold ml-2 ${entry.qualified ? 'text-green-400' : 'text-outline/50'}`}>
+                +{entry.advances}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-on-surface-variant">{t('advancement.talentRequired')}</span>
+          <span className={`text-xs font-bold ${talentMet ? 'text-green-400' : 'text-outline'}`}>
+            {talentMet ? t('advancement.met') : t('advancement.notMet')}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+          {talentEntries.map((entry) => (
+            <div key={entry.name} className="flex items-center gap-1.5 text-[11px] py-0.5">
+              <span className={`material-symbols-outlined text-[12px] ${entry.owned ? 'text-green-400' : 'text-outline/30'}`}>
+                {entry.owned ? 'check_circle' : 'radio_button_unchecked'}
+              </span>
+              <span className={`truncate ${entry.owned ? 'text-tertiary' : 'text-on-surface-variant/60'}`}>
+                {translateTalent(entry.name, t)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CareerTab({ character, availableXp, dispatch }) {
   const { t } = useTranslation();
   const [selectedClass, setSelectedClass] = useState(character.career?.class || 'Warriors');
@@ -226,10 +308,10 @@ function CareerTab({ character, availableXp, dispatch }) {
           <div>
             <span className="text-[9px] text-on-surface-variant uppercase tracking-widest">{t('advancement.current')}</span>
             <p className="text-tertiary font-headline text-lg">
-              {currentCareer?.name} — {currentCareer?.tierName}
+              {translateCareer(currentCareer?.name, t)} — {translateTierName(currentCareer?.tierName, t)}
             </p>
             <p className="text-on-surface-variant text-xs">
-              {currentCareer?.class} · {t('common.tier')} {currentCareer?.tier} · {currentCareer?.status}
+              {t(`careerClasses.${currentCareer?.class}`, { defaultValue: currentCareer?.class })} · {t('common.tier')} {currentCareer?.tier} · {translateStatus(currentCareer?.status, t)}
             </p>
           </div>
           {currentCareer?.tier < 4 && (
@@ -247,6 +329,8 @@ function CareerTab({ character, availableXp, dispatch }) {
           )}
         </div>
       </div>
+
+      {currentCareer?.tier < 4 && <TierRequirements character={character} />}
 
       {/* Career class selector */}
       <div>
@@ -288,10 +372,10 @@ function CareerTab({ character, availableXp, dispatch }) {
                 }`}
               >
                 <p className={`font-headline ${isCurrent ? 'text-primary' : 'text-on-surface-variant'}`}>
-                  {career.name}
+                  {translateCareer(career.name, t)}
                 </p>
                 <p className="text-[9px] text-outline mt-0.5">
-                  {career.tiers[0].name} → {career.tiers[3].name}
+                  {translateTierName(career.tiers[0].name, t)} → {translateTierName(career.tiers[3].name, t)}
                 </p>
                 {!isCurrent && (
                   <button

@@ -132,6 +132,8 @@
     "voiceStop": "Zatrzymaj nagrywanie",
     "voiceListening": "Słucham...",
     "creativityBonus": "Kreatywność +{{bonus}}",
+    "momentumBonus": "Momentum +{{bonus}}",
+    "momentumActive": "Momentum +{{bonus}} w następnym rzucie",
     "exportLog": "Pobierz Log Rozgrywki",
     "generatingMusic": "Generowanie muzyki...",
     "musicPlaying": "Odtwarzanie",
@@ -163,15 +165,45 @@
     "origins": "Pochodzenie",
     "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica...",
     "voice": "Głos Postaci",
-    "noVoice": "Brak głosu"
+    "noVoice": "Brak głosu",
+    "saveToLibrary": "Zapisz Postać",
+    "savedToLibrary": "Zapisano!",
+    "saveError": "Błąd zapisu"
   },
   "quests": {
     "activeChronicles": "Aktywne Kroniki",
-    "noQuests": "Nie odkryto jeszcze żadnych zadań."
+    "noQuests": "Nie odkryto jeszcze żadnych zadań.",
+    "completionCondition": "Warunek Ukończenia",
+    "objectives": "Cele",
+    "selectQuest": "Wybierz zadanie, aby zobaczyć szczegóły"
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
-    "slots": "{{current}}/{{max}} Miejsc"
+    "slots": "{{current}}/{{max}} Miejsc",
+    "type": "Typ:",
+    "rarityCommon": "Zwykły",
+    "rarityUncommon": "Niepospolity",
+    "rarityRare": "Rzadki",
+    "rarityEpic": "Epicki",
+    "rarityLegendary": "Legendarny",
+    "types": {
+      "weapon": "Broń",
+      "armor": "Zbroja",
+      "potion": "Mikstura",
+      "scroll": "Zwój",
+      "artifact": "Artefakt",
+      "tool": "Narzędzie",
+      "food": "Jedzenie",
+      "clothing": "Odzież",
+      "key": "Klucz",
+      "book": "Książka",
+      "ring": "Pierścień",
+      "ammunition": "Amunicja",
+      "trinket": "Drobiazg",
+      "currency": "Waluta",
+      "shield": "Tarcza",
+      "misc": "Różne"
+    }
   },
   "stats": {
     "ws": "WW",
@@ -472,6 +504,11 @@
     "sameClass": "Ta sama klasa",
     "differentClass": "Inna klasa",
     "requirementsNotMet": "Warunki niespełnione",
+    "tierRequirements": "Warunki awansu szczebla",
+    "skillsRequired": "Umiejętności z 5+ rozwinięciami",
+    "talentRequired": "Posiadana zdolność kariery",
+    "met": "Spełniony",
+    "notMet": "Niespełniony",
     "addSkill": "Dodaj umiejętność",
     "owned": "Posiadany"
   },
@@ -522,6 +559,7 @@
     "xpGained": "{{name}} zdobył/a {{amount}} PD",
     "questNew": "Nowe zadanie: {{quest}}",
     "questCompleted": "Zadanie ukończone: {{quest}}",
+    "questObjectiveCompleted": "Cel ukończony: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",
     "moneyGained": "{{name}} otrzymał/a {{amount}}"
   },
@@ -825,7 +863,8 @@
     "Tinker": "Majsterkowicz",
     "Savvy or Suave": "Cwany lub Ogładzony",
     "Coolheaded or Savvy": "Zimna Krew lub Cwany",
-    "Hardy or Second Sight": "Twardziel lub Drugie Spojrzenie"
+    "Hardy or Second Sight": "Twardziel lub Drugie Spojrzenie",
+    "Second Sight or Sixth Sense": "Drugie Spojrzenie lub Szósty Zmysł"
   },
   "multiplayer": {
     "solo": "Solo",
@@ -866,7 +905,12 @@
     "noVoice": "Brak głosu",
     "sceneGenerating": "MG rozwiązuje wszystkie akcje...",
     "noActionsYet": "Brak przesłanych akcji",
-    "waitingForPlayers": "Oczekiwanie na akcje graczy..."
+    "waitingForPlayers": "Oczekiwanie na akcje graczy...",
+    "soloAction": "Solo",
+    "soloActionSend": "Wyślij Solo",
+    "soloActionReady": "Samodzielna akcja dostępna",
+    "soloActionCooldown": "Solo za {{time}}",
+    "soloActionTooltip": "Wyślij tylko swoją akcję bez czekania na innych (3 min odnowienia)"
   },
   "statusTier": {
     "Brass": "Mosiądz",
