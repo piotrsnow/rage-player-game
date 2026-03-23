@@ -160,7 +160,10 @@
     "nextScene": "Next scene",
     "backToCurrent": "Back to current scene",
     "replayNarration": "Replay narration",
-    "sceneReview": "Scene review"
+    "sceneReview": "Scene review",
+    "firstScene": "First scene",
+    "autoPlayScenes": "Auto-play all scenes",
+    "stopAutoPlay": "Stop auto-play"
   },
   "chat": {
     "dmAi": "DM AI",

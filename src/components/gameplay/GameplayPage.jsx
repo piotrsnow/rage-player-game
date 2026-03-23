@@ -49,7 +49,10 @@ export default function GameplayPage() {
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
+  const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const prevScenesLenRef = useRef(0);
+  const autoPlayRef = useRef(false);
+  const displayedSceneIndexRef = useRef(0);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -88,6 +91,26 @@ export default function GameplayPage() {
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
+
+  autoPlayRef.current = autoPlayScenes;
+  displayedSceneIndexRef.current = displayedSceneIndex;
+
+  useEffect(() => {
+    if (
+      narrator.playbackState === 'idle' &&
+      autoPlayRef.current &&
+      scenes.length > 0
+    ) {
+      const currentIdx = displayedSceneIndexRef.current;
+      if (currentIdx < scenes.length - 1) {
+        const nextIdx = currentIdx + 1;
+        setViewingSceneIndex(nextIdx);
+        handleSceneNavigation(nextIdx);
+      } else {
+        setAutoPlayScenes(false);
+      }
+    }
+  }, [narrator.playbackState, scenes.length]);
 
   useEffect(() => {
     if (!campaign && !isMultiplayer) {
@@ -206,6 +229,18 @@ export default function GameplayPage() {
               <span className="flex items-center gap-1">
                 <button
                   onClick={() => {
+                    setViewingSceneIndex(0);
+                    handleSceneNavigation(0);
+                  }}
+                  disabled={displayedSceneIndex <= 0}
+                  title={t('gameplay.firstScene', 'First scene')}
+                  aria-label={t('gameplay.firstScene', 'First scene')}
+                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                >
+                  first_page
+                </button>
+                <button
+                  onClick={() => {
                     const newIndex = Math.max(0, displayedSceneIndex - 1);
                     setViewingSceneIndex(newIndex);
                     handleSceneNavigation(newIndex);
@@ -251,6 +286,35 @@ export default function GameplayPage() {
                     className="material-symbols-outlined text-xs text-primary hover:text-tertiary transition-colors ml-1"
                   >
                     volume_up
+                  </button>
+                )}
+                {settings.narratorEnabled && narrator.isNarratorReady && scenes.length > 1 && (
+                  <button
+                    onClick={() => {
+                      if (autoPlayScenes) {
+                        setAutoPlayScenes(false);
+                        narrator.stop();
+                      } else {
+                        if (displayedSceneIndex >= scenes.length - 1) {
+                          setViewingSceneIndex(0);
+                          handleSceneNavigation(0);
+                        }
+                        setAutoPlayScenes(true);
+                      }
+                    }}
+                    title={autoPlayScenes
+                      ? t('gameplay.stopAutoPlay', 'Stop auto-play')
+                      : t('gameplay.autoPlayScenes', 'Auto-play all scenes')}
+                    aria-label={autoPlayScenes
+                      ? t('gameplay.stopAutoPlay', 'Stop auto-play')
+                      : t('gameplay.autoPlayScenes', 'Auto-play all scenes')}
+                    className={`material-symbols-outlined text-xs transition-colors ml-1 ${
+                      autoPlayScenes
+                        ? 'text-tertiary hover:text-error animate-pulse'
+                        : 'text-outline hover:text-primary'
+                    }`}
+                  >
+                    {autoPlayScenes ? 'stop' : 'play_arrow'}
                   </button>
                 )}
               </span>
@@ -356,8 +420,8 @@ export default function GameplayPage() {
         <ScenePanel
           scene={viewedScene}
           isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
-          highlightInfo={isReviewingPastScene ? null : narrator.highlightInfo}
-          currentChunk={isReviewingPastScene ? null : narrator.currentChunk}
+          highlightInfo={narrator.highlightInfo}
+          currentChunk={narrator.currentChunk}
           diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
           diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
         />

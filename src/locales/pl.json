@@ -160,7 +160,10 @@
     "nextScene": "Następna scena",
     "backToCurrent": "Wróć do aktualnej sceny",
     "replayNarration": "Odtwórz narrację",
-    "sceneReview": "Przegląd sceny"
+    "sceneReview": "Przegląd sceny",
+    "firstScene": "Pierwsza scena",
+    "autoPlayScenes": "Odtwarzaj wszystkie sceny",
+    "stopAutoPlay": "Zatrzymaj odtwarzanie"
   },
   "chat": {
     "dmAi": "MG AI",
