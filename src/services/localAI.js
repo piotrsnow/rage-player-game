@@ -176,6 +176,11 @@ export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en',
     : 'None';
 
   const currentLoc = world?.currentLocation || 'Unknown';
+
+  const npcsHere = npcs.filter((n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());
+  const npcsHereSection = npcsHere.length > 0
+    ? npcsHere.map((n) => n.name).join(', ')
+    : 'None';
   const mapState = world?.mapState || [];
   const mapSection = mapState.length
     ? mapState.slice(0, 10).map((loc) => {
@@ -291,6 +296,7 @@ Map:\n${mapSection}
 Time: ${timeSection}
 Effects:\n${effectsSection}
 NPCs:\n${npcSection}
+NPCs here: ${npcsHereSection}
 Facts: ${worldFacts}
 Journal:\n${journal}
 Quests:\n${activeQuests}
@@ -298,6 +304,7 @@ ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
 Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts.
+Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
 Bestiary sample:\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 5))}
@@ -347,7 +354,7 @@ Write narrative and suggestedActions in ${lang}.`;
   return `${needsReminder}Player action: "${playerAction}"
 Quoted text in the action = PC speech (work into narrative).
 
-Resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
+Feasibility first: impossible=auto-fail (diceRoll=null), trivial=auto-succeed (diceRoll=null). Then resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}
 ${isCustomAction ? 'Custom action: add creativityBonus 10–40 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : ''}
 ${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}

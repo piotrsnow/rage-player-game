@@ -195,6 +195,11 @@ function buildMultiplayerSystemPrompt(gameState, settings, players, language = '
     : 'No NPCs encountered yet.';
 
   const currentLoc = world.currentLocation || 'Unknown';
+
+  const npcsHere = npcs.filter((n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());
+  const npcsHereSection = npcsHere.length > 0
+    ? npcsHere.map((n) => `- ${n.name} (${n.role || 'unknown'})`).join('\n')
+    : 'No known NPCs at this location.';
   const mapState = world.mapState || [];
   const mapSection = mapState.length > 0
     ? mapState.map((loc) => {
@@ -268,6 +273,9 @@ ${charLines}
 NPC REGISTRY:
 ${npcSection}
 
+NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
+${npcsHereSection}
+
 CURRENT LOCATION: ${currentLoc}
 
 MAP STATE (explored locations):
@@ -329,6 +337,13 @@ MULTIPLAYER INSTRUCTIONS:
 9. Always respond with valid JSON.
 10. ITEM VALIDATION: Characters can ONLY use items currently listed in their inventory above. If a player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that the character actually has in their inventory.
 11. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
+
+ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
+- IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If a player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), do NOT include a diceRolls entry for that action and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc.
+- TRIVIAL ACTIONS (auto-success, NO dice roll): If the action is trivially easy with no meaningful chance of failure (e.g., walking a short distance on flat ground, picking up an object at your feet, opening an unlocked door, sitting down), do NOT include a diceRolls entry and narrate the success directly.
+- UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
+- EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules.
+- suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere.
 
 CODEX SYSTEM (detailed lore and knowledge discovery):
 When any player asks about, investigates, or learns about something specific, generate a detailed codex fragment via stateChanges.codexUpdates. Each NPC reveals only ONE fragment per interaction based on their role (scholars know history, peasants know rumors, soldiers know weaknesses/locations). Check the PLAYER CODEX above — never repeat known information. Format:
@@ -446,6 +461,8 @@ Example: input [I encourage everyone to celebrate. "Party on!" I shout.] → nar
 If the input has NO quotation marks at all, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's input text verbatim).
 
 Resolve ALL player actions simultaneously. Describe what happens to each character.
+
+FEASIBILITY CHECK: Before rolling dice, verify each action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (no diceRolls entry). Trivial/certain actions auto-succeed (no diceRolls entry). Only roll for uncertain outcomes.
 
 DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. The "target" number in each diceRoll is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances).
 NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.

@@ -100,6 +100,11 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     : 'No NPCs encountered yet.';
 
   const currentLoc = world?.currentLocation || 'Unknown';
+
+  const npcsHere = npcs.filter((n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());
+  const npcsHereSection = npcsHere.length > 0
+    ? npcsHere.map((n) => `- ${n.name} (${n.role || 'unknown role'})`).join('\n')
+    : 'No known NPCs at this location.';
   const mapState = world?.mapState || [];
   const mapSection = mapState.length > 0
     ? mapState.map((loc) => {
@@ -274,6 +279,9 @@ When this modifier applies, include "dispositionBonus" in the diceRoll output wi
 NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
 ${npcSection}
 
+NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
+${npcsHereSection}
+
 CURRENT LOCATION & MAP:
 Current: ${currentLoc}
 Known locations:
@@ -334,6 +342,13 @@ INSTRUCTIONS:
 13. Update the player's current location via stateChanges.currentLocation when they move.
 14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
+
+ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
+- IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If the player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), set diceRoll to null and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc. Do NOT waste a dice roll on an impossible action.
+- TRIVIAL ACTIONS (auto-success, NO dice roll): If the action is trivially easy with no meaningful chance of failure (e.g., walking a short distance on flat ground, picking up an object at your feet, opening an unlocked door, sitting down), set diceRoll to null and narrate the success directly. These do not need mechanical resolution.
+- UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
+- EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules. If the player attempts to call someone who could plausibly hear them or arrive shortly, narrate the attempt and its result.
+- suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere.
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -549,6 +564,8 @@ Example: input [I encourage everyone to celebrate. "Party on!" I shout.] → nar
 If the input has NO quotation marks at all, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's input text verbatim).
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
+
+FEASIBILITY CHECK: Before rolling dice, verify the action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (diceRoll=null). Trivial/certain actions auto-succeed (diceRoll=null). Only roll for uncertain outcomes.
 
 DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. The "target" number in the diceRoll output is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
 NPC DISPOSITION MODIFIERS: When this roll involves direct interaction with a known NPC (social, trade, persuasion, etc.), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll output with the applied modifier value.
