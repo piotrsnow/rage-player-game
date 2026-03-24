@@ -53,7 +53,11 @@
     "dmgTo": "obrażeń w",
     "critical": "KRYTYCZNY",
     "miss": "Pudło!",
-    "fled": "Ucieczka!"
+    "fled": "Ucieczka!",
+    "surrender": "Poddaj się",
+    "surrenderConfirm": "Jesteś pewien? Będziesz na łasce swoich wrogów.",
+    "surrendered": "Poddanie się",
+    "cancel": "Anuluj"
   },
   "nav": {
     "lobby": "Lobby",
@@ -485,7 +489,11 @@
     "localMusicDesc": "Muzyka w tle z wcześniej wgranych plików MP3 na serwerze. Umieść pliki MP3 w backend/public/music/.",
     "musicVolume": "Głośność Muzyki",
     "musicVolumeDesc": "Poziom głośności odtwarzanej muzyki w tle",
+    "sunoTitle": "Muzyka AI (Suno)",
+    "sunoDesc": "Muzyka instrumentalna generowana przez AI (Suno) dopasowana do klimatu każdej sceny. Każda scena otrzymuje unikalną muzykę w tle.",
     "sunoApiKey": "Klucz API Suno",
+    "sunoApiKeyDesc": "Uzyskaj klucz API z sunoapi.org. Wymagany do generowania muzyki AI.",
+    "keyOnBackend": "Klucz przechowywany na serwerze",
     "sunoModel": "Model Suno",
     "configBackup": "Kopia Konfiguracji",
     "configBackupDesc": "Eksportuj lub importuj pełną konfigurację wraz z kluczami API, ustawieniami MG i kampaniami.",

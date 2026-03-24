@@ -36,8 +36,9 @@ export default function GameplayPage() {
   const mp = useMultiplayer();
   const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
   const narrator = useNarrator();
-  const { setNarratorState } = useGlobalMusic();
+  const { setNarratorState, triggerSceneMusic } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
+  const musicTriggeredRef = useRef(new Set());
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
@@ -45,6 +46,7 @@ export default function GameplayPage() {
   useEffect(() => {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
+
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
@@ -85,6 +87,20 @@ export default function GameplayPage() {
   const error = isMultiplayer ? mp.state.error : state.error;
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
+
+  useEffect(() => {
+    if (
+      currentScene &&
+      !musicTriggeredRef.current.has(currentScene.id) &&
+      !isGeneratingScene
+    ) {
+      musicTriggeredRef.current.add(currentScene.id);
+      const mood = currentScene.atmosphere?.mood;
+      if (mood) {
+        triggerSceneMusic(mood, campaign?.genre, campaign?.tone, currentScene.musicPrompt);
+      }
+    }
+  }, [currentScene, isGeneratingScene, triggerSceneMusic, campaign]);
 
   useEffect(() => {
     if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
@@ -229,6 +245,36 @@ export default function GameplayPage() {
     const combatActionText = summary.playerSurvived
       ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
       : `[Combat resolved: defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+
+    generateScene(combatActionText, false, false).catch(() => {});
+  };
+
+  const handleSurrender = (summary) => {
+    dispatch({ type: 'END_COMBAT' });
+
+    const remainingList = summary.remainingEnemies.map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
+    const combatJournal = `Combat: Surrender — yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
+
+    const stateChanges = {
+      journalEntries: [combatJournal],
+    };
+    if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
+    if (summary.xp) stateChanges.xp = summary.xp;
+    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
+    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
+        id: `msg_${Date.now()}_combat_surrender`,
+        role: 'system',
+        subtype: 'combat_end',
+        content: `You surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated.${summary.xp ? ` +${summary.xp} XP` : ''}`,
+        timestamp: Date.now(),
+      },
+    });
+
+    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -578,6 +624,7 @@ export default function GameplayPage() {
               combat={state.combat}
               dispatch={dispatch}
               onEndCombat={handleEndCombat}
+              onSurrender={handleSurrender}
               character={character}
             />
           </div>

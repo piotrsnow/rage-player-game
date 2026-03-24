@@ -8,6 +8,7 @@ import {
   isCombatOver,
   resolveEnemyTurns,
   endCombat,
+  surrenderCombat,
 } from '../../services/combatEngine';
 
 const MANOEUVRE_ICONS = {
@@ -37,11 +38,12 @@ function WoundsBar({ current, max, name, type }) {
   );
 }
 
-export default function CombatPanel({ combat, dispatch, onEndCombat, character }) {
+export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender, character }) {
   const { t } = useTranslation();
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [lastResult, setLastResult] = useState(null);
+  const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
 
   const currentTurn = getCurrentTurnCombatant(combat);
   const isPlayerTurn = currentTurn?.type === 'player';
@@ -109,6 +111,13 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, character }
     onEndCombat(summary);
   };
 
+  const handleSurrender = () => {
+    if (!character) return;
+    const summary = surrenderCombat(combat, character);
+    setShowSurrenderConfirm(false);
+    onSurrender(summary);
+  };
+
   return (
     <div className="space-y-4 p-3 bg-error-container/5 border border-error/20 rounded-sm">
       {/* Header */}
@@ -122,15 +131,48 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, character }
             {t('combat.round', 'Round')} {combat.round}
           </span>
         </div>
-        {combatOver && (
-          <button
-            onClick={handleEndCombat}
-            className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-primary/15 text-primary border border-primary/20 rounded-sm hover:bg-primary/25 transition-colors"
-          >
-            {t('combat.endCombat', 'End Combat')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!combatOver && (
+            <button
+              onClick={() => setShowSurrenderConfirm(true)}
+              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-outline/10 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-error/15 hover:text-error hover:border-error/20 transition-colors"
+            >
+              {t('combat.surrender', 'Surrender')}
+            </button>
+          )}
+          {combatOver && (
+            <button
+              onClick={handleEndCombat}
+              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-primary/15 text-primary border border-primary/20 rounded-sm hover:bg-primary/25 transition-colors"
+            >
+              {t('combat.endCombat', 'End Combat')}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Surrender Confirmation */}
+      {showSurrenderConfirm && (
+        <div className="p-3 bg-error-container/10 border border-error/30 rounded-sm space-y-2">
+          <p className="text-[11px] text-on-surface">
+            {t('combat.surrenderConfirm', 'Are you sure? You will be at the mercy of your enemies.')}
+          </p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setShowSurrenderConfirm(false)}
+              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-surface-container/50 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
+            >
+              {t('combat.cancel', 'Cancel')}
+            </button>
+            <button
+              onClick={handleSurrender}
+              className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-error/15 text-error border border-error/30 rounded-sm hover:bg-error/25 transition-colors"
+            >
+              {t('combat.surrender', 'Surrender')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Initiative Tracker */}
       <div className="flex gap-1 overflow-x-auto pb-1">

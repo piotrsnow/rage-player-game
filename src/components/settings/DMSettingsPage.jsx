@@ -176,6 +176,7 @@ export default function DMSettingsPage({ onClose }) {
       openaiApiKey: localKeys.openaiApiKey,
       anthropicApiKey: localKeys.anthropicApiKey,
       stabilityApiKey: localKeys.stabilityApiKey,
+      sunoApiKey: sunoKey,
     });
 
     if (apiClient.isConnected()) {
@@ -888,6 +889,79 @@ export default function DMSettingsPage({ onClose }) {
                 onChange={(v) => updateSettings({ musicVolume: v })}
                 displayValue={`${settings.musicVolume ?? 40}%`}
               />
+            )}
+          </div>
+
+          {/* AI Music (Suno) Section */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">auto_awesome</span>
+              {t('settings.sunoTitle')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.sunoDesc')}</p>
+
+            <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+              <div>
+                <p className="font-headline text-tertiary text-sm">{t('settings.musicEnabled')}</p>
+                <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                  {t('settings.musicEnabledDesc')}
+                </p>
+              </div>
+              <button
+                onClick={() => updateSettings({ musicEnabled: !settings.musicEnabled })}
+                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                  settings.musicEnabled
+                    ? 'bg-primary-dim/20 border-primary/30'
+                    : 'bg-surface-container-highest border-outline-variant/30'
+                }`}
+              >
+                <div
+                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                    settings.musicEnabled
+                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                      : 'left-1 bg-on-surface-variant'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.musicEnabled && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.sunoApiKey')}
+                  </label>
+                  <input
+                    type="password"
+                    value={sunoKey}
+                    onChange={(e) => setSunoKey(e.target.value)}
+                    placeholder={hasApiKey('suno') ? t('settings.keyOnBackend') : 'sk-...'}
+                    className="w-full p-3 bg-surface-container-highest border border-outline-variant/20 rounded-sm text-on-surface text-sm placeholder-on-surface-variant/40 focus:border-primary/50 focus:outline-none transition-colors"
+                  />
+                  <p className="text-[9px] text-on-surface-variant mt-1">{t('settings.sunoApiKeyDesc')}</p>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                    {t('settings.sunoModel')}
+                  </label>
+                  <div className="flex gap-2">
+                    {['V3_5', 'V4', 'V4_5'].map((model) => (
+                      <button
+                        key={model}
+                        onClick={() => updateSettings({ sunoModel: model })}
+                        className={`flex-1 px-3 py-2 rounded-sm border text-xs font-label uppercase tracking-widest transition-all ${
+                          (settings.sunoModel || 'V4_5') === model
+                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                        }`}
+                      >
+                        {model.replace('_', '.')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </section>

@@ -53,7 +53,11 @@
     "dmgTo": "dmg to",
     "critical": "CRITICAL",
     "miss": "Miss!",
-    "fled": "Fled!"
+    "fled": "Fled!",
+    "surrender": "Surrender",
+    "surrenderConfirm": "Are you sure? You will be at the mercy of your enemies.",
+    "surrendered": "Surrendered",
+    "cancel": "Cancel"
   },
   "nav": {
     "lobby": "Lobby",
@@ -485,7 +489,11 @@
     "localMusicDesc": "Background music from pre-uploaded MP3 files on the server. Place MP3 files in backend/public/music/.",
     "musicVolume": "Music Volume",
     "musicVolumeDesc": "Volume level for background music playback",
+    "sunoTitle": "AI Music (Suno)",
+    "sunoDesc": "AI-generated instrumental music via Suno for immersive scene atmosphere. Each scene gets unique background music matching its mood.",
     "sunoApiKey": "Suno API Key",
+    "sunoApiKeyDesc": "Get your API key from sunoapi.org. Required for AI music generation.",
+    "keyOnBackend": "Key stored on server",
     "sunoModel": "Suno Model",
     "configBackup": "Configuration Backup",
     "configBackupDesc": "Export or import your full configuration including API keys, DM settings, and campaigns.",

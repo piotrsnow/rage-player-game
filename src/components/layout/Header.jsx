@@ -79,22 +79,30 @@ export default function Header() {
         </nav>
 
         {/* Global Music Controls */}
-        {settings.localMusicEnabled && music.hasMusic && (
+        {((settings.localMusicEnabled && music.hasMusic) || (settings.musicEnabled && (music.isPlaying || music.isGeneratingMusic))) && (
           <div className="flex items-center gap-2">
-            <button
-              onClick={music.togglePlayPause}
-              className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
-            >
-              {music.isPlaying ? 'pause' : 'play_arrow'}
-            </button>
-            <button
-              onClick={music.skip}
-              className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-              title={t('gameplay.musicSkip', 'Next')}
-            >
-              skip_next
-            </button>
+            {music.isGeneratingMusic ? (
+              <span className="material-symbols-outlined text-lg text-primary animate-pulse w-8 h-8 flex items-center justify-center">
+                music_note
+              </span>
+            ) : (
+              <button
+                onClick={music.togglePlayPause}
+                className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
+              >
+                {music.isPlaying ? 'pause' : 'play_arrow'}
+              </button>
+            )}
+            {!settings.musicEnabled && (
+              <button
+                onClick={music.skip}
+                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                title={t('gameplay.musicSkip', 'Next')}
+              >
+                skip_next
+              </button>
+            )}
             <div className="relative" ref={volumeRef}>
               <button
                 onClick={() => setVolumeOpen((v) => !v)}

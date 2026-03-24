@@ -603,7 +603,16 @@ When generating a combat encounter, include "combatUpdate" in stateChanges with 
     "reason": "Short description of why combat started"
   }
 }
-Only include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+Include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+
+PLAYER-INITIATED COMBAT (MANDATORY):
+When the player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation (e.g. "atakuję", "rozpoczynam walkę", "wyzywam go na pojedynek", "rzucam się na niego", "I attack", "I start a fight"), you MUST include "combatUpdate" in stateChanges with appropriate enemies:
+- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY if matching, or create contextually appropriate stats (a town guard is tougher than a beggar; a noble's bodyguard is tougher than a town guard).
+- If the player attacks a named NPC, that NPC becomes an enemy combatant. Their allies/guards may also join the fight.
+- The narrative should briefly describe the moment of escalation — the player draws a weapon, the NPC's eyes widen, bystanders scatter — then combat begins via combatUpdate.
+- If there is genuinely no one to fight (empty location, no NPCs, no creatures), narrate that there is no target and do NOT include combatUpdate.
+- NPCs may attempt to de-escalate or warn the player in dialogue BEFORE combat starts, but if the player's intent is clearly aggressive, combat MUST begin in this same scene — do not delay it to the next scene.
+- Respect player agency: if the player wants to fight, they fight. The consequences of attacking innocents or authorities should come AFTER combat (reputation, bounties, story consequences), not prevent the combat from starting.
 
 FACTION & REPUTATION:
 When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.`;
@@ -663,6 +672,7 @@ The dialogueSegments array must cover the full narrative broken into narration a
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
+  const isSurrender = isPostCombat && playerAction.includes('player surrendered');
 
   const actionPart = extractActionParts(playerAction);
   const dialoguePart = extractDialogueParts(playerAction);
@@ -677,7 +687,19 @@ POST-COMBAT RULES (MANDATORY):
 - The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
 - Set diceRoll to null — no skill test is needed for this post-combat transition scene.
 - Suggest post-combat actions: searching bodies for loot, tending wounds, resting, continuing the journey, investigating why the enemies attacked, etc.
-- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).`
+- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isSurrender ? `
+
+SURRENDER RULES (MANDATORY — the player SURRENDERED, they did not win):
+- The player character dropped their weapon and yielded. The remaining enemies are NOW IN CONTROL of the situation.
+- Narrate the enemies' reaction to the surrender. Their response depends on WHO they are:
+  * Town guards / authorities → arrest, imprisonment, trial, confiscation of weapons. Use stateChanges to remove weapons/contraband via "itemsRemoved".
+  * Bandits / criminals → rob the player, take valuables and money. Use "itemsRemoved" and "moneyChange" (negative) to reflect theft.
+  * Intelligent enemies (NPCs, rival adventurers) → may capture, bind, interrogate, demand ransom, or force servitude. Consider their personality and goals.
+  * Monsters / beasts → if unintelligent, they may not accept surrender (narrate the player being dragged away, left for dead, or barely escaping).
+  * Faction enemies → use "factionChanges" to reflect reputation consequences (humiliation, submission).
+- The consequences MUST be meaningful: the player chose to surrender to avoid death, so they pay a price. Include at least one of: imprisonment, item confiscation, money loss, forced relocation, reputation damage, or a new quest/obligation imposed by the captors.
+- Suggest actions that reflect the surrendered state: negotiating with captors, attempting escape, accepting imprisonment, pleading for mercy, offering information/services in exchange for freedom.
+- Do NOT let the surrender have zero consequences — the enemies won and should act like victors.` : ''}`
     : playerHasDialogue
       ? `The player's ACTION: ${actionPart}
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`

@@ -427,3 +427,32 @@ export function endCombat(combat, playerCharacter) {
     playerSurvived: playerCombatant ? !playerCombatant.isDefeated : false,
   };
 }
+
+export function surrenderCombat(combat, playerCharacter) {
+  const playerCombatant = combat.combatants.find((c) => c.type === 'player');
+  const woundsLost = playerCombatant
+    ? playerCharacter.wounds - playerCombatant.wounds
+    : 0;
+
+  const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
+  const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
+
+  const remainingEnemies = combat.combatants
+    .filter((c) => c.type === 'enemy' && !c.isDefeated)
+    .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
+
+  const playerCriticals = playerCombatant?.criticalWounds || [];
+
+  return {
+    outcome: 'surrender',
+    woundsChange: woundsLost > 0 ? -woundsLost : 0,
+    xp: Math.max(5, Math.floor((enemiesDefeated * 15 + combat.round * 3) * 0.5)),
+    criticalWounds: playerCriticals,
+    enemiesDefeated,
+    totalEnemies,
+    remainingEnemies,
+    rounds: combat.round,
+    playerSurvived: true,
+    reason: combat.reason || '',
+  };
+}
