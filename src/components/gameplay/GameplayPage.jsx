@@ -22,6 +22,7 @@ import MagicPanel from './MagicPanel';
 import PartyPanel from './PartyPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
 import QuestOffersPanel from './QuestOffersPanel';
+import GMModal from './gm/GMModal';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
 
@@ -44,6 +45,7 @@ export default function GameplayPage() {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
+  const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [advancementOpen, setAdvancementOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
@@ -406,6 +408,14 @@ export default function GameplayPage() {
                 public
               </button>
               <button
+                onClick={() => setGmModalOpen(true)}
+                title={t('gmModal.title')}
+                aria-label={t('gmModal.title')}
+                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+              >
+                auto_stories
+              </button>
+              <button
                 onClick={() => {
                   if (isMultiplayer && mpGameState) {
                     exportAsMarkdown({
@@ -652,6 +662,10 @@ export default function GameplayPage() {
           dispatch={dispatch}
           onClose={() => setWorldModalOpen(false)}
         />
+      )}
+
+      {gmModalOpen && (
+        <GMModal onClose={() => setGmModalOpen(false)} />
       )}
 
       {mpPanelOpen && (
