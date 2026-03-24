@@ -629,7 +629,8 @@
       "factions": "Frakcje",
       "time": "Czas",
       "effects": "Efekty",
-      "journal": "Dziennik"
+      "journal": "Dziennik",
+      "quests": "Zadania"
     },
     "emptyFactions": "Brak interakcji z frakcjami",
     "emptyNpcs": "Nie napotkano jeszcze żadnych BN-ów",
@@ -651,7 +652,20 @@
     "noVoice": "Brak przypisanego głosu",
     "disposition": "Przychylność",
     "archivedHistory": "Zarchiwizowana Historia",
-    "eventLog": "Dziennik Wydarzeń"
+    "eventLog": "Dziennik Wydarzeń",
+    "emptyQuests": "Brak zadań",
+    "questGiver": "Zleceniodawca",
+    "turnIn": "Zdaj u",
+    "questLocation": "Lokacja",
+    "objectives": "Cele",
+    "reward": "Nagroda",
+    "completedQuests": "Ukończone",
+    "activeQuests": "Aktywne",
+    "relatedQuests": "Zadania",
+    "npcsHere": "BN-y tutaj",
+    "main": "Główne",
+    "side": "Poboczne",
+    "personal": "Osobiste"
   },
   "costs": {
     "totalCost": "Koszt AI",

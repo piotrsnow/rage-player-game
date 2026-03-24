@@ -673,6 +673,7 @@ export default function GameplayPage() {
       {worldModalOpen && (
         <WorldStateModal
           world={isMultiplayer ? mpGameState?.world : state.world}
+          quests={isMultiplayer ? mpGameState?.quests : state.quests}
           characterVoiceMap={state.characterVoiceMap}
           characterVoices={settings.characterVoices}
           dispatch={dispatch}

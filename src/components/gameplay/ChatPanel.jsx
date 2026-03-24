@@ -156,11 +156,8 @@ function PlayerMessage({ message, isMe }) {
             seg.type === 'dialogue' ? (
               <span
                 key={i}
-                className="inline-flex items-baseline gap-0.5 bg-amber-400/15 border border-amber-400/30 rounded px-1 py-px text-amber-300 mx-0.5"
-              >
-                <span className="material-symbols-outlined text-[11px] translate-y-[1px] opacity-70">chat_bubble</span>
-                {seg.text}
-              </span>
+                className="bg-amber-400/10 rounded-sm text-amber-300/90 italic"
+              >{seg.text}</span>
             ) : (
               <span key={i}>{seg.text}</span>
             )

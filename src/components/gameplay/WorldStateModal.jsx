@@ -1,15 +1,57 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import MapCanvas from './MapCanvas';
 import { FACTION_DEFINITIONS, getReputationTierData } from '../../data/wfrpFactions';
 
-const TABS = ['npcs', 'map', 'factions', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', map: 'map', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
-export default function WorldStateModal({ world, characterVoiceMap, characterVoices, dispatch, onClose }) {
+function matchName(a, b) {
+  if (!a || !b) return false;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+function findQuestsForNpc(npc, quests) {
+  const all = [...(quests?.active || []), ...(quests?.completed || [])];
+  return all.filter((q) =>
+    matchName(q.questGiverId, npc.name) || matchName(q.questGiverId, npc.id) ||
+    matchName(q.turnInNpcId, npc.name) || matchName(q.turnInNpcId, npc.id) ||
+    (npc.relatedQuestIds || []).includes(q.id)
+  );
+}
+
+function findQuestsForLocation(locName, quests) {
+  const all = [...(quests?.active || []), ...(quests?.completed || [])];
+  return all.filter((q) => matchName(q.locationId, locName));
+}
+
+function findNpcsAtLocation(locName, npcs) {
+  return (npcs || []).filter((n) => matchName(n.lastLocation, locName));
+}
+
+function findNpcByRef(ref, npcs) {
+  if (!ref) return null;
+  return (npcs || []).find((n) => matchName(n.name, ref) || matchName(n.id, ref));
+}
+
+function CrossLinkChip({ icon, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded-sm bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+    >
+      <span className="material-symbols-outlined text-[10px]">{icon}</span>
+      <span className="truncate max-w-[120px]">{label}</span>
+    </button>
+  );
+}
+
+export default function WorldStateModal({ world, quests, characterVoiceMap, characterVoices, dispatch, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
+  const [highlightId, setHighlightId] = useState(null);
+  const contentRef = useRef(null);
   const modalRef = useModalA11y(onClose);
 
   const npcs = world?.npcs || [];
@@ -23,6 +65,29 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
   const factions = world?.factions || {};
   const exploredLocations = world?.exploredLocations || [];
 
+  const navigateTo = useCallback((tab, entityId) => {
+    setActiveTab(tab);
+    setHighlightId(entityId || null);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightId || !contentRef.current) return;
+    const timer = setTimeout(() => {
+      const el = contentRef.current?.querySelector(`[data-entity-id="${CSS.escape(highlightId)}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        el.classList.add('ring-2', 'ring-primary/50');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-primary/50');
+          setHighlightId(null);
+        }, 2000);
+      } else {
+        setHighlightId(null);
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [highlightId, activeTab]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('worldState.title')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
@@ -31,7 +96,6 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
         className="relative w-full max-w-2xl max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-xl">public</span>
@@ -40,7 +104,6 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
           <button onClick={onClose} aria-label={t('common.close')} className="material-symbols-outlined text-lg text-outline hover:text-on-surface transition-colors">close</button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b border-outline-variant/10 px-2 gap-1 overflow-x-auto">
           {TABS.map((tab) => (
             <button
@@ -58,13 +121,15 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
           ))}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
+        <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-5">
           {activeTab === 'npcs' && (
-            <NpcTab npcs={npcs} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} t={t} />
+            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'map' && (
-            <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} t={t} />
+            <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} npcs={npcs} quests={quests} navigateTo={navigateTo} t={t} />
+          )}
+          {activeTab === 'quests' && (
+            <QuestsTab quests={quests} npcs={npcs} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'factions' && (
             <FactionsTab factions={factions} t={t} />
@@ -84,7 +149,141 @@ export default function WorldStateModal({ world, characterVoiceMap, characterVoi
   );
 }
 
-function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
+/* ── Quests Tab ── */
+
+function QuestsTab({ quests, npcs, navigateTo, t }) {
+  const active = quests?.active || [];
+  const completed = quests?.completed || [];
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  if (active.length === 0 && completed.length === 0) {
+    return <EmptyState icon="assignment" text={t('worldState.emptyQuests')} />;
+  }
+
+  const typeColors = {
+    main: 'bg-tertiary/15 text-tertiary',
+    side: 'bg-primary/15 text-primary',
+    personal: 'bg-secondary/15 text-secondary',
+  };
+
+  const renderQuest = (quest, isCompleted) => (
+    <div
+      key={quest.id}
+      data-entity-id={quest.id}
+      className={`p-3 rounded-sm border transition-all ${isCompleted ? 'bg-surface-container/20 border-outline-variant/10 opacity-60' : 'bg-surface-container/40 border-outline-variant/10'}`}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm text-primary">{isCompleted ? 'task_alt' : 'assignment'}</span>
+          <span className="text-sm font-bold text-on-surface">{quest.name}</span>
+        </div>
+        {quest.type && (
+          <span className={`text-[10px] font-label uppercase tracking-wider px-2 py-0.5 rounded-sm ${typeColors[quest.type] || typeColors.side}`}>
+            {t(`worldState.${quest.type}`)}
+          </span>
+        )}
+      </div>
+
+      {quest.description && (
+        <p className="text-[11px] text-on-surface-variant mb-2">{quest.description}</p>
+      )}
+
+      {quest.objectives?.length > 0 && (
+        <div className="mb-2">
+          <div className="text-[10px] text-outline uppercase tracking-wider mb-1">{t('worldState.objectives')}</div>
+          {quest.objectives.map((obj) => (
+            <div key={obj.id} className="flex items-start gap-1.5 text-[11px] text-on-surface-variant">
+              <span className={`material-symbols-outlined text-[12px] mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
+                {obj.completed ? 'check_circle' : 'radio_button_unchecked'}
+              </span>
+              <span className={obj.completed ? 'line-through text-outline' : ''}>{obj.description}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        {quest.questGiverId && (
+          <CrossLinkChip
+            icon="person"
+            label={`${t('worldState.questGiver')}: ${quest.questGiverId}`}
+            onClick={() => {
+              const npc = findNpcByRef(quest.questGiverId, npcs);
+              navigateTo('npcs', npc?.id || quest.questGiverId);
+            }}
+          />
+        )}
+        {quest.turnInNpcId && quest.turnInNpcId !== quest.questGiverId && (
+          <CrossLinkChip
+            icon="person_pin"
+            label={`${t('worldState.turnIn')}: ${quest.turnInNpcId}`}
+            onClick={() => {
+              const npc = findNpcByRef(quest.turnInNpcId, npcs);
+              navigateTo('npcs', npc?.id || quest.turnInNpcId);
+            }}
+          />
+        )}
+        {quest.locationId && (
+          <CrossLinkChip
+            icon="location_on"
+            label={quest.locationId}
+            onClick={() => navigateTo('map', quest.locationId)}
+          />
+        )}
+      </div>
+
+      {quest.reward && (
+        <div className="text-[10px] text-outline mt-2 pt-1.5 border-t border-outline-variant/10">
+          <span className="text-outline">{t('worldState.reward')}:</span>{' '}
+          {quest.reward.xp > 0 && <span>{quest.reward.xp} XP</span>}
+          {quest.reward.money && (quest.reward.money.gold > 0 || quest.reward.money.silver > 0 || quest.reward.money.copper > 0) && (
+            <span>
+              {quest.reward.xp > 0 && ', '}
+              {quest.reward.money.gold > 0 && `${quest.reward.money.gold} GC `}
+              {quest.reward.money.silver > 0 && `${quest.reward.money.silver} SS `}
+              {quest.reward.money.copper > 0 && `${quest.reward.money.copper} CP`}
+            </span>
+          )}
+          {quest.reward.description && <span> — {quest.reward.description}</span>}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {active.length > 0 && (
+        <>
+          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1">
+            {t('worldState.activeQuests')} ({active.length})
+          </div>
+          {active.map((q) => renderQuest(q, false))}
+        </>
+      )}
+
+      {completed.length > 0 && (
+        <div className="pt-2">
+          <button
+            onClick={() => setShowCompleted((v) => !v)}
+            className="flex items-center gap-1.5 text-[10px] font-label uppercase tracking-widest text-outline hover:text-on-surface-variant transition-colors px-1"
+          >
+            <span className="material-symbols-outlined text-xs">{showCompleted ? 'expand_less' : 'expand_more'}</span>
+            {t('worldState.completedQuests')} ({completed.length})
+          </button>
+          {showCompleted && (
+            <div className="space-y-3 mt-2">
+              {completed.map((q) => renderQuest(q, true))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── NPC Tab ── */
+
+function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, navigateTo, t }) {
   if (npcs.length === 0) {
     return <EmptyState icon="group" text={t('worldState.emptyNpcs')} />;
   }
@@ -104,12 +303,10 @@ function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
       {npcs.map((npc) => {
         const mapping = characterVoiceMap?.[npc.name];
         const currentVoiceId = mapping?.voiceId;
-        const currentVoiceName = currentVoiceId
-          ? characterVoices?.find((v) => v.voiceId === currentVoiceId)?.voiceName
-          : null;
+        const relatedQuests = findQuestsForNpc(npc, quests);
 
         return (
-          <div key={npc.id} className={`p-3 rounded-sm border ${npc.alive === false ? 'bg-error-container/10 border-error/15 opacity-60' : 'bg-surface-container/40 border-outline-variant/10'}`}>
+          <div key={npc.id} data-entity-id={npc.id} className={`p-3 rounded-sm border transition-all ${npc.alive === false ? 'bg-error-container/10 border-error/15 opacity-60' : 'bg-surface-container/40 border-outline-variant/10'}`}>
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-sm text-primary">person</span>
@@ -139,9 +336,34 @@ function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
             <div className="text-[11px] text-on-surface-variant space-y-0.5">
               {npc.role && <div><span className="text-outline">{t('worldState.role')}:</span> {npc.role}</div>}
               {npc.personality && <div><span className="text-outline">{t('worldState.personality')}:</span> {npc.personality}</div>}
-              {npc.lastLocation && <div><span className="text-outline">{t('worldState.location')}:</span> {npc.lastLocation}</div>}
+              {npc.lastLocation && (
+                <div className="flex items-center gap-1">
+                  <span className="text-outline">{t('worldState.location')}:</span>
+                  <button
+                    onClick={() => navigateTo('map', npc.lastLocation)}
+                    className="text-primary hover:underline cursor-pointer"
+                  >
+                    {npc.lastLocation}
+                  </button>
+                </div>
+              )}
               {npc.notes && <div className="text-outline italic mt-1">{npc.notes}</div>}
             </div>
+
+            {relatedQuests.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-outline-variant/10">
+                <span className="text-[10px] text-outline">{t('worldState.relatedQuests')}:</span>
+                {relatedQuests.map((q) => (
+                  <CrossLinkChip
+                    key={q.id}
+                    icon="assignment"
+                    label={q.name}
+                    onClick={() => navigateTo('quests', q.id)}
+                  />
+                ))}
+              </div>
+            )}
+
             {hasVoicePool && (
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-outline-variant/10">
                 <span className="material-symbols-outlined text-xs text-outline">record_voice_over</span>
@@ -167,7 +389,9 @@ function NpcTab({ npcs, characterVoiceMap, characterVoices, dispatch, t }) {
   );
 }
 
-function MapTab({ mapState, currentLocation, connections, exploredLocations, t }) {
+/* ── Map Tab ── */
+
+function MapTab({ mapState, currentLocation, connections, exploredLocations, npcs, quests, navigateTo, t }) {
   if (mapState.length === 0 && !currentLocation) {
     return <EmptyState icon="map" text={t('worldState.emptyMap')} />;
   }
@@ -197,8 +421,11 @@ function MapTab({ mapState, currentLocation, connections, exploredLocations, t }
           </div>
           {mapState.map((loc) => {
             const isCurrent = loc.name?.toLowerCase() === currentLocation?.toLowerCase();
+            const npcsHere = findNpcsAtLocation(loc.name, npcs);
+            const locQuests = findQuestsForLocation(loc.name, quests);
+
             return (
-              <div key={loc.id} className={`p-2.5 rounded-sm border ${isCurrent ? 'bg-primary/10 border-primary/25' : 'bg-surface-container/40 border-outline-variant/10'}`}>
+              <div key={loc.id} data-entity-id={loc.name} className={`p-2.5 rounded-sm border transition-all ${isCurrent ? 'bg-primary/10 border-primary/25' : 'bg-surface-container/40 border-outline-variant/10'}`}>
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-xs text-primary">location_on</span>
                   <span className="text-[11px] font-bold text-on-surface">{loc.name}</span>
@@ -219,6 +446,37 @@ function MapTab({ mapState, currentLocation, connections, exploredLocations, t }
                     ))}
                   </div>
                 )}
+
+                {(npcsHere.length > 0 || locQuests.length > 0) && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-1.5 border-t border-outline-variant/10">
+                    {npcsHere.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-outline">{t('worldState.npcsHere')}:</span>
+                        {npcsHere.map((n) => (
+                          <CrossLinkChip
+                            key={n.id}
+                            icon="person"
+                            label={n.name}
+                            onClick={() => navigateTo('npcs', n.id)}
+                          />
+                        ))}
+                      </>
+                    )}
+                    {locQuests.length > 0 && (
+                      <>
+                        <span className="text-[10px] text-outline">{t('worldState.relatedQuests')}:</span>
+                        {locQuests.map((q) => (
+                          <CrossLinkChip
+                            key={q.id}
+                            icon="assignment"
+                            label={q.name}
+                            onClick={() => navigateTo('quests', q.id)}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -227,6 +485,8 @@ function MapTab({ mapState, currentLocation, connections, exploredLocations, t }
     </div>
   );
 }
+
+/* ── Time Tab ── */
 
 function TimeTab({ timeState, t }) {
   const timeIcons = { morning: 'wb_sunny', afternoon: 'light_mode', evening: 'wb_twilight', night: 'dark_mode' };
@@ -246,6 +506,8 @@ function TimeTab({ timeState, t }) {
     </div>
   );
 }
+
+/* ── Effects Tab ── */
 
 function EffectsTab({ effects, t }) {
   if (effects.length === 0) {
@@ -271,6 +533,8 @@ function EffectsTab({ effects, t }) {
     </div>
   );
 }
+
+/* ── Journal Tab ── */
 
 function JournalTab({ eventHistory, compressedHistory, t }) {
   if (eventHistory.length === 0 && !compressedHistory) {
@@ -301,6 +565,8 @@ function JournalTab({ eventHistory, compressedHistory, t }) {
     </div>
   );
 }
+
+/* ── Factions Tab ── */
 
 function FactionsTab({ factions, t }) {
   const entries = Object.entries(FACTION_DEFINITIONS);
@@ -353,6 +619,8 @@ function FactionsTab({ factions, t }) {
     </div>
   );
 }
+
+/* ── Shared ── */
 
 function EmptyState({ icon, text }) {
   return (

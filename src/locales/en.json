@@ -629,7 +629,8 @@
       "factions": "Factions",
       "time": "Time",
       "effects": "Effects",
-      "journal": "Journal"
+      "journal": "Journal",
+      "quests": "Quests"
     },
     "emptyFactions": "No faction interactions yet",
     "emptyNpcs": "No NPCs encountered yet",
@@ -651,7 +652,20 @@
     "noVoice": "No voice assigned",
     "disposition": "Disposition",
     "archivedHistory": "Archived History",
-    "eventLog": "Event Log"
+    "eventLog": "Event Log",
+    "emptyQuests": "No quests yet",
+    "questGiver": "Quest giver",
+    "turnIn": "Turn in to",
+    "questLocation": "Location",
+    "objectives": "Objectives",
+    "reward": "Reward",
+    "completedQuests": "Completed",
+    "activeQuests": "Active",
+    "relatedQuests": "Quests",
+    "npcsHere": "NPCs here",
+    "main": "Main",
+    "side": "Side",
+    "personal": "Personal"
   },
   "costs": {
     "totalCost": "Total AI Cost",

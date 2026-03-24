@@ -198,7 +198,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
                 seg.type === 'dialogue' ? (
                   <span
                     key={i}
-                    className="bg-amber-400/15 border border-amber-400/30 rounded px-0.5 text-amber-300 transition-colors"
+                    className="bg-amber-400/10 rounded-sm text-amber-300/90 transition-colors"
                   >{seg.text}</span>
                 ) : (
                   <span key={i} className="text-on-surface">{seg.text}</span>
