@@ -108,7 +108,7 @@ async function generatePortraitWithStability(imageBlob, prompt, apiKey, strength
   const formData = new FormData();
   formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
-  formData.append('negative_prompt', 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy');
+  formData.append('negative_prompt', 'modern clothing, contemporary, photorealistic photo, plain background, blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy, smooth airbrushed skin, plastic look, flat lighting, passport photo, ID photo, selfie');
   formData.append('strength', String(strength));
   formData.append('mode', 'image-to-image');
   formData.append('model', 'sd3.5-large-turbo');

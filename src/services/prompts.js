@@ -1009,18 +1009,18 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
   const isSD = provider === 'stability';
 
   const speciesTraits = {
-    Human: 'human',
-    Halfling: 'halfling, short stature, round face',
-    Dwarf: 'dwarf, stocky build, strong jaw',
-    'High Elf': 'high elf, pointed ears, slender features, ethereal',
-    'Wood Elf': 'wood elf, pointed ears, angular features, wild',
+    Human: 'human, weathered skin, visible pores and skin texture',
+    Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
+    Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
+    'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
+    'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
   };
 
   const genreStyle = isSD
     ? {
-        Fantasy: 'medieval fantasy portrait, painterly oil painting style, dramatic chiaroscuro lighting, RPG character art',
-        'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents',
-        Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism',
+        Fantasy: 'epic high fantasy character portrait, dramatic chiaroscuro lighting, Warhammer Fantasy art style, dark atmospheric oil painting, rich deep colors, ornate costume details',
+        'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents, detailed face',
+        Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism, haunted eyes',
       }
     : {
         Fantasy: 'medieval fantasy character portrait, detailed oil painting, warm candlelight, RPG character art, painterly style',
@@ -1028,12 +1028,12 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
         Horror: 'dark gothic character portrait, eerie candlelight, moody atmospheric shadows',
       };
 
-  const speciesDesc = speciesTraits[species] || 'human';
+  const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
   const style = genreStyle[genre] || genreStyle.Fantasy;
-  const career = careerName ? `, ${careerName}` : '';
+  const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
 
   if (isSD) {
-    return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Preserve the subject's facial features and likeness. Detailed face, sharp focus, 4k, head and shoulders composition. No text, no watermarks.`;
+    return `${style}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate fantasy costume, moody atmospheric background, head and shoulders composition, 4k masterpiece. No text, no watermarks.`;
   }
 
   return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;
