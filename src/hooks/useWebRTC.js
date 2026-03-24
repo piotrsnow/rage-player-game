@@ -98,7 +98,7 @@ export function useWebRTC(myOdId, players, isActive) {
         webrtcService.disconnectFromPeer(odId);
       }
     }
-  }, [isActive, myOdId, players]);
+  }, [isActive, myOdId, players, localStream]);
 
   const startCamera = useCallback(async () => {
     setError(null);
