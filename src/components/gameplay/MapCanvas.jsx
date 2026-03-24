@@ -4,7 +4,7 @@ import { generateMapDecorations, drawDecorations } from '../../services/mapSprit
 
 const MOD_ICONS = { trap: '\u26A0', destruction: '\uD83D\uDCA5', discovery: '\u2728', obstacle: '\uD83E\uDEA8', other: '\u25CF' };
 
-export default function MapCanvas({ mapState, currentLocation, connections }) {
+export default function MapCanvas({ mapState, currentLocation, connections, exploredLocations = [] }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const [size, setSize] = useState({ w: 500, h: 350 });
@@ -101,14 +101,16 @@ export default function MapCanvas({ mapState, currentLocation, connections }) {
       drawEdge(ctx, pa, pb);
     }
 
+    const exploredSet = new Set((exploredLocations || []).map((l) => l.toLowerCase()));
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 400);
     for (const name of nodeNames) {
       const p = positions.get(name);
       if (!p) continue;
       const isCurrent = name.toLowerCase() === currentLocation?.toLowerCase();
+      const isExplored = isCurrent || exploredSet.has(name.toLowerCase());
       const isHov = name === hovered;
       const loc = locMap.get(name.toLowerCase());
-      drawNode(ctx, p, name, isCurrent, isHov, pulse, loc);
+      drawNode(ctx, p, name, isCurrent, isHov, pulse, loc, isExplored);
     }
 
     ctx.restore();
@@ -117,7 +119,7 @@ export default function MapCanvas({ mapState, currentLocation, connections }) {
       const loc = locMap.get(hovered.toLowerCase());
       drawTooltip(ctx, mousePos, hovered, loc, size);
     }
-  }, [size, camera, positions, normEdges, nodeNames, currentLocation, hovered, mousePos, locMap, decorations]);
+  }, [size, camera, positions, normEdges, nodeNames, currentLocation, hovered, mousePos, locMap, decorations, exploredLocations]);
 
   useEffect(() => {
     let running = true;
@@ -234,8 +236,12 @@ function drawEdge(ctx, a, b) {
   ctx.restore();
 }
 
-function drawNode(ctx, pos, name, isCurrent, isHovered, pulse, loc) {
+function drawNode(ctx, pos, name, isCurrent, isHovered, pulse, loc, isExplored = true) {
   const r = isCurrent ? 16 : 12;
+  const fogAlpha = isExplored ? 1.0 : 0.35;
+
+  ctx.save();
+  if (!isExplored) ctx.globalAlpha = fogAlpha;
 
   if (isCurrent) {
     const glowR = r + 10 + pulse * 6;
@@ -294,6 +300,17 @@ function drawNode(ctx, pos, name, isCurrent, isHovered, pulse, loc) {
   ctx.lineWidth = 3;
   ctx.strokeText(name, pos.x, pos.y + r + 6);
   ctx.fillText(name, pos.x, pos.y + r + 6);
+
+  if (!isExplored) {
+    ctx.globalAlpha = 0.4;
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#888';
+    ctx.fillText('?', pos.x, pos.y);
+  }
+
+  ctx.restore();
 }
 
 function drawTooltip(ctx, mouse, name, loc, size) {

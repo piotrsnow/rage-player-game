@@ -38,7 +38,8 @@
     "armory": "Zbrojownia",
     "settings": "Ustawienia",
     "play": "Graj",
-    "character": "Postać"
+    "character": "Postać",
+    "gallery": "Galeria"
   },
   "lobby": {
     "title": "Nikczemny Krzemuch",
@@ -50,7 +51,11 @@
     "savedCampaigns": "Zapisane Kampanie",
     "noCampaigns": "Brak kampanii. Rozpocznij nową przygodę!",
     "exportLog": "Pobierz Log Rozgrywki",
-    "exportJson": "Pobierz Kopię (JSON)"
+    "exportJson": "Pobierz Kopię (JSON)",
+    "syncing": "Synchronizacja...",
+    "synced": "Zsynchronizowano",
+    "localOnly": "Tylko lokalnie",
+    "syncError": "Synchronizacja nie powiodła się"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -138,7 +143,27 @@
     "exportLog": "Pobierz Log Rozgrywki",
     "generatingMusic": "Generowanie muzyki...",
     "musicPlaying": "Odtwarzanie",
-    "musicSkip": "Następny utwór"
+    "musicSkip": "Następny utwór",
+    "searchForQuests": "Szukaj zadań",
+    "searchForQuestsAction": "Rozglądam się za dostępnymi zleceniami, zadaniami lub pracą — pytam okolicznych mieszkańców, sprawdzam tablice ogłoszeń i nasłuchuję plotek",
+    "questOffers": "Dostępne Zadania",
+    "questOfferAccept": "Przyjmij",
+    "questOfferDecline": "Odrzuć",
+    "questOfferAccepted": "Przyjęto",
+    "questOfferDeclined": "Odrzucono",
+    "questOfferReward": "Nagroda",
+    "questOfferFrom": "Od",
+    "questType_main": "Główne",
+    "questType_side": "Poboczne",
+    "questType_personal": "Osobiste",
+    "previousScene": "Poprzednia scena",
+    "nextScene": "Następna scena",
+    "backToCurrent": "Wróć do aktualnej sceny",
+    "replayNarration": "Odtwórz narrację",
+    "sceneReview": "Przegląd sceny",
+    "firstScene": "Pierwsza scena",
+    "autoPlayScenes": "Odtwarzaj wszystkie sceny",
+    "stopAutoPlay": "Zatrzymaj odtwarzanie"
   },
   "chat": {
     "dmAi": "MG AI",
@@ -152,6 +177,14 @@
     "noActiveCharacter": "Brak Aktywnej Postaci",
     "noActiveDescription": "Rozpocznij lub wczytaj kampanię, aby zobaczyć kartę postaci.",
     "goToLobby": "Idź do Lobby",
+    "library": "Twoje Postacie",
+    "libraryDescription": "Przeglądaj zapisane postacie ze swoich kampanii.",
+    "noSavedCharacters": "Brak zapisanych postaci. Zagraj w kampanię, aby zapisać postacie.",
+    "backToList": "Powrót do listy",
+    "deleteCharacter": "Usuń postać",
+    "deleteConfirm": "Czy na pewno chcesz usunąć tę postać?",
+    "characterDeleted": "Postać usunięta",
+    "readOnly": "Podgląd",
     "vitals": "Parametry Życiowe",
     "healthPoints": "Żywotność",
     "manaPool": "Szczęście i Determinacja",
@@ -170,6 +203,33 @@
     "saveToLibrary": "Zapisz Postać",
     "savedToLibrary": "Zapisano!",
     "saveError": "Błąd zapisu"
+  },
+  "codex": {
+    "title": "Kodeks",
+    "entries": "wpisów",
+    "fragment": "fragment",
+    "fragments": "fragmenty",
+    "searchPlaceholder": "Przeszukaj kodeks...",
+    "all": "Wszystkie",
+    "noResults": "Nie znaleziono pasujących wpisów.",
+    "categories": {
+      "artifact": "Artefakty",
+      "person": "Postacie",
+      "place": "Miejsca",
+      "event": "Wydarzenia",
+      "faction": "Frakcje",
+      "creature": "Stworzenia",
+      "concept": "Koncepcje"
+    },
+    "aspects": {
+      "history": "Historia",
+      "description": "Opis",
+      "location": "Lokalizacja",
+      "weakness": "Słabość",
+      "rumor": "Plotka",
+      "technical": "Szczegóły techniczne",
+      "political": "Polityka"
+    }
   },
   "quests": {
     "activeChronicles": "Aktywne Kroniki",
@@ -258,6 +318,13 @@
     "anthropicLabel": "Anthropic (Claude)",
     "openaiApiKey": "Klucz API OpenAI",
     "anthropicApiKey": "Klucz API Anthropic",
+    "modelTier": "Poziom modelu AI",
+    "modelTierDesc": "Modele standardowe są tańsze i szybsze. Modele premium generują bogatsze narracje. Kreacja kampanii zawsze używa premium.",
+    "modelTierStandard": "Standardowy",
+    "modelTierStandardDesc": "GPT-4o Mini / Haiku — tańszy, szybszy",
+    "modelTierPremium": "Premium",
+    "modelTierPremiumDesc": "GPT-4o / Claude Sonnet — bogatsza narracja",
+    "modelTierCostHint": "Szac. ~$0.01/scena (standard) vs ~$0.05/scena (premium)",
     "apiKeysTitle": "Klucze API",
     "apiKeysDescription": "Klucze są przechowywane lokalnie w przeglądarce i nigdy nie są wysyłane na żaden serwer poza dostawcą AI. Potrzebujesz co najmniej jednego klucza, aby grać.",
     "activeProvider": "Aktywny Dostawca",
@@ -431,10 +498,12 @@
     "tabs": {
       "npcs": "BN-y",
       "map": "Mapa",
+      "factions": "Frakcje",
       "time": "Czas",
       "effects": "Efekty",
       "journal": "Dziennik"
     },
+    "emptyFactions": "Brak interakcji z frakcjami",
     "emptyNpcs": "Nie napotkano jeszcze żadnych BN-ów",
     "emptyMap": "Nie zmapowano jeszcze żadnych lokacji",
     "emptyEffects": "Brak aktywnych efektów",
@@ -578,6 +647,13 @@
     "goldShort": "ZK",
     "silverShort": "SS",
     "copperShort": "MP"
+  },
+  "achievements": {
+    "title": "Osiągnięcia",
+    "unlocked": "Odblokowano osiągnięcie",
+    "progress": "Postęp",
+    "locked": "Zablokowane",
+    "noAchievements": "Brak odblokowanych osiągnięć"
   },
   "wfrpSkills": {
     "Art": "Sztuka",

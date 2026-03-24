@@ -15,7 +15,7 @@ import { stabilityProxyRoutes } from './routes/proxy/stability.js';
 import { sunoProxyRoutes } from './routes/proxy/suno.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
-import { startRoomCleanup } from './services/roomManager.js';
+import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
 
 const fastify = Fastify({
   logger: true,
@@ -56,6 +56,7 @@ await fastify.register(musicRoutes, { prefix: '/music' });
 await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
 
 startRoomCleanup();
+await loadActiveSessionsFromDB();
 
 try {
   await fastify.listen({ port: config.port, host: config.host });

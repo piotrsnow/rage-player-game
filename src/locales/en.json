@@ -38,7 +38,8 @@
     "armory": "Armory",
     "settings": "Settings",
     "play": "Play",
-    "character": "Character"
+    "character": "Character",
+    "gallery": "Gallery"
   },
   "lobby": {
     "title": "Nikczemny Krzemuch",
@@ -50,7 +51,11 @@
     "savedCampaigns": "Saved Campaigns",
     "noCampaigns": "No campaigns yet. Start a new adventure!",
     "exportLog": "Download Game Log",
-    "exportJson": "Download Backup (JSON)"
+    "exportJson": "Download Backup (JSON)",
+    "syncing": "Syncing...",
+    "synced": "Synced",
+    "localOnly": "Local only",
+    "syncError": "Sync failed"
   },
   "creator": {
     "title": "Forge a New Campaign",
@@ -138,7 +143,27 @@
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",
     "musicPlaying": "Now playing",
-    "musicSkip": "Next track"
+    "musicSkip": "Next track",
+    "searchForQuests": "Search for quests",
+    "searchForQuestsAction": "I look around for available work, quests, or tasks — I ask locals, check notice boards, and listen for rumors",
+    "questOffers": "Available Quests",
+    "questOfferAccept": "Accept",
+    "questOfferDecline": "Decline",
+    "questOfferAccepted": "Accepted",
+    "questOfferDeclined": "Declined",
+    "questOfferReward": "Reward",
+    "questOfferFrom": "From",
+    "questType_main": "Main",
+    "questType_side": "Side",
+    "questType_personal": "Personal",
+    "previousScene": "Previous scene",
+    "nextScene": "Next scene",
+    "backToCurrent": "Back to current scene",
+    "replayNarration": "Replay narration",
+    "sceneReview": "Scene review",
+    "firstScene": "First scene",
+    "autoPlayScenes": "Auto-play all scenes",
+    "stopAutoPlay": "Stop auto-play"
   },
   "chat": {
     "dmAi": "DM AI",
@@ -152,6 +177,14 @@
     "noActiveCharacter": "No Active Character",
     "noActiveDescription": "Start or load a campaign to view your character sheet.",
     "goToLobby": "Go to Lobby",
+    "library": "Your Characters",
+    "libraryDescription": "Browse saved characters from your campaigns.",
+    "noSavedCharacters": "No saved characters. Play a campaign to save characters.",
+    "backToList": "Back to list",
+    "deleteCharacter": "Delete character",
+    "deleteConfirm": "Are you sure you want to delete this character?",
+    "characterDeleted": "Character deleted",
+    "readOnly": "Preview",
     "vitals": "Vitals",
     "healthPoints": "Wounds",
     "manaPool": "Fortune & Resolve",
@@ -170,6 +203,33 @@
     "saveToLibrary": "Save Character",
     "savedToLibrary": "Saved!",
     "saveError": "Save failed"
+  },
+  "codex": {
+    "title": "Codex",
+    "entries": "entries",
+    "fragment": "fragment",
+    "fragments": "fragments",
+    "searchPlaceholder": "Search the codex...",
+    "all": "All",
+    "noResults": "No matching entries found.",
+    "categories": {
+      "artifact": "Artifacts",
+      "person": "People",
+      "place": "Places",
+      "event": "Events",
+      "faction": "Factions",
+      "creature": "Creatures",
+      "concept": "Concepts"
+    },
+    "aspects": {
+      "history": "History",
+      "description": "Description",
+      "location": "Location",
+      "weakness": "Weakness",
+      "rumor": "Rumor",
+      "technical": "Technical",
+      "political": "Political"
+    }
   },
   "quests": {
     "activeChronicles": "Active Chronicles",
@@ -258,6 +318,13 @@
     "anthropicLabel": "Anthropic (Claude)",
     "openaiApiKey": "OpenAI API Key",
     "anthropicApiKey": "Anthropic API Key",
+    "modelTier": "AI Model Tier",
+    "modelTierDesc": "Standard models are cheaper and faster. Premium models produce richer narratives. Campaign creation always uses premium.",
+    "modelTierStandard": "Standard",
+    "modelTierStandardDesc": "GPT-4o Mini / Haiku — cheaper, faster",
+    "modelTierPremium": "Premium",
+    "modelTierPremiumDesc": "GPT-4o / Claude Sonnet — richer output",
+    "modelTierCostHint": "Est. ~$0.01/scene (standard) vs ~$0.05/scene (premium)",
     "apiKeysTitle": "API Keys",
     "apiKeysDescription": "Keys are stored locally in your browser and never sent to any server besides the AI provider. You need at least one key to play.",
     "activeProvider": "Active Provider",
@@ -431,10 +498,12 @@
     "tabs": {
       "npcs": "NPCs",
       "map": "Map",
+      "factions": "Factions",
       "time": "Time",
       "effects": "Effects",
       "journal": "Journal"
     },
+    "emptyFactions": "No faction interactions yet",
     "emptyNpcs": "No NPCs encountered yet",
     "emptyMap": "No locations mapped yet",
     "emptyEffects": "No active effects",
@@ -578,6 +647,13 @@
     "goldShort": "GC",
     "silverShort": "SS",
     "copperShort": "CP"
+  },
+  "achievements": {
+    "title": "Achievements",
+    "unlocked": "Achievement unlocked",
+    "progress": "Progress",
+    "locked": "Locked",
+    "noAchievements": "No achievements unlocked yet"
   },
   "multiplayer": {
     "solo": "Solo",

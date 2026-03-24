@@ -205,7 +205,13 @@ export default function CampaignCreatorPage() {
 
     try {
       const formWithChar = selectedCharacter
-        ? { ...form, existingCharacter: selectedCharacter }
+        ? {
+            ...form,
+            existingCharacter: selectedCharacter,
+            characterName: selectedCharacter.name,
+            species: selectedCharacter.species,
+            careerPreference: selectedCharacter.career?.name,
+          }
         : createdCharacter
           ? { ...form, createdCharacter, characterName: createdCharacter.name, species: createdCharacter.species }
           : form;
@@ -441,15 +447,23 @@ export default function CampaignCreatorPage() {
                               ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)]'
                               : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60'
                           }`}
-                          onClick={() => {
+                          onClick={async () => {
                             if (isSelected) {
                               setSelectedCharacter(null);
                             } else {
+                              const id = ch.backendId || ch.localId || ch.id;
+                              let fullChar;
+                              try {
+                                fullChar = await storage.loadCharacter(id);
+                              } catch {
+                                fullChar = null;
+                              }
+                              const base = fullChar || ch;
                               const normalized = {
-                                ...ch,
-                                career: career,
-                                backendId: ch.backendId || ch.id,
-                                localId: ch.localId || ch.id,
+                                ...base,
+                                career: base.career || base.careerData || career,
+                                backendId: base.backendId || ch.backendId || ch.id,
+                                localId: base.localId || ch.localId || ch.id,
                               };
                               setSelectedCharacter(normalized);
                             }

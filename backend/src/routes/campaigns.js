@@ -1,6 +1,81 @@
 import { prisma } from '../lib/prisma.js';
 
 export async function campaignRoutes(fastify) {
+  // Public endpoint — no auth required
+  fastify.get('/public', async (request) => {
+    const { genre, tone, sort = 'newest', q, limit = 50, offset = 0 } = request.query;
+    const where = { isPublic: true };
+    if (genre) where.genre = genre;
+    if (tone) where.tone = tone;
+    if (q) where.name = { contains: q, mode: 'insensitive' };
+
+    const orderBy = sort === 'rating'
+      ? { rating: 'desc' }
+      : sort === 'popular'
+        ? { playCount: 'desc' }
+        : { createdAt: 'desc' };
+
+    const [campaigns, total] = await Promise.all([
+      prisma.campaign.findMany({
+        where,
+        select: {
+          id: true, name: true, genre: true, tone: true,
+          rating: true, playCount: true,
+          data: true, createdAt: true,
+          user: { select: { email: true } },
+        },
+        orderBy,
+        take: Math.min(Number(limit) || 50, 100),
+        skip: Number(offset) || 0,
+      }),
+      prisma.campaign.count({ where }),
+    ]);
+
+    return {
+      campaigns: campaigns.map((c) => {
+        let parsed = {};
+        try { parsed = JSON.parse(c.data); } catch { /* empty */ }
+        return {
+          id: c.id,
+          name: c.name,
+          genre: c.genre,
+          tone: c.tone,
+          rating: c.rating,
+          playCount: c.playCount,
+          createdAt: c.createdAt,
+          author: c.user?.email ? c.user.email.slice(0, 2) + '***' : 'Anonymous',
+          sceneCount: parsed.scenes?.length || 0,
+          worldDescription: parsed.campaign?.worldDescription?.substring(0, 300) || '',
+          hook: parsed.campaign?.hook?.substring(0, 200) || '',
+          characterName: parsed.character?.name || '',
+          characterCareer: parsed.character?.career?.name || '',
+        };
+      }),
+      total,
+    };
+  });
+
+  fastify.get('/public/:id', async (request, reply) => {
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: request.params.id, isPublic: true },
+      select: {
+        id: true, name: true, genre: true, tone: true,
+        rating: true, playCount: true,
+        data: true, isPublic: true, createdAt: true,
+      },
+    });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { playCount: { increment: 1 } },
+    });
+
+    let parsed = {};
+    try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+    return { ...campaign, data: parsed };
+  });
+
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/', async (request) => {
@@ -18,7 +93,9 @@ export async function campaignRoutes(fastify) {
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
-    return { ...campaign, data: JSON.parse(campaign.data) };
+    let parsed = {};
+    try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+    return { ...campaign, data: parsed };
   });
 
   fastify.post('/', async (request) => {
@@ -35,7 +112,9 @@ export async function campaignRoutes(fastify) {
       },
     });
 
-    return { ...campaign, data: JSON.parse(campaign.data) };
+    let parsedData = {};
+    try { parsedData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+    return { ...campaign, data: parsedData };
   });
 
   fastify.put('/:id', async (request, reply) => {
@@ -57,7 +136,9 @@ export async function campaignRoutes(fastify) {
       data: updateData,
     });
 
-    return { ...campaign, data: JSON.parse(campaign.data) };
+    let parsedPutData = {};
+    try { parsedPutData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+    return { ...campaign, data: parsedPutData };
   });
 
   fastify.delete('/:id', async (request, reply) => {
@@ -68,5 +149,22 @@ export async function campaignRoutes(fastify) {
 
     await prisma.campaign.delete({ where: { id: request.params.id } });
     return { success: true };
+  });
+
+  fastify.patch('/:id/publish', async (request, reply) => {
+    const existing = await prisma.campaign.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+    });
+    if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
+
+    const { isPublic } = request.body;
+    if (typeof isPublic !== 'boolean') {
+      return reply.code(400).send({ error: 'isPublic must be a boolean' });
+    }
+    const campaign = await prisma.campaign.update({
+      where: { id: request.params.id },
+      data: { isPublic },
+    });
+    return { id: campaign.id, isPublic: campaign.isPublic };
   });
 }

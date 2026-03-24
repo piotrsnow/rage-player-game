@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { prisma } from '../lib/prisma.js';
 
 const rooms = new Map();
 const ROOM_INACTIVE_TTL_MS = 30 * 60 * 1000;
@@ -163,6 +164,7 @@ export function leaveRoom(roomCode, odId) {
 
   if (room.players.size === 0) {
     rooms.delete(roomCode);
+    deleteRoomFromDB(roomCode).catch(() => {});
     return null;
   }
 
@@ -301,7 +303,7 @@ export function getRoom(roomCode) {
 export function broadcast(room, message, excludeOdId = null) {
   const payload = typeof message === 'string' ? message : JSON.stringify(message);
   for (const [, player] of room.players) {
-    if (player.odId !== excludeOdId && player.ws.readyState === 1) {
+    if (player.odId !== excludeOdId && player.ws?.readyState === 1) {
       player.ws.send(payload);
     }
   }
@@ -309,7 +311,7 @@ export function broadcast(room, message, excludeOdId = null) {
 
 export function sendTo(room, odId, message) {
   const player = room.players.get(odId);
-  if (player && player.ws.readyState === 1) {
+  if (player?.ws?.readyState === 1) {
     player.ws.send(typeof message === 'string' ? message : JSON.stringify(message));
   }
 }
@@ -322,9 +324,10 @@ function touchRoom(roomCode) {
 function cleanupInactiveRooms() {
   const now = Date.now();
   for (const [code, room] of rooms) {
-    const hasConnectedPlayers = [...room.players.values()].some((p) => p.ws.readyState === 1);
+    const hasConnectedPlayers = [...room.players.values()].some((p) => p.ws?.readyState === 1);
     if (!hasConnectedPlayers && (now - room.lastActivity) > ROOM_INACTIVE_TTL_MS) {
       rooms.delete(code);
+      deleteRoomFromDB(code).catch(() => {});
     }
   }
 }
@@ -340,6 +343,128 @@ export function startRoomCleanup() {
 export function stopRoomCleanup() {
   clearInterval(cleanupTimer);
   cleanupTimer = null;
+}
+
+function serializePlayersForDB(room) {
+  const players = [];
+  for (const [, p] of room.players) {
+    players.push({
+      odId: p.odId,
+      userId: p.userId,
+      name: p.name,
+      gender: p.gender,
+      photo: p.photo,
+      isHost: p.isHost,
+      voiceId: p.voiceId || null,
+      voiceName: p.voiceName || null,
+      characterData: p.characterData || null,
+    });
+  }
+  return JSON.stringify(players);
+}
+
+export async function saveRoomToDB(roomCode) {
+  const room = rooms.get(roomCode);
+  if (!room || !room.gameState) return;
+
+  try {
+    const hostPlayer = room.players.get(room.hostId);
+    if (!hostPlayer) return;
+
+    await prisma.multiplayerSession.upsert({
+      where: { roomCode },
+      create: {
+        roomCode,
+        hostId: hostPlayer.userId,
+        phase: room.phase,
+        players: serializePlayersForDB(room),
+        gameState: JSON.stringify(room.gameState),
+        settings: JSON.stringify(room.settings),
+      },
+      update: {
+        hostId: hostPlayer.userId,
+        phase: room.phase,
+        players: serializePlayersForDB(room),
+        gameState: JSON.stringify(room.gameState),
+        settings: JSON.stringify(room.settings),
+      },
+    });
+  } catch (err) {
+    console.warn('[roomManager] Failed to save room to DB:', err.message);
+  }
+}
+
+export async function deleteRoomFromDB(roomCode) {
+  try {
+    await prisma.multiplayerSession.delete({ where: { roomCode } }).catch(() => {});
+  } catch {
+    // ignore
+  }
+}
+
+export async function loadActiveSessionsFromDB() {
+  try {
+    const sessions = await prisma.multiplayerSession.findMany({
+      where: { phase: 'playing' },
+    });
+
+    for (const session of sessions) {
+      if (rooms.has(session.roomCode)) continue;
+
+      const players = JSON.parse(session.players || '[]');
+      const gameState = JSON.parse(session.gameState || 'null');
+      const settings = JSON.parse(session.settings || '{}');
+
+      if (!gameState) continue;
+
+      const playerMap = new Map();
+      for (const p of players) {
+        playerMap.set(p.odId, { ...p, ws: null, pendingAction: null, lastSoloActionAt: null });
+      }
+
+      const hostOdId = players.find((p) => p.isHost)?.odId || players[0]?.odId;
+
+      rooms.set(session.roomCode, {
+        roomCode: session.roomCode,
+        hostId: hostOdId,
+        phase: session.phase,
+        settings,
+        players: playerMap,
+        gameState,
+        lastActivity: Date.now(),
+        fromDB: true,
+      });
+    }
+
+    if (sessions.length > 0) {
+      console.log(`[roomManager] Loaded ${sessions.length} multiplayer sessions from DB`);
+    }
+  } catch (err) {
+    console.warn('[roomManager] Failed to load sessions from DB:', err.message);
+  }
+}
+
+export async function findSessionInDB(roomCode) {
+  try {
+    const session = await prisma.multiplayerSession.findUnique({ where: { roomCode } });
+    if (!session) return null;
+    return {
+      roomCode: session.roomCode,
+      phase: session.phase,
+      players: JSON.parse(session.players || '[]'),
+      gameState: JSON.parse(session.gameState || 'null'),
+      settings: JSON.parse(session.settings || '{}'),
+      hostUserId: session.hostId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function restoreRoom(roomCode, roomData) {
+  if (rooms.has(roomCode)) return rooms.get(roomCode);
+  rooms.set(roomCode, roomData);
+  return roomData;
 }
 
 export { sanitizeRoom, touchRoom };

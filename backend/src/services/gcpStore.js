@@ -22,7 +22,10 @@ export class GcpStore {
       metadata: { cacheControl: 'public, max-age=86400' },
     });
 
-    const url = `https://storage.googleapis.com/${this.bucketName}/${storagePath}`;
+    const [url] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 24 * 60 * 60 * 1000,
+    });
     return { url, path: storagePath, size: buffer.length };
   }
 

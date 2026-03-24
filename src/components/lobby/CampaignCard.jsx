@@ -21,6 +21,7 @@ const genreGlowColors = {
 
 export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, onExportJson }) {
   const { t, i18n } = useTranslation();
+  const isSynced = !!campaign.campaign?.backendId;
   const summary = getCampaignSummary(campaign);
   const lastPlayed = new Date(summary.lastPlayed).toLocaleDateString(i18n.language === 'pl' ? 'pl-PL' : undefined, {
     month: 'short',
@@ -66,7 +67,15 @@ export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, 
         </div>
       </div>
       <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
-        <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`material-symbols-outlined text-xs ${isSynced ? 'text-primary-dim' : 'text-outline/40'}`}
+            title={isSynced ? t('lobby.synced', 'Synced') : t('lobby.localOnly', 'Local only')}
+          >
+            {isSynced ? 'cloud_done' : 'cloud_off'}
+          </span>
+          <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
+        </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
           <button
             onClick={(e) => {

@@ -4,6 +4,7 @@ import LobbyPage from './components/lobby/LobbyPage';
 import CampaignCreatorPage from './components/creator/CampaignCreatorPage';
 import GameplayPage from './components/gameplay/GameplayPage';
 import JoinRoomPage from './components/multiplayer/JoinRoomPage';
+import GalleryPage from './components/gallery/GalleryPage';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/create" element={<CampaignCreatorPage />} />
         <Route path="/play" element={<GameplayPage />} />
         <Route path="/join/:code?" element={<JoinRoomPage />} />
+        <Route path="/gallery" element={<GalleryPage />} />
       </Route>
     </Routes>
   );

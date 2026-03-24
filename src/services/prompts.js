@@ -1,4 +1,10 @@
 import { getBonus, formatMoney } from './gameState';
+import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
+import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
+import { formatMagicForPrompt } from '../data/wfrpMagic';
+import { formatWeatherForPrompt } from './weatherEngine';
+import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 
 const NEEDS_LABELS = {
   hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
@@ -13,32 +19,27 @@ export function buildUnmetNeedsBlock(needs) {
   const lines = [];
   for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
     const val = needs[key] ?? 100;
+    if (val >= 10) continue;
     const name = key.charAt(0).toUpperCase() + key.slice(1);
     if (val <= 0 && labels.zero) {
       lines.push(`- ${name}: ${val}/100 [ZERO — ${key === 'bladder' ? 'ACCIDENT' : 'COLLAPSE'} — ${labels.zero}]`);
-    } else if (val < 15) {
-      lines.push(`- ${name}: ${val}/100 [CRITICAL — ${labels.critical}]`);
-    } else if (val < 30) {
-      lines.push(`- ${name}: ${val}/100 [LOW — ${labels.low}]`);
-    } else if (val < 50) {
-      lines.push(`- ${name}: ${val}/100 [MODERATE — ${labels.moderate}]`);
     } else {
-      lines.push(`- ${name}: ${val}/100 [OK]`);
+      lines.push(`- ${name}: ${val}/100 [CRITICAL — ${labels.critical}]`);
     }
   }
+  if (lines.length === 0) return '';
   return `CHARACTER NEEDS STATUS (always factor these into narration, NPC reactions, and outcomes):\n${lines.join('\n')}\n\n`;
 }
 
 export function buildNeedsEnforcementReminder(needs) {
   if (!needs) return '';
   const urgent = [];
-  for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
+  for (const [key] of Object.entries(NEEDS_LABELS)) {
     const val = needs[key] ?? 100;
+    if (val >= 10) continue;
     const name = key.charAt(0).toUpperCase() + key.slice(1);
     if (val <= 0) urgent.push(`${name}: ${val}/100 — ZERO`);
-    else if (val < 15) urgent.push(`${name}: ${val}/100 — CRITICAL`);
-    else if (val < 30) urgent.push(`${name}: ${val}/100 — LOW`);
-    else if (val < 50) urgent.push(`${name}: ${val}/100 — MODERATE`);
+    else urgent.push(`${name}: ${val}/100 — CRITICAL`);
   }
   if (urgent.length === 0) return '';
   return `\nNEEDS ENFORCEMENT (MANDATORY — do NOT skip):
@@ -47,7 +48,7 @@ YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
 3. At least ONE of the four suggestedActions MUST address the most urgent unmet need (e.g. "Find food", "Look for a well", "Find a place to rest").
-4. For needs below 30: apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
+4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
@@ -99,6 +100,11 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     : 'No NPCs encountered yet.';
 
   const currentLoc = world?.currentLocation || 'Unknown';
+
+  const npcsHere = npcs.filter((n) => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());
+  const npcsHereSection = npcsHere.length > 0
+    ? npcsHere.map((n) => `- ${n.name} (${n.role || 'unknown role'})`).join('\n')
+    : 'No known NPCs at this location.';
   const mapState = world?.mapState || [];
   const mapSection = mapState.length > 0
     ? mapState.map((loc) => {
@@ -159,6 +165,12 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
         .join('\n\n');
       parts.push(`RECENT SCENES (full):\n${full}`);
     }
+    if (enhancedContext.relevantCodex) {
+      parts.unshift(enhancedContext.relevantCodex);
+    }
+    if (enhancedContext.relevantMemories) {
+      parts.unshift(enhancedContext.relevantMemories);
+    }
     sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
   } else {
     const scenes = gameState.scenes || [];
@@ -203,29 +215,43 @@ CHARACTER STATE (WFRP 4e):
 - Inventory: ${inventory}
 - Money: ${moneyDisplay}
 - Statuses: ${statuses}
-${needsSystemEnabled && character?.needs ? `
-CHARACTER NEEDS (biological/physical needs — scale 0-100, 100=fully satisfied, 0=critical):
-- Hunger: ${character.needs.hunger ?? 100}/100${(character.needs.hunger ?? 100) < 15 ? ' [CRITICAL — weak, dizzy, stomach pains]' : (character.needs.hunger ?? 100) < 30 ? ' [LOW — hungry, distracted]' : ''}
-- Thirst: ${character.needs.thirst ?? 100}/100${(character.needs.thirst ?? 100) < 15 ? ' [CRITICAL — parched, cracked lips, fading]' : (character.needs.thirst ?? 100) < 30 ? ' [LOW — thirsty, dry mouth]' : ''}
-- Bladder: ${character.needs.bladder ?? 100}/100${(character.needs.bladder ?? 100) <= 0 ? ' [ACCIDENT — character has lost control!]' : (character.needs.bladder ?? 100) < 10 ? ' [CRITICAL — desperate, funny walk, about to lose control]' : (character.needs.bladder ?? 100) < 30 ? ' [LOW — uncomfortable, fidgeting]' : ''}
-- Hygiene: ${character.needs.hygiene ?? 100}/100${(character.needs.hygiene ?? 100) < 15 ? ' [CRITICAL — terrible stench, NPCs recoil]' : (character.needs.hygiene ?? 100) < 30 ? ' [LOW — smelly, NPCs wrinkle noses]' : ''}
-- Rest: ${character.needs.rest ?? 100}/100${(character.needs.rest ?? 100) <= 0 ? ' [COLLAPSE — character passes out from exhaustion]' : (character.needs.rest ?? 100) < 15 ? ' [CRITICAL — can barely keep eyes open, stumbling]' : (character.needs.rest ?? 100) < 30 ? ' [LOW — tired, yawning, slower reactions]' : ''}
+${character?.criticalWounds?.length > 0 ? `\n${formatCriticalWoundsForPrompt(character.criticalWounds)}\nCRITICAL WOUND RULES: Active critical wounds impose penalties on the character's tests and movement. When narrating, reflect the character's injuries — limping, pain, restricted movement, bleeding. Critical wounds that require surgery can only be healed by a trained healer/surgeon. Bleeding wounds worsen over time without treatment. Include "healCriticalWound" in stateChanges (string: wound name) when a critical wound is successfully treated.\n` : ''}${(() => {
+  if (!needsSystemEnabled || !character?.needs) return '';
+  const needsDefs = [
+    { key: 'hunger', zeroLabel: null, critLabel: 'weak, dizzy, stomach pains' },
+    { key: 'thirst', zeroLabel: null, critLabel: 'parched, cracked lips, fading' },
+    { key: 'bladder', zeroLabel: 'ACCIDENT — character has lost control!', critLabel: 'desperate, funny walk, about to lose control' },
+    { key: 'hygiene', zeroLabel: null, critLabel: 'terrible stench, NPCs recoil' },
+    { key: 'rest', zeroLabel: 'COLLAPSE — character passes out from exhaustion', critLabel: 'can barely keep eyes open, stumbling' },
+  ];
+  const critLines = [];
+  for (const { key, zeroLabel, critLabel } of needsDefs) {
+    const val = character.needs[key] ?? 100;
+    if (val >= 10) continue;
+    const name = key.charAt(0).toUpperCase() + key.slice(1);
+    if (val <= 0 && zeroLabel) critLines.push(`- ${name}: ${val}/100 [ZERO — ${zeroLabel}]`);
+    else critLines.push(`- ${name}: ${val}/100 [CRITICAL — ${critLabel}]`);
+  }
+  if (critLines.length === 0) return `
+NEEDS SYSTEM: Active. All needs currently above threshold (>=10). When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), use stateChanges.needsChanges as DELTAS. Always include stateChanges.timeAdvance with "hoursElapsed".
+`;
+  return `
+CHARACTER NEEDS — CRITICAL (biological/physical needs — scale 0-100, below 10 = crisis):
+${critLines.join('\n')}
 
-NEEDS SYSTEM RULES (CRITICAL — these MUST be respected every scene):
-- Needs decay automatically based on hours elapsed. Realistic daily rhythm: ~3 meals, ~4 drinks, ~3 bathroom breaks, ~1 bath, ~8h sleep.
-- ALWAYS weave need effects into the narrative. Do NOT ignore them. The character is a living being with physical needs.
-- Below 50 [MODERATE]: subtle mentions — the character notices growing discomfort, briefly thinks about food/water/rest, shifts uncomfortably. Light narrative flavor.
-- Below 30 [LOW]: noticeable effects — distraction, discomfort, brief NPC reactions. The character's performance is impaired.
-- Below 15 [CRITICAL]: strong effects that actively dominate the scene — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
+NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - At 0 for bladder: the character wets themselves — narrate the embarrassment and NPC reactions.
 - At 0 for rest: the character collapses/falls asleep involuntarily.
-- MECHANICAL PENALTIES: When a need is below 30, apply -10 to related skill test targets: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple low needs stack.
+- ALWAYS weave these critical need effects into the narrative — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
+- MECHANICAL PENALTIES: Apply -10 to related skill test targets for each critical need: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple critical needs stack.
 - When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), you MUST use stateChanges.needsChanges to restore it. Never narrate eating/drinking/resting without updating the corresponding need.
-  Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, short nap +20-30 rest.
+  Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
+- SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: When ANY need is below 40, at least ONE of the four suggestedActions MUST directly address that need (e.g. "Search for food", "Find a stream to drink from", "Look for a place to sleep"). When multiple needs are low, prioritize the most critical.
-- IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal) indicating how many in-game hours this action took (e.g. 0.25 for a quick action = 15 min, 0.5 for a short action = 30 min, 1 for exploration, 8 for sleeping).
-` : ''}
+- MANDATORY: At least ONE of the four suggestedActions MUST directly address the most urgent unmet need (e.g. "Search for food", "Find a stream to drink from", "Look for a place to sleep").
+- IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
+`;
+})()}
 WFRP 4e RULES FOR THE GM:
 - Use the d100 percentile system. When a skill test is needed, the target number = characteristic + skill advances.
 - Success Levels (SL) = (target - roll) ÷ 10, rounded toward 0. Positive SL = degrees of success, negative = degrees of failure.
@@ -239,8 +265,22 @@ WFRP 4e RULES FOR THE GM:
 - When the character uses Fortune/Resolve, reflect it in stateChanges (fortuneChange/resolveChange as negative deltas).
 - Fortune resets to Fate value after a night's rest.
 
+NPC DISPOSITION MODIFIERS (apply when a dice roll involves direct interaction with a known NPC):
+When the player attempts a social, trade, persuasion, or other interpersonal skill test involving a known NPC, look up that NPC's disposition value from the NPC REGISTRY below and apply the corresponding modifier to the dice target number:
+  disposition >= 30 (strong ally): +15 to target
+  disposition >= 15 (friendly): +10 to target
+  disposition >= 5 (warm): +5 to target
+  disposition -5 to +5 (neutral): no modifier
+  disposition <= -5 (cool): -5 to target
+  disposition <= -15 (hostile): -10 to target
+  disposition <= -30 (enemy): -15 to target
+When this modifier applies, include "dispositionBonus" in the diceRoll output with the modifier value (e.g. 10, -5, etc.) and mention the NPC name in the skill test narration.
+
 NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
 ${npcSection}
+
+NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
+${npcsHereSection}
 
 CURRENT LOCATION & MAP:
 Current: ${currentLoc}
@@ -264,7 +304,25 @@ ${activeQuests}
 
 SCENE HISTORY:
 ${sceneHistory}
-
+${(() => {
+  const kb = world?.knowledgeBase;
+  if (!kb) return '';
+  const activeThreads = (kb.plotThreads || []).filter((t) => t.status === 'active');
+  const recentEvents = (kb.events || []).filter((e) => e.importance === 'critical' || e.importance === 'major').slice(-10);
+  const recentDecisions = (kb.decisions || []).slice(-5);
+  if (activeThreads.length === 0 && recentEvents.length === 0 && recentDecisions.length === 0) return '';
+  const lines = [];
+  if (activeThreads.length > 0) {
+    lines.push('Active plot threads: ' + activeThreads.map((t) => t.name).join(', '));
+  }
+  if (recentEvents.length > 0) {
+    lines.push('Key events: ' + recentEvents.map((e) => e.summary).join('; '));
+  }
+  if (recentDecisions.length > 0) {
+    lines.push('Recent decisions: ' + recentDecisions.map((d) => `${d.choice} → ${d.consequence}`).join('; '));
+  }
+  return `\nKNOWLEDGE BASE (long-term memory — reference for consistency):\n${lines.join('\n')}\n`;
+})()}
 LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
@@ -282,8 +340,15 @@ INSTRUCTIONS:
 11. Check ACTIVE EFFECTS before resolving actions in a location — traps should trigger, ongoing spells should apply their effects.
 12. ALWAYS include stateChanges.timeAdvance with "hoursElapsed" (supports decimals) — every action takes 15 minutes to 1 hour of in-game time. Quick dialogue/interaction: 0.25h (15 min), short action/combat: 0.5h (30 min), exploration/travel: 0.75-1h, resting: 2-4h, sleeping: 6-8h. Time drives the needs system.
 13. Update the player's current location via stateChanges.currentLocation when they move.
-14. If the character needs system is active, reflect low needs in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
+14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
+
+ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
+- IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If the player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), set diceRoll to null and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc. Do NOT waste a dice roll on an impossible action.
+- TRIVIAL ACTIONS (auto-success, NO dice roll): If the action is trivially easy with no meaningful chance of failure (e.g., walking a short distance on flat ground, picking up an object at your feet, opening an unlocked door, sitting down), set diceRoll to null and narrate the success directly. These do not need mechanical resolution.
+- UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
+- EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules. If the player attempts to call someone who could plausibly hear them or arrive shortly, narrate the attempt and its result.
+- suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere.
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -327,12 +392,119 @@ For impactful moments (combat, magic, environmental events, dramatic reveals), i
 BACKGROUND MUSIC:
 Include a "musicPrompt" field with a short English description of the ideal instrumental background music for the scene (e.g. "tense orchestral strings with low brass, dark dungeon atmosphere" or "peaceful acoustic guitar with birdsong, sunny meadow"). Focus on instruments, tempo, and emotional tone. Keep it under 200 characters. Use null only if the scene should be silent.
 
+${(() => {
+  const hasCombat = !!gameState?.combat;
+  const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
+  const combatLikely = hasCombat || /\b(attack|fight|combat|ambush|hostile|enemy|enemies|bandits?|creatures?|wolves|monsters?)\b/.test(recentNarrative);
+  if (!combatLikely) return 'BESTIARY: Available on demand — when combat starts, creature stats will be referenced automatically.\n';
+  return `BESTIARY REFERENCE (use these stats for combat encounters instead of inventing stats):\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 15))}\nUse the stats above for known creature types. For creatures not listed, create comparable stats.\n`;
+})()}
+${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
+${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
+The character can cast spells using Channelling (WP) and Language (Magick) tests. Casting Number (CN) is the SL required. Doubles on casting rolls cause Miscasts. When the character attempts magic, describe the wind of magic flowing and the spell's visual effects.
+` : ''}${gameState?.world?.weather ? `CURRENT WEATHER:
+${formatWeatherForPrompt(gameState.world.weather)}
+Factor weather conditions into outdoor scenes — visibility, movement, NPC behavior, and test modifiers.
+` : ''}${(() => {
+  const loc = (currentLoc || '').toLowerCase();
+  const inSettlement = /\b(town|city|village|market|shop|tavern|inn|port|harbor|harbour|forge|smithy|store|emporium|bazaar)\b/.test(loc);
+  const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
+  const tradeLikely = inSettlement || /\b(buy|sell|trade|shop|merchant|vendor|barter|purchase|haggle)\b/.test(recentNarrative);
+  if (!tradeLikely) return '';
+  return `EQUIPMENT & TRADE REFERENCE:\n${formatEquipmentForPrompt('weapons')}\n${formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
+})()}
+
+${(() => {
+  const factions = gameState?.world?.factions;
+  if (!factions || Object.keys(factions).length === 0) return '';
+  const lines = Object.entries(factions).map(([id, rep]) => {
+    const def = FACTION_DEFINITIONS[id];
+    const tier = getReputationTier(rep);
+    return `- ${def?.name || id}: ${rep} (${tier})`;
+  });
+  return `FACTION REPUTATION (affects NPC attitudes, prices, quest availability):\n${lines.join('\n')}\nAdjust NPC behavior based on faction standing: Hostile factions refuse service, Allied factions offer discounts and special quests.\n`;
+})()}CAMPAIGN END:
+When the main quest is fully resolved (completed or catastrophically failed), or all player characters are dead (TPK), you MAY include "campaignEnd" in stateChanges:
+{"campaignEnd": {"status": "completed" or "failed", "epilogue": "A 2-3 paragraph epilogue summarizing the aftermath..."}}
+Only use this for dramatic, definitive campaign conclusions — not mid-story setbacks.
+${(() => {
+  const structure = campaign?.structure;
+  if (!structure?.acts?.length) return '';
+  const currentAct = structure.acts.find((a) => a.number === structure.currentAct) || structure.acts[0];
+  const scenesInAct = (gameState.scenes?.length || 0) - (structure.acts.slice(0, structure.currentAct - 1).reduce((sum, a) => sum + (a.targetScenes || 0), 0));
+  const remaining = Math.max(0, (currentAct.targetScenes || 10) - scenesInAct);
+  return `
+CAMPAIGN PACING:
+Current Act: ${currentAct.number} — "${currentAct.name}" (${currentAct.description || ''})
+Scenes in this act: ${scenesInAct}/${currentAct.targetScenes || '?'}
+Scenes remaining in act: ~${remaining}
+Total campaign progress: Scene ${gameState.scenes?.length || 0} / ~${structure.totalTargetScenes || '?'}
+${remaining <= 3 ? 'IMPORTANT: This act is nearing its end. Build toward the act\'s climax/turning point. If this is the final act, prepare for the campaign conclusion.' : 'Continue developing the act\'s themes and building toward its turning point.'}
+`;
+})()}
+KNOWLEDGE BASE UPDATES:
+After each scene, you may include "knowledgeUpdates" in stateChanges to record important story information:
+{"knowledgeUpdates": {
+  "events": [{"summary": "Brief event description", "importance": "minor|major|critical", "tags": ["combat", "npc_name"]}],
+  "decisions": [{"choice": "What the player decided", "consequence": "What happened as a result", "tags": []}],
+  "plotThreads": [{"id": "thread_unique_id", "name": "Thread Name", "status": "active|resolved|abandoned"}]
+}}
+Use events for key happenings, decisions for player choices with consequences, and plotThreads for ongoing narrative arcs.
+
+CODEX SYSTEM (detailed lore and knowledge discovery):
+When the player asks about, investigates, or learns about something specific (an artifact, person, place, event, faction, creature, or concept), you MUST generate a detailed codex fragment via stateChanges.codexUpdates. This is how the player builds up knowledge about the world.
+
+CODEX RULES:
+1. When the player inquires about something, generate SPECIFIC, VIVID details (2-4 sentences) — never vague statements like "they tell you more". Describe actual history, characteristics, mechanics, origins, or current state.
+2. Each NPC reveals only ONE fragment per interaction. Different NPCs know different aspects based on their role:
+   - Scholars/wizards: "history", "technical", "political" aspects
+   - Common folk/peasants: "rumor" aspects (may be partially inaccurate)
+   - Soldiers/guards: "location", "weakness" aspects
+   - Merchants/craftsmen: "technical", "description" aspects
+   - Nobles/officials: "political", "history" aspects
+3. Check the PLAYER CODEX above (if present) — NEVER repeat information the player already has. Always reveal something NEW.
+4. Use "relatedEntries" to link codex items that are connected (e.g., a weapon linked to its creator).
+5. Some knowledge (especially "weakness" aspects) should require finding the RIGHT source — not everyone knows everything.
+
+CODEX UPDATE FORMAT in stateChanges:
+{"codexUpdates": [
+  {
+    "id": "unique-slug-id",
+    "name": "Display Name of the Subject",
+    "category": "artifact|person|place|event|faction|creature|concept",
+    "fragment": {
+      "content": "2-4 sentences of specific, detailed information about this subject...",
+      "source": "Who or what revealed this information (e.g. 'Elven scholar in Altdorf', 'Ancient tome', 'Local innkeeper')",
+      "aspect": "history|description|location|weakness|rumor|technical|political"
+    },
+    "tags": ["relevant", "search", "tags"],
+    "relatedEntries": ["id-of-related-codex-entry"]
+  }
+]}
+Use the same "id" when adding new fragments to an existing codex entry. Use empty array [] when no new knowledge is discovered.
+
 SCENE IMAGE PROMPT:
-Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".`;
+Include an "imagePrompt" field with a short ENGLISH description of the scene for AI image generation (max 200 characters). Describe the visual composition, key subjects, environment, lighting, and colors. Always write in English regardless of the narrative language. Example: "a lone warrior standing at the edge of a crumbling stone bridge over a misty chasm, torchlight, dark fantasy".
+
+COMBAT ENCOUNTERS:
+When generating a combat encounter, include "combatUpdate" in stateChanges with enemy data:
+{
+  "combatUpdate": {
+    "active": true,
+    "enemies": [
+      {"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
+    ],
+    "reason": "Short description of why combat started"
+  }
+}
+Only include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+
+FACTION & REPUTATION:
+When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, momentumBonus = 0 } = {}, dmSettings = null) {
-  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", and quest names/descriptions/completion conditions/objectives in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {}, dmSettings = null) {
+  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
     return `Generate the opening scene of this campaign. Set the stage with an atmospheric description that draws the player in.
@@ -362,7 +534,8 @@ Respond with ONLY valid JSON in this exact format:
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [],
     "moneyChange": null,
-    "currentLocation": "Location Name"${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
+    "currentLocation": "Location Name",
+    "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   },
   "diceRoll": null
 }
@@ -382,14 +555,21 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
-  return `${needsReminder}The player chose: "${playerAction}"
+  return `${needsReminder}The player's action: ${playerAction}
 
-PLAYER SPEECH: When the player's action contains text in quotation marks (e.g. "some words"), that is the player character speaking those exact words in-character. You MUST include those words as a "dialogue" segment with the player character's name and gender in dialogueSegments. Do NOT merely narrate or paraphrase what the character said — present the quoted words as actual spoken dialogue. The rest of the action (outside quotes) describes what the character does and should be narrated normally.
+ACTION VS SPEECH (CRITICAL — read both rules carefully):
+RULE 1 — ACTION PARTS: The non-quoted parts of the player's input describe what their character DOES — narrate them as action in prose. Never turn unquoted action text into spoken dialogue (e.g. the character must NOT announce their own action aloud).
+RULE 2 — SPEECH PARTS (MANDATORY): When the input contains text inside quotation marks ("..."), that is the character speaking those exact words in-character. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
+Example: input [I encourage everyone to celebrate. "Party on!" I shout.] → narrate the encouraging as action, then include "Party on!" as a dialogue segment.
+If the input has NO quotation marks at all, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's input text verbatim).
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
+FEASIBILITY CHECK: Before rolling dice, verify the action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (diceRoll=null). Trivial/certain actions auto-succeed (diceRoll=null). Only roll for uncertain outcomes.
+
 DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. The "target" number in the diceRoll output is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
-${preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).'}
+NPC DISPOSITION MODIFIERS: When this roll involves direct interaction with a known NPC (social, trade, persuasion, etc.), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll output with the applied modifier value.
+${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null in your response. Do not invent or include any dice check.' : (preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).')}
 ${isCustomAction ? `
 CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus.
 - +10: Mundane custom action — a basic alternative to the suggestions, nothing special
@@ -431,6 +611,7 @@ Respond with ONLY valid JSON in this exact format:
     "transition": "dissolve | fade | arcane_wipe"
   },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
+  "questOffers": [],
   "stateChanges": {
     "woundsChange": 0,
     "xp": 0,
@@ -452,16 +633,22 @@ Respond with ONLY valid JSON in this exact format:
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
     "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
-    "currentLocation": "Current Location Name"${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
+    "currentLocation": "Current Location Name",
+    "factionChanges": null,
+    "combatUpdate": null,
+    "knowledgeUpdates": null,
+    "codexUpdates": [],
+    "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
 
 For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''}). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''}.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action. Use null ONLY when dice frequency is low and the action truly doesn't warrant a test.
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}]}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story (not mandatory but trackable). worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
+QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "offeredBy": "NPC name or source", "reward": "Narrative reward hint", "type": "main|side|personal"}. Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
 For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
 For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
@@ -474,7 +661,7 @@ For stateChanges.mapChanges: log environmental changes to locations (traps set, 
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
 For stateChanges.currentLocation: update whenever the player moves to a new location.
-${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet +80-100 bladder, bath +60-80 hygiene, full night sleep +70-90 rest, nap +20-30 rest. Set all values to 0 only when no need was satisfied in this scene.\n' : ''}
+${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${langReminder}`;
@@ -497,6 +684,10 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `- Preferred career: ${settings.careerPreference}`
     : '- Career: not specified (suggest a career fitting the story and species)';
 
+  const existingCharNote = settings.existingCharacter
+    ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene narrative and dialogueSegments. The characterSuggestion stats will be ignored — focus on making the firstScene narrative fit this character's identity.`
+    : '';
+
   const humorousToneGuidance = settings.tone === 'Humorous'
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Instead, ground the campaign in a believable world and derive comedy from 1-2 genuinely controversial, provocative, or morally ambiguous elements — corrupt institutions, taboo customs, ethically questionable practices, morally grey factions, or politically charged conflicts. Comedy should emerge from how characters earnestly navigate these uncomfortable realities: dark irony, social satire, awkward moral dilemmas, characters taking absurd stances on serious issues. Sharp wit about real controversies, not random nonsense.`
     : '';
@@ -511,7 +702,7 @@ ${characterNameLine}
 ${speciesLine}
 ${careerLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${humorousToneGuidance}
+${langInstruction}${existingCharNote}${humorousToneGuidance}
 
 Generate the campaign foundation. The game uses Warhammer Fantasy Roleplay 4th Edition rules. The 10 characteristics are: WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), I (Initiative), Ag (Agility), Dex (Dexterity), Int (Intelligence), WP (Willpower), Fel (Fellowship). Each characteristic is generated as 2d10 + species base modifier (typically 20 for Humans).
 
@@ -570,8 +761,22 @@ Respond with ONLY valid JSON:
       {"id": "obj_3", "description": "${language === 'pl' ? 'Trzeci etap' : 'Third milestone'}"}
     ]
   },
-  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"]
+  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"],
+  "campaignStructure": {
+    "acts": [
+      {"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},
+      {"number": 2, "name": "Confrontation", "targetScenes": 12, "description": "Escalate the conflict, raise the stakes"},
+      {"number": 3, "name": "Climax", "targetScenes": 5, "description": "Final confrontation and resolution"}
+    ],
+    "currentAct": 1,
+    "totalTargetScenes": 25
+  }
 }
+
+IMPORTANT for campaignStructure:
+- Base the act structure on the campaign length: Short (~15 scenes, 3 acts: 5/7/3), Medium (~25 scenes, 3 acts: 8/12/5), Long (~40 scenes, 3 acts: 12/18/10), Epic (~60+ scenes, 4 acts: 15/20/15/10).
+- Each act needs a name, target scene count, and brief description of its narrative purpose.
+- totalTargetScenes should be the sum of all act target scenes.
 
 IMPORTANT for characterSuggestion:
 - Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.
@@ -584,6 +789,26 @@ IMPORTANT for characterSuggestion:
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
 }
 
+const SANITIZE_PATTERNS = [
+  /\b(blood|bloody|bleeding|bloodied|bloodstain(ed)?)\b/gi,
+  /\b(gore|gory|guts|entrails|viscera|dismember(ed|ment)?)\b/gi,
+  /\b(corpse|dead\s+bod(y|ies)|severed|decapitat(ed|ion)|mutilat(ed|ion))\b/gi,
+  /\b(murder(ed|ing)?|kill(ed|ing)|slaughter(ed|ing)?|massacre)\b/gi,
+  /\b(torture(d|ing)?|torment(ed|ing)?)\b/gi,
+  /\b(naked|nude|undress(ed)?)\b/gi,
+  /\b(slave(ry|s)?|rape|assault(ed|ing)?)\b/gi,
+  /\b(suicide|self-harm)\b/gi,
+  /\b(drug|narcotic|opium|warpstone)\b/gi,
+];
+
+function sanitizeForImageGen(text) {
+  let sanitized = text;
+  for (const pattern of SANITIZE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '');
+  }
+  return sanitized.replace(/\s{2,}/g, ' ').trim();
+}
+
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {
   const isSD = provider === 'stability';
 
@@ -594,9 +819,9 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
         Horror: 'photorealistic horror scene, cinematic photograph, eerie realistic lighting, RAW photo, 8k uhd',
       }
     : {
-        Fantasy: 'dark fantasy oil painting, medieval, magical atmosphere',
+        Fantasy: 'fantasy oil painting, medieval, magical atmosphere',
         'Sci-Fi': 'cinematic sci-fi concept art, futuristic, neon-lit',
-        Horror: 'dark horror illustration, atmospheric, eerie lighting',
+        Horror: 'gothic illustration, atmospheric, eerie lighting',
       };
 
   const toneMap = isSD
@@ -614,7 +839,8 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   const style = styleMap[genre] || styleMap.Fantasy;
   const mood = toneMap[tone] || toneMap.Epic;
 
-  const sceneDesc = imagePrompt || narrative.substring(0, 300);
+  const rawDesc = imagePrompt || narrative.substring(0, 300);
+  const sceneDesc = sanitizeForImageGen(rawDesc);
 
   return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }

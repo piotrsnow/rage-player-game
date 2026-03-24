@@ -8,15 +8,20 @@ import { createSceneId, calculateSL, rollD100 } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
+import { validateStateChanges } from '../services/stateValidator';
+import { processStateChanges as processAchievements } from '../services/achievementTracker';
+import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 
 export function useAI() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language, needsSystemEnabled } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium' } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
+  const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : openaiApiKey;
+  const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
 
   const generateScene = useCallback(
     async (playerAction, isFirstScene = false, isCustomAction = false) => {
@@ -24,8 +29,29 @@ export function useAI() {
       dispatch({ type: 'SET_ERROR', payload: null });
 
       try {
-        const enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
-        const preRolledDice = !isFirstScene ? rollD100() : null;
+        let enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
+        if (enhancedContext && state.world?.knowledgeBase) {
+          const lastScene = state.scenes?.[state.scenes.length - 1];
+          const relevantMemories = contextManager.retrieveRelevantKnowledge(
+            state.world.knowledgeBase, lastScene?.narrative, playerAction
+          );
+          if (relevantMemories) {
+            enhancedContext = { ...enhancedContext, relevantMemories };
+          }
+        }
+        if (enhancedContext && state.world?.codex) {
+          const lastScene = state.scenes?.[state.scenes.length - 1];
+          const relevantCodex = contextManager.retrieveRelevantCodex(
+            state.world.codex, lastScene?.narrative, playerAction
+          );
+          if (relevantCodex) {
+            enhancedContext = { ...enhancedContext, relevantCodex };
+          }
+        }
+        const testsFrequency = settings.dmSettings?.testsFrequency ?? 50;
+        const shouldRollDice = Math.random() * 100 < testsFrequency;
+        const preRolledDice = (!isFirstScene && shouldRollDice) ? rollD100() : null;
+        const skipDiceRoll = !isFirstScene && !shouldRollDice;
         const momentumBonus = state.momentumBonus || 0;
         const { result, usage } = await aiService.generateScene(
           state,
@@ -36,7 +62,7 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, preRolledDice, momentumBonus }
+          { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
@@ -63,17 +89,34 @@ export function useAI() {
           dispatch({ type: 'SET_MOMENTUM', payload: sl * 5 });
         }
 
+        const repairedSegments = repairDialogueSegments(
+          result.narrative,
+          result.dialogueSegments || [],
+          [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])]
+        );
+
+        const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
+        const finalSegments = !isFirstScene
+          ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
+          : repairedSegments;
+
         const sceneId = createSceneId();
+        const questOffers = (result.questOffers || []).map((offer) => ({
+          ...offer,
+          objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })),
+          status: 'pending',
+        }));
         const scene = {
           id: sceneId,
           narrative: result.narrative,
-          dialogueSegments: result.dialogueSegments || [],
+          dialogueSegments: finalSegments,
           soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null,
           imagePrompt: result.imagePrompt || null,
           musicUrl: null,
           image: null,
           actions: result.suggestedActions || [],
+          questOffers,
           chosenAction: playerAction,
           diceRoll: result.diceRoll || null,
           timestamp: Date.now(),
@@ -122,8 +165,9 @@ export function useAI() {
           payload: {
             id: `msg_${Date.now()}_dm`,
             role: 'dm',
+            sceneId,
             content: result.narrative,
-            dialogueSegments: result.dialogueSegments || [],
+            dialogueSegments: finalSegments,
             soundEffect: result.soundEffect || null,
             timestamp: Date.now(),
           },
@@ -139,11 +183,50 @@ export function useAI() {
         }
 
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
-          dispatch({ type: 'APPLY_STATE_CHANGES', payload: result.stateChanges });
+          const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
+          result.stateChanges = validated;
 
-          const scMessages = generateStateChangeMessages(result.stateChanges, state, t);
+          dispatch({ type: 'PUSH_UNDO' });
+          dispatch({ type: 'APPLY_STATE_CHANGES', payload: validated });
+
+          for (const warn of [...warnings, ...corrections]) {
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_val_${Math.random().toString(36).slice(2, 5)}`,
+                role: 'system',
+                subtype: 'validation_warning',
+                content: `⚠ ${warn}`,
+                timestamp: Date.now(),
+              },
+            });
+          }
+
+          const scMessages = generateStateChangeMessages(validated, state, t);
           for (const msg of scMessages) {
             dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
+          }
+
+          const { newlyUnlocked, updatedAchievementState } = processAchievements(
+            state.achievements, validated, state
+          );
+          if (updatedAchievementState) {
+            dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
+          }
+          for (const ach of newlyUnlocked) {
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_ach_${ach.id}`,
+                role: 'system',
+                subtype: 'achievement_unlocked',
+                content: `${ach.icon || '🏆'} ${t('achievements.unlocked', 'Achievement unlocked')}: ${ach.name}`,
+                timestamp: Date.now(),
+              },
+            });
+            if (ach.xpReward && state.character) {
+              dispatch({ type: 'APPLY_STATE_CHANGES', payload: { xp: ach.xpReward } });
+            }
           }
         }
 
@@ -154,7 +237,7 @@ export function useAI() {
 
         // Compress old scenes in the background when threshold exceeded
         if (contextManager.needsCompression(state)) {
-          contextManager.compressOldScenes(state, aiProvider, apiKey, language).then((compResult) => {
+          contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
             if (compResult?.summary) {
               dispatch({ type: 'UPDATE_WORLD', payload: { compressedHistory: compResult.summary } });
               setTimeout(() => autoSave(), 300);
@@ -175,7 +258,8 @@ export function useAI() {
               state.campaign?.tone,
               imageApiKey,
               imageProvider,
-              result.imagePrompt
+              result.imagePrompt,
+              state.campaign?.backendId
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -197,7 +281,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, aiModelTier, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -209,7 +293,9 @@ export function useAI() {
           campaignSettings,
           aiProvider,
           apiKey,
-          language
+          language,
+          aiModelTier,
+          { alternateApiKey }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         return result;
@@ -220,7 +306,7 @@ export function useAI() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [aiProvider, apiKey, language, dispatch]
+    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
   );
 
   const generateStoryPrompt = useCallback(
@@ -229,12 +315,14 @@ export function useAI() {
         { genre, tone, style },
         aiProvider,
         apiKey,
-        language
+        language,
+        aiModelTier,
+        { alternateApiKey }
       );
       if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
       return result.prompt;
     },
-    [aiProvider, apiKey, language, dispatch]
+    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
   );
 
   const generateImageForScene = useCallback(
@@ -251,7 +339,8 @@ export function useAI() {
           tone,
           imageApiKey,
           imageProvider,
-          sceneImagePrompt
+          sceneImagePrompt,
+          state.campaign?.backendId
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -293,7 +382,7 @@ export function useAI() {
 
       const { result, usage } = await aiService.verifyObjective(
         storyContext, quest.name, quest.description, objective.description,
-        aiProvider, apiKey, language
+        aiProvider, apiKey, language, aiModelTier, { alternateApiKey }
       );
       if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
@@ -317,8 +406,50 @@ export function useAI() {
 
       return result;
     },
-    [state, aiProvider, apiKey, language, dispatch, autoSave, t]
+    [state, aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch, autoSave, t]
   );
 
-  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene, verifyQuestObjective };
+  const acceptQuestOffer = useCallback(
+    (sceneId, questOffer) => {
+      const quest = {
+        id: questOffer.id,
+        name: questOffer.name,
+        description: questOffer.description,
+        completionCondition: questOffer.completionCondition,
+        objectives: (questOffer.objectives || []).map((obj) => ({
+          ...obj,
+          completed: false,
+        })),
+      };
+      dispatch({ type: 'ADD_QUEST', payload: quest });
+      dispatch({
+        type: 'UPDATE_SCENE_QUEST_OFFER',
+        payload: { sceneId, offerId: questOffer.id, status: 'accepted' },
+      });
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${Date.now()}_quest_accept`,
+          role: 'system',
+          subtype: 'quest_new',
+          content: t('system.questNew', { quest: questOffer.name }),
+          timestamp: Date.now(),
+        },
+      });
+      setTimeout(() => autoSave(), 300);
+    },
+    [dispatch, autoSave, t]
+  );
+
+  const declineQuestOffer = useCallback(
+    (sceneId, offerId) => {
+      dispatch({
+        type: 'UPDATE_SCENE_QUEST_OFFER',
+        payload: { sceneId, offerId, status: 'declined' },
+      });
+    },
+    [dispatch]
+  );
+
+  return { generateScene, generateCampaign, generateStoryPrompt, generateImageForScene, verifyQuestObjective, acceptQuestOffer, declineQuestOffer };
 }

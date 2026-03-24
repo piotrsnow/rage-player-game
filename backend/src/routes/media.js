@@ -8,8 +8,8 @@ export async function mediaRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.post('/check', async (request) => {
-    const { type, params } = request.body;
-    const key = generateKey(type, params);
+    const { type, params, campaignId } = request.body;
+    const key = generateKey(type, params, campaignId);
 
     const asset = await prisma.mediaAsset.findUnique({ where: { key } });
     if (asset) {
@@ -25,11 +25,14 @@ export async function mediaRoutes(fastify) {
   });
 
   fastify.post('/store', async (request) => {
-    const { key, type, contentType, metadata, data } = request.body;
+    const { key, type, contentType, metadata, data, campaignId } = request.body;
 
     const buffer = Buffer.from(data, 'base64');
     const ext = contentType.split('/')[1] || 'bin';
-    const storagePath = `${type}s/${key.split('/').pop() || key}.${ext}`;
+    const baseName = key.split('/').pop() || key;
+    const storagePath = campaignId
+      ? `campaigns/${campaignId}/${type}s/${baseName}.${ext}`
+      : `${type}s/${baseName}.${ext}`;
 
     const result = await store.put(storagePath, buffer, contentType);
 
@@ -37,6 +40,7 @@ export async function mediaRoutes(fastify) {
       where: { key },
       create: {
         userId: request.user.id,
+        campaignId: campaignId || undefined,
         key,
         type,
         contentType,

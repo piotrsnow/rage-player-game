@@ -109,12 +109,12 @@ export const sunoService = {
     return data.data;
   },
 
-  async cacheTrack({ audioUrl, genre, tone, mood, style, title, duration, imageUrl }) {
+  async cacheTrack({ audioUrl, genre, tone, mood, style, title, duration, imageUrl, campaignId }) {
     if (!apiClient.isConnected()) return null;
     try {
-      const data = await apiClient.post('/proxy/suno/cache-track', {
-        audioUrl, genre, tone, mood, style, title, duration, imageUrl,
-      });
+      const body = { audioUrl, genre, tone, mood, style, title, duration, imageUrl };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/suno/cache-track', body);
       if (data.url) {
         const resolved = data.url.startsWith('http') ? data.url : `${apiClient.getBaseUrl()}${data.url}`;
         return { ...data, url: resolved };

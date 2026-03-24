@@ -16,7 +16,7 @@ const providerOptions = [
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings } = useSettings();
+  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount } = useSettings();
   const [localKeys, setLocalKeys] = useState({
     openaiApiKey: settings.openaiApiKey,
     anthropicApiKey: settings.anthropicApiKey,
@@ -66,8 +66,11 @@ export default function DMSettingsPage({ onClose }) {
       apiClient.configure({ baseUrl: settings.backendUrl });
       loadBackendUser();
       loadCacheStats();
+      if (apiClient.isConnected()) {
+        loadFromAccount();
+      }
     }
-  }, [settings.useBackend, settings.backendUrl, loadBackendUser, loadCacheStats]);
+  }, [settings.useBackend, settings.backendUrl, loadBackendUser, loadCacheStats, loadFromAccount]);
 
   const handleBackendLogin = async () => {
     setBackendLoading(true);
@@ -81,6 +84,8 @@ export default function DMSettingsPage({ onClose }) {
       setBackendSuccess(t('settings.backendLoginSuccess'));
       setBackendPassword('');
       loadCacheStats();
+      await storage.migrateLocalDataToAccount(data.user.id);
+      await loadFromAccount();
     } catch (err) {
       setBackendError(err.message);
     } finally {
@@ -103,6 +108,8 @@ export default function DMSettingsPage({ onClose }) {
       setBackendUser(data.user);
       setBackendSuccess(t('settings.backendRegisterSuccess'));
       setBackendPassword('');
+      await storage.migrateLocalDataToAccount(data.user.id);
+      await loadFromAccount();
     } catch (err) {
       setBackendError(err.message);
     } finally {
@@ -904,6 +911,41 @@ export default function DMSettingsPage({ onClose }) {
               ))}
             </div>
 
+            {/* Model Tier */}
+            <div className="mb-8">
+              <h3 className="font-headline text-sm text-tertiary mb-2 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary-dim text-base">speed</span>
+                {t('settings.modelTier')}
+              </h3>
+              <p className="text-[10px] text-on-surface-variant mb-4">{t('settings.modelTierDesc')}</p>
+              <div className="space-y-2">
+                {[
+                  { id: 'standard', icon: 'bolt', label: t('settings.modelTierStandard'), desc: t('settings.modelTierStandardDesc') },
+                  { id: 'premium', icon: 'diamond', label: t('settings.modelTierPremium'), desc: t('settings.modelTierPremiumDesc') },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => updateSettings({ aiModelTier: opt.id })}
+                    className={`w-full p-3 rounded-sm border text-left flex items-center gap-3 transition-all ${
+                      (settings.aiModelTier || 'premium') === opt.id
+                        ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">{opt.icon}</span>
+                    <div className="flex-1">
+                      <span className="font-headline text-sm block">{opt.label}</span>
+                      <span className="text-[10px] font-label uppercase tracking-widest opacity-70">{opt.desc}</span>
+                    </div>
+                    {(settings.aiModelTier || 'premium') === opt.id && (
+                      <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-on-surface-variant mt-2 opacity-60">{t('settings.modelTierCostHint')}</p>
+            </div>
+
             {/* API Keys */}
             <div className="space-y-6">
               <div>
@@ -1120,6 +1162,67 @@ export default function DMSettingsPage({ onClose }) {
             )}
           </div>
 
+          {/* Local LLM */}
+          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-tertiary/20">
+            <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary-dim">memory</span>
+              {t('settings.localLLM', 'Local LLM')}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-6">{t('settings.localLLMDesc', 'Connect to a locally running LLM via Ollama or LM Studio for offline play.')}</p>
+
+            <div className="space-y-4">
+              <label className="flex items-center justify-between cursor-pointer group">
+                <span className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">{t('settings.enableLocalLLM', 'Enable Local LLM')}</span>
+                <input
+                  type="checkbox"
+                  checked={settings.localLLMEnabled || false}
+                  onChange={(e) => updateSettings({ localLLMEnabled: e.target.checked })}
+                  className="w-4 h-4 accent-primary"
+                />
+              </label>
+
+              {settings.localLLMEnabled && (
+                <>
+                  <div>
+                    <label className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1">
+                      {t('settings.localLLMEndpoint', 'Endpoint URL')}
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.localLLMEndpoint || 'http://localhost:11434'}
+                      onChange={(e) => updateSettings({ localLLMEndpoint: e.target.value })}
+                      placeholder="http://localhost:11434"
+                      className="w-full bg-surface-container/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:border-primary/40 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1">
+                      {t('settings.localLLMModel', 'Model Name')}
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.localLLMModel || ''}
+                      onChange={(e) => updateSettings({ localLLMModel: e.target.value })}
+                      placeholder="llama3, mistral, etc."
+                      className="w-full bg-surface-container/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder:text-outline-variant focus:border-primary/40 focus:outline-none"
+                    />
+                  </div>
+
+                  <label className="flex items-center justify-between cursor-pointer group">
+                    <span className="text-sm text-on-surface-variant group-hover:text-on-surface transition-colors">{t('settings.reducedPrompt', 'Use reduced prompts (recommended for 7B-13B models)')}</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.localLLMReducedPrompt !== false}
+                      onChange={(e) => updateSettings({ localLLMReducedPrompt: e.target.checked })}
+                      className="w-4 h-4 accent-primary"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Info Card */}
           <div className="bg-surface-container-highest/60 backdrop-blur-md p-6 rounded-sm border-r border-tertiary/10">
             <div className="flex items-start gap-4">
@@ -1199,6 +1302,15 @@ export default function DMSettingsPage({ onClose }) {
             </p>
             <p className="font-headline text-tertiary">
               {settings.aiProvider === 'openai' ? t('settings.openaiProvider') : t('settings.anthropicProvider')}
+            </p>
+          </div>
+          <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />
+          <div className="text-center md:text-left">
+            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+              {t('settings.modelTier')}
+            </p>
+            <p className="font-headline text-tertiary">
+              {(settings.aiModelTier || 'premium') === 'premium' ? t('settings.modelTierPremium') : t('settings.modelTierStandard')}
             </p>
           </div>
           <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />

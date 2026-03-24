@@ -1,8 +1,50 @@
 # RPGon — AI-Narrated Tabletop RPG
 
+> **[English](#english)** | **[Polski](#polski)**
+
+---
+
+<a id="english"></a>
+
+## English
+
+RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an AI Game Master, inspired by **Warhammer Fantasy Roleplay** (WFRP) mechanics. An LLM-driven GM narrates the story, resolves d100 tests, manages quests and the living world — in solo mode or multiplayer with up to 6 players.
+
+### Key Features
+
+- **AI Dungeon Master** — GPT-4o / Claude generates narrative, suggests actions, resolves dice checks, and manages world state via structured JSON
+- **WFRP 4e Mechanics** — d100 system with Success Levels, careers (4 tiers), skills, talents, critical wounds, magic (8 Winds + petty spells), economy (GC/SS/CP)
+- **Multiplayer** — up to 6 players via WebSocket, host-approved actions, mid-game join, solo-to-multiplayer conversion
+- **Rich Media** — AI-generated scene illustrations (Stability AI), voice narrator (ElevenLabs TTS with word highlighting), background music (Suno)
+- **Living World** — NPCs with attitudes, faction reputation, weather simulation, day/night cycle, needs system (hunger, fatigue), world map with fog of war
+- **Public Gallery** — publish campaigns for others to browse and fork
+- **Bilingual** — Polish (default) and English UI
+
+### Quick Start
+
+```bash
+npm install && cd backend && npm install && cd ..
+cp backend/.env.example backend/.env   # fill in required variables
+cd backend && npx prisma generate && cd ..
+npm run dev                            # frontend :5173 + backend :3001
+```
+
+The game can run **without the backend** in solo mode — just enter API keys in the Settings page. The backend enables multiplayer, server-side API proxying, campaign persistence in MongoDB, and media storage.
+
+### Documentation
+
+- **[AGENTS.md](./AGENTS.md)** — comprehensive project guide for AI agents (architecture, data flow, conventions)
+- **[Cursor Rules](./.cursor/rules/)** — context-specific rules for AI-assisted development
+
+---
+
+<a id="polski"></a>
+
+## Polski
+
 RPGon to przeglądarkowa gra RPG z narratorem AI, inspirowana mechanikami **Warhammer Fantasy Roleplay** (WFRP). Mistrz Gry sterowany przez LLM prowadzi fabułę, rozstrzyga testy d100, zarządza questami i światem — w trybie solo lub multiplayer do 6 graczy.
 
-## Spis treści
+### Spis treści
 
 - [Architektura](#architektura)
 - [Przepływ gry](#przepływ-gry)
@@ -327,3 +369,30 @@ Gra może działać w trybie solo bez backendu — wystarczy podać klucze API w
 - Proxy API (klucze po stronie serwera)
 - Persystencji kampanii i postaci w MongoDB
 - Generowania i przechowywania mediów
+
+### Zmienne środowiskowe (`backend/.env`)
+
+| Zmienna | Wymagana | Opis |
+|---------|----------|------|
+| `DATABASE_URL` | Tak | Connection string MongoDB |
+| `JWT_SECRET` | Tak | Silny sekret do podpisywania tokenów JWT |
+| `API_KEY_ENCRYPTION_SECRET` | Tak | Sekret do szyfrowania kluczy API w bazie |
+| `PORT` | Nie | Port serwera (domyślnie 3001) |
+| `CORS_ORIGIN` | Nie | Dozwolone origin (domyślnie `true` w dev) |
+| `MEDIA_BACKEND` | Nie | `local` lub `gcp` |
+| `OPENAI_API_KEY` | Nie | Domyślny klucz OpenAI |
+| `ANTHROPIC_API_KEY` | Nie | Domyślny klucz Anthropic |
+| `ELEVENLABS_API_KEY` | Nie | Domyślny klucz ElevenLabs |
+| `STABILITY_API_KEY` | Nie | Domyślny klucz Stability AI |
+| `SUNO_API_KEY` | Nie | Domyślny klucz Suno |
+
+### Testy
+
+```bash
+npm test    # Vitest — uruchamia wszystkie *.test.js
+```
+
+### Dokumentacja
+
+- **[AGENTS.md](./AGENTS.md)** — pełny przewodnik po projekcie dla agentów AI (architektura, przepływ danych, konwencje)
+- **[Cursor Rules](./.cursor/rules/)** — kontekstowe reguły do wspomaganego AI rozwoju kodu

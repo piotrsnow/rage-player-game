@@ -74,9 +74,11 @@ export const elevenlabsService = {
     }));
   },
 
-  async generateSoundEffect(apiKey, text, durationSeconds = 4) {
+  async generateSoundEffect(apiKey, text, durationSeconds = 4, campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/sfx', { text, durationSeconds });
+      const body = { text, durationSeconds };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/sfx', body);
       return resolveMediaUrl(data.url);
     }
 
@@ -103,9 +105,11 @@ export const elevenlabsService = {
     return URL.createObjectURL(blob);
   },
 
-  async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+  async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/tts-stream', { voiceId, text, modelId });
+      const body = { voiceId, text, modelId };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/tts-stream', body);
       return resolveMediaUrl(data.url);
     }
 
@@ -137,9 +141,11 @@ export const elevenlabsService = {
     return URL.createObjectURL(blob);
   },
 
-  async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2') {
+  async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
-      const data = await apiClient.post('/proxy/elevenlabs/tts', { voiceId, text, modelId });
+      const body = { voiceId, text, modelId };
+      if (campaignId) body.campaignId = campaignId;
+      const data = await apiClient.post('/proxy/elevenlabs/tts', body);
       const audioUrl = resolveMediaUrl(data.url);
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
       return { audioUrl, words };
@@ -182,12 +188,9 @@ export const elevenlabsService = {
     return { audioUrl, words };
   },
 
-  splitIntoSentences(text) {
-    const sentences = text.match(/[^.!?…]+[.!?…]+[\s]*/g);
-    if (!sentences) return [text.trim()].filter(Boolean);
-    const remaining = text.replace(/[^.!?…]+[.!?…]+[\s]*/g, '').trim();
-    const result = sentences.map((s) => s.trim()).filter(Boolean);
-    if (remaining) result.push(remaining);
-    return result;
+  splitIntoParagraphs(text) {
+    const paragraphs = text.split(/\n\s*\n/);
+    const result = paragraphs.map((p) => p.trim()).filter(Boolean);
+    return result.length > 0 ? result : [text.trim()].filter(Boolean);
   },
 };

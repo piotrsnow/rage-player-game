@@ -881,7 +881,7 @@ export function getCurrentTierOnlyTalents(careerName, tier) {
 
 export function canAdvanceTier(character) {
   const { career, skills } = character;
-  if (!career || career.tier >= 4) return false;
+  if (!career || career.tier >= 4 || !skills) return false;
   const tierSkills = getCurrentTierOnlySkills(career.name, career.tier);
   let qualifiedSkills = 0;
   for (const sk of tierSkills) {

@@ -1,7 +1,38 @@
 import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildObjectiveVerificationPrompt } from './prompts';
 import { apiClient } from './apiClient';
+import { callLocalLLM, buildReducedSystemPrompt, buildReducedScenePrompt } from './localAI';
+import {
+  safeParseJSON, safeParseAIResponse, withRetry,
+  SceneResponseSchema, CampaignResponseSchema, CompressionResponseSchema,
+  RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema,
+} from './aiResponseValidator';
 
-async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000) {
+const MODEL_MAP = {
+  openai:    { standard: 'gpt-4o-mini',              premium: 'gpt-4o' },
+  anthropic: { standard: 'claude-3-5-haiku-20241022', premium: 'claude-sonnet-4-20250514' },
+};
+
+const TASK_TIER_OVERRIDE = {
+  generateCampaign: 'premium',
+  compressScenes:   'standard',
+  generateRecap:    'standard',
+  verifyObjective:  'standard',
+  generateStoryPrompt: 'standard',
+};
+
+export function selectModel(provider, tier, taskType) {
+  const effectiveTier = TASK_TIER_OVERRIDE[taskType] || tier || 'premium';
+  const providerModels = MODEL_MAP[provider] || MODEL_MAP.openai;
+  return providerModels[effectiveTier] || providerModels.premium;
+}
+
+function parseAIContent(content) {
+  const result = safeParseJSON(content);
+  if (!result.ok) throw new Error(result.error || 'Failed to parse AI response as JSON');
+  return result.data;
+}
+
+async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-4o') {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -9,7 +40,7 @@ async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -28,12 +59,12 @@ async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000) {
   const data = await response.json();
   const content = data.choices[0]?.message?.content;
   const usage = data.usage
-    ? { prompt_tokens: data.usage.prompt_tokens, completion_tokens: data.usage.completion_tokens, model: 'gpt-4o' }
+    ? { prompt_tokens: data.usage.prompt_tokens, completion_tokens: data.usage.completion_tokens, model }
     : null;
-  return { result: JSON.parse(content), usage };
+  return { result: parseAIContent(content), usage };
 }
 
-async function callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens = 2000) {
+async function callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'claude-sonnet-4-20250514') {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -43,7 +74,7 @@ async function callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens = 2000)
       'anthropic-dangerous-direct-browser-access': 'true',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt + '\n\nRespond with ONLY valid JSON, no other text.' }],
@@ -58,91 +89,136 @@ async function callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens = 2000)
   const data = await response.json();
   const content = data.content[0]?.text;
   const usage = data.usage
-    ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens, model: 'claude-sonnet-4-20250514' }
+    ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens, model }
     : null;
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Failed to parse AI response as JSON');
-  return { result: JSON.parse(jsonMatch[0]), usage };
+  return { result: parseAIContent(content), usage };
 }
 
-async function callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens = 2000) {
+async function callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-4o') {
   const data = await apiClient.post('/proxy/openai/chat', {
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    model: 'gpt-4o',
+    model,
     temperature: 0.8,
     response_format: { type: 'json_object' },
   });
   const content = data.choices[0]?.message?.content;
   const usage = data.usage
-    ? { prompt_tokens: data.usage.prompt_tokens, completion_tokens: data.usage.completion_tokens, model: 'gpt-4o' }
+    ? { prompt_tokens: data.usage.prompt_tokens, completion_tokens: data.usage.completion_tokens, model }
     : null;
-  return { result: JSON.parse(content), usage };
+  return { result: parseAIContent(content), usage };
 }
 
-async function callAnthropicViaProxy(systemPrompt, userPrompt, maxTokens = 2000) {
+async function callAnthropicViaProxy(systemPrompt, userPrompt, maxTokens = 2000, model = 'claude-sonnet-4-20250514') {
   const data = await apiClient.post('/proxy/anthropic/chat', {
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt + '\n\nRespond with ONLY valid JSON, no other text.' }],
     max_tokens: maxTokens,
+    model,
   });
   const content = data.content[0]?.text;
   const usage = data.usage
-    ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens, model: 'claude-sonnet-4-20250514' }
+    ? { prompt_tokens: data.usage.input_tokens, completion_tokens: data.usage.output_tokens, model }
     : null;
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Failed to parse AI response as JSON');
-  return { result: JSON.parse(jsonMatch[0]), usage };
+  return { result: parseAIContent(content), usage };
 }
 
-async function callAI(provider, apiKey, systemPrompt, userPrompt, maxTokens) {
-  if (apiClient.isConnected()) {
-    if (provider === 'anthropic') {
-      return callAnthropicViaProxy(systemPrompt, userPrompt, maxTokens);
+function getAlternateProvider(provider) {
+  return provider === 'openai' ? 'anthropic' : 'openai';
+}
+
+async function callAI(provider, apiKey, systemPrompt, userPrompt, maxTokens, { localLLMConfig = null, model = null, modelTier = 'premium', taskType = null, alternateApiKey = null } = {}) {
+  if (localLLMConfig?.enabled && localLLMConfig.endpoint) {
+    return callLocalLLM(
+      localLLMConfig.endpoint,
+      localLLMConfig.model || '',
+      systemPrompt,
+      userPrompt,
+      maxTokens,
+    );
+  }
+
+  return withRetry(async (attempt) => {
+    const useProvider = attempt < 2 ? provider : getAlternateProvider(provider);
+    const useModel = (attempt < 2 && model)
+      ? model
+      : selectModel(useProvider, modelTier, taskType);
+
+    if (apiClient.isConnected()) {
+      if (useProvider === 'anthropic') {
+        return callAnthropicViaProxy(systemPrompt, userPrompt, maxTokens, useModel);
+      }
+      return callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens, useModel);
     }
-    return callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens);
-  }
 
-  if (!apiKey) {
-    throw new Error(`No API key configured for ${provider}. Please add your key in Settings.`);
-  }
+    const useKey = attempt < 2 ? apiKey : alternateApiKey;
+    if (!useKey) {
+      throw new Error(`No API key configured for ${useProvider}. Please add your key in Settings.`);
+    }
 
-  if (provider === 'anthropic') {
-    return callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens);
-  }
-  return callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens);
+    if (useProvider === 'anthropic') {
+      return callAnthropic(useKey, systemPrompt, userPrompt, maxTokens, useModel);
+    }
+    return callOpenAI(useKey, systemPrompt, userPrompt, maxTokens, useModel);
+  }, {
+    retries: 2,
+    onRetry: (attempt, err, delay) => {
+      console.warn(`[ai] Retry ${attempt + 1} after ${delay}ms:`, err.message);
+    },
+  });
 }
 
 export const aiService = {
-  async generateCampaign(settings, provider, apiKey, language = 'en') {
+  async generateCampaign(settings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'generateCampaign');
     const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
     const userPrompt = buildCampaignCreationPrompt(settings, language);
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 4000);
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 4000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
+    const validated = safeParseAIResponse(result, CampaignResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, momentumBonus = 0 } = {}) {
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice, momentumBonus };
-    const systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
-    const userPrompt = buildSceneGenerationPrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 2000);
+  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'generateScene');
+    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus };
+
+    let systemPrompt, userPrompt;
+    if (localLLMConfig?.enabled && localLLMConfig?.reducedPrompt) {
+      systemPrompt = buildReducedSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
+      userPrompt = buildReducedScenePrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
+    } else {
+      systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
+      userPrompt = buildSceneGenerationPrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
+    }
+
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 2000, { localLLMConfig, model, modelTier, taskType: 'generateScene', alternateApiKey });
+    const validated = safeParseAIResponse(result, SceneResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateRecap(gameState, dmSettings, provider, apiKey, language = 'en') {
+  async generateRecap(gameState, dmSettings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'generateRecap');
     const systemPrompt = buildSystemPrompt(gameState, dmSettings, language);
     const userPrompt = buildRecapPrompt(language);
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 500);
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 500, { model, modelTier, taskType: 'generateRecap', alternateApiKey });
+    const validated = safeParseAIResponse(result, RecapResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async compressScenes(scenesText, provider, apiKey, language = 'en') {
+  async compressScenes(scenesText, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'compressScenes');
     const langNote = language === 'pl' ? ' Write the summary in Polish, matching the language of the source scenes.' : '';
     const systemPrompt = `You are a narrative summarizer for an RPG game. Compress scene histories into concise but complete summaries that preserve all important details: NPC names, locations, player decisions, consequences, combat outcomes, items found, and plot developments. Always respond with valid JSON only.${langNote}`;
     const userPrompt = `Summarize the following RPG scene history into a concise narrative summary (max 1500 characters). Preserve key facts: NPC names and fates, locations visited, items acquired/lost, major decisions and their consequences, combat outcomes, and unresolved plot threads.\n\nSCENES:\n${scenesText}\n\nRespond with JSON: {"summary": "Your compressed summary here..."}`;
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 800);
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 800, { model, modelTier, taskType: 'compressScenes', alternateApiKey });
+    const validated = safeParseAIResponse(result, CompressionResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateStoryPrompt({ genre, tone, style }, provider, apiKey, language = 'en') {
+  async generateStoryPrompt({ genre, tone, style }, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'generateStoryPrompt');
     const systemPrompt = 'You are a creative RPG story idea generator. Invent original, evocative adventure premises. Always respond with valid JSON only.';
     const humorousGuidance = tone === 'Humorous'
       ? ` The humor must NOT be random absurdity or slapstick nonsense. Instead, ground the premise in a believable world and weave in 1-2 genuinely controversial, provocative, or morally ambiguous elements (e.g. corrupt religious authorities, morally grey freedom fighters, taboo social customs, ethically questionable magical practices, politically charged factions). The comedy should emerge naturally from how characters navigate these uncomfortable realities — dark irony, social satire, awkward moral dilemmas, and characters who take absurd stances on serious issues. Think Terry Pratchett or Monty Python: sharp wit wrapped around real-world controversies, not random zaniness.`
@@ -153,11 +229,16 @@ export const aiService = {
       `Write the premise in ${language === 'pl' ? 'Polish' : 'English'}.`,
       `Respond with JSON: { "prompt": "<the story premise>" }`,
     ].join('\n');
-    return callAI(provider, apiKey, systemPrompt, userPrompt, 300);
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 300, { model, modelTier, taskType: 'generateStoryPrompt', alternateApiKey });
+    const validated = safeParseAIResponse(result, StoryPromptResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, apiKey, language = 'en') {
+  async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, modelTier, 'verifyObjective');
     const prompts = buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language);
-    return callAI(provider, apiKey, prompts.system, prompts.user, 500);
+    const { result, usage } = await callAI(provider, apiKey, prompts.system, prompts.user, 500, { model, modelTier, taskType: 'verifyObjective', alternateApiKey });
+    const validated = safeParseAIResponse(result, ObjectiveVerificationSchema);
+    return { result: validated.ok ? validated.data : result, usage };
   },
 };

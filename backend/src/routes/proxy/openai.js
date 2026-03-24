@@ -52,10 +52,10 @@ export async function openaiProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'openai');
     if (!apiKey) return reply.code(400).send({ error: 'OpenAI API key not configured' });
 
-    const { prompt, size, quality } = request.body;
+    const { prompt, size, quality, campaignId } = request.body;
 
     const cacheParams = { provider: 'dalle', prompt };
-    const cacheKey = generateKey('image', cacheParams);
+    const cacheKey = generateKey('image', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
@@ -97,6 +97,7 @@ export async function openaiProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
+        campaignId: campaignId || undefined,
         key: cacheKey,
         type: 'image',
         contentType: 'image/png',
