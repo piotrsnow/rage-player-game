@@ -7,6 +7,7 @@
 const PAREN_RE = /^(.+?)\s*\((.+)\)$/;
 
 export function translateSkill(name, t) {
+  if (!name) return name ?? '';
   const match = name.match(PAREN_RE);
   if (match) {
     const base = t(`wfrpSkills.${match[1]}`, { defaultValue: match[1] });
@@ -17,6 +18,7 @@ export function translateSkill(name, t) {
 }
 
 export function translateTalent(name, t) {
+  if (!name) return name ?? '';
   const match = name.match(PAREN_RE);
   if (match) {
     const base = t(`wfrpTalents.${match[1]}`, { defaultValue: match[1] });
@@ -27,10 +29,12 @@ export function translateTalent(name, t) {
 }
 
 export function translateCareer(name, t) {
+  if (!name) return name ?? '';
   return t(`careers.${name}`, { defaultValue: name });
 }
 
 export function translateTierName(name, t) {
+  if (!name) return name ?? '';
   return t(`tierNames.${name}`, { defaultValue: name });
 }
 
