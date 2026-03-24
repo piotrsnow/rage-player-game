@@ -246,7 +246,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
 export default function CharacterSheet({ onClose }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { state, dispatch } = useGame();
+  const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
   const mp = useMultiplayer();
 
@@ -567,16 +567,18 @@ export default function CharacterSheet({ onClose }) {
                 dispatch={dispatch}
                 isMultiplayer={isMultiplayer}
                 onVoiceChange={(charName, voiceId, gender) => {
+                  const voice = (settings.characterVoices || []).find((v) => v.voiceId === voiceId);
                   dispatch({
                     type: 'MAP_CHARACTER_VOICE',
-                    payload: { characterName: charName, voiceId, gender },
+                    payload: { characterName: charName, voiceId, gender, voiceName: voice?.voiceName || null },
                   });
+                  setTimeout(() => autoSave(), 300);
                 }}
               />
 
               {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
                 <div className="mt-8 animate-fade-in">
-                  <QuestLog active={quests.active} completed={quests.completed} />
+                  <QuestLog active={quests.active} completed={quests.completed} npcs={world?.npcs || []} />
                 </div>
               )}
 

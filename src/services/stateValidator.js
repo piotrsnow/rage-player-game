@@ -225,6 +225,24 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
         }
       }
 
+      if (charDelta.moneyChange) {
+        const gain = moneyToCopper(charDelta.moneyChange);
+        if (gain > limits.maxMoneyGainCopper) {
+          allWarnings.push(`${charName}: large money gain ${gain} CP (limit: ${limits.maxMoneyGainCopper})`);
+        }
+        if (character.money && gain < 0) {
+          const currentCopper = moneyToCopper(character.money);
+          if (currentCopper + gain < 0) {
+            allCorrections.push(`${charName}: money spending clamped — tried ${Math.abs(gain)} CP but only has ${currentCopper} CP`);
+            charDelta.moneyChange = {
+              gold: -Math.floor(currentCopper / 100),
+              silver: -Math.floor((currentCopper % 100) / 10),
+              copper: -(currentCopper % 10),
+            };
+          }
+        }
+      }
+
       if (charDelta.needsChanges && typeof charDelta.needsChanges === 'object') {
         for (const [key, val] of Object.entries(charDelta.needsChanges)) {
           if (typeof val !== 'number') continue;
@@ -235,6 +253,41 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
       validatedPerChar[charName] = charDelta;
     }
     validated.perCharacter = validatedPerChar;
+  }
+
+  if (validated.npcs && Array.isArray(validated.npcs)) {
+    const MAX_DISPOSITION_DELTA = 10;
+    for (const npc of validated.npcs) {
+      if (typeof npc.dispositionChange === 'number') {
+        const clamped = clamp(npc.dispositionChange, -MAX_DISPOSITION_DELTA, MAX_DISPOSITION_DELTA);
+        if (clamped !== npc.dispositionChange) {
+          allCorrections.push(`NPC "${npc.name}" disposition delta clamped from ${npc.dispositionChange} to ${clamped}`);
+          npc.dispositionChange = clamped;
+        }
+      }
+    }
+  }
+
+  if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
+    const MAX_CODEX_PER_SCENE = 3;
+    const MAX_FRAGMENT_LENGTH = 1000;
+    if (validated.codexUpdates.length > MAX_CODEX_PER_SCENE) {
+      allCorrections.push(`Codex updates capped from ${validated.codexUpdates.length} to ${MAX_CODEX_PER_SCENE}`);
+      validated.codexUpdates = validated.codexUpdates.slice(0, MAX_CODEX_PER_SCENE);
+    }
+    validated.codexUpdates = validated.codexUpdates.filter((u) => {
+      if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
+        allCorrections.push('Invalid codex update removed (missing required fields)');
+        return false;
+      }
+      return true;
+    });
+    for (const update of validated.codexUpdates) {
+      if (update.fragment.content.length > MAX_FRAGMENT_LENGTH) {
+        update.fragment.content = update.fragment.content.substring(0, MAX_FRAGMENT_LENGTH);
+        allCorrections.push(`Codex fragment for "${update.name}" truncated to ${MAX_FRAGMENT_LENGTH} chars`);
+      }
+    }
   }
 
   return { validated, warnings: allWarnings, corrections: allCorrections };

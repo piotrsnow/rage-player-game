@@ -5,6 +5,7 @@ import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { formatMagicForPrompt } from '../data/wfrpMagic';
 import { formatWeatherForPrompt } from './weatherEngine';
 import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
+import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 
 const NEEDS_LABELS = {
   hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
@@ -98,13 +99,29 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const { campaign, character, world, quests } = gameState;
 
   const activeQuests = quests.active.map((q) => {
-    let line = `- ${q.name}: ${q.description}`;
+    let line = `- ${q.name} [${q.type || 'side'}]: ${q.description}`;
+    if (q.reward) {
+      const parts = [];
+      if (q.reward.xp) parts.push(`${q.reward.xp} XP`);
+      if (q.reward.money) {
+        const m = q.reward.money;
+        if (m.gold) parts.push(`${m.gold} GC`);
+        if (m.silver) parts.push(`${m.silver} SS`);
+        if (m.copper) parts.push(`${m.copper} CP`);
+      }
+      if (q.reward.items?.length > 0) parts.push(q.reward.items.map((i) => i.name || i).join(', '));
+      if (parts.length > 0) line += `\n  Reward: ${parts.join(', ')}`;
+      else if (q.reward.description) line += `\n  Reward: ${q.reward.description}`;
+    }
     if (q.completionCondition) line += `\n  Goal: ${q.completionCondition}`;
     if (q.questGiverId) line += `\n  Quest giver: ${q.questGiverId}`;
+    const turnIn = q.turnInNpcId || q.questGiverId;
+    if (turnIn && turnIn !== q.questGiverId) line += `\n  Turn in to: ${turnIn}`;
     if (q.locationId) line += `\n  Location: ${q.locationId}`;
     if (q.prerequisiteQuestIds?.length > 0) line += `\n  Requires: ${q.prerequisiteQuestIds.join(', ')}`;
+    const allDone = q.objectives?.length > 0 && q.objectives.every((o) => o.completed);
     if (q.objectives?.length > 0) {
-      line += '\n  Objectives:';
+      line += `\n  Objectives${allDone ? ' (ALL DONE — ready to turn in)' : ''}:`;
       for (const obj of q.objectives) {
         line += `\n    [${obj.completed ? 'X' : ' '}] ${obj.description}`;
       }
@@ -418,6 +435,7 @@ INSTRUCTIONS:
 13. Update the player's current location via stateChanges.currentLocation when they move.
 14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
+16. QUEST COMPLETION RULE (CRITICAL): A quest can ONLY be completed (added to completedQuests) when BOTH conditions are met: (a) ALL objectives are marked as completed in questUpdates, AND (b) the player has talked to the turn-in NPC (turnInNpcId, or questGiverId if no turnInNpcId set) about the completed quest in the current scene. Do NOT auto-complete quests — the player must return to the quest giver to report success. When completing a quest, the turn-in NPC should acknowledge the completion, mention the reward, and congratulate the player. If all objectives are done but the player hasn't talked to the NPC yet, suggest returning to the NPC as one of the suggestedActions.
 
 ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
 - IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If the player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), set diceRoll to null and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc. Do NOT waste a dice roll on an impossible action.
@@ -640,13 +658,21 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
-  return `${needsReminder}The player's action: ${playerAction}
+  const actionPart = extractActionParts(playerAction);
+  const dialoguePart = extractDialogueParts(playerAction);
+  const playerHasDialogue = hasDialogue(playerAction);
+
+  const actionBlock = playerHasDialogue
+    ? `The player's ACTION: ${actionPart}
+The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
+    : `The player's action: ${playerAction}`;
+
+  return `${needsReminder}${actionBlock}
 
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
-RULE 1 — ACTION PARTS: The non-quoted parts of the player's input describe what their character DOES — narrate them as action in prose. Never turn unquoted action text into spoken dialogue (e.g. the character must NOT announce their own action aloud).
-RULE 2 — SPEECH PARTS (MANDATORY): When the input contains text inside quotation marks ("..."), that is the character speaking those exact words in-character. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
-Example: input [I encourage everyone to celebrate. "Party on!" I shout.] → narrate the encouraging as action, then include "Party on!" as a dialogue segment.
-If the input has NO quotation marks at all, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's input text verbatim).
+RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
+RULE 2 — SPEECH PARTS (MANDATORY): The DIALOGUE line (if present) contains the character's exact in-character speech. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
+If there is no DIALOGUE line, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's action text verbatim).
 
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
@@ -732,9 +758,9 @@ For atmosphere: choose weather, particles, mood, and transition that best match 
 
 For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
-For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, locationId, prerequisiteQuestIds}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
-QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "offeredBy": "NPC name or source", "reward": "Narrative reward hint", "type": "main|side|personal"}. Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
+QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "offeredBy": "NPC name or source", "reward": {"xp": 50, "money": {"gold": 1, "silver": 0, "copper": 0}, "items": [], "description": "50 XP and 1 Gold Crown"}, "type": "main|side|personal"}. Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
 LOOT RARITY GATING (enforced by campaign progression):
 - Scenes 1-15 (Act 1): Only "common" and "uncommon" items as loot or purchases. "rare" items only as major quest rewards.
@@ -862,6 +888,14 @@ Respond with ONLY valid JSON:
     "name": "${language === 'pl' ? 'Nazwa głównego zadania' : 'Main quest name'}",
     "description": "${language === 'pl' ? 'Krótki opis zadania' : 'Brief quest description'}",
     "completionCondition": "${language === 'pl' ? 'Co trzeba zrobić, aby ukończyć to zadanie' : 'What must be done to complete this quest'}",
+    "type": "main",
+    "questGiverId": "${language === 'pl' ? 'Imię NPC zlecającego' : 'Quest giver NPC name'}",
+    "reward": {
+      "xp": 150,
+      "money": {"gold": 2, "silver": 0, "copper": 0},
+      "items": [],
+      "description": "${language === 'pl' ? '150 PD i 2 Złote Korony' : '150 XP and 2 Gold Crowns'}"
+    },
     "objectives": [
       {"id": "obj_1", "description": "${language === 'pl' ? 'Pierwszy etap historii' : 'First milestone along the story'}"},
       {"id": "obj_2", "description": "${language === 'pl' ? 'Drugi etap' : 'Second milestone'}"},

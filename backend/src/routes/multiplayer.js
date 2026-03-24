@@ -38,10 +38,41 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
       const delta = perChar[c.name] || perChar[c.playerName];
       if (!delta) return c;
       const updated = { ...c };
-      if (delta.wounds != null) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
+      if (delta.wounds != null) {
+        const newWounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
+        if (newWounds === 0 && delta.wounds < 0) {
+          const currentCritCount = updated.criticalWoundCount || 0;
+          updated.criticalWoundCount = currentCritCount + 1;
+          if (updated.criticalWoundCount >= 3) {
+            if (updated.fate > 0) {
+              updated.fate = updated.fate - 1;
+              updated.fortune = Math.min(updated.fortune, updated.fate);
+              updated.criticalWoundCount = 2;
+              updated.wounds = 1;
+            } else {
+              updated.status = 'dead';
+              updated.wounds = 0;
+            }
+          } else {
+            updated.wounds = newWounds;
+          }
+        } else {
+          updated.wounds = newWounds;
+        }
+      }
       if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
       if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
       if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
+      if (delta.fortuneChange != null) updated.fortune = Math.max(0, Math.min(updated.fate ?? 2, (updated.fortune ?? 0) + delta.fortuneChange));
+      if (delta.resolveChange != null) updated.resolve = Math.max(0, Math.min(updated.resilience ?? 1, (updated.resolve ?? 0) + delta.resolveChange));
+      if (delta.fateChange != null) {
+        updated.fate = Math.max(0, (updated.fate ?? 0) + delta.fateChange);
+        updated.fortune = Math.min(updated.fortune ?? 0, updated.fate);
+      }
+      if (delta.resilienceChange != null) {
+        updated.resilience = Math.max(0, (updated.resilience ?? 0) + delta.resilienceChange);
+        updated.resolve = Math.min(updated.resolve ?? 0, updated.resilience);
+      }
       if (Array.isArray(delta.newItems)) {
         updated.inventory = [...(updated.inventory || []), ...delta.newItems];
       }
@@ -69,6 +100,13 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
           }
         }
         updated.needs = needs;
+      }
+      if (delta.statuses) updated.statuses = delta.statuses;
+      if (Array.isArray(delta.criticalWounds)) {
+        updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
+      }
+      if (delta.healCriticalWound) {
+        updated.criticalWounds = (updated.criticalWounds || []).filter((cw) => cw.name !== delta.healCriticalWound);
       }
       return updated;
     });
@@ -157,8 +195,32 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
           alive: true,
           notes: npc.notes || '',
           disposition: 0,
+          factionId: npc.factionId || null,
+          relatedQuestIds: npc.relatedQuestIds || [],
+          relationships: npc.relationships || [],
         });
+      } else if (npc.action === 'introduce' && idx >= 0) {
+        npcs[idx] = {
+          ...npcs[idx],
+          ...(npc.gender && { gender: npc.gender }),
+          ...(npc.role && { role: npc.role }),
+          ...(npc.personality && { personality: npc.personality }),
+          ...(npc.attitude && { attitude: npc.attitude }),
+          ...(npc.location && { lastLocation: npc.location }),
+          ...(npc.notes && { notes: npc.notes }),
+          ...(npc.factionId !== undefined && { factionId: npc.factionId }),
+          ...(npc.relatedQuestIds?.length > 0 && { relatedQuestIds: npc.relatedQuestIds }),
+          ...(npc.relationships?.length > 0 && { relationships: npc.relationships }),
+        };
       } else if (idx >= 0) {
+        const mergedRelQuestIds = npc.relatedQuestIds?.length > 0
+          ? [...new Set([...(npcs[idx].relatedQuestIds || []), ...npc.relatedQuestIds])]
+          : npcs[idx].relatedQuestIds;
+        const mergedRelationships = npc.relationships?.length > 0
+          ? [...(npcs[idx].relationships || []).filter(
+              (r) => !npc.relationships.some((nr) => nr.npcName === r.npcName)
+            ), ...npc.relationships]
+          : npcs[idx].relationships;
         npcs[idx] = {
           ...npcs[idx],
           ...(npc.gender && { gender: npc.gender }),
@@ -168,8 +230,11 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
           ...(npc.location && { lastLocation: npc.location }),
           ...(npc.notes && { notes: npc.notes }),
           ...(npc.alive !== undefined && { alive: npc.alive }),
+          ...(npc.factionId !== undefined && { factionId: npc.factionId }),
+          ...(mergedRelQuestIds && { relatedQuestIds: mergedRelQuestIds }),
+          ...(mergedRelationships && { relationships: mergedRelationships }),
           ...(typeof npc.dispositionChange === 'number' && {
-            disposition: (npcs[idx].disposition || 0) + npc.dispositionChange,
+            disposition: Math.max(-50, Math.min(50, (npcs[idx].disposition || 0) + npc.dispositionChange)),
           }),
         };
       }
@@ -223,6 +288,111 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
     updatedWorld.activeEffects = effects;
   }
 
+  if (stateChanges.factionChanges && typeof stateChanges.factionChanges === 'object') {
+    const factions = { ...(updatedWorld.factions || {}) };
+    for (const [factionId, delta] of Object.entries(stateChanges.factionChanges)) {
+      const current = factions[factionId] || 0;
+      factions[factionId] = Math.max(-100, Math.min(100, current + delta));
+    }
+    updatedWorld.factions = factions;
+  }
+
+  if (stateChanges.weatherUpdate) {
+    updatedWorld.weather = stateChanges.weatherUpdate;
+  }
+
+  if (stateChanges.currentLocation) {
+    const explored = new Set(updatedWorld.exploredLocations || []);
+    explored.add(stateChanges.currentLocation);
+    updatedWorld.exploredLocations = [...explored];
+  }
+
+  if (stateChanges.knowledgeUpdates) {
+    const kb = { ...(updatedWorld.knowledgeBase || { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] }) };
+    const ku = stateChanges.knowledgeUpdates;
+    if (ku.events?.length > 0) {
+      kb.events = [...(kb.events || []), ...ku.events.map((e) => ({
+        ...e, sceneIndex: (gameState.scenes || []).length,
+      }))].slice(-50);
+    }
+    if (ku.decisions?.length > 0) {
+      kb.decisions = [...(kb.decisions || []), ...ku.decisions.map((d) => ({
+        ...d, sceneIndex: (gameState.scenes || []).length,
+      }))].slice(-50);
+    }
+    if (ku.plotThreads?.length > 0) {
+      const threads = [...(kb.plotThreads || [])];
+      for (const pt of ku.plotThreads) {
+        const idx = threads.findIndex((t) => t.id === pt.id);
+        if (idx >= 0) {
+          threads[idx] = {
+            ...threads[idx], ...pt,
+            relatedNpcIds: [...new Set([...(threads[idx].relatedNpcIds || []), ...(pt.relatedNpcIds || [])])],
+            relatedQuestIds: [...new Set([...(threads[idx].relatedQuestIds || []), ...(pt.relatedQuestIds || [])])],
+            relatedLocationIds: [...new Set([...(threads[idx].relatedLocationIds || []), ...(pt.relatedLocationIds || [])])],
+            relatedScenes: [...new Set([...(threads[idx].relatedScenes || []), (gameState.scenes || []).length])],
+          };
+        } else {
+          threads.push({ ...pt, relatedScenes: [(gameState.scenes || []).length] });
+        }
+      }
+      kb.plotThreads = threads;
+    }
+    updatedWorld.knowledgeBase = kb;
+  }
+
+  // Auto-populate knowledgeBase from NPC/location changes
+  {
+    const kb = { ...(updatedWorld.knowledgeBase || { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] }) };
+    let kbChanged = false;
+    const sceneIdx = (gameState.scenes || []).length;
+    if (stateChanges.npcs?.length > 0) {
+      const kbChars = { ...(kb.characters || {}) };
+      for (const npc of (updatedWorld.npcs || [])) {
+        const changedNpc = stateChanges.npcs.find((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+        if (!changedNpc) continue;
+        const key = npc.name.toLowerCase();
+        const existing = kbChars[key] || { interactionCount: 0, knownFacts: [] };
+        kbChars[key] = {
+          name: npc.name, lastSeen: npc.lastLocation || existing.lastSeen || '',
+          lastSeenScene: sceneIdx, disposition: npc.disposition ?? existing.disposition ?? 0,
+          factionId: npc.factionId || existing.factionId || null,
+          role: npc.role || existing.role || '', alive: npc.alive ?? existing.alive ?? true,
+          interactionCount: existing.interactionCount + 1, knownFacts: existing.knownFacts,
+          relationships: npc.relationships || existing.relationships || [],
+        };
+      }
+      kb.characters = kbChars;
+      kbChanged = true;
+    }
+    const currentLoc = stateChanges.currentLocation || updatedWorld.currentLocation;
+    if (currentLoc) {
+      const kbLocs = { ...(kb.locations || {}) };
+      const key = currentLoc.toLowerCase();
+      const existing = kbLocs[key] || { visitCount: 0, knownFacts: [], npcsEncountered: [] };
+      const npcsHere = (updatedWorld.npcs || [])
+        .filter((n) => n.alive !== false && n.lastLocation?.toLowerCase() === currentLoc.toLowerCase())
+        .map((n) => n.name);
+      kbLocs[key] = {
+        name: currentLoc, visitCount: existing.visitCount + (stateChanges.currentLocation ? 1 : 0),
+        lastVisited: sceneIdx, knownFacts: existing.knownFacts,
+        npcsEncountered: [...new Set([...(existing.npcsEncountered || []), ...npcsHere])],
+      };
+      kb.locations = kbLocs;
+      kbChanged = true;
+    }
+    if (kbChanged) updatedWorld.knowledgeBase = kb;
+  }
+
+  let updatedCampaign = null;
+  if (stateChanges.campaignEnd && gameState.campaign) {
+    updatedCampaign = {
+      ...gameState.campaign,
+      status: stateChanges.campaignEnd.status || 'completed',
+      epilogue: stateChanges.campaignEnd.epilogue || '',
+    };
+  }
+
   let updatedQuests = { ...(gameState.quests || { active: [], completed: [] }) };
   if (Array.isArray(stateChanges.newQuests) && stateChanges.newQuests.length > 0) {
     const normalized = stateChanges.newQuests.map((q) => ({
@@ -255,6 +425,7 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
     characters: updatedCharacters,
     world: updatedWorld,
     quests: updatedQuests,
+    ...(updatedCampaign && { campaign: updatedCampaign }),
   };
 }
 
@@ -648,6 +819,7 @@ export async function multiplayerRoutes(fastify) {
               characters: applied.characters,
               world: applied.world,
               quests: applied.quests,
+              ...(applied.campaign && { campaign: applied.campaign }),
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
               characterMomentum: newMomentum,
@@ -741,6 +913,7 @@ export async function multiplayerRoutes(fastify) {
               characters: applied.characters,
               world: applied.world,
               quests: applied.quests,
+              ...(applied.campaign && { campaign: applied.campaign }),
               scenes: [...(room.gameState.scenes || []), sceneResult.scene],
               chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
               characterMomentum: newSoloMomentum,
@@ -851,6 +1024,37 @@ export async function multiplayerRoutes(fastify) {
               status: 'declined',
               room: sanitizeRoom(room),
             });
+            break;
+          }
+
+          case 'SYNC_CHARACTER': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            if (!room.gameState?.characters) break;
+
+            const charData = msg.character;
+            if (!charData) break;
+
+            const charIdx = room.gameState.characters.findIndex((c) => c.odId === odId);
+            if (charIdx < 0) break;
+
+            const prev = room.gameState.characters[charIdx];
+            room.gameState.characters[charIdx] = {
+              ...prev,
+              ...charData,
+              odId: prev.odId,
+              playerName: prev.playerName,
+            };
+            setGameState(roomCode, room.gameState);
+
+            broadcast(room, {
+              type: 'CHARACTER_SYNCED',
+              odId,
+              room: sanitizeRoom(room),
+            });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after char sync failed'));
             break;
           }
 

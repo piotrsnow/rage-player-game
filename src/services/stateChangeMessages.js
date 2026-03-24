@@ -71,6 +71,22 @@ export function generateStateChangeMessages(stateChanges, state, t) {
       const quest = activeQuests.find((q) => q.id === qId);
       const name = quest?.name || qId;
       msgs.push({ id: mkId(), role: 'system', subtype: 'quest_completed', content: t('system.questCompleted', { quest: name }), timestamp: ts });
+
+      if (quest?.reward) {
+        const parts = [];
+        if (quest.reward.xp) parts.push(`${quest.reward.xp} XP`);
+        if (quest.reward.money) {
+          const m = quest.reward.money;
+          if (m.gold) parts.push(`${m.gold} GC`);
+          if (m.silver) parts.push(`${m.silver} SS`);
+          if (m.copper) parts.push(`${m.copper} CP`);
+        }
+        if (quest.reward.items?.length > 0) parts.push(quest.reward.items.map((i) => i.name || i).join(', '));
+        const rewardText = parts.length > 0 ? parts.join(', ') : quest.reward.description;
+        if (rewardText) {
+          msgs.push({ id: mkId(), role: 'system', subtype: 'quest_reward', content: t('system.questReward', { reward: rewardText }), timestamp: ts });
+        }
+      }
     }
   }
 

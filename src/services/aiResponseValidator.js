@@ -65,6 +65,17 @@ const QuestObjectiveSchema = z.object({
   description: z.string(),
 }).passthrough();
 
+const QuestRewardSchema = z.object({
+  xp: z.number().optional().default(0),
+  money: z.object({
+    gold: z.number().optional().default(0),
+    silver: z.number().optional().default(0),
+    copper: z.number().optional().default(0),
+  }).passthrough().optional(),
+  items: z.array(z.any()).optional().default([]),
+  description: z.string().optional(),
+}).passthrough().optional();
+
 const QuestSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -72,14 +83,15 @@ const QuestSchema = z.object({
   completionCondition: z.string().optional(),
   objectives: z.array(QuestObjectiveSchema).optional().default([]),
   questGiverId: z.string().nullable().optional(),
+  turnInNpcId: z.string().nullable().optional(),
   locationId: z.string().nullable().optional(),
   prerequisiteQuestIds: z.array(z.string()).optional().default([]),
+  reward: QuestRewardSchema,
+  type: z.enum(['main', 'side', 'personal']).optional().default('side'),
 }).passthrough();
 
 const QuestOfferSchema = QuestSchema.extend({
   offeredBy: z.string().optional(),
-  reward: z.string().optional(),
-  type: z.enum(['main', 'side', 'personal']).optional().default('side'),
 });
 
 const QuestUpdateSchema = z.object({

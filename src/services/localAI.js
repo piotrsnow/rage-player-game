@@ -3,6 +3,7 @@ import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
 import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
 import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { buildUnmetNeedsBlock, buildNeedsEnforcementReminder } from './prompts';
+import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 
 function normalizeEndpoint(endpoint) {
   return String(endpoint || '').replace(/\/+$/, '');
@@ -351,8 +352,13 @@ Write narrative and suggestedActions in ${lang}.`;
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
-  return `${needsReminder}Player action: "${playerAction}"
-Quoted text in the action = PC speech (work into narrative).
+  const playerHasDialogue = hasDialogue(playerAction);
+  const actionLine = playerHasDialogue
+    ? `Player ACTION: ${extractActionParts(playerAction)}\nPlayer DIALOGUE (exact PC speech): ${extractDialogueParts(playerAction)}`
+    : `Player action: "${playerAction}"`;
+
+  return `${needsReminder}${actionLine}
+${playerHasDialogue ? 'DIALOGUE line = exact PC speech — include verbatim in narrative.' : 'Quoted text in the action = PC speech (work into narrative).'}
 
 Feasibility first: impossible=auto-fail (diceRoll=null), trivial=auto-succeed (diceRoll=null). Then resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}

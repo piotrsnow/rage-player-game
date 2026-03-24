@@ -127,10 +127,15 @@ function gameReducer(state, action) {
         ...action.payload.campaign,
         status: 'active',
       };
+      const voiceMap = {};
+      if (char.voiceId && char.name) {
+        voiceMap[char.name] = { voiceId: char.voiceId, gender: char.gender || null };
+      }
       return {
         ...initialState,
         campaign: campaignData,
         character: { ...char, needs: char.needs || createDefaultNeeds() },
+        characterVoiceMap: voiceMap,
         world: action.payload.world || initialState.world,
         scenes: action.payload.scenes || [],
         chatHistory: action.payload.chatHistory || [],
@@ -162,6 +167,15 @@ function gameReducer(state, action) {
         loaded.world.codex = {};
       }
       if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
+      if (loaded.character?.voiceId && loaded.character.name) {
+        if (!loaded.characterVoiceMap) loaded.characterVoiceMap = {};
+        if (!loaded.characterVoiceMap[loaded.character.name]) {
+          loaded.characterVoiceMap[loaded.character.name] = {
+            voiceId: loaded.character.voiceId,
+            gender: loaded.character.gender || null,
+          };
+        }
+      }
       return loaded;
     }
 
@@ -639,8 +653,11 @@ function gameReducer(state, action) {
           ...q,
           objectives: (q.objectives || []).map((obj) => ({ ...obj, completed: obj.completed ?? false })),
           questGiverId: q.questGiverId || null,
+          turnInNpcId: q.turnInNpcId || q.questGiverId || null,
           locationId: q.locationId || null,
           prerequisiteQuestIds: q.prerequisiteQuestIds || [],
+          reward: q.reward || null,
+          type: q.type || 'side',
         }));
         next.quests = {
           ...next.quests,
@@ -649,14 +666,50 @@ function gameReducer(state, action) {
       }
 
       if (changes.completedQuests) {
-        // State consistency: only complete quests that exist in active
         const activeIds = new Set(next.quests.active.map((q) => q.id));
         const validIds = changes.completedQuests.filter((id) => activeIds.has(id));
         if (validIds.length > 0) {
           const completed = next.quests.active.filter((q) => validIds.includes(q.id));
+
+          let totalRewardXp = 0;
+          let rewardMoney = { gold: 0, silver: 0, copper: 0 };
+          const rewardItems = [];
+          for (const q of completed) {
+            if (q.reward) {
+              if (q.reward.xp) totalRewardXp += q.reward.xp;
+              if (q.reward.money) {
+                rewardMoney.gold += q.reward.money.gold || 0;
+                rewardMoney.silver += q.reward.money.silver || 0;
+                rewardMoney.copper += q.reward.money.copper || 0;
+              }
+              if (q.reward.items?.length > 0) rewardItems.push(...q.reward.items);
+            }
+          }
+
+          if (totalRewardXp > 0) {
+            next.character = { ...next.character, xp: (next.character.xp || 0) + totalRewardXp };
+          }
+          if (rewardMoney.gold || rewardMoney.silver || rewardMoney.copper) {
+            const cur = next.character.money || { gold: 0, silver: 0, copper: 0 };
+            next.character = {
+              ...next.character,
+              money: normalizeMoney({
+                gold: (cur.gold || 0) + rewardMoney.gold,
+                silver: (cur.silver || 0) + rewardMoney.silver,
+                copper: (cur.copper || 0) + rewardMoney.copper,
+              }),
+            };
+          }
+          if (rewardItems.length > 0) {
+            next.character = {
+              ...next.character,
+              inventory: [...(next.character.inventory || []), ...rewardItems],
+            };
+          }
+
           next.quests = {
             active: next.quests.active.filter((q) => !validIds.includes(q.id)),
-            completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now() }))],
+            completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now(), rewardGranted: true }))],
           };
         }
       }
@@ -1121,13 +1174,21 @@ function gameReducer(state, action) {
 
     case 'MAP_CHARACTER_VOICE': {
       const { characterName, voiceId, gender } = action.payload;
-      return {
+      const next = {
         ...state,
         characterVoiceMap: {
           ...state.characterVoiceMap,
           [characterName]: { voiceId, gender },
         },
       };
+      if (state.character && state.character.name === characterName) {
+        next.character = {
+          ...state.character,
+          voiceId: voiceId || null,
+          voiceName: action.payload.voiceName || state.character.voiceName || null,
+        };
+      }
+      return next;
     }
 
     case 'PUSH_UNDO': {

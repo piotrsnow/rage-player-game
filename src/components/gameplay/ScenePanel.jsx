@@ -111,26 +111,55 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
     [scene?.image]
   );
 
-  const [displayedImage, setDisplayedImage] = useState(imageSrc);
-  const [imageLoaded, setImageLoaded] = useState(!!imageSrc);
+  const currentImageRef = useRef(imageSrc);
+  const [currentImage, setCurrentImage] = useState(imageSrc);
+  const [prevImage, setPrevImage] = useState(null);
+  const [showCurrent, setShowCurrent] = useState(true);
 
   useEffect(() => {
-    if (!imageSrc) return;
-    if (imageSrc === displayedImage) {
-      setImageLoaded(true);
+    if (!imageSrc) {
+      currentImageRef.current = null;
+      setCurrentImage(null);
+      setPrevImage(null);
+      setShowCurrent(true);
       return;
     }
-    setImageLoaded(false);
+    if (imageSrc === currentImageRef.current) return;
+
+    let cancelled = false;
     const img = new Image();
     img.onload = () => {
-      setDisplayedImage(imageSrc);
-      setImageLoaded(true);
+      if (cancelled) return;
+      setPrevImage(currentImageRef.current);
+      currentImageRef.current = imageSrc;
+      setCurrentImage(imageSrc);
+      setShowCurrent(false);
     };
     img.onerror = () => {
-      setImageLoaded(true);
+      if (cancelled) return;
     };
     img.src = imageSrc;
+
+    return () => { cancelled = true; };
   }, [imageSrc]);
+
+  useEffect(() => {
+    if (!showCurrent && currentImage) {
+      let cancelled = false;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!cancelled) setShowCurrent(true);
+        });
+      });
+      return () => { cancelled = true; };
+    }
+  }, [showCurrent, currentImage]);
+
+  const handleTransitionEnd = useCallback((e) => {
+    if (e.propertyName === 'opacity') {
+      setPrevImage(null);
+    }
+  }, []);
 
   const handleImageError = useCallback(() => {
     if (scene?.id && scene?.image) {
@@ -204,18 +233,23 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   return (
     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
       {/* Scene Image */}
-      {displayedImage ? (
+      {currentImage || prevImage ? (
         <>
-          <img
-            src={displayedImage}
-            alt="Scene"
-            className={`w-full h-full object-cover transition-opacity duration-700 ${!imageLoaded ? 'opacity-80' : ''}`}
-            onError={handleImageError}
-          />
-          {isGeneratingImage && !imageLoaded && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/30" style={{ zIndex: 1 }}>
-              <LoadingSpinner size="md" text={t('gameplay.conjuringVision')} />
-            </div>
+          {prevImage && (
+            <img
+              src={prevImage}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+          {currentImage && (
+            <img
+              src={currentImage}
+              alt="Scene"
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${showCurrent ? 'opacity-100' : 'opacity-0'}`}
+              onTransitionEnd={handleTransitionEnd}
+              onError={handleImageError}
+            />
           )}
         </>
       ) : (

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/wfrpTranslate';
+import { parseActionSegments } from '../../services/actionParser';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
   const hi = highlightInfo;
@@ -139,6 +140,7 @@ function DmMessage({ message, narrator }) {
 function PlayerMessage({ message, isMe }) {
   const { t } = useTranslation();
   const displayName = message.playerName || t('chat.you');
+  const segments = parseActionSegments(message.content);
   return (
     <div className={`flex flex-col gap-2 animate-fade-in ${isMe !== false ? 'items-end' : 'items-start'}`}>
       <div className="text-[10px] font-bold text-tertiary-dim uppercase tracking-widest">
@@ -149,7 +151,21 @@ function PlayerMessage({ message, isMe }) {
           ? 'bg-surface-container-high/40 border-r-2 border-tertiary-dim rounded-l-lg'
           : 'bg-surface-container-high/25 border-l-2 border-tertiary-dim/50 rounded-r-lg'
       }`}>
-        <p className="text-sm text-on-surface leading-relaxed">{message.content}</p>
+        <p className="text-sm text-on-surface leading-relaxed">
+          {segments.map((seg, i) =>
+            seg.type === 'dialogue' ? (
+              <span
+                key={i}
+                className="inline-flex items-baseline gap-0.5 bg-amber-400/15 border border-amber-400/30 rounded px-1 py-px text-amber-300 mx-0.5"
+              >
+                <span className="material-symbols-outlined text-[11px] translate-y-[1px] opacity-70">chat_bubble</span>
+                {seg.text}
+              </span>
+            ) : (
+              <span key={i}>{seg.text}</span>
+            )
+          )}
+        </p>
       </div>
     </div>
   );
@@ -165,6 +181,7 @@ const SUBTYPE_STYLES = {
   level_up:         { icon: 'military_tech', color: 'text-amber-300',  line: 'to-amber-300/40' },
   quest_new:        { icon: 'assignment',    color: 'text-blue-400',   line: 'to-blue-400/30' },
   quest_completed:  { icon: 'task_alt',      color: 'text-emerald-400', line: 'to-emerald-400/30' },
+  quest_reward:     { icon: 'paid',          color: 'text-amber-400',   line: 'to-amber-400/30' },
   quest_objective_completed: { icon: 'checklist', color: 'text-teal-400', line: 'to-teal-400/30' },
   money_spent:      { icon: 'payments',     color: 'text-orange-400',  line: 'to-orange-400/30' },
   money_gained:     { icon: 'paid',         color: 'text-yellow-400',  line: 'to-yellow-400/30' },

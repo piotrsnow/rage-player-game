@@ -417,8 +417,11 @@ export const storage = {
           xpSpent: character.xpSpent,
           backstory: character.backstory,
           inventory: character.inventory,
+          money: character.money || { gold: 0, silver: 0, copper: 0 },
           portraitUrl: character.portraitUrl || '',
           campaignCount: character.campaignCount || 0,
+          voiceId: character.voiceId || null,
+          voiceName: character.voiceName || null,
         };
 
         let saved;
@@ -513,7 +516,10 @@ export const storage = {
         xp: character.xp,
         xpSpent: character.xpSpent,
         inventory: character.inventory,
+        money: character.money || { gold: 0, silver: 0, copper: 0 },
         backstory: character.backstory,
+        voiceId: character.voiceId || null,
+        voiceName: character.voiceName || null,
       });
     } catch (err) {
       console.warn('[storage] Character sync failed:', err.message);
@@ -585,6 +591,7 @@ export const storage = {
               xpSpent: char.xpSpent ?? 0,
               backstory: char.backstory || '',
               inventory: char.inventory || [],
+              money: char.money || { gold: 0, silver: 0, copper: 0 },
               portraitUrl: char.portraitUrl || '',
               campaignCount: char.campaignCount ?? 0,
             });

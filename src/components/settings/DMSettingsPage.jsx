@@ -1293,47 +1293,47 @@ export default function DMSettingsPage({ onClose }) {
         </section>
       </div>
 
-      {/* Footer Actions */}
-      <footer className="mt-12 pt-8 border-t border-outline-variant/15 flex flex-col md:flex-row justify-between items-center gap-8">
-        <div className="flex gap-8 items-center">
-          <div className="text-center md:text-left">
-            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-              {t('settings.activeProvider')}
-            </p>
-            <p className="font-headline text-tertiary">
-              {settings.aiProvider === 'openai' ? t('settings.openaiProvider') : t('settings.anthropicProvider')}
-            </p>
-          </div>
-          <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />
-          <div className="text-center md:text-left">
-            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-              {t('settings.modelTier')}
-            </p>
-            <p className="font-headline text-tertiary">
-              {(settings.aiModelTier || 'premium') === 'premium' ? t('settings.modelTierPremium') : t('settings.modelTierStandard')}
-            </p>
-          </div>
-          <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />
-          <div className="text-center md:text-left">
-            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-              {t('settings.status')}
-            </p>
-            <p className={`font-headline ${(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? 'text-primary' : 'text-error'}`}>
-              {(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? t('settings.keyConfigured') : t('settings.noKeySet')}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-4 w-full md:w-auto">
-          <Button variant="ghost" onClick={handleReset} className="flex-1 md:flex-none">
-            {t('settings.resetGrimoire')}
-          </Button>
-          <Button onClick={handleApply} className="flex-1 md:flex-none relative">
-            {saved ? t('settings.saved') : t('settings.applyChanges')}
-          </Button>
-        </div>
-      </footer>
     </div>
         </div>
+
+        <footer className="shrink-0 border-t border-outline-variant/15 bg-surface-container-highest/80 backdrop-blur-xl px-6 lg:px-12 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex gap-8 items-center">
+            <div className="text-center md:text-left">
+              <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {t('settings.activeProvider')}
+              </p>
+              <p className="font-headline text-tertiary">
+                {settings.aiProvider === 'openai' ? t('settings.openaiProvider') : t('settings.anthropicProvider')}
+              </p>
+            </div>
+            <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />
+            <div className="text-center md:text-left">
+              <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {t('settings.modelTier')}
+              </p>
+              <p className="font-headline text-tertiary">
+                {(settings.aiModelTier || 'premium') === 'premium' ? t('settings.modelTierPremium') : t('settings.modelTierStandard')}
+              </p>
+            </div>
+            <div className="h-8 w-[1px] bg-outline-variant/20 hidden md:block" />
+            <div className="text-center md:text-left">
+              <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {t('settings.status')}
+              </p>
+              <p className={`font-headline ${(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? 'text-primary' : 'text-error'}`}>
+                {(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? t('settings.keyConfigured') : t('settings.noKeySet')}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-4 w-full md:w-auto">
+            <Button variant="ghost" onClick={handleReset} className="flex-1 md:flex-none">
+              {t('settings.resetGrimoire')}
+            </Button>
+            <Button onClick={handleApply} className="flex-1 md:flex-none relative">
+              {saved ? t('settings.saved') : t('settings.applyChanges')}
+            </Button>
+          </div>
+        </footer>
       </div>
     </div>
   );

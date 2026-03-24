@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import PendingActions from '../multiplayer/PendingActions';
+import { parseActionSegments } from '../../services/actionParser';
 
 export default function ActionPanel({ actions = [], onAction, disabled }) {
   const [customAction, setCustomAction] = useState('');
@@ -75,6 +76,10 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
       mp.soloAction(myPlayer.pendingAction, false, settings.language || 'en', settings.dmSettings);
     }
   };
+
+  const displayValue = customAction + (interim ? (customAction ? ' ' : '') + interim : '');
+  const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
+  const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
 
   return (
     <div className="space-y-4">
@@ -184,31 +189,51 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
       {/* Custom Action Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <form onSubmit={handleCustomSubmit} className="relative">
-          <textarea
-            value={customAction + (interim ? (customAction ? ' ' : '') + interim : '')}
-            onChange={(e) => setCustomAction(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleCustomSubmit(e);
+          <div className="relative">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 w-full text-sm py-3 px-1 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
+            >
+              {displaySegments.map((seg, i) =>
+                seg.type === 'dialogue' ? (
+                  <span
+                    key={i}
+                    className="bg-amber-400/15 border border-amber-400/30 rounded px-0.5 text-amber-300 transition-colors"
+                  >{seg.text}</span>
+                ) : (
+                  <span key={i} className="text-on-surface">{seg.text}</span>
+                )
+              )}
+            </div>
+            <textarea
+              value={displayValue}
+              onChange={(e) => setCustomAction(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleCustomSubmit(e);
+                }
+              }}
+              placeholder={
+                listening
+                  ? t('gameplay.voiceListening')
+                  : supported
+                    ? t('gameplay.customActionPlaceholderVoice')
+                    : t('gameplay.customActionPlaceholder')
               }
-            }}
-            placeholder={
-              listening
-                ? t('gameplay.voiceListening')
-                : supported
-                  ? t('gameplay.customActionPlaceholderVoice')
-                  : t('gameplay.customActionPlaceholder')
-            }
-            rows={2}
-            disabled={disabled}
-            readOnly={listening}
-            className={`w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 ${
-              listening
-                ? 'border-primary/60 text-on-surface shadow-[0_2px_8px_rgba(197,154,255,0.15)]'
-                : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
-            }`}
-          />
+              rows={2}
+              disabled={disabled}
+              readOnly={listening}
+              style={hasDialogueText ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
+              className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
+                hasDialogueText ? 'selection:bg-primary/30' : ''
+              } ${
+                listening
+                  ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
+                  : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
+              }`}
+            />
+          </div>
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
               {supported && (

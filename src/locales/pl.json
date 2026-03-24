@@ -251,7 +251,14 @@
     "verifyObjective": "Sprawdź czy ukończone",
     "objectiveVerified": "Cel zweryfikowany jako ukończony",
     "objectiveNotFulfilled": "Cel jeszcze nie spełniony",
-    "verifyError": "Nie udało się zweryfikować celu"
+    "verifyError": "Nie udało się zweryfikować celu",
+    "reward": "Nagroda",
+    "xpShort": "PD",
+    "readyToTurnIn": "Gotowe do zdania",
+    "returnToNpc": "Wróć do {{npc}}, aby ukończyć to zadanie",
+    "turnInNpc": "Zdaj u",
+    "questGiver": "Zleceniodawca",
+    "completedQuests": "Ukończone"
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
@@ -755,6 +762,7 @@
     "xpGained": "{{name}} zdobył/a {{amount}} PD",
     "questNew": "Nowe zadanie: {{quest}}",
     "questCompleted": "Zadanie ukończone: {{quest}}",
+    "questReward": "Nagroda za zadanie: {{reward}}",
     "questObjectiveCompleted": "Cel ukończony: {{quest}} — {{objective}}",
     "questObjectiveVerified": "Cel zweryfikowany: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",

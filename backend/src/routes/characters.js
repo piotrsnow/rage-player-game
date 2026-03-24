@@ -17,6 +17,7 @@ function deserializeCharacter(c) {
     skills: safeJsonParse(c.skills, {}),
     talents: safeJsonParse(c.talents, []),
     inventory: safeJsonParse(c.inventory, []),
+    money: safeJsonParse(c.money, {}),
   };
 }
 
@@ -63,8 +64,11 @@ export async function characterRoutes(fastify) {
         xpSpent: body.xpSpent ?? 0,
         backstory: body.backstory || '',
         inventory: JSON.stringify(body.inventory || []),
+        money: JSON.stringify(body.money || {}),
         portraitUrl: body.portraitUrl || '',
         campaignCount: body.campaignCount ?? 0,
+        voiceId: body.voiceId || '',
+        voiceName: body.voiceName || '',
       },
     });
 
@@ -96,8 +100,11 @@ export async function characterRoutes(fastify) {
     if (body.xpSpent !== undefined) updateData.xpSpent = body.xpSpent;
     if (body.backstory !== undefined) updateData.backstory = body.backstory;
     if (body.inventory !== undefined) updateData.inventory = JSON.stringify(body.inventory);
+    if (body.money !== undefined) updateData.money = JSON.stringify(body.money);
     if (body.portraitUrl !== undefined) updateData.portraitUrl = body.portraitUrl;
     if (body.campaignCount !== undefined) updateData.campaignCount = body.campaignCount;
+    if (body.voiceId !== undefined) updateData.voiceId = body.voiceId || '';
+    if (body.voiceName !== undefined) updateData.voiceName = body.voiceName || '';
 
     const character = await prisma.character.update({
       where: { id: request.params.id },

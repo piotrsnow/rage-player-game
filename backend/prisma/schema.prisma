@@ -76,8 +76,11 @@ model Character {
   xpSpent         Int      @default(0)
   backstory       String   @default("")
   inventory       String   @default("[]") // JSON array
+  money           String   @default("{}") // JSON: { gold, silver, copper }
   portraitUrl     String   @default("")
   campaignCount   Int      @default(0)
+  voiceId         String   @default("")
+  voiceName       String   @default("")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

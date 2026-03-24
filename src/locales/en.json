@@ -251,7 +251,14 @@
     "verifyObjective": "Check if completed",
     "objectiveVerified": "Objective verified as completed",
     "objectiveNotFulfilled": "Objective not yet fulfilled",
-    "verifyError": "Failed to verify objective"
+    "verifyError": "Failed to verify objective",
+    "reward": "Reward",
+    "xpShort": "XP",
+    "readyToTurnIn": "Ready to turn in",
+    "returnToNpc": "Return to {{npc}} to complete this quest",
+    "turnInNpc": "Turn in to",
+    "questGiver": "Quest giver",
+    "completedQuests": "Completed"
   },
   "inventory": {
     "title": "Armory & Artifacts",
@@ -755,6 +762,7 @@
     "xpGained": "{{name}} gained {{amount}} XP",
     "questNew": "New quest: {{quest}}",
     "questCompleted": "Quest completed: {{quest}}",
+    "questReward": "Quest reward: {{reward}}",
     "questObjectiveCompleted": "Objective completed: {{quest}} — {{objective}}",
     "questObjectiveVerified": "Objective verified: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",

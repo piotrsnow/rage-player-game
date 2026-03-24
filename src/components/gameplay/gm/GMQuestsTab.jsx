@@ -74,21 +74,48 @@ export default function GMQuestsTab({ gameState }) {
   );
 }
 
+function formatReward(reward) {
+  if (!reward) return null;
+  if (typeof reward === 'string') return reward;
+  const parts = [];
+  if (reward.xp) parts.push(`${reward.xp} XP`);
+  if (reward.money) {
+    const m = reward.money;
+    if (m.gold) parts.push(`${m.gold} GC`);
+    if (m.silver) parts.push(`${m.silver} SS`);
+    if (m.copper) parts.push(`${m.copper} CP`);
+  }
+  if (reward.items?.length > 0) parts.push(reward.items.map((i) => i.name || i).join(', '));
+  return parts.length > 0 ? parts.join(', ') : reward.description || null;
+}
+
 function QuestCard({ quest, findNpc, t, isActive }) {
   const giver = findNpc(quest.questGiverId);
+  const turnInNpc = quest.turnInNpcId && quest.turnInNpcId !== quest.questGiverId ? findNpc(quest.turnInNpcId) : null;
   const completedObjectives = quest.objectives?.filter((o) => o.completed).length || 0;
   const totalObjectives = quest.objectives?.length || 0;
+  const readyToTurnIn = isActive && totalObjectives > 0 && completedObjectives === totalObjectives;
+  const rewardText = formatReward(quest.reward);
 
   return (
-    <div className={`p-3 rounded-sm border ${isActive ? 'bg-surface-container/40 border-outline-variant/10' : 'bg-surface-container/20 border-outline-variant/5 opacity-70'}`}>
+    <div className={`p-3 rounded-sm border ${
+      readyToTurnIn ? 'bg-amber-500/8 border-amber-500/15'
+      : isActive ? 'bg-surface-container/40 border-outline-variant/10'
+      : 'bg-surface-container/20 border-outline-variant/5 opacity-70'
+    }`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2 min-w-0">
-          <span className={`material-symbols-outlined text-sm ${isActive ? 'text-primary' : 'text-outline'}`}>
-            {isActive ? 'assignment' : 'assignment_turned_in'}
+          <span className={`material-symbols-outlined text-sm ${readyToTurnIn ? 'text-amber-400' : isActive ? 'text-primary' : 'text-outline'}`}>
+            {readyToTurnIn ? 'assignment_return' : isActive ? 'assignment' : 'assignment_turned_in'}
           </span>
           <span className="text-[11px] font-bold text-on-surface truncate">{quest.name}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {readyToTurnIn && (
+            <span className="text-[8px] font-label uppercase tracking-wider text-amber-400 bg-amber-500/15 px-1 py-0.5 rounded-sm">
+              {t('quests.readyToTurnIn')}
+            </span>
+          )}
           {quest.type && (
             <span className={`text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
               quest.type === 'main' ? 'bg-primary/15 text-primary' :
@@ -124,6 +151,15 @@ function QuestCard({ quest, findNpc, t, isActive }) {
         </div>
       )}
 
+      {/* Reward */}
+      {rewardText && (
+        <div className="flex items-center gap-1.5 mb-2 text-[10px]">
+          <span className="material-symbols-outlined text-xs text-amber-400">paid</span>
+          <span className="text-amber-400/70 font-label uppercase tracking-wider">{t('quests.reward')}:</span>
+          <span className="text-on-surface-variant">{rewardText}</span>
+        </div>
+      )}
+
       {/* Metadata */}
       <div className="flex items-center gap-3 flex-wrap text-[9px] text-outline">
         {giver && (
@@ -132,16 +168,16 @@ function QuestCard({ quest, findNpc, t, isActive }) {
             {giver.name}
           </span>
         )}
+        {turnInNpc && (
+          <span className="flex items-center gap-1">
+            <span className="material-symbols-outlined text-[10px]">assignment_return</span>
+            {turnInNpc.name}
+          </span>
+        )}
         {quest.locationId && (
           <span className="flex items-center gap-1">
             <span className="material-symbols-outlined text-[10px]">place</span>
             {quest.locationId}
-          </span>
-        )}
-        {quest.reward && (
-          <span className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-[10px]">redeem</span>
-            {quest.reward}
           </span>
         )}
       </div>

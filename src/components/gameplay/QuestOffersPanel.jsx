@@ -110,12 +110,30 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
                     )}
 
                     {offer.reward && (
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <span className="material-symbols-outlined text-xs text-on-surface-variant">emoji_events</span>
-                        <span className="text-[10px] font-label text-on-surface-variant uppercase tracking-widest">
-                          {t('gameplay.questOfferReward')}:
-                        </span>
-                        <span className="text-xs text-on-surface">{offer.reward}</span>
+                      <div className="flex items-start gap-2 bg-amber-500/8 border border-amber-500/15 rounded-sm p-2.5 mb-2">
+                        <span className="material-symbols-outlined text-sm text-amber-400 mt-0.5">paid</span>
+                        <div>
+                          <p className="text-[10px] font-label text-amber-400/80 uppercase tracking-widest mb-0.5">
+                            {t('gameplay.questOfferReward')}
+                          </p>
+                          <p className="text-xs text-on-surface leading-relaxed">
+                            {typeof offer.reward === 'string'
+                              ? offer.reward
+                              : (() => {
+                                  const parts = [];
+                                  if (offer.reward.xp) parts.push(`${offer.reward.xp} XP`);
+                                  if (offer.reward.money) {
+                                    const m = offer.reward.money;
+                                    if (m.gold) parts.push(`${m.gold} GC`);
+                                    if (m.silver) parts.push(`${m.silver} SS`);
+                                    if (m.copper) parts.push(`${m.copper} CP`);
+                                  }
+                                  if (offer.reward.items?.length > 0) parts.push(offer.reward.items.map((i) => i.name || i).join(', '));
+                                  return parts.length > 0 ? parts.join(', ') : offer.reward.description || '';
+                                })()
+                            }
+                          </p>
+                        </div>
                       </div>
                     )}
 

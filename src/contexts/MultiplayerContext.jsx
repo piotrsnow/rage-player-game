@@ -131,13 +131,22 @@ function mpReducer(state, action) {
             const u = { ...c };
             if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
             if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
-            // Legacy D&D fields for backward compat
             if (delta.hp != null && u.hp != null) u.hp = Math.max(0, Math.min(u.maxHp || 100, u.hp + delta.hp));
             if (delta.mana != null && u.mana != null) u.mana = Math.max(0, Math.min(u.maxMana || 50, u.mana + delta.mana));
+            if (delta.fortuneChange != null) u.fortune = Math.max(0, Math.min(u.fate ?? 2, (u.fortune ?? 0) + delta.fortuneChange));
+            if (delta.resolveChange != null) u.resolve = Math.max(0, Math.min(u.resilience ?? 1, (u.resolve ?? 0) + delta.resolveChange));
             if (Array.isArray(delta.newItems)) u.inventory = [...(u.inventory || []), ...delta.newItems];
             if (Array.isArray(delta.removeItems)) {
               const rmById = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.id || i.name)));
               u.inventory = (u.inventory || []).filter((i) => !rmById.has(typeof i === 'string' ? i : i.id || i.name));
+            }
+            if (delta.moneyChange) {
+              const cur = u.money || { gold: 0, silver: 0, copper: 0 };
+              let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
+                + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
+                + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
+              if (total < 0) total = 0;
+              u.money = { gold: Math.floor(total / 100), silver: Math.floor((total % 100) / 10), copper: total % 10 };
             }
             if (delta.needsChanges && u.needs) {
               const needs = { ...u.needs };
@@ -145,6 +154,13 @@ function mpReducer(state, action) {
                 if (key in needs) needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
               }
               u.needs = needs;
+            }
+            if (delta.statuses) u.statuses = delta.statuses;
+            if (Array.isArray(delta.criticalWounds)) {
+              u.criticalWounds = [...(u.criticalWounds || []), ...delta.criticalWounds];
+            }
+            if (delta.healCriticalWound) {
+              u.criticalWounds = (u.criticalWounds || []).filter((cw) => cw.name !== delta.healCriticalWound);
             }
             return u;
           });
@@ -210,6 +226,9 @@ function mpReducer(state, action) {
           world.currentLocation = newLoc;
           world.mapConnections = mapConns;
           world.mapState = mapSt;
+          const explored = new Set(world.exploredLocations || []);
+          explored.add(newLoc);
+          world.exploredLocations = [...explored];
           newGameState = { ...newGameState, world };
         }
 
@@ -234,6 +253,33 @@ function mpReducer(state, action) {
           }
           world.mapState = mapState;
           newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.factionChanges && typeof stateChanges.factionChanges === 'object') {
+          const world = { ...(newGameState.world || {}) };
+          const factions = { ...(world.factions || {}) };
+          for (const [factionId, delta] of Object.entries(stateChanges.factionChanges)) {
+            factions[factionId] = Math.max(-100, Math.min(100, (factions[factionId] || 0) + delta));
+          }
+          world.factions = factions;
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.weatherUpdate) {
+          const world = { ...(newGameState.world || {}) };
+          world.weather = stateChanges.weatherUpdate;
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.campaignEnd && newGameState.campaign) {
+          newGameState = {
+            ...newGameState,
+            campaign: {
+              ...newGameState.campaign,
+              status: stateChanges.campaignEnd.status || 'completed',
+              epilogue: stateChanges.campaignEnd.epilogue || '',
+            },
+          };
         }
       }
 
@@ -277,6 +323,13 @@ function mpReducer(state, action) {
         players: action.payload.room?.players || state.players,
       };
     }
+
+    case 'CHARACTER_SYNCED':
+      return {
+        ...state,
+        gameState: action.payload.room?.gameState || state.gameState,
+        players: action.payload.room?.players || state.players,
+      };
 
     case 'LEFT_ROOM':
     case 'RESET':
@@ -327,6 +380,9 @@ export function MultiplayerProvider({ children }) {
       }),
       wsService.on('QUEST_OFFER_UPDATE', (msg) => {
         dispatch({ type: 'QUEST_OFFER_UPDATE', payload: msg });
+      }),
+      wsService.on('CHARACTER_SYNCED', (msg) => {
+        dispatch({ type: 'CHARACTER_SYNCED', payload: msg });
       }),
       wsService.on('LEFT_ROOM', () => dispatch({ type: 'LEFT_ROOM' })),
       wsService.on('KICKED', (msg) => {
@@ -427,6 +483,10 @@ export function MultiplayerProvider({ children }) {
     wsService.send({ type: 'DECLINE_QUEST_OFFER', sceneId, offerId });
   }, []);
 
+  const syncCharacter = useCallback((character) => {
+    wsService.send('SYNC_CHARACTER', { character });
+  }, []);
+
   const value = {
     state,
     dispatch,
@@ -448,6 +508,7 @@ export function MultiplayerProvider({ children }) {
     onSceneUpdate,
     acceptMpQuestOffer,
     declineMpQuestOffer,
+    syncCharacter,
   };
 
   return (

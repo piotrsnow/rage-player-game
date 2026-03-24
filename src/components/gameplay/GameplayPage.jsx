@@ -223,6 +223,20 @@ export default function GameplayPage() {
     dispatch({ type: 'SET_ERROR', payload: null });
   };
 
+  const handleAdvancementOpen = () => {
+    if (isMultiplayer && character) {
+      dispatch({ type: 'UPDATE_CHARACTER', payload: character });
+    }
+    setAdvancementOpen(true);
+  };
+
+  const handleAdvancementClose = () => {
+    if (isMultiplayer && state.character) {
+      mp.syncCharacter(state.character);
+    }
+    setAdvancementOpen(false);
+  };
+
   if (!campaign) return null;
 
   return (
@@ -361,7 +375,7 @@ export default function GameplayPage() {
               )}
               {availableXp > 0 && (
                 <button
-                  onClick={() => setAdvancementOpen(true)}
+                  onClick={handleAdvancementOpen}
                   className="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
                 >
                   <span className="material-symbols-outlined text-xs">upgrade</span>
@@ -649,7 +663,9 @@ export default function GameplayPage() {
           narrator={settings.narratorEnabled ? narrator : null}
           autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
-          momentumBonus={state.momentumBonus || 0}
+          momentumBonus={isMultiplayer
+            ? (mpGameState?.characterMomentum?.[character?.name] || 0)
+            : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
         />
       </aside>
@@ -673,7 +689,7 @@ export default function GameplayPage() {
       )}
 
       {advancementOpen && (
-        <AdvancementPanel onClose={() => setAdvancementOpen(false)} />
+        <AdvancementPanel onClose={handleAdvancementClose} />
       )}
 
       {achievementsOpen && (
