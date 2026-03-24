@@ -51,12 +51,58 @@ YOU MUST:
 4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
-export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
+function buildRelationshipGraphBlock(npcs, quests, factions) {
+  const lines = [];
+  const aliveNpcs = (npcs || []).filter((n) => n.alive !== false);
+
+  for (const npc of aliveNpcs) {
+    const parts = [npc.name];
+    if (npc.factionId) parts.push(`(${npc.factionId})`);
+    const relParts = [];
+    if (npc.relationships?.length > 0) {
+      for (const r of npc.relationships) {
+        relParts.push(`${r.type} of ${r.npcName}`);
+      }
+    }
+    const questLinks = [];
+    for (const q of [...(quests?.active || []), ...(quests?.completed || [])]) {
+      if (q.questGiverId && (q.questGiverId === npc.id || q.questGiverId.toLowerCase() === npc.name?.toLowerCase())) {
+        questLinks.push(`quest giver for "${q.name}"`);
+      }
+    }
+    if (npc.relatedQuestIds?.length > 0) {
+      for (const qid of npc.relatedQuestIds) {
+        const q = (quests?.active || []).find((qq) => qq.id === qid);
+        if (q && !questLinks.some((l) => l.includes(q.name))) {
+          questLinks.push(`involved in "${q.name}"`);
+        }
+      }
+    }
+    const allRels = [...relParts, ...questLinks];
+    if (allRels.length > 0 || npc.factionId) {
+      lines.push(`${parts.join(' ')}${allRels.length > 0 ? ' — ' + allRels.join(', ') : ''}`);
+    }
+  }
+
+  if (lines.length === 0) return '';
+  return `\nRELATIONSHIP GRAPH (use to maintain consistent NPC behavior, alliances, and rivalries):\n${lines.map((l) => `- ${l}`).join('\n')}\n\n`;
+}
+
+function buildConsistencyWarningsBlock(warnings) {
+  if (!warnings?.length) return '';
+  const relevant = warnings.slice(0, 5);
+  return `WORLD CONSISTENCY WARNINGS (address these in your narrative if relevant):\n${relevant.map((w) => `- ${w}`).join('\n')}\n\n`;
+}
+
+export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false, consistencyWarnings = [] } = {}) {
   const { campaign, character, world, quests } = gameState;
 
   const activeQuests = quests.active.map((q) => {
     let line = `- ${q.name}: ${q.description}`;
     if (q.completionCondition) line += `\n  Goal: ${q.completionCondition}`;
+    if (q.questGiverId) line += `\n  Quest giver: ${q.questGiverId}`;
+    if (q.locationId) line += `\n  Location: ${q.locationId}`;
+    if (q.prerequisiteQuestIds?.length > 0) line += `\n  Requires: ${q.prerequisiteQuestIds.join(', ')}`;
     if (q.objectives?.length > 0) {
       line += '\n  Objectives:';
       for (const obj of q.objectives) {
@@ -96,7 +142,16 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
 
   const npcs = world?.npcs || [];
   const npcSection = npcs.length > 0
-    ? npcs.map((n) => `- ${n.name} (${n.role || 'unknown role'}, ${n.gender || '?'}): personality="${n.personality || '?'}", attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}, location="${n.lastLocation || 'unknown'}"${n.alive === false ? ' [DEAD]' : ''}${n.notes ? ` — ${n.notes}` : ''}`).join('\n')
+    ? npcs.map((n) => {
+        let line = `- ${n.name} (${n.role || 'unknown role'}, ${n.gender || '?'}): personality="${n.personality || '?'}", attitude=${n.attitude || 'neutral'}, disposition=${n.disposition || 0}, location="${n.lastLocation || 'unknown'}"`;
+        if (n.factionId) line += `, faction=${n.factionId}`;
+        if (n.alive === false) line += ' [DEAD]';
+        if (n.relationships?.length > 0) {
+          line += ` | relations: ${n.relationships.map((r) => `${r.type} of ${r.npcName}`).join(', ')}`;
+        }
+        if (n.notes) line += ` — ${n.notes}`;
+        return line;
+      }).join('\n')
     : 'No NPCs encountered yet.';
 
   const currentLoc = world?.currentLocation || 'Unknown';
@@ -196,6 +251,13 @@ NARRATOR VOICE & STYLE:
 - Drama: ${dramaLabel}
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
 
+NARRATIVE TONE RULES (anti-purple-prose guardrails):
+- VARY PROSE DENSITY BY SCENE TYPE: Action scenes are SHORT and PUNCHY (1-2 paragraphs max, terse sentences, focus on consequences). Exploration is atmospheric but concrete — describe what the character sees, hears, smells, not abstract feelings. Dialogue scenes focus on character voice. Save poetic language for key dramatic moments ONLY.
+- AVOID: Excessive metaphors in every paragraph. Overly flowery descriptions of mundane events. A uniform "literary" tone across all NPCs. Multiple adjectives stacked before every noun. Starting every paragraph with a weather or atmosphere description.
+- NPC DIALOGUE VARIATION: Each NPC speaks differently. A peasant does not sound like a scholar. A soldier does not sound like a merchant. Dialogue should reveal character, not showcase vocabulary.
+- The Old World is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
+- HUMOR COUNTERWEIGHT: Even at high humor settings, maintain real stakes. Funny failures should still hurt mechanically (wounds, lost items, reputation). Comedic NPCs can still be dangerous. Never let humor deflate genuine tension in life-or-death situations.
+
 WORLD DESCRIPTION:
 ${campaign?.worldDescription || 'The Old World awaits — a grim and perilous realm of dark fantasy.'}
 
@@ -265,6 +327,20 @@ WFRP 4e RULES FOR THE GM:
 - When the character uses Fortune/Resolve, reflect it in stateChanges (fortuneChange/resolveChange as negative deltas).
 - Fortune resets to Fate value after a night's rest.
 
+GRADED SUCCESS & FAILURE (use SL to determine outcome severity — never purely binary):
+- CRITICAL SUCCESS (roll 01-04): Automatic success with spectacular bonus effects — extra loot, awed NPCs, lasting advantage. Award +1 to +3 bonus SL.
+- STRONG SUCCESS (SL +3 or higher): Clear, decisive success with potential bonus benefits.
+- MARGINAL SUCCESS (SL 0 to +2): SUCCESS AT A COST — the action succeeds, but with a complication: minor wound, lost item, time wasted, noise attracting attention, partial information, NPC annoyance, or an unintended side effect. The goal is achieved, but not cleanly.
+- MARGINAL FAILURE (SL -1 to -2): FAILURE WITH OPPORTUNITY — the action fails, but the character learns something useful, a new option opens, or they narrowly avoid the worst outcome. Still a real failure — no hidden success.
+- HARD FAILURE (SL -3 or worse): Significant consequences — wounds, broken items, reputation loss, faction alerts, enemy gains advantage, rumor spreads. Always include at least one stateChanges consequence.
+- CRITICAL FAILURE (roll 96-100): Catastrophic — lasting stateChanges consequences are MANDATORY (wound, item loss, faction change, NPC hostility, or new complication).
+
+CONSEQUENCE SYSTEM (MANDATORY for risky actions, especially failures):
+Every risky action should generate at least one consequence from this list: reputation change (factionChanges), NPC disposition shift, time loss, resource loss, wound, rumor spread (worldFacts), price changes, quest complication, new enemy, or environmental change.
+- HEAT MECHANIC: Criminal, chaotic, or violent actions accumulate "heat" — track via journalEntries and worldFacts. Escalating heat triggers: guards patrol more, NPCs become wary and suspicious, prices rise, bounties appear, witch hunters investigate, factions send agents. Use factionChanges to mechanically represent this (negative deltas to lawful factions like military, temple_sigmar, witch_hunters).
+- RUMOR PROPAGATION: Notable actions (especially failures and crimes) become worldFacts that NPCs reference in future scenes. Major events should spread — "I heard a stranger was asking about..." or "Word is someone tried to..."
+- ECONOMIC CONSEQUENCES: Faction standing should visibly affect prices mentioned in narration. Hostile faction territory = 20-50% markup. Allied = 10-20% discount. Reference this in merchant dialogue.
+
 NPC DISPOSITION MODIFIERS (apply when a dice roll involves direct interaction with a known NPC):
 When the player attempts a social, trade, persuasion, or other interpersonal skill test involving a known NPC, look up that NPC's disposition value from the NPC REGISTRY below and apply the corresponding modifier to the dice target number:
   disposition >= 30 (strong ally): +15 to target
@@ -323,7 +399,7 @@ ${(() => {
   }
   return `\nKNOWLEDGE BASE (long-term memory — reference for consistency):\n${lines.join('\n')}\n`;
 })()}
-LANGUAGE INSTRUCTION:
+${buildRelationshipGraphBlock(npcs, quests, world?.factions)}${consistencyWarnings?.length > 0 ? buildConsistencyWarningsBlock(consistencyWarnings) : ''}LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
 INSTRUCTIONS:
@@ -422,7 +498,16 @@ ${(() => {
     const tier = getReputationTier(rep);
     return `- ${def?.name || id}: ${rep} (${tier})`;
   });
-  return `FACTION REPUTATION (affects NPC attitudes, prices, quest availability):\n${lines.join('\n')}\nAdjust NPC behavior based on faction standing: Hostile factions refuse service, Allied factions offer discounts and special quests.\n`;
+  return `FACTION REPUTATION (affects NPC attitudes, prices, quest availability):\n${lines.join('\n')}\n
+WORLD REACTIVITY RULES (MANDATORY — factions are not just flavor text):
+- When the player performs actions that would logically alert a faction, ALWAYS include factionChanges in stateChanges. Do NOT skip faction reactions.
+- HOSTILE FACTION STANDING (-30 or below): Manifests as higher prices (+20-50%), refused service at affiliated shops, ambushes by faction agents, bounty hunters, closed quest lines, NPCs warning the player to leave. Mention these consequences explicitly in narration and NPC dialogue.
+- UNFRIENDLY FACTION STANDING (-10 to -29): Cold reception, overpriced goods (+10-20%), NPCs reluctant to share information, rumors about the player's misdeeds.
+- ALLIED FACTION STANDING (+30 or above): Manifests as discounts (-10-20%), tips and insider information, safe houses, exclusive quests, but ALSO obligations — the faction expects loyalty and may send the player on missions or involve them in politics. Enemies of the faction now target the player too.
+- FRIENDLY FACTION STANDING (+10 to +29): Warmer reception, fair prices, more willing to share rumors and information.
+- Use worldFacts to record rumors that NPCs will reference later: "Word has spread that [player action]...", "The guild knows about...", etc.
+- Prices mentioned in narration MUST reflect faction standing — explicitly mention markups ("The merchant eyes you coolly. 'For you? Eight silver.'") or discounts ("A friend of the guild pays only four silver.").
+- NEVER have a hostile faction be friendly without good narrative reason. NEVER have factions ignore player actions that directly affect them.\n`;
 })()}CAMPAIGN END:
 When the main quest is fully resolved (completed or catastrophically failed), or all player characters are dead (TPK), you MAY include "campaignEnd" in stateChanges:
 {"campaignEnd": {"status": "completed" or "failed", "epilogue": "A 2-3 paragraph epilogue summarizing the aftermath..."}}
@@ -447,9 +532,9 @@ After each scene, you may include "knowledgeUpdates" in stateChanges to record i
 {"knowledgeUpdates": {
   "events": [{"summary": "Brief event description", "importance": "minor|major|critical", "tags": ["combat", "npc_name"]}],
   "decisions": [{"choice": "What the player decided", "consequence": "What happened as a result", "tags": []}],
-  "plotThreads": [{"id": "thread_unique_id", "name": "Thread Name", "status": "active|resolved|abandoned"}]
+  "plotThreads": [{"id": "thread_unique_id", "name": "Thread Name", "status": "active|resolved|abandoned", "relatedNpcIds": ["npc_name"], "relatedQuestIds": ["quest_id"], "relatedLocationIds": ["location_name"]}]
 }}
-Use events for key happenings, decisions for player choices with consequences, and plotThreads for ongoing narrative arcs.
+Use events for key happenings, decisions for player choices with consequences, and plotThreads for ongoing narrative arcs. For plotThreads, always include relatedNpcIds (names of involved NPCs), relatedQuestIds (IDs of related quests), and relatedLocationIds (names of relevant locations) to maintain the relationship graph.
 
 CODEX SYSTEM (detailed lore and knowledge discovery):
 When the player asks about, investigates, or learns about something specific (an artifact, person, place, event, faction, creature, or concept), you MUST generate a detailed codex fragment via stateChanges.codexUpdates. This is how the player builds up knowledge about the world.
@@ -529,7 +614,7 @@ Respond with ONLY valid JSON in this exact format:
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
-    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": ""}],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [],
@@ -572,18 +657,19 @@ NPC DISPOSITION MODIFIERS: When this roll involves direct interaction with a kno
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null in your response. Do not invent or include any dice check.' : (preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).')}
 ${isCustomAction ? `
 CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus.
-- +10: Mundane custom action — a basic alternative to the suggestions, nothing special
-- +15: Slightly creative — shows some thought or personality but still straightforward
-- +20: Moderately creative — good use of environment or character abilities
-- +30: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
-- +40: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE
-Always award at least +10 for any custom action.
+- +5: Mundane custom action — a basic alternative to the suggestions, nothing special
+- +10: Slightly creative — shows some thought or personality but still straightforward
+- +15: Moderately creative — good use of environment or character abilities
+- +20: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
+- +25: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE.
+Award +5 minimum for any custom action. Do NOT default to high bonuses — most custom actions are +5 or +10.
+COMBINED BONUS CAP: The total of creativityBonus + momentumBonus + dispositionBonus is hard-capped at +30 by the game engine. Any excess is discarded. Keep this in mind when setting target numbers.
 Output the diceRoll fields as follows:
 - "baseTarget": the BASE value (characteristic + skill advances only)
-- "creativityBonus": the bonus (10-40)
+- "creativityBonus": the bonus (5-25)
 - "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
-Example: baseTarget=31, creativityBonus=20, target=51, roll=45 → 45 ≤ 51 → success=true. The narrative MUST describe a successful outcome.
+Example: baseTarget=31, creativityBonus=15, target=46, roll=45 → 45 ≤ 46 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}${momentumBonus !== 0 ? `
 MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from a previous roll.
 ${momentumBonus > 0 ? 'Add this to the target: target = baseTarget + creativityBonus + momentumBonus.' : 'Subtract this from the target: target = baseTarget + creativityBonus + momentumBonus (momentumBonus is negative, so it reduces the target).'}
@@ -628,7 +714,7 @@ Respond with ONLY valid JSON in this exact format:
     "skillAdvances": null,
     "newTalents": null,
     "careerAdvance": null,
-    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5}],
+    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5, "factionId": "faction_id_or_null", "relationships": [{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]}],
     "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
     "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
@@ -646,17 +732,38 @@ For atmosphere: choose weather, particles, mood, and transition that best match 
 
 For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
-For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}]}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story (not mandatory but trackable). worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, locationId, prerequisiteQuestIds}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
 QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "offeredBy": "NPC name or source", "reward": "Narrative reward hint", "type": "main|side|personal"}. Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
+LOOT RARITY GATING (enforced by campaign progression):
+- Scenes 1-15 (Act 1): Only "common" and "uncommon" items as loot or purchases. "rare" items only as major quest rewards.
+- Scenes 16-30 (Act 2): "rare" items available through merchants, loot, and quests. "exotic" items only through major quest lines with narrative buildup.
+- Scenes 31+ (Act 3+): "exotic" items possible but ALWAYS with narrative cost — they attract thieves, faction interest, rumors, political consequences, or obligations. Powerful items are never free.
+- COST OF OWNERSHIP: Rare and exotic items draw attention. NPCs comment on them, thieves target the character, factions want them, and rumors spread about whoever carries them. Include these consequences in worldFacts and NPC reactions.
+- Always set the "rarity" field on new items: "common", "uncommon", "rare", or "exotic".
 For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
 For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
 For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Mighty Blow"]. Use null if none.
 For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player. Only include dispositionChange when the interaction is direct and personal.
+NPC RELATIONSHIP TRACKING: When introducing or updating NPCs, include these optional fields to build the world relationship graph:
+- "factionId": the faction this NPC belongs to (merchants_guild, thieves_guild, temple_sigmar, etc.) — faction reputation will automatically influence their disposition toward the player
+- "relatedQuestIds": array of quest IDs this NPC is involved in (as quest giver, target, or participant)
+- "relationships": array of NPC-to-NPC relationships: [{"npcName": "Other NPC Name", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]
+These relationships persist across scenes and are used for world consistency. Always set factionId for NPCs who belong to a known faction.
+NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
+- Critical success: +3 to +5
+- Strong success (SL 3+): +2 to +3
+- Marginal success (SL 0-2): +1 to +2
+- Marginal failure (SL -1 to -2): -1 to -2
+- Hard failure (SL -3 or worse): -3 to -5
+- Critical failure: -5 to -8
+- Betrayal, broken promise, or threat: -8 to -10 (immediate, regardless of roll)
+Trust builds SLOWLY but breaks FAST. Disposition delta is capped at +-10 per scene by the game engine.
+NPC PERSONALITY FRICTION: At least 30% of NPCs should be naturally suspicious, hostile, self-interested, or uncooperative. Not every NPC wants to help. Introduce suspicious/hostile NPCs with negative starting disposition (-5 to -20).
+NPC GRUDGE MEMORY: NPCs remember humiliations, failures, threats, and broken promises. These persist across scenes and reduce disposition permanently. Record grudges in NPC notes via stateChanges.npcs. When an NPC has been wronged, reference it in their dialogue and behavior — they do NOT forgive easily.
 For stateChanges.mapChanges: log environmental changes to locations (traps set, doors opened, items left, destruction). type is one of: trap, obstacle, discovery, destruction, other.
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.

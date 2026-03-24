@@ -26,10 +26,18 @@ const DiceRollSchema = z.object({
   dispositionBonus: z.number().optional(),
 }).passthrough().nullable().optional();
 
+const NpcRelationshipSchema = z.object({
+  npcName: z.string(),
+  type: z.enum(['ally', 'enemy', 'family', 'employer', 'rival', 'friend', 'mentor', 'subordinate']),
+}).passthrough();
+
 const NpcChangeSchema = z.object({
   action: z.string().optional().default('introduce'),
   name: z.string(),
   gender: z.string().optional(),
+  factionId: z.string().nullable().optional(),
+  relatedQuestIds: z.array(z.string()).optional().default([]),
+  relationships: z.array(NpcRelationshipSchema).optional().default([]),
 }).passthrough();
 
 const TimeAdvanceSchema = z.object({
@@ -63,6 +71,9 @@ const QuestSchema = z.object({
   description: z.string(),
   completionCondition: z.string().optional(),
   objectives: z.array(QuestObjectiveSchema).optional().default([]),
+  questGiverId: z.string().nullable().optional(),
+  locationId: z.string().nullable().optional(),
+  prerequisiteQuestIds: z.array(z.string()).optional().default([]),
 }).passthrough();
 
 const QuestOfferSchema = QuestSchema.extend({

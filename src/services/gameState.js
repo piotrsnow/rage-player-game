@@ -146,10 +146,11 @@ export function getBonus(characteristicValue) {
   return Math.floor(characteristicValue / 10);
 }
 
-// Calculate Success Levels: (target - roll) / 10, rounded toward 0
+// Calculate Success Levels: (target - roll) / 10, rounded toward 0, clamped to [-10, +10]
 export function calculateSL(roll, target) {
   const diff = target - roll;
-  return diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
+  const raw = diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
+  return Math.max(-10, Math.min(10, raw));
 }
 
 // WFRP Wounds = Strength Bonus + 2 × Toughness Bonus + Willpower Bonus

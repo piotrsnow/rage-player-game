@@ -125,6 +125,31 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     });
   }
 
+  if (validated.npcs && Array.isArray(validated.npcs)) {
+    const MAX_DISPOSITION_DELTA = 10;
+    for (const npc of validated.npcs) {
+      if (typeof npc.dispositionChange === 'number') {
+        const clamped = clamp(npc.dispositionChange, -MAX_DISPOSITION_DELTA, MAX_DISPOSITION_DELTA);
+        if (clamped !== npc.dispositionChange) {
+          corrections.push(`NPC "${npc.name}" disposition delta clamped from ${npc.dispositionChange} to ${clamped}`);
+          npc.dispositionChange = clamped;
+        }
+      }
+    }
+  }
+
+  if (validated.newItems && Array.isArray(validated.newItems)) {
+    const sceneCount = currentState?.scenes?.length || 0;
+    const RARITY_GATES = { common: 0, uncommon: 0, rare: 16, exotic: 31 };
+    for (const item of validated.newItems) {
+      const rarity = (item.rarity || 'common').toLowerCase();
+      const minScene = RARITY_GATES[rarity];
+      if (minScene !== undefined && sceneCount < minScene) {
+        warnings.push(`Item "${item.name}" has rarity "${rarity}" but campaign is only at scene ${sceneCount} (available from scene ${minScene}+)`);
+      }
+    }
+  }
+
   if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
     const MAX_CODEX_PER_SCENE = 3;
     const MAX_FRAGMENT_LENGTH = 1000;

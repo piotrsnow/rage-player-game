@@ -11,6 +11,7 @@ import { generateStateChangeMessages } from '../services/stateChangeMessages';
 import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
+import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 
 export function useAI() {
   const { t } = useTranslation();
@@ -34,7 +35,7 @@ export function useAI() {
         if (enhancedContext && state.world?.knowledgeBase) {
           const lastScene = state.scenes?.[state.scenes.length - 1];
           const relevantMemories = contextManager.retrieveRelevantKnowledge(
-            state.world.knowledgeBase, lastScene?.narrative, playerAction
+            state.world.knowledgeBase, lastScene?.narrative, playerAction, state
           );
           if (relevantMemories) {
             enhancedContext = { ...enhancedContext, relevantMemories };
@@ -71,11 +72,16 @@ export function useAI() {
           const roll = result.diceRoll.roll;
           const bonus = result.diceRoll.creativityBonus || 0;
           const momentum = result.diceRoll.momentumBonus || 0;
-          const effectiveTarget = result.diceRoll.target;
+          const disposition = result.diceRoll.dispositionBonus || 0;
 
-          if (!result.diceRoll.baseTarget && (bonus > 0 || momentum !== 0)) {
-            result.diceRoll.baseTarget = effectiveTarget - bonus - momentum;
-          }
+          const baseTarget = result.diceRoll.baseTarget || (result.diceRoll.target - bonus - momentum - disposition);
+          result.diceRoll.baseTarget = baseTarget;
+
+          const MAX_COMBINED_BONUS = 30;
+          const totalBonus = bonus + momentum + disposition;
+          const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
+          const effectiveTarget = baseTarget + cappedBonus;
+          result.diceRoll.target = effectiveTarget;
 
           const isCriticalSuccess = roll >= 1 && roll <= 4;
           const isCriticalFailure = roll >= 96 && roll <= 100;
@@ -87,7 +93,8 @@ export function useAI() {
           result.diceRoll.sl = calculateSL(roll, effectiveTarget);
 
           const sl = result.diceRoll.sl;
-          dispatch({ type: 'SET_MOMENTUM', payload: sl * 5 });
+          const rawMomentum = sl * 5;
+          dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-40, Math.min(40, rawMomentum)) });
         }
 
         const repairedSegments = repairDialogueSegments(
@@ -187,10 +194,28 @@ export function useAI() {
           const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
           result.stateChanges = validated;
 
+          const previousFactions = { ...(state.world?.factions || {}) };
+
           dispatch({ type: 'PUSH_UNDO' });
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: validated });
 
-          for (const warn of [...warnings, ...corrections]) {
+          // Run world consistency checker after state changes
+          const postState = {
+            ...state,
+            world: { ...state.world, factions: { ...(state.world?.factions || {}), ...(validated.factionChanges || {}) } },
+          };
+          const consistency = checkWorldConsistency(postState, previousFactions);
+          const patches = applyConsistencyPatches(postState, consistency.statePatches);
+          if (patches) {
+            if (patches.npcs) {
+              dispatch({ type: 'UPDATE_WORLD', payload: { npcs: patches.npcs } });
+            }
+            if (patches.newWorldFacts?.length > 0) {
+              dispatch({ type: 'APPLY_STATE_CHANGES', payload: { worldFacts: patches.newWorldFacts } });
+            }
+          }
+
+          for (const warn of [...warnings, ...corrections, ...consistency.corrections]) {
             dispatch({
               type: 'ADD_CHAT_MESSAGE',
               payload: {
@@ -241,7 +266,11 @@ export function useAI() {
           contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
             if (gen !== compressionGenRef.current) return;
             if (compResult?.summary) {
-              dispatch({ type: 'UPDATE_WORLD', payload: { compressedHistory: compResult.summary } });
+              const worldUpdate = { compressedHistory: compResult.summary };
+              if (compResult.entitySnapshot) {
+                worldUpdate.compressedEntityState = compResult.entitySnapshot;
+              }
+              dispatch({ type: 'UPDATE_WORLD', payload: worldUpdate });
               setTimeout(() => autoSave(), 300);
             }
             if (compResult?.usage) {

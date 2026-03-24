@@ -638,6 +638,9 @@ function gameReducer(state, action) {
         const normalized = changes.newQuests.map((q) => ({
           ...q,
           objectives: (q.objectives || []).map((obj) => ({ ...obj, completed: obj.completed ?? false })),
+          questGiverId: q.questGiverId || null,
+          locationId: q.locationId || null,
+          prerequisiteQuestIds: q.prerequisiteQuestIds || [],
         }));
         next.quests = {
           ...next.quests,
@@ -692,6 +695,11 @@ function gameReducer(state, action) {
 
       if (changes.npcs?.length > 0) {
         const npcs = [...(next.world.npcs || [])];
+        const relationshipFields = (npc) => ({
+          ...(npc.factionId !== undefined && { factionId: npc.factionId }),
+          ...(npc.relatedQuestIds?.length > 0 && { relatedQuestIds: npc.relatedQuestIds }),
+          ...(npc.relationships?.length > 0 && { relationships: npc.relationships }),
+        });
         for (const npc of changes.npcs) {
           const idx = npcs.findIndex((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
           if (npc.action === 'introduce' && idx < 0) {
@@ -706,9 +714,11 @@ function gameReducer(state, action) {
               alive: true,
               notes: npc.notes || '',
               disposition: 0,
+              factionId: npc.factionId || null,
+              relatedQuestIds: npc.relatedQuestIds || [],
+              relationships: npc.relationships || [],
             });
           } else if (npc.action === 'introduce' && idx >= 0) {
-            // State consistency: "introduce" for existing NPC -> merge instead of duplicate
             npcs[idx] = {
               ...npcs[idx],
               ...(npc.gender && { gender: npc.gender }),
@@ -717,8 +727,17 @@ function gameReducer(state, action) {
               ...(npc.attitude && { attitude: npc.attitude }),
               ...(npc.location && { lastLocation: npc.location }),
               ...(npc.notes && { notes: npc.notes }),
+              ...relationshipFields(npc),
             };
           } else if (idx >= 0) {
+            const mergedRelQuestIds = npc.relatedQuestIds?.length > 0
+              ? [...new Set([...(npcs[idx].relatedQuestIds || []), ...npc.relatedQuestIds])]
+              : npcs[idx].relatedQuestIds;
+            const mergedRelationships = npc.relationships?.length > 0
+              ? [...(npcs[idx].relationships || []).filter(
+                  (r) => !npc.relationships.some((nr) => nr.npcName === r.npcName)
+                ), ...npc.relationships]
+              : npcs[idx].relationships;
             npcs[idx] = {
               ...npcs[idx],
               ...(npc.gender && { gender: npc.gender }),
@@ -728,8 +747,11 @@ function gameReducer(state, action) {
               ...(npc.location && { lastLocation: npc.location }),
               ...(npc.notes && { notes: npc.notes }),
               ...(npc.alive !== undefined && { alive: npc.alive }),
+              ...(npc.factionId !== undefined && { factionId: npc.factionId }),
+              ...(mergedRelQuestIds && { relatedQuestIds: mergedRelQuestIds }),
+              ...(mergedRelationships && { relationships: mergedRelationships }),
               ...(typeof npc.dispositionChange === 'number' && {
-                disposition: (npcs[idx].disposition || 0) + npc.dispositionChange,
+                disposition: Math.max(-50, Math.min(50, (npcs[idx].disposition || 0) + npc.dispositionChange)),
               }),
             };
           }
@@ -828,9 +850,23 @@ function gameReducer(state, action) {
           for (const pt of ku.plotThreads) {
             const idx = threads.findIndex((t) => t.id === pt.id);
             if (idx >= 0) {
-              threads[idx] = { ...threads[idx], ...pt };
+              const existing = threads[idx];
+              threads[idx] = {
+                ...existing,
+                ...pt,
+                relatedNpcIds: [...new Set([...(existing.relatedNpcIds || []), ...(pt.relatedNpcIds || [])])],
+                relatedQuestIds: [...new Set([...(existing.relatedQuestIds || []), ...(pt.relatedQuestIds || [])])],
+                relatedLocationIds: [...new Set([...(existing.relatedLocationIds || []), ...(pt.relatedLocationIds || [])])],
+                relatedScenes: [...new Set([...(existing.relatedScenes || []), next.scenes?.length || 0])],
+              };
             } else {
-              threads.push({ ...pt, relatedScenes: [next.scenes?.length || 0] });
+              threads.push({
+                ...pt,
+                relatedNpcIds: pt.relatedNpcIds || [],
+                relatedQuestIds: pt.relatedQuestIds || [],
+                relatedLocationIds: pt.relatedLocationIds || [],
+                relatedScenes: [next.scenes?.length || 0],
+              });
             }
           }
           kb.plotThreads = threads;
@@ -884,6 +920,61 @@ function gameReducer(state, action) {
           }
         }
         next.world = { ...next.world, codex };
+      }
+
+      // --- Auto-populate knowledgeBase.characters and .locations ---
+      {
+        const kb = { ...(next.world.knowledgeBase || { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] }) };
+        let kbChanged = false;
+        const sceneIdx = next.scenes?.length || 0;
+
+        if (changes.npcs?.length > 0) {
+          const kbChars = { ...(kb.characters || {}) };
+          for (const npc of (next.world.npcs || [])) {
+            const changedNpc = changes.npcs.find((n) => n.name?.toLowerCase() === npc.name?.toLowerCase());
+            if (!changedNpc) continue;
+            const key = npc.name.toLowerCase();
+            const existing = kbChars[key] || { interactionCount: 0, knownFacts: [] };
+            kbChars[key] = {
+              name: npc.name,
+              lastSeen: npc.lastLocation || existing.lastSeen || '',
+              lastSeenScene: sceneIdx,
+              disposition: npc.disposition ?? existing.disposition ?? 0,
+              factionId: npc.factionId || existing.factionId || null,
+              role: npc.role || existing.role || '',
+              alive: npc.alive ?? existing.alive ?? true,
+              interactionCount: existing.interactionCount + 1,
+              knownFacts: existing.knownFacts,
+              relationships: npc.relationships || existing.relationships || [],
+            };
+          }
+          kb.characters = kbChars;
+          kbChanged = true;
+        }
+
+        const currentLoc = changes.currentLocation || next.world.currentLocation;
+        if (currentLoc) {
+          const kbLocs = { ...(kb.locations || {}) };
+          const key = currentLoc.toLowerCase();
+          const existing = kbLocs[key] || { visitCount: 0, knownFacts: [], npcsEncountered: [] };
+          const npcsHere = (next.world.npcs || [])
+            .filter((n) => n.alive !== false && n.lastLocation?.toLowerCase() === currentLoc.toLowerCase())
+            .map((n) => n.name);
+          const mergedNpcs = [...new Set([...(existing.npcsEncountered || []), ...npcsHere])];
+          kbLocs[key] = {
+            name: currentLoc,
+            visitCount: existing.visitCount + (changes.currentLocation ? 1 : 0),
+            lastVisited: sceneIdx,
+            knownFacts: existing.knownFacts,
+            npcsEncountered: mergedNpcs,
+          };
+          kb.locations = kbLocs;
+          kbChanged = true;
+        }
+
+        if (kbChanged) {
+          next.world = { ...next.world, knowledgeBase: kb };
+        }
       }
 
       if (next.character?.needs) {
