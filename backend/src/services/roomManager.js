@@ -550,4 +550,4 @@ export function restorePendingActions(roomCode, actions) {
   }
 }
 
-export { sanitizeRoom, touchRoom, disconnectPlayer };
+export { sanitizeRoom, touchRoom };
