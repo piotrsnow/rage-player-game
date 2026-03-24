@@ -103,9 +103,13 @@ export default function GameplayPage() {
     ) {
       const currentIdx = displayedSceneIndexRef.current;
       if (currentIdx < scenes.length - 1) {
-        const nextIdx = currentIdx + 1;
-        setViewingSceneIndex(nextIdx);
-        handleSceneNavigation(nextIdx);
+        const timer = setTimeout(() => {
+          if (!autoPlayRef.current) return;
+          const nextIdx = currentIdx + 1;
+          setViewingSceneIndex(nextIdx);
+          handleSceneNavigation(nextIdx);
+        }, 1500);
+        return () => clearTimeout(timer);
       } else {
         setAutoPlayScenes(false);
       }
@@ -162,12 +166,15 @@ export default function GameplayPage() {
     if (!scene) return;
 
     const targetMsg = chatHistory.find((m) => m.sceneId === scene.id);
+    const fallbackMsg = !targetMsg
+      ? chatHistory.filter((m) => m.role === 'dm')[sceneIndex]
+      : null;
+    const narratorMsgId = targetMsg?.id || fallbackMsg?.id || `nav_${scene.id}`;
+
     if (targetMsg) {
       setScrollTargetMessageId(targetMsg.id);
-    } else {
-      const dmMessages = chatHistory.filter((m) => m.role === 'dm');
-      const fallback = dmMessages[sceneIndex];
-      if (fallback) setScrollTargetMessageId(fallback.id);
+    } else if (fallbackMsg) {
+      setScrollTargetMessageId(fallbackMsg.id);
     }
 
     if (settings.narratorEnabled && narrator.isNarratorReady) {
@@ -175,7 +182,7 @@ export default function GameplayPage() {
         content: scene.narrative,
         dialogueSegments: scene.dialogueSegments || [],
         soundEffect: scene.soundEffect || null,
-      }, `nav_${scene.id}`);
+      }, narratorMsgId);
     }
   };
 
@@ -274,11 +281,16 @@ export default function GameplayPage() {
                     onClick={() => {
                       const sceneToReplay = scenes[displayedSceneIndex];
                       if (sceneToReplay) {
+                        const replayTargetMsg = chatHistory.find((m) => m.sceneId === sceneToReplay.id);
+                        const replayFallbackMsg = !replayTargetMsg
+                          ? chatHistory.filter((m) => m.role === 'dm')[displayedSceneIndex]
+                          : null;
+                        const replayMsgId = replayTargetMsg?.id || replayFallbackMsg?.id || `replay_${sceneToReplay.id}`;
                         narrator.speakSingle({
                           content: sceneToReplay.narrative,
                           dialogueSegments: sceneToReplay.dialogueSegments || [],
                           soundEffect: sceneToReplay.soundEffect || null,
-                        }, `replay_${sceneToReplay.id}`);
+                        }, replayMsgId);
                       }
                     }}
                     title={t('gameplay.replayNarration', 'Replay narration')}

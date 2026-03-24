@@ -64,6 +64,7 @@ export function useNarrator() {
   const abortRef = useRef(false);
   const objectUrlsRef = useRef([]);
   const highlightRafRef = useRef(null);
+  const generationRef = useRef(0);
 
   const stopHighlightLoop = useCallback(() => {
     if (highlightRafRef.current) {
@@ -97,14 +98,18 @@ export function useNarrator() {
   const cleanup = useCallback(() => {
     stopHighlightLoop();
     if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.removeAttribute('src');
+      const a = audioRef.current;
       audioRef.current = null;
+      a.dispatchEvent(new Event('ended'));
+      a.pause();
+      a.removeAttribute('src');
     }
     if (sfxAudioRef.current) {
-      sfxAudioRef.current.pause();
-      sfxAudioRef.current.removeAttribute('src');
+      const s = sfxAudioRef.current;
       sfxAudioRef.current = null;
+      s.dispatchEvent(new Event('ended'));
+      s.pause();
+      s.removeAttribute('src');
     }
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current = [];
@@ -117,12 +122,12 @@ export function useNarrator() {
     };
   }, [cleanup]);
 
-  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation) => {
     let prefetchPromise = null;
     let wordOffset = 0;
 
     for (let s = 0; s < chunks.length; s++) {
-      if (abortRef.current) break;
+      if (abortRef.current || generationRef.current !== generation) break;
       const chunk = chunks[s].trim();
       if (!chunk) continue;
 
@@ -134,14 +139,16 @@ export function useNarrator() {
         setPlaybackState(STATES.LOADING);
         result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
       }
+      if (generationRef.current !== generation) break;
 
       if (!result) {
         result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
       }
+      if (generationRef.current !== generation) break;
 
       dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
       objectUrlsRef.current.push(result.audioUrl);
-      if (abortRef.current) break;
+      if (abortRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
         prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunks[s + 1].trim(), undefined, campaignId)
@@ -164,6 +171,7 @@ export function useNarrator() {
         audio.onerror = resolve;
         audio.play().catch(resolve);
       });
+      if (generationRef.current !== generation) break;
 
       wordOffset += result.words.length;
       stopHighlightLoop();
@@ -172,6 +180,8 @@ export function useNarrator() {
   }, [startHighlightLoop, stopHighlightLoop, dispatch]);
 
   const processQueue = useCallback(async () => {
+    const myGeneration = generationRef.current;
+
     if (queueRef.current.length === 0) {
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
@@ -202,10 +212,11 @@ export function useNarrator() {
       if (sfxEnabled && soundEffect) {
         try {
           const sfxUrl = await elevenlabsService.generateSoundEffect(elevenlabsApiKey, soundEffect, 4, campaignId);
+          if (generationRef.current !== myGeneration) return;
           dispatch({ type: 'ADD_AI_COST', payload: calculateCost('sfx', {}) });
           objectUrlsRef.current.push(sfxUrl);
 
-          if (!abortRef.current) {
+          if (!abortRef.current && generationRef.current === myGeneration) {
             const sfxAudio = new Audio(sfxUrl);
             sfxAudio.volume = Math.max(0, Math.min(1, (sfxVolume || 70) / 100));
             sfxAudioRef.current = sfxAudio;
@@ -220,6 +231,8 @@ export function useNarrator() {
           console.warn('SFX generation failed:', sfxErr.message);
         }
       }
+
+      if (generationRef.current !== myGeneration) return;
 
       if (abortRef.current) {
         cleanup();
@@ -267,7 +280,7 @@ export function useNarrator() {
       const localVoiceMap = new Map();
 
       for (let i = 0; i < segments.length; i++) {
-        if (abortRef.current) break;
+        if (abortRef.current || generationRef.current !== myGeneration) break;
 
         const seg = segments[i];
         const text = seg.text?.trim();
@@ -290,8 +303,11 @@ export function useNarrator() {
         }
 
         const chunks = elevenlabsService.splitIntoParagraphs(text);
-        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text, campaignId);
+        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text, campaignId, myGeneration);
+        if (generationRef.current !== myGeneration) return;
       }
+
+      if (generationRef.current !== myGeneration) return;
 
       cleanup();
       queueRef.current.shift();
@@ -299,6 +315,7 @@ export function useNarrator() {
       setCurrentCharacter(null);
       processQueue();
     } catch (err) {
+      if (generationRef.current !== myGeneration) return;
       if (err.name !== 'AbortError') {
         console.warn('Narrator TTS error:', err.message);
       }
@@ -339,6 +356,7 @@ export function useNarrator() {
   }, [playbackState]);
 
   const stop = useCallback(() => {
+    generationRef.current++;
     abortRef.current = true;
     queueRef.current = [];
     cleanup();
