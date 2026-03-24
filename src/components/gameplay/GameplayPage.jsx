@@ -53,6 +53,7 @@ export default function GameplayPage() {
   const prevScenesLenRef = useRef(0);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
+  const handleSceneNavRef = useRef(null);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -107,7 +108,7 @@ export default function GameplayPage() {
           if (!autoPlayRef.current) return;
           const nextIdx = currentIdx + 1;
           setViewingSceneIndex(nextIdx);
-          handleSceneNavigation(nextIdx);
+          handleSceneNavRef.current?.(nextIdx);
         }, 1500);
         return () => clearTimeout(timer);
       } else {
@@ -185,6 +186,7 @@ export default function GameplayPage() {
       }, narratorMsgId);
     }
   };
+  handleSceneNavRef.current = handleSceneNavigation;
 
   const handleAction = async (action, isCustomAction = false) => {
     try {

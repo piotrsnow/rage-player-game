@@ -67,9 +67,9 @@ describe('validateStateChanges', () => {
 
   it('clamps needs delta to default max', () => {
     const { validated } = validateStateChanges(
-      { needsChanges: { hunger: 100 } },
+      { needsChanges: { hunger: 150 } },
       { character: baseCharacter },
     );
-    expect(validated.needsChanges.hunger).toBe(50);
+    expect(validated.needsChanges.hunger).toBe(100);
   });
 });

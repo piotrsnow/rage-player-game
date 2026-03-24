@@ -102,7 +102,7 @@ export function useGameState() {
             skills: {},
             talents: [],
             inventory: [],
-            money: { gc: 0, ss: 0, cp: 0 },
+            money: { gold: 0, silver: 0, copper: 0 },
             movement: 4,
             fate: 2,
             fortune: 2,

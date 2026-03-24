@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -17,6 +17,7 @@ export function useAI() {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
+  const compressionGenRef = useRef(0);
   const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium' } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
@@ -177,7 +178,7 @@ export function useAI() {
           if (!result.stateChanges) result.stateChanges = {};
           if (!result.stateChanges.timeAdvance) {
             result.stateChanges.timeAdvance = { hoursElapsed: 0.5 };
-          } else if (!result.stateChanges.timeAdvance.hoursElapsed) {
+          } else if (result.stateChanges.timeAdvance.hoursElapsed == null) {
             result.stateChanges.timeAdvance.hoursElapsed = 0.5;
           }
         }
@@ -235,9 +236,10 @@ export function useAI() {
         // Auto-save after scene resolution (delay for state to settle)
         setTimeout(() => autoSave(), 300);
 
-        // Compress old scenes in the background when threshold exceeded
         if (contextManager.needsCompression(state)) {
+          const gen = ++compressionGenRef.current;
           contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
+            if (gen !== compressionGenRef.current) return;
             if (compResult?.summary) {
               dispatch({ type: 'UPDATE_WORLD', payload: { compressedHistory: compResult.summary } });
               setTimeout(() => autoSave(), 300);

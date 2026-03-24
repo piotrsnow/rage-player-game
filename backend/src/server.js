@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
+import helmet from '@fastify/helmet';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
@@ -22,6 +23,7 @@ const fastify = Fastify({
   bodyLimit: 50 * 1024 * 1024, // 50MB for media uploads
 });
 
+await fastify.register(helmet, { contentSecurityPolicy: false });
 await fastify.register(corsPlugin);
 await fastify.register(authPlugin);
 await fastify.register(websocket);
@@ -37,9 +39,14 @@ await fastify.register(async function authScope(app) {
   app.register(authRoutes);
 }, { prefix: '/auth' });
 
-await fastify.register(campaignRoutes, { prefix: '/campaigns' });
-await fastify.register(characterRoutes, { prefix: '/characters' });
-await fastify.register(mediaRoutes, { prefix: '/media' });
+await fastify.register(async function dataScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(campaignRoutes, { prefix: '/campaigns' });
+  app.register(characterRoutes, { prefix: '/characters' });
+  app.register(mediaRoutes, { prefix: '/media' });
+});
 
 await fastify.register(async function proxyScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -52,7 +59,13 @@ await fastify.register(async function proxyScope(app) {
   app.register(sunoProxyRoutes, { prefix: '/suno' });
 }, { prefix: '/proxy' });
 
-await fastify.register(musicRoutes, { prefix: '/music' });
+await fastify.register(async function musicScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(musicRoutes);
+}, { prefix: '/music' });
+
 await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
 
 startRoomCleanup();

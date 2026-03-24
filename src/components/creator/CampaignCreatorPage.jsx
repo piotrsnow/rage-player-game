@@ -226,8 +226,13 @@ export default function CampaignCreatorPage() {
     }
   };
 
+  useEffect(() => {
+    if (mp.state.phase === 'playing' && mp.state.gameState) {
+      navigate('/play');
+    }
+  }, [mp.state.phase, mp.state.gameState, navigate]);
+
   if (mp.state.phase === 'playing' && mp.state.gameState) {
-    navigate('/play');
     return null;
   }
 

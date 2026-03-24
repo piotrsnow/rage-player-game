@@ -1,5 +1,25 @@
 import { prisma } from '../lib/prisma.js';
 
+function safeJsonParse(raw, fallback = {}) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function deserializeCharacter(c) {
+  return {
+    ...c,
+    careerData: safeJsonParse(c.careerData, {}),
+    characteristics: safeJsonParse(c.characteristics, {}),
+    advances: safeJsonParse(c.advances, {}),
+    skills: safeJsonParse(c.skills, {}),
+    talents: safeJsonParse(c.talents, []),
+    inventory: safeJsonParse(c.inventory, []),
+  };
+}
+
 export async function characterRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -9,15 +29,7 @@ export async function characterRoutes(fastify) {
       orderBy: { updatedAt: 'desc' },
     });
 
-    return characters.map((c) => ({
-      ...c,
-      careerData: JSON.parse(c.careerData),
-      characteristics: JSON.parse(c.characteristics),
-      advances: JSON.parse(c.advances),
-      skills: JSON.parse(c.skills),
-      talents: JSON.parse(c.talents),
-      inventory: JSON.parse(c.inventory),
-    }));
+    return characters.map(deserializeCharacter);
   });
 
   fastify.get('/:id', async (request, reply) => {
@@ -26,15 +38,7 @@ export async function characterRoutes(fastify) {
     });
     if (!character) return reply.code(404).send({ error: 'Character not found' });
 
-    return {
-      ...character,
-      careerData: JSON.parse(character.careerData),
-      characteristics: JSON.parse(character.characteristics),
-      advances: JSON.parse(character.advances),
-      skills: JSON.parse(character.skills),
-      talents: JSON.parse(character.talents),
-      inventory: JSON.parse(character.inventory),
-    };
+    return deserializeCharacter(character);
   });
 
   fastify.post('/', async (request) => {
@@ -64,15 +68,7 @@ export async function characterRoutes(fastify) {
       },
     });
 
-    return {
-      ...character,
-      careerData: JSON.parse(character.careerData),
-      characteristics: JSON.parse(character.characteristics),
-      advances: JSON.parse(character.advances),
-      skills: JSON.parse(character.skills),
-      talents: JSON.parse(character.talents),
-      inventory: JSON.parse(character.inventory),
-    };
+    return deserializeCharacter(character);
   });
 
   fastify.put('/:id', async (request, reply) => {
@@ -108,15 +104,7 @@ export async function characterRoutes(fastify) {
       data: updateData,
     });
 
-    return {
-      ...character,
-      careerData: JSON.parse(character.careerData),
-      characteristics: JSON.parse(character.characteristics),
-      advances: JSON.parse(character.advances),
-      skills: JSON.parse(character.skills),
-      talents: JSON.parse(character.talents),
-      inventory: JSON.parse(character.inventory),
-    };
+    return deserializeCharacter(character);
   });
 
   fastify.delete('/:id', async (request, reply) => {

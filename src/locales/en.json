@@ -30,7 +30,16 @@
     "criticalFailure": "Critical Failure!",
     "check": "Check",
     "vs": "vs",
-    "dc": "DC"
+    "dc": "DC",
+    "somethingWentWrong": "Something Went Wrong",
+    "unexpectedError": "An unexpected error occurred.",
+    "returnToLobby": "Return to Lobby"
+  },
+  "combat": {
+    "dmgTo": "dmg to",
+    "critical": "CRITICAL",
+    "miss": "Miss!",
+    "fled": "Fled!"
   },
   "nav": {
     "lobby": "Lobby",
@@ -123,6 +132,7 @@
     }
   },
   "gameplay": {
+    "pettyMagic": "Petty Magic",
     "chooseAction": "Choose Your Action",
     "dmWeavesFate": "The DM weaves fate...",
     "goToSettings": "Go to Settings",
@@ -174,6 +184,7 @@
     "narratorPaused": "Paused"
   },
   "character": {
+    "bonus": "B",
     "noActiveCharacter": "No Active Character",
     "noActiveDescription": "Start or load a campaign to view your character sheet.",
     "goToLobby": "Go to Lobby",
@@ -293,6 +304,10 @@
     "felLong": "Fellowship"
   },
   "settings": {
+    "localLLM": "Local LLM",
+    "localLLMDesc": "Connect to a locally running LLM via Ollama or LM Studio for offline play.",
+    "localLLMEndpoint": "Endpoint URL",
+    "localLLMModel": "Model Name",
     "title": "Dungeon Master Settings",
     "subtitle": "Calibrate the arcane engine. Your choices here will reshape the narrative fabric of the realm.",
     "narrativeAnchors": "Narrative Anchors",

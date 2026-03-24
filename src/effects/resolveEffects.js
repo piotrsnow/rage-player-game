@@ -37,8 +37,6 @@ const GENRE_DEFAULTS = {
   Fantasy:   { weather: 'clear', particles: 'magic_dust', mood: 'mystical' },
   'Sci-Fi':  { weather: 'clear', particles: 'sparks',     mood: 'tense' },
   Horror:    { weather: 'fog',   particles: 'embers',     mood: 'dark' },
-  Steampunk: { weather: 'fog',   particles: 'sparks',     mood: 'tense' },
-  Western:   { weather: 'clear', particles: 'embers',     mood: 'tense' },
 };
 
 const TONE_OVERRIDES = {

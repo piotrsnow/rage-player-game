@@ -87,6 +87,20 @@ export async function sunoProxyRoutes(fastify) {
     const { audioUrl, genre, tone, mood, style, title, duration, imageUrl, campaignId } = request.body;
     if (!audioUrl) return reply.code(400).send({ error: 'audioUrl is required' });
 
+    const ALLOWED_AUDIO_HOSTS = ['cdn1.suno.ai', 'cdn2.suno.ai', 'audiopipe.suno.ai', 'cdn.sunoapi.org'];
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(audioUrl);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid audioUrl' });
+    }
+    if (!ALLOWED_AUDIO_HOSTS.some((h) => parsedUrl.hostname === h || parsedUrl.hostname.endsWith(`.${h}`))) {
+      return reply.code(400).send({ error: 'audioUrl domain not allowed' });
+    }
+    if (parsedUrl.protocol !== 'https:') {
+      return reply.code(400).send({ error: 'Only HTTPS audioUrl allowed' });
+    }
+
     const cacheParams = { genre, tone, mood, style };
     const cacheKey = generateKey('music', cacheParams, campaignId);
 

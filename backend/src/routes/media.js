@@ -28,11 +28,15 @@ export async function mediaRoutes(fastify) {
     const { key, type, contentType, metadata, data, campaignId } = request.body;
 
     const buffer = Buffer.from(data, 'base64');
-    const ext = contentType.split('/')[1] || 'bin';
-    const baseName = key.split('/').pop() || key;
-    const storagePath = campaignId
-      ? `campaigns/${campaignId}/${type}s/${baseName}.${ext}`
-      : `${type}s/${baseName}.${ext}`;
+    const rawExt = (contentType.split('/')[1] || 'bin').replace(/[^a-zA-Z0-9]/g, '');
+    const ext = rawExt.substring(0, 10);
+    const rawBaseName = (key.split('/').pop() || key).replace(/[^a-zA-Z0-9_\-]/g, '');
+    const baseName = rawBaseName.substring(0, 100) || 'file';
+    const safeCampaignId = campaignId ? campaignId.replace(/[^a-zA-Z0-9_\-]/g, '') : null;
+    const safeType = (type || 'file').replace(/[^a-zA-Z0-9_\-]/g, '');
+    const storagePath = safeCampaignId
+      ? `campaigns/${safeCampaignId}/${safeType}s/${baseName}.${ext}`
+      : `${safeType}s/${baseName}.${ext}`;
 
     const result = await store.put(storagePath, buffer, contentType);
 

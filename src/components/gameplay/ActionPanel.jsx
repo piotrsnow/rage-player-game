@@ -104,7 +104,7 @@ export default function ActionPanel({ actions = [], onAction, disabled }) {
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {actions.map((action, i) => (
-              <div key={i} className="flex gap-1.5">
+              <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1.5">
                 <button
                   onClick={() => handleSuggestedAction(action)}
                   disabled={disabled || hasPendingAction}

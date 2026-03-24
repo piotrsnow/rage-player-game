@@ -21,7 +21,10 @@ export function calculateCost(type, metadata = {}) {
     case 'ai': {
       const { model, prompt_tokens = 0, completion_tokens = 0 } = metadata;
       const pricing = PRICING.ai[model];
-      if (!pricing) return { type, model, cost: 0, tokens: { prompt_tokens, completion_tokens }, timestamp };
+      if (!pricing) {
+        if (model) console.warn(`[CostTracker] Unknown AI model "${model}" — cost recorded as 0`);
+        return { type, model, cost: 0, tokens: { prompt_tokens, completion_tokens }, timestamp };
+      }
       const cost = prompt_tokens * pricing.input + completion_tokens * pricing.output;
       return { type, model, cost, tokens: { prompt_tokens, completion_tokens }, timestamp };
     }

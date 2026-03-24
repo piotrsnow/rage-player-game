@@ -136,8 +136,8 @@ function mpReducer(state, action) {
             if (delta.mana != null && u.mana != null) u.mana = Math.max(0, Math.min(u.maxMana || 50, u.mana + delta.mana));
             if (Array.isArray(delta.newItems)) u.inventory = [...(u.inventory || []), ...delta.newItems];
             if (Array.isArray(delta.removeItems)) {
-              const rm = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
-              u.inventory = (u.inventory || []).filter((i) => !rm.has(typeof i === 'string' ? i : i.name));
+              const rmById = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.id || i.name)));
+              u.inventory = (u.inventory || []).filter((i) => !rmById.has(typeof i === 'string' ? i : i.id || i.name));
             }
             if (delta.needsChanges && u.needs) {
               const needs = { ...u.needs };

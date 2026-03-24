@@ -12,13 +12,6 @@ export const authPlugin = fp(async function (fastify) {
     try {
       await request.jwtVerify();
     } catch (err) {
-      const queryToken = request.query?.token;
-      if (queryToken) {
-        try {
-          request.user = fastify.jwt.verify(queryToken);
-          return;
-        } catch {}
-      }
       reply.code(401).send({ error: 'Unauthorized', message: err.message });
     }
   });

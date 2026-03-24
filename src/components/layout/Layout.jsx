@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
+import ErrorBoundary from '../ui/ErrorBoundary';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 
@@ -25,7 +26,9 @@ export default function Layout() {
           <Header />
           <Sidebar />
           <main className="lg:pl-64 pt-16 pb-24 lg:pb-0 min-h-screen">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
           <MobileNav />
           <ModalLayer />

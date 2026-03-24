@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import i18next from 'i18next';
 import Button from './Button';
 
 export default class ErrorBoundary extends Component {
@@ -11,17 +12,22 @@ export default class ErrorBoundary extends Component {
     return { hasError: true, error };
   }
 
+  componentDidCatch(error, errorInfo) {
+    console.error('[ErrorBoundary]', error, errorInfo);
+  }
+
   render() {
     if (this.state.hasError) {
+      const t = i18next.t.bind(i18next);
       return (
         <div className="min-h-screen bg-surface-dim flex items-center justify-center p-8">
           <div className="max-w-md text-center">
             <span className="material-symbols-outlined text-6xl text-error/40 mb-4 block">
               error
             </span>
-            <h2 className="font-headline text-2xl text-tertiary mb-2">Something Went Wrong</h2>
+            <h2 className="font-headline text-2xl text-tertiary mb-2">{t('common.somethingWentWrong')}</h2>
             <p className="text-on-surface-variant text-sm mb-6">
-              {this.state.error?.message || 'An unexpected error occurred.'}
+              {this.state.error?.message || t('common.unexpectedError')}
             </p>
             <Button
               onClick={() => {
@@ -29,7 +35,7 @@ export default class ErrorBoundary extends Component {
                 window.location.href = '/';
               }}
             >
-              Return to Lobby
+              {t('common.returnToLobby')}
             </Button>
           </div>
         </div>

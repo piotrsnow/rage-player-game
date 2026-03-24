@@ -40,7 +40,7 @@ export default function StatsGrid({ characteristics, advances }) {
             <span className="text-tertiary font-headline text-3xl">{value}</span>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-primary-dim text-[10px] font-bold">
-                B: {bonus}
+                {t('character.bonus')}: {bonus}
               </span>
               {adv > 0 && (
                 <span className="text-green-400 text-[10px] font-bold">

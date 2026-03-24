@@ -70,10 +70,16 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     if (gain > limits.maxMoneyGainCopper) {
       warnings.push(`Large money gain: ${gain} CP (limit: ${limits.maxMoneyGainCopper})`);
     }
-    if (character?.money) {
+    if (character?.money && gain < 0) {
       const currentCopper = moneyToCopper(character.money);
-      if (gain < 0 && currentCopper + gain < 0) {
-        warnings.push(`Money would go negative — spending more than character has`);
+      if (currentCopper + gain < 0) {
+        const maxSpend = -currentCopper;
+        corrections.push(`Money spending clamped: tried ${gain} CP but only have ${currentCopper} CP`);
+        validated.moneyChange = {
+          gold: -Math.floor(currentCopper / 100),
+          silver: -Math.floor((currentCopper % 100) / 10),
+          copper: -(currentCopper % 10),
+        };
       }
     }
   }

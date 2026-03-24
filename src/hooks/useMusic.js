@@ -12,7 +12,7 @@ const log = (...args) => console.log('%c[Music]', 'color:#34d399;font-weight:bol
 
 export function useMusic(narratorPlaybackState) {
   const { settings } = useSettings();
-  const { dispatch } = useGame();
+  const { state, dispatch } = useGame();
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);

@@ -14,6 +14,8 @@ export default function MapCanvas({ mapState, currentLocation, connections, expl
   const dragging = useRef(false);
   const lastPointer = useRef({ x: 0, y: 0 });
   const animFrame = useRef(0);
+  const parchmentCacheRef = useRef(null);
+  const parchmentSizeRef = useRef({ w: 0, h: 0 });
 
   const locs = useMemo(() => mapState || [], [mapState]);
   const conns = useMemo(() => connections || [], [connections]);
@@ -85,7 +87,15 @@ export default function MapCanvas({ mapState, currentLocation, connections, expl
     ctx.fillStyle = '#1a1612';
     ctx.fillRect(0, 0, size.w, size.h);
 
-    drawParchmentTexture(ctx, size.w, size.h);
+    if (!parchmentCacheRef.current || parchmentSizeRef.current.w !== size.w || parchmentSizeRef.current.h !== size.h) {
+      const offscreen = document.createElement('canvas');
+      offscreen.width = size.w;
+      offscreen.height = size.h;
+      drawParchmentTexture(offscreen.getContext('2d'), size.w, size.h);
+      parchmentCacheRef.current = offscreen;
+      parchmentSizeRef.current = { w: size.w, h: size.h };
+    }
+    ctx.drawImage(parchmentCacheRef.current, 0, 0);
 
     ctx.save();
     ctx.translate(size.w / 2, size.h / 2);
@@ -122,15 +132,17 @@ export default function MapCanvas({ mapState, currentLocation, connections, expl
   }, [size, camera, positions, normEdges, nodeNames, currentLocation, hovered, mousePos, locMap, decorations, exploredLocations]);
 
   useEffect(() => {
-    let running = true;
-    const loop = () => {
-      if (!running) return;
-      draw();
-      animFrame.current = requestAnimationFrame(loop);
-    };
-    loop();
-    return () => { running = false; cancelAnimationFrame(animFrame.current); };
+    animFrame.current = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animFrame.current);
   }, [draw]);
+
+  useEffect(() => {
+    if (!currentLocation) return;
+    const interval = setInterval(() => {
+      animFrame.current = requestAnimationFrame(draw);
+    }, 50);
+    return () => clearInterval(interval);
+  }, [currentLocation, draw]);
 
   const handlePointerDown = useCallback((e) => {
     dragging.current = true;

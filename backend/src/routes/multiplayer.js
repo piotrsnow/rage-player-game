@@ -281,29 +281,33 @@ export async function multiplayerRoutes(fastify) {
 
       const userId = user.id;
 
-      socket.on('message', async (raw) => {
-        let msg;
-        try {
-          msg = JSON.parse(raw.toString());
-        } catch {
-          socket.send(JSON.stringify({ type: 'ERROR', message: 'Invalid JSON' }));
-          return;
-        }
+      let messageQueueTail = Promise.resolve();
 
-        try {
-          await handleMessage(fastify, socket, userId, msg);
-        } catch (err) {
-          fastify.log.error(err, 'WebSocket message handler error');
-          const safeMessages = ['Room not found', 'Cannot join this room', 'Room is full',
-            'Not in a room', 'Only the host can start the game', 'No actions to approve',
-            'Only the host can kick players', 'Only the host can update settings',
-            'Invalid kick target', 'Player not found', 'Game not in progress',
-            'Game state is required', 'Room no longer exists',
-            'Cannot rejoin: player not found or unauthorized',
-            'Solo action on cooldown'];
-          const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
-          socket.send(JSON.stringify({ type: 'ERROR', message }));
-        }
+      socket.on('message', (raw) => {
+        messageQueueTail = messageQueueTail.then(async () => {
+          let msg;
+          try {
+            msg = JSON.parse(raw.toString());
+          } catch {
+            socket.send(JSON.stringify({ type: 'ERROR', message: 'Invalid JSON' }));
+            return;
+          }
+
+          try {
+            await handleMessage(fastify, socket, userId, msg);
+          } catch (err) {
+            fastify.log.error(err, 'WebSocket message handler error');
+            const safeMessages = ['Room not found', 'Cannot join this room', 'Room is full',
+              'Not in a room', 'Only the host can start the game', 'No actions to approve',
+              'Only the host can kick players', 'Only the host can update settings',
+              'Invalid kick target', 'Player not found', 'Game not in progress',
+              'Game state is required', 'Room no longer exists',
+              'Cannot rejoin: player not found or unauthorized',
+              'Solo action on cooldown'];
+            const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
+            socket.send(JSON.stringify({ type: 'ERROR', message }));
+          }
+        }).catch(() => {});
       });
 
       socket.on('close', () => {

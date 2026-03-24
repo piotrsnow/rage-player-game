@@ -30,7 +30,16 @@
     "criticalFailure": "Krytyczna porażka!",
     "check": "Test",
     "vs": "vs",
-    "dc": "ST"
+    "dc": "ST",
+    "somethingWentWrong": "Coś poszło nie tak",
+    "unexpectedError": "Wystąpił nieoczekiwany błąd.",
+    "returnToLobby": "Wróć do Lobby"
+  },
+  "combat": {
+    "dmgTo": "obrażeń w",
+    "critical": "KRYTYCZNY",
+    "miss": "Pudło!",
+    "fled": "Ucieczka!"
   },
   "nav": {
     "lobby": "Lobby",
@@ -123,6 +132,7 @@
     }
   },
   "gameplay": {
+    "pettyMagic": "Drobna magia",
     "chooseAction": "Wybierz Akcję",
     "dmWeavesFate": "MG splata przeznaczenie...",
     "goToSettings": "Idź do Ustawień",
@@ -174,6 +184,7 @@
     "narratorPaused": "Wstrzymano"
   },
   "character": {
+    "bonus": "B",
     "noActiveCharacter": "Brak Aktywnej Postaci",
     "noActiveDescription": "Rozpocznij lub wczytaj kampanię, aby zobaczyć kartę postaci.",
     "goToLobby": "Idź do Lobby",
@@ -293,6 +304,10 @@
     "felLong": "Ogłada"
   },
   "settings": {
+    "localLLM": "Lokalny LLM",
+    "localLLMDesc": "Połącz się z lokalnie uruchomionym LLM przez Ollama lub LM Studio, aby grać offline.",
+    "localLLMEndpoint": "Adres URL endpointu",
+    "localLLMModel": "Nazwa modelu",
     "title": "Ustawienia Mistrza Gry",
     "subtitle": "Skalibruj arkaniczną maszynę. Twoje wybory przeformują tkankę narracji krainy.",
     "narrativeAnchors": "Kotwice Narracji",

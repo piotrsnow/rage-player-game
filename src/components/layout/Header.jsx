@@ -129,19 +129,24 @@ export default function Header() {
           {hasActiveGame && (
             <Link
               to="/play"
+              aria-label={t('nav.play')}
               className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
             >
               auto_awesome
             </Link>
           )}
           <button
+            type="button"
             onClick={openSettings}
+            aria-label={t('nav.settings')}
             className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
           >
             settings
           </button>
           <button
+            type="button"
             onClick={openCharacterSheet}
+            aria-label={t('nav.character')}
             className="w-9 h-9 rounded-full border border-primary/20 overflow-hidden bg-surface-container-high flex items-center justify-center hover:border-primary/40 hover:shadow-[0_0_12px_rgba(197,154,255,0.2)] transition-all duration-300"
           >
             <span className="material-symbols-outlined text-primary text-sm">person</span>

@@ -10,7 +10,7 @@ const MAX_COMPRESSED_HISTORY_LENGTH = 5000;
 function extractKeywords(text) {
   if (!text) return [];
   return text.toLowerCase()
-    .replace(/[^a-z\u00C0-\u024F\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 3);
 }

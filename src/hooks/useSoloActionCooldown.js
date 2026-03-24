@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 
+// Must match backend SOLO_ACTION_COOLDOWN_MS in backend/src/services/roomManager.js
 const SOLO_COOLDOWN_MS = 3 * 60 * 1000;
 
 export function useSoloActionCooldown(lastSoloActionAt) {

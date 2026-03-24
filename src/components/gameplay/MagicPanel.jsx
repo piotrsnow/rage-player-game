@@ -10,8 +10,8 @@ import {
 import { WINDS_OF_MAGIC, SPELLS, PETTY_SPELLS } from '../../data/wfrpMagic';
 import { getBonus } from '../../services/gameState';
 
-function loreLabel(loreKey) {
-  if (loreKey === 'petty') return 'Petty Magic';
+function loreLabel(loreKey, t) {
+  if (loreKey === 'petty') return t('gameplay.pettyMagic');
   const w = WINDS_OF_MAGIC[loreKey];
   return w?.title || loreKey;
 }
@@ -86,7 +86,7 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
     const keys = [...map.keys()].sort(
       (a, b) => loreSortOrder.indexOf(a) - loreSortOrder.indexOf(b)
     );
-    return keys.map((k) => ({ loreKey: k, label: loreLabel(k), spells: map.get(k) }));
+    return keys.map((k) => ({ loreKey: k, label: loreLabel(k, t), spells: map.get(k) }));
   }, [availableSpells, loreSortOrder]);
 
   const channelLoreOptions = useMemo(() => {
@@ -241,7 +241,7 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
                   : 'bg-surface-dim/40 text-on-surface-variant border-outline-variant/10 hover:border-primary/20'
               }`}
             >
-              {loreLabel(lk)}
+              {loreLabel(lk, t)}
             </button>
           ))}
         </div>

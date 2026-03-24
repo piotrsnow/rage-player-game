@@ -14,7 +14,7 @@ export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   host: process.env.HOST || '0.0.0.0',
 
-  databaseUrl: process.env.DATABASE_URL || 'file:./dev.db',
+  databaseUrl: process.env.DATABASE_URL || 'mongodb://localhost:27017/rpgon',
 
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: '7d',

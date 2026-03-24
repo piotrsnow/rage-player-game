@@ -263,14 +263,14 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, character }
         <div className="text-[10px] text-on-surface-variant bg-surface-container/40 p-2 rounded-sm border border-outline-variant/10">
           <span className="font-bold">{lastResult.actor}</span>: {lastResult.manoeuvre}
           {lastResult.outcome === 'hit' && (
-            <span className="text-error"> — {lastResult.damage} dmg to {lastResult.hitLocation}
+            <span className="text-error"> — {lastResult.damage} {t('combat.dmgTo')} {lastResult.hitLocation}
               {lastResult.criticalWound && (
-                <span className="text-tertiary font-bold"> CRITICAL: {lastResult.criticalWound.name} — {lastResult.criticalWound.effect}</span>
+                <span className="text-tertiary font-bold"> {t('combat.critical')}: {lastResult.criticalWound.name} — {lastResult.criticalWound.effect}</span>
               )}
             </span>
           )}
-          {lastResult.outcome === 'miss' && <span className="text-outline"> — Miss!</span>}
-          {lastResult.outcome === 'fled' && <span className="text-primary"> — Fled!</span>}
+          {lastResult.outcome === 'miss' && <span className="text-outline"> — {t('combat.miss')}</span>}
+          {lastResult.outcome === 'fled' && <span className="text-primary"> — {t('combat.fled')}</span>}
         </div>
       )}
 
@@ -278,7 +278,7 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, character }
       <div className="max-h-24 overflow-y-auto custom-scrollbar">
         <div className="space-y-0.5">
           {combat.log.slice(-5).map((entry, i) => (
-            <div key={i} className="text-[9px] text-outline leading-tight">{entry}</div>
+            <div key={`log_${combat.log.length - 5 + i}`} className="text-[9px] text-outline leading-tight">{entry}</div>
           ))}
         </div>
       </div>
