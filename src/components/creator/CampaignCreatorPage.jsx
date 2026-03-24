@@ -157,6 +157,18 @@ export default function CampaignCreatorPage() {
     [broadcastSettings],
   );
 
+  // Sync selected/created character to multiplayer room
+  useEffect(() => {
+    if (!inMpRoom) return;
+    const char = charMode === 'new' ? createdCharacter : selectedCharacter;
+    if (!char) return;
+    mp.updateMyCharacter({
+      name: char.name,
+      gender: char.gender,
+      characterData: char,
+    });
+  }, [inMpRoom, charMode, createdCharacter, selectedCharacter]);
+
   const handleRandomize = async () => {
     if (!hasApiKey || isRandomizing) return;
     setIsRandomizing(true);
@@ -343,38 +355,36 @@ export default function CampaignCreatorPage() {
               {t('characterPicker.title')}
             </label>
 
-            {!isMultiplayer && (
-              <div className="flex gap-3 mb-6">
-                <button
-                  onClick={() => { setCharMode('new'); setSelectedCharacter(null); }}
-                  className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
-                    charMode === 'new'
-                      ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-                      : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-lg">person_add</span>
-                    <span className="font-bold text-sm">{t('characterPicker.createNew')}</span>
-                  </div>
-                  <p className="text-[10px] opacity-70">{t('characterPicker.createNewDesc')}</p>
-                </button>
-                <button
-                  onClick={() => setCharMode('existing')}
-                  className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
-                    charMode === 'existing'
-                      ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-                      : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="material-symbols-outlined text-lg">group</span>
-                    <span className="font-bold text-sm">{t('characterPicker.useExisting')}</span>
-                  </div>
-                  <p className="text-[10px] opacity-70">{t('characterPicker.useExistingDesc')}</p>
-                </button>
-              </div>
-            )}
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => { setCharMode('new'); setSelectedCharacter(null); }}
+                className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
+                  charMode === 'new'
+                    ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
+                    : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="material-symbols-outlined text-lg">person_add</span>
+                  <span className="font-bold text-sm">{t('characterPicker.createNew')}</span>
+                </div>
+                <p className="text-[10px] opacity-70">{t('characterPicker.createNewDesc')}</p>
+              </button>
+              <button
+                onClick={() => setCharMode('existing')}
+                className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
+                  charMode === 'existing'
+                    ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
+                    : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high hover:text-tertiary hover:border-primary/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="material-symbols-outlined text-lg">group</span>
+                  <span className="font-bold text-sm">{t('characterPicker.useExisting')}</span>
+                </div>
+                <p className="text-[10px] opacity-70">{t('characterPicker.useExistingDesc')}</p>
+              </button>
+            </div>
 
             {/* New character: modal trigger + summary */}
             {charMode === 'new' && (
@@ -432,7 +442,7 @@ export default function CampaignCreatorPage() {
             )}
 
             {/* Existing character picker */}
-            {!isMultiplayer && charMode === 'existing' && (
+            {charMode === 'existing' && (
               <div className="animate-fade-in">
                 {savedCharacters.length === 0 ? (
                   <p className="text-on-surface-variant text-sm text-center py-6 border border-outline-variant/10 rounded-sm bg-surface-container-high/20">
@@ -582,7 +592,7 @@ export default function CampaignCreatorPage() {
           {isMultiplayer && (
             <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
               {inMpRoom ? (
-                <PlayerLobby genre={form.genre} />
+                <PlayerLobby />
               ) : (
                 <div className="text-center space-y-4">
                   <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
@@ -616,7 +626,7 @@ export default function CampaignCreatorPage() {
             {isMultiplayer && inMpRoom && mp.state.isHost ? (
               <Button
                 onClick={handleStartMultiplayerGame}
-                disabled={!form.storyPrompt.trim() || mp.state.players.length < 1}
+                disabled={!form.storyPrompt.trim() || mp.state.players.length < 1 || !hasCharacter}
                 size="lg"
               >
                 <span className="material-symbols-outlined text-sm">swords</span>
@@ -648,7 +658,7 @@ export default function CampaignCreatorPage() {
               {t('creator.noApiKeyHint')}
             </p>
           )}
-          {!hasCharacter && !isMultiplayer && hasApiKey && (
+          {!hasCharacter && hasApiKey && (
             <p className="text-tertiary-dim text-xs flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">info</span>
               {t('creator.noCharacterHint')}

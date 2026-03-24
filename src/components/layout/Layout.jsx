@@ -5,6 +5,7 @@ import MobileNav from './MobileNav';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
+import VersionBadge from '../ui/VersionBadge';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 
@@ -32,6 +33,7 @@ export default function Layout() {
           </main>
           <MobileNav />
           <ModalLayer />
+          <VersionBadge />
           <div className="fixed inset-0 pointer-events-none z-[100] opacity-[0.03] mix-blend-overlay">
             <div className="absolute inset-0 noise-overlay" />
           </div>
