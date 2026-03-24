@@ -488,4 +488,4 @@ export function restoreRoom(roomCode, roomData) {
   return roomData;
 }
 
-export { sanitizeRoom, touchRoom, listJoinableRooms };
+export { sanitizeRoom, touchRoom };
