@@ -488,6 +488,9 @@ Include a "musicPrompt" field with a short English description of the ideal inst
 
 ${(() => {
   const hasCombat = !!gameState?.combat;
+  const recentJournal = (world?.eventHistory || []).slice(-1)[0] || '';
+  const combatJustEnded = /^Combat:\s*(Victory|Defeat)\b/.test(recentJournal);
+  if (combatJustEnded) return 'BESTIARY: Combat just ended — do not start another fight immediately. Bestiary available on demand for future encounters.\n';
   const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
   const combatLikely = hasCombat || /\b(attack|fight|combat|ambush|hostile|enemy|enemies|bandits?|creatures?|wolves|monsters?)\b/.test(recentNarrative);
   if (!combatLikely) return 'BESTIARY: Available on demand — when combat starts, creature stats will be referenced automatically.\n';
@@ -659,22 +662,34 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
+  const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
+
   const actionPart = extractActionParts(playerAction);
   const dialoguePart = extractDialogueParts(playerAction);
   const playerHasDialogue = hasDialogue(playerAction);
 
-  const actionBlock = playerHasDialogue
-    ? `The player's ACTION: ${actionPart}
+  const actionBlock = isPostCombat
+    ? `COMBAT JUST ENDED — ${playerAction}
+
+POST-COMBAT RULES (MANDATORY):
+- Do NOT include "combatUpdate" in this scene's stateChanges — combat has JUST ended, do not start another fight.
+- Narrate the aftermath: describe the battlefield, fallen enemies, the character's condition and wounds, loot found, NPC reactions if any witnesses are present.
+- The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
+- Set diceRoll to null — no skill test is needed for this post-combat transition scene.
+- Suggest post-combat actions: searching bodies for loot, tending wounds, resting, continuing the journey, investigating why the enemies attacked, etc.
+- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).`
+    : playerHasDialogue
+      ? `The player's ACTION: ${actionPart}
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
-    : `The player's action: ${playerAction}`;
+      : `The player's action: ${playerAction}`;
 
   return `${needsReminder}${actionBlock}
-
+${isPostCombat ? '' : `
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
 RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
 RULE 2 — SPEECH PARTS (MANDATORY): The DIALOGUE line (if present) contains the character's exact in-character speech. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
 If there is no DIALOGUE line, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's action text verbatim).
-
+`}
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
 
 FEASIBILITY CHECK: Before rolling dice, verify the action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (diceRoll=null). Trivial/certain actions auto-succeed (diceRoll=null). Only roll for uncertain outcomes.

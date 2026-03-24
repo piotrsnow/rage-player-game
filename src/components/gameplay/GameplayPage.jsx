@@ -202,13 +202,19 @@ export default function GameplayPage() {
 
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
-    const stateChanges = {};
+
+    const combatJournal = summary.playerSurvived
+      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}`
+      : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
+
+    const stateChanges = {
+      journalEntries: [combatJournal],
+    };
     if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
     if (summary.xp) stateChanges.xp = summary.xp;
     if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
-    if (Object.keys(stateChanges).length > 0) {
-      dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
-    }
+    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+
     dispatch({
       type: 'ADD_CHAT_MESSAGE',
       payload: {
@@ -219,6 +225,12 @@ export default function GameplayPage() {
         timestamp: Date.now(),
       },
     });
+
+    const combatActionText = summary.playerSurvived
+      ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
+      : `[Combat resolved: defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+
+    generateScene(combatActionText, false, false).catch(() => {});
   };
 
   const dismissError = () => {
