@@ -520,11 +520,11 @@ export function MultiplayerProvider({ children }) {
   }, []);
 
   const acceptMpQuestOffer = useCallback((sceneId, questOffer) => {
-    wsService.send({ type: 'ACCEPT_QUEST_OFFER', sceneId, questOffer });
+    wsService.send('ACCEPT_QUEST_OFFER', { sceneId, questOffer });
   }, []);
 
   const declineMpQuestOffer = useCallback((sceneId, offerId) => {
-    wsService.send({ type: 'DECLINE_QUEST_OFFER', sceneId, offerId });
+    wsService.send('DECLINE_QUEST_OFFER', { sceneId, offerId });
   }, []);
 
   const syncCharacter = useCallback((character) => {
