@@ -30,13 +30,17 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           <div className="relative group">
             <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
             <div className="relative bg-surface-container-high border border-outline-variant/15 p-1 rounded-sm overflow-hidden">
-              <div className="w-full aspect-[3/4] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
-                <span className="material-symbols-outlined text-8xl text-outline/20">person</span>
-              </div>
+              {character.portraitUrl ? (
+                <img src={character.portraitUrl} alt={character.name} className="w-full aspect-[3/4] object-cover" />
+              ) : (
+                <div className="w-full aspect-[3/4] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
+                  <span className="material-symbols-outlined text-8xl text-outline/20">person</span>
+                </div>
+              )}
               <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-tertiary font-headline text-lg">{t('character.inspiration')}</p>
+                    <p className="text-tertiary font-headline text-lg">{character.portraitUrl ? character.name : t('character.inspiration')}</p>
                     <div className="flex gap-1 mt-1">
                       <span className="w-4 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
                       <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />

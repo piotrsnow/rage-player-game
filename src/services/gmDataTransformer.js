@@ -43,7 +43,7 @@ export function buildGraphData(gameState) {
     const compId = `comp_${comp.name?.toLowerCase().replace(/\s+/g, '_')}`;
     addNode(compId, comp.name, 'npc', { ...comp, isCompanion: true });
     if (character) {
-      addEdge('pc', compId, 'companion', 'relationship');
+      addEdge('pc', compId, 'edgeLabels.companion', 'relationship');
     }
   });
 
@@ -101,13 +101,13 @@ export function buildGraphData(gameState) {
     if (npc.lastLocation) {
       const locNode = findLocationNode(nodes, npc.lastLocation);
       if (locNode) {
-        addEdge(npcId, locNode.id, 'located at', 'located_at');
+        addEdge(npcId, locNode.id, 'edgeLabels.locatedAt', 'located_at');
       }
     }
 
     // NPC-to-Faction
     if (npc.factionId && nodeIds.has(`fac_${npc.factionId}`)) {
-      addEdge(npcId, `fac_${npc.factionId}`, 'member', 'faction_member');
+      addEdge(npcId, `fac_${npc.factionId}`, 'edgeLabels.member', 'faction_member');
     }
   });
 
@@ -116,7 +116,7 @@ export function buildGraphData(gameState) {
     const fromNode = findLocationNode(nodes, from);
     const toNode = findLocationNode(nodes, to);
     if (fromNode && toNode) {
-      addEdge(fromNode.id, toNode.id, 'path', 'map_connection');
+      addEdge(fromNode.id, toNode.id, 'edgeLabels.path', 'map_connection');
     }
   });
 
@@ -124,7 +124,7 @@ export function buildGraphData(gameState) {
   if (character && currentLocation) {
     const locNode = findLocationNode(nodes, currentLocation);
     if (locNode) {
-      addEdge('pc', locNode.id, 'current location', 'located_at');
+      addEdge('pc', locNode.id, 'edgeLabels.currentLocation', 'located_at');
     }
   }
 
@@ -138,14 +138,14 @@ export function buildGraphData(gameState) {
       );
       if (giverNpc) {
         const giverId = giverNpc.id || `npc_${giverNpc.name?.toLowerCase().replace(/\s+/g, '_')}`;
-        addEdge(giverId, qId, 'quest giver', 'quest_giver');
+        addEdge(giverId, qId, 'edgeLabels.questGiver', 'quest_giver');
       }
     }
 
     if (quest.locationId) {
       const locNode = findLocationNode(nodes, quest.locationId);
       if (locNode) {
-        addEdge(qId, locNode.id, 'quest location', 'quest_location');
+        addEdge(qId, locNode.id, 'edgeLabels.questLocation', 'quest_location');
       }
     }
   });

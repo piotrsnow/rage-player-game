@@ -71,7 +71,7 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
                     <span className="text-[11px] text-on-surface truncate flex-1">
                       {conn.otherNode.name}
                     </span>
-                    <span className="text-[9px] text-outline shrink-0">{conn.label}</span>
+                    <span className="text-[9px] text-outline shrink-0">{conn.label?.startsWith('edgeLabels.') ? t(`gmModal.${conn.label}`) : conn.label}</span>
                   </button>
                 );
               })}
@@ -100,7 +100,7 @@ function NpcDetail({ data, isPC, t }) {
             data.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
             data.attitude === 'hostile' ? 'bg-error/15 text-error' :
             'bg-outline/10 text-outline'
-          }`}>{data.attitude}</span>
+          }`}>{t(`gmModal.attitudes.${data.attitude}`, data.attitude)}</span>
         </div>
       )}
       {data.disposition != null && data.disposition !== 0 && (
@@ -111,7 +111,7 @@ function NpcDetail({ data, isPC, t }) {
           </span>
         </div>
       )}
-      {data.gender && <Field label={t('gmModal.detail.gender')} value={data.gender} />}
+      {data.gender && <Field label={t('gmModal.detail.gender')} value={t(`gmModal.genders.${data.gender}`, data.gender)} />}
       {data.lastLocation && <Field label={t('gmModal.detail.location')} value={data.lastLocation} />}
       {data.alive === false && (
         <div className="text-error font-bold uppercase text-[10px]">{t('gmModal.detail.dead')}</div>
@@ -173,7 +173,7 @@ function FactionDetail({ data, t }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <div className="text-[10px] font-bold uppercase">{tierData.label}</div>
+      <div className="text-[10px] font-bold uppercase">{t(`gmModal.reputationTiers.${tierData.tier}`, tierData.label)}</div>
       {def?.effects[tierData.tier] && (
         <p className="text-[10px] text-outline italic">{def.effects[tierData.tier]}</p>
       )}
@@ -188,7 +188,7 @@ function QuestDetail({ data, t }) {
       {data.description && <p>{data.description}</p>}
       {data.status && (
         <div className={`text-[10px] font-bold uppercase ${data.status === 'active' ? 'text-primary' : 'text-outline'}`}>
-          {data.status}
+          {t(`gmModal.questStatuses.${data.status}`, data.status)}
         </div>
       )}
       {data.type && <Field label={t('gmModal.detail.questType')} value={data.type} />}

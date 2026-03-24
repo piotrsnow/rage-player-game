@@ -3,17 +3,23 @@ import FogEffect from './layers/FogEffect';
 import WeatherEffect from './layers/WeatherEffect';
 import TransitionEffect from './layers/TransitionEffect';
 import AmbientEffect from './layers/AmbientEffect';
+import FilmGrainEffect from './layers/FilmGrainEffect';
+import ColorGradeEffect from './layers/ColorGradeEffect';
+import LightRaysEffect from './layers/LightRaysEffect';
+import HeatDistortionEffect from './layers/HeatDistortionEffect';
+import FireflyEffect from './layers/FireflyEffect';
+import LensFlareEffect from './layers/LensFlareEffect';
 
 /* ------------------------------------------------------------------ */
-/*  Mood → fog / ambient tint mapping                                 */
+/*  Mood → fog / ambient config mapping                               */
 /* ------------------------------------------------------------------ */
 
 const MOOD_TINTS = {
-  mystical: { fog: 'purple', ambientGlow: true },
-  dark:     { fog: 'grey',   ambientGlow: false },
-  peaceful: { fog: 'green',  ambientGlow: true },
-  tense:    { fog: 'red',    ambientGlow: false },
-  chaotic:  { fog: 'orange', ambientGlow: true },
+  mystical: { ambientGlow: true },
+  dark:     { ambientGlow: false },
+  peaceful: { ambientGlow: true },
+  tense:    { ambientGlow: false },
+  chaotic:  { ambientGlow: true },
 };
 
 /* ------------------------------------------------------------------ */
@@ -34,15 +40,15 @@ const WEATHER_CONFIGS = {
 /* ------------------------------------------------------------------ */
 
 const GENRE_DEFAULTS = {
-  Fantasy:   { weather: 'clear', particles: 'magic_dust', mood: 'mystical' },
-  'Sci-Fi':  { weather: 'clear', particles: 'sparks',     mood: 'tense' },
-  Horror:    { weather: 'fog',   particles: 'embers',     mood: 'dark' },
+  Fantasy:   { weather: 'clear', particles: 'magic_dust', mood: 'mystical', lighting: 'natural' },
+  'Sci-Fi':  { weather: 'clear', particles: 'sparks',     mood: 'tense',    lighting: 'bright' },
+  Horror:    { weather: 'fog',   particles: 'embers',     mood: 'dark',     lighting: 'candlelight' },
 };
 
 const TONE_OVERRIDES = {
-  dark:       { mood: 'dark' },
+  dark:       { mood: 'dark',     lighting: 'night' },
   gritty:     { mood: 'tense' },
-  epic:       { mood: 'chaotic', particles: 'arcane' },
+  epic:       { mood: 'chaotic',  particles: 'arcane', lighting: 'rays' },
   lightheart: { mood: 'peaceful' },
   mysterious: { mood: 'mystical', particles: 'arcane' },
 };
@@ -52,7 +58,7 @@ const TONE_OVERRIDES = {
  * Uses campaign genre and tone as best-effort heuristics.
  */
 function deriveAtmosphereFromCampaign(campaign) {
-  const base = { weather: 'clear', particles: 'none', mood: 'mystical', transition: 'fade' };
+  const base = { weather: 'clear', particles: 'none', mood: 'mystical', lighting: 'natural', transition: 'fade' };
 
   if (!campaign) return base;
 
@@ -72,7 +78,7 @@ function deriveAtmosphereFromCampaign(campaign) {
  * `EffectEngine.setEffects()`.
  *
  * @param {object|null|undefined} atmosphere
- *   Shape: { weather, particles, mood, transition }
+ *   Shape: { weather, particles, mood, lighting, transition }
  * @param {{ genre?: string, tone?: string }} [campaign]
  *   Fallback source when atmosphere is missing.
  * @returns {Array<{ init, update, draw, destroy }>}
@@ -80,15 +86,23 @@ function deriveAtmosphereFromCampaign(campaign) {
 export default function resolveEffects(atmosphere, campaign) {
   const atm = atmosphere ?? deriveAtmosphereFromCampaign(campaign);
   const layers = [];
+  const mood = atm.mood ?? 'mystical';
+  const lighting = atm.lighting ?? 'natural';
 
-  // --- Ambient (always-on: vignette + dust motes + border glow) ---
-  const moodCfg = MOOD_TINTS[atm.mood] ?? MOOD_TINTS.mystical;
+  // --- Ambient (always-on: vignette + dust motes + conditional border glow) ---
+  const moodCfg = MOOD_TINTS[mood] ?? MOOD_TINTS.mystical;
   layers.push(new AmbientEffect({ glow: moodCfg.ambientGlow }));
 
+  // --- Film Grain (always-on, mood-scaled) ---
+  layers.push(new FilmGrainEffect({ mood }));
+
+  // --- Colour Grade (always-on, mood-tinted) ---
+  layers.push(new ColorGradeEffect({ mood }));
+
   // --- Fog ---
-  const needsFog = atm.weather === 'fog' || atm.mood === 'mystical' || atm.mood === 'dark';
+  const needsFog = atm.weather === 'fog' || mood === 'mystical' || mood === 'dark';
   if (needsFog) {
-    layers.push(new FogEffect({ tint: moodCfg.fog }));
+    layers.push(new FogEffect({ mood }));
   }
 
   // --- Weather ---
@@ -97,9 +111,29 @@ export default function resolveEffects(atmosphere, campaign) {
     layers.push(new WeatherEffect(weatherCfg));
   }
 
+  // --- Heat Distortion (fire weather or chaotic mood) ---
+  if (atm.weather === 'fire' || mood === 'chaotic') {
+    layers.push(new HeatDistortionEffect());
+  }
+
   // --- Particles ---
   if (atm.particles && atm.particles !== 'none') {
     layers.push(new ParticleEffect({ variant: atm.particles }));
+  }
+
+  // --- Light Rays (rays / dawn / bright lighting) ---
+  if (lighting === 'rays' || lighting === 'dawn' || lighting === 'bright') {
+    layers.push(new LightRaysEffect({ lighting }));
+  }
+
+  // --- Fireflies (night / candlelight / moonlight lighting) ---
+  if (lighting === 'night' || lighting === 'candlelight' || lighting === 'moonlight') {
+    layers.push(new FireflyEffect({ lighting }));
+  }
+
+  // --- Lens Flare (bright / dawn lighting) ---
+  if (lighting === 'bright' || lighting === 'dawn') {
+    layers.push(new LensFlareEffect({ lighting }));
   }
 
   // --- Transition (one-shot, auto-removes via `finished` flag) ---

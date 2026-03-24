@@ -134,7 +134,7 @@ function NpcCard({ npc, t }) {
         <div className="flex items-center gap-2 min-w-0">
           <span className="material-symbols-outlined text-sm text-primary">person</span>
           <span className="text-[11px] font-bold text-on-surface truncate">{npc.name}</span>
-          {npc.gender && <span className="text-[10px] text-outline shrink-0">({npc.gender})</span>}
+          {npc.gender && <span className="text-[10px] text-outline shrink-0">({t(`gmModal.genders.${npc.gender}`, npc.gender)})</span>}
         </div>
         {isDead && <span className="text-[9px] text-error font-bold uppercase shrink-0">{t('gmModal.detail.dead')}</span>}
       </div>
@@ -149,7 +149,7 @@ function NpcCard({ npc, t }) {
             npc.attitude === 'friendly' ? 'bg-primary/15 text-primary' :
             npc.attitude === 'hostile' ? 'bg-error/15 text-error' :
             'bg-outline/10 text-outline'
-          }`}>{npc.attitude}</span>
+          }`}>{t(`gmModal.attitudes.${npc.attitude}`, npc.attitude)}</span>
         )}
         {npc.disposition != null && npc.disposition !== 0 && (
           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${
@@ -223,7 +223,7 @@ function FactionCard({ faction, t }) {
           <span className="text-[11px] font-bold text-on-surface truncate">{def?.name || faction.id}</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${bgColor}/15 ${textColor}`}>{tierData.label}</span>
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${bgColor}/15 ${textColor}`}>{t(`gmModal.reputationTiers.${tierData.tier}`, tierData.label)}</span>
           <span className={`text-[10px] font-bold tabular-nums ${textColor}`}>{reputation > 0 ? '+' : ''}{reputation}</span>
         </div>
       </div>

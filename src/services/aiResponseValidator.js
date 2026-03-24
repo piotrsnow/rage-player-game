@@ -4,6 +4,7 @@ const AtmosphereSchema = z.object({
   weather: z.string().optional().default('clear'),
   particles: z.string().optional().default('none'),
   mood: z.string().optional().default('peaceful'),
+  lighting: z.string().optional().default('natural'),
   transition: z.string().optional().default('dissolve'),
 }).passthrough().optional().default({});
 

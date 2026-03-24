@@ -11,6 +11,7 @@ import {
   generateStartingMoney,
 } from '../../services/gameState';
 import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
+import PortraitGenerator from './PortraitGenerator';
 
 function SectionHeader({ icon, label, onRandomize }) {
   return (
@@ -71,6 +72,8 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const [skills, setSkills] = useState(initialCharacter?.skills || {});
   const [talents, setTalents] = useState(initialCharacter?.talents || []);
   const [backstory, setBackstory] = useState(initialCharacter?.backstory || '');
+  const [portraitUrl, setPortraitUrl] = useState(initialCharacter?.portraitUrl || null);
+  const [portraitOpen, setPortraitOpen] = useState(false);
 
   const speciesData = SPECIES[species] || SPECIES.Human;
   const maxWounds = useMemo(() => calculateWounds(characteristics), [characteristics]);
@@ -171,10 +174,11 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
       money: generateStartingMoney(career.status),
       statuses: [],
       backstory,
+      portraitUrl: portraitUrl || '',
       xp: 0,
       xpSpent: 0,
     });
-  }, [name, gender, species, selectedCareer, tier1, characteristics, maxWounds, speciesData, skills, talents, backstory, genre, onConfirm]);
+  }, [name, gender, species, selectedCareer, tier1, characteristics, maxWounds, speciesData, skills, talents, backstory, portraitUrl, genre, onConfirm]);
 
   const availableTalents = useMemo(() => {
     const careerTalents = tier1?.talents || [];
@@ -271,6 +275,48 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 ))}
               </div>
             </div>
+          </section>
+
+          {/* Portrait */}
+          <section>
+            <SectionHeader icon="photo_camera" label={t('charCreator.portrait')} />
+            <p className="text-[11px] text-on-surface-variant mb-3">{t('charCreator.portraitDesc')}</p>
+            {portraitUrl && !portraitOpen ? (
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-[85px] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_10px_rgba(197,154,255,0.15)]">
+                  <img src={portraitUrl} alt="Portrait" className="w-full h-full object-cover" />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPortraitOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-label text-tertiary hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10"
+                  >
+                    <span className="material-symbols-outlined text-sm">edit</span>
+                    {t('character.updatePortrait')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPortraitUrl(null); setPortraitOpen(true); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-label text-on-surface-variant hover:text-error border border-outline-variant/15 hover:border-error/30 rounded-sm transition-all"
+                  >
+                    <span className="material-symbols-outlined text-sm">delete</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <PortraitGenerator
+                species={species}
+                gender={gender}
+                careerName={selectedCareer?.name}
+                genre={genre}
+                initialPortrait={portraitUrl}
+                onPortraitReady={(url) => {
+                  setPortraitUrl(url);
+                  if (url) setPortraitOpen(false);
+                }}
+              />
+            )}
           </section>
 
           {/* Species */}

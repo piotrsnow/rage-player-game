@@ -627,6 +627,7 @@ Respond with ONLY valid JSON in this exact format:
     "weather": "rain | snow | storm | clear | fog | fire",
     "particles": "magic_dust | sparks | embers | arcane | none",
     "mood": "mystical | dark | peaceful | tense | chaotic",
+    "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
@@ -647,7 +648,7 @@ For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each acti
 
 For stateChanges.journalEntries: provide 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant player decisions, discoveries, or combat outcomes. Each entry should be a self-contained 1-2 sentence summary. Do NOT log trivial details.
 
-For atmosphere: choose weather, particles, mood, and transition that match the scene's environment and tone. weather describes the environmental condition, particles adds visual flair (magic_dust for mystical places, sparks for forges/tech, embers for fire/destruction, arcane for magical events), mood sets the overall feel, and transition is the visual transition into this scene (use "fade" for the opening scene).
+For atmosphere: choose weather, particles, mood, lighting, and transition that match the scene's environment and tone. weather describes the environmental condition, particles adds visual flair (magic_dust for mystical places, sparks for forges/tech, embers for fire/destruction, arcane for magical events), mood sets the overall feel, lighting describes the scene's light source and quality (natural for daylight outdoors, night for darkness/starlight, dawn for sunrise/sunset, bright for strong direct light, rays for god-rays through trees/windows, candlelight for indoor dim light, moonlight for moon-lit nights), and transition is the visual transition into this scene (use "fade" for the opening scene).
 
 For musicPrompt: describe the ideal instrumental background music — mention instruments, tempo, and emotional tone. Keep under 200 characters. Example: "slow strings with harp arpeggios, mysterious and enchanting". Use null only if the scene should be silent.
 
@@ -720,6 +721,7 @@ Respond with ONLY valid JSON in this exact format:
     "weather": "rain | snow | storm | clear | fog | fire",
     "particles": "magic_dust | sparks | embers | arcane | none",
     "mood": "mystical | dark | peaceful | tense | chaotic",
+    "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
   "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
@@ -754,7 +756,7 @@ Respond with ONLY valid JSON in this exact format:
   }
 }
 
-For atmosphere: choose weather, particles, mood, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
+For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
 For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
@@ -879,6 +881,7 @@ Respond with ONLY valid JSON:
       "weather": "clear | rain | snow | storm | fog | fire",
       "particles": "magic_dust | sparks | embers | arcane | none",
       "mood": "mystical | dark | peaceful | tense | chaotic",
+      "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
       "transition": "fade"
     },
     "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
@@ -984,6 +987,30 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   const sceneDesc = sanitizeForImageGen(rawDesc);
 
   return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+}
+
+export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy') {
+  const genderLabel = gender === 'female' ? 'female' : 'male';
+
+  const speciesTraits = {
+    Human: 'human',
+    Halfling: 'halfling, short stature, round face',
+    Dwarf: 'dwarf, stocky build, strong jaw',
+    'High Elf': 'high elf, pointed ears, slender features, ethereal',
+    'Wood Elf': 'wood elf, pointed ears, angular features, wild',
+  };
+
+  const genreStyle = {
+    Fantasy: 'medieval fantasy portrait, painterly oil painting style, dramatic chiaroscuro lighting, RPG character art',
+    'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents',
+    Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism',
+  };
+
+  const speciesDesc = speciesTraits[species] || 'human';
+  const style = genreStyle[genre] || genreStyle.Fantasy;
+  const career = careerName ? `, ${careerName}` : '';
+
+  return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Preserve the subject's facial features and likeness. Detailed face, sharp focus, 4k, head and shoulders composition. No text, no watermarks.`;
 }
 
 export function buildRecapPrompt(language = 'en') {

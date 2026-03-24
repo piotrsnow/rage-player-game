@@ -108,13 +108,13 @@ export default function GMOverviewTab({ gameState }) {
               <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.time')}</span>
             </div>
             <div className="text-[11px] text-on-surface-variant space-y-1">
-              <div>{t('gmModal.overview.day')} {timeState.day} &mdash; <span className="capitalize">{timeState.timeOfDay}</span></div>
+              <div>{t('gmModal.overview.day')} {timeState.day} &mdash; <span className="capitalize">{t(`worldState.periods.${timeState.timeOfDay}`, timeState.timeOfDay)}</span></div>
               {timeState.hour != null && (
                 <div className="text-lg font-headline text-primary tabular-nums">
                   {Math.floor(timeState.hour).toString().padStart(2, '0')}:{Math.round((timeState.hour % 1) * 60).toString().padStart(2, '0')}
                 </div>
               )}
-              {timeState.season && <div className="text-[10px] text-outline capitalize">{timeState.season}</div>}
+              {timeState.season && <div className="text-[10px] text-outline capitalize">{t(`worldState.seasons.${timeState.season}`, timeState.season)}</div>}
             </div>
           </div>
         )}

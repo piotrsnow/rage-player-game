@@ -40,7 +40,10 @@ function pick(arr) {
 /* ------------------------------------------------------------------ */
 
 export default class AmbientEffect {
-  constructor() {
+  /** @param {{ glow?: boolean }} [options] */
+  constructor(options = {}) {
+    this.glowEnabled = options.glow ?? true;
+
     this.width  = 0;
     this.height = 0;
     this.time   = 0;
@@ -119,7 +122,9 @@ export default class AmbientEffect {
     }
 
     /* --- 3. Border glow --------------------------------------------- */
-    this._drawBorderGlow(ctx, intensity);
+    if (this.glowEnabled) {
+      this._drawBorderGlow(ctx, intensity);
+    }
 
     ctx.restore();
   }

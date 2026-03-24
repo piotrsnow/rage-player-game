@@ -240,7 +240,7 @@ export default function GMGraphTab({ gameState }) {
                       className="fill-on-surface-variant text-[8px] pointer-events-none"
                       style={{ fontFamily: 'Manrope, sans-serif' }}
                     >
-                      {edge.label}
+                      {edge.label.startsWith('edgeLabels.') ? t(`gmModal.${edge.label}`) : edge.label}
                     </text>
                   )}
                 </g>

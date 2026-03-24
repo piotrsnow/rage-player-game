@@ -499,9 +499,9 @@ function TimeTab({ timeState, t }) {
       <span className="material-symbols-outlined text-5xl text-primary">{timeIcons[timeState.timeOfDay] || 'schedule'}</span>
       <div className="text-center space-y-2">
         <div className="text-3xl font-headline text-primary tabular-nums">{displayHour}</div>
-        <div className="text-lg font-bold text-on-surface capitalize">{timeState.timeOfDay}</div>
+        <div className="text-lg font-bold text-on-surface capitalize">{t(`worldState.periods.${timeState.timeOfDay}`, timeState.timeOfDay)}</div>
         <div className="text-sm text-on-surface-variant">{t('worldState.day')} {timeState.day}</div>
-        <div className="text-[11px] text-outline capitalize">{t('worldState.season')}: {timeState.season}</div>
+        <div className="text-[11px] text-outline capitalize">{t('worldState.season')}: {t(`worldState.seasons.${timeState.season}`, timeState.season)}</div>
       </div>
     </div>
   );

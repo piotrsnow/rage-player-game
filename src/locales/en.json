@@ -207,6 +207,7 @@
     "skills": "Skills",
     "talents": "Talents",
     "inspiration": "Inspiration",
+    "updatePortrait": "Change Portrait",
     "origins": "Origins",
     "originsEmpty": "The origins of this adventurer remain shrouded in mystery...",
     "voice": "Character Voice",
@@ -539,6 +540,15 @@
     "emptyJournal": "No journal entries yet",
     "emptyAssets": "No character data available",
     "emptyInventory": "Empty inventory",
+    "edgeLabels": {
+      "companion": "companion",
+      "locatedAt": "located at",
+      "member": "member",
+      "path": "path",
+      "currentLocation": "current location",
+      "questGiver": "quest giver",
+      "questLocation": "quest location"
+    },
     "graphHint": "Drag to pan, scroll to zoom, click nodes for details",
     "searchPlaceholder": "Search...",
     "noResults": "No results found",
@@ -591,6 +601,30 @@
       "questType": "Type",
       "objectives": "Objectives",
       "completion": "Completion"
+    },
+    "attitudes": {
+      "friendly": "friendly",
+      "hostile": "hostile",
+      "neutral": "neutral",
+      "suspicious": "suspicious",
+      "fearful": "fearful"
+    },
+    "genders": {
+      "male": "male",
+      "female": "female",
+      "unknown": "unknown"
+    },
+    "questStatuses": {
+      "active": "active",
+      "completed": "completed",
+      "failed": "failed"
+    },
+    "reputationTiers": {
+      "hostile": "Hostile",
+      "unfriendly": "Unfriendly",
+      "neutral": "Neutral",
+      "friendly": "Friendly",
+      "allied": "Allied"
     },
     "overview": {
       "genre": "Genre",
@@ -648,6 +682,19 @@
     "mapConnections": "Known paths",
     "day": "Day",
     "season": "Season",
+    "seasons": {
+      "spring": "spring",
+      "summer": "summer",
+      "autumn": "autumn",
+      "winter": "winter",
+      "unknown": "unknown"
+    },
+    "periods": {
+      "morning": "morning",
+      "afternoon": "afternoon",
+      "evening": "evening",
+      "night": "night"
+    },
     "voice": "Voice",
     "noVoice": "No voice assigned",
     "disposition": "Disposition",
@@ -751,7 +798,24 @@
     "createCharacter": "Create Character",
     "characterReady": "Character Ready",
     "skillPointsRemaining": "Skill Points",
-    "talentSlots": "Talents"
+    "talentSlots": "Talents",
+    "portrait": "Portrait",
+    "portraitDesc": "Take a photo with your webcam or upload one. AI will transform it into a fantasy portrait while preserving your facial features.",
+    "openCamera": "Open Camera",
+    "capturePhoto": "Capture",
+    "uploadPhoto": "Upload Photo",
+    "retakePhoto": "Retake",
+    "fantasyIntensity": "Fantasy Intensity",
+    "strengthSubtle": "Subtle",
+    "strengthBalanced": "Balanced",
+    "strengthIntense": "Intense",
+    "generatePortrait": "Generate Fantasy Portrait",
+    "portraitGenerating": "Generating...",
+    "acceptPortrait": "Accept",
+    "retryPortrait": "Retry",
+    "portraitNeedsKey": "Portrait generation requires a Stability AI API key. Configure it in Settings.",
+    "portraitFiltered": "The image was filtered by the AI safety system. Please try with a different photo.",
+    "cameraError": "Could not access camera. Try uploading a photo instead."
   },
   "characterPicker": {
     "title": "Your Character",

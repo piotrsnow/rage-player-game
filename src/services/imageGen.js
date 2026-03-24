@@ -1,4 +1,4 @@
-import { buildImagePrompt } from './prompts';
+import { buildImagePrompt, buildPortraitPrompt } from './prompts';
 import { apiClient } from './apiClient';
 
 async function generateWithDalle(prompt, apiKey) {
@@ -77,6 +77,53 @@ function resolveMediaUrl(url) {
   return url;
 }
 
+async function generatePortraitWithStability(imageBlob, prompt, apiKey, strength = 0.45) {
+  const formData = new FormData();
+  formData.append('image', imageBlob, 'photo.jpg');
+  formData.append('prompt', prompt);
+  formData.append('negative_prompt', 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy');
+  formData.append('strength', String(strength));
+  formData.append('mode', 'image-to-image');
+  formData.append('model', 'sd3.5-large-turbo');
+  formData.append('output_format', 'jpeg');
+  formData.append('none', '');
+
+  const response = await fetch('https://api.stability.ai/v2beta/stable-image/generate/sd3', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: 'application/json',
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    console.error('Stability portrait API error:', err);
+    const msg = err.errors?.join('; ') || err.message || err.name || `Stability API error: ${response.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await response.json();
+  if (data.finish_reason === 'CONTENT_FILTERED') {
+    throw new Error('CONTENT_FILTERED');
+  }
+  return `data:image/jpeg;base64,${data.image}`;
+}
+
+async function generatePortraitViaProxy(imageBlob, prompt, strength) {
+  const formData = new FormData();
+  formData.append('image', imageBlob, 'photo.jpg');
+  formData.append('prompt', prompt);
+  formData.append('strength', String(strength));
+
+  const data = await apiClient.request('/proxy/stability/portrait', {
+    method: 'POST',
+    body: formData,
+  });
+  return resolveMediaUrl(data.url);
+}
+
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null) {
     const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
@@ -93,5 +140,19 @@ export const imageService = {
       return generateWithStability(prompt, apiKey);
     }
     return generateWithDalle(prompt, apiKey);
+  },
+
+  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45) {
+    const prompt = buildPortraitPrompt(species, gender, careerName, genre);
+
+    if (apiClient.isConnected()) {
+      return generatePortraitViaProxy(imageBlob, prompt, strength);
+    }
+
+    if (!apiKey) {
+      throw new Error('Stability AI API key required for portrait generation.');
+    }
+
+    return generatePortraitWithStability(imageBlob, prompt, apiKey, strength);
   },
 };

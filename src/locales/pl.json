@@ -207,6 +207,7 @@
     "skills": "Umiejętności",
     "talents": "Zdolności",
     "inspiration": "Inspiracja",
+    "updatePortrait": "Zmień portret",
     "origins": "Pochodzenie",
     "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica...",
     "voice": "Głos Postaci",
@@ -539,6 +540,15 @@
     "emptyJournal": "Brak wpisów w dzienniku",
     "emptyAssets": "Brak danych postaci",
     "emptyInventory": "Pusty ekwipunek",
+    "edgeLabels": {
+      "companion": "towarzysz",
+      "locatedAt": "znajduje się",
+      "member": "członek",
+      "path": "szlak",
+      "currentLocation": "obecna lokacja",
+      "questGiver": "zleceniodawca",
+      "questLocation": "lokacja zadania"
+    },
     "graphHint": "Przeciągnij aby przesunąć, scroll aby przybliżyć, kliknij węzeł po szczegóły",
     "searchPlaceholder": "Szukaj...",
     "noResults": "Brak wyników",
@@ -591,6 +601,30 @@
       "questType": "Typ",
       "objectives": "Cele",
       "completion": "Warunek ukończenia"
+    },
+    "attitudes": {
+      "friendly": "przyjazny",
+      "hostile": "wrogi",
+      "neutral": "neutralny",
+      "suspicious": "podejrzliwy",
+      "fearful": "przerażony"
+    },
+    "genders": {
+      "male": "mężczyzna",
+      "female": "kobieta",
+      "unknown": "nieznana"
+    },
+    "questStatuses": {
+      "active": "aktywne",
+      "completed": "ukończone",
+      "failed": "nieudane"
+    },
+    "reputationTiers": {
+      "hostile": "wrogi",
+      "unfriendly": "nieprzyjazny",
+      "neutral": "neutralny",
+      "friendly": "przyjazny",
+      "allied": "sprzymierzony"
     },
     "overview": {
       "genre": "Gatunek",
@@ -648,6 +682,19 @@
     "mapConnections": "Znane ścieżki",
     "day": "Dzień",
     "season": "Pora roku",
+    "seasons": {
+      "spring": "wiosna",
+      "summer": "lato",
+      "autumn": "jesień",
+      "winter": "zima",
+      "unknown": "nieznana"
+    },
+    "periods": {
+      "morning": "poranek",
+      "afternoon": "popołudnie",
+      "evening": "wieczór",
+      "night": "noc"
+    },
     "voice": "Głos",
     "noVoice": "Brak przypisanego głosu",
     "disposition": "Przychylność",
@@ -751,7 +798,24 @@
     "createCharacter": "Stwórz Postać",
     "characterReady": "Postać Gotowa",
     "skillPointsRemaining": "Punkty umiejętności",
-    "talentSlots": "Zdolności"
+    "talentSlots": "Zdolności",
+    "portrait": "Portret",
+    "portraitDesc": "Zrób zdjęcie kamerką lub wgraj plik. AI przekształci je w portret fantasy, zachowując rysy twarzy.",
+    "openCamera": "Włącz kamerę",
+    "capturePhoto": "Zrób zdjęcie",
+    "uploadPhoto": "Wgraj zdjęcie",
+    "retakePhoto": "Ponów",
+    "fantasyIntensity": "Intensywność fantasy",
+    "strengthSubtle": "Subtelna",
+    "strengthBalanced": "Zbalansowana",
+    "strengthIntense": "Intensywna",
+    "generatePortrait": "Generuj portret fantasy",
+    "portraitGenerating": "Generowanie...",
+    "acceptPortrait": "Zatwierdź",
+    "retryPortrait": "Ponów",
+    "portraitNeedsKey": "Generowanie portretu wymaga klucza API Stability AI. Skonfiguruj go w Ustawieniach.",
+    "portraitFiltered": "Obraz został odfiltrowany przez system bezpieczeństwa AI. Spróbuj z innym zdjęciem.",
+    "cameraError": "Nie można uzyskać dostępu do kamery. Spróbuj wgrać zdjęcie."
   },
   "characterPicker": {
     "title": "Twoja Postać",
