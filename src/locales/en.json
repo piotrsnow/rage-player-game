@@ -367,6 +367,8 @@
     "activeProvider": "Active Provider",
     "status": "Status",
     "keyConfigured": "Key Configured",
+    "serverKeyActive": "Server Key",
+    "serverKeyHint": "Server key active ({{masked}})",
     "noKeySet": "No Key Set",
     "openaiProvider": "OpenAI GPT-4o",
     "anthropicProvider": "Anthropic Claude",
@@ -921,7 +923,12 @@
     "soloActionSend": "Send Solo",
     "soloActionReady": "Solo action available",
     "soloActionCooldown": "Solo in {{time}}",
-    "soloActionTooltip": "Send only your action without waiting for others (3 min cooldown)"
+    "soloActionTooltip": "Send only your action without waiting for others (3 min cooldown)",
+    "availableRooms": "Available Rooms",
+    "loadingRooms": "Loading rooms...",
+    "noRooms": "No rooms available right now. Ask a host to share their code or create your own!",
+    "phaseLobby": "Lobby",
+    "phasePlaying": "In Game"
   },
   "statusTier": {
     "Brass": "Brass",

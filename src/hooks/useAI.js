@@ -16,7 +16,7 @@ import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarning
 export function useAI() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
   const { aiProvider, openaiApiKey, anthropicApiKey, imageGenEnabled, imageProvider, stabilityApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium' } = settings;
@@ -279,8 +279,8 @@ export function useAI() {
           });
         }
 
-        // Generate scene image asynchronously
-        if (imageGenEnabled && imageApiKey) {
+        const hasImageKey = imageApiKey || hasApiKey(imageProvider === 'stability' ? 'stability' : 'openai');
+        if (imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
             const imageUrl = await imageService.generateSceneImage(
@@ -312,7 +312,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, aiModelTier, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, aiModelTier, hasApiKey, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -358,7 +358,8 @@ export function useAI() {
 
   const generateImageForScene = useCallback(
     async (sceneId, narrative, imagePrompt, campaignOverride) => {
-      if (!imageGenEnabled || !imageApiKey || !narrative) return null;
+      const hasImgKey = imageApiKey || hasApiKey(imageProvider === 'stability' ? 'stability' : 'openai');
+      if (!imageGenEnabled || !hasImgKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
       try {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
@@ -387,7 +388,7 @@ export function useAI() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, hasApiKey, dispatch, autoSave]
   );
 
   const verifyQuestObjective = useCallback(

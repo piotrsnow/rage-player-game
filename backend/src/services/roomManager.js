@@ -300,6 +300,27 @@ export function getRoom(roomCode) {
   return rooms.get(roomCode) || null;
 }
 
+export function listJoinableRooms() {
+  const result = [];
+  for (const [, room] of rooms) {
+    if (room.players.size >= 6) continue;
+    const hostPlayer = [...room.players.values()].find((p) => p.isHost);
+    result.push({
+      roomCode: room.roomCode,
+      phase: room.phase,
+      hostName: hostPlayer?.name || 'Host',
+      playerCount: room.players.size,
+      maxPlayers: 6,
+      settings: {
+        genre: room.settings?.genre || '',
+        tone: room.settings?.tone || '',
+        difficulty: room.settings?.difficulty || '',
+      },
+    });
+  }
+  return result;
+}
+
 export function broadcast(room, message, excludeOdId = null) {
   const payload = typeof message === 'string' ? message : JSON.stringify(message);
   for (const [, player] of room.players) {
@@ -467,4 +488,4 @@ export function restoreRoom(roomCode, roomData) {
   return roomData;
 }
 
-export { sanitizeRoom, touchRoom };
+export { sanitizeRoom, touchRoom, listJoinableRooms };

@@ -11,7 +11,7 @@ const DUCK_VOLUME_RATIO = 0.2;
 const log = (...args) => console.log('%c[Music]', 'color:#34d399;font-weight:bold', ...args);
 
 export function useMusic(narratorPlaybackState) {
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
   const { state, dispatch } = useGame();
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -118,8 +118,8 @@ export function useMusic(narratorPlaybackState) {
   }, [stopFade]);
 
   const ensureMusicForMood = useCallback(async (mood, genre, tone, musicPrompt) => {
-    if (!settings.sunoApiKey || !settings.musicEnabled) {
-      log('Skipped — musicEnabled:', settings.musicEnabled, 'hasKey:', !!settings.sunoApiKey);
+    if (!(settings.sunoApiKey || hasApiKey('suno')) || !settings.musicEnabled) {
+      log('Skipped — musicEnabled:', settings.musicEnabled, 'hasKey:', !!(settings.sunoApiKey || hasApiKey('suno')));
       return;
     }
     if (!mood) {
@@ -211,7 +211,7 @@ export function useMusic(narratorPlaybackState) {
       setIsGenerating(false);
       dispatch({ type: 'SET_GENERATING_MUSIC', payload: false });
     }
-  }, [settings.sunoApiKey, settings.musicEnabled, settings.sunoModel, crossfadeTo, dispatch]);
+  }, [settings.sunoApiKey, settings.musicEnabled, settings.sunoModel, hasApiKey, crossfadeTo, dispatch]);
 
   const pause = useCallback(() => {
     if (activeAudioRef.current) {

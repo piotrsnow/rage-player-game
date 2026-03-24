@@ -367,6 +367,8 @@
     "activeProvider": "Aktywny Dostawca",
     "status": "Status",
     "keyConfigured": "Klucz Skonfigurowany",
+    "serverKeyActive": "Klucz Serwera",
+    "serverKeyHint": "Klucz z serwera aktywny ({{masked}})",
     "noKeySet": "Brak Klucza",
     "openaiProvider": "OpenAI GPT-4o",
     "anthropicProvider": "Anthropic Claude",
@@ -1215,7 +1217,12 @@
     "soloActionSend": "Wyślij Solo",
     "soloActionReady": "Samodzielna akcja dostępna",
     "soloActionCooldown": "Solo za {{time}}",
-    "soloActionTooltip": "Wyślij tylko swoją akcję bez czekania na innych (3 min odnowienia)"
+    "soloActionTooltip": "Wyślij tylko swoją akcję bez czekania na innych (3 min odnowienia)",
+    "availableRooms": "Dostępne Pokoje",
+    "loadingRooms": "Wczytywanie pokojów...",
+    "noRooms": "Brak dostępnych pokojów. Poproś hosta o kod lub utwórz własny!",
+    "phaseLobby": "Lobby",
+    "phasePlaying": "W Grze"
   },
   "statusTier": {
     "Brass": "Mosiądz",

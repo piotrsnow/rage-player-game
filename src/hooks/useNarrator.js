@@ -49,7 +49,7 @@ function resolveVoiceForCharacter(characterName, gender, characterVoiceMap, loca
 }
 
 export function useNarrator() {
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
   const { state, dispatch } = useGame();
   const [playbackState, setPlaybackState] = useState(STATES.IDLE);
   const [currentMessageId, setCurrentMessageId] = useState(null);
@@ -198,7 +198,7 @@ export function useNarrator() {
     setPlaybackState(STATES.LOADING);
 
     const { elevenlabsApiKey, elevenlabsVoiceId, characterVoices, sfxEnabled, sfxVolume, dialogueSpeed } = settings;
-    if (!elevenlabsApiKey || !elevenlabsVoiceId) {
+    if (!(elevenlabsApiKey || hasApiKey('elevenlabs')) || !elevenlabsVoiceId) {
       queueRef.current.shift();
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
@@ -398,7 +398,7 @@ export function useNarrator() {
     currentCharacter,
     highlightInfo,
     currentChunk,
-    isNarratorReady: !!(settings.narratorEnabled && settings.elevenlabsApiKey && settings.elevenlabsVoiceId),
+    isNarratorReady: !!(settings.narratorEnabled && (settings.elevenlabsApiKey || hasApiKey('elevenlabs')) && settings.elevenlabsVoiceId),
     speak,
     speakScene,
     speakSingle,

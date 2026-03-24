@@ -5,6 +5,16 @@ import { apiClient } from '../services/apiClient';
 
 const SettingsContext = createContext(null);
 
+const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', suno: '' };
+
+const LOCAL_KEY_MAP = {
+  openai: 'openaiApiKey',
+  anthropic: 'anthropicApiKey',
+  elevenlabs: 'elevenlabsApiKey',
+  stability: 'stabilityApiKey',
+  suno: 'sunoApiKey',
+};
+
 const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'sunoApiKey',
@@ -63,6 +73,7 @@ export function SettingsProvider({ children }) {
     return saved ? { ...defaultSettings, ...saved } : defaultSettings;
   });
 
+  const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const syncingFromBackendRef = useRef(false);
   const saveTimerRef = useRef(null);
 
@@ -99,6 +110,19 @@ export function SettingsProvider({ children }) {
     document.documentElement.lang = settings.language || 'en';
   }, [settings.language, i18n]);
 
+  const fetchBackendKeys = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setBackendKeys(EMPTY_BACKEND_KEYS);
+      return;
+    }
+    try {
+      const keys = await apiClient.get('/auth/api-keys');
+      setBackendKeys({ ...EMPTY_BACKEND_KEYS, ...keys });
+    } catch {
+      setBackendKeys(EMPTY_BACKEND_KEYS);
+    }
+  }, []);
+
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();
     if (!accountSettings || Object.keys(accountSettings).length === 0) return;
@@ -118,10 +142,12 @@ export function SettingsProvider({ children }) {
     });
     setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
 
+    fetchBackendKeys();
+
     storage.syncCampaigns().catch((err) => {
       console.warn('[SettingsContext] Campaign sync after login failed:', err.message);
     });
-  }, []);
+  }, [fetchBackendKeys]);
 
   const updateSettings = useCallback((updates) => {
     setSettings((prev) => ({ ...prev, ...updates }));
@@ -148,6 +174,12 @@ export function SettingsProvider({ children }) {
       : settings.anthropicApiKey;
   }, [settings]);
 
+  const hasApiKey = useCallback((provider) => {
+    const localField = LOCAL_KEY_MAP[provider];
+    if (localField && settings[localField]) return true;
+    return apiClient.isConnected() && !!backendKeys[provider];
+  }, [settings, backendKeys]);
+
   const value = {
     settings,
     updateSettings,
@@ -155,6 +187,9 @@ export function SettingsProvider({ children }) {
     resetSettings,
     importSettings,
     getApiKey,
+    hasApiKey,
+    backendKeys,
+    fetchBackendKeys,
     loadFromAccount,
   };
 

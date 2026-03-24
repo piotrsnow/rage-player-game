@@ -16,7 +16,7 @@ const providerOptions = [
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount } = useSettings();
+  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount, hasApiKey, backendKeys, fetchBackendKeys } = useSettings();
   const [localKeys, setLocalKeys] = useState({
     openaiApiKey: settings.openaiApiKey,
     anthropicApiKey: settings.anthropicApiKey,
@@ -70,9 +70,10 @@ export default function DMSettingsPage({ onClose }) {
       loadCacheStats();
       if (apiClient.isConnected()) {
         loadFromAccount();
+        fetchBackendKeys();
       }
     }
-  }, [settings.useBackend, settings.backendUrl, loadBackendUser, loadCacheStats, loadFromAccount]);
+  }, [settings.useBackend, settings.backendUrl, loadBackendUser, loadCacheStats, loadFromAccount, fetchBackendKeys]);
 
   const handleBackendLogin = async () => {
     setBackendLoading(true);
@@ -188,6 +189,7 @@ export default function DMSettingsPage({ onClose }) {
             suno: sunoKey || '',
           },
         });
+        fetchBackendKeys();
       } catch {
         // local save still succeeds
       }
@@ -206,13 +208,15 @@ export default function DMSettingsPage({ onClose }) {
   };
 
   const handleLoadVoices = async () => {
-    if (!elevenlabsKey.trim()) return;
+    if (!elevenlabsKey.trim() && !apiClient.isConnected()) return;
     setLoadingVoices(true);
     setVoiceError(null);
     try {
       const voiceList = await elevenlabsService.getVoices(elevenlabsKey);
       setVoices(voiceList);
-      updateSettings({ elevenlabsApiKey: elevenlabsKey });
+      if (elevenlabsKey.trim()) {
+        updateSettings({ elevenlabsApiKey: elevenlabsKey });
+      }
     } catch (err) {
       setVoiceError(err.message);
     } finally {
@@ -644,17 +648,23 @@ export default function DMSettingsPage({ onClose }) {
                   type="password"
                   value={elevenlabsKey}
                   onChange={(e) => setElevenlabsKey(e.target.value)}
-                  placeholder="xi-..."
+                  placeholder={backendKeys.elevenlabs ? backendKeys.elevenlabs : 'xi-...'}
                   className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
                 />
                 <button
                   onClick={handleLoadVoices}
-                  disabled={!elevenlabsKey.trim() || loadingVoices}
+                  disabled={(!elevenlabsKey.trim() && !apiClient.isConnected()) || loadingVoices}
                   className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
                 >
                   {loadingVoices ? t('settings.loadingVoices') : t('settings.loadVoices')}
                 </button>
               </div>
+              {!elevenlabsKey && backendKeys.elevenlabs && (
+                <p className="text-[10px] text-primary/70 mt-1 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">cloud_done</span>
+                  {t('settings.serverKeyHint', { masked: backendKeys.elevenlabs })}
+                </p>
+              )}
               {voiceError && (
                 <p className="text-error text-xs mt-2">{voiceError}</p>
               )}
@@ -960,9 +970,15 @@ export default function DMSettingsPage({ onClose }) {
                   onChange={(e) =>
                     setLocalKeys((p) => ({ ...p, openaiApiKey: e.target.value }))
                   }
-                  placeholder="sk-..."
+                  placeholder={backendKeys.openai ? backendKeys.openai : 'sk-...'}
                   className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
                 />
+                {!localKeys.openaiApiKey && backendKeys.openai && (
+                  <p className="text-[10px] text-primary/70 mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px]">cloud_done</span>
+                    {t('settings.serverKeyHint', { masked: backendKeys.openai })}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
@@ -974,9 +990,15 @@ export default function DMSettingsPage({ onClose }) {
                   onChange={(e) =>
                     setLocalKeys((p) => ({ ...p, anthropicApiKey: e.target.value }))
                   }
-                  placeholder="sk-ant-..."
+                  placeholder={backendKeys.anthropic ? backendKeys.anthropic : 'sk-ant-...'}
                   className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
                 />
+                {!localKeys.anthropicApiKey && backendKeys.anthropic && (
+                  <p className="text-[10px] text-primary/70 mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px]">cloud_done</span>
+                    {t('settings.serverKeyHint', { masked: backendKeys.anthropic })}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -1024,12 +1046,19 @@ export default function DMSettingsPage({ onClose }) {
                   onChange={(e) =>
                     setLocalKeys((p) => ({ ...p, stabilityApiKey: e.target.value }))
                   }
-                  placeholder="sk-..."
+                  placeholder={backendKeys.stability ? backendKeys.stability : 'sk-...'}
                   className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
                 />
-                <p className="text-[10px] text-on-surface-variant mt-2">
-                  {t('settings.stabilityApiKeyDesc')}
-                </p>
+                {!localKeys.stabilityApiKey && backendKeys.stability ? (
+                  <p className="text-[10px] text-primary/70 mt-2 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px]">cloud_done</span>
+                    {t('settings.serverKeyHint', { masked: backendKeys.stability })}
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-on-surface-variant mt-2">
+                    {t('settings.stabilityApiKeyDesc')}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1340,8 +1369,12 @@ export default function DMSettingsPage({ onClose }) {
               <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
                 {t('settings.status')}
               </p>
-              <p className={`font-headline ${(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? 'text-primary' : 'text-error'}`}>
-                {(localKeys.openaiApiKey || localKeys.anthropicApiKey) ? t('settings.keyConfigured') : t('settings.noKeySet')}
+              <p className={`font-headline ${(hasApiKey('openai') || hasApiKey('anthropic')) ? 'text-primary' : 'text-error'}`}>
+                {(hasApiKey('openai') || hasApiKey('anthropic'))
+                  ? (!(localKeys.openaiApiKey || localKeys.anthropicApiKey) && apiClient.isConnected()
+                    ? t('settings.serverKeyActive')
+                    : t('settings.keyConfigured'))
+                  : t('settings.noKeySet')}
               </p>
             </div>
           </div>

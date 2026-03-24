@@ -4,6 +4,7 @@ import {
   updateSettings, submitAction, withdrawAction, approveActions, executeSoloAction,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom, touchRoom,
   saveRoomToDB, deleteRoomFromDB, loadActiveSessionsFromDB, findSessionInDB, restoreRoom,
+  listJoinableRooms,
 } from '../services/roomManager.js';
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
@@ -430,6 +431,10 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
 }
 
 export async function multiplayerRoutes(fastify) {
+  fastify.get('/rooms', { onRequest: [fastify.authenticate] }, async () => {
+    return { rooms: listJoinableRooms() };
+  });
+
   fastify.get('/', { websocket: true }, async (socket, request) => {
     let odId = null;
     let roomCode = null;

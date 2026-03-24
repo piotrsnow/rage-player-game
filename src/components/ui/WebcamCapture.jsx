@@ -76,6 +76,12 @@ export default function WebcamCapture({ onCapture, onCancel }) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [stopCamera, previewUrl]);
 
+  useEffect(() => {
+    if (mode === 'camera' && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [mode]);
+
   const startCamera = useCallback(async () => {
     setCameraError(false);
     try {
