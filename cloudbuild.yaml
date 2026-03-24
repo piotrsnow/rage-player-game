@@ -19,7 +19,7 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'rpgon'
+      - 'rage-player-game'
       - '--image=gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA'
       - '--region=${_REGION}'
       - '--platform=managed'
