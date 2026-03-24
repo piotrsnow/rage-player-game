@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import Button from '../ui/Button';
+import FloatingVideoPanel from './FloatingVideoPanel';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 import { translateCareer } from '../../utils/wfrpTranslate';
 
@@ -107,6 +108,7 @@ export default function PlayerLobby() {
   const { state, leaveRoom } = useMultiplayer();
   const { players, myOdId, roomCode } = state;
   const [copied, setCopied] = useState(false);
+  const [videoPanelOpen, setVideoPanelOpen] = useState(false);
 
   const handleCopyCode = async () => {
     try {
@@ -157,13 +159,30 @@ export default function PlayerLobby() {
         </div>
       </div>
 
-      {/* Leave Button */}
-      <div className="pt-2">
+      {/* Actions */}
+      <div className="flex items-center gap-3 pt-2">
         <Button variant="ghost" onClick={leaveRoom} size="sm">
           <span className="material-symbols-outlined text-sm">logout</span>
           {t('multiplayer.leaveRoom')}
         </Button>
+        <button
+          onClick={() => setVideoPanelOpen((v) => !v)}
+          title={t('webcam.videoChat')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-label border transition-all ${
+            videoPanelOpen
+              ? 'bg-surface-tint/15 text-primary border-primary/30'
+              : 'text-on-surface-variant border-outline-variant/15 hover:text-primary hover:border-primary/20'
+          }`}
+        >
+          <span className="material-symbols-outlined text-sm">video_camera_front</span>
+          {t('webcam.videoChat')}
+        </button>
       </div>
+
+      <FloatingVideoPanel
+        visible={videoPanelOpen}
+        onClose={() => setVideoPanelOpen(false)}
+      />
     </div>
   );
 }
