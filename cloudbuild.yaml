@@ -1,0 +1,40 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/rpgon:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/rpgon:latest']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'rpgon'
+      - '--image=gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--min-instances=0'
+      - '--max-instances=1'
+      - '--timeout=3600'
+      - '--session-affinity'
+      - '--set-env-vars=NODE_ENV=production'
+      - '--set-secrets=JWT_SECRET=rpgon-jwt-secret:latest,API_KEY_ENCRYPTION_SECRET=rpgon-encryption-secret:latest,DATABASE_URL=rpgon-database-url:latest,GCS_BUCKET_NAME=rpgon-gcs-bucket:latest'
+
+substitutions:
+  _REGION: 'europe-central2'
+
+images:
+  - 'gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/rpgon:latest'

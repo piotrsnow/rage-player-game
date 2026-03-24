@@ -1232,5 +1232,23 @@
     "Warrior Priest": "Warrior Priest",
     "Priest Captain": "Priest Captain",
     "Templar": "Templar"
+  },
+  "webcam": {
+    "videoChat": "Video Chat",
+    "startCamera": "Start Camera",
+    "stopCamera": "Stop Camera",
+    "muteMic": "Mute Microphone",
+    "unmuteMic": "Unmute Microphone",
+    "mutePlayer": "Mute Player",
+    "unmutePlayer": "Unmute Player",
+    "volume": "Volume",
+    "minimize": "Minimize",
+    "expand": "Expand",
+    "cameraError": "Could not access camera. Please check permissions.",
+    "connecting": "Connecting...",
+    "noCamera": "No camera detected",
+    "you": "You",
+    "remoteMicOff": "Microphone off",
+    "hint": "Your camera and microphone will be shared with other players in the room."
   }
 }

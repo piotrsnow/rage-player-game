@@ -1,0 +1,42 @@
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: rpgon
+
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3001:8080"
+    depends_on:
+      - mongodb
+    environment:
+      PORT: "8080"
+      HOST: "0.0.0.0"
+      DATABASE_URL: "mongodb://mongodb:27017/rpgon"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3001}"
+      MEDIA_BACKEND: "${MEDIA_BACKEND:-local}"
+      MEDIA_LOCAL_PATH: "/data/media"
+      # GCP (optional, only when MEDIA_BACKEND=gcp)
+      GCS_BUCKET_NAME: "${GCS_BUCKET_NAME:-}"
+      GCP_SERVICE_ACCOUNT_KEY: "${GCP_SERVICE_ACCOUNT_KEY:-}"
+      # Default API keys (optional, users can add their own via UI)
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
+      STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
+      SUNO_API_KEY: "${SUNO_API_KEY:-}"
+    volumes:
+      - media-data:/data/media
+
+volumes:
+  mongo-data:
+  media-data:

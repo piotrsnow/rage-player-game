@@ -1,0 +1,21 @@
+# Production override — GCP Cloud Run compatible
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# For Cloud Run you only need the single container (backend service).
+# MongoDB should be an external managed instance (MongoDB Atlas).
+# Media storage should use GCS (MEDIA_BACKEND=gcp).
+
+services:
+  mongodb:
+    profiles:
+      - disabled
+
+  backend:
+    environment:
+      NODE_ENV: "production"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to your MongoDB Atlas connection string}"
+      MEDIA_BACKEND: "gcp"
+      GCS_BUCKET_NAME: "${GCS_BUCKET_NAME:?Set GCS_BUCKET_NAME}"
+      GCP_SERVICE_ACCOUNT_KEY: "${GCP_SERVICE_ACCOUNT_KEY:-}"
+      CORS_ORIGIN: "${CORS_ORIGIN:?Set CORS_ORIGIN to your frontend domain}"
+    volumes: []

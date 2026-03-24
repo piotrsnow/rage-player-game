@@ -1526,5 +1526,23 @@
     "Warrior Priest": "Kapłan-Wojownik",
     "Priest Captain": "Kapitan Kapłanów",
     "Templar": "Templariusz"
+  },
+  "webcam": {
+    "videoChat": "Wideorozmowa",
+    "startCamera": "Włącz kamerę",
+    "stopCamera": "Wyłącz kamerę",
+    "muteMic": "Wycisz mikrofon",
+    "unmuteMic": "Włącz mikrofon",
+    "mutePlayer": "Wycisz gracza",
+    "unmutePlayer": "Odcisz gracza",
+    "volume": "Głośność",
+    "minimize": "Minimalizuj",
+    "expand": "Rozwiń",
+    "cameraError": "Nie można uzyskać dostępu do kamery. Sprawdź uprawnienia.",
+    "connecting": "Łączenie...",
+    "noCamera": "Nie wykryto kamery",
+    "you": "Ty",
+    "remoteMicOff": "Mikrofon wyłączony",
+    "hint": "Twoja kamera i mikrofon będą udostępnione innym graczom w pokoju."
   }
 }

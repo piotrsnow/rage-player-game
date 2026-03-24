@@ -1,4 +1,8 @@
+import { existsSync } from 'fs';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
 import Fastify from 'fastify';
+import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
@@ -17,6 +21,9 @@ import { sunoProxyRoutes } from './routes/proxy/suno.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
 
 const fastify = Fastify({
   logger: true,
@@ -70,6 +77,25 @@ await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
 
 startRoomCleanup();
 await loadActiveSessionsFromDB();
+
+if (existsSync(STATIC_ROOT)) {
+  await fastify.register(fastifyStatic, {
+    root: STATIC_ROOT,
+    wildcard: false,
+  });
+
+  fastify.setNotFoundHandler((request, reply) => {
+    if (request.url.startsWith('/auth') || request.url.startsWith('/campaigns') ||
+        request.url.startsWith('/characters') || request.url.startsWith('/media') ||
+        request.url.startsWith('/proxy') || request.url.startsWith('/music') ||
+        request.url.startsWith('/multiplayer') || request.url.startsWith('/health')) {
+      return reply.code(404).send({ error: 'Not found' });
+    }
+    return reply.sendFile('index.html');
+  });
+
+  fastify.log.info(`Serving frontend from ${STATIC_ROOT}`);
+}
 
 try {
   await fastify.listen({ port: config.port, host: config.host });

@@ -23,6 +23,7 @@ import PartyPanel from './PartyPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
 import QuestOffersPanel from './QuestOffersPanel';
 import GMModal from './gm/GMModal';
+import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
 
@@ -49,6 +50,7 @@ export default function GameplayPage() {
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
   const [advancementOpen, setAdvancementOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [videoPanelOpen, setVideoPanelOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
@@ -405,6 +407,18 @@ export default function GameplayPage() {
               >
                 {isMultiplayer ? 'group' : 'group_add'}
               </button>
+              {isMultiplayer && (
+                <button
+                  onClick={() => setVideoPanelOpen((v) => !v)}
+                  title={t('webcam.videoChat')}
+                  aria-label={t('webcam.videoChat')}
+                  className={`material-symbols-outlined text-sm transition-colors ${
+                    videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
+                  }`}
+                >
+                  video_camera_front
+                </button>
+              )}
               <button
                 onClick={() => setAchievementsOpen(true)}
                 title={t('achievements.title', 'Achievements')}
@@ -697,6 +711,13 @@ export default function GameplayPage() {
         <AchievementsPanel
           achievementState={state.achievements}
           onClose={() => setAchievementsOpen(false)}
+        />
+      )}
+
+      {isMultiplayer && (
+        <FloatingVideoPanel
+          visible={videoPanelOpen}
+          onClose={() => setVideoPanelOpen(false)}
         />
       )}
     </div>

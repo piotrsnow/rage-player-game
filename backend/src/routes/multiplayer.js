@@ -1108,6 +1108,47 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'WEBRTC_OFFER': {
+            if (!roomCode) break;
+            const rtcOfferRoom = getRoom(roomCode);
+            if (rtcOfferRoom && msg.targetOdId) {
+              sendTo(rtcOfferRoom, msg.targetOdId, { type: 'WEBRTC_OFFER', fromOdId: odId, offer: msg.offer });
+            }
+            break;
+          }
+
+          case 'WEBRTC_ANSWER': {
+            if (!roomCode) break;
+            const rtcAnswerRoom = getRoom(roomCode);
+            if (rtcAnswerRoom && msg.targetOdId) {
+              sendTo(rtcAnswerRoom, msg.targetOdId, { type: 'WEBRTC_ANSWER', fromOdId: odId, answer: msg.answer });
+            }
+            break;
+          }
+
+          case 'WEBRTC_ICE': {
+            if (!roomCode) break;
+            const rtcIceRoom = getRoom(roomCode);
+            if (rtcIceRoom && msg.targetOdId) {
+              sendTo(rtcIceRoom, msg.targetOdId, { type: 'WEBRTC_ICE', fromOdId: odId, candidate: msg.candidate });
+            }
+            break;
+          }
+
+          case 'WEBRTC_TRACK_STATE': {
+            if (!roomCode) break;
+            const rtcTrackRoom = getRoom(roomCode);
+            if (rtcTrackRoom && msg.targetOdId) {
+              sendTo(rtcTrackRoom, msg.targetOdId, {
+                type: 'WEBRTC_TRACK_STATE',
+                fromOdId: odId,
+                videoEnabled: msg.videoEnabled,
+                audioEnabled: msg.audioEnabled,
+              });
+            }
+            break;
+          }
+
           case 'KICK_PLAYER': {
             if (!roomCode || !odId) throw new Error('Not in a room');
             const room = getRoom(roomCode);
