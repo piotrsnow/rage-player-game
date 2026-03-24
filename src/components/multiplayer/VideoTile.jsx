@@ -51,7 +51,7 @@ export default function VideoTile({
     'bg-gray-500';
 
   return (
-    <div className="relative group rounded-sm overflow-hidden bg-surface-container-highest/80 border border-outline-variant/15 aspect-video flex items-center justify-center">
+    <div className="relative group rounded-sm overflow-hidden bg-surface-container-highest/80 border border-outline-variant/15 w-full h-full flex items-center justify-center">
       <video
         ref={videoRef}
         autoPlay
