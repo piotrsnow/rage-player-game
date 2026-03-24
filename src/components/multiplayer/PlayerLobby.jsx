@@ -34,15 +34,18 @@ function CharacterSummaryBadge({ characterData, t }) {
 
 function PlayerCard({ player, isMe }) {
   const { t } = useTranslation();
+  const isDisconnected = player.connected === false;
 
   return (
     <div className={`p-4 rounded-sm border transition-all ${
-      isMe
-        ? 'bg-surface-tint/10 border-primary/30'
-        : 'bg-surface-container-high/40 border-outline-variant/15'
+      isDisconnected
+        ? 'bg-error/5 border-error/20 opacity-70'
+        : isMe
+          ? 'bg-surface-tint/10 border-primary/30'
+          : 'bg-surface-container-high/40 border-outline-variant/15'
     }`}>
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold relative ${
           player.isHost
             ? 'bg-gradient-to-tr from-primary-dim to-primary text-on-primary'
             : 'bg-surface-container-high text-on-surface-variant'
@@ -54,11 +57,16 @@ function PlayerCard({ player, isMe }) {
               {player.isHost ? 'shield' : 'person'}
             </span>
           )}
+          {isDisconnected && (
+            <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-error flex items-center justify-center">
+              <span className="material-symbols-outlined text-[10px] text-on-error">wifi_off</span>
+            </span>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-on-surface truncate">
+            <span className={`text-sm font-bold truncate ${isDisconnected ? 'text-on-surface/50' : 'text-on-surface'}`}>
               {player.characterData?.name || player.name}
             </span>
             {player.isHost && (
@@ -69,6 +77,11 @@ function PlayerCard({ player, isMe }) {
             {isMe && (
               <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
                 {t('multiplayer.you')}
+              </span>
+            )}
+            {isDisconnected && (
+              <span className="text-[10px] font-bold text-error/70 uppercase tracking-wider">
+                {t('multiplayer.disconnected', 'offline')}
               </span>
             )}
           </div>

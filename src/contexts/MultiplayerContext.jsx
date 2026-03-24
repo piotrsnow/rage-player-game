@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
-import { wsService } from '../services/websocket';
+import { wsService, clearPersistedRejoinInfo, getPersistedRejoinInfo } from '../services/websocket';
 import { apiClient } from '../services/apiClient';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 
@@ -36,18 +36,21 @@ function mpReducer(state, action) {
         roomSettings: action.payload.room.settings,
       };
 
-    case 'ROOM_JOINED':
+    case 'ROOM_JOINED': {
+      const joinedOdId = action.payload.odId;
+      const joinedIsHost = action.payload.room.players.find((p) => p.odId === joinedOdId)?.isHost || false;
       return {
         ...state,
         isMultiplayer: true,
-        isHost: false,
+        isHost: joinedIsHost,
         roomCode: action.payload.roomCode,
-        myOdId: action.payload.odId,
+        myOdId: joinedOdId,
         phase: action.payload.room.phase,
         players: action.payload.room.players,
         gameState: action.payload.room.gameState,
         roomSettings: action.payload.room.settings,
       };
+    }
 
     case 'ROOM_STATE':
       return {
@@ -97,6 +100,19 @@ function mpReducer(state, action) {
         roomSettings: action.payload.room.settings ?? state.roomSettings,
       };
 
+    case 'PLAYER_DISCONNECTED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+        isHost: action.payload.room.players.find((p) => p.odId === state.myOdId)?.isHost || state.isHost,
+      };
+
+    case 'PLAYER_RECONNECTED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+      };
+
     case 'GAME_STARTING':
       return { ...state, isGenerating: true };
 
@@ -117,6 +133,14 @@ function mpReducer(state, action) {
 
     case 'SCENE_GENERATING':
       return { ...state, isGenerating: true };
+
+    case 'GENERATION_FAILED':
+      return {
+        ...state,
+        isGenerating: false,
+        players: action.payload.room?.players || state.players,
+        error: action.payload.message || 'Generation failed',
+      };
 
     case 'SCENE_UPDATE': {
       let newGameState = action.payload.room?.gameState || state.gameState;
@@ -367,10 +391,13 @@ export function MultiplayerProvider({ children }) {
       wsService.on('PLAYER_JOINED', (msg) => dispatch({ type: 'PLAYER_JOINED', payload: msg })),
       wsService.on('PLAYER_JOINED_MIDGAME', (msg) => dispatch({ type: 'PLAYER_JOINED_MIDGAME', payload: msg })),
       wsService.on('PLAYER_LEFT', (msg) => dispatch({ type: 'PLAYER_LEFT', payload: msg })),
+      wsService.on('PLAYER_DISCONNECTED', (msg) => dispatch({ type: 'PLAYER_DISCONNECTED', payload: msg })),
+      wsService.on('PLAYER_RECONNECTED', (msg) => dispatch({ type: 'PLAYER_RECONNECTED', payload: msg })),
       wsService.on('GAME_STARTING', () => dispatch({ type: 'GAME_STARTING' })),
       wsService.on('GAME_STARTED', (msg) => dispatch({ type: 'GAME_STARTED', payload: msg })),
       wsService.on('ACTIONS_UPDATED', (msg) => dispatch({ type: 'ACTIONS_UPDATED', payload: msg })),
       wsService.on('SCENE_GENERATING', () => dispatch({ type: 'SCENE_GENERATING' })),
+      wsService.on('GENERATION_FAILED', (msg) => dispatch({ type: 'GENERATION_FAILED', payload: msg })),
       wsService.on('SCENE_UPDATE', (msg) => {
         dispatch({ type: 'SCENE_UPDATE', payload: msg });
         sceneCallbackRef.current?.(msg);
@@ -384,11 +411,19 @@ export function MultiplayerProvider({ children }) {
       wsService.on('CHARACTER_SYNCED', (msg) => {
         dispatch({ type: 'CHARACTER_SYNCED', payload: msg });
       }),
-      wsService.on('LEFT_ROOM', () => dispatch({ type: 'LEFT_ROOM' })),
+      wsService.on('LEFT_ROOM', () => {
+        clearPersistedRejoinInfo();
+        dispatch({ type: 'LEFT_ROOM' });
+      }),
       wsService.on('KICKED', (msg) => {
         wsService.setRejoinInfo(null, null);
+        clearPersistedRejoinInfo();
         dispatch({ type: 'SET_ERROR', payload: msg.message || 'You have been removed from the room' });
         dispatch({ type: 'RESET' });
+      }),
+      wsService.on('ROOM_EXPIRED', () => {
+        clearPersistedRejoinInfo();
+        wsService.setRejoinInfo(null, null);
       }),
       wsService.on('ERROR', (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
     ];
@@ -431,8 +466,17 @@ export function MultiplayerProvider({ children }) {
 
   const leaveRoom = useCallback(() => {
     wsService.send('LEAVE_ROOM');
+    clearPersistedRejoinInfo();
     dispatch({ type: 'RESET' });
   }, []);
+
+  const rejoinRoom = useCallback(async () => {
+    const info = getPersistedRejoinInfo();
+    if (!info?.roomCode || !info?.odId) return false;
+    await ensureConnected();
+    wsService.send('REJOIN_ROOM', { roomCode: info.roomCode, odId: info.odId });
+    return true;
+  }, [ensureConnected]);
 
   const updateMyCharacter = useCallback((data) => {
     wsService.send('UPDATE_CHARACTER', data);
@@ -494,6 +538,7 @@ export function MultiplayerProvider({ children }) {
     disconnect,
     createRoom,
     joinRoom,
+    rejoinRoom,
     convertToMultiplayer,
     leaveRoom,
     kickPlayer,

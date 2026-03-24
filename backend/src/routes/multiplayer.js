@@ -4,7 +4,7 @@ import {
   updateSettings, submitAction, withdrawAction, approveActions, executeSoloAction,
   setPhase, setGameState, broadcast, sendTo, sanitizeRoom, getRoom, touchRoom,
   saveRoomToDB, deleteRoomFromDB, loadActiveSessionsFromDB, findSessionInDB, restoreRoom,
-  listJoinableRooms,
+  listJoinableRooms, disconnectPlayer, listUserRooms, restorePendingActions,
 } from '../services/roomManager.js';
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
@@ -435,6 +435,42 @@ export async function multiplayerRoutes(fastify) {
     return { rooms: listJoinableRooms() };
   });
 
+  fastify.get('/my-sessions', { onRequest: [fastify.authenticate] }, async (request) => {
+    const userId = request.user.id;
+    const inMemory = listUserRooms(userId);
+
+    if (inMemory.length > 0) return { sessions: inMemory };
+
+    try {
+      const dbSessions = await prisma.multiplayerSession.findMany({
+        where: { phase: 'playing' },
+        select: { roomCode: true, phase: true, players: true, settings: true, gameState: true, updatedAt: true },
+      });
+
+      const userSessions = [];
+      for (const session of dbSessions) {
+        const players = JSON.parse(session.players || '[]');
+        const match = players.find((p) => p.userId === userId);
+        if (!match) continue;
+        const settings = JSON.parse(session.settings || '{}');
+        const gameState = JSON.parse(session.gameState || '{}');
+        const hostPlayer = players.find((p) => p.isHost);
+        userSessions.push({
+          roomCode: session.roomCode,
+          phase: session.phase,
+          hostName: hostPlayer?.name || 'Host',
+          campaignName: gameState?.campaign?.name || settings?.genre || 'Campaign',
+          playerCount: players.length,
+          myOdId: match.odId,
+          isHost: match.isHost,
+        });
+      }
+      return { sessions: userSessions };
+    } catch {
+      return { sessions: [] };
+    }
+  });
+
   fastify.get('/', { websocket: true }, async (socket, request) => {
     let odId = null;
     let roomCode = null;
@@ -489,24 +525,31 @@ export async function multiplayerRoutes(fastify) {
       socket.on('close', () => {
         if (roomCode && odId) {
           const currentRoom = getRoom(roomCode);
-          const leavingPlayer = currentRoom?.players.get(odId);
-          const playerName = leavingPlayer?.name || 'A player';
-          const wasPlaying = currentRoom?.phase === 'playing' && currentRoom?.gameState;
+          if (!currentRoom) return;
 
-          const room = leaveRoom(roomCode, odId);
-          if (room) {
-            if (wasPlaying && room.gameState) {
-              room.gameState.characters = (room.gameState.characters || []).filter((c) => c.odId !== odId);
-              const journalEntry = `${playerName} left the party.`;
-              if (!room.gameState.world) room.gameState.world = {};
-              room.gameState.world.eventHistory = [...(room.gameState.world?.eventHistory || []), journalEntry];
-              setGameState(roomCode, room.gameState);
+          const player = currentRoom.players.get(odId);
+          const playerName = player?.name || 'A player';
+
+          if (currentRoom.phase === 'lobby') {
+            const room = leaveRoom(roomCode, odId);
+            if (room) {
+              broadcast(room, {
+                type: 'PLAYER_LEFT',
+                playerId: odId,
+                room: sanitizeRoom(room),
+              });
             }
-            broadcast(room, {
-              type: 'PLAYER_LEFT',
-              playerId: odId,
-              room: sanitizeRoom(room),
-            });
+          } else {
+            const room = disconnectPlayer(roomCode, odId);
+            if (room) {
+              broadcast(room, {
+                type: 'PLAYER_DISCONNECTED',
+                playerId: odId,
+                playerName,
+                room: sanitizeRoom(room),
+              });
+              saveRoomToDB(roomCode).catch(() => {});
+            }
           }
         }
       });
@@ -698,35 +741,43 @@ export async function multiplayerRoutes(fastify) {
 
             broadcast(currentRoom, { type: 'GAME_STARTING' });
 
-            const hostPlayer = currentRoom.players.get(currentRoom.hostId);
-            const dbUser = await prisma.user.findUnique({
-              where: { id: hostPlayer.userId },
-              select: { apiKeys: true },
-            });
+            try {
+              const hostPlayer = currentRoom.players.get(currentRoom.hostId);
+              const dbUser = await prisma.user.findUnique({
+                where: { id: hostPlayer.userId },
+                select: { apiKeys: true },
+              });
 
-            const players = [];
-            for (const [, p] of currentRoom.players) {
-              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost, characterData: p.characterData || null });
+              const players = [];
+              for (const [, p] of currentRoom.players) {
+                players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost, characterData: p.characterData || null });
+              }
+
+              const campaignResult = await generateMultiplayerCampaign(
+                currentRoom.settings,
+                players,
+                dbUser?.apiKeys || '{}',
+                msg.language || 'en',
+              );
+
+              setPhase(roomCode, 'playing');
+              setGameState(roomCode, campaignResult);
+
+              const updatedRoom = getRoom(roomCode);
+              broadcast(updatedRoom, {
+                type: 'GAME_STARTED',
+                gameState: campaignResult,
+                room: sanitizeRoom(updatedRoom),
+              });
+
+              saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+            } catch (genErr) {
+              fastify.log.error(genErr, 'START_GAME generation failed');
+              broadcast(currentRoom, {
+                type: 'GENERATION_FAILED',
+                message: 'Campaign generation failed. Please try again.',
+              });
             }
-
-            const campaignResult = await generateMultiplayerCampaign(
-              currentRoom.settings,
-              players,
-              dbUser?.apiKeys || '{}',
-              msg.language || 'en',
-            );
-
-            setPhase(roomCode, 'playing');
-            setGameState(roomCode, campaignResult);
-
-            const updatedRoom = getRoom(roomCode);
-            broadcast(updatedRoom, {
-              type: 'GAME_STARTED',
-              gameState: campaignResult,
-              room: sanitizeRoom(updatedRoom),
-            });
-
-            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
             break;
           }
 
@@ -780,84 +831,94 @@ export async function multiplayerRoutes(fastify) {
 
             broadcast(room, { type: 'SCENE_GENERATING' });
 
-            const hostPlayer = room.players.get(room.hostId);
-            const dbUser = await prisma.user.findUnique({
-              where: { id: hostPlayer.userId },
-              select: { apiKeys: true },
-            });
+            try {
+              const hostPlayer = room.players.get(room.hostId);
+              const dbUser = await prisma.user.findUnique({
+                where: { id: hostPlayer.userId },
+                select: { apiKeys: true },
+              });
 
-            const players = [];
-            for (const [, p] of room.players) {
-              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
-            }
+              const players = [];
+              for (const [, p] of room.players) {
+                players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
+              }
 
-            const characterMomentum = room.gameState.characterMomentum || {};
+              const characterMomentum = room.gameState.characterMomentum || {};
 
-            const sceneResult = await generateMultiplayerScene(
-              room.gameState,
-              room.settings,
-              players,
-              actions,
-              dbUser?.apiKeys || '{}',
-              msg.language || 'en',
-              msg.dmSettings || null,
-              characterMomentum,
-            );
+              const sceneResult = await generateMultiplayerScene(
+                room.gameState,
+                room.settings,
+                players,
+                actions,
+                dbUser?.apiKeys || '{}',
+                msg.language || 'en',
+                msg.dmSettings || null,
+                characterMomentum,
+              );
 
-            const { validated: validatedChanges } = validateMultiplayerStateChanges(
-              sceneResult.stateChanges, room.gameState
-            );
-            sceneResult.stateChanges = validatedChanges;
+              const { validated: validatedChanges } = validateMultiplayerStateChanges(
+                sceneResult.stateChanges, room.gameState
+              );
+              sceneResult.stateChanges = validatedChanges;
 
-            const newMomentum = {};
-            if (sceneResult.scene.diceRolls?.length) {
-              for (const dr of sceneResult.scene.diceRolls) {
-                if (dr.character && dr.sl != null) {
-                  newMomentum[dr.character] = dr.sl * 5;
+              const newMomentum = {};
+              if (sceneResult.scene.diceRolls?.length) {
+                for (const dr of sceneResult.scene.diceRolls) {
+                  if (dr.character && dr.sl != null) {
+                    newMomentum[dr.character] = dr.sl * 5;
+                  }
                 }
               }
-            }
 
-            const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
-            const updatedGameState = {
-              ...room.gameState,
-              characters: applied.characters,
-              world: applied.world,
-              quests: applied.quests,
-              ...(applied.campaign && { campaign: applied.campaign }),
-              scenes: [...(room.gameState.scenes || []), sceneResult.scene],
-              chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
-              characterMomentum: newMomentum,
-            };
-            setGameState(roomCode, updatedGameState);
+              const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
+              const updatedGameState = {
+                ...room.gameState,
+                characters: applied.characters,
+                world: applied.world,
+                quests: applied.quests,
+                ...(applied.campaign && { campaign: applied.campaign }),
+                scenes: [...(room.gameState.scenes || []), sceneResult.scene],
+                chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
+                characterMomentum: newMomentum,
+              };
+              setGameState(roomCode, updatedGameState);
 
-            const updatedRoom = getRoom(roomCode);
-            broadcast(updatedRoom, {
-              type: 'SCENE_UPDATE',
-              scene: sceneResult.scene,
-              chatMessages: sceneResult.chatMessages,
-              stateChanges: sceneResult.stateChanges,
-              room: sanitizeRoom(updatedRoom),
-            });
+              const updatedRoom = getRoom(roomCode);
+              broadcast(updatedRoom, {
+                type: 'SCENE_UPDATE',
+                scene: sceneResult.scene,
+                chatMessages: sceneResult.chatMessages,
+                stateChanges: sceneResult.stateChanges,
+                room: sanitizeRoom(updatedRoom),
+              });
 
-            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+              saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
 
-            if (needsCompression(updatedGameState)) {
-              compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
-                .then((summary) => {
-                  if (summary) {
-                    const currentRoom = getRoom(roomCode);
-                    if (currentRoom?.gameState) {
-                      currentRoom.gameState.world = {
-                        ...(currentRoom.gameState.world || {}),
-                        compressedHistory: summary,
-                      };
-                      setGameState(roomCode, currentRoom.gameState);
-                      saveRoomToDB(roomCode).catch(() => {});
+              if (needsCompression(updatedGameState)) {
+                compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                  .then((summary) => {
+                    if (summary) {
+                      const currentRoom = getRoom(roomCode);
+                      if (currentRoom?.gameState) {
+                        currentRoom.gameState.world = {
+                          ...(currentRoom.gameState.world || {}),
+                          compressedHistory: summary,
+                        };
+                        setGameState(roomCode, currentRoom.gameState);
+                        saveRoomToDB(roomCode).catch(() => {});
+                      }
                     }
-                  }
-                })
-                .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+                  })
+                  .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+              }
+            } catch (genErr) {
+              fastify.log.error(genErr, 'APPROVE_ACTIONS generation failed');
+              restorePendingActions(roomCode, actions);
+              broadcast(room, {
+                type: 'GENERATION_FAILED',
+                message: 'Scene generation failed. Your actions have been restored — please try again.',
+                room: sanitizeRoom(room),
+              });
             }
             break;
           }
@@ -872,86 +933,96 @@ export async function multiplayerRoutes(fastify) {
               room: sanitizeRoom(room),
             });
 
-            const hostPlayer = room.players.get(room.hostId);
-            const dbUser = await prisma.user.findUnique({
-              where: { id: hostPlayer.userId },
-              select: { apiKeys: true },
-            });
+            try {
+              const hostPlayer = room.players.get(room.hostId);
+              const dbUser = await prisma.user.findUnique({
+                where: { id: hostPlayer.userId },
+                select: { apiKeys: true },
+              });
 
-            const players = [];
-            for (const [, p] of room.players) {
-              players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
-            }
-
-            const soloMomentum = room.gameState.characterMomentum || {};
-
-            const sceneResult = await generateMultiplayerScene(
-              room.gameState,
-              room.settings,
-              players,
-              [action],
-              dbUser?.apiKeys || '{}',
-              msg.language || 'en',
-              msg.dmSettings || null,
-              soloMomentum,
-            );
-
-            const { validated: validatedSoloChanges } = validateMultiplayerStateChanges(
-              sceneResult.stateChanges, room.gameState
-            );
-            sceneResult.stateChanges = validatedSoloChanges;
-
-            const newSoloMomentum = { ...soloMomentum };
-            if (sceneResult.scene.diceRolls?.length) {
-              for (const dr of sceneResult.scene.diceRolls) {
-                if (dr.character && dr.sl != null) {
-                  newSoloMomentum[dr.character] = dr.sl * 5;
-                }
+              const players = [];
+              for (const [, p] of room.players) {
+                players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
               }
-            } else if (sceneResult.scene.diceRoll?.sl != null) {
-              newSoloMomentum[action.name] = sceneResult.scene.diceRoll.sl * 5;
-            }
 
-            const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
-            const updatedGameState = {
-              ...room.gameState,
-              characters: applied.characters,
-              world: applied.world,
-              quests: applied.quests,
-              ...(applied.campaign && { campaign: applied.campaign }),
-              scenes: [...(room.gameState.scenes || []), sceneResult.scene],
-              chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
-              characterMomentum: newSoloMomentum,
-            };
-            setGameState(roomCode, updatedGameState);
+              const soloMomentum = room.gameState.characterMomentum || {};
 
-            const updatedRoom = getRoom(roomCode);
-            broadcast(updatedRoom, {
-              type: 'SCENE_UPDATE',
-              scene: sceneResult.scene,
-              chatMessages: sceneResult.chatMessages,
-              stateChanges: sceneResult.stateChanges,
-              room: sanitizeRoom(updatedRoom),
-            });
+              const sceneResult = await generateMultiplayerScene(
+                room.gameState,
+                room.settings,
+                players,
+                [action],
+                dbUser?.apiKeys || '{}',
+                msg.language || 'en',
+                msg.dmSettings || null,
+                soloMomentum,
+              );
 
-            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+              const { validated: validatedSoloChanges } = validateMultiplayerStateChanges(
+                sceneResult.stateChanges, room.gameState
+              );
+              sceneResult.stateChanges = validatedSoloChanges;
 
-            if (needsCompression(updatedGameState)) {
-              compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
-                .then((summary) => {
-                  if (summary) {
-                    const currentRoom = getRoom(roomCode);
-                    if (currentRoom?.gameState) {
-                      currentRoom.gameState.world = {
-                        ...(currentRoom.gameState.world || {}),
-                        compressedHistory: summary,
-                      };
-                      setGameState(roomCode, currentRoom.gameState);
-                      saveRoomToDB(roomCode).catch(() => {});
-                    }
+              const newSoloMomentum = { ...soloMomentum };
+              if (sceneResult.scene.diceRolls?.length) {
+                for (const dr of sceneResult.scene.diceRolls) {
+                  if (dr.character && dr.sl != null) {
+                    newSoloMomentum[dr.character] = dr.sl * 5;
                   }
-                })
-                .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+                }
+              } else if (sceneResult.scene.diceRoll?.sl != null) {
+                newSoloMomentum[action.name] = sceneResult.scene.diceRoll.sl * 5;
+              }
+
+              const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);
+              const updatedGameState = {
+                ...room.gameState,
+                characters: applied.characters,
+                world: applied.world,
+                quests: applied.quests,
+                ...(applied.campaign && { campaign: applied.campaign }),
+                scenes: [...(room.gameState.scenes || []), sceneResult.scene],
+                chatHistory: [...(room.gameState.chatHistory || []), ...sceneResult.chatMessages],
+                characterMomentum: newSoloMomentum,
+              };
+              setGameState(roomCode, updatedGameState);
+
+              const updatedRoom = getRoom(roomCode);
+              broadcast(updatedRoom, {
+                type: 'SCENE_UPDATE',
+                scene: sceneResult.scene,
+                chatMessages: sceneResult.chatMessages,
+                stateChanges: sceneResult.stateChanges,
+                room: sanitizeRoom(updatedRoom),
+              });
+
+              saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
+
+              if (needsCompression(updatedGameState)) {
+                compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                  .then((summary) => {
+                    if (summary) {
+                      const currentRoom = getRoom(roomCode);
+                      if (currentRoom?.gameState) {
+                        currentRoom.gameState.world = {
+                          ...(currentRoom.gameState.world || {}),
+                          compressedHistory: summary,
+                        };
+                        setGameState(roomCode, currentRoom.gameState);
+                        saveRoomToDB(roomCode).catch(() => {});
+                      }
+                    }
+                  })
+                  .catch((err) => fastify.log.warn(err, 'MP scene compression failed'));
+              }
+            } catch (genErr) {
+              fastify.log.error(genErr, 'SOLO_ACTION generation failed');
+              restorePendingActions(roomCode, [action]);
+              broadcast(room, {
+                type: 'GENERATION_FAILED',
+                message: 'Scene generation failed. Your action has been restored — please try again.',
+                room: sanitizeRoom(room),
+              });
             }
             break;
           }
@@ -1093,23 +1164,34 @@ export async function multiplayerRoutes(fastify) {
             }
 
             if (!targetRoom) {
-              ws.send(JSON.stringify({ type: 'ERROR', message: 'Room no longer exists' }));
+              ws.send(JSON.stringify({ type: 'ROOM_EXPIRED', message: 'Room no longer exists' }));
               break;
             }
             const existingPlayer = targetRoom.players.get(msg.odId);
             if (!existingPlayer || existingPlayer.userId !== uid) {
-              ws.send(JSON.stringify({ type: 'ERROR', message: 'Cannot rejoin: player not found or unauthorized' }));
+              ws.send(JSON.stringify({ type: 'ROOM_EXPIRED', message: 'Cannot rejoin: player not found or unauthorized' }));
               break;
             }
             existingPlayer.ws = ws;
             odId = msg.odId;
             roomCode = msg.roomCode;
+            touchRoom(roomCode);
+
             sendTo(targetRoom, odId, {
               type: 'ROOM_JOINED',
               roomCode,
               odId,
               room: sanitizeRoom(targetRoom),
             });
+
+            broadcast(targetRoom, {
+              type: 'PLAYER_RECONNECTED',
+              playerId: odId,
+              playerName: existingPlayer.name,
+              room: sanitizeRoom(targetRoom),
+            }, odId);
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after rejoin failed'));
             break;
           }
 

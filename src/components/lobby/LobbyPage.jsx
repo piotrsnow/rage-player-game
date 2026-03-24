@@ -4,9 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
 import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
+import { getPersistedRejoinInfo, clearPersistedRejoinInfo } from '../../services/websocket';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModals } from '../../contexts/ModalContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
@@ -28,9 +30,12 @@ export default function LobbyPage() {
   const { dispatch } = useGame();
   const { openSettings } = useModals();
   const { settings } = useSettings();
+  const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [rejoinInfo, setRejoinInfo] = useState(null);
+  const [rejoining, setRejoining] = useState(false);
 
   useEffect(() => {
     setCampaigns(storage.getCampaigns());
@@ -41,6 +46,23 @@ export default function LobbyPage() {
         .then((synced) => setCampaigns(synced))
         .catch(() => {})
         .finally(() => setSyncing(false));
+    }
+
+    const persisted = getPersistedRejoinInfo();
+    if (persisted?.roomCode && apiClient.isConnected()) {
+      apiClient.get('/multiplayer/my-sessions')
+        .then((res) => {
+          const sessions = res?.sessions || [];
+          const match = sessions.find((s) => s.roomCode === persisted.roomCode);
+          if (match) {
+            setRejoinInfo({ ...persisted, ...match });
+          } else {
+            clearPersistedRejoinInfo();
+          }
+        })
+        .catch(() => {
+          setRejoinInfo(persisted);
+        });
     }
   }, []);
 
@@ -69,6 +91,43 @@ export default function LobbyPage() {
       dispatch({ type: 'LOAD_CAMPAIGN', payload: campaigns[0] });
       navigate('/play');
     }
+  };
+
+  useEffect(() => {
+    if (rejoining && mp.state.isMultiplayer && mp.state.roomCode) {
+      setRejoining(false);
+      const target = mp.state.phase === 'playing' ? '/play' : '/create';
+      navigate(target);
+    }
+  }, [rejoining, mp.state.isMultiplayer, mp.state.roomCode, mp.state.phase, navigate]);
+
+  useEffect(() => {
+    if (rejoining && mp.state.error) {
+      setRejoining(false);
+      clearPersistedRejoinInfo();
+      setRejoinInfo(null);
+    }
+  }, [rejoining, mp.state.error]);
+
+  const handleRejoin = async () => {
+    setRejoining(true);
+    try {
+      const success = await mp.rejoinRoom();
+      if (!success) {
+        clearPersistedRejoinInfo();
+        setRejoinInfo(null);
+        setRejoining(false);
+      }
+    } catch {
+      clearPersistedRejoinInfo();
+      setRejoinInfo(null);
+      setRejoining(false);
+    }
+  };
+
+  const handleDismissRejoin = () => {
+    clearPersistedRejoinInfo();
+    setRejoinInfo(null);
   };
 
   const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
@@ -117,6 +176,45 @@ export default function LobbyPage() {
           </>
         )}
       </div>
+
+      {/* Multiplayer Rejoin Banner */}
+      {rejoinInfo && (
+        <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
+          <GlassCard elevated className="p-6 border-l-2 border-primary">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-primary mt-0.5">wifi_off</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-headline text-primary text-sm mb-1">
+                  {t('lobby.activeMultiplayerSession', 'Active Multiplayer Session')}
+                </p>
+                <p className="text-on-surface-variant text-xs mb-3">
+                  {t('lobby.rejoinDescription', 'You were disconnected from a multiplayer game. Rejoin to continue playing.')}
+                  {rejoinInfo.campaignName && (
+                    <span className="block mt-1 text-on-surface/70 font-medium">
+                      {rejoinInfo.campaignName} &middot; {rejoinInfo.roomCode}
+                    </span>
+                  )}
+                  {!rejoinInfo.campaignName && (
+                    <span className="block mt-1 text-on-surface/70 font-medium">
+                      {t('multiplayer.room', 'Room')}: {rejoinInfo.roomCode}
+                    </span>
+                  )}
+                </p>
+                <div className="flex gap-3">
+                  <Button size="sm" onClick={handleRejoin} disabled={rejoining}>
+                    {rejoining
+                      ? t('lobby.rejoining', 'Rejoining...')
+                      : t('lobby.rejoinSession', 'Rejoin Game')}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={handleDismissRejoin} disabled={rejoining}>
+                    {t('lobby.dismissSession', 'Dismiss')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
       {/* API Key Warning */}
       {!hasApiKey && (

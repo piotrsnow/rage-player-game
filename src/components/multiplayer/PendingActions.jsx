@@ -52,6 +52,12 @@ export default function PendingActions() {
                 {p.odId === myOdId && (
                   <span className="text-[10px] text-tertiary">({t('multiplayer.you')})</span>
                 )}
+                {p.connected === false && (
+                  <span className="text-[10px] text-error/70 flex items-center gap-0.5" title={t('multiplayer.playerDisconnected')}>
+                    <span className="material-symbols-outlined text-[10px]">wifi_off</span>
+                    {t('multiplayer.disconnected', 'offline')}
+                  </span>
+                )}
                 <SoloBadge lastSoloActionAt={p.lastSoloActionAt} />
               </div>
               <p className="text-sm text-on-surface-variant pl-6 italic">
@@ -67,10 +73,21 @@ export default function PendingActions() {
           {playersWaiting.map((p) => (
             <div
               key={p.odId}
-              className="flex items-center gap-1.5 px-2 py-1 bg-surface-container-high/20 rounded-sm text-xs text-on-surface-variant"
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-sm text-xs ${
+                p.connected === false
+                  ? 'bg-error/10 text-error/60'
+                  : 'bg-surface-container-high/20 text-on-surface-variant'
+              }`}
             >
-              <span className="material-symbols-outlined text-sm text-outline">hourglass_top</span>
+              {p.connected === false ? (
+                <span className="material-symbols-outlined text-sm">wifi_off</span>
+              ) : (
+                <span className="material-symbols-outlined text-sm text-outline">hourglass_top</span>
+              )}
               {p.name}
+              {p.connected === false && (
+                <span className="text-[10px]">({t('multiplayer.disconnected', 'offline')})</span>
+              )}
               <SoloBadge lastSoloActionAt={p.lastSoloActionAt} />
             </div>
           ))}

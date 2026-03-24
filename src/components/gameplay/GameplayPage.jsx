@@ -235,6 +235,9 @@ export default function GameplayPage() {
 
   const dismissError = () => {
     dispatch({ type: 'SET_ERROR', payload: null });
+    if (isMultiplayer) {
+      mp.dispatch({ type: 'SET_ERROR', payload: null });
+    }
   };
 
   const handleAdvancementOpen = () => {

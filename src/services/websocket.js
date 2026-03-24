@@ -1,3 +1,5 @@
+const REJOIN_STORAGE_KEY = 'nikczemny_krzemuch_mp_rejoin';
+
 class WebSocketService {
   constructor() {
     this._ws = null;
@@ -14,20 +16,59 @@ class WebSocketService {
     this._maxReconnectAttempts = 10;
     this._roomCode = null;
     this._odId = null;
+    this._loadRejoinInfo();
   }
 
   get connected() {
     return this._ws?.readyState === WebSocket.OPEN;
   }
 
+  _loadRejoinInfo() {
+    try {
+      const raw = localStorage.getItem(REJOIN_STORAGE_KEY);
+      if (raw) {
+        const info = JSON.parse(raw);
+        if (info.roomCode && info.odId) {
+          this._roomCode = info.roomCode;
+          this._odId = info.odId;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  _persistRejoinInfo() {
+    try {
+      if (this._roomCode && this._odId) {
+        localStorage.setItem(REJOIN_STORAGE_KEY, JSON.stringify({
+          roomCode: this._roomCode,
+          odId: this._odId,
+        }));
+      }
+    } catch { /* ignore */ }
+  }
+
+  static clearPersistedRejoinInfo() {
+    try { localStorage.removeItem(REJOIN_STORAGE_KEY); } catch { /* ignore */ }
+  }
+
+  static getPersistedRejoinInfo() {
+    try {
+      const raw = localStorage.getItem(REJOIN_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
   connect(baseUrl, token) {
-    this.disconnect();
     this._intentionalClose = false;
     this._reconnectAttempts = 0;
     this._baseUrl = baseUrl;
     this._token = token;
     const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
     this._url = `${wsUrl}/multiplayer?token=${encodeURIComponent(token)}`;
+    if (this._ws) {
+      this._ws.close();
+      this._ws = null;
+    }
     return this._open();
   }
 
@@ -109,6 +150,7 @@ class WebSocketService {
   setRejoinInfo(roomCode, odId) {
     this._roomCode = roomCode;
     this._odId = odId;
+    this._persistRejoinInfo();
   }
 
   disconnect() {
@@ -157,3 +199,6 @@ class WebSocketService {
 }
 
 export const wsService = new WebSocketService();
+
+export const clearPersistedRejoinInfo = WebSocketService.clearPersistedRejoinInfo;
+export const getPersistedRejoinInfo = WebSocketService.getPersistedRejoinInfo;

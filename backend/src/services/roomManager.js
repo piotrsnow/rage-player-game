@@ -30,6 +30,7 @@ function sanitizeRoom(room) {
       gender: p.gender,
       photo: p.photo,
       isHost: p.isHost,
+      connected: p.ws?.readyState === 1,
       pendingAction: p.pendingAction,
       lastSoloActionAt: p.lastSoloActionAt || null,
       voiceId: p.voiceId || null,
@@ -175,6 +176,55 @@ export function leaveRoom(roomCode, odId) {
   }
 
   return room;
+}
+
+export function disconnectPlayer(roomCode, odId) {
+  const room = rooms.get(roomCode);
+  if (!room) return null;
+
+  const player = room.players.get(odId);
+  if (!player) return null;
+
+  player.ws = null;
+
+  const hasConnected = [...room.players.values()].some((p) => p.ws?.readyState === 1);
+  if (!hasConnected) {
+    room.lastActivity = Date.now();
+  }
+
+  if (room.hostId === odId) {
+    const connectedPlayer = [...room.players.values()].find((p) => p.odId !== odId && p.ws?.readyState === 1);
+    if (connectedPlayer) {
+      player.isHost = false;
+      connectedPlayer.isHost = true;
+      room.hostId = connectedPlayer.odId;
+    }
+  }
+
+  return room;
+}
+
+export function listUserRooms(userId) {
+  const result = [];
+  for (const [, room] of rooms) {
+    for (const [, p] of room.players) {
+      if (p.userId === userId) {
+        const hostPlayer = [...room.players.values()].find((pl) => pl.isHost);
+        const campaignName = room.gameState?.campaign?.name || room.settings?.genre || 'Campaign';
+        result.push({
+          roomCode: room.roomCode,
+          phase: room.phase,
+          hostName: hostPlayer?.name || 'Host',
+          campaignName,
+          playerCount: room.players.size,
+          myOdId: p.odId,
+          isHost: p.isHost,
+        });
+        break;
+      }
+    }
+  }
+  return result;
 }
 
 export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName, characterData }) {
@@ -488,4 +538,16 @@ export function restoreRoom(roomCode, roomData) {
   return roomData;
 }
 
-export { sanitizeRoom, touchRoom };
+export function restorePendingActions(roomCode, actions) {
+  const room = rooms.get(roomCode);
+  if (!room) return;
+  for (const a of actions) {
+    const player = room.players.get(a.odId);
+    if (player) {
+      player.pendingAction = a.action;
+      player.pendingActionIsCustom = a.isCustom || false;
+    }
+  }
+}
+
+export { sanitizeRoom, touchRoom, disconnectPlayer, listUserRooms };

@@ -78,7 +78,12 @@
     "syncing": "Synchronizacja...",
     "synced": "Zsynchronizowano",
     "localOnly": "Tylko lokalnie",
-    "syncError": "Synchronizacja nie powiodła się"
+    "syncError": "Synchronizacja nie powiodła się",
+    "activeMultiplayerSession": "Aktywna sesja multiplayer",
+    "rejoinDescription": "Zostałeś rozłączony z gry multiplayer. Dołącz ponownie, aby kontynuować grę.",
+    "rejoinSession": "Wróć do gry",
+    "rejoining": "Łączenie...",
+    "dismissSession": "Odrzuć"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -1224,7 +1229,11 @@
     "loadingRooms": "Wczytywanie pokojów...",
     "noRooms": "Brak dostępnych pokojów. Poproś hosta o kod lub utwórz własny!",
     "phaseLobby": "Lobby",
-    "phasePlaying": "W Grze"
+    "phasePlaying": "W Grze",
+    "disconnected": "offline",
+    "playerDisconnected": "Gracz rozłączony",
+    "playerReconnected": "Gracz połączony ponownie",
+    "room": "Pokój"
   },
   "statusTier": {
     "Brass": "Mosiądz",
