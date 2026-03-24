@@ -831,6 +831,8 @@
     "acceptPortrait": "Accept",
     "retryPortrait": "Retry",
     "portraitNeedsKey": "Portrait generation requires a Stability AI API key. Configure it in Settings.",
+    "portraitNeedsKeyDalle": "Portrait generation requires an OpenAI API key. Configure it in Settings.",
+    "portraitDescDalle": "AI will generate a fantasy portrait of your character based on the selected species, gender, and career.",
     "portraitFiltered": "The image was filtered by the AI safety system. Please try with a different photo.",
     "cameraError": "Could not access camera. Try uploading a photo instead."
   },

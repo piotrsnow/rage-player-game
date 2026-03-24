@@ -12,7 +12,14 @@ const STRENGTH_PRESETS = [
 
 export default function PortraitGenerator({ species, gender, careerName, genre, onPortraitReady, initialPortrait }) {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
+
+  const provider = settings.imageProvider || 'dalle';
+  const isDalle = provider === 'dalle';
+  const apiKey = isDalle ? settings.openaiApiKey : settings.stabilityApiKey;
+  const hasKey = isDalle
+    ? !!(settings.openaiApiKey || (settings.useBackend && hasApiKey('openai')))
+    : !!(settings.stabilityApiKey || (settings.useBackend && hasApiKey('stability')));
 
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
@@ -23,8 +30,6 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
 
   const abortRef = useRef(false);
 
-  const hasStabilityKey = !!(settings.stabilityApiKey || settings.useBackend);
-
   const handleCapture = useCallback((blob) => {
     setPhotoBlob(blob);
     setGeneratedUrl(null);
@@ -32,17 +37,18 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   }, []);
 
   const handleGenerate = useCallback(async () => {
-    if (!photoBlob) return;
+    if (!isDalle && !photoBlob) return;
     setGenerating(true);
     setError(null);
     abortRef.current = false;
 
     try {
       const url = await imageService.generatePortrait(
-        photoBlob,
+        isDalle ? null : photoBlob,
         { species, gender, careerName, genre },
-        settings.stabilityApiKey,
+        apiKey,
         strength,
+        provider,
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);
@@ -59,7 +65,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, gender, careerName, genre, settings.stabilityApiKey, strength, t]);
+  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, isDalle, t]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);
@@ -80,11 +86,13 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     onPortraitReady(null);
   }, [onPortraitReady]);
 
-  if (!hasStabilityKey) {
+  if (!hasKey) {
     return (
       <div className="flex items-center gap-2 p-3 bg-surface-container-high/20 border border-outline-variant/10 rounded-sm">
         <span className="material-symbols-outlined text-sm text-outline">info</span>
-        <p className="text-xs text-on-surface-variant">{t('charCreator.portraitNeedsKey')}</p>
+        <p className="text-xs text-on-surface-variant">
+          {isDalle ? t('charCreator.portraitNeedsKeyDalle') : t('charCreator.portraitNeedsKey')}
+        </p>
       </div>
     );
   }
@@ -127,8 +135,44 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     );
   }
 
+  if (isDalle) {
+    return (
+      <div className="flex flex-col items-center gap-4">
+        <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
+          {t('charCreator.portraitDescDalle')}
+        </p>
+
+        {error && (
+          <p className="text-xs text-error text-center">{error}</p>
+        )}
+
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={generating}
+          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-surface-tint text-on-primary text-xs font-label font-bold rounded-sm border border-primary shadow-[0_0_15px_rgba(197,154,255,0.3)] hover:shadow-[0_0_25px_rgba(197,154,255,0.5)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {generating ? (
+            <>
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              {t('charCreator.portraitGenerating')}
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              {t('charCreator.generatePortrait')}
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center gap-4">
+      <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
+        {t('charCreator.portraitDesc')}
+      </p>
       <WebcamCapture onCapture={handleCapture} />
 
       {photoBlob && (

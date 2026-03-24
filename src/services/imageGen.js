@@ -77,6 +77,33 @@ function resolveMediaUrl(url) {
   return url;
 }
 
+async function generatePortraitWithDalle(prompt, apiKey) {
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'standard',
+      response_format: 'b64_json',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `DALL-E API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0]?.b64_json;
+  return b64 ? `data:image/png;base64,${b64}` : null;
+}
+
 async function generatePortraitWithStability(imageBlob, prompt, apiKey, strength = 0.45) {
   const formData = new FormData();
   formData.append('image', imageBlob, 'photo.jpg');
@@ -124,6 +151,14 @@ async function generatePortraitViaProxy(imageBlob, prompt, strength) {
   return resolveMediaUrl(data.url);
 }
 
+async function generatePortraitViaProxyDalle(prompt) {
+  const data = await apiClient.post('/proxy/openai/images', {
+    prompt,
+    size: '1024x1024',
+  });
+  return resolveMediaUrl(data.url);
+}
+
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null) {
     const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
@@ -142,8 +177,18 @@ export const imageService = {
     return generateWithDalle(prompt, apiKey);
   },
 
-  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45) {
-    const prompt = buildPortraitPrompt(species, gender, careerName, genre);
+  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability') {
+    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider);
+
+    if (provider === 'dalle') {
+      if (apiClient.isConnected()) {
+        return generatePortraitViaProxyDalle(prompt);
+      }
+      if (!apiKey) {
+        throw new Error('OpenAI API key required for portrait generation.');
+      }
+      return generatePortraitWithDalle(prompt, apiKey);
+    }
 
     if (apiClient.isConnected()) {
       return generatePortraitViaProxy(imageBlob, prompt, strength);

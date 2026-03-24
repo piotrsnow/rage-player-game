@@ -1004,8 +1004,9 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy') {
+export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability') {
   const genderLabel = gender === 'female' ? 'female' : 'male';
+  const isSD = provider === 'stability';
 
   const speciesTraits = {
     Human: 'human',
@@ -1015,17 +1016,27 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
     'Wood Elf': 'wood elf, pointed ears, angular features, wild',
   };
 
-  const genreStyle = {
-    Fantasy: 'medieval fantasy portrait, painterly oil painting style, dramatic chiaroscuro lighting, RPG character art',
-    'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents',
-    Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism',
-  };
+  const genreStyle = isSD
+    ? {
+        Fantasy: 'medieval fantasy portrait, painterly oil painting style, dramatic chiaroscuro lighting, RPG character art',
+        'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents',
+        Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism',
+      }
+    : {
+        Fantasy: 'medieval fantasy character portrait, detailed oil painting, warm candlelight, RPG character art, painterly style',
+        'Sci-Fi': 'sci-fi character portrait, cinematic concept art, futuristic holographic accents',
+        Horror: 'dark gothic character portrait, eerie candlelight, moody atmospheric shadows',
+      };
 
   const speciesDesc = speciesTraits[species] || 'human';
   const style = genreStyle[genre] || genreStyle.Fantasy;
   const career = careerName ? `, ${careerName}` : '';
 
-  return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Preserve the subject's facial features and likeness. Detailed face, sharp focus, 4k, head and shoulders composition. No text, no watermarks.`;
+  if (isSD) {
+    return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Preserve the subject's facial features and likeness. Detailed face, sharp focus, 4k, head and shoulders composition. No text, no watermarks.`;
+  }
+
+  return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en') {

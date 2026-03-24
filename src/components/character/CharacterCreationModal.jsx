@@ -280,7 +280,6 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
           {/* Portrait */}
           <section>
             <SectionHeader icon="photo_camera" label={t('charCreator.portrait')} />
-            <p className="text-[11px] text-on-surface-variant mb-3">{t('charCreator.portraitDesc')}</p>
             {portraitUrl && !portraitOpen ? (
               <div className="flex items-center gap-4">
                 <div className="w-16 h-[85px] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_10px_rgba(197,154,255,0.15)]">

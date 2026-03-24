@@ -831,6 +831,8 @@
     "acceptPortrait": "Zatwierdź",
     "retryPortrait": "Ponów",
     "portraitNeedsKey": "Generowanie portretu wymaga klucza API Stability AI. Skonfiguruj go w Ustawieniach.",
+    "portraitNeedsKeyDalle": "Generowanie portretu wymaga klucza API OpenAI. Skonfiguruj go w Ustawieniach.",
+    "portraitDescDalle": "AI wygeneruje portret fantasy twojej postaci na podstawie wybranej rasy, płci i profesji.",
     "portraitFiltered": "Obraz został odfiltrowany przez system bezpieczeństwa AI. Spróbuj z innym zdjęciem.",
     "cameraError": "Nie można uzyskać dostępu do kamery. Spróbuj wgrać zdjęcie."
   },
