@@ -493,6 +493,7 @@
     "backendDesc": "Connect to a backend server for media caching, API key management, and cloud storage.",
     "backendUrl": "Server URL",
     "backendUrlPlaceholder": "http://localhost:3001",
+    "backendUrlRemote": "remote",
     "backendConnect": "Connect",
     "backendDisconnect": "Disconnect",
     "backendConnected": "Connected",

@@ -493,6 +493,7 @@
     "backendDesc": "Połącz się z serwerem backend dla cachowania mediów, zarządzania kluczami API i przechowywania w chmurze.",
     "backendUrl": "Adres serwera",
     "backendUrlPlaceholder": "http://localhost:3001",
+    "backendUrlRemote": "zdalny",
     "backendConnect": "Połącz",
     "backendDisconnect": "Rozłącz",
     "backendConnected": "Połączono",

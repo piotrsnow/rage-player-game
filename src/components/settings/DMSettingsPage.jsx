@@ -32,7 +32,9 @@ export default function DMSettingsPage({ onClose }) {
   const [importStatus, setImportStatus] = useState(null);
   const fileInputRef = useRef(null);
 
-  const [backendUrl, setBackendUrl] = useState(settings.backendUrl || '');
+  const isProduction = import.meta.env.PROD;
+  const defaultBackendUrl = isProduction ? window.location.origin : 'http://localhost:3001';
+  const [backendUrl, setBackendUrl] = useState(settings.backendUrl || defaultBackendUrl);
   const [backendEmail, setBackendEmail] = useState('');
   const [backendPassword, setBackendPassword] = useState('');
   const [backendLoading, setBackendLoading] = useState(false);
@@ -1093,15 +1095,33 @@ export default function DMSettingsPage({ onClose }) {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                    {t('settings.backendUrl')}
-                  </label>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest shrink-0">
+                      {t('settings.backendUrl')}
+                    </label>
+                    <div className="flex gap-1 ml-auto">
+                      <button
+                        type="button"
+                        onClick={() => setBackendUrl('http://localhost:3001')}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono transition-all ${backendUrl === 'http://localhost:3001' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-on-surface-variant/50 border border-outline-variant/10 hover:border-primary/20 hover:text-primary/70'}`}
+                      >
+                        localhost
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBackendUrl(window.location.origin)}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono transition-all ${backendUrl === window.location.origin ? 'bg-primary/20 text-primary border border-primary/30' : 'text-on-surface-variant/50 border border-outline-variant/10 hover:border-primary/20 hover:text-primary/70'}`}
+                      >
+                        {t('settings.backendUrlRemote')}
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="text"
                     value={backendUrl}
                     onChange={(e) => setBackendUrl(e.target.value)}
                     placeholder={t('settings.backendUrlPlaceholder')}
-                    className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
+                    className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-[11px] py-1.5 px-1 placeholder:text-outline/30 font-mono"
                   />
                 </div>
                 <div>
