@@ -13,7 +13,7 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent } from '../services/prompts';
-import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter } from '../services/diceRollInference';
+import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -117,7 +117,7 @@ export function useAI() {
         }
 
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
-          const resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
+          let resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
           if (!resolvedCharacteristic) {
             result.diceRoll = null;
           } else {
@@ -130,6 +130,23 @@ export function useAI() {
             if (result.diceRoll.characteristicValue == null) {
               result.diceRoll = null;
             } else {
+              const bestSkill = pickBestSkill(
+                result.diceRoll.suggestedSkills,
+                state.character?.skills,
+                state.character?.characteristics,
+              );
+              if (bestSkill) {
+                result.diceRoll.skill = bestSkill.skill;
+                result.diceRoll.skillAdvances = bestSkill.advances;
+                if (bestSkill.characteristic !== resolvedCharacteristic) {
+                  resolvedCharacteristic = bestSkill.characteristic;
+                  result.diceRoll.characteristic = resolvedCharacteristic;
+                  result.diceRoll.characteristicValue =
+                    state.character?.characteristics?.[resolvedCharacteristic] ?? result.diceRoll.characteristicValue;
+                }
+                result.diceRoll.baseTarget = result.diceRoll.characteristicValue + bestSkill.advances;
+              }
+
               const originalTarget = result.diceRoll.target;
               const roll = result.diceRoll.roll;
               const bonus = result.diceRoll.creativityBonus || 0;

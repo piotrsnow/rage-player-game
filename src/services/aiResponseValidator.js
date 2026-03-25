@@ -24,6 +24,7 @@ const DiceRollSchema = z.object({
   target: z.number().optional(),
   sl: z.number().optional(),
   skill: z.string().optional(),
+  suggestedSkills: z.array(z.string()).optional().default([]),
   characteristic: CharacteristicKeySchema.optional(),
   characteristicValue: z.number().optional(),
   skillAdvances: z.number().optional(),

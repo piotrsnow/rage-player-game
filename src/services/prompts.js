@@ -429,6 +429,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 WFRP 4e RULES FOR THE GM:
 - Use the d100 percentile system. When a skill test is needed, start with baseTarget = characteristic + skill advances. Then apply separate modifiers to get the final target.
 - EVERY diceRoll MUST include "characteristic" (one of: ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (the raw stat value), and "skillAdvances" (advances in the tested skill, 0 if untrained). NEVER return a diceRoll without these fields. Choose the most appropriate characteristic for the action based on WFRP skill definitions above.
+- EVERY diceRoll MUST include "suggestedSkills": an array of 2-4 WFRP skill names (English) that could plausibly apply to this action, ordered from most to least fitting. The game engine will pick the one where the character has the highest advances, so list all reasonable options. Example: a persuasion attempt → ["Charm", "Haggle", "Gossip", "Intimidate"]. Use your "skill" field for the single best match; the engine may override it from suggestedSkills.
 - For speech, persuasion, bargaining, bluffing, charming, greeting, asking questions, or other social interaction without a more specific WFRP skill, default to Fel (Fellowship). Do NOT invent non-WFRP stats such as "charisma".
 - If you cannot determine a valid WFRP characteristic key for the action, set diceRoll to null instead of guessing.
 - IMPORTANT: "difficultyModifier" is a SEPARATE field from baseTarget. Use only this discrete scale: +40, +30, +20, +10, 0, -10, -20, -30, -40.
@@ -900,13 +901,15 @@ COMBINED BONUS CAP: The total of creativityBonus + momentumBonus + dispositionBo
 Output the diceRoll fields as follows:
 - "characteristic": the characteristic key used (e.g. "ag", "ws", "fel")
 - "characteristicValue": the raw characteristic value (e.g. 33)
+- "skill": the single best matching WFRP skill name (e.g. "Charm")
+- "suggestedSkills": array of 2-4 applicable WFRP skill names (e.g. ["Charm", "Haggle", "Gossip"])
 - "skillAdvances": the skill advances applied (e.g. 10; use 0 if untrained)
 - "baseTarget": the BASE value (characteristicValue + skillAdvances)
 - "difficultyModifier": the separate difficulty step (one of +40, +30, +20, +10, 0, -10, -20, -30, -40)
 - "creativityBonus": the bonus (5-25)
 - "target": the EFFECTIVE value = baseTarget + creativityBonus + difficultyModifier (+ other applicable modifiers) (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
-Example: characteristic="ag", characteristicValue=33, skillAdvances=10, baseTarget=43, difficultyModifier=-10, creativityBonus=15, target=48, roll=45 → 45 ≤ 48 → success=true. The narrative MUST describe a successful outcome.
+Example: characteristic="ag", characteristicValue=33, skill="Athletics", suggestedSkills=["Athletics","Dodge","Climb"], skillAdvances=10, baseTarget=43, difficultyModifier=-10, creativityBonus=15, target=48, roll=45 → 45 ≤ 48 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}${momentumBonus !== 0 ? `
 MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from a previous roll.
 ${momentumBonus > 0 ? 'Add this to the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus.' : 'Subtract this from the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus (momentumBonus is negative, so it reduces the target).'}

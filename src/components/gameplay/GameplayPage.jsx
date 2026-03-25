@@ -82,6 +82,7 @@ export default function GameplayPage() {
   const [advancementOpen, setAdvancementOpen] = useState(false);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
+  const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
@@ -630,6 +631,44 @@ export default function GameplayPage() {
                   {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
                 </div>
               ) : null}
+              {/* Auto-Player toggle (solo only) */}
+              {!isMultiplayer && currentScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={autoPlayer.toggleAutoPlayer}
+                    title={t('autoPlayer.toggle')}
+                    aria-label={t('autoPlayer.toggle')}
+                    className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${
+                      autoPlayer.isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-on-primary transition-transform duration-200 ${
+                        autoPlayer.isAutoPlaying ? 'translate-x-[14px]' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  {autoPlayer.isAutoPlaying && autoPlayer.isThinking && (
+                    <span className="material-symbols-outlined text-xs text-primary animate-spin">progress_activity</span>
+                  )}
+                  <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant hidden xl:inline">
+                    {t('autoPlayer.title')}
+                  </span>
+                  {autoPlayer.isAutoPlaying && (
+                    <span className="text-[9px] text-outline tabular-nums">
+                      {autoPlayer.turnsPlayed}{autoPlayer.autoPlayerSettings.maxTurns > 0 ? `/${autoPlayer.autoPlayerSettings.maxTurns}` : ''}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setAutoPlayerSettingsOpen(true)}
+                    title={t('autoPlayer.settings')}
+                    aria-label={t('autoPlayer.settings')}
+                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                  >
+                    tune
+                  </button>
+                </div>
+              )}
               <button
                 onClick={() => setMpPanelOpen(true)}
                 title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
@@ -887,27 +926,10 @@ export default function GameplayPage() {
           </div>
         )}
 
-        {/* Auto-Player Panel (solo only) */}
-        {!isMultiplayer && currentScene && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
-          <div className="px-2 animate-fade-in">
-            <AutoPlayerPanel
-              isAutoPlaying={autoPlayer.isAutoPlaying}
-              isThinking={autoPlayer.isThinking}
-              turnsPlayed={autoPlayer.turnsPlayed}
-              lastError={autoPlayer.lastError}
-              toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
-              autoPlayerSettings={autoPlayer.autoPlayerSettings}
-              updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
-              characterName={character?.name}
-              isGeneratingScene={isGeneratingScene}
-            />
-          </div>
-        )}
-
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
                 {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
               </label>
@@ -1001,6 +1023,21 @@ export default function GameplayPage() {
         <AchievementsPanel
           achievementState={state.achievements}
           onClose={() => setAchievementsOpen(false)}
+        />
+      )}
+
+      {autoPlayerSettingsOpen && (
+        <AutoPlayerPanel
+          isAutoPlaying={autoPlayer.isAutoPlaying}
+          isThinking={autoPlayer.isThinking}
+          turnsPlayed={autoPlayer.turnsPlayed}
+          lastError={autoPlayer.lastError}
+          toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
+          autoPlayerSettings={autoPlayer.autoPlayerSettings}
+          updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
+          characterName={character?.name}
+          isGeneratingScene={isGeneratingScene}
+          onClose={() => setAutoPlayerSettingsOpen(false)}
         />
       )}
 

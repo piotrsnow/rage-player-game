@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AI_MODELS, RECOMMENDED_MODELS } from '../../services/ai';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -16,91 +15,92 @@ export default function AutoPlayerPanel({
   updateAutoPlayerSettings,
   characterName,
   isGeneratingScene,
+  onClose,
 }) {
   const { settings } = useSettings();
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
 
   const delaySeconds = Math.round((autoPlayerSettings.delay || 3000) / 1000);
 
   return (
-    <div className="bg-surface-container-low/60 backdrop-blur-md border border-outline-variant/15 rounded-sm overflow-hidden">
-      {/* Header row */}
-      <div className="flex items-center justify-between px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleAutoPlayer}
-            className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
-              isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
-            }`}
-            aria-label={t('autoPlayer.toggle')}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-on-primary transition-transform duration-200 ${
-                isAutoPlaying ? 'translate-x-4' : 'translate-x-0'
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md bg-surface-container-low border border-outline-variant/20 rounded-lg shadow-2xl animate-fade-in overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleAutoPlayer}
+              className={`relative w-9 h-5 rounded-full transition-colors duration-200 ${
+                isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
               }`}
-            />
-          </button>
-          {isAutoPlaying && isThinking && (
-            <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>
-          )}
-          <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
-            {t('autoPlayer.title')}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Status */}
-          {isAutoPlaying && (
-            <span className="text-[10px] text-on-surface-variant">
-              {isThinking ? (
-                <span className="flex items-center gap-1 text-primary">
-                  <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span>
-                  {t('autoPlayer.thinking')}
-                </span>
-              ) : isGeneratingScene ? (
-                <span className="flex items-center gap-1 text-tertiary">
-                  <span className="material-symbols-outlined text-xs animate-pulse">auto_stories</span>
-                  {t('autoPlayer.dmWorking')}
-                </span>
-              ) : (
-                <span className="flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs text-primary">smart_toy</span>
-                  {characterName
-                    ? t('autoPlayer.playingAs', { name: characterName })
-                    : t('autoPlayer.active')}
-                </span>
-              )}
+              aria-label={t('autoPlayer.toggle')}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-on-primary transition-transform duration-200 ${
+                  isAutoPlaying ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <span className="text-xs font-headline uppercase tracking-widest text-on-surface">
+              {t('autoPlayer.title')}
             </span>
-          )}
+            {isAutoPlaying && isThinking && (
+              <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>
+            )}
+          </div>
 
-          {turnsPlayed > 0 && (
-            <span className="text-[9px] text-outline tabular-nums">
-              {turnsPlayed}{autoPlayerSettings.maxTurns > 0 ? `/${autoPlayerSettings.maxTurns}` : ''} {t('autoPlayer.turns')}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {isAutoPlaying && (
+              <span className="text-[10px] text-on-surface-variant">
+                {isThinking ? (
+                  <span className="flex items-center gap-1 text-primary">
+                    {t('autoPlayer.thinking')}
+                  </span>
+                ) : isGeneratingScene ? (
+                  <span className="flex items-center gap-1 text-tertiary">
+                    <span className="material-symbols-outlined text-xs animate-pulse">auto_stories</span>
+                    {t('autoPlayer.dmWorking')}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-xs text-primary">smart_toy</span>
+                    {characterName
+                      ? t('autoPlayer.playingAs', { name: characterName })
+                      : t('autoPlayer.active')}
+                  </span>
+                )}
+              </span>
+            )}
 
-          {/* Expand/collapse */}
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-            aria-label={expanded ? t('common.close') : t('autoPlayer.settings')}
-          >
-            {expanded ? 'expand_less' : 'tune'}
-          </button>
+            {turnsPlayed > 0 && (
+              <span className="text-[9px] text-outline tabular-nums">
+                {turnsPlayed}{autoPlayerSettings.maxTurns > 0 ? `/${autoPlayerSettings.maxTurns}` : ''} {t('autoPlayer.turns')}
+              </span>
+            )}
+
+            <button
+              onClick={onClose}
+              className="material-symbols-outlined text-sm text-outline hover:text-on-surface transition-colors"
+              aria-label={t('common.close')}
+            >
+              close
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* Error */}
-      {lastError && (
-        <div className="px-4 pb-2">
-          <p className="text-[10px] text-error truncate">{lastError}</p>
-        </div>
-      )}
+        {/* Error */}
+        {lastError && (
+          <div className="px-5 pt-3">
+            <p className="text-[10px] text-error truncate">{lastError}</p>
+          </div>
+        )}
 
-      {/* Expanded Settings */}
-      {expanded && (
-        <div className="border-t border-outline-variant/10 px-4 py-3 space-y-4 animate-fade-in">
+        {/* Settings */}
+        <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
           {/* Play Style */}
           <div>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
@@ -247,7 +247,7 @@ export default function AutoPlayerPanel({
             />
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

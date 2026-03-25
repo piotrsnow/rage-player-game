@@ -4,11 +4,19 @@ import plTranslations from '../locales/pl.json' with { type: 'json' };
 const CHARACTERISTIC_KEY_SET = new Set(CHARACTERISTIC_KEYS);
 const ALL_SKILLS = [...SKILLS.basic, ...SKILLS.advanced];
 
+function stripDiacritics(str) {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\u0142/g, 'l')   // ł → l
+    .replace(/\u0141/g, 'L');   // Ł → L
+}
+
 function canonicalizeKey(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '');
+  return stripDiacritics(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, '')
+  );
 }
 
 const SKILL_ALIAS_MAP = new Map();
@@ -33,7 +41,6 @@ const CHARACTERISTIC_ALIASES = new Map([
   ['initiative', 'i'],
   ['inicjatywa', 'i'],
   ['agility', 'ag'],
-  ['zrecznosc', 'ag'],
   ['dexterity', 'dex'],
   ['manualdexterity', 'dex'],
   ['intelligence', 'int'],
@@ -46,6 +53,20 @@ const CHARACTERISTIC_ALIASES = new Map([
   ['charyzma', 'fel'],
   ['social', 'fel'],
   ['spoleczne', 'fel'],
+  // Polish WFRP stat names (long)
+  ['walkawrecz', 'ws'],
+  ['umiejetnoscistrzeleckie', 'bs'],
+  ['zwinnosc', 'ag'],
+  ['zrecznosc', 'dex'],
+  ['oglada', 'fel'],
+  // Polish WFRP abbreviations
+  ['ww', 'ws'],
+  ['us', 'bs'],
+  ['wt', 't'],
+  ['zw', 'ag'],
+  ['zr', 'dex'],
+  ['sw', 'wp'],
+  ['ogd', 'fel'],
 ]);
 
 const SOCIAL_ACTION_RE = /["“”„«»]|(?:\b(?:say|tell|ask|speak|talk|chat|greet|persuade|convince|negotiate|bargain|haggle|bluff|lie|question|request|plead|flirt|joke|taunt|boast|promise|explain|encourage|warn|command|order)\b)|(?:\b(?:mow(?:ie|ic)?|mówię|mówić|powiedz|powiem|powiadam|zapyt(?:am|ac)?|zapytuję|pytam|rozmawiam|zagaduj(?:e|ę|ac)?|gad(?:am|ac)|prosz(?:e|ę)|przekonuj(?:e|ę|ac)?|negocjuj(?:e|ę|ac)?|targuj(?:e|ę|ac)?|blefuj(?:e|ę|ac)?|klam(?:ie|ię)|kłamię|wyjasni(?:am|ac)?|wyjaśniam|ostrzegam|nakazuj(?:e|ę|ac)?|komplementuj(?:e|ę|ac)?)\b)/iu;
@@ -61,9 +82,11 @@ export function normalizeCharacteristicKey(value) {
 
 export function findSkillCharacteristicKey(skillName) {
   if (typeof skillName !== 'string' || !skillName.trim()) return null;
-  const baseName = skillName.replace(/\s*\(.*\)/, '').trim();
+  const normalized = normalizeSkillName(skillName);
+  const lookupName = normalized || skillName.trim();
+  const baseName = lookupName.replace(/\s*\(.*\)/, '').trim();
   const allSkills = [...SKILLS.basic, ...SKILLS.advanced];
-  const found = allSkills.find((skill) => skill.name === baseName || skill.name === skillName.trim());
+  const found = allSkills.find((skill) => skill.name === baseName || skill.name === lookupName);
   return found ? normalizeCharacteristicKey(found.characteristic) : null;
 }
 
@@ -98,6 +121,40 @@ export function inferSkillFromCharacter(characteristicKey, skillAdvances, charac
     if (skillChar === characteristicKey) candidates.push(skillName);
   }
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Given an array of AI-suggested skill names, pick the one that yields the
+ * highest effective base target (characteristicValue + skillAdvances).
+ * Returns { skill, advances, characteristic } or null.
+ */
+export function pickBestSkill(suggestedSkills, characterSkills, characteristics) {
+  if (!Array.isArray(suggestedSkills) || suggestedSkills.length === 0) return null;
+
+  const charSkills = characterSkills && typeof characterSkills === 'object' ? characterSkills : {};
+  const chars = characteristics && typeof characteristics === 'object' ? characteristics : {};
+
+  let best = null;
+
+  for (const raw of suggestedSkills) {
+    const normalized = normalizeSkillName(raw);
+    if (!normalized) continue;
+
+    const charKey = findSkillCharacteristicKey(normalized);
+    if (!charKey) continue;
+
+    const advances = charSkills[normalized] ?? 0;
+    const charValue = chars[charKey] ?? 0;
+    const effective = charValue + advances;
+
+    if (!best || effective > best.effective) {
+      best = { skill: normalized, advances, characteristic: charKey, effective };
+    }
+  }
+
+  if (!best) return null;
+  const { effective: _, ...result } = best;
+  return result;
 }
 
 export function resolveDiceRollCharacteristic(diceRoll, actionText = '') {
