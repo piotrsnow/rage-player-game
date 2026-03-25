@@ -208,7 +208,7 @@
     "voiceListening": "Listening...",
     "creativityBonus": "Creativity +{{bonus}}",
     "momentumBonus": "Momentum {{bonus}}",
-    "dispositionBonus": "NPC {{bonus}}",
+    "dispositionBonus": "Disposition {{bonus}}",
     "momentumActive": "Momentum {{bonus}} on next roll",
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",
