@@ -3,14 +3,10 @@ import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toObjectId } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
-import { MODEL_3D_CATALOG as LEGACY_MODEL_3D_CATALOG } from '../../../../shared/modelCatalog3d.js';
 
 const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const store = createMediaStore(config);
 const TARGET_FORMATS = ['glb'];
-const LEGACY_BY_STORAGE_PATH = new Map(
-  LEGACY_MODEL_3D_CATALOG.map((entry) => [entry.storagePath, entry]),
-);
 
 function normalizeIdPart(value) {
   return String(value || '')
@@ -46,21 +42,19 @@ function aliasTokensFromFile(file) {
 
 function toCatalogEntry(prefabAsset) {
   const metadata = JSON.parse(prefabAsset.metadata || '{}');
-  const legacy = LEGACY_BY_STORAGE_PATH.get(prefabAsset.path);
-  const file = prefabAsset.fileName || legacy?.file || prefabAsset.path.split('/').pop() || '';
-  const category = prefabAsset.category || legacy?.category || 'misc';
+  const file = prefabAsset.fileName || prefabAsset.path.split('/').pop() || '';
+  const category = prefabAsset.category || 'misc';
   const aliases = Array.from(new Set([
     ...(Array.isArray(metadata.aliases) ? metadata.aliases : []),
-    ...(legacy?.aliases || []),
     ...aliasTokensFromFile(file),
   ]));
 
   return {
-    id: metadata.modelId || legacy?.id || `${normalizeIdPart(category)}:${normalizeIdPart(file)}`,
+    id: metadata.modelId || `${normalizeIdPart(category)}:${normalizeIdPart(file)}`,
     category,
     file,
-    title: metadata.title || legacy?.title || titleFromFile(file),
-    prompt: metadata.prompt || legacy?.prompt || '',
+    title: metadata.title || titleFromFile(file),
+    prompt: metadata.prompt || '',
     aliases,
     storagePath: prefabAsset.path,
     updatedAt: prefabAsset.updatedAt,
@@ -76,8 +70,59 @@ function buildCacheParams(prompt, assetKey, cacheVersion) {
   };
 }
 
+function sanitizeStoragePath(value) {
+  const normalized = String(value || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (!normalized.length) {
+    return '';
+  }
+
+  if (normalized.some((segment) => segment === '.' || segment === '..')) {
+    return '';
+  }
+
+  if (normalized.some((segment) => /[\u0000-\u001F\u007F]/.test(segment))) {
+    return '';
+  }
+
+  return normalized.join('/');
+}
+
 export async function meshyProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
+
+  async function sendPrefabByStoragePath(storagePath, reply) {
+    const prefab = await prisma.prefabAsset.findUnique({
+      where: { path: storagePath },
+    });
+
+    if (prefab) {
+      await prisma.prefabAsset.update({
+        where: { path: storagePath },
+        data: { lastAccessedAt: new Date() },
+      });
+    }
+
+    const result = await store.get(storagePath);
+
+    if (!result?.buffer) {
+      if (prefab) {
+        await prisma.prefabAsset.delete({
+          where: { path: storagePath },
+        });
+        fastify.log.warn({ storagePath }, 'Removed stale prefabAsset after missing storage object');
+      }
+      return reply.code(404).send({ error: 'Prefab model not found' });
+    }
+
+    reply.header('Content-Type', 'model/gltf-binary');
+    reply.header('Cache-Control', 'public, max-age=86400');
+    return reply.send(result.buffer);
+  }
 
   async function getMeshyKey(request, reply) {
     const user = await prisma.user.findUnique({
@@ -267,6 +312,19 @@ export async function meshyProxyRoutes(fastify) {
     };
   });
 
+  fastify.get('/prefabs', async (request, reply) => {
+    const storagePath = sanitizeStoragePath(request.query?.path);
+    if (!storagePath) {
+      return reply.code(400).send({ error: 'path query param is required' });
+    }
+
+    if (!storagePath.startsWith('prefabs/')) {
+      return reply.code(400).send({ error: 'Invalid prefab path' });
+    }
+
+    return sendPrefabByStoragePath(storagePath, reply);
+  });
+
   fastify.get('/prefabs/:category/:file', async (request, reply) => {
     const { category, file } = request.params;
     if (!category || !file) {
@@ -276,25 +334,6 @@ export async function meshyProxyRoutes(fastify) {
     const safeCategory = String(category).replace(/[^a-zA-Z0-9_-]/g, '');
     const safeFile = String(file).replace(/[^a-zA-Z0-9_.-]/g, '');
     const storagePath = `prefabs/${safeCategory}/${safeFile}`;
-    const prefab = await prisma.prefabAsset.findUnique({
-      where: { path: storagePath },
-    });
-
-    if (prefab) {
-      await prisma.prefabAsset.update({
-        where: { path: storagePath },
-        data: { lastAccessedAt: new Date() },
-      });
-    }
-
-    const result = await store.get(storagePath);
-
-    if (!result?.buffer) {
-      return reply.code(404).send({ error: 'Prefab model not found' });
-    }
-
-    reply.header('Content-Type', 'model/gltf-binary');
-    reply.header('Cache-Control', 'public, max-age=86400');
-    return reply.send(result.buffer);
+    return sendPrefabByStoragePath(storagePath, reply);
   });
 }

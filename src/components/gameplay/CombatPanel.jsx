@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MANOEUVRES } from '../../data/wfrpCombat';
+import { useCombatAudio } from '../../hooks/useCombatAudio';
 import {
   resolveManoeuvre,
   advanceTurn,
@@ -34,6 +35,134 @@ const LOG_COLORS = {
   round: { border: '#48474a', bg: 'transparent' },
 };
 
+const AI_TURN_DELAY_MS = 1500;
+
+function AnimatedTextSegment({
+  text,
+  startIndex,
+  visibleCount,
+  className = '',
+  style,
+}) {
+  const revealedChars = Math.max(0, Math.min(text.length, visibleCount - startIndex));
+  const visibleText = text.slice(0, revealedChars);
+
+  if (!visibleText) return null;
+
+  return (
+    <span className={className} style={style}>
+      {visibleText.split('').map((char, index) => (
+        <span
+          key={`${startIndex}_${index}`}
+          className="combat-log-letter"
+        >
+          {char === ' ' ? '\u00A0' : char}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function AnimatedCombatLogText({ entry }) {
+  const textSegments = useMemo(() => {
+    const segments = [
+      {
+        key: 'actor',
+        text: entry.actor || '',
+        className: 'font-bold',
+        style: { color: entry.actorColor || '#fffbfe' },
+      },
+    ];
+
+    if (entry.action) {
+      segments.push({
+        key: 'action',
+        text: ` ${entry.action} `,
+        className: 'text-on-surface-variant',
+      });
+    }
+
+    if (entry.target) {
+      segments.push({
+        key: 'target',
+        text: entry.target,
+        className: 'font-bold',
+        style: { color: entry.targetColor || '#fffbfe' },
+      });
+    }
+
+    let cursor = 0;
+    return segments.map((segment) => {
+      const mapped = {
+        ...segment,
+        startIndex: cursor,
+      };
+      cursor += segment.text.length;
+      return mapped;
+    });
+  }, [entry]);
+
+  const totalChars = textSegments.reduce((sum, segment) => sum + segment.text.length, 0);
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+    []
+  );
+  const [visibleCount, setVisibleCount] = useState(prefersReducedMotion ? totalChars : 0);
+  const textRevealComplete = visibleCount >= totalChars;
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      setVisibleCount(totalChars);
+      return undefined;
+    }
+
+    setVisibleCount(0);
+    if (!totalChars) return undefined;
+
+    const timer = window.setInterval(() => {
+      setVisibleCount((current) => {
+        if (current >= totalChars) {
+          window.clearInterval(timer);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 18);
+
+    return () => window.clearInterval(timer);
+  }, [entry.id, totalChars, prefersReducedMotion]);
+
+  return (
+    <>
+      {textSegments.map((segment) => (
+        <AnimatedTextSegment
+          key={`${entry.id}_${segment.key}`}
+          text={segment.text}
+          startIndex={segment.startIndex}
+          visibleCount={visibleCount}
+          className={segment.className}
+          style={segment.style}
+        />
+      ))}
+      {entry.damage != null && textRevealComplete && (
+        <span className="inline-flex items-center ml-1.5 px-1.5 py-0.5 rounded-sm bg-error/20 text-error font-bold text-[11px] tabular-nums animate-fade-in">
+          -{entry.damage}
+        </span>
+      )}
+      {entry.location && textRevealComplete && (
+        <span className="ml-1.5 text-[10px] text-on-surface-variant px-1.5 py-0.5 bg-surface-container rounded-sm animate-fade-in">
+          {entry.location}
+        </span>
+      )}
+      {entry.critName && textRevealComplete && (
+        <div className="mt-0.5 text-[11px] text-tertiary font-bold animate-fade-in">
+          ⚡ {entry.critName}{entry.critEffect ? ` - ${entry.critEffect}` : ''}
+        </div>
+      )}
+    </>
+  );
+}
+
 function CombatLogEntry({ entry }) {
   if (!entry) return null;
   const style = LOG_COLORS[entry.type] || LOG_COLORS.miss;
@@ -59,32 +188,7 @@ function CombatLogEntry({ entry }) {
         {entry.type === 'hit' ? 'swords' : entry.type === 'critical' ? 'local_fire_department' : entry.type === 'miss' ? 'close' : entry.type === 'fled' ? 'exit_to_app' : entry.type === 'defeat' ? 'skull' : 'info'}
       </span>
       <div className="flex-1 min-w-0 text-[12px] leading-snug">
-        <span className="font-bold" style={{ color: entry.actorColor || '#fffbfe' }}>
-          {entry.actor}
-        </span>
-        {entry.action && (
-          <span className="text-on-surface-variant"> {entry.action} </span>
-        )}
-        {entry.target && (
-          <span className="font-bold" style={{ color: entry.targetColor || '#fffbfe' }}>
-            {entry.target}
-          </span>
-        )}
-        {entry.damage != null && (
-          <span className="inline-flex items-center ml-1.5 px-1.5 py-0.5 rounded-sm bg-error/20 text-error font-bold text-[11px] tabular-nums">
-            -{entry.damage}
-          </span>
-        )}
-        {entry.location && (
-          <span className="ml-1.5 text-[10px] text-on-surface-variant px-1.5 py-0.5 bg-surface-container rounded-sm">
-            {entry.location}
-          </span>
-        )}
-        {entry.critName && (
-          <div className="mt-0.5 text-[11px] text-tertiary font-bold">
-            ⚡ {entry.critName}{entry.critEffect ? ` — ${entry.critEffect}` : ''}
-          </div>
-        )}
+        <AnimatedCombatLogText entry={entry} />
       </div>
     </div>
   );
@@ -99,8 +203,10 @@ export default function CombatPanel({
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
+  const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
   const logEndRef = useRef(null);
   const lastProcessedTsRef = useRef(null);
+  const combatAudio = useCombatAudio(combat);
 
   const currentTurn = getCurrentTurnCombatant(combat);
   const isMyTurn = isMultiplayer
@@ -163,9 +269,16 @@ export default function CombatPanel({
     if (combatOver) return;
     if (isMultiplayer && !isHost) return;
     const current = getCurrentTurnCombatant(combat);
-    if (!current || current.type === 'player') return;
+    if (!current || current.type === 'player') {
+      setIsAwaitingAiTurn(false);
+      return;
+    }
 
+    setIsAwaitingAiTurn(true);
+
+    // Give the player a short beat before AI takes over.
     const timer = setTimeout(() => {
+      setIsAwaitingAiTurn(false);
       const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(combat);
       for (const er of enemyResults) {
         if (!isMultiplayer) dispatchCombatChatMessage(er);
@@ -178,7 +291,7 @@ export default function CombatPanel({
       } else {
         dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
       }
-    }, 600);
+    }, AI_TURN_DELAY_MS);
     return () => clearTimeout(timer);
   }, [combat.turnIndex, combat.round, combatOver, isMultiplayer, isHost]);
 
@@ -205,6 +318,7 @@ export default function CombatPanel({
 
   const addResultToLog = (result) => {
     if (!result) return;
+    combatAudio.playForResult(result);
     const friendly = isActorFriendly(result.actor);
     const actorColor = friendly ? '#c59aff' : '#ff6e84';
     const targetColor = friendly ? '#ff6e84' : '#c59aff';
@@ -367,19 +481,6 @@ export default function CombatPanel({
 
     let finalCombat = advanceTurn(updatedCombat);
 
-    if (!isCombatOver(finalCombat)) {
-      const currentAfterAdvance = getCurrentTurnCombatant(finalCombat);
-      if (currentAfterAdvance && currentAfterAdvance.type !== 'player') {
-        const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(finalCombat);
-        finalCombat = afterEnemies;
-        for (const er of enemyResults) {
-          dispatchCombatChatMessage(er);
-          addResultToLog(er);
-          allResults.push(er);
-        }
-      }
-    }
-
     if (isMultiplayer) {
       finalCombat.lastResults = allResults;
       finalCombat.lastResultsTs = Date.now();
@@ -399,18 +500,6 @@ export default function CombatPanel({
     const allResults = result ? [result] : [];
 
     let finalCombat = advanceTurn(updatedCombat);
-
-    if (!isCombatOver(finalCombat)) {
-      const currentAfterAdvance = getCurrentTurnCombatant(finalCombat);
-      if (currentAfterAdvance && currentAfterAdvance.type !== 'player') {
-        const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(finalCombat);
-        finalCombat = afterEnemies;
-        for (const er of enemyResults) {
-          addResultToLog(er);
-          allResults.push(er);
-        }
-      }
-    }
 
     finalCombat.lastResults = allResults;
     finalCombat.lastResultsTs = Date.now();
@@ -583,7 +672,13 @@ export default function CombatPanel({
       )}
 
       {/* Enemy/ally acting indicator */}
-      {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && (
+      {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && isAwaitingAiTurn && (
+        <div className="text-center py-3 text-[12px] text-on-surface-variant">
+          <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
+          {t('combat.nextTurnSoon', 'Next turn in a moment: {{name}}', { name: currentTurn?.name })}
+        </div>
+      )}
+      {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && !isAwaitingAiTurn && (
         <div className="text-center py-3 text-[12px] text-on-surface-variant">
           <span className="material-symbols-outlined text-sm mr-1 animate-spin">sync</span>
           {currentTurn?.name} {t('combat.isActing', 'is acting...')}

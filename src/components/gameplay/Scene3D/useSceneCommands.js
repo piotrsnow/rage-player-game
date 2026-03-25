@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { useGame } from '../../../contexts/GameContext';
-import { planScene } from '../../../services/scenePlanner';
+import { planScene, SCENE_PLANNER_VERSION } from '../../../services/scenePlanner';
 import { reportWanted3dEntries } from '../../../services/wanted3dClient';
 import {
   getModelCatalogVersion,
@@ -90,11 +90,13 @@ export function useSceneCommands(scene) {
     if (!scene) return null;
 
     const sceneCatalogVersion = scene.sceneCommand?.catalogVersion || 0;
+    const scenePlannerVersion = scene.sceneCommand?.plannerVersion || 0;
     if (
       scene.sceneCommand &&
       !combatChanged &&
       hasResolvedModelMetadata(scene.sceneCommand) &&
-      sceneCatalogVersion === catalogVersion
+      sceneCatalogVersion === catalogVersion &&
+      scenePlannerVersion === SCENE_PLANNER_VERSION
     ) {
       return {
         sceneCommand: scene.sceneCommand,
@@ -147,7 +149,7 @@ export function useSceneCommands(scene) {
   }, [cmd]);
 
   useEffect(() => {
-    const persistKey = scene?.id ? `${scene.id}:${catalogVersion}` : null;
+    const persistKey = scene?.id ? `${scene.id}:${catalogVersion}:${SCENE_PLANNER_VERSION}` : null;
     if (cmd && persistKey && !persistedRef.current.has(persistKey)) {
       persistedRef.current.add(persistKey);
       dispatch({
@@ -159,12 +161,13 @@ export function useSceneCommands(scene) {
 
   useEffect(() => {
     if (!scene?.id || !planResult) return;
+    const assignmentKey = `${scene.id}:${SCENE_PLANNER_VERSION}`;
     const assignments = planResult.modelAssignments;
     const hasAssignments = !!assignments?.playerModel
       || (assignments?.partyModels?.length || 0) > 0
       || (assignments?.npcModels?.length || 0) > 0;
-    if (!hasAssignments || assignmentRef.current.has(scene.id)) return;
-    assignmentRef.current.add(scene.id);
+    if (!hasAssignments || assignmentRef.current.has(assignmentKey)) return;
+    assignmentRef.current.add(assignmentKey);
     dispatch({
       type: 'UPSERT_3D_MODEL_ASSIGNMENTS',
       payload: assignments,
@@ -173,8 +176,9 @@ export function useSceneCommands(scene) {
 
   useEffect(() => {
     if (!scene?.id || !planResult?.wantedEntries?.length) return;
-    if (wantedRef.current.has(scene.id)) return;
-    wantedRef.current.add(scene.id);
+    const wantedKey = `${scene.id}:${SCENE_PLANNER_VERSION}`;
+    if (wantedRef.current.has(wantedKey)) return;
+    wantedRef.current.add(wantedKey);
     const campaignId = state.campaign?.id || state.campaign?.backendId || null;
     reportWanted3dEntries(planResult.wantedEntries, campaignId);
   }, [scene?.id, planResult, state.campaign?.id, state.campaign?.backendId]);

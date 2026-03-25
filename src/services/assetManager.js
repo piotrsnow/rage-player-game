@@ -10,6 +10,9 @@ const urlCache = new Map();
 /** @type {Map<string, Set<Function>>} assetKey -> listeners for when asset becomes ready */
 const pendingListeners = new Map();
 
+// Keep Meshy integration code intact, but stop launching new text-to-3d jobs.
+const ON_DEMAND_MESHY_GENERATION_ENABLED = false;
+
 /**
  * @typedef {Object} ResolvedAsset
  * @property {'prefab'|'cached'|'generating'|'placeholder'} source
@@ -61,7 +64,7 @@ export function resolveAssetSync(assetKey, options = {}) {
     return { source: 'generating', url: null, prefab, loading: true };
   }
 
-  if (meshyEnabled && meshyApiKey) {
+  if (ON_DEMAND_MESHY_GENERATION_ENABLED && meshyEnabled && meshyApiKey) {
     loadFromCacheOrGenerate(assetKey, meshyApiKey, campaignId, onReady);
   }
 
@@ -144,7 +147,7 @@ export async function resolveAsset(assetKey, options = {}) {
   const prefab = category === 'char' ? getCharacterPrefab(type) :
                  category === 'obj' ? getObjectPrefab(type) : null;
 
-  if (!meshyEnabled || !meshyApiKey) {
+  if (!meshyEnabled || !meshyApiKey || !ON_DEMAND_MESHY_GENERATION_ENABLED) {
     scene3dDebug.assetResolve(assetKey, 'prefab (Meshy disabled)');
     return { source: 'prefab', url: null, prefab, loading: false };
   }
@@ -185,6 +188,10 @@ export async function resolveAsset(assetKey, options = {}) {
 
 async function loadFromCacheOrGenerate(assetKey, meshyApiKey, campaignId, onReady) {
   try {
+    if (!ON_DEMAND_MESHY_GENERATION_ENABLED) {
+      return;
+    }
+
     const prompt = buildMeshyPrompt(assetKey);
 
     if (apiClient.isConnected()) {

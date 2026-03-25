@@ -107,9 +107,17 @@ export const apiClient = {
     const token = this.getToken();
 
     if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
-      if (!base) return url;
-      const full = `${base}${url}`;
-      return token ? `${full}?token=${token}` : full;
+      const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
+      if (!origin) return url;
+
+      try {
+        const resolved = new URL(url, origin);
+        resolved.searchParams.delete('token');
+        if (token) resolved.searchParams.set('token', token);
+        return resolved.toString();
+      } catch {
+        return url;
+      }
     }
 
     if (base && url.startsWith(base)) {

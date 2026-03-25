@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import * as THREE from 'three';
 import { LIGHTING_PRESETS } from './Lighting3D';
 
 const GROUND_COLORS = {
@@ -39,20 +40,105 @@ const FOG_SETTINGS = {
   storm: { enabled: true, color: '#4A4A4A', near: 5, far: 20 },
 };
 
+const PRACTICAL_LIGHT_TYPES = new Set(['campfire', 'torch', 'lantern', 'fireplace']);
+
+const STAR_LAYOUT = [
+  [-18, 20, -25, 0.12],
+  [-12, 24, -18, 0.08],
+  [-4, 22, -28, 0.09],
+  [3, 18, -22, 0.1],
+  [10, 25, -18, 0.11],
+  [17, 21, -24, 0.09],
+  [-20, 16, -12, 0.07],
+  [-8, 17, -10, 0.08],
+  [1, 23, -12, 0.07],
+  [9, 19, -8, 0.08],
+  [18, 24, -14, 0.1],
+  [-15, 26, -6, 0.08],
+];
+
+const CLOUD_LAYOUT = [
+  { position: [-16, 15, -20], scale: 1.2 },
+  { position: [-5, 18, -25], scale: 1.6 },
+  { position: [10, 16, -18], scale: 1.3 },
+  { position: [18, 19, -24], scale: 1.1 },
+];
+
+function blendColors(base, tint, amount) {
+  return `#${new THREE.Color(base).lerp(new THREE.Color(tint), amount).getHexString()}`;
+}
+
+function getGroundPalette(type, timeOfDay, weather) {
+  const base = GROUND_COLORS[type] || GROUND_COLORS.generic;
+  const weatherTint = {
+    clear: base,
+    cloudy: '#8B8F96',
+    rain: '#4F5D6A',
+    snow: '#DDE6EF',
+    fog: '#9AA0A6',
+    storm: '#3E434B',
+    fire: '#7A4A2A',
+  }[weather] || base;
+  const timeTint = {
+    dawn: '#E9A06B',
+    morning: '#9CC9E8',
+    afternoon: '#B7D38B',
+    evening: '#B36A4A',
+    night: '#293752',
+  }[timeOfDay] || '#9CC9E8';
+
+  const main = blendColors(blendColors(base, weatherTint, 0.35), timeTint, 0.16);
+  const detail = blendColors(main, '#F1E0B0', weather === 'snow' ? 0.2 : 0.08);
+  const edge = blendColors(main, '#1F1B18', timeOfDay === 'night' ? 0.25 : 0.14);
+
+  return { main, detail, edge };
+}
+
+function getFallbackLightConfig(isIndoor, timeOfDay) {
+  if (isIndoor) {
+    return {
+      kind: 'hanging_lantern',
+      position: [0, 2.35, 0],
+      color: '#FFD28A',
+      intensity: 1.2,
+      distance: 9,
+      decay: 2,
+    };
+  }
+
+  return {
+    kind: 'lantern_post',
+    position: [-3.4, 0, 3.2],
+    color: timeOfDay === 'night' ? '#BFD7FF' : '#FFD58A',
+    intensity: timeOfDay === 'night' ? 1.1 : 0.75,
+    distance: timeOfDay === 'night' ? 8 : 6,
+    decay: 2,
+  };
+}
+
 /**
  * @param {Object} props
  * @param {import('../../../services/sceneCommandSchema').EnvironmentCommand} props.environment
+ * @param {import('../../../services/sceneCommandSchema').ObjectCommand[]} [props.objects]
  */
-export default function Environment3D({ environment }) {
+export default function Environment3D({ environment, objects = [] }) {
   const { type = 'generic', timeOfDay = 'afternoon', weather = 'clear' } = environment || {};
 
-  const groundColor = GROUND_COLORS[type] || GROUND_COLORS.generic;
   const skyColor = SKY_COLORS[timeOfDay] || SKY_COLORS.afternoon;
   const fogConfig = FOG_SETTINGS[weather] || FOG_SETTINGS.clear;
   const isIndoor = ['tavern', 'dungeon', 'castle', 'temple'].includes(type);
+  const groundPalette = useMemo(() => getGroundPalette(type, timeOfDay, weather), [type, timeOfDay, weather]);
 
   const floorSize = isIndoor ? 12 : 40;
   const wallHeight = isIndoor ? 3.5 : 0;
+  const hasPracticalLight = useMemo(
+    () => objects.some((obj) => PRACTICAL_LIGHT_TYPES.has(obj?.type)),
+    [objects]
+  );
+  const fallbackLight = useMemo(
+    () => (hasPracticalLight ? null : getFallbackLightConfig(isIndoor, timeOfDay)),
+    [hasPracticalLight, isIndoor, timeOfDay]
+  );
 
   const envObjects = useMemo(() => {
     const objs = [];
@@ -119,7 +205,15 @@ export default function Environment3D({ environment }) {
       {/* Ground plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[floorSize, floorSize]} />
-        <meshStandardMaterial color={groundColor} roughness={0.9} />
+        <meshStandardMaterial color={groundPalette.main} roughness={0.92} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.005, 0]} receiveShadow>
+        <circleGeometry args={[floorSize * 0.34, 48]} />
+        <meshStandardMaterial color={groundPalette.detail} roughness={1} transparent opacity={0.55} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.002, 0]} receiveShadow>
+        <ringGeometry args={[floorSize * 0.34, floorSize * 0.5, 64]} />
+        <meshStandardMaterial color={groundPalette.edge} roughness={1} transparent opacity={0.28} />
       </mesh>
 
       {/* Sky dome (outdoor only) */}
@@ -129,6 +223,30 @@ export default function Environment3D({ environment }) {
           <meshBasicMaterial color={skyColor} side={1} />
         </mesh>
       )}
+
+      {!isIndoor && timeOfDay !== 'night' && CLOUD_LAYOUT.map((cloud, index) => (
+        <group key={`cloud-${index}`} position={cloud.position}>
+          <mesh position={[-1.4 * cloud.scale, 0, 0]}>
+            <sphereGeometry args={[1.5 * cloud.scale, 12, 12]} />
+            <meshBasicMaterial color={blendColors(skyColor, '#FFFFFF', 0.6)} transparent opacity={weather === 'storm' ? 0.35 : 0.55} />
+          </mesh>
+          <mesh position={[0, 0.35 * cloud.scale, 0]}>
+            <sphereGeometry args={[1.9 * cloud.scale, 12, 12]} />
+            <meshBasicMaterial color={blendColors(skyColor, '#FFFFFF', 0.7)} transparent opacity={weather === 'storm' ? 0.38 : 0.6} />
+          </mesh>
+          <mesh position={[1.6 * cloud.scale, 0.05 * cloud.scale, 0.3]}>
+            <sphereGeometry args={[1.35 * cloud.scale, 12, 12]} />
+            <meshBasicMaterial color={blendColors(skyColor, '#F5F7FA', 0.65)} transparent opacity={weather === 'storm' ? 0.32 : 0.52} />
+          </mesh>
+        </group>
+      ))}
+
+      {!isIndoor && timeOfDay === 'night' && STAR_LAYOUT.map(([x, y, z, size], index) => (
+        <mesh key={`star-${index}`} position={[x, y, z]}>
+          <sphereGeometry args={[size, 8, 8]} />
+          <meshBasicMaterial color={index % 3 === 0 ? '#F4F8FF' : '#D8E6FF'} />
+        </mesh>
+      ))}
 
       {!isIndoor && celestialBody && (
         <group position={celestialBody.position}>
@@ -140,6 +258,54 @@ export default function Environment3D({ environment }) {
             <sphereGeometry args={[celestialBody.size * 1.8, 20, 20]} />
             <meshBasicMaterial color={celestialBody.glow} transparent opacity={0.12} />
           </mesh>
+        </group>
+      )}
+
+      {fallbackLight && fallbackLight.kind === 'hanging_lantern' && (
+        <group position={fallbackLight.position}>
+          <mesh position={[0, 0.45, 0]} castShadow>
+            <cylinderGeometry args={[0.02, 0.02, 0.9, 6]} />
+            <meshStandardMaterial color="#4B3B2A" roughness={0.85} metalness={0.15} />
+          </mesh>
+          <mesh castShadow>
+            <boxGeometry args={[0.28, 0.34, 0.28]} />
+            <meshStandardMaterial color="#8A6738" emissive={fallbackLight.color} emissiveIntensity={0.35} roughness={0.45} metalness={0.2} />
+          </mesh>
+          <mesh position={[0, 0, 0]}>
+            <sphereGeometry args={[0.12, 12, 12]} />
+            <meshBasicMaterial color={fallbackLight.color} transparent opacity={0.75} />
+          </mesh>
+          <pointLight
+            color={fallbackLight.color}
+            intensity={fallbackLight.intensity}
+            position={[0, 0, 0]}
+            distance={fallbackLight.distance}
+            decay={fallbackLight.decay}
+          />
+        </group>
+      )}
+
+      {fallbackLight && fallbackLight.kind === 'lantern_post' && (
+        <group position={fallbackLight.position}>
+          <mesh position={[0, 1.05, 0]} castShadow>
+            <cylinderGeometry args={[0.06, 0.08, 2.1, 8]} />
+            <meshStandardMaterial color="#5E4934" roughness={0.9} />
+          </mesh>
+          <mesh position={[0, 2.15, 0]} castShadow>
+            <boxGeometry args={[0.28, 0.34, 0.28]} />
+            <meshStandardMaterial color="#87653B" emissive={fallbackLight.color} emissiveIntensity={0.28} roughness={0.55} metalness={0.1} />
+          </mesh>
+          <mesh position={[0, 2.15, 0]}>
+            <sphereGeometry args={[0.11, 10, 10]} />
+            <meshBasicMaterial color={fallbackLight.color} transparent opacity={0.72} />
+          </mesh>
+          <pointLight
+            color={fallbackLight.color}
+            intensity={fallbackLight.intensity}
+            position={[0, 2.15, 0]}
+            distance={fallbackLight.distance}
+            decay={fallbackLight.decay}
+          />
         </group>
       )}
 

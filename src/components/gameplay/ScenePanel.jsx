@@ -109,7 +109,16 @@ function HighlightedNarrative({ text, highlightInfo }) {
   );
 }
 
-export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentChunk, diceRoll, diceRolls, onImageError }) {
+export default function ScenePanel({
+  scene,
+  combat = null,
+  isGeneratingImage,
+  highlightInfo,
+  currentChunk,
+  diceRoll,
+  diceRolls,
+  onImageError,
+}) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
   const { state, dispatch } = useGame();
@@ -296,6 +305,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         }>
           <Scene3DPanel
             scene={scene}
+            combat={combat}
             onError={() => updateSettings({ sceneVisualization: 'image' })}
           />
         </Suspense>

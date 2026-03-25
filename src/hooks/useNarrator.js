@@ -3,6 +3,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useGame } from '../contexts/GameContext';
 import { elevenlabsService } from '../services/elevenlabs';
 import { calculateCost } from '../services/costTracker';
+import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 
 const STATES = {
   IDLE: 'idle',
@@ -10,43 +11,6 @@ const STATES = {
   PLAYING: 'playing',
   PAUSED: 'paused',
 };
-
-function resolveVoiceForCharacter(characterName, gender, characterVoiceMap, localMap, characterVoices, dispatch) {
-  const existing = localMap.get(characterName) || characterVoiceMap[characterName];
-  if (existing) {
-    const genderOk = !gender || !existing.gender || existing.gender === gender;
-    if (genderOk) return existing.voiceId;
-  }
-
-  if (!characterVoices || characterVoices.length === 0) {
-    return existing?.voiceId || null;
-  }
-
-  const usedVoiceIds = new Set();
-  for (const v of Object.values(characterVoiceMap)) usedVoiceIds.add(v.voiceId);
-  for (const v of localMap.values()) usedVoiceIds.add(v.voiceId);
-
-  const genderPool = gender === 'male' || gender === 'female'
-    ? characterVoices.filter((v) => v.gender === gender)
-    : characterVoices;
-
-  const pool = genderPool.length > 0 ? genderPool : characterVoices;
-
-  let assigned = pool.find((v) => !usedVoiceIds.has(v.voiceId));
-  if (!assigned) {
-    const totalMapped = Object.keys(characterVoiceMap).length + localMap.size;
-    assigned = pool[totalMapped % pool.length];
-  }
-
-  const entry = { voiceId: assigned.voiceId, gender: gender || null };
-  localMap.set(characterName, entry);
-  dispatch({
-    type: 'MAP_CHARACTER_VOICE',
-    payload: { characterName, voiceId: assigned.voiceId, gender: gender || null },
-  });
-
-  return assigned.voiceId;
-}
 
 export function useNarrator() {
   const { settings, hasApiKey } = useSettings();
@@ -59,7 +23,6 @@ export function useNarrator() {
   const [currentChunk, setCurrentChunk] = useState(null);
 
   const audioRef = useRef(null);
-  const sfxAudioRef = useRef(null);
   const queueRef = useRef([]);
   const abortRef = useRef(false);
   const objectUrlsRef = useRef([]);
@@ -103,13 +66,6 @@ export function useNarrator() {
       a.dispatchEvent(new Event('ended'));
       a.pause();
       a.removeAttribute('src');
-    }
-    if (sfxAudioRef.current) {
-      const s = sfxAudioRef.current;
-      sfxAudioRef.current = null;
-      s.dispatchEvent(new Event('ended'));
-      s.pause();
-      s.removeAttribute('src');
     }
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current = [];
@@ -193,11 +149,11 @@ export function useNarrator() {
     }
 
     const item = queueRef.current[0];
-    const { dialogueSegments, soundEffect, narrative, messageId } = item;
+    const { dialogueSegments, narrative, messageId } = item;
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
-      const { elevenlabsVoiceId, characterVoices, sfxEnabled, sfxVolume, dialogueSpeed } = settings;
+      const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
       if (!hasApiKey('elevenlabs') || !elevenlabsVoiceId) {
       queueRef.current.shift();
       setPlaybackState(STATES.IDLE);
@@ -209,28 +165,6 @@ export function useNarrator() {
       abortRef.current = false;
 
       const campaignId = state.campaign?.backendId || null;
-      if (sfxEnabled && soundEffect) {
-        try {
-          const sfxUrl = await elevenlabsService.generateSoundEffect(undefined, soundEffect, 4, campaignId);
-          if (generationRef.current !== myGeneration) return;
-          dispatch({ type: 'ADD_AI_COST', payload: calculateCost('sfx', {}) });
-          objectUrlsRef.current.push(sfxUrl);
-
-          if (!abortRef.current && generationRef.current === myGeneration) {
-            const sfxAudio = new Audio(sfxUrl);
-            sfxAudio.volume = Math.max(0, Math.min(1, (sfxVolume || 70) / 100));
-            sfxAudioRef.current = sfxAudio;
-            await new Promise((resolve) => {
-              sfxAudio.onended = resolve;
-              sfxAudio.onerror = resolve;
-              sfxAudio.play().catch(resolve);
-            });
-            sfxAudioRef.current = null;
-          }
-        } catch (sfxErr) {
-          console.warn('SFX generation failed:', sfxErr.message);
-        }
-      }
 
       if (generationRef.current !== myGeneration) return;
 

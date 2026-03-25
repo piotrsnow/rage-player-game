@@ -190,6 +190,21 @@
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes combatGlyphPop {
+  0% {
+    opacity: 0;
+    transform: scale(4);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @property --border-angle {
   syntax: '<angle>';
   initial-value: 0deg;
@@ -242,6 +257,13 @@
 
 .animate-scale-in {
   animation: scaleIn 0.3s ease-out both;
+}
+
+.combat-log-letter {
+  display: inline-block;
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+  animation: combatGlyphPop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes micPulse {

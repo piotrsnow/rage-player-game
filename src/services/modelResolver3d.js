@@ -1,7 +1,6 @@
-import { MODEL_3D_CATALOG, getModelCatalogEntry } from '../../shared/modelCatalog3d.js';
 import { apiClient } from './apiClient';
 
-let runtimeCatalog = MODEL_3D_CATALOG;
+let runtimeCatalog = [];
 let runtimeCatalogById = new Map(runtimeCatalog.map((entry) => [entry.id, entry]));
 let catalogVersion = 0;
 let catalogLoaded = false;
@@ -216,18 +215,11 @@ export async function refreshModelCatalog(force = false) {
 
   catalogLoadPromise = apiClient.get('/proxy/meshy/prefabs/catalog')
     .then((response) => {
-      if (Array.isArray(response?.items) && response.items.length > 0) {
-        setRuntimeCatalog(response.items);
-      } else if (!catalogLoaded) {
-        setRuntimeCatalog(MODEL_3D_CATALOG);
-      }
+      setRuntimeCatalog(Array.isArray(response?.items) ? response.items : []);
       return runtimeCatalog;
     })
     .catch((error) => {
       console.warn('[modelResolver3d] Failed to load prefab catalog:', error.message);
-      if (!catalogLoaded) {
-        setRuntimeCatalog(MODEL_3D_CATALOG);
-      }
       return runtimeCatalog;
     })
     .finally(() => {
@@ -239,6 +231,9 @@ export async function refreshModelCatalog(force = false) {
 
 function buildCatalogUrl(entry) {
   if (!entry) return null;
+  if (entry.storagePath) {
+    return `/proxy/meshy/prefabs?path=${encodeURIComponent(entry.storagePath)}`;
+  }
   return `/proxy/meshy/prefabs/${encodeURIComponent(entry.category)}/${encodeURIComponent(entry.file)}`;
 }
 
@@ -273,15 +268,28 @@ function scoreEntry(entry, preferredCategories, tokens) {
   return { score, matchedTokens };
 }
 
-function pickBestEntry({ entries, preferredCategories, tokens }) {
-  let best = null;
+function rankEntries({ entries, preferredCategories, tokens, excludeModelIds = [] }) {
+  const excluded = new Set(excludeModelIds.filter(Boolean));
+  const ranked = [];
+
   for (const entry of entries) {
+    if (excluded.has(entry.id)) continue;
     const { score, matchedTokens } = scoreEntry(entry, preferredCategories, tokens);
-    if (!best || score > best.score || (score === best.score && matchedTokens > best.matchedTokens)) {
-      best = { entry, score, matchedTokens };
-    }
+    ranked.push({ entry, score, matchedTokens });
   }
-  return best;
+
+  ranked.sort((left, right) => {
+    if (right.score !== left.score) return right.score - left.score;
+    if (right.matchedTokens !== left.matchedTokens) return right.matchedTokens - left.matchedTokens;
+    return left.entry.id.localeCompare(right.entry.id);
+  });
+
+  return ranked;
+}
+
+function pickBestEntry(options) {
+  const [best] = rankEntries(options);
+  return best || null;
 }
 
 function buildSelection(entry, score, source, preferredCategories, exact = false) {
@@ -298,12 +306,20 @@ function buildSelection(entry, score, source, preferredCategories, exact = false
 }
 
 export function getCatalogModel(modelId) {
-  return runtimeCatalogById.get(modelId) || getModelCatalogEntry(modelId);
+  return runtimeCatalogById.get(modelId) || null;
 }
 
-export function selectCharacterModel({ name = '', species = '', career = '', gender = '', archetype = '' }) {
+export function selectCharacterModel({
+  name = '',
+  species = '',
+  career = '',
+  gender = '',
+  archetype = '',
+  excludeModelIds = [],
+}) {
+  const excluded = new Set(excludeModelIds.filter(Boolean));
   const exactId = EXACT_CHARACTER_MODELS[archetype];
-  if (exactId) {
+  if (exactId && !excluded.has(exactId)) {
     const exactEntry = getCatalogModel(exactId);
     if (exactEntry) {
       return buildSelection(exactEntry, 100, 'exact_archetype', [exactEntry.category], true);
@@ -321,14 +337,25 @@ export function selectCharacterModel({ name = '', species = '', career = '', gen
     ...tokenize(gender),
     ...tokenize(archetype.replace(/_/g, ' ')),
   ]);
-  const best = pickBestEntry({ entries: runtimeCatalog, preferredCategories, tokens });
+  const best = pickBestEntry({
+    entries: runtimeCatalog,
+    preferredCategories,
+    tokens,
+    excludeModelIds,
+  });
   if (!best) return null;
   return buildSelection(best.entry, best.score, 'token_match', preferredCategories);
 }
 
-export function selectObjectModel({ name = '', type = '', environmentType = '' }) {
+export function selectObjectModel({
+  name = '',
+  type = '',
+  environmentType = '',
+  excludeModelIds = [],
+}) {
+  const excluded = new Set(excludeModelIds.filter(Boolean));
   const exactId = EXACT_OBJECT_MODELS[type];
-  if (exactId) {
+  if (exactId && !excluded.has(exactId)) {
     const exactEntry = getCatalogModel(exactId);
     if (exactEntry) {
       return buildSelection(exactEntry, 100, 'exact_type', [exactEntry.category], true);
@@ -341,7 +368,12 @@ export function selectObjectModel({ name = '', type = '', environmentType = '' }
     ...tokenize(type.replace(/_/g, ' ')),
     ...tokenize(environmentType),
   ]);
-  const best = pickBestEntry({ entries: runtimeCatalog, preferredCategories, tokens });
+  const best = pickBestEntry({
+    entries: runtimeCatalog,
+    preferredCategories,
+    tokens,
+    excludeModelIds,
+  });
   if (!best) return null;
   return buildSelection(best.entry, best.score, 'token_match', preferredCategories);
 }

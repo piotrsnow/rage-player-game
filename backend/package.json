@@ -14,7 +14,9 @@
     "generate:prefabs": "node scripts/generatePrefabs.js",
     "generate:prefabs:dry": "node scripts/generatePrefabs.js --dry-run",
     "import:prefabs": "node scripts/importPrefabsFromModels3d.js",
-    "import:prefabs:dry": "node scripts/importPrefabsFromModels3d.js --dry-run"
+    "import:prefabs:dry": "node scripts/importPrefabsFromModels3d.js --dry-run",
+    "import:prefabs:scan-gcp": "node scripts/importPrefabsFromModels3d.js --scan-gcp",
+    "import:prefabs:scan-gcp:dry": "node scripts/importPrefabsFromModels3d.js --scan-gcp --dry-run"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

@@ -646,6 +646,7 @@ export default function GameplayPage() {
         {/* Scene Panel */}
         <ScenePanel
           scene={viewedScene}
+          combat={isMultiplayer ? mpGameState?.combat : state.combat}
           isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
           highlightInfo={narrator.highlightInfo}
           currentChunk={narrator.currentChunk}

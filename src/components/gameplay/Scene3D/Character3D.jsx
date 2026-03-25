@@ -1,9 +1,11 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useEffect, useState, useMemo, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getAnchor, getFacingRotation } from '../../../data/sceneAnchors';
 import { getCharacterPrefab } from '../../../data/prefabs';
 import { resolveSceneModelSync } from '../../../services/assetManager';
+import { apiClient } from '../../../services/apiClient';
+import { refreshModelCatalog, selectCharacterModel } from '../../../services/modelResolver3d';
 import { scene3dDebug } from '../../../services/scene3dDebug';
 import PlaceholderMesh from './PlaceholderMesh';
 import GLBModel from './GLBModel';
@@ -23,8 +25,15 @@ const ENTRANCE_DURATION = 0.6;
  * @param {string} props.environmentType
  * @param {Object} [props.meshySettings]
  * @param {Object} [props.allCharacterPositions] - Map of id -> [x,y,z] for facingTarget lookups
+ * @param {Function} [props.onClick]
  */
-export default function Character3D({ command, environmentType, meshySettings = {}, allCharacterPositions = {} }) {
+export default function Character3D({
+  command,
+  environmentType,
+  meshySettings = {},
+  allCharacterPositions = {},
+  onClick = null,
+}) {
   const groupRef = useRef();
   const [currentAnimation, setCurrentAnimation] = useState(command.animation || 'idle');
   const targetPositionRef = useRef(null);
@@ -35,6 +44,8 @@ export default function Character3D({ command, environmentType, meshySettings = 
   const prefab = useMemo(() => getCharacterPrefab(command.archetype), [command.archetype]);
 
   const [modelUrl, setModelUrl] = useState(command.modelUrl || null);
+  const [failedModelIds, setFailedModelIds] = useState([]);
+  const activeModelIdRef = useRef(command.modelId || null);
 
   const anchor = useMemo(
     () => getAnchor(environmentType, command.anchor),
@@ -57,6 +68,8 @@ export default function Character3D({ command, environmentType, meshySettings = 
   }, [command.position, anchor, prefab]);
 
   useEffect(() => {
+    setFailedModelIds([]);
+    activeModelIdRef.current = command.modelId || null;
     const resolved = resolveSceneModelSync({
       directUrl: command.modelUrl || null,
       assetKey: command.assetHint ? `char:${command.assetHint}` : null,
@@ -68,6 +81,30 @@ export default function Character3D({ command, environmentType, meshySettings = 
     });
     setModelUrl(resolved.url || null);
   }, [command.modelUrl, command.assetHint, command.archetype, meshySettings]);
+
+  const handleModelError = useCallback(async () => {
+    const failedId = activeModelIdRef.current || command.modelId || null;
+    const excludeModelIds = [...new Set([...failedModelIds, failedId].filter(Boolean))];
+
+    setFailedModelIds(excludeModelIds);
+
+    await refreshModelCatalog(true).catch(() => null);
+
+    const nextSelection = selectCharacterModel({
+      name: command.name || '',
+      archetype: command.archetype || '',
+      excludeModelIds,
+    });
+
+    if (!nextSelection?.modelUrl) {
+      activeModelIdRef.current = null;
+      setModelUrl(null);
+      return;
+    }
+
+    activeModelIdRef.current = nextSelection.modelId || null;
+    setModelUrl(apiClient.resolveMediaUrl(nextSelection.modelUrl));
+  }, [command.archetype, command.modelId, command.name, failedModelIds]);
 
   useEffect(() => {
     if (command.moveTo) {
@@ -181,9 +218,22 @@ export default function Character3D({ command, environmentType, meshySettings = 
   const scale = command.scale || 1;
 
   return (
-    <group ref={groupRef} position={initialPosition.toArray()} rotation={[0, targetRotation, 0]} scale={[0, 0, 0]}>
+    <group
+      ref={groupRef}
+      position={initialPosition.toArray()}
+      rotation={[0, targetRotation, 0]}
+      scale={[0, 0, 0]}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.(command);
+      }}
+    >
       <group scale={[scale, scale, scale]}>
-        <GLBModel url={modelUrl} fallback={<PlaceholderMesh prefab={prefab} label={command.name} />} />
+        <GLBModel
+          url={modelUrl}
+          fallback={<PlaceholderMesh prefab={prefab} label={command.name} />}
+          onError={handleModelError}
+        />
         {command.highlighted && (
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -(prefab?.yOffset || 0) + 0.02, 0]}>
             <ringGeometry args={[0.35, 0.45, 24]} />

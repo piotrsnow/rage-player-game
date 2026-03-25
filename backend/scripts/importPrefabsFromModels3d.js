@@ -6,6 +6,7 @@
  *   node --env-file=.env scripts/importPrefabsFromModels3d.js
  *   node --env-file=.env scripts/importPrefabsFromModels3d.js --dry-run
  *   node --env-file=.env scripts/importPrefabsFromModels3d.js --prefix prefabs
+ *   node --env-file=.env scripts/importPrefabsFromModels3d.js --scan-gcp
  */
 
 import 'dotenv/config';
@@ -24,18 +25,20 @@ const __dirname = path.dirname(__filename);
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const FORCE = args.includes('--force');
+const SCAN_GCP = args.includes('--scan-gcp');
 const sourceDir = path.resolve(__dirname, getArgValue('--source') || '../3dmodels');
 const storageRootPrefix = sanitizePrefix(getArgValue('--prefix') || 'prefabs');
 
 const store = createMediaStore(config);
-const syncedStoragePaths = new Set();
 const stats = {
+  collectionCleared: 0,
   localFilesFound: 0,
   localRenamed: 0,
   localUploaded: 0,
   localUploadSkipped: 0,
   localDeleted: 0,
   gcsFilesFound: 0,
+  gcsMissing: 0,
   dbSynced: 0,
   dbSkipped: 0,
   failed: 0,
@@ -259,10 +262,18 @@ async function deleteLocalFile(localPath) {
   stats.localDeleted++;
 }
 
+async function clearPrefabAssetCollection() {
+  if (DRY_RUN) {
+    return;
+  }
+
+  const result = await prisma.prefabAsset.deleteMany({});
+  stats.collectionCleared = result.count;
+}
+
 async function upsertPrefabAssetForPath(entry, size, metadata) {
   if (DRY_RUN) {
     stats.dbSkipped++;
-    syncedStoragePaths.add(entry.storagePath);
     return;
   }
 
@@ -298,7 +309,6 @@ async function upsertPrefabAssetForPath(entry, size, metadata) {
   }
 
   stats.dbSynced++;
-  syncedStoragePaths.add(entry.storagePath);
 }
 
 async function processLocalEntry(entry, index) {
@@ -367,12 +377,17 @@ function buildGcsEntry(storagePath) {
 async function processExistingGcsFile(file, index) {
   try {
     const storagePath = file.name.replace(/\\/g, '/');
-
-    if (syncedStoragePaths.has(storagePath)) {
+    const [exists] = await file.exists();
+    if (!exists) {
+      stats.gcsMissing++;
+      console.warn(
+        `[gcs   ${index + 1}/${stats.gcsFilesFound}] SKIP missing ${storagePath}${DRY_RUN ? ' (dry-run)' : ''}`,
+      );
       return;
     }
 
-    const size = parseInt(file.metadata?.size || '0', 10);
+    const [metadata] = await file.getMetadata();
+    const size = parseInt(metadata?.size || file.metadata?.size || '0', 10);
     const entry = buildGcsEntry(storagePath);
 
     await upsertPrefabAssetForPath(entry, size, {
@@ -398,26 +413,33 @@ async function processExistingGcsFile(file, index) {
 async function main() {
   await ensurePreconditions();
 
-  const bucket = createGcpBucket();
+  const bucket = SCAN_GCP ? createGcpBucket() : null;
   const localFiles = await collectGlbFiles(sourceDir);
   const localEntries = buildLocalEntries(localFiles);
-  const gcsFiles = await listExistingGcsGlbs(bucket);
 
   ensureNoCollisions(localEntries);
 
   stats.localFilesFound = localEntries.length;
-  stats.gcsFilesFound = gcsFiles.length;
 
   console.log('╔══════════════════════════════════════════════════╗');
-  console.log('║     Local GLB Import + Existing GCS DB Sync     ║');
+  console.log('║      Local GLB Import + Optional GCS Scan       ║');
   console.log('╠══════════════════════════════════════════════════╣');
   console.log(`║  Source: ${sourceDir.padEnd(40).slice(0, 40)}║`);
   console.log(`║  Prefix: ${storageRootPrefix.padEnd(40).slice(0, 40)}║`);
   console.log(`║  Local:  ${String(localEntries.length).padEnd(40).slice(0, 40)}║`);
-  console.log(`║  GCS:    ${String(gcsFiles.length).padEnd(40).slice(0, 40)}║`);
+  console.log(`║  GCS:    ${String(SCAN_GCP).padEnd(40).slice(0, 40)}║`);
   console.log(`║  Dry:    ${String(DRY_RUN).padEnd(40).slice(0, 40)}║`);
   console.log(`║  Force:  ${String(FORCE).padEnd(40).slice(0, 40)}║`);
   console.log('╚══════════════════════════════════════════════════╝');
+
+  if (SCAN_GCP && DRY_RUN) {
+    console.log('Dry-run: skipping PrefabAsset collection cleanup before GCP scan.');
+  } else if (SCAN_GCP) {
+    await clearPrefabAssetCollection();
+    console.log(`Cleared PrefabAsset collection (${stats.collectionCleared} records).`);
+  } else {
+    console.log('Skipping PrefabAsset collection cleanup (use --scan-gcp for full GCS rebuild).');
+  }
 
   if (localEntries.length === 0) {
     console.log(`No local GLB files found in ${sourceDir}, skipping local import.`);
@@ -427,17 +449,27 @@ async function main() {
     await processLocalEntry(entry, index);
   }
 
-  for (const [index, file] of gcsFiles.entries()) {
-    await processExistingGcsFile(file, index);
+  if (SCAN_GCP && bucket) {
+    const gcsFiles = await listExistingGcsGlbs(bucket);
+    stats.gcsFilesFound = gcsFiles.length;
+    console.log(`Scanning GCS complete: found ${stats.gcsFilesFound} GLB files under "${storageRootPrefix}/".`);
+
+    for (const [index, file] of gcsFiles.entries()) {
+      await processExistingGcsFile(file, index);
+    }
+  } else {
+    console.log('Skipping GCS scan (pass --scan-gcp to sync every GLB from the bucket).');
   }
 
   console.log('\nSummary');
+  console.log(`  Collection cleared:${String(stats.collectionCleared).padStart(4)}`);
   console.log(`  Local found:      ${stats.localFilesFound}`);
   console.log(`  Local renamed:    ${stats.localRenamed}`);
   console.log(`  Local uploaded:   ${stats.localUploaded}`);
   console.log(`  Upload skipped:   ${stats.localUploadSkipped}`);
   console.log(`  Local deleted:    ${stats.localDeleted}`);
   console.log(`  GCS found:        ${stats.gcsFilesFound}`);
+  console.log(`  GCS missing:      ${stats.gcsMissing}`);
   console.log(`  DB synced:        ${stats.dbSynced}`);
   console.log(`  DB skipped:       ${stats.dbSkipped}`);
   console.log(`  Failed:           ${stats.failed}`);

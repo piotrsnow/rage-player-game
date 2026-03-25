@@ -11,8 +11,9 @@ import * as THREE from 'three';
  * @param {Object} props
  * @param {string} props.url - Path to the .glb file
  * @param {React.ReactNode} [props.fallback] - Rendered when loading fails
+ * @param {Function} [props.onError] - Called when GLB loading fails
  */
-export default function GLBModel({ url, fallback = null }) {
+export default function GLBModel({ url, fallback = null, onError = null }) {
   const [failed, setFailed] = useState(false);
   const [gltf, setGltf] = useState(null);
 
@@ -28,11 +29,16 @@ export default function GLBModel({ url, fallback = null }) {
       url,
       (loaded) => { if (!cancelled) setGltf(loaded); },
       undefined,
-      () => { if (!cancelled) setFailed(true); },
+      () => {
+        if (!cancelled) {
+          setFailed(true);
+          onError?.();
+        }
+      },
     );
 
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, onError]);
 
   const cloned = useMemo(() => {
     if (!gltf) return null;

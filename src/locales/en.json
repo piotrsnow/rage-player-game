@@ -64,6 +64,7 @@
     "cancel": "Cancel",
     "multiplayer": "MP",
     "waitingFor": "Waiting for {{name}}...",
+    "nextTurnSoon": "Next turn in a moment: {{name}}",
     "hostWillEnd": "The host will end combat...",
     "chatHit": "{{actor}} hits {{target}} — {{damage}} damage ({{location}})",
     "chatMiss": "{{actor}} misses {{target}}",

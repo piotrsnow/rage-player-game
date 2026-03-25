@@ -112,7 +112,16 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
   if (!actor || !manoeuvre) return { combat: state, result: null };
 
   const log = [];
-  const result = { actor: actor.name, manoeuvre: manoeuvre.name, rolls: [] };
+  const result = {
+    actor: actor.name,
+    actorId: actor.id,
+    actorType: actor.type,
+    manoeuvre: manoeuvre.name,
+    manoeuvreKey,
+    targetId: target?.id || null,
+    targetType: target?.type || null,
+    rolls: [],
+  };
 
   if (manoeuvre.type === 'defensive') {
     if (manoeuvreKey === 'defend') {
@@ -154,6 +163,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
     result.targetName = target.name;
     const knownSpells = actor.knownSpells || [];
     const spell = knownSpells[0] || { name: 'Magic Dart', cn: 0, damage: '+WPB', lore: 'petty' };
+    result.spellName = spell.name;
     const castResult = performCastingTest(actor, spell, 0);
 
     result.rolls.push({
@@ -239,6 +249,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
         .map((w) => (typeof w === 'string' ? w : w.name))
         .find((w) => getWeaponData(w)) || 'Hand Weapon';
       const weaponData = getWeaponData(mainWeapon);
+      result.weaponName = mainWeapon;
 
       let weaponDmg = sb;
       const dmgStr = weaponData.damage || '+SB';
@@ -297,6 +308,10 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       result.criticalWound = criticalWound;
       result.targetDefeated = target.isDefeated;
     } else {
+      const mainWeapon = (actor.weapons || actor.inventory || [])
+        .map((w) => (typeof w === 'string' ? w : w.name))
+        .find((w) => getWeaponData(w)) || 'Hand Weapon';
+      result.weaponName = mainWeapon;
       if (actor.advantage > 0) actor.advantage = Math.max(0, actor.advantage - 1);
       target.advantage += 1;
 

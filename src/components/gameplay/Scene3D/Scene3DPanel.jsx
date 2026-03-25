@@ -2,6 +2,7 @@ import { useMemo, useCallback, useState, useEffect, useRef, Suspense } from 'rea
 import { Canvas } from '@react-three/fiber';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useGame } from '../../../contexts/GameContext';
+import { useCombatAudio } from '../../../hooks/useCombatAudio';
 import { getAnchor } from '../../../data/sceneAnchors';
 import { useSceneCommands } from './useSceneCommands';
 import Environment3D from './Environment3D';
@@ -10,7 +11,7 @@ import Object3D from './Object3D';
 import CameraController from './CameraController';
 import Lighting3D from './Lighting3D';
 
-function Scene3DContent({ sceneCmd }) {
+function Scene3DContent({ sceneCmd, onCharacterClick }) {
   const { settings } = useSettings();
   const { state } = useGame();
   const campaignId = state.campaign?.id || state.campaign?.backendId || null;
@@ -41,7 +42,7 @@ function Scene3DContent({ sceneCmd }) {
         mood={sceneCmd.environment.mood}
         environmentType={sceneCmd.environment.type}
       />
-      <Environment3D environment={sceneCmd.environment} />
+      <Environment3D environment={sceneCmd.environment} objects={sceneCmd.objects} />
 
       {sceneCmd.characters.map((charCmd) => (
         <Character3D
@@ -50,6 +51,7 @@ function Scene3DContent({ sceneCmd }) {
           environmentType={sceneCmd.environment.type}
           meshySettings={meshySettings}
           allCharacterPositions={characterPositions}
+          onClick={onCharacterClick}
         />
       ))}
 
@@ -175,10 +177,20 @@ function detectWebGL() {
   }
 }
 
-export default function Scene3DPanel({ scene, onError }) {
+export default function Scene3DPanel({ scene, combat = null, onError }) {
   const sceneCmd = useSceneCommands(scene);
+  const combatAudio = useCombatAudio(combat);
   const [hasError, setHasError] = useState(false);
   const [webGLSupported] = useState(detectWebGL);
+
+  const handleCharacterClick = useCallback((characterCommand) => {
+    if (!combat?.active || !characterCommand?.name) return;
+
+    const combatant = combat.combatants?.find((entry) => entry?.name === characterCommand.name);
+    if (!combatant) return;
+
+    void combatAudio.playBattleCry(combatant);
+  }, [combat, combatAudio]);
 
   useEffect(() => {
     if (!webGLSupported) {
@@ -239,7 +251,7 @@ export default function Scene3DPanel({ scene, onError }) {
           style={{ width: '100%', height: '100%' }}
           gl={{ antialias: true, alpha: false }}
         >
-          <Scene3DContent sceneCmd={sceneCmd} />
+          <Scene3DContent sceneCmd={sceneCmd} onCharacterClick={handleCharacterClick} />
         </Canvas>
       </Suspense>
       <SceneTransition sceneCmd={sceneCmd} />

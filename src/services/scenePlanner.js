@@ -4,6 +4,9 @@ import { resolveCharacterArchetype, matchObjectType } from '../data/prefabs';
 import { selectCharacterModel, selectObjectModel } from './modelResolver3d';
 import { scene3dDebug } from './scene3dDebug';
 
+export const SCENE_PLANNER_VERSION = 2;
+const MAX_DUPLICATE_MODEL_INSTANCES = 2;
+
 const LOCATION_KEYWORDS = {
   tavern:       ['tavern', 'inn', 'pub', 'bar', 'taproom', 'alehouse', 'common room', 'karczma', 'gospoda'],
   forest:       ['forest', 'wood', 'grove', 'thicket', 'glade', 'clearing', 'las', 'gaj', 'polana'],
@@ -191,8 +194,9 @@ function extractSpeakerNames(dialogueSegments) {
   const names = new Set();
   if (!Array.isArray(dialogueSegments)) return names;
   for (const seg of dialogueSegments) {
-    if (seg.speaker && seg.type === 'dialogue') {
-      names.add(seg.speaker.toLowerCase());
+    const rawName = seg.character || seg.speaker || '';
+    if (rawName && seg.type === 'dialogue') {
+      names.add(rawName.toLowerCase());
     }
   }
   return names;
@@ -257,6 +261,35 @@ function resolveCoverageStatus({ hasModel, reviewNeeded }) {
   return { status: 'matched', alreadyExists: true };
 }
 
+function getCappedModelIds(modelUsage) {
+  return [...modelUsage.entries()]
+    .filter(([, count]) => count >= MAX_DUPLICATE_MODEL_INSTANCES)
+    .map(([modelId]) => modelId);
+}
+
+function consumeSelection(selection, modelUsage) {
+  if (!selection?.modelId) return selection;
+
+  const currentCount = modelUsage.get(selection.modelId) || 0;
+  if (currentCount >= MAX_DUPLICATE_MODEL_INSTANCES) {
+    return null;
+  }
+
+  modelUsage.set(selection.modelId, currentCount + 1);
+  return selection;
+}
+
+function chooseSceneModel({ storedModel, selectFallback, modelUsage }) {
+  const storedSelection = getStoredModelSelection(storedModel);
+  if (storedSelection) {
+    const consumedStored = consumeSelection(storedSelection, modelUsage);
+    if (consumedStored) return consumedStored;
+  }
+
+  const fallbackSelection = selectFallback(getCappedModelIds(modelUsage));
+  return consumeSelection(fallbackSelection, modelUsage);
+}
+
 /**
  * Determine camera mode from scene context.
  * @param {object} scene
@@ -264,13 +297,6 @@ function resolveCoverageStatus({ hasModel, reviewNeeded }) {
  * @returns {{ mode: string, focusTargets: string[] }}
  */
 function determineCamera(scene, state) {
-  if (state.combat?.active) {
-    return { mode: 'action_focus', focusTargets: ['player'] };
-  }
-  if (scene.dialogueSegments && scene.dialogueSegments.length > 0) {
-    const speakers = extractSpeakerNames(scene.dialogueSegments);
-    return { mode: 'dialogue', focusTargets: ['player', ...Array.from(speakers).slice(0, 1).map(n => `npc_${n.replace(/\s+/g, '_')}`)] };
-  }
   return { mode: 'exploration', focusTargets: [] };
 }
 
@@ -332,15 +358,21 @@ export function planScene(scene, state, options = {}) {
   const allCharacters = [];
   const entityIds = [];
   const modelAssignments = { playerModel: null, partyModels: [], npcModels: [] };
+  const sceneModelUsage = new Map();
 
   if (player) {
     const pid = 'player';
-    const playerSelection = getStoredModelSelection(player.model3d) || selectCharacterModel({
-      name: player.name,
-      species: player.species,
-      career: player.career?.name,
-      gender: player.gender,
-      archetype: resolveCharacterArchetype(player.species, player.career?.name, player.gender),
+    const playerSelection = chooseSceneModel({
+      storedModel: player.model3d,
+      modelUsage: sceneModelUsage,
+      selectFallback: (excludeModelIds) => selectCharacterModel({
+        name: player.name,
+        species: player.species,
+        career: player.career?.name,
+        gender: player.gender,
+        archetype: resolveCharacterArchetype(player.species, player.career?.name, player.gender),
+        excludeModelIds,
+      }),
     });
     if (!player.model3d && playerSelection?.modelId) {
       modelAssignments.playerModel = toPersistedModel(playerSelection);
@@ -373,12 +405,17 @@ export function planScene(scene, state, options = {}) {
   ).slice(0, 8);
 
   for (const npc of visibleNpcs) {
-    const npcSelection = getStoredModelSelection(npc.model3d) || selectCharacterModel({
-      name: npc.name,
-      species: npc.species,
-      career: npc.career,
-      gender: npc.gender,
-      archetype: resolveCharacterArchetype(npc.species, npc.career, npc.gender),
+    const npcSelection = chooseSceneModel({
+      storedModel: npc.model3d,
+      modelUsage: sceneModelUsage,
+      selectFallback: (excludeModelIds) => selectCharacterModel({
+        name: npc.name,
+        species: npc.species,
+        career: npc.career,
+        gender: npc.gender,
+        archetype: resolveCharacterArchetype(npc.species, npc.career, npc.gender),
+        excludeModelIds,
+      }),
     });
     if (!npc.model3d && npcSelection?.modelId) {
       modelAssignments.npcModels.push({
@@ -394,12 +431,17 @@ export function planScene(scene, state, options = {}) {
     for (const companion of state.party) {
       if (!companion || companion.name === player?.name) continue;
       const cid = `companion_${companion.name.toLowerCase().replace(/\s+/g, '_')}`;
-      const companionSelection = getStoredModelSelection(companion.model3d) || selectCharacterModel({
-        name: companion.name,
-        species: companion.species,
-        career: companion.career?.name,
-        gender: companion.gender,
-        archetype: resolveCharacterArchetype(companion.species, companion.career?.name, companion.gender),
+      const companionSelection = chooseSceneModel({
+        storedModel: companion.model3d,
+        modelUsage: sceneModelUsage,
+        selectFallback: (excludeModelIds) => selectCharacterModel({
+          name: companion.name,
+          species: companion.species,
+          career: companion.career?.name,
+          gender: companion.gender,
+          archetype: resolveCharacterArchetype(companion.species, companion.career?.name, companion.gender),
+          excludeModelIds,
+        }),
       });
       if (!companion.model3d && companionSelection?.modelId) {
         modelAssignments.partyModels.push({
@@ -483,10 +525,15 @@ export function planScene(scene, state, options = {}) {
   const envObjects = envProps
     .filter(p => !usedAnchors.has(p.anchor))
     .map((p, i) => {
-      const selection = selectObjectModel({
-        name: p.type.replace(/_/g, ' '),
-        type: p.type,
-        environmentType: locationType,
+      const selection = chooseSceneModel({
+        storedModel: null,
+        modelUsage: sceneModelUsage,
+        selectFallback: (excludeModelIds) => selectObjectModel({
+          name: p.type.replace(/_/g, ' '),
+          type: p.type,
+          environmentType: locationType,
+          excludeModelIds,
+        }),
       });
       return {
         id: `env_${p.type}_${i}`,
@@ -504,10 +551,15 @@ export function planScene(scene, state, options = {}) {
   let objAnchorIdx = 0;
 
   const sceneSpecificObjects = sceneObjects.map(o => {
-    const selection = selectObjectModel({
-      name: `${o.name} ${o.description || ''}`.trim(),
-      type: o.type,
-      environmentType: locationType,
+    const selection = chooseSceneModel({
+      storedModel: null,
+      modelUsage: sceneModelUsage,
+      selectFallback: (excludeModelIds) => selectObjectModel({
+        name: `${o.name} ${o.description || ''}`.trim(),
+        type: o.type,
+        environmentType: locationType,
+        excludeModelIds,
+      }),
     });
     return {
       id: o.id,
@@ -572,6 +624,7 @@ export function planScene(scene, state, options = {}) {
     transitions: [{ type: transitionType, duration: transitionDuration }],
   });
   sceneCommand.catalogVersion = catalogVersion;
+  sceneCommand.plannerVersion = SCENE_PLANNER_VERSION;
 
   const sceneId = scene.id || `scene_${Date.now()}`;
   const sceneText = scene.narrative || '';
