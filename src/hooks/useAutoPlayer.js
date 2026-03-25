@@ -43,7 +43,7 @@ export function getAutoPlayerAdvanceDelay({
 }
 
 export function useAutoPlayer(handleAction, options = {}) {
-  const { state, dispatch } = useGame();
+  const { state } = useGame();
   const { settings, getApiKey, updateSettings } = useSettings();
   const {
     narratorPlaybackState = 'idle',
@@ -143,26 +143,17 @@ export function useAutoPlayer(handleAction, options = {}) {
 
       setIsThinking(false);
 
-      const shown = await showOverlay(result.action);
+      const actionText = result.chatMessage
+        ? `${result.chatMessage}\n${result.action}`
+        : result.action;
+
+      const shown = await showOverlay(actionText);
       if (!shown) return;
 
       if (abortRef.current || !enabledRef.current) return;
 
-      if (result.chatMessage) {
-        dispatch({
-          type: 'ADD_CHAT_MESSAGE',
-          payload: {
-            id: `msg_${Date.now()}_autoplayer`,
-            role: 'player',
-            content: result.chatMessage,
-            timestamp: Date.now(),
-            isAutoPlayer: true,
-          },
-        });
-      }
-
       if (handleAction) {
-        await handleAction(result.action, result.isCustom);
+        await handleAction(actionText, result.isCustom);
       }
 
       setTurnsPlayed((prev) => prev + 1);
@@ -176,7 +167,7 @@ export function useAutoPlayer(handleAction, options = {}) {
       overlayResolveRef.current = null;
       isRunningRef.current = false;
     }
-  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, dispatch, showOverlay]);
+  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, showOverlay]);
 
   useEffect(() => {
     const currentLen = state.scenes?.length || 0;
