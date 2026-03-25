@@ -161,25 +161,62 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   );
 
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
+  const [incomingSrc, setIncomingSrc] = useState(null);
+  const [isCrossfading, setIsCrossfading] = useState(false);
 
   useEffect(() => {
-    if (!imageSrc || imageSrc === displayedSrc) return;
+    if (!imageSrc) {
+      if (!isGeneratingImage) {
+        setDisplayedSrc(null);
+        setIncomingSrc(null);
+        setIsCrossfading(false);
+      }
+      return;
+    }
+
+    if (imageSrc === displayedSrc || imageSrc === incomingSrc) return;
 
     let cancelled = false;
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      setDisplayedSrc(imageSrc);
+      if (!displayedSrc) {
+        setDisplayedSrc(imageSrc);
+        setIncomingSrc(null);
+        setIsCrossfading(false);
+        return;
+      }
+
+      setIncomingSrc(imageSrc);
+      requestAnimationFrame(() => {
+        if (!cancelled) {
+          setIsCrossfading(true);
+        }
+      });
     };
     img.onerror = () => {};
     img.src = imageSrc;
 
     return () => { cancelled = true; };
-  }, [imageSrc, displayedSrc]);
+  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage]);
+
+  useEffect(() => {
+    if (!incomingSrc || !isCrossfading) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayedSrc(incomingSrc);
+      setIncomingSrc(null);
+      setIsCrossfading(false);
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [incomingSrc, isCrossfading]);
 
   const handleImageError = useCallback(() => {
     if (scene?.id && scene?.image) {
       setDisplayedSrc(null);
+      setIncomingSrc(null);
+      setIsCrossfading(false);
       dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
       onImageError?.(scene.id);
     }
@@ -264,13 +301,29 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
-      ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
-        <img
-          src={displayedSrc}
-          alt="Scene"
-          className="absolute inset-0 w-full h-full object-cover"
-          onError={handleImageError}
-        />
+      ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc) ? (
+        <>
+          {displayedSrc && (
+            <img
+              src={displayedSrc}
+              alt="Scene"
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out ${
+                isCrossfading ? 'opacity-0' : 'opacity-100'
+              }`}
+              onError={handleImageError}
+            />
+          )}
+          {incomingSrc && (
+            <img
+              src={incomingSrc}
+              alt="Scene"
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out ${
+                isCrossfading ? 'opacity-100' : 'opacity-0'
+              }`}
+              onError={handleImageError}
+            />
+          )}
+        </>
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (

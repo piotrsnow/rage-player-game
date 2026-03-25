@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toObjectId } from '../../services/hashService.js';
+import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -54,7 +55,7 @@ export async function openaiProxyRoutes(fastify) {
 
     const { prompt, size, quality, campaignId } = request.body;
 
-    const cacheParams = { provider: 'dalle', prompt };
+    const cacheParams = { provider: 'dalle', prompt, resolutionScale: GENERATED_IMAGE_SCALE };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -90,7 +91,8 @@ export async function openaiProxyRoutes(fastify) {
     const b64 = data.data[0]?.b64_json;
     if (!b64) return reply.code(500).send({ error: 'No image returned from DALL-E' });
 
-    const buffer = Buffer.from(b64, 'base64');
+    const originalBuffer = Buffer.from(b64, 'base64');
+    const buffer = await downscaleGeneratedImage(originalBuffer);
     const storagePath = cacheKey;
     const storeResult = await store.put(storagePath, buffer, 'image/png');
 

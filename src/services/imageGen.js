@@ -1,6 +1,36 @@
 import { buildImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './prompts';
 import { apiClient } from './apiClient';
 
+const GENERATED_IMAGE_SCALE = 0.75;
+
+async function resizeImageDataUrl(dataUrl, scale = GENERATED_IMAGE_SCALE) {
+  if (!dataUrl || scale >= 1) return dataUrl;
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext('2d');
+      if (!context) {
+        resolve(dataUrl);
+        return;
+      }
+
+      context.drawImage(image, 0, 0, width, height);
+      const mimeType = dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png';
+      const quality = mimeType === 'image/jpeg' ? 0.9 : undefined;
+      resolve(canvas.toDataURL(mimeType, quality));
+    };
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
 async function generateWithDalle(prompt, apiKey) {
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
@@ -293,12 +323,15 @@ export const imageService = {
 
     if (provider === 'stability') {
       const negativePrompt = getImageStyleNegative(imageStyle) + ', blurry, low quality, text, watermark, signature';
-      return generateWithStability(prompt, apiKey, negativePrompt);
+      const imageUrl = await generateWithStability(prompt, apiKey, negativePrompt);
+      return resizeImageDataUrl(imageUrl);
     }
     if (provider === 'gemini') {
-      return generateWithGemini(prompt, apiKey);
+      const imageUrl = await generateWithGemini(prompt, apiKey);
+      return resizeImageDataUrl(imageUrl);
     }
-    return generateWithDalle(prompt, apiKey);
+    const imageUrl = await generateWithDalle(prompt, apiKey);
+    return resizeImageDataUrl(imageUrl);
   },
 
   async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting') {

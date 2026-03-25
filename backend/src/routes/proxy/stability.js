@@ -2,6 +2,7 @@ import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toObjectId } from '../../services/hashService.js';
+import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -21,7 +22,7 @@ export async function stabilityProxyRoutes(fastify) {
 
     const { prompt, negativePrompt, model, aspectRatio, campaignId } = request.body;
 
-    const cacheParams = { provider: 'stability', prompt };
+    const cacheParams = { provider: 'stability', prompt, resolutionScale: GENERATED_IMAGE_SCALE };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -54,7 +55,8 @@ export async function stabilityProxyRoutes(fastify) {
     }
 
     const data = await response.json();
-    const buffer = Buffer.from(data.image, 'base64');
+    const originalBuffer = Buffer.from(data.image, 'base64');
+    const buffer = await downscaleGeneratedImage(originalBuffer);
 
     const storagePath = cacheKey.replace('.png', '.jpg');
     const storeResult = await store.put(storagePath, buffer, 'image/jpeg');
