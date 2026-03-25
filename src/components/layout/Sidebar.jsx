@@ -43,11 +43,11 @@ export default function Sidebar() {
       {character && (
         <div className="px-6 mb-8">
           {character.portraitUrl && (
-            <div className="mb-4 overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+            <div className="mt-[60px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
               <img
                 src={character.portraitUrl}
                 alt={character.name}
-                className="h-40 w-full object-cover"
+                className="h-full w-full object-cover"
               />
             </div>
           )}

@@ -2,6 +2,20 @@ import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
 
+const MAX_COMBINED_BONUS = 30;
+const MIN_DIFFICULTY_MODIFIER = -40;
+const MAX_DIFFICULTY_MODIFIER = 40;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDifficultyModifier(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
+    : 0;
+}
+
 const NEEDS_LABELS = {
   hunger: { low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
   thirst: { low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
@@ -323,7 +337,7 @@ When a player attempts a social, trade, persuasion, or other interpersonal skill
   disposition <= -5 (cool): -5 to target
   disposition <= -15 (hostile): -10 to target
   disposition <= -30 (enemy): -15 to target
-When this modifier applies, include "dispositionBonus" in the diceRoll entry with the modifier value.
+When this modifier applies, include "dispositionBonus" in the diceRoll entry with the modifier value. Keep it separate from "difficultyModifier".
 
 MULTIPLAYER INSTRUCTIONS:
 1. You are running a MULTIPLAYER session using the WFRP 4th Edition system. Multiple players act simultaneously each round.
@@ -472,8 +486,9 @@ Resolve ALL player actions simultaneously. Describe what happens to each charact
 
 FEASIBILITY CHECK: Before rolling dice, verify each action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (no diceRolls entry). Trivial/certain actions auto-succeed (no diceRolls entry). Only roll for uncertain outcomes.
 
-DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. The "target" number in each diceRoll is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances).
-NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.
+DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. Build each roll like this: "baseTarget" = characteristic + skill advances, "difficultyModifier" = an explicit difficulty step, and "target" = the final effective target used for success comparison.
+DIFFICULTY MODIFIER: Always expose task difficulty explicitly via "difficultyModifier" instead of hiding it inside "target". Use only one of these values: +40, +30, +20, +10, 0, -10, -20, -30, -40. Guide: +40 routine, +30 easy, +20 favorable, +10 slightly favorable, 0 standard, -10 challenging, -20 hard, -30 very hard, -40 extreme / nearly suicidal.
+NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a separate target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.
 ${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
 ${skipDiceRolls && Object.keys(skipDiceRolls).length > 0 ? `DICE ROLL OVERRIDE: Characters marked [NO DICE ROLL] above do NOT require a dice roll this round. Do NOT include them in the diceRolls array. Resolve their actions narratively without mechanical dice resolution.` : ''}
 ${hasCustomActions ? `
@@ -484,15 +499,17 @@ CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not
 - +30: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
 - +40: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE
 Always award at least +10 for any custom action.
+COMBINED BONUS CAP: creativityBonus + momentumBonus + dispositionBonus is capped at +30 by the game engine. "difficultyModifier" is NOT part of that cap and stays separate.
 Output the diceRoll fields as follows for custom actions:
 - "baseTarget": the BASE value (characteristic + skill advances only)
+- "difficultyModifier": the separate difficulty step (one of +40, +30, +20, +10, 0, -10, -20, -30, -40)
 - "creativityBonus": the bonus (10-40)
-- "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
+- "target": the EFFECTIVE value = baseTarget + difficultyModifier + creativityBonus (+ other applicable modifiers) (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
-Example: baseTarget=31, creativityBonus=20, target=51, roll=45 → 45 ≤ 51 → success=true. The narrative MUST describe a successful outcome.
+Example: baseTarget=31, difficultyModifier=-10, creativityBonus=20, target=41, roll=45 → 45 > 41 → success=false. The narrative MUST describe a failed outcome.
 ` : ''}${hasMomentum ? `
 MOMENTUM: Some characters have momentum from a previous roll (shown as [MOMENTUM +N] or [MOMENTUM -N] above).
-Positive momentum is a bonus — add it to the target: target = baseTarget + creativityBonus + momentumBonus.
+Positive momentum is a bonus — add it to the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus.
 Negative momentum is a penalty — it reduces the target (momentumBonus is negative, so adding it lowers the target).
 Output "momentumBonus": N in the diceRoll entry for that character (N can be positive or negative).
 Momentum is consumed after this roll regardless of outcome.
@@ -542,7 +559,7 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 LOOT RARITY GATING: Scenes 1-15: only "common"/"uncommon" items. Scenes 16-30: "rare" allowed. Scenes 31+: "exotic" possible but with narrative cost (thieves, faction interest, rumors). Always set the "rarity" field.
 ITEM VALIDATION: Characters can ONLY use items currently in their inventory. If a player references an item they don't have, the action MUST fail narratively. Only include items in removeItems that exist in the character's inventory.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + creativityBonus (the effective target). For normal actions: "target" = characteristic + skill advances. Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "baseTarget": <number — characteristic + skill advances only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
@@ -942,6 +959,8 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       const bonus = dr.creativityBonus || 0;
       const momentum = dr.momentumBonus || 0;
       const disposition = dr.dispositionBonus || 0;
+      const difficultyModifier = normalizeDifficultyModifier(dr.difficultyModifier);
+      dr.difficultyModifier = difficultyModifier;
 
       let baseTarget;
       if (dr.baseTarget) {
@@ -949,7 +968,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       } else if (dr.characteristicValue != null && dr.skillAdvances != null) {
         baseTarget = dr.characteristicValue + dr.skillAdvances;
       } else {
-        baseTarget = dr.target - bonus - momentum - disposition;
+        baseTarget = dr.target - bonus - momentum - disposition - difficultyModifier;
       }
       dr.baseTarget = baseTarget;
 
@@ -957,10 +976,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
         dr.skillAdvances = Math.max(0, baseTarget - dr.characteristicValue);
       }
 
-      const MAX_COMBINED_BONUS = 30;
       const totalBonus = bonus + momentum + disposition;
       const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-      const effectiveTarget = baseTarget + cappedBonus;
+      const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
       dr.target = effectiveTarget;
 
       const isCriticalSuccess = roll >= 1 && roll <= 4;

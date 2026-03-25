@@ -16,6 +16,7 @@ function CompactBonusTags({ dr, t }) {
   const hasTags = (dr.characteristic && dr.characteristicValue != null)
     || dr.skillAdvances > 0
     || dr.creativityBonus > 0
+    || (dr.difficultyModifier != null && dr.difficultyModifier !== 0)
     || (dr.momentumBonus != null && dr.momentumBonus !== 0)
     || (dr.dispositionBonus != null && dr.dispositionBonus !== 0);
   if (!hasTags) return null;
@@ -34,6 +35,15 @@ function CompactBonusTags({ dr, t }) {
       {dr.creativityBonus > 0 && (
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
           {t('gameplay.creativityBonus', { bonus: dr.creativityBonus })}
+        </span>
+      )}
+      {dr.difficultyModifier != null && dr.difficultyModifier !== 0 && (
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+          dr.difficultyModifier > 0
+            ? 'bg-teal-400/15 text-teal-300 border-teal-400/30'
+            : 'bg-rose-400/15 text-rose-300 border-rose-400/30'
+        }`}>
+          {t('gameplay.difficultyModifier', { bonus: (dr.difficultyModifier > 0 ? '+' : '') + dr.difficultyModifier })}
         </span>
       )}
       {dr.momentumBonus != null && dr.momentumBonus !== 0 && (

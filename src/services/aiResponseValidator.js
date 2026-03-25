@@ -27,6 +27,7 @@ const DiceRollSchema = z.object({
   success: z.boolean().optional(),
   criticalSuccess: z.boolean().optional().default(false),
   criticalFailure: z.boolean().optional().default(false),
+  difficultyModifier: z.number().min(-40).max(40).optional(),
   dispositionBonus: z.number().optional(),
 }).passthrough().nullable().optional();
 

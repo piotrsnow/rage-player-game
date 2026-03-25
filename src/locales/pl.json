@@ -255,6 +255,7 @@
     "voiceStop": "Zatrzymaj nagrywanie",
     "voiceListening": "Słucham...",
     "creativityBonus": "Kreatywność +{{bonus}}",
+    "difficultyModifier": "Trudność {{bonus}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Przychylność {{bonus}}",
     "momentumActive": "Momentum {{bonus}} w następnym rzucie",

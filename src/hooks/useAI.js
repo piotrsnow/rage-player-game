@@ -15,6 +15,20 @@ import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResp
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent } from '../services/prompts';
 
+const MAX_COMBINED_BONUS = 30;
+const MIN_DIFFICULTY_MODIFIER = -40;
+const MAX_DIFFICULTY_MODIFIER = 40;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeDifficultyModifier(value) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
+    : 0;
+}
+
 export function useAI() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
@@ -101,6 +115,8 @@ export function useAI() {
           const bonus = result.diceRoll.creativityBonus || 0;
           const momentum = result.diceRoll.momentumBonus || 0;
           const disposition = result.diceRoll.dispositionBonus || 0;
+          const difficultyModifier = normalizeDifficultyModifier(result.diceRoll.difficultyModifier);
+          result.diceRoll.difficultyModifier = difficultyModifier;
 
           if (!result.diceRoll.characteristic && result.diceRoll.skill) {
             result.diceRoll.characteristic = getSkillCharacteristic(result.diceRoll.skill);
@@ -115,7 +131,7 @@ export function useAI() {
           } else if (result.diceRoll.characteristicValue != null && result.diceRoll.skillAdvances != null) {
             baseTarget = result.diceRoll.characteristicValue + result.diceRoll.skillAdvances;
           } else {
-            baseTarget = result.diceRoll.target - bonus - momentum - disposition;
+            baseTarget = result.diceRoll.target - bonus - momentum - disposition - difficultyModifier;
           }
           result.diceRoll.baseTarget = baseTarget;
 
@@ -123,10 +139,9 @@ export function useAI() {
             result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
           }
 
-          const MAX_COMBINED_BONUS = 30;
           const totalBonus = bonus + momentum + disposition;
           const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-          const effectiveTarget = baseTarget + cappedBonus;
+          const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
           result.diceRoll.target = effectiveTarget;
 
           const isCriticalSuccess = roll >= 1 && roll <= 4;

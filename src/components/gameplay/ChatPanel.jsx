@@ -255,6 +255,15 @@ function BonusTags({ d, t }) {
           {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
         </span>
       )}
+      {d.difficultyModifier != null && d.difficultyModifier !== 0 && (
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+          d.difficultyModifier > 0
+            ? 'bg-teal-400/15 text-teal-300 border-teal-400/30'
+            : 'bg-rose-400/15 text-rose-300 border-rose-400/30'
+        }`}>
+          {t('gameplay.difficultyModifier', { bonus: (d.difficultyModifier > 0 ? '+' : '') + d.difficultyModifier })}
+        </span>
+      )}
       {d.momentumBonus != null && d.momentumBonus !== 0 && (
         <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
           d.momentumBonus > 0

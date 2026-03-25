@@ -255,6 +255,7 @@
     "voiceStop": "Stop recording",
     "voiceListening": "Listening...",
     "creativityBonus": "Creativity +{{bonus}}",
+    "difficultyModifier": "Difficulty {{bonus}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Disposition {{bonus}}",
     "momentumActive": "Momentum {{bonus}} on next roll",
