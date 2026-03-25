@@ -1236,6 +1236,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               characterVoiceMap={state.characterVoiceMap}
               characterVoices={settings.characterVoices}
               dispatch={dispatch}
+              autoSave={autoSave}
               onClose={() => setWorldModalOpen(false)}
             />
           )}

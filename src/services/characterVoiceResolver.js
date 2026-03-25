@@ -8,11 +8,21 @@ export function resolveVoiceForCharacter(
 ) {
   if (!characterName) return null;
 
-  const existing = localMap.get(characterName) || characterVoiceMap[characterName];
-  if (existing) {
-    const genderOk = !gender || !existing.gender || existing.gender === gender;
-    if (genderOk) return existing.voiceId;
+  const persisted = characterVoiceMap[characterName];
+  if (persisted?.voiceId) {
+    localMap.set(characterName, persisted);
+    const genderOk = !gender || !persisted.gender || persisted.gender === gender;
+    if (genderOk) return persisted.voiceId;
   }
+
+  const local = localMap.get(characterName);
+  if (local) {
+    const genderOk = !gender || !local.gender || local.gender === gender;
+    if (genderOk) return local.voiceId;
+  }
+
+  const existing = persisted || local;
+  if (existing && !characterVoices?.length) return existing.voiceId;
 
   if (!characterVoices || characterVoices.length === 0) {
     return existing?.voiceId || null;

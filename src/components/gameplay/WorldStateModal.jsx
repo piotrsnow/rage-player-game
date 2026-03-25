@@ -47,7 +47,7 @@ function CrossLinkChip({ icon, label, onClick }) {
   );
 }
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, characterVoices, dispatch, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, characterVoices, dispatch, autoSave, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
   const [highlightId, setHighlightId] = useState(null);
@@ -89,12 +89,11 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, char
   }, [highlightId, activeTab]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('worldState.title')} onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('worldState.title')}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div
         ref={modalRef}
         className="relative w-full max-w-2xl max-h-[80vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
           <div className="flex items-center gap-2">
@@ -123,7 +122,7 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, char
 
         <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-5">
           {activeTab === 'npcs' && (
-            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} navigateTo={navigateTo} t={t} />
+            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'map' && (
             <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} npcs={npcs} quests={quests} navigateTo={navigateTo} t={t} />
@@ -283,7 +282,7 @@ function QuestsTab({ quests, npcs, navigateTo, t }) {
 
 /* ── NPC Tab ── */
 
-function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, navigateTo, t }) {
+function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, autoSave, navigateTo, t }) {
   if (npcs.length === 0) {
     return <EmptyState icon="group" text={t('worldState.emptyNpcs')} />;
   }
@@ -291,11 +290,11 @@ function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, na
   const hasVoicePool = characterVoices && characterVoices.length > 0;
 
   const handleVoiceChange = (npcName, npcGender, voiceId) => {
-    if (!voiceId) return;
     dispatch({
       type: 'MAP_CHARACTER_VOICE',
-      payload: { characterName: npcName, voiceId, gender: npcGender || null },
+      payload: { characterName: npcName, voiceId: voiceId || null, gender: npcGender || null },
     });
+    if (autoSave) setTimeout(() => autoSave(), 300);
   };
 
   return (

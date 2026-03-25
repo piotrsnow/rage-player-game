@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const CHAR_INTERVAL_MS = 55;
+const CHAR_INTERVAL_MS = 45;
 const TYPING_SFX_COUNT = 3;
 
 function pickRandomTypingSfx() {
