@@ -59,6 +59,7 @@ const defaultSettings = {
     verbosity: 'medium',
     customInstructions: '',
     maxTurns: 0,
+    modelTier: 'standard',
   },
   dmSettings: {
     narrativeStyle: 50,

@@ -937,7 +937,11 @@
     "maxTurns": "Maks. Tur",
     "customInstructions": "Wskazówki Osobowości",
     "customInstructionsPlaceholder": "np. zawsze targuj się, unikaj walki, flirtuj z BN-ami...",
-    "aiControlling": "AI gra"
+    "aiControlling": "AI gra",
+    "modelTier": "Model AI",
+    "modelTier_standard": "Standardowy",
+    "modelTier_premium": "Premium",
+    "modelTierHint": "Standardowy jest tańszy, Premium mądrzejszy"
   },
   "achievements": {
     "title": "Osiągnięcia",

@@ -209,7 +209,7 @@ async function callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, mode
 export async function decideAction(gameState, settings, autoPlayerSettings, apiKey, provider) {
   const language = settings.language || 'en';
   const { systemPrompt, userPrompt } = buildAutoPlayerPrompt(gameState, autoPlayerSettings, language);
-  const model = selectModel(provider, 'standard', 'autoPlayer');
+  const model = selectModel(provider, autoPlayerSettings.modelTier || 'standard', 'autoPlayer');
 
   const result = await callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, model);
 

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 const STYLES = ['cautious', 'balanced', 'aggressive', 'chaotic'];
 const VERBOSITY_LEVELS = ['low', 'medium', 'high'];
+const MODEL_TIERS = ['standard', 'premium'];
 
 export default function AutoPlayerPanel({
   isAutoPlaying,
@@ -153,6 +154,31 @@ export default function AutoPlayerPanel({
                   }`}
                 >
                   {t(`autoPlayer.verbosity_${v}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Model Tier */}
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {t('autoPlayer.modelTier')}
+              </label>
+              <span className="text-[9px] text-outline">{t('autoPlayer.modelTierHint')}</span>
+            </div>
+            <div className="flex gap-1">
+              {MODEL_TIERS.map((tier) => (
+                <button
+                  key={tier}
+                  onClick={() => updateAutoPlayerSettings({ modelTier: tier })}
+                  className={`flex-1 py-1.5 text-[10px] font-label uppercase tracking-wider rounded-sm border transition-all ${
+                    (autoPlayerSettings.modelTier || 'standard') === tier
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary'
+                  }`}
+                >
+                  {t(`autoPlayer.modelTier_${tier}`)}
                 </button>
               ))}
             </div>

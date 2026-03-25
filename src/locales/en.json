@@ -937,7 +937,11 @@
     "maxTurns": "Max Turns",
     "customInstructions": "Personality Hints",
     "customInstructionsPlaceholder": "e.g. always try to haggle, avoid combat, flirt with NPCs...",
-    "aiControlling": "AI is playing"
+    "aiControlling": "AI is playing",
+    "modelTier": "AI Model",
+    "modelTier_standard": "Standard",
+    "modelTier_premium": "Premium",
+    "modelTierHint": "Standard is cheaper, Premium is smarter"
   },
   "achievements": {
     "title": "Achievements",
