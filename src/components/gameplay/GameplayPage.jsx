@@ -28,7 +28,9 @@ import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
 import { createMultiplayerCombatState } from '../../services/combatEngine';
 import { useAutoPlayer } from '../../hooks/useAutoPlayer';
+import { useIdleTimer } from '../../hooks/useIdleTimer';
 import AutoPlayerPanel from './AutoPlayerPanel';
+import IdleTimer from './IdleTimer';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
@@ -200,6 +202,7 @@ export default function GameplayPage() {
   handleSceneNavRef.current = handleSceneNavigation;
 
   const handleAction = async (action, isCustomAction = false) => {
+    idleTimer.resetTimer();
     try {
       await generateScene(action, false, isCustomAction);
     } catch {
@@ -221,6 +224,28 @@ export default function GameplayPage() {
         && narrator.isNarratorReady,
     }
   );
+
+  const handleIdleEvent = useCallback(({ roll, threshold }) => {
+    generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
+  }, [generateScene]);
+
+  const idlePaused = isMultiplayer
+    || isGeneratingScene
+    || !!(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)
+    || autoPlayer.isAutoPlaying
+    || isReviewingPastScene
+    || (campaign?.status && campaign.status !== 'active')
+    || character?.status === 'dead'
+    || !currentScene;
+
+  const idleTimer = useIdleTimer({
+    paused: idlePaused,
+    narratorPlaybackState: narrator.playbackState,
+    narratorEnabled: settings.narratorEnabled,
+    narratorReady: narrator.isNarratorReady,
+    sceneId: currentScene?.id || null,
+    onIdleEvent: handleIdleEvent,
+  });
 
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
@@ -857,9 +882,19 @@ export default function GameplayPage() {
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
-            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-              {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
-            </label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+                {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
+              </label>
+              {!isMultiplayer && !autoPlayer.isAutoPlaying && (
+                <IdleTimer
+                  idleSeconds={idleTimer.idleSeconds}
+                  timerActive={idleTimer.timerActive}
+                  lastRoll={idleTimer.lastRoll}
+                  isRolling={idleTimer.isRolling}
+                />
+              )}
+            </div>
             <ActionPanel
               actions={currentScene.actions}
               onAction={handleAction}

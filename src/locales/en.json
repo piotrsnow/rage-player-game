@@ -1036,6 +1036,11 @@
     "silverShort": "SS",
     "copperShort": "CP"
   },
+  "idle": {
+    "rollResult": "d100: {{roll}} (< {{threshold}})",
+    "somethingHappens": "Something stirs...",
+    "worldEvent": "Something stirs in the world..."
+  },
   "autoPlayer": {
     "title": "AI Auto-Player",
     "toggle": "Toggle AI auto-player",

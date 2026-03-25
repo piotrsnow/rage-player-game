@@ -74,10 +74,11 @@ export function useAI() {
             enhancedContext = { ...enhancedContext, relevantCodex };
           }
         }
+        const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
         const testsFrequency = settings.dmSettings?.testsFrequency ?? 50;
-        const shouldRollDice = Math.random() * 100 < testsFrequency;
+        const shouldRollDice = !isIdleWorldEvent && Math.random() * 100 < testsFrequency;
         const preRolledDice = (!isFirstScene && shouldRollDice) ? rollD100() : null;
-        const skipDiceRoll = !isFirstScene && !shouldRollDice;
+        const skipDiceRoll = isIdleWorldEvent || (!isFirstScene && !shouldRollDice);
         const momentumBonus = state.momentumBonus || 0;
         const { result, usage } = await aiService.generateScene(
           state,
@@ -92,7 +93,7 @@ export function useAI() {
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
-        if (!isFirstScene && detectCombatIntent(playerAction)) {
+        if (!isFirstScene && !isIdleWorldEvent && detectCombatIntent(playerAction)) {
           const hasCombatUpdate = result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true;
           if (!hasCombatUpdate) {
             console.warn('[useAI] Combat intent detected but AI omitted combatUpdate — retrying with reinforced prompt');
@@ -182,7 +183,7 @@ export function useAI() {
         );
 
         const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
-        const finalSegments = !isFirstScene
+        const finalSegments = (!isFirstScene && !isIdleWorldEvent)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
 
@@ -210,13 +211,26 @@ export function useAI() {
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
 
-        if (!isFirstScene && playerAction) {
+        if (!isFirstScene && playerAction && !isIdleWorldEvent) {
           dispatch({
             type: 'ADD_CHAT_MESSAGE',
             payload: {
               id: `msg_${Date.now()}_player`,
               role: 'player',
               content: playerAction,
+              timestamp: Date.now(),
+            },
+          });
+        }
+
+        if (isIdleWorldEvent) {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_world_event`,
+              role: 'system',
+              subtype: 'world_event',
+              content: t('idle.worldEvent', 'Something stirs in the world...'),
               timestamp: Date.now(),
             },
           });

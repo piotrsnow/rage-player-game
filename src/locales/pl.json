@@ -1036,6 +1036,11 @@
     "silverShort": "SS",
     "copperShort": "MP"
   },
+  "idle": {
+    "rollResult": "k100: {{roll}} (< {{threshold}})",
+    "somethingHappens": "Coś się porusza...",
+    "worldEvent": "Coś się dzieje w świecie..."
+  },
   "autoPlayer": {
     "title": "AI Auto-Gracz",
     "toggle": "Przełącz AI auto-gracza",

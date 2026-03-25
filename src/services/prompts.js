@@ -775,6 +775,7 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
+  const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
   const isSurrender = isPostCombat && playerAction.includes('player surrendered');
   const isPostCombatDefeat = isPostCombat && (
@@ -787,7 +788,22 @@ The dialogueSegments array must cover the full narrative broken into narration a
   const dialoguePart = extractDialogueParts(playerAction);
   const playerHasDialogue = hasDialogue(playerAction);
 
-  const actionBlock = isPostCombat
+  const actionBlock = isIdleWorldEvent
+    ? `IDLE WORLD EVENT — NO PLAYER ACTION OCCURRED.
+
+The player has been idle. The world moves on without them. Generate a small, atmospheric ambient event — something mundane, slice-of-life that happens TO or AROUND the character without their initiative.
+
+RULES FOR THIS SCENE (MANDATORY):
+- The character did NOT take any action. Do not narrate the character doing something deliberate.
+- Something happens in the world spontaneously: a passerby, an animal, weather, a sound, a small incident nearby.
+- Examples of appropriate events: a stray cat approaches and rubs against the character's leg, a street vendor loudly hawks their wares nearby, a fat drunkard stumbles into the character, a bird relieves itself on the character's shoulder, a horse spits in their direction, a child tugs at their sleeve asking for coin, a gust of wind scatters papers, a cart wheel breaks nearby, an NPC starts an argument within earshot, rain begins to fall.
+- Keep the narrative SHORT (1-2 paragraphs). This is a minor world beat, not a major plot event.
+- The event CAN optionally plant a subtle quest hook or introduce a character, but it does NOT have to. Most of the time, keep it purely atmospheric.
+- Set diceRoll to null — no skill test is needed.
+- Do NOT start combat. Do NOT include combatUpdate.
+- suggestedActions should include reactions to what just happened (e.g. "pet the cat", "talk to the vendor", "brush off the mess", "ignore and move on") plus normal exploration options.
+- stateChanges should be minimal or empty. A small timeAdvance (5-15 minutes) is appropriate.`
+    : isPostCombat
     ? `COMBAT JUST ENDED — ${playerAction}
 
 POST-COMBAT RULES (MANDATORY):
