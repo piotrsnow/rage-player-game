@@ -86,12 +86,20 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
 
   const handleInitiateCombat = () => {
     setCombatPickerOpen(false);
-    onAction('[INITIATE COMBAT]', true);
+    if (isMultiplayer) {
+      mp.soloAction('[INITIATE COMBAT]', true, settings.language || 'en', settings.dmSettings);
+    } else {
+      onAction('[INITIATE COMBAT]', true);
+    }
   };
 
   const handleAttackNpc = (npcName) => {
     setCombatPickerOpen(false);
-    onAction(`[ATTACK: ${npcName}]`, true);
+    if (isMultiplayer) {
+      mp.soloAction(`[ATTACK: ${npcName}]`, true, settings.language || 'en', settings.dmSettings);
+    } else {
+      onAction(`[ATTACK: ${npcName}]`, true);
+    }
   };
 
   const displayValue = customAction + (interim ? (customAction ? ' ' : '') + interim : '');
@@ -166,8 +174,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
           </button>
 
           {/* Initiate Combat */}
-          {!isMultiplayer && (
-            <div className="relative">
+          <div className="relative">
               <button
                 onClick={() => setCombatPickerOpen((v) => !v)}
                 disabled={disabled || hasPendingAction}
@@ -236,7 +243,6 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                 </div>
               )}
             </div>
-          )}
         </div>
       )}
 

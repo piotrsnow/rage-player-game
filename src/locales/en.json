@@ -65,7 +65,12 @@
     "chatMiss": "{{actor}} misses {{target}}",
     "chatCritical": "{{target}} suffers a critical wound: {{wound}}!",
     "chatDefeated": "{{target}} is defeated!",
-    "chatFled": "{{actor}} flees from combat!"
+    "chatFled": "{{actor}} flees from combat!",
+    "playerDied": "Your character has fallen in combat",
+    "playerDiedDesc": "With no Fate points remaining, death is final. Your journey ends here.",
+    "spectatorMode": "Spectator Mode",
+    "spectatorDesc": "You are now spectating. Your character is dead and cannot take any more actions.",
+    "fateSpent": "Fate point spent — cheated death!"
   },
   "nav": {
     "lobby": "Lobby",

@@ -65,7 +65,12 @@
     "chatFled": "{{actor}} ucieka z walki!",
     "multiplayer": "MP",
     "waitingFor": "Czekam na {{name}}...",
-    "hostWillEnd": "Host zakończy walkę..."
+    "hostWillEnd": "Host zakończy walkę...",
+    "playerDied": "Twoja postać poległa w walce",
+    "playerDiedDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna. Twoja podróż dobiegła końca.",
+    "spectatorMode": "Tryb widza",
+    "spectatorDesc": "Jesteś teraz widzem. Twoja postać nie żyje i nie może podejmować żadnych akcji.",
+    "fateSpent": "Punkt Przeznaczenia wydany — oszukano śmierć!"
   },
   "nav": {
     "lobby": "Lobby",

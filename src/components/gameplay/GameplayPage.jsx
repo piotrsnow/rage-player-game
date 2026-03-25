@@ -232,22 +232,36 @@ export default function GameplayPage() {
     if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
     if (summary.xp) stateChanges.xp = summary.xp;
     if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
+
+    if (!summary.playerSurvived && character) {
+      const critCount = (character.criticalWoundCount || 0) + 1;
+      if (critCount >= 3 && (character.fate || 0) <= 0) {
+        stateChanges.forceStatus = 'dead';
+      }
+    }
+
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+
+    const isDead = stateChanges.forceStatus === 'dead';
 
     dispatch({
       type: 'ADD_CHAT_MESSAGE',
       payload: {
         id: `msg_${Date.now()}_combat_end`,
         role: 'system',
-        subtype: 'combat_end',
-        content: `Combat ended after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. ${summary.playerSurvived ? 'You survived!' : 'You were defeated!'}${summary.xp ? ` +${summary.xp} XP` : ''}`,
+        subtype: isDead ? 'combat_death' : 'combat_end',
+        content: isDead
+          ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
+          : `Combat ended after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. ${summary.playerSurvived ? 'You survived!' : 'You were defeated!'}${summary.xp ? ` +${summary.xp} XP` : ''}`,
         timestamp: Date.now(),
       },
     });
 
     const combatActionText = summary.playerSurvived
       ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
-      : `[Combat resolved: defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+      : isDead
+        ? `[Combat resolved: character died in combat after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. Death is permanent.]`
+        : `[Combat resolved: defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -810,7 +824,7 @@ export default function GameplayPage() {
         )}
 
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
+        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
           <div className="px-2 animate-fade-in">
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {t('gameplay.chooseAction')}
@@ -819,18 +833,29 @@ export default function GameplayPage() {
               actions={currentScene.actions}
               onAction={handleAction}
               disabled={isGeneratingScene}
-              npcs={(state.world?.npcs || []).filter((npc) => npc.alive !== false && npc.lastLocation === state.world?.currentLocation)}
+              npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
             />
           </div>
         )}
 
-        {/* Dead character notice */}
-        {character?.status === 'dead' && (!campaign?.status || campaign.status === 'active') && (
+        {/* Dead character notice (solo) */}
+        {character?.status === 'dead' && !isMultiplayer && (!campaign?.status || campaign.status === 'active') && (
           <div className="px-2 animate-fade-in">
             <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-error">skull</span>
               <p className="text-error font-headline text-lg">{t('gameplay.characterDead', 'Your character has fallen')}</p>
               <p className="text-on-surface-variant text-xs">{t('gameplay.characterDeadDesc', 'With no Fate points remaining, death is final.')}</p>
+            </div>
+          </div>
+        )}
+
+        {/* MP Spectator mode for dead player */}
+        {isMultiplayer && mp.state.isDead && (!campaign?.status || campaign.status === 'active') && (
+          <div className="px-2 animate-fade-in">
+            <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
+              <span className="material-symbols-outlined text-4xl text-error">skull</span>
+              <p className="text-error font-headline text-lg">{t('combat.playerDied', 'Your character has fallen')}</p>
+              <p className="text-on-surface-variant text-xs">{t('combat.spectatorDesc', 'You are now spectating. Your character is dead and cannot take any more actions.')}</p>
             </div>
           </div>
         )}

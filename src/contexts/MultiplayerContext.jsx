@@ -18,6 +18,7 @@ const initialState = {
   isGenerating: false,
   error: null,
   pendingCombatManoeuvre: null,
+  isDead: false,
 };
 
 function mpReducer(state, action) {
@@ -335,6 +336,7 @@ function mpReducer(state, action) {
       if (!state.gameState) return state;
       let updatedChars = state.gameState.characters || [];
       const perChar = action.payload.perCharacter || {};
+      const deadList = action.payload.deadPlayers || [];
       updatedChars = updatedChars.map((c) => {
         const delta = perChar[c.name];
         if (!delta) return c;
@@ -344,15 +346,40 @@ function mpReducer(state, action) {
         if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
           u.criticalWounds = [...(u.criticalWounds || []), ...delta.criticalWounds];
         }
+        if (u.wounds === 0 && delta.wounds < 0) {
+          const critCount = (u.criticalWoundCount || 0) + 1;
+          u.criticalWoundCount = critCount;
+          if (critCount >= 3) {
+            if ((u.fate || 0) > 0) {
+              u.fate = u.fate - 1;
+              u.fortune = Math.min(u.fortune || 0, u.fate);
+              u.criticalWoundCount = 2;
+              u.wounds = 1;
+            } else {
+              u.status = 'dead';
+            }
+          }
+        }
         return u;
       });
+      const myChar = updatedChars.find((c) => c.odId === state.myOdId);
+      const isDead = myChar?.status === 'dead';
       return {
         ...state,
+        isDead: isDead || state.isDead,
         gameState: {
           ...state.gameState,
           characters: updatedChars,
           combat: null,
         },
+      };
+    }
+
+    case 'PLAYER_DIED': {
+      const { playerOdId } = action.payload;
+      return {
+        ...state,
+        isDead: state.isDead || (playerOdId === state.myOdId),
       };
     }
 
@@ -460,6 +487,9 @@ export function MultiplayerProvider({ children }) {
       }),
       wsService.on('COMBAT_ENDED', (msg) => {
         dispatch({ type: 'COMBAT_ENDED', payload: msg });
+      }),
+      wsService.on('PLAYER_DIED', (msg) => {
+        dispatch({ type: 'PLAYER_DIED', payload: msg });
       }),
       wsService.on('LEFT_ROOM', () => {
         clearPersistedRejoinInfo();

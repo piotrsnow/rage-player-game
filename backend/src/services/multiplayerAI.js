@@ -941,11 +941,27 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       const roll = dr.roll;
       const bonus = dr.creativityBonus || 0;
       const momentum = dr.momentumBonus || 0;
-      const effectiveTarget = dr.target;
+      const disposition = dr.dispositionBonus || 0;
 
-      if (!dr.baseTarget && (bonus > 0 || momentum !== 0)) {
-        dr.baseTarget = effectiveTarget - bonus - momentum;
+      let baseTarget;
+      if (dr.baseTarget) {
+        baseTarget = dr.baseTarget;
+      } else if (dr.characteristicValue != null && dr.skillAdvances != null) {
+        baseTarget = dr.characteristicValue + dr.skillAdvances;
+      } else {
+        baseTarget = dr.target - bonus - momentum - disposition;
       }
+      dr.baseTarget = baseTarget;
+
+      if (dr.skillAdvances == null && dr.characteristicValue != null) {
+        dr.skillAdvances = Math.max(0, baseTarget - dr.characteristicValue);
+      }
+
+      const MAX_COMBINED_BONUS = 30;
+      const totalBonus = bonus + momentum + disposition;
+      const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
+      const effectiveTarget = baseTarget + cappedBonus;
+      dr.target = effectiveTarget;
 
       const isCriticalSuccess = roll >= 1 && roll <= 4;
       const isCriticalFailure = roll >= 96 && roll <= 100;

@@ -99,15 +99,23 @@ export function useAI() {
           const momentum = result.diceRoll.momentumBonus || 0;
           const disposition = result.diceRoll.dispositionBonus || 0;
 
-          const baseTarget = result.diceRoll.baseTarget || (result.diceRoll.target - bonus - momentum - disposition);
-          result.diceRoll.baseTarget = baseTarget;
-
           if (!result.diceRoll.characteristic && result.diceRoll.skill) {
             result.diceRoll.characteristic = getSkillCharacteristic(result.diceRoll.skill);
           }
           if (result.diceRoll.characteristic && result.diceRoll.characteristicValue == null) {
             result.diceRoll.characteristicValue = state.character?.characteristics?.[result.diceRoll.characteristic] || 0;
           }
+
+          let baseTarget;
+          if (result.diceRoll.baseTarget) {
+            baseTarget = result.diceRoll.baseTarget;
+          } else if (result.diceRoll.characteristicValue != null && result.diceRoll.skillAdvances != null) {
+            baseTarget = result.diceRoll.characteristicValue + result.diceRoll.skillAdvances;
+          } else {
+            baseTarget = result.diceRoll.target - bonus - momentum - disposition;
+          }
+          result.diceRoll.baseTarget = baseTarget;
+
           if (result.diceRoll.skillAdvances == null && result.diceRoll.characteristicValue != null) {
             result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
           }

@@ -73,7 +73,7 @@ export function MusicProvider({ children }) {
         currentTrack: sunoActive
           ? (suno.currentTrackTitle ? { name: suno.currentTrackTitle } : null)
           : (active?.currentTrack || null),
-        hasMusic: ambient.hasMusic || campaign.hasMusic || settings.musicEnabled,
+        hasMusic: ambient.hasMusic || campaign.hasMusic || settings.musicEnabled || (settings.localMusicEnabled && settings.useBackend),
         hasActiveMusic: sunoActive ? suno.isPlaying || suno.isGenerating : (active?.hasMusic || false),
         isGameplay,
         isGeneratingMusic: suno.isGenerating,

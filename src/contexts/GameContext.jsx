@@ -558,6 +558,11 @@ function gameReducer(state, action) {
         }
       }
 
+      if (changes.forceStatus && next.character) {
+        next.character = { ...next.character };
+        next.character.status = changes.forceStatus;
+      }
+
       if (changes.fortuneChange !== undefined && next.character) {
         next.character = { ...next.character };
         next.character.fortune = Math.max(0, Math.min(next.character.fate, next.character.fortune + changes.fortuneChange));

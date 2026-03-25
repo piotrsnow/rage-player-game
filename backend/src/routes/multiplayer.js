@@ -1177,6 +1177,7 @@ export async function multiplayerRoutes(fastify) {
 
             const combatPerChar = msg.perCharacter || {};
             const chars = endRoom.gameState.characters || [];
+            const deadPlayers = [];
             endRoom.gameState.characters = chars.map((c) => {
               const delta = combatPerChar[c.name];
               if (!delta) return c;
@@ -1189,6 +1190,21 @@ export async function multiplayerRoutes(fastify) {
               }
               if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
                 updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
+              }
+              if (updated.wounds === 0 && delta.wounds < 0) {
+                const critCount = (updated.criticalWoundCount || 0) + 1;
+                updated.criticalWoundCount = critCount;
+                if (critCount >= 3) {
+                  if ((updated.fate || 0) > 0) {
+                    updated.fate = updated.fate - 1;
+                    updated.fortune = Math.min(updated.fortune || 0, updated.fate);
+                    updated.criticalWoundCount = 2;
+                    updated.wounds = 1;
+                  } else {
+                    updated.status = 'dead';
+                    deadPlayers.push({ name: c.name, odId: c.odId });
+                  }
+                }
               }
               return updated;
             });
@@ -1208,6 +1224,7 @@ export async function multiplayerRoutes(fastify) {
             broadcast(endRoom, {
               type: 'COMBAT_ENDED',
               perCharacter: combatPerChar,
+              deadPlayers,
               summary: {
                 enemiesDefeated: msg.enemiesDefeated,
                 totalEnemies: msg.totalEnemies,
@@ -1216,6 +1233,14 @@ export async function multiplayerRoutes(fastify) {
               },
               room: sanitizeRoom(endRoom),
             });
+
+            for (const dp of deadPlayers) {
+              broadcast(endRoom, {
+                type: 'PLAYER_DIED',
+                playerName: dp.name,
+                playerOdId: dp.odId,
+              });
+            }
 
             saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after combat end failed'));
             break;
