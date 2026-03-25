@@ -186,7 +186,7 @@ export function useNarrator() {
 
           if (fullNarrative && allSegmentsText.length < fullNarrative.length * 0.7) {
             const narrativeNoQuotes = fullNarrative
-              .replace(/["""„«»][^"""„«»]*["""„«»]/g, '')
+              .replace(/["""„«»\u2018\u2019'][^"""„«»\u2018\u2019']*["""„«»\u2018\u2019']/g, '')
               .replace(/\s{2,}/g, ' ')
               .trim();
 

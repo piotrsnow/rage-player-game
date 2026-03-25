@@ -863,6 +863,7 @@ window.DICE = (function() {
     function shift_dice_faces(dice, value, res) {
         var r = CONSTS.dice_face_range[dice.dice_type];
         if (dice.dice_type == 'd10' && value == 10) value = 0;
+        if (dice.dice_type == 'd100') res = Math.floor(res / 10);
         if (!(value >= r[0] && value <= r[1])) return;
         var num = value - res;
         var geom = dice.geometry.clone();

@@ -13,7 +13,7 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent } from '../services/prompts';
-import { resolveDiceRollCharacteristic } from '../services/diceRollInference';
+import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter } from '../services/diceRollInference';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -153,6 +153,21 @@ export function useAI() {
                 result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
               }
 
+              if (result.diceRoll.skill) {
+                const normalized = normalizeSkillName(result.diceRoll.skill);
+                if (normalized) {
+                  result.diceRoll.skill = normalized;
+                }
+              }
+              if (!result.diceRoll.skill && result.diceRoll.skillAdvances > 0) {
+                const inferred = inferSkillFromCharacter(
+                  resolvedCharacteristic,
+                  result.diceRoll.skillAdvances,
+                  state.character?.skills
+                );
+                if (inferred) result.diceRoll.skill = inferred;
+              }
+
               const totalBonus = bonus + momentum + disposition;
               const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
               const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
@@ -170,8 +185,8 @@ export function useAI() {
               result.diceRoll.sl = calculateSL(roll, effectiveTarget);
 
               const sl = result.diceRoll.sl;
-              const rawMomentum = sl * 5;
-              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-40, Math.min(40, rawMomentum)) });
+              const rawMomentum = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
+              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-45, Math.min(45, rawMomentum)) });
             }
           }
         }

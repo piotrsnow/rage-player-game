@@ -190,29 +190,39 @@ describe('item rarity warnings', () => {
   });
 });
 
+function calcMomentum(sl) {
+  const raw = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
+  return Math.max(-45, Math.min(45, raw));
+}
+
 describe('momentum capping', () => {
-  it('momentum formula sl*5 is capped conceptually at +-40 (SL +-8)', () => {
+  it('momentum formula sl*5+5 / sl*5-5 with offset from zero', () => {
     const sl8 = calculateSL(1, 85);
     expect(sl8).toBe(8);
-    const momentum8 = Math.max(-40, Math.min(40, sl8 * 5));
-    expect(momentum8).toBe(40);
+    expect(calcMomentum(sl8)).toBe(45);
 
     const slNeg8 = calculateSL(95, 10);
     expect(slNeg8).toBe(-8);
-    const momentumNeg8 = Math.max(-40, Math.min(40, slNeg8 * 5));
-    expect(momentumNeg8).toBe(-40);
+    expect(calcMomentum(slNeg8)).toBe(-45);
+
+    expect(calcMomentum(0)).toBe(0);
   });
 
   it('extreme SL values produce capped momentum', () => {
     const sl10 = calculateSL(1, 120);
     expect(sl10).toBe(10);
-    const momentum10 = Math.max(-40, Math.min(40, sl10 * 5));
-    expect(momentum10).toBe(40);
+    expect(calcMomentum(sl10)).toBe(45);
 
     const slNeg10 = calculateSL(100, 0);
     expect(slNeg10).toBe(-10);
-    const momentumNeg10 = Math.max(-40, Math.min(40, slNeg10 * 5));
-    expect(momentumNeg10).toBe(-40);
+    expect(calcMomentum(slNeg10)).toBe(-45);
+  });
+
+  it('moderate SL values apply +5/-5 offset', () => {
+    expect(calcMomentum(2)).toBe(15);   // 2*5+5
+    expect(calcMomentum(-2)).toBe(-15);  // -2*5-5
+    expect(calcMomentum(1)).toBe(10);   // 1*5+5
+    expect(calcMomentum(-1)).toBe(-10);  // -1*5-5
   });
 });
 

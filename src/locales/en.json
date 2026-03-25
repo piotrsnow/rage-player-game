@@ -1039,7 +1039,9 @@
   "idle": {
     "rollResult": "d100: {{roll}} (< {{threshold}})",
     "somethingHappens": "Something stirs...",
-    "worldEvent": "Something stirs in the world..."
+    "worldEvent": "Something stirs in the world...",
+    "fastForward": "Fast forward x5",
+    "normalSpeed": "Normal speed"
   },
   "autoPlayer": {
     "title": "AI Auto-Player",

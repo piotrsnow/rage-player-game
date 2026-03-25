@@ -6,7 +6,7 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function IdleTimer({ idleSeconds, timerActive, lastRoll, isRolling }) {
+export default function IdleTimer({ idleSeconds, timerActive, lastRoll, isRolling, fastMode, onToggleFastMode }) {
   const { t } = useTranslation();
 
   if (!timerActive && !lastRoll) return null;
@@ -17,20 +17,24 @@ export default function IdleTimer({ idleSeconds, timerActive, lastRoll, isRollin
   return (
     <div className="flex items-center gap-3 text-[10px] text-on-surface-variant">
       {showTimer && (
-        <div
-          className="flex items-center gap-1.5 transition-opacity duration-500"
+        <button
+          type="button"
+          onClick={onToggleFastMode}
+          className={`flex items-center gap-1.5 transition-all duration-500 cursor-pointer hover:text-primary ${fastMode ? 'text-primary' : ''}`}
           style={{ opacity: 0.4 + pulseIntensity * 0.6 }}
+          title={fastMode ? t('idle.normalSpeed', 'Normal speed') : t('idle.fastForward', 'Fast forward x5')}
         >
           <span
             className="material-symbols-outlined text-xs"
             style={{ opacity: 0.5 + pulseIntensity * 0.5 }}
           >
-            hourglass_top
+            {fastMode ? 'fast_forward' : 'hourglass_top'}
           </span>
           <span className="tabular-nums font-mono tracking-wider">
             {formatTime(idleSeconds)}
           </span>
-        </div>
+          {fastMode && <span className="text-[8px] font-bold">x5</span>}
+        </button>
       )}
 
       {lastRoll && (

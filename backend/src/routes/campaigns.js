@@ -1,5 +1,20 @@
 import { prisma } from '../lib/prisma.js';
 
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 50;
+
+async function withRetry(fn) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRetryable = err.code === 'P2034';
+      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_BASE_MS * 2 ** attempt));
+    }
+  }
+}
+
 export async function campaignRoutes(fastify) {
   // Public endpoint — no auth required
   fastify.get('/public', async (request) => {
@@ -66,10 +81,12 @@ export async function campaignRoutes(fastify) {
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: { playCount: { increment: 1 } },
-    });
+    await withRetry(() =>
+      prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { playCount: { increment: 1 } },
+      }),
+    );
 
     let parsed = {};
     try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
@@ -131,10 +148,12 @@ export async function campaignRoutes(fastify) {
     if (tone !== undefined) updateData.tone = tone;
     if (data !== undefined) updateData.data = JSON.stringify(data);
 
-    const campaign = await prisma.campaign.update({
-      where: { id: request.params.id },
-      data: updateData,
-    });
+    const campaign = await withRetry(() =>
+      prisma.campaign.update({
+        where: { id: request.params.id },
+        data: updateData,
+      }),
+    );
 
     let parsedPutData = {};
     try { parsedPutData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
@@ -161,10 +180,12 @@ export async function campaignRoutes(fastify) {
     if (typeof isPublic !== 'boolean') {
       return reply.code(400).send({ error: 'isPublic must be a boolean' });
     }
-    const campaign = await prisma.campaign.update({
-      where: { id: request.params.id },
-      data: { isPublic },
-    });
+    const campaign = await withRetry(() =>
+      prisma.campaign.update({
+        where: { id: request.params.id },
+        data: { isPublic },
+      }),
+    );
     return { id: campaign.id, isPublic: campaign.isPublic };
   });
 }

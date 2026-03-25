@@ -105,6 +105,40 @@ describe('repairDialogueSegments', () => {
     expect(result2.find(s => s.type === 'dialogue')?.text).toBe('Fuyez!');
   });
 
+  it('handles single curly quotes \u2018...\u2019', () => {
+    const segments = [
+      { type: 'narration', text: 'Ksenobi powiedzia\u0142: \u2018Czasem nawet niebo postanawia nagradza\u0107 cierpliwo\u015B\u0107.\u2019' },
+    ];
+    const knownNpcs = [{ name: 'Ksenobi', gender: 'male' }];
+    const result = repairDialogueSegments('...', segments, knownNpcs);
+
+    const dialogue = result.find(s => s.type === 'dialogue');
+    expect(dialogue).toBeDefined();
+    expect(dialogue.text).toBe('Czasem nawet niebo postanawia nagradza\u0107 cierpliwo\u015B\u0107.');
+    expect(dialogue.character).toBe('Ksenobi');
+    expect(dialogue.gender).toBe('male');
+  });
+
+  it('handles ASCII single quotes in dialogue', () => {
+    const segments = [
+      { type: 'narration', text: "The old man whispered: 'Run away, child!'" },
+    ];
+    const result = repairDialogueSegments('...', segments);
+
+    const dialogue = result.find(s => s.type === 'dialogue');
+    expect(dialogue).toBeDefined();
+    expect(dialogue.text).toBe('Run away, child!');
+  });
+
+  it('generates segments from narrative with single curly quotes when segments are empty', () => {
+    const narrative = '\u015Alimak Ksenobi u\u015Bmiechna\u0142 si\u0119. \u2018Czasem nawet niebo postanawia nagradza\u0107 cierpliwo\u015B\u0107.\u2019';
+    const result = repairDialogueSegments(narrative, [], [{ name: '\u015Alimak Ksenobi', gender: 'male' }]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].text).toBe('Czasem nawet niebo postanawia nagradza\u0107 cierpliwo\u015B\u0107.');
+  });
+
   it('does not split dialogue-type segments', () => {
     const segments = [
       { type: 'dialogue', character: 'Aldric', text: 'He said "hello" to me.', gender: 'male' },

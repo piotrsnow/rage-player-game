@@ -1039,7 +1039,9 @@
   "idle": {
     "rollResult": "k100: {{roll}} (< {{threshold}})",
     "somethingHappens": "Coś się porusza...",
-    "worldEvent": "Coś się dzieje w świecie..."
+    "worldEvent": "Coś się dzieje w świecie...",
+    "fastForward": "Przyśpiesz x5",
+    "normalSpeed": "Normalna prędkość"
   },
   "autoPlayer": {
     "title": "AI Auto-Gracz",

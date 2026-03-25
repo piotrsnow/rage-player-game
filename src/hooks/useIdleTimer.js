@@ -4,6 +4,7 @@ const INTERVAL_SECONDS = 30;
 const THRESHOLD_STEP = 5;
 const GRACE_PERIOD_MS = 15_000;
 const ROLL_DISPLAY_MS = 3000;
+const SPEED_MULTIPLIER = 5;
 
 function getThreshold(checkIndex) {
   return (checkIndex + 1) * THRESHOLD_STEP;
@@ -25,6 +26,7 @@ export function useIdleTimer({
   const [timerActive, setTimerActive] = useState(false);
   const [lastRoll, setLastRoll] = useState(null);
   const [isRolling, setIsRolling] = useState(false);
+  const [fastMode, setFastMode] = useState(false);
 
   const checkIndexRef = useRef(0);
   const graceTimerRef = useRef(null);
@@ -38,6 +40,7 @@ export function useIdleTimer({
     setTimerActive(false);
     setLastRoll(null);
     setIsRolling(false);
+    setFastMode(false);
     checkIndexRef.current = 0;
     if (graceTimerRef.current) {
       clearTimeout(graceTimerRef.current);
@@ -47,6 +50,10 @@ export function useIdleTimer({
       clearTimeout(rollTimeoutRef.current);
       rollTimeoutRef.current = null;
     }
+  }, []);
+
+  const toggleFastMode = useCallback(() => {
+    setFastMode((prev) => !prev);
   }, []);
 
   // Reset when scene changes
@@ -86,9 +93,11 @@ export function useIdleTimer({
     }
   }, [paused, timerActive, sceneId, narratorEnabled, narratorReady, narratorPlaybackState]);
 
-  // Tick every second when active and not paused
+  // Tick when active and not paused — 5x faster in fast mode
   useEffect(() => {
     if (!timerActive || paused) return;
+
+    const tickMs = fastMode ? 1000 / SPEED_MULTIPLIER : 1000;
 
     const interval = setInterval(() => {
       setIdleSeconds((prev) => {
@@ -116,10 +125,10 @@ export function useIdleTimer({
 
         return next;
       });
-    }, 1000);
+    }, tickMs);
 
     return () => clearInterval(interval);
-  }, [timerActive, paused, isRolling]);
+  }, [timerActive, paused, isRolling, fastMode]);
 
   useEffect(() => {
     return () => {
@@ -133,6 +142,8 @@ export function useIdleTimer({
     timerActive,
     lastRoll,
     isRolling,
+    fastMode,
     resetTimer,
+    toggleFastMode,
   };
 }

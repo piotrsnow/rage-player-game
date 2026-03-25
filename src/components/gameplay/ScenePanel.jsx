@@ -167,7 +167,7 @@ function OverlayOutcomeTarget({ dr, t }) {
         isSuccess ? 'border-primary/35 shadow-[0_0_18px_rgba(197,154,255,0.12)]' : 'border-outline-variant/25'
       }`}>
         <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-on-surface-variant">
-          {dr.characteristic ? t(`stats.${dr.characteristic}Long`) : t('common.target', 'Cel')}
+          {dr.skill ? translateSkill(dr.skill, t) : dr.characteristic ? t(`stats.${dr.characteristic}Long`) : t('common.target', 'Cel')}
         </span>
         <span className="font-mono text-lg font-black text-on-surface leading-none">
           {target}

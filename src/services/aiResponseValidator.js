@@ -311,8 +311,8 @@ function getSchemaDefaults(schema) {
   return {};
 }
 
-const QUOTE_OPEN = '„"«"';
-const QUOTE_CLOSE = '""»"';
+const QUOTE_OPEN = '„\u201C«"\u2018\u2019\'';
+const QUOTE_CLOSE = '\u201D"»\u201C\u2019\u2018\'';
 const QUOTE_PATTERN = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
 
 function findSpeakerInText(textBefore, knownNames) {

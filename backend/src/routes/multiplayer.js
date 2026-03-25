@@ -865,7 +865,8 @@ export async function multiplayerRoutes(fastify) {
               if (sceneResult.scene.diceRolls?.length) {
                 for (const dr of sceneResult.scene.diceRolls) {
                   if (dr.character && dr.sl != null) {
-                    newMomentum[dr.character] = dr.sl * 5;
+                    const sl = dr.sl;
+                    newMomentum[dr.character] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
                   }
                 }
               }
@@ -967,11 +968,13 @@ export async function multiplayerRoutes(fastify) {
               if (sceneResult.scene.diceRolls?.length) {
                 for (const dr of sceneResult.scene.diceRolls) {
                   if (dr.character && dr.sl != null) {
-                    newSoloMomentum[dr.character] = dr.sl * 5;
+                    const sl = dr.sl;
+                    newSoloMomentum[dr.character] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
                   }
                 }
               } else if (sceneResult.scene.diceRoll?.sl != null) {
-                newSoloMomentum[action.name] = sceneResult.scene.diceRoll.sl * 5;
+                const sl = sceneResult.scene.diceRoll.sl;
+                newSoloMomentum[action.name] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
               }
 
               const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);

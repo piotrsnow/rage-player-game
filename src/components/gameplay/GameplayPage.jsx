@@ -892,6 +892,8 @@ export default function GameplayPage() {
                   timerActive={idleTimer.timerActive}
                   lastRoll={idleTimer.lastRoll}
                   isRolling={idleTimer.isRolling}
+                  fastMode={idleTimer.fastMode}
+                  onToggleFastMode={idleTimer.toggleFastMode}
                 />
               )}
             </div>

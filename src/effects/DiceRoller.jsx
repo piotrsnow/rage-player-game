@@ -63,7 +63,7 @@ function ensureDiceLibrary() {
 function getPercentileResults(roll) {
   if (roll === 100) return [0, 0];
   const safeRoll = Math.max(0, Math.min(99, Number(roll) || 0));
-  return [Math.floor(safeRoll / 10) * 10, safeRoll % 10];
+  return [Math.floor(safeRoll / 10), safeRoll % 10];
 }
 
 export default function DiceRoller({
