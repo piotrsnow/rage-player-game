@@ -184,6 +184,14 @@ export default function ScenePanel({
   const [isCrossfading, setIsCrossfading] = useState(false);
 
   useEffect(() => {
+    // When browsing between scenes, always show the image assigned to that scene.
+    // Crossfade should only be used when the current scene receives a newly generated image.
+    setDisplayedSrc(imageSrc || null);
+    setIncomingSrc(null);
+    setIsCrossfading(false);
+  }, [scene?.id]);
+
+  useEffect(() => {
     if (!imageSrc) {
       if (!isGeneratingImage) {
         setDisplayedSrc(null);
@@ -217,7 +225,7 @@ export default function ScenePanel({
     img.src = imageSrc;
 
     return () => { cancelled = true; };
-  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage]);
+  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage, scene?.id]);
 
   useEffect(() => {
     if (!incomingSrc || !isCrossfading) return;
