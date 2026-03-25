@@ -246,13 +246,13 @@ export function useAI() {
                 if (currentMomentum < 0) {
                   nextMomentum = newValue;
                 } else {
-                  nextMomentum = newValue > currentMomentum ? newValue : Math.max(0, currentMomentum - 5);
+                  nextMomentum = newValue > currentMomentum ? newValue : Math.round((newValue + currentMomentum) / 2);
                 }
               } else {
                 if (currentMomentum > 0) {
                   nextMomentum = newValue;
                 } else {
-                  nextMomentum = newValue < currentMomentum ? newValue : Math.min(0, currentMomentum + 5);
+                  nextMomentum = newValue < currentMomentum ? newValue : Math.round((newValue + currentMomentum) / 2);
                 }
               }
               dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-30, Math.min(30, nextMomentum)) });
