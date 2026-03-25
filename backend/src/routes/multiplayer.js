@@ -806,7 +806,7 @@ export async function multiplayerRoutes(fastify) {
             const room = getRoom(roomCode);
             if (!room) throw new Error('Room not found');
             const { sceneId, image } = msg;
-            if (!sceneId || !image) break;
+            if (!sceneId) break;
 
             if (room.gameState?.scenes) {
               const idx = room.gameState.scenes.findIndex((s) => s.id === sceneId);
@@ -1131,6 +1131,93 @@ export async function multiplayerRoutes(fastify) {
             });
 
             saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after char sync failed'));
+            break;
+          }
+
+          case 'COMBAT_SYNC': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const combatRoom = getRoom(roomCode);
+            if (!combatRoom) throw new Error('Room not found');
+            if (combatRoom.hostId !== odId) throw new Error('Only the host can sync combat state');
+            if (!combatRoom.gameState) throw new Error('Game not in progress');
+
+            combatRoom.gameState.combat = msg.combat;
+            setGameState(roomCode, combatRoom.gameState);
+
+            broadcast(combatRoom, {
+              type: 'COMBAT_SYNC',
+              combat: msg.combat,
+            });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after combat sync failed'));
+            break;
+          }
+
+          case 'COMBAT_MANOEUVRE': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const manRoom = getRoom(roomCode);
+            if (!manRoom) throw new Error('Room not found');
+            if (!manRoom.gameState?.combat?.active) throw new Error('No active combat');
+
+            sendTo(manRoom, manRoom.hostId, {
+              type: 'COMBAT_MANOEUVRE',
+              fromOdId: odId,
+              manoeuvre: msg.manoeuvre,
+              targetId: msg.targetId,
+            });
+            break;
+          }
+
+          case 'COMBAT_ENDED': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const endRoom = getRoom(roomCode);
+            if (!endRoom) throw new Error('Room not found');
+            if (endRoom.hostId !== odId) throw new Error('Only the host can end combat');
+            if (!endRoom.gameState) throw new Error('Game not in progress');
+
+            const combatPerChar = msg.perCharacter || {};
+            const chars = endRoom.gameState.characters || [];
+            endRoom.gameState.characters = chars.map((c) => {
+              const delta = combatPerChar[c.name];
+              if (!delta) return c;
+              const updated = { ...c };
+              if (delta.wounds != null) {
+                updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + delta.wounds));
+              }
+              if (delta.xp != null) {
+                updated.xp = (updated.xp || 0) + delta.xp;
+              }
+              if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
+                updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
+              }
+              return updated;
+            });
+
+            endRoom.gameState.combat = null;
+
+            if (msg.journalEntry) {
+              if (!endRoom.gameState.world) endRoom.gameState.world = {};
+              endRoom.gameState.world.eventHistory = [
+                ...(endRoom.gameState.world.eventHistory || []),
+                msg.journalEntry,
+              ];
+            }
+
+            setGameState(roomCode, endRoom.gameState);
+
+            broadcast(endRoom, {
+              type: 'COMBAT_ENDED',
+              perCharacter: combatPerChar,
+              summary: {
+                enemiesDefeated: msg.enemiesDefeated,
+                totalEnemies: msg.totalEnemies,
+                rounds: msg.rounds,
+                outcome: msg.outcome || 'victory',
+              },
+              room: sanitizeRoom(endRoom),
+            });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after combat end failed'));
             break;
           }
 

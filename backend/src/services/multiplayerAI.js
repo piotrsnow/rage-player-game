@@ -417,7 +417,8 @@ Respond with ONLY valid JSON:
     "completedQuests": [],
     "questUpdates": [],
     "activeEffects": [{"action": "add", "type": "trap|spell|environmental", "location": "Location", "description": "Effect description", "placedBy": "who"}],
-    "codexUpdates": []
+    "codexUpdates": [],
+    "combatUpdate": null
   }
 }
 
@@ -434,6 +435,11 @@ For stateChanges.mapChanges: use when a location is modified (trap set, destruct
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
+
+COMBAT ENCOUNTERS (MULTIPLAYER):
+When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges with enemy data. The client-side combat engine handles turn-by-turn tactical resolution.
+{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}], "reason": "Short description of why combat started"}}
+PLAYER-INITIATED COMBAT: When ANY player's action explicitly involves attacking, starting a fight, or provoking a confrontation, you MUST include "combatUpdate" with appropriate enemies built from NPCs present in the scene. Use the BESTIARY for matching stat blocks, or create contextually appropriate stats. The narrative should briefly describe the escalation, then combat begins via combatUpdate. Do NOT narrate combat without including combatUpdate. Set combatUpdate to null when no combat starts.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
   }
@@ -526,7 +532,8 @@ Respond with ONLY valid JSON:
     "completedQuests": [],
     "questUpdates": [],
     "activeEffects": [],
-    "codexUpdates": []
+    "codexUpdates": [],
+    "combatUpdate": null
   }
 }
 
@@ -546,6 +553,11 @@ For stateChanges.activeEffects: manage traps, spells, ongoing environmental effe
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
+
+COMBAT ENCOUNTERS (MULTIPLAYER):
+When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges with enemy data. The client-side combat engine handles turn-by-turn tactical resolution for all players.
+{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}], "reason": "Short description of why combat started"}}
+PLAYER-INITIATED COMBAT: When ANY player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation, you MUST include "combatUpdate" with appropriate enemies. Use NPCs currently present in the scene as enemies with stat blocks from the BESTIARY if matching, or create contextually appropriate stats. The narrative should briefly describe the escalation, then combat begins via combatUpdate. Respect player agency: if a player wants to fight, they fight. Do NOT narrate combat without including combatUpdate. Set combatUpdate to null when no combat starts.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }
@@ -973,6 +985,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })),
     status: 'pending',
   }));
+  const stateChanges = result.stateChanges || {};
   const scene = {
     id: sceneId,
     narrative: result.narrative || '',
@@ -987,6 +1000,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     diceRolls: result.diceRolls || [],
     playerActions: actions.map((a) => ({ name: a.name, action: a.action })),
     timestamp: Date.now(),
+    ...(stateChanges.combatUpdate && { stateChanges: { combatUpdate: stateChanges.combatUpdate } }),
   };
 
   const chatMessages = [];
@@ -1034,7 +1048,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   });
 
   const scMessages = generateStateChangeMessages(
-    result.stateChanges || {},
+    stateChanges,
     gameState.characters || [],
     language,
     gameState.quests,
@@ -1044,7 +1058,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   return {
     scene,
     chatMessages,
-    stateChanges: result.stateChanges || {},
+    stateChanges,
   };
 }
 

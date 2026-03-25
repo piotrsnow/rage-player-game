@@ -183,6 +183,12 @@ const SUBTYPE_STYLES = {
   quest_objective_completed: { icon: 'checklist', color: 'text-teal-400', line: 'to-teal-400/30' },
   money_spent:      { icon: 'payments',     color: 'text-orange-400',  line: 'to-orange-400/30' },
   money_gained:     { icon: 'paid',         color: 'text-yellow-400',  line: 'to-yellow-400/30' },
+  combat_hit:       { icon: 'swords',       color: 'text-red-400',     line: 'to-red-400/30' },
+  combat_miss:      { icon: 'shield',       color: 'text-slate-400',   line: 'to-slate-400/30' },
+  combat_critical:  { icon: 'local_fire_department', color: 'text-orange-400', line: 'to-orange-400/30' },
+  combat_defeat:    { icon: 'skull',        color: 'text-red-500',     line: 'to-red-500/30' },
+  combat_fled:      { icon: 'directions_run', color: 'text-yellow-400', line: 'to-yellow-400/30' },
+  combat_end:       { icon: 'flag',         color: 'text-primary',     line: 'to-primary/30' },
 };
 
 function buildTargetBreakdown(d) {

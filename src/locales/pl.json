@@ -57,7 +57,15 @@
     "surrender": "Poddaj się",
     "surrenderConfirm": "Jesteś pewien? Będziesz na łasce swoich wrogów.",
     "surrendered": "Poddanie się",
-    "cancel": "Anuluj"
+    "cancel": "Anuluj",
+    "chatHit": "{{actor}} trafia {{target}} — {{damage}} obrażeń ({{location}})",
+    "chatMiss": "{{actor}} pudłuje atak na {{target}}",
+    "chatCritical": "{{target}} otrzymuje ranę krytyczną: {{wound}}!",
+    "chatDefeated": "{{target}} pokonany!",
+    "chatFled": "{{actor}} ucieka z walki!",
+    "multiplayer": "MP",
+    "waitingFor": "Czekam na {{name}}...",
+    "hostWillEnd": "Host zakończy walkę..."
   },
   "nav": {
     "lobby": "Lobby",

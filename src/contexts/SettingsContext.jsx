@@ -104,6 +104,17 @@ export function SettingsProvider({ children }) {
   }, [settings.backendUrl, settings.useBackend]);
 
   useEffect(() => {
+    if (settings.backendUrl && settings.useBackend) {
+      const timer = setTimeout(() => {
+        if (apiClient.isConnected()) {
+          fetchBackendKeys();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [settings.backendUrl, settings.useBackend, fetchBackendKeys]);
+
+  useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
       i18n.changeLanguage(settings.language);
     }

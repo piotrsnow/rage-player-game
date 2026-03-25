@@ -57,7 +57,15 @@
     "surrender": "Surrender",
     "surrenderConfirm": "Are you sure? You will be at the mercy of your enemies.",
     "surrendered": "Surrendered",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "multiplayer": "MP",
+    "waitingFor": "Waiting for {{name}}...",
+    "hostWillEnd": "The host will end combat...",
+    "chatHit": "{{actor}} hits {{target}} — {{damage}} damage ({{location}})",
+    "chatMiss": "{{actor}} misses {{target}}",
+    "chatCritical": "{{target}} suffers a critical wound: {{wound}}!",
+    "chatDefeated": "{{target}} is defeated!",
+    "chatFled": "{{actor}} flees from combat!"
   },
   "nav": {
     "lobby": "Lobby",

@@ -26,6 +26,7 @@ import GMModal from './gm/GMModal';
 import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
+import { createMultiplayerCombatState } from '../../services/combatEngine';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
@@ -152,15 +153,17 @@ export default function GameplayPage() {
       !imageAttemptedRef.current.has(currentScene.id)
     ) {
       if (isMultiplayer && !mp.state.isHost) return;
-      imageAttemptedRef.current.add(currentScene.id);
       generateImageForScene(
         currentScene.id,
         currentScene.narrative,
         currentScene.imagePrompt,
         isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined
       ).then((imageUrl) => {
-        if (isMultiplayer && imageUrl) {
-          mp.updateSceneImage(currentScene.id, imageUrl);
+        if (imageUrl) {
+          imageAttemptedRef.current.add(currentScene.id);
+          if (isMultiplayer) {
+            mp.updateSceneImage(currentScene.id, imageUrl);
+          }
         }
       });
     }
@@ -278,6 +281,100 @@ export default function GameplayPage() {
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
+
+  // --- Multiplayer combat handlers (host-only) ---
+  const combatPanelRef = useRef(null);
+
+  const handleMpEndCombat = (summary) => {
+    const perChar = summary.perCharacter || {};
+    const perCharForServer = {};
+    for (const [name, data] of Object.entries(perChar)) {
+      perCharForServer[name] = {
+        wounds: data.wounds || 0,
+        xp: data.xp || 0,
+        criticalWounds: data.criticalWounds || [],
+      };
+    }
+
+    const allSurvived = Object.values(perChar).every((p) => p.survived);
+    const combatJournal = allSurvived
+      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.`
+      : `Combat: Defeat — party fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
+
+    mp.endMultiplayerCombat({
+      perCharacter: perCharForServer,
+      enemiesDefeated: summary.enemiesDefeated,
+      totalEnemies: summary.totalEnemies,
+      rounds: summary.rounds,
+      outcome: allSurvived ? 'victory' : 'defeat',
+      journalEntry: combatJournal,
+    });
+
+    const combatActionText = allSurvived
+      ? `[Combat resolved: party defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.]`
+      : `[Combat resolved: party defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+
+    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
+  };
+
+  const handleMpSurrender = (summary) => {
+    const perChar = summary.perCharacter || {};
+    const perCharForServer = {};
+    for (const [name, data] of Object.entries(perChar)) {
+      perCharForServer[name] = {
+        wounds: data.wounds || 0,
+        xp: data.xp || 0,
+        criticalWounds: data.criticalWounds || [],
+      };
+    }
+
+    const remainingList = (summary.remainingEnemies || []).map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
+    const combatJournal = `Combat: Surrender — party yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining: ${remainingList}.`;
+
+    mp.endMultiplayerCombat({
+      perCharacter: perCharForServer,
+      enemiesDefeated: summary.enemiesDefeated,
+      totalEnemies: summary.totalEnemies,
+      rounds: summary.rounds,
+      outcome: 'surrender',
+      journalEntry: combatJournal,
+    });
+
+    const combatActionText = `[Combat resolved: party surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason: ${summary.reason || 'unknown'}.]`;
+
+    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
+  };
+
+  // Host: detect combatUpdate from scene results and create MP combat state
+  const lastCombatSceneRef = useRef(null);
+  useEffect(() => {
+    if (!isMultiplayer || !mp.state.isHost) return;
+    const lastScene = (mpGameState?.scenes || []).at(-1);
+    if (!lastScene || lastScene.id === lastCombatSceneRef.current) return;
+    if (mpGameState?.combat?.active) return;
+
+    const combatUpdate = lastScene.stateChanges?.combatUpdate;
+    if (combatUpdate?.active && combatUpdate.enemies?.length > 0) {
+      lastCombatSceneRef.current = lastScene.id;
+      const chars = mpGameState.characters || [];
+      const combatState = createMultiplayerCombatState(chars, combatUpdate.enemies, []);
+      combatState.reason = combatUpdate.reason || '';
+      mp.syncCombatState(combatState);
+    }
+  }, [isMultiplayer, mp.state.isHost, mpGameState?.scenes, mpGameState?.combat, mpGameState?.characters]);
+
+  // Host: handle incoming COMBAT_MANOEUVRE from other players
+  useEffect(() => {
+    if (!isMultiplayer || !mp.state.isHost) return;
+    const pending = mp.state.pendingCombatManoeuvre;
+    if (!pending) return;
+
+    mp.clearPendingCombatManoeuvre();
+    const fromPlayerId = `player_${pending.fromOdId}`;
+    if (CombatPanel.resolveRemoteManoeuvre) {
+      CombatPanel.resolveRemoteManoeuvre(fromPlayerId, pending.manoeuvre, pending.targetId);
+    }
+  }, [isMultiplayer, mp.state.isHost, mp.state.pendingCombatManoeuvre]);
 
   const dismissError = () => {
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -537,6 +634,7 @@ export default function GameplayPage() {
           currentChunk={narrator.currentChunk}
           diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
           diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
+          onImageError={isMultiplayer ? (sceneId) => mp.updateSceneImage(sceneId, null) : undefined}
         />
 
         {/* Past Scene Narrative Review */}
@@ -618,14 +716,20 @@ export default function GameplayPage() {
         )}
 
         {/* Combat Panel */}
-        {state.combat?.active && !isMultiplayer && !isViewingCompanion && !isReviewingPastScene && (
+        {((isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)) && !isViewingCompanion && !isReviewingPastScene && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
-              combat={state.combat}
+              combat={isMultiplayer ? mpGameState.combat : state.combat}
               dispatch={dispatch}
-              onEndCombat={handleEndCombat}
-              onSurrender={handleSurrender}
+              onEndCombat={isMultiplayer ? handleMpEndCombat : handleEndCombat}
+              onSurrender={isMultiplayer ? handleMpSurrender : handleSurrender}
               character={character}
+              isMultiplayer={isMultiplayer}
+              myPlayerId={isMultiplayer ? `player_${mp.state.myOdId}` : 'player'}
+              onSendManoeuvre={mp.sendCombatManoeuvre}
+              onHostResolve={mp.syncCombatState}
+              isHost={mp.state.isHost}
+              mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
             />
           </div>
         )}

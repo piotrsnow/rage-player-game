@@ -17,6 +17,7 @@ const initialState = {
   roomSettings: null,
   isGenerating: false,
   error: null,
+  pendingCombatManoeuvre: null,
 };
 
 function mpReducer(state, action) {
@@ -315,6 +316,46 @@ function mpReducer(state, action) {
       };
     }
 
+    case 'COMBAT_SYNC': {
+      if (!state.gameState) return state;
+      return {
+        ...state,
+        gameState: { ...state.gameState, combat: action.payload.combat },
+      };
+    }
+
+    case 'COMBAT_MANOEUVRE': {
+      return {
+        ...state,
+        pendingCombatManoeuvre: action.payload,
+      };
+    }
+
+    case 'COMBAT_ENDED': {
+      if (!state.gameState) return state;
+      let updatedChars = state.gameState.characters || [];
+      const perChar = action.payload.perCharacter || {};
+      updatedChars = updatedChars.map((c) => {
+        const delta = perChar[c.name];
+        if (!delta) return c;
+        const u = { ...c };
+        if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
+        if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
+        if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
+          u.criticalWounds = [...(u.criticalWounds || []), ...delta.criticalWounds];
+        }
+        return u;
+      });
+      return {
+        ...state,
+        gameState: {
+          ...state.gameState,
+          characters: updatedChars,
+          combat: null,
+        },
+      };
+    }
+
     case 'UPDATE_SCENE_IMAGE': {
       if (!state.gameState?.scenes) return state;
       const scenes = state.gameState.scenes.map((s) =>
@@ -410,6 +451,15 @@ export function MultiplayerProvider({ children }) {
       }),
       wsService.on('CHARACTER_SYNCED', (msg) => {
         dispatch({ type: 'CHARACTER_SYNCED', payload: msg });
+      }),
+      wsService.on('COMBAT_SYNC', (msg) => {
+        dispatch({ type: 'COMBAT_SYNC', payload: msg });
+      }),
+      wsService.on('COMBAT_MANOEUVRE', (msg) => {
+        dispatch({ type: 'COMBAT_MANOEUVRE', payload: msg });
+      }),
+      wsService.on('COMBAT_ENDED', (msg) => {
+        dispatch({ type: 'COMBAT_ENDED', payload: msg });
       }),
       wsService.on('LEFT_ROOM', () => {
         clearPersistedRejoinInfo();
@@ -531,6 +581,22 @@ export function MultiplayerProvider({ children }) {
     wsService.send('SYNC_CHARACTER', { character });
   }, []);
 
+  const syncCombatState = useCallback((combat) => {
+    wsService.send('COMBAT_SYNC', { combat });
+  }, []);
+
+  const sendCombatManoeuvre = useCallback((manoeuvre, targetId) => {
+    wsService.send('COMBAT_MANOEUVRE', { manoeuvre, targetId });
+  }, []);
+
+  const endMultiplayerCombat = useCallback((results) => {
+    wsService.send('COMBAT_ENDED', results);
+  }, []);
+
+  const clearPendingCombatManoeuvre = useCallback(() => {
+    dispatch({ type: 'COMBAT_MANOEUVRE', payload: null });
+  }, []);
+
   const value = {
     state,
     dispatch,
@@ -554,6 +620,10 @@ export function MultiplayerProvider({ children }) {
     acceptMpQuestOffer,
     declineMpQuestOffer,
     syncCharacter,
+    syncCombatState,
+    sendCombatManoeuvre,
+    endMultiplayerCombat,
+    clearPendingCombatManoeuvre,
   };
 
   return (

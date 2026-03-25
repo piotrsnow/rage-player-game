@@ -151,6 +151,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
   }
 
   if (manoeuvre.type === 'magic' && target) {
+    result.targetName = target.name;
     const knownSpells = actor.knownSpells || [];
     const spell = knownSpells[0] || { name: 'Magic Dart', cn: 0, damage: '+WPB', lore: 'petty' };
     const castResult = performCastingTest(actor, spell, 0);
@@ -202,6 +203,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
   }
 
   if (manoeuvre.type === 'offensive' && target) {
+    result.targetName = target.name;
     const attackSkill = manoeuvre.skill || 'Melee (Basic)';
     const attackTarget = getSkillValue(actor, attackSkill) + (actor.advantage * 10);
 
@@ -453,6 +455,146 @@ export function surrenderCombat(combat, playerCharacter) {
     remainingEnemies,
     rounds: combat.round,
     playerSurvived: true,
+    reason: combat.reason || '',
+  };
+}
+
+// --- Multiplayer combat ---
+
+export function createMultiplayerCombatState(playerCharacters, enemies, allies = []) {
+  const combatants = [];
+
+  for (const pc of playerCharacters) {
+    combatants.push({
+      id: `player_${pc.odId}`,
+      odId: pc.odId,
+      name: pc.name,
+      type: 'player',
+      characteristics: { ...pc.characteristics },
+      wounds: pc.wounds,
+      maxWounds: pc.maxWounds,
+      skills: { ...pc.skills },
+      talents: [...(pc.talents || [])],
+      inventory: [...(pc.inventory || [])],
+      knownSpells: pc.knownSpells || [],
+      advantage: 0,
+      initiative: 0,
+      conditions: [],
+      isDefeated: false,
+    });
+  }
+
+  for (const ally of allies) {
+    combatants.push({
+      id: `ally_${ally.name.toLowerCase().replace(/\s+/g, '_')}`,
+      name: ally.name,
+      type: 'ally',
+      characteristics: { ...ally.characteristics },
+      wounds: ally.wounds ?? ally.maxWounds ?? 10,
+      maxWounds: ally.maxWounds ?? 10,
+      skills: { ...ally.skills },
+      talents: ally.talents || [],
+      inventory: ally.inventory || [],
+      advantage: 0,
+      initiative: 0,
+      conditions: [],
+      isDefeated: false,
+    });
+  }
+
+  for (const enemy of enemies) {
+    combatants.push({
+      id: `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${Math.random().toString(36).slice(2, 5)}`,
+      name: enemy.name,
+      type: 'enemy',
+      characteristics: { ...enemy.characteristics },
+      wounds: enemy.wounds ?? enemy.maxWounds ?? 10,
+      maxWounds: enemy.maxWounds ?? 10,
+      skills: { ...enemy.skills },
+      talents: enemy.talents || [],
+      traits: enemy.traits || [],
+      armour: enemy.armour || {},
+      weapons: enemy.weapons || ['Hand Weapon'],
+      advantage: 0,
+      initiative: 0,
+      conditions: [],
+      isDefeated: false,
+    });
+  }
+
+  for (const c of combatants) {
+    c.initiative = rollInitiative(c);
+  }
+  combatants.sort((a, b) => b.initiative - a.initiative);
+
+  return {
+    active: true,
+    multiplayer: true,
+    round: 1,
+    turnIndex: 0,
+    combatants,
+    log: ['Combat begins! Round 1.'],
+    resolved: false,
+  };
+}
+
+export function endMultiplayerCombat(combat, playerCharacters) {
+  const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
+  const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
+  const baseXp = Math.max(10, enemiesDefeated * 15 + combat.round * 5);
+
+  const perCharacter = {};
+  for (const pc of playerCharacters) {
+    const combatant = combat.combatants.find((c) => c.odId === pc.odId);
+    if (!combatant) continue;
+    const woundsLost = pc.wounds - combatant.wounds;
+    perCharacter[pc.name] = {
+      wounds: woundsLost > 0 ? -woundsLost : 0,
+      xp: baseXp,
+      criticalWounds: combatant.criticalWounds || [],
+      survived: !combatant.isDefeated,
+    };
+  }
+
+  return {
+    perCharacter,
+    enemiesDefeated,
+    totalEnemies,
+    rounds: combat.round,
+    allSurvived: Object.values(perCharacter).every((p) => p.survived),
+    reason: combat.reason || '',
+  };
+}
+
+export function surrenderMultiplayerCombat(combat, playerCharacters) {
+  const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
+  const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
+  const baseXp = Math.max(5, Math.floor((enemiesDefeated * 15 + combat.round * 3) * 0.5));
+
+  const remainingEnemies = combat.combatants
+    .filter((c) => c.type === 'enemy' && !c.isDefeated)
+    .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
+
+  const perCharacter = {};
+  for (const pc of playerCharacters) {
+    const combatant = combat.combatants.find((c) => c.odId === pc.odId);
+    if (!combatant) continue;
+    const woundsLost = pc.wounds - combatant.wounds;
+    perCharacter[pc.name] = {
+      wounds: woundsLost > 0 ? -woundsLost : 0,
+      xp: baseXp,
+      criticalWounds: combatant.criticalWounds || [],
+      survived: true,
+    };
+  }
+
+  return {
+    outcome: 'surrender',
+    perCharacter,
+    enemiesDefeated,
+    totalEnemies,
+    remainingEnemies,
+    rounds: combat.round,
     reason: combat.reason || '',
   };
 }

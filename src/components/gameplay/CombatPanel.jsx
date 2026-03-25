@@ -9,6 +9,8 @@ import {
   resolveEnemyTurns,
   endCombat,
   surrenderCombat,
+  endMultiplayerCombat,
+  surrenderMultiplayerCombat,
 } from '../../services/combatEngine';
 
 const MANOEUVRE_ICONS = {
@@ -22,12 +24,14 @@ const MANOEUVRE_ICONS = {
   defend: 'security',
 };
 
-function WoundsBar({ current, max, name, type }) {
+function WoundsBar({ current, max, name, type, isMe }) {
   const pct = max > 0 ? (current / max) * 100 : 0;
   const color = type === 'enemy' ? 'bg-error' : type === 'player' ? 'bg-primary' : 'bg-tertiary';
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <span className="text-[10px] text-on-surface-variant truncate w-20 shrink-0">{name}</span>
+      <span className={`text-[10px] truncate w-20 shrink-0 ${isMe ? 'text-primary font-bold' : 'text-on-surface-variant'}`}>
+        {name}{isMe ? ' ★' : ''}
+      </span>
       <div className="flex-1 h-1.5 bg-surface-container rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all duration-300`} style={{ width: `${pct}%` }} />
       </div>
@@ -38,7 +42,10 @@ function WoundsBar({ current, max, name, type }) {
   );
 }
 
-export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender, character }) {
+export default function CombatPanel({
+  combat, dispatch, onEndCombat, onSurrender, character,
+  isMultiplayer = false, myPlayerId, onSendManoeuvre, onHostResolve, isHost = false, mpCharacters,
+}) {
   const { t } = useTranslation();
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
@@ -46,8 +53,11 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
 
   const currentTurn = getCurrentTurnCombatant(combat);
-  const isPlayerTurn = currentTurn?.type === 'player';
+  const isMyTurn = isMultiplayer
+    ? currentTurn?.id === myPlayerId
+    : currentTurn?.type === 'player';
   const combatOver = isCombatOver(combat);
+  const canControl = isMultiplayer ? isHost : true;
 
   const enemies = useMemo(
     () => combat.combatants.filter((c) => c.type === 'enemy'),
@@ -58,12 +68,20 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
     [combat.combatants]
   );
 
+  const myCombatant = useMemo(() => {
+    if (isMultiplayer && myPlayerId) {
+      return combat.combatants.find((c) => c.id === myPlayerId);
+    }
+    return combat.combatants.find((c) => c.type === 'player');
+  }, [combat.combatants, isMultiplayer, myPlayerId]);
+
   const availableManoeuvres = useMemo(() => {
+    const charForSkills = myCombatant || character;
     return Object.entries(MANOEUVRES).filter(([key]) => {
-      if (key === 'castSpell' && !character?.skills?.['Channelling']) return false;
+      if (key === 'castSpell' && !charForSkills?.skills?.['Channelling']) return false;
       return true;
     });
-  }, [character]);
+  }, [myCombatant, character]);
 
   const handleManoeuvreSelect = (key) => {
     setSelectedManoeuvre(key);
@@ -75,19 +93,103 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
     }
   };
 
+  const dispatchCombatChatMessage = (result) => {
+    if (!result) return;
+    const ts = Date.now();
+    const uid = () => Math.random().toString(36).slice(2, 6);
+
+    if (result.outcome === 'hit' && result.damage != null) {
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${ts}_hit_${uid()}`,
+          role: 'system',
+          subtype: 'combat_hit',
+          content: t('combat.chatHit', {
+            actor: result.actor,
+            target: result.targetName || '?',
+            damage: result.damage,
+            location: result.hitLocation || '',
+          }),
+          timestamp: ts,
+        },
+      });
+      if (result.criticalWound) {
+        dispatch({
+          type: 'ADD_CHAT_MESSAGE',
+          payload: {
+            id: `msg_${ts}_crit_${uid()}`,
+            role: 'system',
+            subtype: 'combat_critical',
+            content: t('combat.chatCritical', {
+              target: result.targetName || '?',
+              wound: result.criticalWound.name || '',
+            }),
+            timestamp: ts,
+          },
+        });
+      }
+      if (result.targetDefeated) {
+        dispatch({
+          type: 'ADD_CHAT_MESSAGE',
+          payload: {
+            id: `msg_${ts}_ko_${uid()}`,
+            role: 'system',
+            subtype: 'combat_defeat',
+            content: t('combat.chatDefeated', { target: result.targetName || '?' }),
+            timestamp: ts,
+          },
+        });
+      }
+    } else if (result.outcome === 'miss') {
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${ts}_miss_${uid()}`,
+          role: 'system',
+          subtype: 'combat_miss',
+          content: t('combat.chatMiss', {
+            actor: result.actor,
+            target: result.targetName || '?',
+          }),
+          timestamp: ts,
+        },
+      });
+    } else if (result.outcome === 'fled') {
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          id: `msg_${ts}_fled_${uid()}`,
+          role: 'system',
+          subtype: 'combat_fled',
+          content: t('combat.chatFled', { actor: result.actor }),
+          timestamp: ts,
+        },
+      });
+    }
+  };
+
   const handleExecute = () => {
-    if (!selectedManoeuvre || !isPlayerTurn) return;
+    if (!selectedManoeuvre || !isMyTurn) return;
     const man = MANOEUVRES[selectedManoeuvre];
     const needsTarget = man.type === 'offensive' || man.type === 'magic';
-
     if (needsTarget && !selectedTarget) return;
 
+    if (isMultiplayer && !isHost) {
+      onSendManoeuvre?.(selectedManoeuvre, selectedTarget);
+      setSelectedManoeuvre(null);
+      setSelectedTarget(null);
+      return;
+    }
+
+    const actorId = isMultiplayer ? myPlayerId : 'player';
     const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, 'player', selectedManoeuvre, selectedTarget
+      combat, actorId, selectedManoeuvre, selectedTarget
     );
     setLastResult(result);
     setSelectedManoeuvre(null);
     setSelectedTarget(null);
+    dispatchCombatChatMessage(result);
 
     let finalCombat = advanceTurn(updatedCombat);
 
@@ -96,26 +198,76 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
       if (currentAfterAdvance && currentAfterAdvance.type !== 'player') {
         const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(finalCombat);
         finalCombat = afterEnemies;
+        for (const er of enemyResults) {
+          dispatchCombatChatMessage(er);
+        }
         if (enemyResults.length > 0) {
           setLastResult(enemyResults[enemyResults.length - 1]);
         }
       }
     }
 
-    dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
+    if (isMultiplayer) {
+      onHostResolve?.(finalCombat);
+    } else {
+      dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
+    }
   };
 
+  const handleHostResolveManoeuvre = (fromPlayerId, manoeuvre, targetId) => {
+    if (!isHost || !isMultiplayer) return;
+
+    const { combat: updatedCombat, result } = resolveManoeuvre(
+      combat, fromPlayerId, manoeuvre, targetId
+    );
+    setLastResult(result);
+    dispatchCombatChatMessage(result);
+
+    let finalCombat = advanceTurn(updatedCombat);
+
+    if (!isCombatOver(finalCombat)) {
+      const currentAfterAdvance = getCurrentTurnCombatant(finalCombat);
+      if (currentAfterAdvance && currentAfterAdvance.type !== 'player') {
+        const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(finalCombat);
+        finalCombat = afterEnemies;
+        for (const er of enemyResults) {
+          dispatchCombatChatMessage(er);
+        }
+        if (enemyResults.length > 0) {
+          setLastResult(enemyResults[enemyResults.length - 1]);
+        }
+      }
+    }
+
+    onHostResolve?.(finalCombat);
+  };
+
+  CombatPanel.resolveRemoteManoeuvre = handleHostResolveManoeuvre;
+
   const handleEndCombat = () => {
-    if (!character) return;
-    const summary = endCombat(combat, character);
-    onEndCombat(summary);
+    if (isMultiplayer) {
+      if (!isHost || !mpCharacters) return;
+      const summary = endMultiplayerCombat(combat, mpCharacters);
+      onEndCombat(summary);
+    } else {
+      if (!character) return;
+      const summary = endCombat(combat, character);
+      onEndCombat(summary);
+    }
   };
 
   const handleSurrender = () => {
-    if (!character) return;
-    const summary = surrenderCombat(combat, character);
-    setShowSurrenderConfirm(false);
-    onSurrender(summary);
+    if (isMultiplayer) {
+      if (!isHost || !mpCharacters) return;
+      const summary = surrenderMultiplayerCombat(combat, mpCharacters);
+      setShowSurrenderConfirm(false);
+      onSurrender(summary);
+    } else {
+      if (!character) return;
+      const summary = surrenderCombat(combat, character);
+      setShowSurrenderConfirm(false);
+      onSurrender(summary);
+    }
   };
 
   return (
@@ -130,9 +282,14 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
           <span className="text-[10px] text-on-surface-variant px-2 py-0.5 bg-surface-container rounded-sm">
             {t('combat.round', 'Round')} {combat.round}
           </span>
+          {isMultiplayer && (
+            <span className="text-[9px] text-tertiary px-2 py-0.5 bg-tertiary/10 rounded-sm uppercase tracking-widest">
+              {t('combat.multiplayer', 'MP')}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {!combatOver && (
+          {!combatOver && canControl && (
             <button
               onClick={() => setShowSurrenderConfirm(true)}
               className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-outline/10 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-error/15 hover:text-error hover:border-error/20 transition-colors"
@@ -140,7 +297,7 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
               {t('combat.surrender', 'Surrender')}
             </button>
           )}
-          {combatOver && (
+          {combatOver && canControl && (
             <button
               onClick={handleEndCombat}
               className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-primary/15 text-primary border border-primary/20 rounded-sm hover:bg-primary/25 transition-colors"
@@ -192,7 +349,10 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
             <span className="material-symbols-outlined text-xs">
               {c.type === 'enemy' ? 'skull' : c.type === 'player' ? 'person' : 'group'}
             </span>
-            <span className="font-bold">{c.name}</span>
+            <span className="font-bold">
+              {c.name}
+              {isMultiplayer && c.id === myPlayerId ? ' ★' : ''}
+            </span>
             {c.advantage > 0 && (
               <span className="text-primary font-bold">+{c.advantage}</span>
             )}
@@ -207,7 +367,14 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
             {t('combat.allies', 'Allies')}
           </div>
           {friendlies.map((c) => (
-            <WoundsBar key={c.id} current={c.wounds} max={c.maxWounds} name={c.name} type={c.type} />
+            <WoundsBar
+              key={c.id}
+              current={c.wounds}
+              max={c.maxWounds}
+              name={c.name}
+              type={c.type}
+              isMe={isMultiplayer && c.id === myPlayerId}
+            />
           ))}
         </div>
         <div className="space-y-1.5">
@@ -220,8 +387,8 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
         </div>
       </div>
 
-      {/* Player Actions */}
-      {isPlayerTurn && !combatOver && (
+      {/* Player Actions — my turn */}
+      {isMyTurn && !combatOver && (
         <div className="space-y-3 pt-2 border-t border-outline-variant/10">
           <div className="text-[10px] font-label uppercase tracking-widest text-primary">
             {t('combat.yourTurn', 'Your Turn')} — {t('combat.chooseManoeuvre', 'Choose Manoeuvre')}
@@ -278,8 +445,16 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
         </div>
       )}
 
-      {/* Not player turn indicator */}
-      {!isPlayerTurn && !combatOver && (
+      {/* Waiting for another player (MP) */}
+      {isMultiplayer && !isMyTurn && !combatOver && currentTurn?.type === 'player' && (
+        <div className="text-center py-3 text-[11px] text-on-surface-variant">
+          <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
+          {t('combat.waitingFor', 'Waiting for {{name}}...', { name: currentTurn?.name })}
+        </div>
+      )}
+
+      {/* Enemy/ally acting indicator */}
+      {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && (
         <div className="text-center py-3 text-[11px] text-on-surface-variant">
           <span className="material-symbols-outlined text-sm mr-1 animate-spin">sync</span>
           {currentTurn?.name} {t('combat.isActing', 'is acting...')}
@@ -297,6 +472,11 @@ export default function CombatPanel({ combat, dispatch, onEndCombat, onSurrender
           <div className="text-[10px] text-on-surface-variant mt-1">
             {combat.round} {t('combat.roundsPlural', 'rounds')} — {enemies.filter((e) => e.isDefeated).length}/{enemies.length} {t('combat.enemiesDefeated', 'enemies defeated')}
           </div>
+          {isMultiplayer && !isHost && (
+            <div className="text-[9px] text-outline mt-2">
+              {t('combat.hostWillEnd', 'The host will end combat...')}
+            </div>
+          )}
         </div>
       )}
 

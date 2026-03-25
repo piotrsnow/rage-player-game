@@ -74,7 +74,7 @@ function HighlightedNarrative({ text, highlightInfo }) {
   );
 }
 
-export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentChunk, diceRoll, diceRolls }) {
+export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentChunk, diceRoll, diceRolls, onImageError }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const { state, dispatch } = useGame();
@@ -178,8 +178,9 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   const handleImageError = useCallback(() => {
     if (scene?.id && scene?.image) {
       dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
+      onImageError?.(scene.id);
     }
-  }, [scene?.id, scene?.image, dispatch]);
+  }, [scene?.id, scene?.image, dispatch, onImageError]);
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const prevSceneIdRef = useRef(null);
