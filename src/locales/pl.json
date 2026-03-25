@@ -75,6 +75,7 @@
     "chatHit": "{{actor}} trafia {{target}} — {{damage}} obrażeń ({{location}})",
     "chatCriticalHit": "{{actor}} trafia krytycznie {{target}} — {{damage}} obrażeń ({{location}})",
     "chatMiss": "{{actor}} pudłuje atak na {{target}}",
+    "missShort": "PUDŁO",
     "chatCritical": "{{target}} otrzymuje ranę krytyczną: {{wound}}!",
     "chatDefeated": "{{target}} pokonany!",
     "chatFled": "{{actor}} ucieka z walki!",

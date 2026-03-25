@@ -256,8 +256,17 @@ function AnimatedCombatLogText({ entry }) {
         </span>
       )}
       {entry.damage != null && textRevealComplete && (
-        <span className="inline-flex items-center ml-1.5 px-1.5 py-0.5 rounded-sm bg-error/20 text-error font-bold text-[11px] tabular-nums animate-fade-in">
+        <span className="inline-flex items-center ml-1.5 px-2 py-1 rounded-sm bg-error/20 text-error font-black text-sm uppercase tracking-wider tabular-nums animate-fade-in">
           -{entry.damage}
+        </span>
+      )}
+      {entry.highlightText && textRevealComplete && (
+        <span className={`inline-flex items-center ml-1.5 px-2 py-1 rounded-sm font-black text-sm uppercase tracking-wider animate-fade-in ${
+          entry.highlightTone === 'miss'
+            ? 'bg-surface-container-high text-on-surface'
+            : 'bg-primary/15 text-primary'
+        }`}>
+          {entry.highlightText}
         </span>
       )}
       {entry.location && textRevealComplete && (
@@ -634,6 +643,8 @@ export default function CombatPanel({
         actor: result.actor,
         action: `→ ${t('combat.miss', 'Miss!')}`,
         target: result.targetName || '?',
+        highlightText: t('combat.missShort', 'PUDŁO'),
+        highlightTone: 'miss',
         actorColor,
         targetColor,
         details: buildCombatLogDetails(result, t),
@@ -697,6 +708,8 @@ export default function CombatPanel({
               damage: result.damage,
               location: result.hitLocation || '',
             }),
+          combatBadgeText: `-${result.damage}`,
+          combatBadgeTone: 'hit',
           timestamp: ts,
         },
       });
@@ -738,6 +751,8 @@ export default function CombatPanel({
             actor: result.actor,
             target: result.targetName || '?',
           }),
+          combatBadgeText: t('combat.missShort', 'PUDŁO'),
+          combatBadgeTone: 'miss',
           timestamp: ts,
         },
       });

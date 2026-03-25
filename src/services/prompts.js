@@ -770,6 +770,11 @@ The dialogueSegments array must cover the full narrative broken into narration a
 
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
   const isSurrender = isPostCombat && playerAction.includes('player surrendered');
+  const isPostCombatDefeat = isPostCombat && (
+    playerAction.includes('LOST the fight')
+    || playerAction.includes('did NOT win')
+    || playerAction.includes('party LOST the fight')
+  );
 
   const actionPart = extractActionParts(playerAction);
   const dialoguePart = extractDialogueParts(playerAction);
@@ -784,7 +789,14 @@ POST-COMBAT RULES (MANDATORY):
 - The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
 - Set diceRoll to null — no skill test is needed for this post-combat transition scene.
 - Suggest post-combat actions: searching bodies for loot, tending wounds, resting, continuing the journey, investigating why the enemies attacked, etc.
-- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isSurrender ? `
+- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isPostCombatDefeat ? `
+
+DEFEAT RULES (MANDATORY — the player LOST this fight):
+- This scene is a DEFEAT aftermath, not a victory lap.
+- NEVER describe the player as the winner, never imply all enemies were beaten, and never frame the outcome as a triumphant continuation.
+- The surviving enemies, hostile environment, or immediate consequences are IN CONTROL of the scene.
+- Focus on defeat consequences such as capture, rescue, humiliation, being stripped of gear, waking later in pain, or barely surviving under enemy pressure.
+- Suggested actions must fit the losing position: plead, recover, escape captivity, search for help, crawl to safety, bargain, or treat wounds.` : ''}${isSurrender ? `
 
 SURRENDER RULES (MANDATORY — the player SURRENDERED, they did not win):
 - The player character dropped their weapon and yielded. The remaining enemies are NOW IN CONTROL of the situation.

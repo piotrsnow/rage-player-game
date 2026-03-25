@@ -260,11 +260,14 @@ export default function GameplayPage() {
       },
     });
 
+    if (isDead) {
+      narrator.stop?.();
+      return;
+    }
+
     const combatActionText = summary.playerSurvived
       ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
-      : isDead
-        ? `[Combat resolved: character died in combat after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. Death is permanent.]`
-        : `[Combat resolved: defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+      : `[Combat resolved: the player LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They were reduced to 0 wounds and did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss.${summary.woundsChange ? ` The player took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` The player suffered ${summary.criticalWounds.length} critical wound(s).` : ''} Narrate ONLY the defeat aftermath: capture, rescue, being left for dead, waking up wounded, losing gear, or enemies taking control. NEVER describe this as a victory, clean escape, or total enemy defeat.]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -329,7 +332,7 @@ export default function GameplayPage() {
 
     const combatActionText = allSurvived
       ? `[Combat resolved: party defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.]`
-      : `[Combat resolved: party defeated after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.]`;
+      : `[Combat resolved: the party LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss. Narrate ONLY the defeat aftermath: capture, forced retreat, rescue, imprisonment, losing equipment, or waking later under enemy control. NEVER describe this as a victory or as if all enemies were defeated.]`;
 
     mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
   };

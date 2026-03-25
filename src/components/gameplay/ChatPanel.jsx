@@ -336,14 +336,24 @@ function SystemMessage({ message }) {
 
   if (style) {
     const isLevelUp = message.subtype === 'level_up';
+    const hasCombatBadge = Boolean(message.combatBadgeText);
     return (
       <div className={`flex items-center gap-3 py-2 animate-fade-in ${isLevelUp ? 'opacity-100' : 'opacity-90'}`}>
         <div className={`h-px flex-1 bg-gradient-to-r from-transparent ${style.line}`} />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-center">
           <span className={`material-symbols-outlined text-sm ${style.color} ${isLevelUp ? 'animate-float' : ''}`}>{style.icon}</span>
           <div className={`text-[10px] uppercase font-bold tracking-widest ${style.color} ${isLevelUp ? 'text-xs' : ''}`}>
             {message.content}
           </div>
+          {hasCombatBadge && (
+            <span className={`px-2.5 py-1 rounded-md text-sm font-black tracking-wider ${
+              message.combatBadgeTone === 'miss'
+                ? 'bg-surface-container-high text-on-surface border border-outline-variant/20'
+                : 'bg-error/15 text-error border border-error/20'
+            }`}>
+              {message.combatBadgeText}
+            </span>
+          )}
         </div>
         <div className={`h-px flex-1 bg-gradient-to-l from-transparent ${style.line}`} />
       </div>

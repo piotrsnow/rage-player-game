@@ -79,6 +79,7 @@
     "chatHit": "{{actor}} hits {{target}} — {{damage}} damage ({{location}})",
     "chatCriticalHit": "{{actor}} lands a critical hit on {{target}} — {{damage}} damage ({{location}})",
     "chatMiss": "{{actor}} misses {{target}}",
+    "missShort": "MISS",
     "chatCritical": "{{target}} suffers a critical wound: {{wound}}!",
     "chatDefeated": "{{target}} is defeated!",
     "chatFled": "{{actor}} flees from combat!",

@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 
 export const GENERATED_IMAGE_SCALE = 0.75;
-const GEMINI_IMAGE_SCALE_MULTIPLIER = 0.7;
+const GEMINI_IMAGE_SCALE_MULTIPLIER = 0.5;
 
 export function getGeneratedImageScale(provider = 'dalle') {
   if (provider === 'gemini') {
