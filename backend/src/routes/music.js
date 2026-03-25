@@ -9,6 +9,13 @@ const MUSIC_ROOT = resolve(__dirname, '..', '..', 'public', 'music');
 const ALLOWED_FOLDERS = new Set(['lobby']);
 const GCS_MUSIC_PREFIX = 'music/';
 
+function setMusicResponseHeaders(reply) {
+  reply.header('Content-Type', 'audio/mpeg');
+  reply.header('Cache-Control', 'public, max-age=604800');
+  reply.header('Accept-Ranges', 'bytes');
+  reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+}
+
 function resolveMusicDir(folder) {
   if (folder && ALLOWED_FOLDERS.has(folder)) {
     return join(MUSIC_ROOT, folder);
@@ -105,8 +112,7 @@ export async function musicRoutes(fastify) {
       const storagePath = gcsMusicPath(folder, filename);
       const result = await store.get(storagePath);
       if (result) {
-        reply.header('Content-Type', 'audio/mpeg');
-        reply.header('Cache-Control', 'public, max-age=604800');
+        setMusicResponseHeaders(reply);
         return reply.send(result.buffer);
       }
     }
@@ -116,9 +122,7 @@ export async function musicRoutes(fastify) {
 
     try {
       const buffer = await readFile(filePath);
-      reply.header('Content-Type', 'audio/mpeg');
-      reply.header('Cache-Control', 'public, max-age=604800');
-      reply.header('Accept-Ranges', 'bytes');
+      setMusicResponseHeaders(reply);
       return reply.send(buffer);
     } catch {
       return reply.code(404).send({ error: 'Track not found' });

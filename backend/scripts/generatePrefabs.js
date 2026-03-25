@@ -20,7 +20,7 @@ const GCP_SERVICE_ACCOUNT_KEY = process.env.GCP_SERVICE_ACCOUNT_KEY;
 const POLL_INTERVAL_MS = 10_000;
 const MAX_POLL_ATTEMPTS = 180; // 30 min max per model
 const GCS_PREFIX = 'prefabs';
-const STYLE_SUFFIX = ', game-ready 3D model, stylized fantasy, centered';
+const STYLE_SUFFIX = ', game-ready 3D model, stylized fantasy, centered, goofy whimsical exaggerated fantasy style, playful caricature look, silly proportions, toy-like, slightly absurd';
 const CHARACTER_BODY_SUFFIX = ', grotesque chibi fantasy proportions, comically unnaturally dwarfish, extremely tiny body, stubby very short limbs, massively oversized head, caricature silhouette, keep full outfit and equipment readable';
 const TARGET_FORMATS = ['glb'];
 
