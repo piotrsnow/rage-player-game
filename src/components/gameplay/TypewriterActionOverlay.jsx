@@ -21,7 +21,7 @@ export default function TypewriterActionOverlay({ text, onComplete }) {
   useEffect(() => {
     const audio = new Audio(pickRandomTypingSfx());
     audio.loop = true;
-    audio.volume = 0.45;
+    audio.volume = 0.38;
     audio.play().catch(() => {});
     audioRef.current = audio;
     return () => {
