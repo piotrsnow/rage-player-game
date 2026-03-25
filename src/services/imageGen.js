@@ -2,6 +2,14 @@ import { buildImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './
 import { apiClient } from './apiClient';
 
 const GENERATED_IMAGE_SCALE = 0.75;
+const GEMINI_IMAGE_SCALE_MULTIPLIER = 0.7;
+
+export function getGeneratedImageScale(provider = 'dalle') {
+  if (provider === 'gemini') {
+    return GENERATED_IMAGE_SCALE * GEMINI_IMAGE_SCALE_MULTIPLIER;
+  }
+  return GENERATED_IMAGE_SCALE;
+}
 
 async function resizeImageDataUrl(dataUrl, scale = GENERATED_IMAGE_SCALE) {
   if (!dataUrl || scale >= 1) return dataUrl;
@@ -324,14 +332,14 @@ export const imageService = {
     if (provider === 'stability') {
       const negativePrompt = getImageStyleNegative(imageStyle) + ', blurry, low quality, text, watermark, signature';
       const imageUrl = await generateWithStability(prompt, apiKey, negativePrompt);
-      return resizeImageDataUrl(imageUrl);
+      return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
     }
     if (provider === 'gemini') {
       const imageUrl = await generateWithGemini(prompt, apiKey);
-      return resizeImageDataUrl(imageUrl);
+      return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
     }
     const imageUrl = await generateWithDalle(prompt, apiKey);
-    return resizeImageDataUrl(imageUrl);
+    return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
   },
 
   async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting') {
@@ -356,9 +364,10 @@ export const imageService = {
       if (!apiKey) {
         throw new Error('Google AI API key required for portrait generation.');
       }
-      return imageBlob
-        ? generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey)
-        : generatePortraitWithGemini(prompt, apiKey);
+      const imageUrl = imageBlob
+        ? await generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey)
+        : await generatePortraitWithGemini(prompt, apiKey);
+      return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
     }
 
     if (apiClient.isConnected()) {
