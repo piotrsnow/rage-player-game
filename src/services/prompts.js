@@ -7,6 +7,14 @@ import { formatWeatherForPrompt } from './weatherEngine';
 import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 
+export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęiąa]|rozpoczynam|rzucam\s+si[eę]|wyzywam|bij[eę]|uderz(?:am|e)|zabij|zaatakuj|dobywam|wyci[aą]gam\s+(?:miecz|bro[nń]|topor|n[oó][zż]|sztylet)|attack|fight|strike|hit|punch|stab|slash|shoot|kill|combat|draw\s*(?:my\s+)?(?:sword|weapon|blade|axe|knife|dagger))\b/i;
+
+export function detectCombatIntent(playerAction) {
+  if (!playerAction) return false;
+  if (playerAction.startsWith('[Combat resolved:')) return false;
+  return COMBAT_INTENT_REGEX.test(playerAction);
+}
+
 const NEEDS_LABELS = {
   hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
   thirst: { moderate: 'mouth getting dry, craving a drink', low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
@@ -333,6 +341,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 })()}
 WFRP 4e RULES FOR THE GM:
 - Use the d100 percentile system. When a skill test is needed, the target number = characteristic + skill advances.
+- EVERY diceRoll MUST include "characteristic" (one of: ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (the raw stat value), and "skillAdvances" (advances in the tested skill, 0 if untrained). NEVER return a diceRoll without these fields. Choose the most appropriate characteristic for the action based on WFRP skill definitions above.
 - Success Levels (SL) = (target - roll) ÷ 10, rounded toward 0. Positive SL = degrees of success, negative = degrees of failure.
 - A roll of 01-04 always succeeds (critical); 96-00 always fails (critical).
 - CRITICAL SUCCESS (roll 01-04): automatic success regardless of target number. Award bonus SL (+1 to +3 extra). Narrate an exceptionally favorable outcome — extra benefits, impressive feats, awed NPCs, found bonus loot, etc.
@@ -705,7 +714,16 @@ SURRENDER RULES (MANDATORY — the player SURRENDERED, they did not win):
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
       : `The player's action: ${playerAction}`;
 
-  return `${needsReminder}${actionBlock}
+  const combatIntentDetected = !isPostCombat && detectCombatIntent(playerAction);
+  const combatReminder = combatIntentDetected
+    ? `\n\nCOMBAT INTENT DETECTED — MANDATORY RESPONSE REQUIREMENT:
+The player is explicitly initiating combat. You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array containing stat blocks for the opponents.
+Use NPCs present in the scene as enemies. If no specific NPCs are present, use contextually appropriate opponents (tavern patrons, guards, etc.).
+Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "Tavern Thug", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`
+    : '';
+
+  return `${needsReminder}${actionBlock}${combatReminder}
 ${isPostCombat ? '' : `
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
 RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
@@ -729,11 +747,14 @@ CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested opt
 Award +5 minimum for any custom action. Do NOT default to high bonuses — most custom actions are +5 or +10.
 COMBINED BONUS CAP: The total of creativityBonus + momentumBonus + dispositionBonus is hard-capped at +30 by the game engine. Any excess is discarded. Keep this in mind when setting target numbers.
 Output the diceRoll fields as follows:
-- "baseTarget": the BASE value (characteristic + skill advances only)
+- "characteristic": the characteristic key used (e.g. "ag", "ws", "fel")
+- "characteristicValue": the raw characteristic value (e.g. 33)
+- "skillAdvances": the skill advances applied (e.g. 10; use 0 if untrained)
+- "baseTarget": the BASE value (characteristicValue + skillAdvances)
 - "creativityBonus": the bonus (5-25)
 - "target": the EFFECTIVE value = baseTarget + creativityBonus (this is the number you compare the roll against!)
 - "success": whether roll <= target (the effective value)
-Example: baseTarget=31, creativityBonus=15, target=46, roll=45 → 45 ≤ 46 → success=true. The narrative MUST describe a successful outcome.
+Example: characteristic="ag", characteristicValue=33, skillAdvances=10, baseTarget=43, creativityBonus=15, target=58, roll=45 → 45 ≤ 58 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}${momentumBonus !== 0 ? `
 MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from a previous roll.
 ${momentumBonus > 0 ? 'Add this to the target: target = baseTarget + creativityBonus + momentumBonus.' : 'Subtract this from the target: target = baseTarget + creativityBonus + momentumBonus (momentumBonus is negative, so it reduces the target).'}
@@ -786,7 +807,7 @@ Respond with ONLY valid JSON in this exact format:
     "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
     "currentLocation": "Current Location Name",
     "factionChanges": null,
-    "combatUpdate": null,
+    "combatUpdate": "INCLUDE combatUpdate OBJECT WITH active:true AND enemies ARRAY WHEN COMBAT STARTS — omit or set null when no combat",
     "knowledgeUpdates": null,
     "codexUpdates": [],
     "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
@@ -795,7 +816,7 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristic + skill advances only>, "creativityBonus": <number 10-40>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristic + skill advances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" is the base value (characteristic + skill advances only) for display.` : `"target" is the characteristic + skill advances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "characteristic": "<characteristic key: ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in tested skill, 0 if untrained>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristicValue + skillAdvances>, "creativityBonus": <number 5-25>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. MANDATORY: "characteristic", "characteristicValue", and "skillAdvances" must ALWAYS be present when diceRoll is not null. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristicValue + skillAdvances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" = characteristicValue + skillAdvances.` : `"target" = characteristicValue + skillAdvances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.

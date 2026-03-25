@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { getBonus } from '../../services/gameState';
+import Tooltip from '../ui/Tooltip';
 
 const STAT_CONFIG = [
   { key: 'ws', icon: 'swords' },
@@ -27,28 +28,29 @@ export default function StatsGrid({ characteristics, advances }) {
         const adv = advances?.[key] || 0;
 
         return (
-          <div
-            key={key}
-            className="bg-surface-container-high/60 backdrop-blur-md p-4 border-b-2 border-primary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80"
-          >
-            <span className="material-symbols-outlined text-primary-dim mb-1 text-2xl">
-              {icon}
-            </span>
-            <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.15em] mb-1">
-              {t(`stats.${key}`)}
-            </span>
-            <span className="text-tertiary font-headline text-3xl">{value}</span>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-primary-dim text-[10px] font-bold">
-                {t('character.bonus')}: {bonus}
+          <Tooltip key={key} content={t(`tooltips.stats.${key}`, { defaultValue: '' })}>
+            <div
+              className="bg-surface-container-high/60 backdrop-blur-md p-4 border-b-2 border-primary/20 flex flex-col items-center text-center transition-all hover:bg-surface-container-highest/80"
+            >
+              <span className="material-symbols-outlined text-primary-dim mb-1 text-2xl">
+                {icon}
               </span>
-              {adv > 0 && (
-                <span className="text-green-400 text-[10px] font-bold">
-                  +{adv}
+              <span className="text-on-surface-variant font-label text-[9px] uppercase tracking-[0.15em] mb-1">
+                {t(`stats.${key}`)}
+              </span>
+              <span className="text-tertiary font-headline text-3xl">{value}</span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-primary-dim text-[10px] font-bold">
+                  {t('character.bonus')}: {bonus}
                 </span>
-              )}
+                {adv > 0 && (
+                  <span className="text-green-400 text-[10px] font-bold">
+                    +{adv}
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
+          </Tooltip>
         );
       })}
     </div>

@@ -13,6 +13,11 @@ import CodexPanel from './CodexPanel';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
 import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
+import Tooltip from '../ui/Tooltip';
+
+function getTooltipKey(name) {
+  return name?.replace(/\s*\(.*\)/, '') || '';
+}
 
 const NEEDS_META = [
   { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
@@ -171,10 +176,12 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               </h3>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                 {Object.entries(character.skills).map(([name, adv]) => (
-                  <div key={name} className="flex justify-between text-on-surface-variant">
-                    <span>{translateSkill(name, t)}</span>
-                    <span className="text-primary-dim font-bold">+{adv}</span>
-                  </div>
+                  <Tooltip key={name} content={t(`tooltips.skills.${getTooltipKey(name)}`, { defaultValue: '' })}>
+                    <div className="flex justify-between text-on-surface-variant w-full">
+                      <span>{translateSkill(name, t)}</span>
+                      <span className="text-primary-dim font-bold">+{adv}</span>
+                    </div>
+                  </Tooltip>
                 ))}
               </div>
             </div>
@@ -188,9 +195,11 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               </h3>
               <div className="flex flex-wrap gap-2">
                 {character.talents.map((talent) => (
-                  <span key={talent} className="px-3 py-1 bg-surface-container-high text-on-surface-variant text-xs rounded-sm border border-outline-variant/10">
-                    {translateTalent(talent, t)}
-                  </span>
+                  <Tooltip key={talent} content={t(`tooltips.talents.${getTooltipKey(talent)}`, { defaultValue: '' })}>
+                    <span className="px-3 py-1 bg-surface-container-high text-on-surface-variant text-xs rounded-sm border border-outline-variant/10">
+                      {translateTalent(talent, t)}
+                    </span>
+                  </Tooltip>
                 ))}
               </div>
             </div>

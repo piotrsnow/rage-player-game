@@ -8,6 +8,20 @@ import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import DiceRoller from '../../effects/DiceRoller';
 import { translateSkill } from '../../utils/wfrpTranslate';
+import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
+
+function compactBreakdown(dr) {
+  const charKey = dr.characteristic;
+  const label = charKey ? (CHARACTERISTIC_SHORT[charKey] || charKey.toUpperCase()) : null;
+  const val = dr.characteristicValue;
+  if (label == null || val == null) return String(dr.target || dr.dc);
+  const parts = [`${label} ${val}`];
+  if (dr.skillAdvances > 0) parts.push(`+${dr.skillAdvances}`);
+  if (dr.creativityBonus > 0) parts.push(`+${dr.creativityBonus}`);
+  if (dr.momentumBonus != null && dr.momentumBonus !== 0) parts.push(`${dr.momentumBonus > 0 ? '+' : ''}${dr.momentumBonus}`);
+  if (dr.dispositionBonus != null && dr.dispositionBonus !== 0) parts.push(`${dr.dispositionBonus > 0 ? '+' : ''}${dr.dispositionBonus}`);
+  return `${parts.join(' ')}=${dr.target || dr.dc}`;
+}
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
@@ -316,7 +330,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                     {dr.character}
                   </p>
                   <p className="text-xs text-on-surface-variant truncate">
-                    {translateSkill(dr.skill, t)}: {dr.roll} {t('common.vs')} {dr.target || dr.dc}
+                    {translateSkill(dr.skill, t)}: {dr.roll} {t('common.vs')} {compactBreakdown(dr)}
                   </p>
                   <p className={`text-xs font-bold ${
                     dr.criticalSuccess ? 'text-amber-400' : dr.criticalFailure ? 'text-red-700' : dr.success ? 'text-primary' : 'text-error'
@@ -336,7 +350,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                   {t('gameplay.diceCheck', { skill: translateSkill(diceRoll.skill, t) })}
                 </p>
                 <p className="text-xs text-on-surface-variant">
-                  {diceRoll.roll} {t('common.vs')} {diceRoll.target || diceRoll.dc} (SL {diceRoll.sl ?? 0})
+                  {diceRoll.roll} {t('common.vs')} {compactBreakdown(diceRoll)} (SL {diceRoll.sl ?? 0})
                 </p>
                 <p className={`text-xs font-bold ${
                   diceRoll.criticalSuccess ? 'text-amber-400' : diceRoll.criticalFailure ? 'text-red-700' : diceRoll.success ? 'text-primary' : 'text-error'

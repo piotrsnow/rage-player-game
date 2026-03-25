@@ -304,7 +304,7 @@ Quests:\n${activeQuests}
 ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
-Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts.
+Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained).
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
@@ -362,14 +362,14 @@ ${playerHasDialogue ? 'DIALOGUE line = exact PC speech — include verbatim in n
 
 Feasibility first: impossible=auto-fail (diceRoll=null), trivial=auto-succeed (diceRoll=null). Then resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}
-${isCustomAction ? 'Custom action: add creativityBonus 10–40 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : ''}
+${isCustomAction ? 'Custom action: add creativityBonus 5–25 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : ''}
 ${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}
 
 JSON only — no dialogueSegments, soundEffect, musicPrompt, atmosphere, or imagePrompt.
 
 ${reducedStateJson}
 
-diceRoll when needed: {"type":"d100","roll",${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}
+diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances.
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}

@@ -5,6 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
 import { createSceneId, calculateSL, rollD100 } from '../services/gameState';
+import { getSkillCharacteristic } from '../data/wfrp';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -12,6 +13,7 @@ import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
+import { detectCombatIntent } from '../services/prompts';
 
 export function useAI() {
   const { t } = useTranslation();
@@ -68,6 +70,29 @@ export function useAI() {
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
+        if (!isFirstScene && detectCombatIntent(playerAction)) {
+          const hasCombatUpdate = result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true;
+          if (!hasCombatUpdate) {
+            console.warn('[useAI] Combat intent detected but AI omitted combatUpdate — retrying with reinforced prompt');
+            try {
+              const retryAction = `[SYSTEM: COMBAT MUST START THIS SCENE] ${playerAction}`;
+              const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
+                state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
+                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
+              );
+              if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
+              if (retryResult.stateChanges?.combatUpdate?.active === true) {
+                console.log('[useAI] Retry succeeded — combatUpdate present');
+                Object.assign(result, retryResult);
+              } else {
+                console.warn('[useAI] Retry also omitted combatUpdate — using original response');
+              }
+            } catch (retryErr) {
+              console.warn('[useAI] Combat retry failed, using original response:', retryErr.message);
+            }
+          }
+        }
+
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
           const roll = result.diceRoll.roll;
           const bonus = result.diceRoll.creativityBonus || 0;
@@ -76,6 +101,16 @@ export function useAI() {
 
           const baseTarget = result.diceRoll.baseTarget || (result.diceRoll.target - bonus - momentum - disposition);
           result.diceRoll.baseTarget = baseTarget;
+
+          if (!result.diceRoll.characteristic && result.diceRoll.skill) {
+            result.diceRoll.characteristic = getSkillCharacteristic(result.diceRoll.skill);
+          }
+          if (result.diceRoll.characteristic && result.diceRoll.characteristicValue == null) {
+            result.diceRoll.characteristicValue = state.character?.characteristics?.[result.diceRoll.characteristic] || 0;
+          }
+          if (result.diceRoll.skillAdvances == null && result.diceRoll.characteristicValue != null) {
+            result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
+          }
 
           const MAX_COMBINED_BONUS = 30;
           const totalBonus = bonus + momentum + disposition;
