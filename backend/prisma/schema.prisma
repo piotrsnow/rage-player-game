@@ -134,6 +134,24 @@ model MediaAsset {
   @@index([campaignId])
 }
 
+model PrefabAsset {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  key            String   @unique // Stable shared key, usually matching storage path
+  category       String   @default("")
+  fileName       String
+  contentType    String   // MIME type
+  size           Int      @default(0)
+  backend        String   @default("local") // "local" | "gcp"
+  path           String   @unique // Storage path (filesystem path or GCS object name)
+  metadata       String   @default("{}") // JSON: import/sync metadata
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  lastAccessedAt DateTime @default(now())
+
+  @@index([category])
+  @@index([fileName])
+}
+
 model Wanted3D {
   id               String   @id @default(auto()) @map("_id") @db.ObjectId
   userId           String   @db.ObjectId

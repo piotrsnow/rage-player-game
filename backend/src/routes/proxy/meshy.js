@@ -3,10 +3,69 @@ import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toObjectId } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
+import { MODEL_3D_CATALOG as LEGACY_MODEL_3D_CATALOG } from '../../../../shared/modelCatalog3d.js';
 
 const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const store = createMediaStore(config);
 const TARGET_FORMATS = ['glb'];
+const LEGACY_BY_STORAGE_PATH = new Map(
+  LEGACY_MODEL_3D_CATALOG.map((entry) => [entry.storagePath, entry]),
+);
+
+function normalizeIdPart(value) {
+  return String(value || '')
+    .replace(/\.glb$/i, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function titleFromFile(file) {
+  return String(file || '')
+    .replace(/\.glb$/i, '')
+    .replace(/_/g, ' ')
+    .trim();
+}
+
+function aliasTokensFromFile(file) {
+  const raw = String(file || '').replace(/\.glb$/i, '');
+  const parts = raw
+    .split(/[_\s-]+/)
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+
+  const aliases = new Set();
+  if (parts.length) {
+    aliases.add(parts.join(' '));
+    if (parts.length > 1) {
+      aliases.add(parts[parts.length - 1]);
+    }
+  }
+  return [...aliases];
+}
+
+function toCatalogEntry(prefabAsset) {
+  const metadata = JSON.parse(prefabAsset.metadata || '{}');
+  const legacy = LEGACY_BY_STORAGE_PATH.get(prefabAsset.path);
+  const file = prefabAsset.fileName || legacy?.file || prefabAsset.path.split('/').pop() || '';
+  const category = prefabAsset.category || legacy?.category || 'misc';
+  const aliases = Array.from(new Set([
+    ...(Array.isArray(metadata.aliases) ? metadata.aliases : []),
+    ...(legacy?.aliases || []),
+    ...aliasTokensFromFile(file),
+  ]));
+
+  return {
+    id: metadata.modelId || legacy?.id || `${normalizeIdPart(category)}:${normalizeIdPart(file)}`,
+    category,
+    file,
+    title: metadata.title || legacy?.title || titleFromFile(file),
+    prompt: metadata.prompt || legacy?.prompt || '',
+    aliases,
+    storagePath: prefabAsset.path,
+    updatedAt: prefabAsset.updatedAt,
+  };
+}
 
 function buildCacheParams(prompt, assetKey, cacheVersion) {
   return {
@@ -193,6 +252,21 @@ export async function meshyProxyRoutes(fastify) {
     return { cached: false, key: cacheKey };
   });
 
+  fastify.get('/prefabs/catalog', async () => {
+    const prefabs = await prisma.prefabAsset.findMany({
+      orderBy: [
+        { category: 'asc' },
+        { fileName: 'asc' },
+      ],
+    });
+
+    return {
+      items: prefabs.map(toCatalogEntry),
+      total: prefabs.length,
+      source: 'prefabAsset',
+    };
+  });
+
   fastify.get('/prefabs/:category/:file', async (request, reply) => {
     const { category, file } = request.params;
     if (!category || !file) {
@@ -202,6 +276,17 @@ export async function meshyProxyRoutes(fastify) {
     const safeCategory = String(category).replace(/[^a-zA-Z0-9_-]/g, '');
     const safeFile = String(file).replace(/[^a-zA-Z0-9_.-]/g, '');
     const storagePath = `prefabs/${safeCategory}/${safeFile}`;
+    const prefab = await prisma.prefabAsset.findUnique({
+      where: { path: storagePath },
+    });
+
+    if (prefab) {
+      await prisma.prefabAsset.update({
+        where: { path: storagePath },
+        data: { lastAccessedAt: new Date() },
+      });
+    }
+
     const result = await store.get(storagePath);
 
     if (!result?.buffer) {

@@ -311,7 +311,7 @@ function extractSceneObjects(scene) {
  * @returns {import('./sceneCommandSchema').SceneCommand}
  */
 export function planScene(scene, state, options = {}) {
-  const { prevLocationType = null } = options;
+  const { prevLocationType = null, catalogVersion = 0 } = options;
   if (!scene) {
     return {
       sceneCommand: parseSceneCommand({ sceneId: 'empty', environment: {}, characters: [], objects: [], camera: {}, transitions: [] }),
@@ -571,6 +571,7 @@ export function planScene(scene, state, options = {}) {
     camera,
     transitions: [{ type: transitionType, duration: transitionDuration }],
   });
+  sceneCommand.catalogVersion = catalogVersion;
 
   const sceneId = scene.id || `scene_${Date.now()}`;
   const sceneText = scene.narrative || '';
