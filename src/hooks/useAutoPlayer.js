@@ -15,6 +15,32 @@ const DEFAULT_AUTO_PLAYER = {
 const AUTO_MOVE_DELAY_WITHOUT_NARRATION = 1500;
 const AUTO_MOVE_DELAY_AFTER_NARRATION = 500;
 const AUTO_TYPING_PAUSE = 500;
+const MAX_SILENT_WAIT_BEFORE_FORCE_TURN = 3000;
+
+export function getAutoPlayerAdvanceDelay({
+  shouldWaitForNarration,
+  narratorPlaybackState,
+  narrationSeenForPendingScene,
+  pendingSceneAgeMs,
+}) {
+  const narrationIsActivelyPlaying = narratorPlaybackState === 'playing';
+  const silentWaitExceeded = shouldWaitForNarration
+    && !narrationSeenForPendingScene
+    && !narrationIsActivelyPlaying
+    && pendingSceneAgeMs >= MAX_SILENT_WAIT_BEFORE_FORCE_TURN;
+
+  if (shouldWaitForNarration && narrationIsActivelyPlaying) {
+    return null;
+  }
+
+  if (silentWaitExceeded) {
+    return 0;
+  }
+
+  return shouldWaitForNarration && narrationSeenForPendingScene
+    ? AUTO_MOVE_DELAY_AFTER_NARRATION
+    : AUTO_MOVE_DELAY_WITHOUT_NARRATION;
+}
 
 export function useAutoPlayer(handleAction, options = {}) {
   const { state, dispatch } = useGame();
@@ -40,6 +66,7 @@ export function useAutoPlayer(handleAction, options = {}) {
   const pendingSceneCountRef = useRef(0);
   const completedSceneCountRef = useRef(0);
   const narrationSeenForPendingSceneRef = useRef(false);
+  const pendingSceneStartedAtRef = useRef(0);
 
   enabledRef.current = autoPlayerSettings.enabled;
 
@@ -68,6 +95,7 @@ export function useAutoPlayer(handleAction, options = {}) {
       setLastError(null);
       pendingSceneCountRef.current = 0;
       narrationSeenForPendingSceneRef.current = false;
+      pendingSceneStartedAtRef.current = 0;
     } else {
       abortRef.current = false;
       setTurnsPlayed(0);
@@ -175,26 +203,38 @@ export function useAutoPlayer(handleAction, options = {}) {
     if (justEnabled && currentLen > completedSceneCountRef.current) {
       pendingSceneCountRef.current = currentLen;
       narrationSeenForPendingSceneRef.current = false;
+      pendingSceneStartedAtRef.current = Date.now();
     }
 
     if (currentLen > pendingSceneCountRef.current && currentLen > completedSceneCountRef.current) {
       pendingSceneCountRef.current = currentLen;
       narrationSeenForPendingSceneRef.current = false;
+      pendingSceneStartedAtRef.current = Date.now();
     }
 
     const hasPendingScene = pendingSceneCountRef.current > completedSceneCountRef.current;
     if (!hasPendingScene) return;
 
-    if (shouldWaitForNarration && narratorPlaybackState !== 'idle') {
+    if (!pendingSceneStartedAtRef.current) {
+      pendingSceneStartedAtRef.current = Date.now();
+    }
+
+    if (narratorPlaybackState === 'playing') {
       narrationSeenForPendingSceneRef.current = true;
+    }
+
+    const delay = getAutoPlayerAdvanceDelay({
+      shouldWaitForNarration,
+      narratorPlaybackState,
+      narrationSeenForPendingScene: narrationSeenForPendingSceneRef.current,
+      pendingSceneAgeMs: Date.now() - pendingSceneStartedAtRef.current,
+    });
+
+    if (delay == null) {
       return;
     }
 
     if (timerRef.current) clearTimeout(timerRef.current);
-
-    const delay = shouldWaitForNarration && narrationSeenForPendingSceneRef.current
-      ? AUTO_MOVE_DELAY_AFTER_NARRATION
-      : AUTO_MOVE_DELAY_WITHOUT_NARRATION;
     const scheduledSceneCount = pendingSceneCountRef.current;
 
     timerRef.current = setTimeout(() => {
@@ -202,6 +242,7 @@ export function useAutoPlayer(handleAction, options = {}) {
       if (enabledRef.current && !abortRef.current) {
         completedSceneCountRef.current = scheduledSceneCount;
         narrationSeenForPendingSceneRef.current = false;
+        pendingSceneStartedAtRef.current = 0;
         playTurn();
       }
     }, delay);
