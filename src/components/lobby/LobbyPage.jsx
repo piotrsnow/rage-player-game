@@ -30,7 +30,7 @@ export default function LobbyPage() {
   const { t } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
-  const { settings } = useSettings();
+  const { settings, backendUser } = useSettings();
   const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
@@ -132,6 +132,7 @@ export default function LobbyPage() {
   };
 
   const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
+  const isLoggedIn = !!backendUser;
   const hasCampaigns = campaigns.length > 0;
 
   return (
@@ -173,7 +174,7 @@ export default function LobbyPage() {
         <Button size="lg" onClick={() => navigate('/create')}>
           {t('lobby.newCampaign')}
         </Button>
-        {hasCampaigns && (
+        {isLoggedIn && hasCampaigns && (
           <>
             <span className="text-xs text-outline uppercase tracking-widest hidden sm:block">{t('common.or', 'or')}</span>
             <Button size="lg" variant="secondary" onClick={handleContinue}>
@@ -243,7 +244,7 @@ export default function LobbyPage() {
       )}
 
       {/* Saved Campaigns */}
-      {hasCampaigns && (
+      {isLoggedIn && hasCampaigns && (
         <div className="w-full max-w-2xl animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
           <GlassCard elevated className="p-8">
             <h3 className="font-headline text-tertiary text-xl mb-6 flex items-center gap-3">
@@ -278,7 +279,7 @@ export default function LobbyPage() {
       )}
 
       {/* Empty State */}
-      {!hasCampaigns && hasApiKey && (
+      {isLoggedIn && !hasCampaigns && hasApiKey && (
         <div className="text-center text-on-surface-variant animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-4 block animate-float-slow">
             auto_stories
