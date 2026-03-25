@@ -26,6 +26,7 @@ export function useAutoPlayer(handleAction) {
   const abortRef = useRef(false);
   const scenesLenRef = useRef(state.scenes?.length || 0);
   const enabledRef = useRef(autoPlayerSettings.enabled);
+  const prevEnabledRef = useRef(autoPlayerSettings.enabled);
   const isRunningRef = useRef(false);
 
   enabledRef.current = autoPlayerSettings.enabled;
@@ -103,6 +104,9 @@ export function useAutoPlayer(handleAction) {
     const prevLen = scenesLenRef.current;
     scenesLenRef.current = currentLen;
 
+    const justEnabled = autoPlayerSettings.enabled && !prevEnabledRef.current;
+    prevEnabledRef.current = autoPlayerSettings.enabled;
+
     if (!autoPlayerSettings.enabled) return;
     if (state.isGeneratingScene) return;
     if (state.combat?.active) return;
@@ -117,8 +121,9 @@ export function useAutoPlayer(handleAction) {
 
     const hasNewScene = currentLen > prevLen && prevLen > 0;
     const isFirstSceneReady = currentLen === 1 && prevLen === 0;
+    const enabledWithExistingScenes = justEnabled && currentLen > 0;
 
-    if (!hasNewScene && !isFirstSceneReady) return;
+    if (!hasNewScene && !isFirstSceneReady && !enabledWithExistingScenes) return;
 
     if (timerRef.current) clearTimeout(timerRef.current);
 

@@ -60,7 +60,7 @@ async function generateWithStability(prompt, apiKey, negativePrompt) {
   return `data:image/jpeg;base64,${data.image}`;
 }
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent';
 
 async function generateWithGemini(prompt, apiKey) {
   const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {
