@@ -1,34 +1,38 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { LIGHTING_PRESETS } from './Lighting3D';
+import ProceduralFoliage3D from './ProceduralFoliage3D';
+import ProceduralStructures3D from './ProceduralStructures3D';
+import DistantBackdrop3D from './DistantBackdrop3D';
+import { createSceneSeed } from './proceduralSceneUtils';
 
 const GROUND_COLORS = {
-  tavern:       '#5C3A1E',
-  forest:       '#2D5A1E',
-  dungeon:      '#3A3A3A',
-  road:         '#7A6B5A',
-  castle:       '#696969',
-  market:       '#8B7355',
-  camp:         '#4A6B2A',
-  cave:         '#4A4A4A',
-  village:      '#6B8E3A',
-  city_street:  '#6B6B6B',
-  temple:       '#8B8B7A',
-  swamp:        '#3B5323',
-  mountain:     '#808080',
-  river:        '#4A7A5A',
-  ruins:        '#7A7A6A',
-  battlefield:  '#5A5A3A',
-  ship:         '#654321',
-  generic:      '#6B7B5A',
+  tavern: '#5C3A1E',
+  forest: '#2D5A1E',
+  dungeon: '#3A3A3A',
+  road: '#7A6B5A',
+  castle: '#696969',
+  market: '#8B7355',
+  camp: '#4A6B2A',
+  cave: '#4A4A4A',
+  village: '#6B8E3A',
+  city_street: '#6B6B6B',
+  temple: '#8B8B7A',
+  swamp: '#3B5323',
+  mountain: '#808080',
+  river: '#4A7A5A',
+  ruins: '#7A7A6A',
+  battlefield: '#5A5A3A',
+  ship: '#654321',
+  generic: '#6B7B5A',
 };
 
 const SKY_COLORS = {
-  dawn:      '#FF7F50',
-  morning:   '#87CEEB',
+  dawn: '#FF7F50',
+  morning: '#87CEEB',
   afternoon: '#4A90D9',
-  evening:   '#FF6347',
-  night:     '#191970',
+  evening: '#FF6347',
+  night: '#191970',
 };
 
 const FOG_SETTINGS = {
@@ -55,13 +59,6 @@ const STAR_LAYOUT = [
   [9, 19, -8, 0.08],
   [18, 24, -14, 0.1],
   [-15, 26, -6, 0.08],
-];
-
-const CLOUD_LAYOUT = [
-  { position: [-16, 15, -20], scale: 1.2 },
-  { position: [-5, 18, -25], scale: 1.6 },
-  { position: [10, 16, -18], scale: 1.3 },
-  { position: [18, 19, -24], scale: 1.1 },
 ];
 
 function blendColors(base, tint, amount) {
@@ -116,21 +113,77 @@ function getFallbackLightConfig(isIndoor, timeOfDay) {
   };
 }
 
+function getGroundFeatures(type, floorSize, timeOfDay) {
+  const features = [];
+
+  if (type === 'road' || type === 'city_street' || type === 'village') {
+    features.push({
+      kind: 'strip',
+      position: [0, -0.003, 0],
+      size: [floorSize * 0.22, floorSize * 0.9],
+      rotation: [-Math.PI / 2, 0, 0],
+      color: type === 'city_street' ? '#6A6A6A' : '#7A674F',
+      opacity: type === 'city_street' ? 0.55 : 0.42,
+    });
+  }
+
+  if (type === 'river') {
+    features.push({
+      kind: 'strip',
+      position: [0, -0.002, 0],
+      size: [floorSize * 0.28, floorSize * 0.96],
+      rotation: [-Math.PI / 2, 0.08, 0],
+      color: timeOfDay === 'night' ? '#244C66' : '#4E88A8',
+      opacity: 0.7,
+    });
+  }
+
+  if (type === 'camp') {
+    features.push({
+      kind: 'circle',
+      position: [0, -0.001, 0],
+      radius: floorSize * 0.12,
+      color: '#6A4A2C',
+      opacity: 0.38,
+    });
+  }
+
+  if (type === 'battlefield' || type === 'ruins') {
+    features.push({
+      kind: 'ring',
+      position: [0, -0.002, 0],
+      inner: floorSize * 0.16,
+      outer: floorSize * 0.33,
+      color: '#4E4035',
+      opacity: 0.22,
+    });
+  }
+
+  return features;
+}
+
 /**
  * @param {Object} props
  * @param {import('../../../services/sceneCommandSchema').EnvironmentCommand} props.environment
  * @param {import('../../../services/sceneCommandSchema').ObjectCommand[]} [props.objects]
+ * @param {string} [props.sceneId]
  */
-export default function Environment3D({ environment, objects = [] }) {
-  const { type = 'generic', timeOfDay = 'afternoon', weather = 'clear' } = environment || {};
+export default function Environment3D({ environment, objects = [], sceneId = 'scene' }) {
+  const {
+    type = 'generic',
+    variant = 'default',
+    timeOfDay = 'afternoon',
+    weather = 'clear',
+  } = environment || {};
 
   const skyColor = SKY_COLORS[timeOfDay] || SKY_COLORS.afternoon;
   const fogConfig = FOG_SETTINGS[weather] || FOG_SETTINGS.clear;
   const isIndoor = ['tavern', 'dungeon', 'castle', 'temple'].includes(type);
   const groundPalette = useMemo(() => getGroundPalette(type, timeOfDay, weather), [type, timeOfDay, weather]);
-
   const floorSize = isIndoor ? 12 : 40;
   const wallHeight = isIndoor ? 3.5 : 0;
+  const sceneSeed = useMemo(() => createSceneSeed(sceneId, type, variant), [sceneId, type, variant]);
+
   const hasPracticalLight = useMemo(
     () => objects.some((obj) => PRACTICAL_LIGHT_TYPES.has(obj?.type)),
     [objects]
@@ -138,6 +191,10 @@ export default function Environment3D({ environment, objects = [] }) {
   const fallbackLight = useMemo(
     () => (hasPracticalLight ? null : getFallbackLightConfig(isIndoor, timeOfDay)),
     [hasPracticalLight, isIndoor, timeOfDay]
+  );
+  const groundFeatures = useMemo(
+    () => getGroundFeatures(type, floorSize, timeOfDay),
+    [type, floorSize, timeOfDay]
   );
 
   const envObjects = useMemo(() => {
@@ -149,23 +206,6 @@ export default function Environment3D({ environment, objects = [] }) {
         { type: 'box', pos: [0, 0.5, -4], scale: [4, 1, 0.5], color: '#5C3A1E' },
         { type: 'box', pos: [3.5, 0.6, -2], scale: [1.5, 1.2, 0.5], color: '#696969' },
       );
-    } else if (type === 'forest') {
-      for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2;
-        const dist = 6 + Math.random() * 4;
-        objs.push({
-          type: 'cone',
-          pos: [Math.cos(angle) * dist, 1.5, Math.sin(angle) * dist],
-          scale: [1, 3, 1],
-          color: '#1B4D1B',
-        });
-        objs.push({
-          type: 'cylinder',
-          pos: [Math.cos(angle) * dist, 0.3, Math.sin(angle) * dist],
-          scale: [0.15, 0.6, 0.15],
-          color: '#654321',
-        });
-      }
     } else if (type === 'dungeon') {
       objs.push(
         { type: 'box', pos: [-4, 1.25, 0], scale: [0.3, 2.5, 12], color: '#505050' },
@@ -173,6 +213,16 @@ export default function Environment3D({ environment, objects = [] }) {
       );
     } else if (type === 'camp') {
       objs.push({ type: 'cone', pos: [0, 0.3, 0], scale: [0.4, 0.6, 0.4], color: '#FF4500' });
+    } else if (type === 'ruins') {
+      objs.push(
+        { type: 'box', pos: [-4.2, 1.05, -2.8], scale: [0.55, 2.1, 1.6], color: '#68635A' },
+        { type: 'box', pos: [0, 1.2, -5], scale: [3.8, 2.4, 0.4], color: '#71695D' },
+      );
+    } else if (type === 'mountain') {
+      objs.push(
+        { type: 'sphere', pos: [4.6, 0.75, -2.2], scale: [1.2, 1.2, 1.2], color: '#7B7F83' },
+        { type: 'sphere', pos: [-3.8, 0.55, 2.1], scale: [0.8, 0.8, 0.8], color: '#6A6F75' },
+      );
     }
 
     return objs;
@@ -202,7 +252,6 @@ export default function Environment3D({ environment, objects = [] }) {
 
   return (
     <group>
-      {/* Ground plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
         <planeGeometry args={[floorSize, floorSize]} />
         <meshStandardMaterial color={groundPalette.main} roughness={0.92} />
@@ -216,30 +265,40 @@ export default function Environment3D({ environment, objects = [] }) {
         <meshStandardMaterial color={groundPalette.edge} roughness={1} transparent opacity={0.28} />
       </mesh>
 
-      {/* Sky dome (outdoor only) */}
+      {groundFeatures.map((feature, index) => {
+        if (feature.kind === 'strip') {
+          return (
+            <mesh key={`ground-strip-${index}`} rotation={feature.rotation} position={feature.position} receiveShadow>
+              <planeGeometry args={feature.size} />
+              <meshStandardMaterial color={feature.color} roughness={1} transparent opacity={feature.opacity} />
+            </mesh>
+          );
+        }
+        if (feature.kind === 'circle') {
+          return (
+            <mesh key={`ground-circle-${index}`} rotation={[-Math.PI / 2, 0, 0]} position={feature.position} receiveShadow>
+              <circleGeometry args={[feature.radius, 48]} />
+              <meshStandardMaterial color={feature.color} roughness={1} transparent opacity={feature.opacity} />
+            </mesh>
+          );
+        }
+        if (feature.kind === 'ring') {
+          return (
+            <mesh key={`ground-ring-${index}`} rotation={[-Math.PI / 2, 0, 0]} position={feature.position} receiveShadow>
+              <ringGeometry args={[feature.inner, feature.outer, 48]} />
+              <meshStandardMaterial color={feature.color} roughness={1} transparent opacity={feature.opacity} />
+            </mesh>
+          );
+        }
+        return null;
+      })}
+
       {!isIndoor && (
         <mesh position={[0, 0, 0]}>
           <sphereGeometry args={[50, 16, 16]} />
           <meshBasicMaterial color={skyColor} side={1} />
         </mesh>
       )}
-
-      {!isIndoor && timeOfDay !== 'night' && CLOUD_LAYOUT.map((cloud, index) => (
-        <group key={`cloud-${index}`} position={cloud.position}>
-          <mesh position={[-1.4 * cloud.scale, 0, 0]}>
-            <sphereGeometry args={[1.5 * cloud.scale, 12, 12]} />
-            <meshBasicMaterial color={blendColors(skyColor, '#FFFFFF', 0.6)} transparent opacity={weather === 'storm' ? 0.35 : 0.55} />
-          </mesh>
-          <mesh position={[0, 0.35 * cloud.scale, 0]}>
-            <sphereGeometry args={[1.9 * cloud.scale, 12, 12]} />
-            <meshBasicMaterial color={blendColors(skyColor, '#FFFFFF', 0.7)} transparent opacity={weather === 'storm' ? 0.38 : 0.6} />
-          </mesh>
-          <mesh position={[1.6 * cloud.scale, 0.05 * cloud.scale, 0.3]}>
-            <sphereGeometry args={[1.35 * cloud.scale, 12, 12]} />
-            <meshBasicMaterial color={blendColors(skyColor, '#F5F7FA', 0.65)} transparent opacity={weather === 'storm' ? 0.32 : 0.52} />
-          </mesh>
-        </group>
-      ))}
 
       {!isIndoor && timeOfDay === 'night' && STAR_LAYOUT.map(([x, y, z, size], index) => (
         <mesh key={`star-${index}`} position={[x, y, z]}>
@@ -271,7 +330,7 @@ export default function Environment3D({ environment, objects = [] }) {
             <boxGeometry args={[0.28, 0.34, 0.28]} />
             <meshStandardMaterial color="#8A6738" emissive={fallbackLight.color} emissiveIntensity={0.35} roughness={0.45} metalness={0.2} />
           </mesh>
-          <mesh position={[0, 0, 0]}>
+          <mesh>
             <sphereGeometry args={[0.12, 12, 12]} />
             <meshBasicMaterial color={fallbackLight.color} transparent opacity={0.75} />
           </mesh>
@@ -309,7 +368,31 @@ export default function Environment3D({ environment, objects = [] }) {
         </group>
       )}
 
-      {/* Ceiling (indoor) */}
+      <DistantBackdrop3D
+        environmentType={type}
+        timeOfDay={timeOfDay}
+        floorSize={floorSize}
+        seed={sceneSeed}
+        isIndoor={isIndoor}
+      />
+
+      <ProceduralFoliage3D
+        environmentType={type}
+        timeOfDay={timeOfDay}
+        weather={weather}
+        floorSize={floorSize}
+        seed={sceneSeed}
+        isIndoor={isIndoor}
+      />
+
+      <ProceduralStructures3D
+        environmentType={type}
+        timeOfDay={timeOfDay}
+        floorSize={floorSize}
+        seed={sceneSeed}
+        isIndoor={isIndoor}
+      />
+
       {isIndoor && (
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, wallHeight, 0]}>
           <planeGeometry args={[floorSize, floorSize]} />
@@ -317,7 +400,6 @@ export default function Environment3D({ environment, objects = [] }) {
         </mesh>
       )}
 
-      {/* Walls (indoor) */}
       {isIndoor && (
         <>
           <mesh position={[0, wallHeight / 2, -floorSize / 2]}>
@@ -339,9 +421,8 @@ export default function Environment3D({ environment, objects = [] }) {
         </>
       )}
 
-      {/* Environment-specific objects */}
-      {envObjects.map((obj, i) => (
-        <mesh key={i} position={obj.pos} castShadow>
+      {envObjects.map((obj, index) => (
+        <mesh key={index} position={obj.pos} castShadow>
           {obj.type === 'box' && <boxGeometry args={obj.scale} />}
           {obj.type === 'cone' && <coneGeometry args={[obj.scale[0], obj.scale[1], 8]} />}
           {obj.type === 'cylinder' && <cylinderGeometry args={[obj.scale[0], obj.scale[0], obj.scale[1], 8]} />}
@@ -350,7 +431,6 @@ export default function Environment3D({ environment, objects = [] }) {
         </mesh>
       ))}
 
-      {/* Fog */}
       {fogConfig.enabled && <fog attach="fog" color={fogConfig.color} near={fogConfig.near} far={fogConfig.far} />}
     </group>
   );

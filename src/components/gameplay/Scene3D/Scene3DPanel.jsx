@@ -6,6 +6,7 @@ import { useCombatAudio } from '../../../hooks/useCombatAudio';
 import { getAnchor } from '../../../data/sceneAnchors';
 import { useSceneCommands } from './useSceneCommands';
 import Environment3D from './Environment3D';
+import AmbientEffects3D from './AmbientEffects3D';
 import Character3D from './Character3D';
 import Object3D from './Object3D';
 import CameraController from './CameraController';
@@ -42,7 +43,15 @@ function Scene3DContent({ sceneCmd, onCharacterClick }) {
         mood={sceneCmd.environment.mood}
         environmentType={sceneCmd.environment.type}
       />
-      <Environment3D environment={sceneCmd.environment} objects={sceneCmd.objects} />
+      <Environment3D
+        environment={sceneCmd.environment}
+        objects={sceneCmd.objects}
+        sceneId={sceneCmd.sceneId}
+      />
+      <AmbientEffects3D
+        environment={sceneCmd.environment}
+        sceneId={sceneCmd.sceneId}
+      />
 
       {sceneCmd.characters.map((charCmd) => (
         <Character3D

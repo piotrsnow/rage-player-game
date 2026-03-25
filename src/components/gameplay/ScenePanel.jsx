@@ -11,7 +11,7 @@ import SceneCanvas from './SceneCanvas';
 import { translateSkill } from '../../utils/wfrpTranslate';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
-
+const NEW_IMAGE_DELAY_MS = 300;
 function CompactBonusTags({ dr, t }) {
   const hasTags = (dr.characteristic && dr.characteristicValue != null)
     || dr.skillAdvances > 0
@@ -182,18 +182,25 @@ export default function ScenePanel({
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
   const [incomingSrc, setIncomingSrc] = useState(null);
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const revealTimeoutRef = useRef(null);
 
   useEffect(() => {
-    // When browsing between scenes, always show the image assigned to that scene.
-    // Crossfade should only be used when the current scene receives a newly generated image.
-    setDisplayedSrc(imageSrc || null);
+    const resetTimeoutId = window.setTimeout(() => {
+      setDisplayedSrc(null);
+    }, 200);
     setIncomingSrc(null);
     setIsCrossfading(false);
+
+    return () => window.clearTimeout(resetTimeoutId);
   }, [scene?.id]);
 
   useEffect(() => {
     if (!imageSrc) {
       if (!isGeneratingImage) {
+        if (revealTimeoutRef.current) {
+          window.clearTimeout(revealTimeoutRef.current);
+          revealTimeoutRef.current = null;
+        }
         setDisplayedSrc(null);
         setIncomingSrc(null);
         setIsCrossfading(false);
@@ -207,25 +214,38 @@ export default function ScenePanel({
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      if (!displayedSrc) {
-        setDisplayedSrc(imageSrc);
-        setIncomingSrc(null);
-        setIsCrossfading(false);
-        return;
+      if (revealTimeoutRef.current) {
+        window.clearTimeout(revealTimeoutRef.current);
       }
+      revealTimeoutRef.current = window.setTimeout(() => {
+        if (cancelled) return;
 
-      setIncomingSrc(imageSrc);
-      requestAnimationFrame(() => {
-        if (!cancelled) {
-          setIsCrossfading(true);
+        if (!displayedSrc) {
+          setDisplayedSrc(imageSrc);
+          setIncomingSrc(null);
+          setIsCrossfading(false);
+          return;
         }
-      });
+
+        setIncomingSrc(imageSrc);
+        requestAnimationFrame(() => {
+          if (!cancelled) {
+            setIsCrossfading(true);
+          }
+        });
+      }, NEW_IMAGE_DELAY_MS);
     };
     img.onerror = () => {};
     img.src = imageSrc;
 
-    return () => { cancelled = true; };
-  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage, scene?.id]);
+    return () => {
+      cancelled = true;
+      if (revealTimeoutRef.current) {
+        window.clearTimeout(revealTimeoutRef.current);
+        revealTimeoutRef.current = null;
+      }
+    };
+  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage]);
 
   useEffect(() => {
     if (!incomingSrc || !isCrossfading) return;
