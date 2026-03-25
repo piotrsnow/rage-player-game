@@ -72,7 +72,7 @@ export default function TypewriterActionOverlay({ text, onComplete }) {
 
   return (
     <div
-      className={`absolute inset-0 z-30 flex items-center justify-center ${
+      className={`fixed inset-0 z-[70] flex items-center justify-center ${
         phase === 'fading' ? 'animate-typewriter-fade-out' : ''
       }`}
       style={{

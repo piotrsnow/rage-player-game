@@ -1,11 +1,30 @@
 import { rollD100, calculateSL, getBonus } from './gameState';
-import { getHitLocation, getWeaponData, getArmourAP, MANOEUVRES } from '../data/wfrpCombat';
+import { getHitLocation, getWeaponData, getArmourAP, MANOEUVRES, MELEE_RANGE, BATTLEFIELD_MAX, DEFAULT_MOVEMENT } from '../data/wfrpCombat';
 import { rollCriticalWound, getCriticalEffectSummary } from '../data/wfrpCriticals';
 import { performCastingTest } from './magicEngine';
 
 const CRITICAL_HIT_DAMAGE_BONUS = 2;
 const CRITICAL_HIT_MIN_DAMAGE = 1;
 const MAX_COMBAT_CREATIVITY_BONUS = 25;
+
+function getMovementAllowance(combatant) {
+  return combatant.characteristics?.m || DEFAULT_MOVEMENT;
+}
+
+function assignInitialPositions(combatants) {
+  const friendlies = combatants.filter((c) => c.type === 'player' || c.type === 'ally');
+  const enemies = combatants.filter((c) => c.type === 'enemy');
+  friendlies.forEach((c, i) => { c.position = 2 + i * 2; });
+  enemies.forEach((c, i) => { c.position = BATTLEFIELD_MAX - 2 - i * 2; });
+}
+
+export function getDistance(a, b) {
+  return Math.abs((a.position ?? 0) - (b.position ?? 0));
+}
+
+export function isInMeleeRange(a, b) {
+  return getDistance(a, b) <= MELEE_RANGE;
+}
 const COMBAT_CREATIVITY_KEYWORDS = [
   'wall', 'table', 'chair', 'barrel', 'torch', 'rope', 'chain', 'sand', 'mud', 'stairs',
   'flank', 'spin', 'twist', 'leap', 'feint', 'shoulder', 'kick', 'pommel', 'shield',
@@ -56,6 +75,9 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
     initiative: 0,
     conditions: [],
     isDefeated: false,
+    position: 0,
+    movementUsed: 0,
+    movementAllowance: getMovementAllowance(playerCharacter),
   });
 
   for (const ally of allies) {
@@ -73,6 +95,9 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
       initiative: 0,
       conditions: [],
       isDefeated: false,
+      position: 0,
+      movementUsed: 0,
+      movementAllowance: getMovementAllowance(ally),
     });
   }
 
@@ -93,8 +118,13 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
       initiative: 0,
       conditions: [],
       isDefeated: false,
+      position: 0,
+      movementUsed: 0,
+      movementAllowance: getMovementAllowance(enemy),
     });
   }
+
+  assignInitialPositions(combatants);
 
   for (const c of combatants) {
     c.initiative = rollInitiative(c);
@@ -109,6 +139,21 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
     log: [`Combat begins! Round 1.`],
     resolved: false,
   };
+}
+
+export function moveCombatant(combat, actorId, targetPosition) {
+  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
+  const actor = state.combatants.find((c) => c.id === actorId);
+  if (!actor || actor.isDefeated) return { combat: state, moved: false };
+
+  const clampedTarget = Math.max(0, Math.min(BATTLEFIELD_MAX, Math.round(targetPosition)));
+  const dist = Math.abs(clampedTarget - (actor.position ?? 0));
+  const remaining = actor.movementAllowance - (actor.movementUsed || 0);
+  if (dist === 0 || dist > remaining) return { combat: state, moved: false };
+
+  actor.movementUsed = (actor.movementUsed || 0) + dist;
+  actor.position = clampedTarget;
+  return { combat: state, moved: true, distance: dist };
 }
 
 function getSkillBreakdown(combatant, skillKey) {
@@ -196,6 +241,30 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   const customDescription = sanitizeCombatDescription(options.customDescription);
 
   if (!actor || !manoeuvre) return { combat: state, result: null };
+
+  if (target && manoeuvre.range === 'melee' && !isInMeleeRange(actor, target)) {
+    return {
+      combat: state,
+      result: {
+        actor: actor.name,
+        actorId: actor.id,
+        actorType: actor.type,
+        manoeuvre: manoeuvre.name,
+        manoeuvreKey,
+        targetId: target.id,
+        targetName: target.name,
+        outcome: 'out_of_range',
+        distance: getDistance(actor, target),
+        rolls: [],
+      },
+    };
+  }
+
+  if (target && manoeuvre.closesDistance) {
+    const dir = target.position > actor.position ? 1 : -1;
+    actor.position = target.position - dir;
+    actor.position = Math.max(0, Math.min(BATTLEFIELD_MAX, actor.position));
+  }
 
   const log = [];
   const result = {
@@ -477,6 +546,7 @@ export function advanceRound(combat) {
 
   for (const c of state.combatants) {
     c.conditions = c.conditions.filter((cond) => cond !== 'defending' && cond !== 'dodging');
+    c.movementUsed = 0;
   }
 
   state.round += 1;
@@ -519,17 +589,31 @@ export function getEnemyAction(combat, enemyId) {
   );
   if (playerTargets.length === 0) return null;
 
-  const target = playerTargets[Math.floor(Math.random() * playerTargets.length)];
+  const closest = playerTargets.reduce((best, t) => {
+    const d = getDistance(enemy, t);
+    return !best || d < best.dist ? { target: t, dist: d } : best;
+  }, null);
+  const target = closest.target;
+  const dist = closest.dist;
 
   if (enemy.wounds < enemy.maxWounds * 0.2 && Math.random() < 0.3) {
     return { manoeuvre: 'flee', targetId: target.id };
+  }
+
+  const inMelee = dist <= MELEE_RANGE;
+
+  if (!inMelee) {
+    if (dist <= MELEE_RANGE + (enemy.movementAllowance - (enemy.movementUsed || 0))) {
+      return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
+    }
+    return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
   }
 
   if (enemy.advantage === 0 && Math.random() < 0.2) {
     return { manoeuvre: 'feint', targetId: target.id };
   }
 
-  if (Math.random() < 0.15) {
+  if (Math.random() < 0.15 && dist > MELEE_RANGE) {
     return { manoeuvre: 'charge', targetId: target.id };
   }
 
@@ -550,6 +634,18 @@ export function resolveEnemyTurns(combat) {
 
     const action = getEnemyAction(state, current.id);
     if (action) {
+      if (action.moveToward) {
+        const moveTarget = state.combatants.find((c) => c.id === action.moveToward);
+        if (moveTarget && !isInMeleeRange(current, moveTarget) && !MANOEUVRES[action.manoeuvre]?.closesDistance) {
+          const dir = moveTarget.position > current.position ? 1 : -1;
+          const remaining = current.movementAllowance - (current.movementUsed || 0);
+          const moveDist = Math.min(remaining, getDistance(current, moveTarget) - 1);
+          if (moveDist > 0) {
+            current.position = Math.max(0, Math.min(BATTLEFIELD_MAX, current.position + dir * moveDist));
+            current.movementUsed = (current.movementUsed || 0) + moveDist;
+          }
+        }
+      }
       const { combat: updated, result } = resolveManoeuvre(state, current.id, action.manoeuvre, action.targetId);
       state = updated;
       if (result) results.push(result);
@@ -639,6 +735,9 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
       initiative: 0,
       conditions: [],
       isDefeated: false,
+      position: 0,
+      movementUsed: 0,
+      movementAllowance: getMovementAllowance(pc),
     });
   }
 
@@ -657,6 +756,9 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
       initiative: 0,
       conditions: [],
       isDefeated: false,
+      position: 0,
+      movementUsed: 0,
+      movementAllowance: getMovementAllowance(ally),
     });
   }
 
@@ -677,8 +779,13 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
       initiative: 0,
       conditions: [],
       isDefeated: false,
+      position: 0,
+      movementUsed: 0,
+      movementAllowance: getMovementAllowance(enemy),
     });
   }
+
+  assignInitialPositions(combatants);
 
   for (const c of combatants) {
     c.initiative = rollInitiative(c);

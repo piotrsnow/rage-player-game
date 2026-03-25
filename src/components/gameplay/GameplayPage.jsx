@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -34,15 +34,21 @@ import AutoPlayerPanel from './AutoPlayerPanel';
 import TypewriterActionOverlay from './TypewriterActionOverlay';
 import IdleTimer from './IdleTimer';
 
-export default function GameplayPage({ readOnly = false }) {
+export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
   const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
-  const narrator = useNarrator();
+  const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
+  const narrator = useNarrator(
+    readOnly && shareToken
+      ? { viewerMode: true, shareToken, backendUrl: viewerBackendUrl }
+      : undefined
+  );
   const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
 
@@ -146,6 +152,48 @@ export default function GameplayPage({ readOnly = false }) {
       || null;
   }, []);
 
+  const speakBrowserTts = useCallback((text) => {
+    try {
+      if (!text || typeof window === 'undefined') return false;
+      const synth = window.speechSynthesis;
+      if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') return false;
+
+      synth.cancel();
+      const utter = new window.SpeechSynthesisUtterance(text);
+      utter.lang = settings.language || 'pl';
+      utter.rate = Math.max(0.7, Math.min(1.2, (settings.dialogueSpeed || 100) / 100));
+      utter.pitch = 1;
+      utter.volume = 1;
+      synth.speak(utter);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [settings.language, settings.dialogueSpeed]);
+
+  const playSceneNarration = useCallback((scene, fallbackIndex = null) => {
+    if (!scene?.narrative) return;
+
+    // Preferred: ElevenLabs narrator (requires backend auth + voice configured)
+    if (narrator.isNarratorReady) {
+      const msg = chatHistory.find((m) => m.sceneId === scene.id);
+      const fallbackMsg = fallbackIndex != null
+        ? chatHistory.filter((m) => m.role === 'dm')[fallbackIndex]
+        : null;
+      const narratorMsgId = msg?.id || fallbackMsg?.id || `play_${scene.id}`;
+      narrator.speakSingle({
+        content: scene.narrative,
+        dialogueSegments: scene.dialogueSegments || [],
+        soundEffect: scene.soundEffect || null,
+      }, narratorMsgId);
+      return;
+    }
+
+    // Fallback: browser TTS (works in viewer without backend auth)
+    const ok = speakBrowserTts(scene.narrative);
+    if (!ok) openSettings();
+  }, [narrator, chatHistory, speakBrowserTts, openSettings]);
+
   const navigateWithTypewriter = useCallback((nextIdx) => {
     if (typewriterAction) return;
     const nextScene = scenes[nextIdx];
@@ -196,6 +244,40 @@ export default function GameplayPage({ readOnly = false }) {
       navigate('/');
     }
   }, [campaign, isMultiplayer, readOnly, navigate]);
+
+  // Viewer mode: force-enable narrator toggle so speaker controls work.
+  const viewerNarratorEnabledRef = useRef(false);
+  useEffect(() => {
+    if (!readOnly) return;
+    if (viewerNarratorEnabledRef.current) return;
+    if (!settings.narratorEnabled) {
+      viewerNarratorEnabledRef.current = true;
+      updateSettings({ narratorEnabled: true });
+    }
+  }, [readOnly, settings.narratorEnabled, updateSettings]);
+
+  // Viewer mode: default to scene=0 unless URL says otherwise.
+  useEffect(() => {
+    if (!readOnly) return;
+    if (!scenes || scenes.length === 0) return;
+
+    const params = new URLSearchParams(location.search || '');
+    const raw = params.get('scene');
+
+    if (raw == null) {
+      params.set('scene', '0');
+      navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+      return;
+    }
+
+    let idx = 0;
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed)) idx = parsed;
+
+    const clamped = Math.max(0, Math.min(scenes.length - 1, idx));
+    setViewingSceneIndex(clamped);
+    handleSceneNavigation(clamped);
+  }, [readOnly, scenes?.length, location.pathname, location.search, navigate]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -256,7 +338,7 @@ export default function GameplayPage({ readOnly = false }) {
       setScrollTargetMessageId(fallbackMsg.id);
     }
 
-    if (settings.narratorEnabled && narrator.isNarratorReady) {
+    if ((settings.narratorEnabled || readOnly) && narrator.isNarratorReady) {
       narrator.speakSingle({
         content: scene.narrative,
         dialogueSegments: scene.dialogueSegments || [],
@@ -534,15 +616,9 @@ export default function GameplayPage({ readOnly = false }) {
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Read-only banner */}
-      {readOnly && (
-        <div className="flex items-center justify-center gap-2 py-1.5 bg-tertiary/10 border-t border-tertiary/20 text-tertiary text-xs font-bold tracking-wider uppercase shrink-0 w-full lg:absolute lg:bottom-0 lg:left-0 lg:right-0 lg:z-50">
-          <span className="material-symbols-outlined text-sm">visibility</span>
-          {t('viewer.readOnlyBanner')}
-        </div>
-      )}
       {/* Main Game Area */}
-      <div className={`flex-1 flex flex-col p-4 md:p-6 gap-6 overflow-y-auto custom-scrollbar ${readOnly ? 'lg:mt-8' : ''}`}>
+      <div className={`flex-1 flex flex-col min-h-0 ${readOnly ? 'lg:mt-8' : ''}`}>
+        <div className="flex-1 flex flex-col px-4 md:px-6 pt-4 md:pt-6 pb-2 gap-6 overflow-y-auto custom-scrollbar min-h-0">
         {/* Scene Counter */}
         {scenes.length > 0 && (
           <div className="flex items-center justify-between px-2">
@@ -596,8 +672,8 @@ export default function GameplayPage({ readOnly = false }) {
                 </button>
                 <button
                   onClick={() => {
-                    setViewingSceneIndex(null);
-                    handleSceneNavigation(scenes.length - 1);
+                    const next = displayedSceneIndex + 1;
+                    navigateWithTypewriter(next);
                   }}
                   disabled={displayedSceneIndex >= scenes.length - 1}
                   title={t('gameplay.lastScene', 'Last scene')}
@@ -606,31 +682,19 @@ export default function GameplayPage({ readOnly = false }) {
                 >
                   last_page
                 </button>
-                {isReviewingPastScene && settings.narratorEnabled && narrator.isNarratorReady && (
+                {viewedScene?.narrative && (
                   <button
                     onClick={() => {
-                      const sceneToReplay = scenes[displayedSceneIndex];
-                      if (sceneToReplay) {
-                        const replayTargetMsg = chatHistory.find((m) => m.sceneId === sceneToReplay.id);
-                        const replayFallbackMsg = !replayTargetMsg
-                          ? chatHistory.filter((m) => m.role === 'dm')[displayedSceneIndex]
-                          : null;
-                        const replayMsgId = replayTargetMsg?.id || replayFallbackMsg?.id || `replay_${sceneToReplay.id}`;
-                        narrator.speakSingle({
-                          content: sceneToReplay.narrative,
-                          dialogueSegments: sceneToReplay.dialogueSegments || [],
-                          soundEffect: sceneToReplay.soundEffect || null,
-                        }, replayMsgId);
-                      }
+                      playSceneNarration(viewedScene, displayedSceneIndex);
                     }}
-                    title={t('gameplay.replayNarration', 'Replay narration')}
-                    aria-label={t('gameplay.replayNarration', 'Replay narration')}
-                    className="material-symbols-outlined text-xs text-primary hover:text-tertiary transition-colors ml-1"
+                    title={t('gameplay.playScene', 'Play scene')}
+                    aria-label={t('gameplay.playScene', 'Play scene')}
+                    className="material-symbols-outlined text-xs text-outline hover:text-primary transition-colors ml-1"
                   >
-                    volume_up
+                    play_circle
                   </button>
                 )}
-                {settings.narratorEnabled && narrator.isNarratorReady && scenes.length > 1 && (
+                {((settings.narratorEnabled || readOnly) && narrator.isNarratorReady && scenes.length > 1) && (
                   <button
                     onClick={() => {
                       if (autoPlayScenes) {
@@ -853,6 +917,20 @@ export default function GameplayPage({ readOnly = false }) {
           )}
         </div>
 
+        {/* Read-only: always show readable narrative text */}
+        {readOnly && viewedScene?.narrative && (
+          <div className="px-2 animate-fade-in">
+            <div className="bg-surface-container-low/60 backdrop-blur-md border border-outline-variant/15 rounded-sm p-5 max-h-[40vh] overflow-y-auto custom-scrollbar">
+              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                {t('common.scene')} {displayedSceneIndex + 1}
+              </label>
+              <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+                {viewedScene.narrative}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Past Scene Narrative Review */}
         {isReviewingPastScene && viewedScene?.narrative && (
           <div className="px-2 animate-fade-in space-y-3">
@@ -1026,7 +1104,10 @@ export default function GameplayPage({ readOnly = false }) {
             />
           </div>
         )}
+        </div>
 
+        {/* Bottom panel — always visible */}
+        <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
@@ -1076,6 +1157,7 @@ export default function GameplayPage({ readOnly = false }) {
             </div>
           </div>
         )}
+        </div>
 
       </div>
 
@@ -1084,7 +1166,7 @@ export default function GameplayPage({ readOnly = false }) {
         <ChatPanel
           messages={chatHistory}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={settings.narratorEnabled && settings.narratorAutoPlay}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)

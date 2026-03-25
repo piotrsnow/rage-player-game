@@ -121,6 +121,7 @@ const initialState = {
   scenes: [],
   chatHistory: [],
   characterVoiceMap: {},
+  narratorVoiceId: null,
   isLoading: false,
   error: null,
   aiCosts: { total: 0, breakdown: { ai: 0, image: 0, tts: 0, sfx: 0, music: 0 }, history: [] },
@@ -1292,6 +1293,9 @@ function gameReducer(state, action) {
       }
       return next;
     }
+
+    case 'SET_NARRATOR_VOICE':
+      return { ...state, narratorVoiceId: action.payload || null };
 
     case 'PUSH_UNDO': {
       const MAX_UNDO = 10;

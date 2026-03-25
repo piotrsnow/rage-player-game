@@ -121,7 +121,20 @@
     "logWpBonus": "WPB",
     "logTotalSL": "suma SL",
     "logCriticalEffect": "Efekt krytyczny",
-    "failedFlee": "nie zdołał uciec"
+    "failedFlee": "nie zdołał uciec",
+    "movement": "Ruch",
+    "movementShort": "Ruch",
+    "clickToMove": "Kliknij pole bitwy, aby się ruszyć",
+    "movedAction": "ruszył się o {{dist}}y",
+    "outOfRange": "Cel za daleko do walki wręcz. Podejdź bliżej lub użyj Szarży.",
+    "outOfRangeShort": "Poza zasięgiem",
+    "hoverForDetails": "Najedź na pionek po szczegóły",
+    "wounds": "Rany",
+    "advantage": "Przew.",
+    "position": "Poz",
+    "criticalWounds": "Krytyczne",
+    "criticalWound": "Rana krytyczna",
+    "defeated": "Pokonany"
   },
   "nav": {
     "lobby": "Lobby",

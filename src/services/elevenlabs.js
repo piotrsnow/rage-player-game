@@ -87,6 +87,25 @@ export const elevenlabsService = {
     throw new Error('ElevenLabs requires backend connection');
   },
 
+  async textToSpeechFromCache(backendUrl, shareToken, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
+    const base = (backendUrl || '').replace(/\/+$/, '');
+    if (!base || !shareToken) return null;
+
+    try {
+      const res = await fetch(`${base}/campaigns/share/${shareToken}/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voiceId, text, modelId, campaignId }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
+      return { audioUrl: data.url, words };
+    } catch {
+      return null;
+    }
+  },
+
   splitIntoParagraphs(text) {
     const paragraphs = text.split(/\n\s*\n/);
     const result = paragraphs.map((p) => p.trim()).filter(Boolean);

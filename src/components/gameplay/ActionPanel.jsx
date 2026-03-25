@@ -140,12 +140,25 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
     }
   };
 
+  const textareaRef = useRef(null);
+
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }, []);
+
   const isAutoTyping = !!autoPlayerTypingText;
   const displayValue = isAutoTyping
     ? autoPlayerTypingText
     : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
   const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
   const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
+
+  useEffect(() => {
+    autoResize();
+  }, [displayValue, autoResize]);
 
   return (
     <div className="space-y-2">
@@ -384,6 +397,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                   )}
                 </div>
                 <textarea
+                  ref={textareaRef}
                   value={displayValue}
                   onChange={(e) => !isAutoTyping && handleTypingChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -403,7 +417,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                   disabled={disabled && !isAutoTyping}
                   readOnly={listening || isAutoTyping}
                   style={hasDialogueText && !isAutoTyping ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
-                  className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
+                  className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-outline/40 overflow-hidden disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
                     hasDialogueText ? 'selection:bg-amber-400/30' : ''
                   } ${
                     isAutoTyping

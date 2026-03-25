@@ -55,22 +55,20 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   }, [baseUrl]);
 
   const fetchTracks = useCallback(async () => {
-    if (!baseUrl) {
-      log('No backend URL configured');
-      return;
-    }
     try {
       const qs = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-      const resp = await fetch(`${baseUrl}/music/tracks${qs}`);
+      const endpointBase = baseUrl || '';
+      const url = endpointBase ? `${endpointBase}/music/tracks${qs}` : `/music/tracks${qs}`;
+      const resp = await fetch(url);
       const data = await resp.json();
       if (data.tracks?.length) {
         setTracks(data.tracks);
         const shuffled = [...data.tracks].sort(() => Math.random() - 0.5);
         shuffledRef.current = shuffled;
         trackIndexRef.current = -1;
-        log(`Loaded ${data.tracks.length} tracks${folder ? ` (folder: ${folder})` : ''}`);
+        log(`Loaded ${data.tracks.length} tracks${folder ? ` (folder: ${folder})` : ''}${endpointBase ? '' : ' (same-origin)'}`);
       } else {
-        log(`No tracks available on server${folder ? ` (folder: ${folder})` : ''}`);
+        log(`No tracks available on server${folder ? ` (folder: ${folder})` : ''}${endpointBase ? '' : ' (same-origin)'}`);
       }
       setLoaded(true);
     } catch (err) {
@@ -80,7 +78,7 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   }, [baseUrl, folder]);
 
   useEffect(() => {
-    if (settings.localMusicEnabled && settings.useBackend && settings.backendUrl) {
+    if (settings.localMusicEnabled && (settings.useBackend ? settings.backendUrl : true)) {
       fetchTracks();
     }
   }, [settings.localMusicEnabled, settings.useBackend, settings.backendUrl, fetchTracks]);

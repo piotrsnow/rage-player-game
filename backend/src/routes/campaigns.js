@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
+import { generateKey } from '../services/hashService.js';
+import { createMediaStore } from '../services/mediaStore.js';
+import { config } from '../config.js';
 
+const store = createMediaStore(config);
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
 
@@ -108,6 +112,11 @@ export async function campaignRoutes(fastify) {
 
     let parsed = {};
     try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+
+    if (!parsed.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
+      parsed.narratorVoiceId = config.elevenlabsDefaultVoiceId;
+    }
+
     return {
       id: campaign.id,
       name: campaign.name,
@@ -117,6 +126,70 @@ export async function campaignRoutes(fastify) {
       author: campaign.user?.email ? campaign.user.email.slice(0, 2) + '***' : 'Anonymous',
       data: parsed,
     };
+  });
+
+  const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1';
+
+  // Public TTS for shared campaigns — no auth required, uses server key
+  fastify.post('/share/:token/tts', async (request, reply) => {
+    const campaign = await prisma.campaign.findUnique({
+      where: { shareToken: request.params.token },
+      select: { id: true, userId: true },
+    });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+
+    const { voiceId, text, modelId } = request.body || {};
+    if (!voiceId || !text) return reply.code(400).send({ error: 'voiceId and text are required' });
+
+    const model = modelId || 'eleven_multilingual_v2';
+    const cacheParams = { voiceId, text, modelId: model };
+    const cacheKey = generateKey('tts', cacheParams, campaign.id);
+
+    const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
+    if (existing) {
+      const url = await store.getUrl(existing.path);
+      const meta = JSON.parse(existing.metadata);
+      return { url, alignment: meta.alignment || null };
+    }
+
+    const apiKey = config.apiKeys.elevenlabs;
+    if (!apiKey) return reply.code(404).send({ error: 'Audio not cached' });
+
+    const response = await fetch(`${ELEVENLABS_URL}/text-to-speech/${voiceId}/with-timestamps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'xi-api-key': apiKey },
+      body: JSON.stringify({
+        text,
+        model_id: model,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
+        output_format: 'mp3_44100_128',
+      }),
+    });
+
+    if (!response.ok) {
+      return reply.code(502).send({ error: 'TTS generation failed' });
+    }
+
+    const data = await response.json();
+    const audioBytes = Buffer.from(data.audio_base64, 'base64');
+    await store.put(cacheKey, audioBytes, 'audio/mpeg');
+    const url = await store.getUrl(cacheKey);
+
+    await prisma.mediaAsset.create({
+      data: {
+        userId: campaign.userId,
+        campaignId: campaign.id,
+        key: cacheKey,
+        type: 'tts',
+        contentType: 'audio/mpeg',
+        size: audioBytes.length,
+        backend: config.mediaBackend,
+        path: cacheKey,
+        metadata: JSON.stringify({ ...cacheParams, alignment: data.alignment }),
+      },
+    });
+
+    return { url, alignment: data.alignment || null };
   });
 
   // ── Authenticated routes (wrapped in a child scope with auth hook) ───

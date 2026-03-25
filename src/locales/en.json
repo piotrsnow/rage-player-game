@@ -121,7 +121,20 @@
     "logWpBonus": "WPB",
     "logTotalSL": "total SL",
     "logCriticalEffect": "Critical effect",
-    "failedFlee": "failed to flee"
+    "failedFlee": "failed to flee",
+    "movement": "Movement",
+    "movementShort": "Mov",
+    "clickToMove": "Click battlefield to move",
+    "movedAction": "moved {{dist}}y",
+    "outOfRange": "Target too far for melee. Move closer or use Charge.",
+    "outOfRangeShort": "Out of range",
+    "hoverForDetails": "Hover a token for details",
+    "wounds": "Wounds",
+    "advantage": "Adv",
+    "position": "Pos",
+    "criticalWounds": "Criticals",
+    "criticalWound": "Critical wound",
+    "defeated": "KO"
   },
   "nav": {
     "lobby": "Lobby",

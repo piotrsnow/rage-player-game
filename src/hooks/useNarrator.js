@@ -12,7 +12,7 @@ const STATES = {
   PAUSED: 'paused',
 };
 
-export function useNarrator() {
+export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
   const { settings, hasApiKey } = useSettings();
   const { state, dispatch } = useGame();
   const [playbackState, setPlaybackState] = useState(STATES.IDLE);
@@ -78,6 +78,13 @@ export function useNarrator() {
     };
   }, [cleanup]);
 
+  const fetchTts = useCallback(async (voiceId, chunk, campaignId) => {
+    if (viewerMode && backendUrl && shareToken) {
+      return elevenlabsService.textToSpeechFromCache(backendUrl, shareToken, voiceId, chunk, undefined, campaignId);
+    }
+    return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId);
+  }, [viewerMode, backendUrl, shareToken]);
+
   const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation) => {
     let prefetchPromise = null;
     let wordOffset = 0;
@@ -93,21 +100,24 @@ export function useNarrator() {
         prefetchPromise = null;
       } else {
         setPlaybackState(STATES.LOADING);
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
+        result = await fetchTts(voiceId, chunk, campaignId);
       }
       if (generationRef.current !== generation) break;
 
       if (!result) {
-        result = await elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunk, undefined, campaignId);
+        result = await fetchTts(voiceId, chunk, campaignId);
       }
       if (generationRef.current !== generation) break;
+      if (!result) continue;
 
-      dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
+      if (!viewerMode) {
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
+      }
       objectUrlsRef.current.push(result.audioUrl);
       if (abortRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
-        prefetchPromise = elevenlabsService.textToSpeechWithTimestamps(apiKey, voiceId, chunks[s + 1].trim(), undefined, campaignId)
+        prefetchPromise = fetchTts(voiceId, chunks[s + 1].trim(), campaignId)
           .catch((err) => {
             console.warn('Prefetch TTS failed:', err.message);
             return null;
@@ -139,7 +149,7 @@ export function useNarrator() {
       stopHighlightLoop();
       audioRef.current = null;
     }
-  }, [startHighlightLoop, stopHighlightLoop, dispatch]);
+  }, [startHighlightLoop, stopHighlightLoop, dispatch, fetchTts, viewerMode]);
 
   const processQueue = useCallback(async () => {
     const myGeneration = generationRef.current;
@@ -160,17 +170,23 @@ export function useNarrator() {
     setPlaybackState(STATES.LOADING);
 
       const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
-      if (!hasApiKey('elevenlabs') || !elevenlabsVoiceId) {
-      queueRef.current.shift();
-      setPlaybackState(STATES.IDLE);
-      setCurrentMessageId(null);
-      return;
-    }
+      const defaultVoiceId = state.narratorVoiceId || elevenlabsVoiceId;
+
+      if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
+        queueRef.current.shift();
+        setPlaybackState(STATES.IDLE);
+        setCurrentMessageId(null);
+        return;
+      }
 
     try {
       abortRef.current = false;
 
       const campaignId = state.campaign?.backendId || null;
+
+      if (!state.narratorVoiceId && defaultVoiceId) {
+        dispatch({ type: 'SET_NARRATOR_VOICE', payload: defaultVoiceId });
+      }
 
       if (generationRef.current !== myGeneration) return;
 
@@ -219,7 +235,7 @@ export function useNarrator() {
 
       const localVoiceMap = new Map();
 
-      const playerCharNames = (state.party || [state.character])
+      const playerCharNames = viewerMode ? [] : (state.party || [state.character])
         .map(c => c?.name?.toLowerCase())
         .filter(Boolean);
 
@@ -230,24 +246,29 @@ export function useNarrator() {
         const text = seg.text?.trim();
         if (!text) continue;
 
-        if (seg.type === 'dialogue' && seg.character && playerCharNames.includes(seg.character.toLowerCase())) {
+        if (!viewerMode && seg.type === 'dialogue' && seg.character && playerCharNames.includes(seg.character.toLowerCase())) {
           continue;
         }
 
         setCurrentSegmentIndex(i);
         setCurrentCharacter(seg.type === 'dialogue' ? seg.character : null);
 
-        let voiceId = elevenlabsVoiceId;
-        if (seg.type === 'dialogue' && seg.character && characterVoices?.length > 0) {
-          const mapped = resolveVoiceForCharacter(
-            seg.character,
-            seg.gender,
-            state.characterVoiceMap,
-            localVoiceMap,
-            characterVoices,
-            dispatch
-          );
-          if (mapped) voiceId = mapped;
+        let voiceId = defaultVoiceId;
+        if (seg.type === 'dialogue' && seg.character) {
+          const existingMapping = state.characterVoiceMap?.[seg.character];
+          if (existingMapping?.voiceId) {
+            voiceId = existingMapping.voiceId;
+          } else if (!viewerMode && characterVoices?.length > 0) {
+            const mapped = resolveVoiceForCharacter(
+              seg.character,
+              seg.gender,
+              state.characterVoiceMap,
+              localVoiceMap,
+              characterVoices,
+              dispatch
+            );
+            if (mapped) voiceId = mapped;
+          }
         }
 
         const chunks = elevenlabsService.splitIntoParagraphs(text);
@@ -271,7 +292,7 @@ export function useNarrator() {
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, dispatch, cleanup, playChunkPipeline]);
+  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, playChunkPipeline]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({
@@ -346,7 +367,9 @@ export function useNarrator() {
     currentCharacter,
     highlightInfo,
     currentChunk,
-    isNarratorReady: !!(settings.narratorEnabled && hasApiKey('elevenlabs') && settings.elevenlabsVoiceId),
+    isNarratorReady: viewerMode
+      ? !!((state.narratorVoiceId || settings.elevenlabsVoiceId) && backendUrl && shareToken)
+      : !!(settings.narratorEnabled && hasApiKey('elevenlabs') && settings.elevenlabsVoiceId),
     speak,
     speakScene,
     speakSingle,

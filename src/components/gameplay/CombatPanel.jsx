@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MANOEUVRES } from '../../data/wfrpCombat';
+import { MANOEUVRES, MELEE_RANGE } from '../../data/wfrpCombat';
 import { useCombatAudio } from '../../hooks/useCombatAudio';
 import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -14,8 +14,11 @@ import {
   surrenderCombat,
   endMultiplayerCombat,
   surrenderMultiplayerCombat,
+  moveCombatant,
+  getDistance,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
+import CombatDetailPanel from './CombatDetailPanel';
 import Tooltip from '../ui/Tooltip';
 
 const MANOEUVRE_ICONS = {
@@ -283,6 +286,15 @@ function AnimatedCombatLogText({ entry }) {
   );
 }
 
+function renderDetailWithBoldValues(text, key) {
+  const parts = text.split(/([-+]?\d+)/g);
+  return parts.map((part, i) =>
+    /^[-+]?\d+$/.test(part)
+      ? <span key={`${key}_${i}`} className="font-bold text-on-surface">{part}</span>
+      : part
+  );
+}
+
 function buildCombatLogTooltipContent(entry, t) {
   if (!entry) return null;
 
@@ -301,7 +313,7 @@ function buildCombatLogTooltipContent(entry, t) {
           key={`${entry.id}_tooltip_${index}`}
           className="text-[11px] leading-snug break-words"
         >
-          {detail}
+          {renderDetailWithBoldValues(detail, `${entry.id}_tooltip_${index}`)}
         </div>
       ))}
     </div>
@@ -374,6 +386,7 @@ export default function CombatPanel({
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
+  const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
   const logEndRef = useRef(null);
   const lastProcessedTsRef = useRef(null);
   const commentaryCombatKeyRef = useRef('');
@@ -855,6 +868,44 @@ export default function CombatPanel({
     }
   };
 
+  const handleMoveToPosition = useCallback((targetYard) => {
+    if (!isMyTurn || combatOver) return;
+    const actorId = isMultiplayer ? myPlayerId : 'player';
+    const { combat: updated, moved, distance: dist } = moveCombatant(combat, actorId, targetYard);
+    if (!moved) return;
+
+    const actor = updated.combatants.find((c) => c.id === actorId);
+    const uid = Math.random().toString(36).slice(2, 6);
+    addLogEntry({
+      type: 'info',
+      actor: actor?.name || '?',
+      action: t('combat.movedAction', 'moved {{dist}}y', { dist }),
+      target: '',
+      actorColor: '#c59aff',
+      id: `move_${uid}`,
+    });
+
+    if (isMultiplayer) {
+      onHostResolve?.(updated);
+    } else {
+      dispatch({ type: 'UPDATE_COMBAT', payload: updated });
+    }
+  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t]);
+
+  const selectedTargetOutOfMeleeRange = useMemo(() => {
+    if (!selectedManoeuvre || !selectedTarget) return false;
+    const man = MANOEUVRES[selectedManoeuvre];
+    if (man.range !== 'melee') return false;
+    const target = combat.combatants.find((c) => c.id === selectedTarget);
+    if (!target || !myCombatant) return false;
+    return getDistance(myCombatant, target) > MELEE_RANGE;
+  }, [selectedManoeuvre, selectedTarget, combat.combatants, myCombatant]);
+
+  const hoveredCombatant = useMemo(() => {
+    if (hoveredCombatantId) return combat.combatants.find((c) => c.id === hoveredCombatantId);
+    return myCombatant;
+  }, [hoveredCombatantId, combat.combatants, myCombatant]);
+
   return (
     <div className="space-y-3">
       {/* Header */}
@@ -923,8 +974,27 @@ export default function CombatPanel({
         isMultiplayer={isMultiplayer}
         selectedTarget={selectedTarget}
         onSelectTarget={setSelectedTarget}
+        onHoverCombatant={setHoveredCombatantId}
+        onMoveToPosition={handleMoveToPosition}
         combatOver={combatOver}
+        isMyTurn={isMyTurn}
+        myCombatantId={myCombatant?.id}
       />
+
+      {/* Movement indicator */}
+      {isMyTurn && !combatOver && myCombatant && (
+        <div className="flex items-center gap-3 text-[11px]">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
+            <span className="material-symbols-outlined text-sm text-primary">directions_walk</span>
+            <span className="text-on-surface-variant">{t('combat.movement', 'Movement')}:</span>
+            <span className="text-primary font-bold tabular-nums">
+              {myCombatant.movementAllowance - (myCombatant.movementUsed || 0)}/{myCombatant.movementAllowance}
+            </span>
+            <span className="text-outline-variant">y</span>
+          </div>
+          <span className="text-[10px] text-outline-variant">{t('combat.clickToMove', 'Click battlefield to move')}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] gap-3 items-start">
         <div className="space-y-3 pt-1">
@@ -958,20 +1028,32 @@ export default function CombatPanel({
                     {t('combat.selectTarget', 'Select Target')}:
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    {enemies.filter((e) => !e.isDefeated).map((e) => (
-                      <button
-                        key={e.id}
-                        onClick={() => setSelectedTarget(e.id)}
-                        className={`px-3 py-1.5 rounded-sm border text-[11px] font-bold transition-all ${
-                          selectedTarget === e.id
-                            ? 'bg-error/15 text-error border-error/30'
-                            : 'bg-surface-container/40 text-on-surface-variant border-outline-variant/10 hover:border-error/20'
-                        }`}
-                      >
-                        {e.name} ({e.wounds}/{e.maxWounds})
-                      </button>
-                    ))}
+                    {enemies.filter((e) => !e.isDefeated).map((e) => {
+                      const dist = myCombatant ? getDistance(myCombatant, e) : 0;
+                      return (
+                        <button
+                          key={e.id}
+                          onClick={() => setSelectedTarget(e.id)}
+                          className={`px-3 py-1.5 rounded-sm border text-[11px] font-bold transition-all ${
+                            selectedTarget === e.id
+                              ? 'bg-error/15 text-error border-error/30'
+                              : 'bg-surface-container/40 text-on-surface-variant border-outline-variant/10 hover:border-error/20'
+                          }`}
+                        >
+                          {e.name} ({e.wounds}/{e.maxWounds})
+                          <span className="ml-1 text-[10px] text-outline-variant font-normal">{dist}y</span>
+                        </button>
+                      );
+                    })}
                   </div>
+                </div>
+              )}
+
+              {/* Out of range warning */}
+              {selectedTargetOutOfMeleeRange && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-sm text-[11px] text-amber-400">
+                  <span className="material-symbols-outlined text-sm">warning</span>
+                  {t('combat.outOfRange', 'Target too far for melee. Move closer or use Charge.')}
                 </div>
               )}
 
@@ -1047,10 +1129,10 @@ export default function CombatPanel({
               {/* Execute Button */}
               <button
                 onClick={handleExecute}
-                disabled={!selectedManoeuvre || ((MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && !selectedTarget)}
+                disabled={!selectedManoeuvre || ((MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && !selectedTarget) || selectedTargetOutOfMeleeRange}
                 className="w-full px-4 py-2.5 text-[12px] font-bold uppercase tracking-widest bg-error/15 text-error border border-error/20 rounded-sm hover:bg-error/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {t('combat.execute', 'Execute')}
+                {selectedTargetOutOfMeleeRange ? t('combat.outOfRangeShort', 'Out of range') : t('combat.execute', 'Execute')}
               </button>
             </div>
           )}
@@ -1092,10 +1174,17 @@ export default function CombatPanel({
           )}
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 space-y-3">
+          {/* Detail Panel */}
+          <CombatDetailPanel
+            combatant={hoveredCombatant}
+            myCombatant={myCombatant}
+            allCombatants={combat.combatants}
+          />
+
           {/* Combat Log */}
           {combatLog.length > 0 && (
-            <div className="space-y-1 max-h-[420px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+            <div className="space-y-1 max-h-[320px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
               {combatLog.slice(-10).map((entry) => (
                 <CombatLogEntry key={entry.id} entry={entry} t={t} />
               ))}
@@ -1105,7 +1194,7 @@ export default function CombatPanel({
 
           {/* Old combat.log fallback (first round before any actions) */}
           {combatLog.length === 0 && combat.log.length > 0 && (
-            <div className="space-y-1 max-h-[420px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+            <div className="space-y-1 max-h-[320px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
               {combat.log.slice(-5).map((entry, i) => (
                 <div key={`legacy_${i}`} className="text-[11px] text-outline-variant leading-snug px-2 py-1">
                   {entry}

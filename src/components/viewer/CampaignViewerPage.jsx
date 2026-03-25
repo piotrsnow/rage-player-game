@@ -82,5 +82,5 @@ export default function CampaignViewerPage() {
     );
   }
 
-  return <GameplayPage readOnly />;
+  return <GameplayPage readOnly shareToken={shareToken} />;
 }

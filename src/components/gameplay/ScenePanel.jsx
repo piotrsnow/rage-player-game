@@ -494,7 +494,7 @@ export default function ScenePanel({
 
   if (!scene) {
     return (
-      <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
+      <div className="relative w-full h-[clamp(260px,62vh,680px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center">
         <div className="absolute inset-0 bg-primary/[0.02]" style={{ animation: 'glowPulse 4s ease-in-out infinite' }} />
         <div className="text-center relative z-10">
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-3 block animate-float-slow">auto_stories</span>
@@ -505,7 +505,7 @@ export default function ScenePanel({
   }
 
   return (
-    <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
+    <div className="relative w-full h-[clamp(260px,62vh,680px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
       {/* Scene background: 3D, AI image, canvas 2D, or placeholder */}
       {(settings.sceneVisualization || 'image') === '3d' ? (
         <Suspense fallback={

@@ -35,6 +35,8 @@ export const config = {
     meshy: process.env.MESHY_API_KEY || '',
   },
 
+  elevenlabsDefaultVoiceId: "HnELITaEvp7a0HOmfoBo",
+
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,
 
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',

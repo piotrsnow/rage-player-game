@@ -15,7 +15,7 @@ export function MusicProvider({ children }) {
 
   const [narratorState, setNarratorState] = useState(null);
 
-  const isGameplay = location.pathname === '/play';
+  const isGameplay = location.pathname === '/play' || location.pathname.startsWith('/view/');
   const prevIsGameplayRef = useRef(isGameplay);
 
   const campaignMusicFolder = GENRE_MUSIC_FOLDER[gameState.campaign?.genre] || undefined;
