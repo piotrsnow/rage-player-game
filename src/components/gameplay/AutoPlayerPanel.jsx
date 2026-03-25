@@ -41,6 +41,9 @@ export default function AutoPlayerPanel({
               }`}
             />
           </button>
+          {isAutoPlaying && isThinking && (
+            <span className="material-symbols-outlined text-sm text-primary animate-spin">progress_activity</span>
+          )}
           <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
             {t('autoPlayer.title')}
           </span>

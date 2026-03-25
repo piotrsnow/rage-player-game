@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import { apiClient } from '../services/apiClient';
 
 const CROSSFADE_MS = 2000;
 const DUCK_VOLUME_RATIO = 0.2;
@@ -46,21 +45,23 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
     }
   }, [narratorPlaybackState]);
 
+  const baseUrl = settings.useBackend && settings.backendUrl
+    ? settings.backendUrl.replace(/\/+$/, '')
+    : '';
+
   const resolveTrackUrl = useCallback((track) => {
-    const base = apiClient.getBaseUrl();
-    if (!base) return track.url;
-    return `${base}${track.url}`;
-  }, []);
+    if (!baseUrl) return track.url;
+    return `${baseUrl}${track.url}`;
+  }, [baseUrl]);
 
   const fetchTracks = useCallback(async () => {
-    const base = apiClient.getBaseUrl();
-    if (!base) {
+    if (!baseUrl) {
       log('No backend URL configured');
       return;
     }
     try {
       const qs = folder ? `?folder=${encodeURIComponent(folder)}` : '';
-      const resp = await fetch(`${base}/music/tracks${qs}`);
+      const resp = await fetch(`${baseUrl}/music/tracks${qs}`);
       const data = await resp.json();
       if (data.tracks?.length) {
         setTracks(data.tracks);
@@ -76,7 +77,7 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
       log('Failed to fetch tracks:', err.message);
       setLoaded(true);
     }
-  }, [folder]);
+  }, [baseUrl, folder]);
 
   useEffect(() => {
     if (settings.localMusicEnabled && settings.useBackend && settings.backendUrl) {

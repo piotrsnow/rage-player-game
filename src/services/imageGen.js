@@ -68,7 +68,10 @@ async function generateWithGemini(prompt, apiKey) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+      },
     }),
   });
 
@@ -90,7 +93,33 @@ async function generateWithGemini(prompt, apiKey) {
 }
 
 async function generatePortraitWithGemini(prompt, apiKey) {
-  return generateWithGemini(prompt, apiKey);
+  const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const msg = err.error?.message || `Gemini API error: ${response.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts) throw new Error('Gemini returned no content');
+
+  const imagePart = parts.find((p) => p.inlineData);
+  if (!imagePart) throw new Error('Gemini returned no image');
+
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType || 'image/png'};base64,${b64}`;
 }
 
 async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
@@ -107,7 +136,10 @@ async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
           { text: prompt },
         ],
       }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+      },
     }),
   });
 

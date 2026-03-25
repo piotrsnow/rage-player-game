@@ -1,9 +1,11 @@
 import { readdir, readFile, stat } from 'fs/promises';
 import { resolve, join, extname } from 'path';
+import { fileURLToPath } from 'url';
 import { config } from '../config.js';
 import { createMediaStore } from '../services/mediaStore.js';
 
-const MUSIC_ROOT = resolve('public/music');
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const MUSIC_ROOT = resolve(__dirname, '..', '..', 'public', 'music');
 const ALLOWED_FOLDERS = new Set(['lobby']);
 const GCS_MUSIC_PREFIX = 'music/';
 
@@ -40,7 +42,8 @@ async function localTracks(folder) {
         };
       })
     );
-  } catch {
+  } catch (err) {
+    console.warn('[music] Failed to read local music dir:', musicDir, err?.code || err?.message || err);
     return [];
   }
 }
@@ -68,7 +71,8 @@ async function gcsTracks(store, folder) {
         };
       })
     );
-  } catch {
+  } catch (err) {
+    console.warn('[music] Failed to read GCS music tracks:', err?.code || err?.message || err);
     return [];
   }
 }
@@ -81,7 +85,10 @@ export async function musicRoutes(fastify) {
     const folder = request.query.folder || '';
 
     if (useGcs) {
-      return { tracks: await gcsTracks(store, folder) };
+      const cloudTracks = await gcsTracks(store, folder);
+      if (cloudTracks.length > 0) {
+        return { tracks: cloudTracks };
+      }
     }
     return { tracks: await localTracks(folder) };
   });
@@ -97,10 +104,11 @@ export async function musicRoutes(fastify) {
     if (useGcs) {
       const storagePath = gcsMusicPath(folder, filename);
       const result = await store.get(storagePath);
-      if (!result) return reply.code(404).send({ error: 'Track not found' });
-      reply.header('Content-Type', 'audio/mpeg');
-      reply.header('Cache-Control', 'public, max-age=604800');
-      return reply.send(result.buffer);
+      if (result) {
+        reply.header('Content-Type', 'audio/mpeg');
+        reply.header('Cache-Control', 'public, max-age=604800');
+        return reply.send(result.buffer);
+      }
     }
 
     const musicDir = resolveMusicDir(folder);

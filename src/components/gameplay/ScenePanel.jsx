@@ -23,7 +23,7 @@ function CompactBonusTags({ dr, t }) {
     <div className="flex items-center gap-1 flex-wrap mt-0.5">
       {dr.characteristic && dr.characteristicValue != null && (
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/30">
-          {t(`character.${dr.characteristic}Long`)} {dr.characteristicValue}
+          {t(`stats.${dr.characteristic}Long`)} {dr.characteristicValue}
         </span>
       )}
       {dr.skillAdvances > 0 && (

@@ -13,7 +13,7 @@ const ATTITUDE_STYLES = {
   friendly: 'bg-success/20 text-success border-success/30',
 };
 
-export default function ActionPanel({ actions = [], onAction, disabled, npcs = [] }) {
+export default function ActionPanel({ actions = [], onAction, disabled, npcs = [], autoPlayerTypingText = '' }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const { t } = useTranslation();
@@ -140,7 +140,10 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
     }
   };
 
-  const displayValue = customAction + (interim ? (customAction ? ' ' : '') + interim : '');
+  const isAutoTyping = !!autoPlayerTypingText;
+  const displayValue = isAutoTyping
+    ? autoPlayerTypingText
+    : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
   const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
   const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
 
@@ -357,7 +360,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
             </div>
             <textarea
               value={displayValue}
-              onChange={(e) => handleTypingChange(e.target.value)}
+              onChange={(e) => !isAutoTyping && handleTypingChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -372,23 +375,31 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                     : t('gameplay.customActionPlaceholder')
               }
               rows={2}
-              disabled={disabled}
-              readOnly={listening}
-              style={hasDialogueText ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
+              disabled={disabled && !isAutoTyping}
+              readOnly={listening || isAutoTyping}
+              style={hasDialogueText && !isAutoTyping ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
               className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
                 hasDialogueText ? 'selection:bg-amber-400/30' : ''
               } ${
-                listening
-                  ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
-                  : hasDialogueText
-                    ? 'border-amber-400/40 shadow-[0_2px_8px_rgba(251,191,36,0.08)]'
-                    : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
+                isAutoTyping
+                  ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
+                  : listening
+                    ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
+                    : hasDialogueText
+                      ? 'border-amber-400/40 shadow-[0_2px_8px_rgba(251,191,36,0.08)]'
+                      : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
               }`}
             />
           </div>
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-2">
-              {supported && (
+              {isAutoTyping && (
+                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-primary animate-pulse">
+                  <span className="material-symbols-outlined text-sm">smart_toy</span>
+                  {t('autoPlayer.typing')}
+                </span>
+              )}
+              {supported && !isAutoTyping && (
                 <button
                   type="button"
                   onClick={toggle}

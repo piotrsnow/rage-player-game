@@ -195,7 +195,7 @@ function BonusTags({ d, t }) {
     <div className="flex items-center gap-1.5 flex-wrap">
       {d.characteristic && d.characteristicValue != null && (
         <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/30">
-          {t(`character.${d.characteristic}Long`)} {d.characteristicValue}
+          {t(`stats.${d.characteristic}Long`)} {d.characteristicValue}
         </span>
       )}
       {d.skillAdvances > 0 && (

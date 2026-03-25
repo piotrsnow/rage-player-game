@@ -8,7 +8,7 @@ const PRICING = {
   image: {
     'dall-e-3': 0.080,
     'sd3.5-large-turbo': 0.065,
-    'gemini-2.5-flash-image': 0.039,
+    'gemini-3.1-flash-image-preview': 0.039,
   },
   tts: { perChar: 0.30 / 1000 },
   sfx: { perGeneration: 0.10 },
@@ -31,7 +31,7 @@ export function calculateCost(type, metadata = {}) {
     }
     case 'image': {
       const { provider } = metadata;
-      const model = provider === 'stability' ? 'sd3.5-large-turbo' : provider === 'gemini' ? 'gemini-2.5-flash-image' : 'dall-e-3';
+      const model = provider === 'stability' ? 'sd3.5-large-turbo' : provider === 'gemini' ? 'gemini-3.1-flash-image-preview' : 'dall-e-3';
       const cost = PRICING.image[model] || 0;
       return { type, model, cost, timestamp };
     }

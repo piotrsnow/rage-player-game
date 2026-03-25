@@ -59,8 +59,10 @@ function formatRecentScenes(scenes, count = 3) {
 }
 
 function formatQuests(quests) {
-  if (!quests || quests.length === 0) return '';
-  const active = quests.filter((q) => q.status === 'active' || !q.status);
+  if (!quests) return '';
+  const list = Array.isArray(quests) ? quests : (quests.active || []);
+  if (list.length === 0) return '';
+  const active = list.filter((q) => q.status === 'active' || !q.status);
   if (active.length === 0) return '';
   return 'Active quests:\n' + active.map((q) => {
     const objectives = (q.objectives || [])

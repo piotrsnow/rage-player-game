@@ -836,7 +836,7 @@ export default function GameplayPage() {
 
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
-          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !isMultiplayer ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
             </label>
@@ -844,6 +844,7 @@ export default function GameplayPage() {
               actions={currentScene.actions}
               onAction={handleAction}
               disabled={isGeneratingScene}
+              autoPlayerTypingText={autoPlayer.typingText}
               npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
             />
           </div>

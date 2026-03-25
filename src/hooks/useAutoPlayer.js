@@ -21,8 +21,10 @@ export function useAutoPlayer(handleAction) {
   const [isThinking, setIsThinking] = useState(false);
   const [turnsPlayed, setTurnsPlayed] = useState(0);
   const [lastError, setLastError] = useState(null);
+  const [typingText, setTypingText] = useState('');
 
   const timerRef = useRef(null);
+  const typingRef = useRef(null);
   const abortRef = useRef(false);
   const scenesLenRef = useRef(state.scenes?.length || 0);
   const enabledRef = useRef(autoPlayerSettings.enabled);
@@ -45,8 +47,13 @@ export function useAutoPlayer(handleAction) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      if (typingRef.current) {
+        clearInterval(typingRef.current);
+        typingRef.current = null;
+      }
       abortRef.current = true;
       setIsThinking(false);
+      setTypingText('');
       setTurnsPlayed(0);
       setLastError(null);
     } else {
@@ -55,6 +62,31 @@ export function useAutoPlayer(handleAction) {
       setLastError(null);
     }
   }, [autoPlayerSettings, updateAutoPlayerSettings]);
+
+  const animateTyping = useCallback((text) => {
+    return new Promise((resolve) => {
+      if (typingRef.current) clearInterval(typingRef.current);
+      let i = 0;
+      setTypingText('');
+      const charDelay = Math.max(15, Math.min(40, 1200 / (text.length || 1)));
+      typingRef.current = setInterval(() => {
+        if (abortRef.current || !enabledRef.current) {
+          clearInterval(typingRef.current);
+          typingRef.current = null;
+          setTypingText('');
+          resolve(false);
+          return;
+        }
+        i++;
+        setTypingText(text.slice(0, i));
+        if (i >= text.length) {
+          clearInterval(typingRef.current);
+          typingRef.current = null;
+          resolve(true);
+        }
+      }, charDelay);
+    });
+  }, []);
 
   const playTurn = useCallback(async () => {
     if (isRunningRef.current) return;
@@ -69,6 +101,16 @@ export function useAutoPlayer(handleAction) {
       const apiKey = getApiKey();
       const provider = settings.aiProvider || 'openai';
       const result = await decideAction(state, settings, autoPlayerSettings, apiKey, provider);
+
+      if (abortRef.current || !enabledRef.current) return;
+
+      setIsThinking(false);
+
+      const typed = await animateTyping(result.action);
+      if (!typed) return;
+
+      await new Promise((r) => setTimeout(r, 400));
+      setTypingText('');
 
       if (abortRef.current || !enabledRef.current) return;
 
@@ -95,9 +137,10 @@ export function useAutoPlayer(handleAction) {
       setLastError(err.message);
     } finally {
       setIsThinking(false);
+      setTypingText('');
       isRunningRef.current = false;
     }
-  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, dispatch]);
+  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, dispatch, animateTyping]);
 
   useEffect(() => {
     const currentLen = state.scenes?.length || 0;
@@ -161,12 +204,17 @@ export function useAutoPlayer(handleAction) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
+      if (typingRef.current) {
+        clearInterval(typingRef.current);
+        typingRef.current = null;
+      }
     };
   }, []);
 
   return {
     isAutoPlaying: autoPlayerSettings.enabled,
     isThinking,
+    typingText,
     turnsPlayed,
     lastError,
     toggleAutoPlayer,

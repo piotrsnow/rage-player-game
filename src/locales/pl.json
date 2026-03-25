@@ -995,7 +995,8 @@
     "customInstructionsPlaceholder": "np. zawsze targuj się, unikaj walki, flirtuj z BN-ami...",
     "aiControlling": "AI gra",
     "model": "Model AI",
-    "modelRecommended": "Polecany"
+    "modelRecommended": "Polecany",
+    "typing": "AI pisze..."
   },
   "achievements": {
     "title": "Osiągnięcia",

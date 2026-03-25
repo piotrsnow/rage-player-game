@@ -995,7 +995,8 @@
     "customInstructionsPlaceholder": "e.g. always try to haggle, avoid combat, flirt with NPCs...",
     "aiControlling": "AI is playing",
     "model": "AI Model",
-    "modelRecommended": "Recommended"
+    "modelRecommended": "Recommended",
+    "typing": "AI typing..."
   },
   "achievements": {
     "title": "Achievements",

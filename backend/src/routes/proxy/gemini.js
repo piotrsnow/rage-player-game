@@ -6,7 +6,7 @@ import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
 const store = createMediaStore(config);
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent';
 
 function extractImageFromResponse(data) {
   const parts = data.candidates?.[0]?.content?.parts;
@@ -44,7 +44,10 @@ export async function geminiProxyRoutes(fastify) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+        },
       }),
     });
 
@@ -130,7 +133,10 @@ export async function geminiProxyRoutes(fastify) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: requestParts }],
-        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+        },
       }),
     });
 
