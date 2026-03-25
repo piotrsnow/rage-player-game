@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-const CHAR_INTERVAL_MS = 45;
+const CHAR_INTERVAL_MS = 35;
 const TYPING_SFX_COUNT = 3;
 
 function pickRandomTypingSfx() {
@@ -21,7 +21,7 @@ export default function TypewriterActionOverlay({ text, onComplete }) {
   useEffect(() => {
     const audio = new Audio(pickRandomTypingSfx());
     audio.loop = true;
-    audio.volume = 0.38;
+    audio.volume = 0.45;
     audio.play().catch(() => {});
     audioRef.current = audio;
     return () => {
