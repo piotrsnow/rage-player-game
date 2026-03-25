@@ -1142,11 +1142,18 @@ export async function multiplayerRoutes(fastify) {
             if (!combatRoom.gameState) throw new Error('Game not in progress');
 
             combatRoom.gameState.combat = msg.combat;
+            if (Array.isArray(msg.chatMessages) && msg.chatMessages.length > 0) {
+              combatRoom.gameState.chatHistory = [
+                ...(combatRoom.gameState.chatHistory || []),
+                ...msg.chatMessages,
+              ];
+            }
             setGameState(roomCode, combatRoom.gameState);
 
             broadcast(combatRoom, {
               type: 'COMBAT_SYNC',
               combat: msg.combat,
+              chatMessages: Array.isArray(msg.chatMessages) ? msg.chatMessages : [],
             });
 
             saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after combat sync failed'));
@@ -1164,6 +1171,7 @@ export async function multiplayerRoutes(fastify) {
               fromOdId: odId,
               manoeuvre: msg.manoeuvre,
               targetId: msg.targetId,
+              customDescription: msg.customDescription,
             });
             break;
           }

@@ -320,9 +320,16 @@ function mpReducer(state, action) {
 
     case 'COMBAT_SYNC': {
       if (!state.gameState) return state;
+      const chatMessages = action.payload.chatMessages || [];
       return {
         ...state,
-        gameState: { ...state.gameState, combat: action.payload.combat },
+        gameState: {
+          ...state.gameState,
+          combat: action.payload.combat,
+          chatHistory: chatMessages.length > 0
+            ? [...(state.gameState.chatHistory || []), ...chatMessages]
+            : state.gameState.chatHistory,
+        },
       };
     }
 
@@ -630,12 +637,12 @@ export function MultiplayerProvider({ children }) {
     wsService.send('SYNC_CHARACTER', { character });
   }, []);
 
-  const syncCombatState = useCallback((combat) => {
-    wsService.send('COMBAT_SYNC', { combat });
+  const syncCombatState = useCallback((combat, options = {}) => {
+    wsService.send('COMBAT_SYNC', { combat, ...options });
   }, []);
 
-  const sendCombatManoeuvre = useCallback((manoeuvre, targetId) => {
-    wsService.send('COMBAT_MANOEUVRE', { manoeuvre, targetId });
+  const sendCombatManoeuvre = useCallback((manoeuvre, targetId, customDescription = '') => {
+    wsService.send('COMBAT_MANOEUVRE', { manoeuvre, targetId, customDescription });
   }, []);
 
   const endMultiplayerCombat = useCallback((results) => {

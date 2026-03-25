@@ -20,6 +20,38 @@ const LOCAL_ONLY_KEYS = [
 ];
 const SHARED_VOICE_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
+function clampCombatCommentaryFrequency(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 3;
+  return Math.max(0, Math.min(5, Math.round(numeric)));
+}
+
+function normalizeDmSettings(dmSettings) {
+  return {
+    ...defaultSettings.dmSettings,
+    ...(dmSettings || {}),
+    combatCommentaryFrequency: clampCombatCommentaryFrequency(
+      dmSettings?.combatCommentaryFrequency ?? defaultSettings.dmSettings.combatCommentaryFrequency
+    ),
+  };
+}
+
+function mergeSettingsWithDefaults(source) {
+  if (!source) return defaultSettings;
+
+  const merged = { ...defaultSettings, ...source };
+  merged.dmSettings = normalizeDmSettings(source.dmSettings);
+  merged.autoPlayer = { ...defaultSettings.autoPlayer, ...(source.autoPlayer || {}) };
+
+  if (source.imageGenEnabled !== undefined && source.sceneVisualization === undefined) {
+    merged.sceneVisualization = source.imageGenEnabled ? 'image' : 'none';
+  }
+
+  delete merged.elevenlabsApiKey;
+  delete merged.imageGenEnabled;
+  return merged;
+}
+
 function sanitizeSharedVoiceSettings(value) {
   const source = value && typeof value === 'object' ? value : {};
   const characterVoices = Array.isArray(source.characterVoices)
@@ -97,6 +129,7 @@ const defaultSettings = {
     responseLength: 50,
     difficulty: 50,
     testsFrequency: 50,
+    combatCommentaryFrequency: 3,
     freedom: 50,
     narratorPoeticism: 50,
     narratorGrittiness: 30,
@@ -111,14 +144,7 @@ export function SettingsProvider({ children }) {
   const { i18n } = useTranslation();
   const [settings, setSettings] = useState(() => {
     const saved = storage.getSettings();
-    if (!saved) return defaultSettings;
-    const merged = { ...defaultSettings, ...saved };
-    if (saved.imageGenEnabled !== undefined && saved.sceneVisualization === undefined) {
-      merged.sceneVisualization = saved.imageGenEnabled ? 'image' : 'none';
-    }
-    delete merged.elevenlabsApiKey;
-    delete merged.imageGenEnabled;
-    return merged;
+    return mergeSettingsWithDefaults(saved);
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
@@ -220,14 +246,7 @@ export function SettingsProvider({ children }) {
 
     syncingFromBackendRef.current = true;
     setSettings((prev) => {
-      const merged = { ...defaultSettings, ...accountSettings };
-      if (accountSettings.dmSettings) {
-        merged.dmSettings = { ...defaultSettings.dmSettings, ...accountSettings.dmSettings };
-      }
-      if (accountSettings.autoPlayer) {
-        merged.autoPlayer = { ...defaultSettings.autoPlayer, ...accountSettings.autoPlayer };
-      }
-      delete merged.elevenlabsApiKey;
+      const merged = mergeSettingsWithDefaults(accountSettings);
       for (const key of LOCAL_ONLY_KEYS) {
         if (prev[key] !== undefined && prev[key] !== '') {
           merged[key] = prev[key];
@@ -274,7 +293,7 @@ export function SettingsProvider({ children }) {
   const updateDMSettings = useCallback((updates) => {
     setSettings((prev) => ({
       ...prev,
-      dmSettings: { ...prev.dmSettings, ...updates },
+      dmSettings: normalizeDmSettings({ ...prev.dmSettings, ...updates }),
     }));
   }, []);
 
@@ -290,9 +309,7 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const importSettings = useCallback((imported) => {
-    const merged = { ...defaultSettings, ...imported };
-    delete merged.elevenlabsApiKey;
-    setSettings(merged);
+    setSettings(mergeSettingsWithDefaults(imported));
   }, []);
 
   const getApiKey = useCallback(() => {

@@ -3,6 +3,36 @@ import { getHitLocation, getWeaponData, getArmourAP, MANOEUVRES } from '../data/
 import { rollCriticalWound, getCriticalEffectSummary } from '../data/wfrpCriticals';
 import { performCastingTest } from './magicEngine';
 
+const CRITICAL_HIT_DAMAGE_BONUS = 2;
+const CRITICAL_HIT_MIN_DAMAGE = 1;
+const MAX_COMBAT_CREATIVITY_BONUS = 25;
+const COMBAT_CREATIVITY_KEYWORDS = [
+  'wall', 'table', 'chair', 'barrel', 'torch', 'rope', 'chain', 'sand', 'mud', 'stairs',
+  'flank', 'spin', 'twist', 'leap', 'feint', 'shoulder', 'kick', 'pommel', 'shield',
+  'scabbard', 'window', 'pillar', 'ground', 'helmet',
+];
+
+function sanitizeCombatDescription(description) {
+  return typeof description === 'string' ? description.trim() : '';
+}
+
+function getCombatCreativityBonus(description) {
+  const normalized = sanitizeCombatDescription(description).toLowerCase();
+  if (!normalized) return 0;
+
+  const words = normalized.match(/[\p{L}\p{N}'-]+/gu) || [];
+  const uniqueWords = new Set(words);
+  const keywordHits = COMBAT_CREATIVITY_KEYWORDS.filter((keyword) => normalized.includes(keyword)).length;
+
+  let bonus = 5;
+  if (words.length >= 6) bonus += 5;
+  if (words.length >= 10) bonus += 5;
+  if (keywordHits >= 2) bonus += 5;
+  if (words.length >= 14 && uniqueWords.size >= 10) bonus += 5;
+
+  return Math.min(MAX_COMBAT_CREATIVITY_BONUS, bonus);
+}
+
 function rollInitiative(combatant) {
   const agi = combatant.characteristics?.ag || combatant.characteristics?.i || 30;
   const d10 = Math.floor(Math.random() * 10) + 1;
@@ -81,7 +111,7 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
   };
 }
 
-function getSkillValue(combatant, skillKey) {
+function getSkillBreakdown(combatant, skillKey) {
   const charKey = skillKey === 'Dodge' ? 'ag'
     : skillKey.startsWith('Melee') ? 'ws'
     : skillKey.startsWith('Ranged') ? 'bs'
@@ -90,7 +120,62 @@ function getSkillValue(combatant, skillKey) {
     : 'ws';
   const baseChar = combatant.characteristics?.[charKey] || 30;
   const advances = combatant.skills?.[skillKey] || 0;
-  return baseChar + advances;
+  return {
+    skill: skillKey,
+    characteristic: charKey,
+    characteristicValue: baseChar,
+    skillAdvances: advances,
+    baseTarget: baseChar + advances,
+  };
+}
+
+function getSkillValue(combatant, skillKey) {
+  return getSkillBreakdown(combatant, skillKey).baseTarget;
+}
+
+function getWeaponDamageBreakdown(weaponData, strengthBonus) {
+  const dmgStr = weaponData.damage || '+SB';
+
+  if (dmgStr.includes('+SB+')) {
+    const staticModifier = parseInt(dmgStr.split('+SB+')[1], 10) || 0;
+    return {
+      formula: dmgStr,
+      usesStrengthBonus: true,
+      strengthBonus,
+      staticModifier,
+      total: strengthBonus + staticModifier,
+    };
+  }
+
+  if (dmgStr.includes('+SB-')) {
+    const staticModifier = -(parseInt(dmgStr.split('+SB-')[1], 10) || 0);
+    return {
+      formula: dmgStr,
+      usesStrengthBonus: true,
+      strengthBonus,
+      staticModifier,
+      total: strengthBonus + staticModifier,
+    };
+  }
+
+  if (dmgStr.includes('SB')) {
+    return {
+      formula: dmgStr,
+      usesStrengthBonus: true,
+      strengthBonus,
+      staticModifier: 0,
+      total: strengthBonus,
+    };
+  }
+
+  const staticModifier = dmgStr.startsWith('+') ? parseInt(dmgStr.slice(1), 10) || 0 : 0;
+  return {
+    formula: dmgStr,
+    usesStrengthBonus: false,
+    strengthBonus,
+    staticModifier,
+    total: staticModifier,
+  };
 }
 
 function getCombatantAP(combatant, location) {
@@ -103,11 +188,12 @@ function getCombatantAP(combatant, location) {
   return getArmourAP(armourNames, location);
 }
 
-export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
+export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, options = {}) {
   const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
   const actor = state.combatants.find((c) => c.id === actorId);
   const target = targetId ? state.combatants.find((c) => c.id === targetId) : null;
   const manoeuvre = MANOEUVRES[manoeuvreKey];
+  const customDescription = sanitizeCombatDescription(options.customDescription);
 
   if (!actor || !manoeuvre) return { combat: state, result: null };
 
@@ -127,9 +213,11 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
     if (manoeuvreKey === 'defend') {
       actor.conditions = [...actor.conditions.filter((c) => c !== 'defending'), 'defending'];
       log.push(`${actor.name} takes a defensive stance.`);
+      result.effectDescription = '+20 defense until next round';
     } else if (manoeuvreKey === 'dodge') {
       actor.conditions = [...actor.conditions.filter((c) => c !== 'dodging'), 'dodging'];
       log.push(`${actor.name} prepares to dodge.`);
+      result.effectDescription = 'Uses Dodge against the next incoming attack';
     }
     result.outcome = 'defensive';
     state.log = [...state.log, ...log];
@@ -138,12 +226,17 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
 
   if (manoeuvre.modifiers.flee) {
     const skill = manoeuvre.skill || 'Athletics';
-    const target_num = getSkillValue(actor, skill);
+    const skillBreakdown = getSkillBreakdown(actor, skill);
+    const target_num = skillBreakdown.baseTarget;
     const roll = rollD100();
     const sl = calculateSL(roll, target_num);
     const success = roll <= 4 || (roll <= target_num && roll < 96);
 
     result.rolls.push({ skill, roll, target: target_num, sl, success });
+    result.checkBreakdown = {
+      ...skillBreakdown,
+      target: target_num,
+    };
 
     if (success) {
       actor.isDefeated = true;
@@ -165,6 +258,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
     const spell = knownSpells[0] || { name: 'Magic Dart', cn: 0, damage: '+WPB', lore: 'petty' };
     result.spellName = spell.name;
     const castResult = performCastingTest(actor, spell, 0);
+    const castBreakdown = getSkillBreakdown(actor, 'Language (Magick)');
 
     result.rolls.push({
       skill: 'Language (Magick)',
@@ -174,6 +268,10 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       success: castResult.success,
       side: 'caster',
     });
+    result.castBreakdown = {
+      ...castBreakdown,
+      target: castResult.target,
+    };
 
     if (castResult.success) {
       const wpb = getBonus(actor.characteristics?.wp || 30);
@@ -194,6 +292,13 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       );
       result.outcome = 'hit';
       result.damage = totalDamage;
+      result.damageBreakdown = {
+        willpowerBonus: wpb,
+        totalSL: castResult.totalSL,
+        rawDamage,
+        toughnessBonus: tb,
+        totalDamage,
+      };
       result.targetDefeated = target.isDefeated;
     } else {
       if (actor.advantage > 0) actor.advantage = Math.max(0, actor.advantage - 1);
@@ -215,12 +320,16 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
   if (manoeuvre.type === 'offensive' && target) {
     result.targetName = target.name;
     const attackSkill = manoeuvre.skill || 'Melee (Basic)';
-    const attackTarget = getSkillValue(actor, attackSkill) + (actor.advantage * 10);
+    const attackSkillBreakdown = getSkillBreakdown(actor, attackSkill);
+    const advantageBonus = actor.advantage * 10;
+    const creativityBonus = getCombatCreativityBonus(customDescription);
+    const attackTarget = attackSkillBreakdown.baseTarget + advantageBonus + creativityBonus;
 
     const defenseSkill = target.conditions.includes('dodging') ? 'Dodge'
       : (manoeuvre.opposed || 'Melee (Basic)');
-    let defenseTarget = getSkillValue(target, defenseSkill);
-    if (target.conditions.includes('defending')) defenseTarget += 20;
+    const defenseSkillBreakdown = getSkillBreakdown(target, defenseSkill);
+    const defendBonus = target.conditions.includes('defending') ? 20 : 0;
+    let defenseTarget = defenseSkillBreakdown.baseTarget + defendBonus;
 
     const attackRoll = rollD100();
     const defenseRoll = rollD100();
@@ -232,11 +341,33 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
     const attackSuccess = attackCrit || (!attackFumble && attackRoll <= attackTarget);
 
     result.rolls.push(
-      { skill: attackSkill, roll: attackRoll, target: attackTarget, sl: attackSL, success: attackSuccess, side: 'attacker' },
+      {
+        skill: attackSkill,
+        roll: attackRoll,
+        target: attackTarget,
+        sl: attackSL,
+        success: attackSuccess,
+        side: 'attacker',
+        criticalHit: attackCrit,
+      },
       { skill: defenseSkill, roll: defenseRoll, target: defenseTarget, sl: defenseSL, success: defenseRoll <= defenseTarget, side: 'defender' },
     );
+    result.customDescription = customDescription || null;
+    result.creativityBonus = creativityBonus;
+    result.attackBreakdown = {
+      ...attackSkillBreakdown,
+      advantageBonus,
+      creativityBonus,
+      target: attackTarget,
+    };
+    result.defenseBreakdown = {
+      ...defenseSkillBreakdown,
+      defendBonus,
+      target: defenseTarget,
+    };
 
     const netSL = attackSL - defenseSL;
+    result.netSL = netSL;
 
     if (attackSuccess && netSL >= 0) {
       actor.advantage += 1;
@@ -251,20 +382,17 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       const weaponData = getWeaponData(mainWeapon);
       result.weaponName = mainWeapon;
 
-      let weaponDmg = sb;
-      const dmgStr = weaponData.damage || '+SB';
-      if (dmgStr.includes('+SB+')) {
-        weaponDmg = sb + parseInt(dmgStr.split('+SB+')[1], 10);
-      } else if (dmgStr.includes('+SB-')) {
-        weaponDmg = sb - parseInt(dmgStr.split('+SB-')[1], 10);
-      } else if (dmgStr.startsWith('+') && !dmgStr.includes('SB')) {
-        weaponDmg = parseInt(dmgStr.slice(1), 10);
-      }
+      const weaponDamage = getWeaponDamageBreakdown(weaponData, sb);
+      const weaponDmg = weaponDamage.total;
 
       const rawDamage = weaponDmg + netSL;
+      const criticalBonusDamage = attackCrit ? CRITICAL_HIT_DAMAGE_BONUS : 0;
       const tb = getBonus(target.characteristics?.t || 30);
       const ap = getCombatantAP(target, hitLoc);
-      const totalDamage = Math.max(0, rawDamage - tb - ap);
+      const mitigatedDamage = rawDamage + criticalBonusDamage - tb - ap;
+      const totalDamage = attackCrit
+        ? Math.max(CRITICAL_HIT_MIN_DAMAGE, mitigatedDamage)
+        : Math.max(0, mitigatedDamage);
 
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) {
@@ -296,7 +424,10 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       log.push(
         `${actor.name} attacks ${target.name}: ${attackRoll} vs ${attackTarget} (SL ${attackSL}), ` +
         `${target.name} defends: ${defenseRoll} vs ${defenseTarget} (SL ${defenseSL}). ` +
-        `Hit ${hitLoc}! Damage: ${rawDamage} - ${tb} TB - ${ap} AP = ${totalDamage} wounds.` +
+        `${attackCrit ? 'CRITICAL HIT! ' : ''}` +
+        `Hit ${hitLoc}! Damage: ${rawDamage}` +
+        `${criticalBonusDamage ? ` + ${criticalBonusDamage} crit` : ''}` +
+        ` - ${tb} TB - ${ap} AP = ${totalDamage} wounds.` +
         `${target.isDefeated ? ` ${target.name} is defeated!` : ''}` +
         `${criticalWound ? ` CRITICAL: ${getCriticalEffectSummary(criticalWound)}` : ''}`
       );
@@ -304,6 +435,18 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId) {
       result.outcome = 'hit';
       result.damage = totalDamage;
       result.hitLocation = hitLoc;
+      result.criticalHit = attackCrit;
+      result.criticalBonusDamage = criticalBonusDamage;
+      result.minimumDamageApplied = attackCrit && mitigatedDamage < CRITICAL_HIT_MIN_DAMAGE;
+      result.damageBreakdown = {
+        ...weaponDamage,
+        netSL,
+        rawDamage,
+        criticalBonusDamage,
+        toughnessBonus: tb,
+        armourPoints: ap,
+        totalDamage,
+      };
       result.isDoubles = isDoubles && attackSuccess;
       result.criticalWound = criticalWound;
       result.targetDefeated = target.isDefeated;

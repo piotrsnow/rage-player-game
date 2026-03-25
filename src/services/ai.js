@@ -1,10 +1,10 @@
-import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildObjectiveVerificationPrompt } from './prompts';
+import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildObjectiveVerificationPrompt, buildCombatCommentaryPrompts } from './prompts';
 import { apiClient } from './apiClient';
 import { callLocalLLM, buildReducedSystemPrompt, buildReducedScenePrompt } from './localAI';
 import {
   safeParseJSON, safeParseAIResponse, withRetry,
   SceneResponseSchema, CampaignResponseSchema, CompressionResponseSchema,
-  RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema,
+  RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema, CombatCommentaryResponseSchema,
 } from './aiResponseValidator';
 
 export const AI_MODELS = [
@@ -36,6 +36,7 @@ const TASK_TIER_OVERRIDE = {
   generateRecap:    'standard',
   verifyObjective:  'standard',
   generateStoryPrompt: 'standard',
+  generateCombatCommentary: 'standard',
 };
 
 export function selectModel(provider, tier, taskType) {
@@ -254,6 +255,19 @@ export const aiService = {
     ].join('\n');
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 300, { model, modelTier, taskType: 'generateStoryPrompt', alternateApiKey });
     const validated = safeParseAIResponse(result, StoryPromptResponseSchema);
+    return { result: validated.ok ? validated.data : result, usage };
+  },
+
+  async generateCombatCommentary(gameState, combatSnapshot, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null, explicitModel = null } = {}) {
+    const model = explicitModel || selectModel(provider, modelTier, 'generateCombatCommentary');
+    const prompts = buildCombatCommentaryPrompts(gameState, combatSnapshot, language);
+    const { result, usage } = await callAI(provider, apiKey, prompts.system, prompts.user, 700, {
+      model,
+      modelTier,
+      taskType: 'generateCombatCommentary',
+      alternateApiKey,
+    });
+    const validated = safeParseAIResponse(result, CombatCommentaryResponseSchema);
     return { result: validated.ok ? validated.data : result, usage };
   },
 

@@ -151,6 +151,10 @@ export default function DMSettingsPage({ onClose }) {
   const difficultyLabel = settings.dmSettings.difficulty < 25 ? t('settings.difficultyLabels.easy') : settings.dmSettings.difficulty < 50 ? t('settings.difficultyLabels.normal') : settings.dmSettings.difficulty < 75 ? t('settings.difficultyLabels.hard') : t('settings.difficultyLabels.expert');
   const chaosLabel = settings.dmSettings.narrativeStyle < 25 ? t('settings.chaosLabels.stable') : settings.dmSettings.narrativeStyle < 50 ? t('settings.chaosLabels.balanced') : settings.dmSettings.narrativeStyle < 75 ? t('settings.chaosLabels.chaotic') : t('settings.chaosLabels.wild');
   const lengthLabel = settings.dmSettings.responseLength < 33 ? t('settings.lengthLabels.short') : settings.dmSettings.responseLength < 66 ? t('settings.lengthLabels.medium') : t('settings.lengthLabels.long');
+  const combatCommentaryFrequency = settings.dmSettings.combatCommentaryFrequency ?? 3;
+  const combatCommentaryLabel = combatCommentaryFrequency === 0
+    ? t('settings.combatCommentaryDisabled')
+    : t('settings.combatCommentaryEveryRounds', { count: combatCommentaryFrequency });
 
   const poeticismLabel = (settings.dmSettings.narratorPoeticism ?? 50) < 25 ? t('settings.poeticismLabels.prosaic') : (settings.dmSettings.narratorPoeticism ?? 50) < 50 ? t('settings.poeticismLabels.literary') : (settings.dmSettings.narratorPoeticism ?? 50) < 75 ? t('settings.poeticismLabels.poetic') : t('settings.poeticismLabels.lyrical');
   const grittinessLabel = (settings.dmSettings.narratorGrittiness ?? 30) < 25 ? t('settings.grittinessLabels.light') : (settings.dmSettings.narratorGrittiness ?? 30) < 50 ? t('settings.grittinessLabels.grounded') : (settings.dmSettings.narratorGrittiness ?? 30) < 75 ? t('settings.grittinessLabels.gritty') : t('settings.grittinessLabels.brutal');
@@ -260,6 +264,16 @@ export default function DMSettingsPage({ onClose }) {
                     value={settings.dmSettings.testsFrequency}
                     onChange={(v) => updateDMSettings({ testsFrequency: v })}
                     displayValue={`${settings.dmSettings.testsFrequency}%`}
+                  />
+
+                  <Slider
+                    label={t('settings.combatCommentaryFrequency')}
+                    description={t('settings.combatCommentaryFrequencyDesc')}
+                    min={0}
+                    max={5}
+                    value={combatCommentaryFrequency}
+                    onChange={(v) => updateDMSettings({ combatCommentaryFrequency: v })}
+                    displayValue={combatCommentaryLabel}
                   />
 
                   <Slider
@@ -419,8 +433,10 @@ export default function DMSettingsPage({ onClose }) {
                           { id: 'watercolor', icon: 'water_drop' },
                           { id: 'comic', icon: 'auto_stories' },
                           { id: 'darkFantasy', icon: 'skull' },
+                          { id: 'vanGogh', icon: 'texture' },
                           { id: 'photoreal', icon: 'photo_camera' },
                           { id: 'retro', icon: 'grid_on' },
+                          { id: 'gothic', icon: 'castle' },
                         ].map((style) => (
                           <button
                             key={style.id}

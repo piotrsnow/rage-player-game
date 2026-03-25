@@ -16,6 +16,85 @@ export function detectCombatIntent(playerAction) {
   return COMBAT_INTENT_REGEX.test(playerAction);
 }
 
+function formatCombatantForCommentary(combatant) {
+  const status = combatant.isDefeated
+    ? 'defeated'
+    : `${combatant.wounds}/${combatant.maxWounds} wounds`;
+  return `- ${combatant.name} [${combatant.type}]${combatant.side ? ` side=${combatant.side}` : ''} — ${status}`;
+}
+
+export function buildCombatCommentaryPrompts(gameState, combatSnapshot, language = 'en') {
+  const campaignName = gameState?.campaign?.name || 'Unnamed Campaign';
+  const currentLocation = gameState?.world?.currentLocation || 'Unknown';
+  const activeCombatants = combatSnapshot?.activeCombatants || [];
+  const defeatedCombatants = combatSnapshot?.defeatedCombatants || [];
+  const recentResults = combatSnapshot?.recentResults || [];
+  const recentLogEntries = combatSnapshot?.recentLogEntries || [];
+  const langNote = language === 'pl'
+    ? 'Write both the narration and battle cries in Polish.'
+    : 'Write both the narration and battle cries in English.';
+
+  const activeBlock = activeCombatants.length > 0
+    ? activeCombatants.map(formatCombatantForCommentary).join('\n')
+    : '- No active combatants remain.';
+  const defeatedBlock = defeatedCombatants.length > 0
+    ? defeatedCombatants.map(formatCombatantForCommentary).join('\n')
+    : '- Nobody has been defeated yet.';
+  const recentResultsBlock = recentResults.length > 0
+    ? recentResults.map((entry) => `- ${entry}`).join('\n')
+    : '- No recent exchanges recorded.';
+  const recentLogBlock = recentLogEntries.length > 0
+    ? recentLogEntries.map((entry) => `- ${entry}`).join('\n')
+    : '- No recent combat log lines.';
+
+  return {
+    system: `You are a battle commentator for the tabletop RPG campaign "${campaignName}" using Warhammer Fantasy Roleplay 4th Edition tone and texture.
+
+Your job is to add a short mid-combat narration to an already active fight.
+
+MANDATORY RULES:
+- This is NOT a full scene. Do not continue the adventure outside the current fight.
+- Do NOT invent or request any state changes, combat resolution, new enemies, victory, surrender, or an end to combat.
+- Write exactly ONE narrator paragraph summarizing the current state and momentum of the battle.
+- Then provide exactly ONE short, vicious battle cry for EACH active combatant listed in the input.
+- Battle cries must be direct speech only, with no narration around them.
+- Use only the listed combatants and recent combat context. Do not introduce new speakers.
+- Keep the output tight and vivid. The commentary should feel fast and reactive, not like a full prose scene.
+- ${langNote}
+- Respond with ONLY valid JSON in this exact format:
+{
+  "narration": "One paragraph of battle narration...",
+  "battleCries": [
+    { "speaker": "Combatant Name", "text": "Short battle cry!" }
+  ]
+}`,
+    user: `Generate a mid-combat commentary for an already active fight.
+
+ROUND: ${combatSnapshot?.round ?? 0}
+LOCATION: ${currentLocation}
+REASON FOR THE FIGHT: ${combatSnapshot?.reason || 'Unknown'}
+ACTIVE COMBATANT COUNT: ${activeCombatants.length}
+
+ACTIVE COMBATANTS:
+${activeBlock}
+
+DEFEATED COMBATANTS:
+${defeatedBlock}
+
+RECENT RESOLUTION SNAPSHOT:
+${recentResultsBlock}
+
+RECENT COMBAT LOG:
+${recentLogBlock}
+
+REMINDERS:
+- Narration must stay in the present battle and reflect visible momentum, wounds, pressure, positioning, fear, fury, or desperation.
+- Battle cries must cover every active combatant exactly once.
+- Do not duplicate the same cry wording for everyone.
+- Do not mention JSON, rules, or mechanics in the narration unless it is natural diegetic language.`,
+  };
+}
+
 const NEEDS_LABELS = {
   hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
   thirst: { moderate: 'mouth getting dry, craving a drink', low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
@@ -1120,6 +1199,11 @@ const IMAGE_STYLE_PROMPTS = {
     portrait: 'dark fantasy portrait, haunted hollow eyes, scarred weathered face, gothic atmosphere, sickly palette, nightmarish eldritch details',
     negative: 'bright, cheerful, cartoon, anime, clean, happy',
   },
+  vanGogh: {
+    prompt: 'post-impressionist painting in the style of Van Gogh, expressive swirling brushstrokes, thick impasto texture, luminous night-sky colors, emotional dramatic movement, vivid painterly energy',
+    portrait: 'post-impressionist portrait inspired by Van Gogh, swirling brushwork, thick impasto texture, vivid expressive colors, emotional painterly lighting',
+    negative: 'photograph, photorealistic, 3d render, flat shading, smooth digital art',
+  },
   photoreal: {
     prompt: 'photorealistic cinematic photograph, shallow depth of field, RAW photo quality, 8K UHD, DSLR, natural film grain, realistic lighting and materials',
     portrait: 'photorealistic portrait photograph, DSLR quality, shallow depth of field, natural skin texture, cinematic lighting, 8K detail',
@@ -1129,6 +1213,11 @@ const IMAGE_STYLE_PROMPTS = {
     prompt: '16-bit pixel art, retro SNES-era RPG scene, limited color palette, dithering, nostalgic low-resolution aesthetic, crisp individual pixels visible',
     portrait: '16-bit pixel art character portrait, retro RPG style, limited palette, clean pixel work, nostalgic SNES aesthetic',
     negative: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render',
+  },
+  gothic: {
+    prompt: 'gothic fantasy artwork, towering cathedral arches, ornate stonework, candlelit gloom, medieval illuminated detail, solemn dramatic composition, sacred and ominous atmosphere',
+    portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
+    negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
   },
 };
 

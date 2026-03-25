@@ -129,6 +129,11 @@ const QuestUpdateSchema = z.object({
   completed: z.boolean(),
 }).passthrough();
 
+const CombatCrySchema = z.object({
+  speaker: z.string().min(1),
+  text: z.string().min(1),
+}).passthrough();
+
 const StateChangesSchema = z.object({
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
@@ -230,6 +235,11 @@ export const RecapResponseSchema = z.object({
 
 export const StoryPromptResponseSchema = z.object({
   prompt: z.string().min(1),
+}).passthrough();
+
+export const CombatCommentaryResponseSchema = z.object({
+  narration: z.string().min(1),
+  battleCries: z.array(CombatCrySchema).optional().default([]),
 }).passthrough();
 
 export const ObjectiveVerificationSchema = z.object({

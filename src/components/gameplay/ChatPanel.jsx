@@ -137,6 +137,53 @@ function DmMessage({ message, narrator }) {
   );
 }
 
+function CombatCommentaryMessage({ message, narrator }) {
+  const { t } = useTranslation();
+  const { playbackState, currentMessageId, isNarratorReady, speakSingle, pause, resume, STATES } = narrator || {};
+  const isThisPlaying = currentMessageId === message.id && playbackState === STATES?.PLAYING;
+  const isThisPaused = currentMessageId === message.id && playbackState === STATES?.PAUSED;
+  const isThisLoading = currentMessageId === message.id && playbackState === STATES?.LOADING;
+
+  const handleNarratorToggle = () => {
+    if (isThisPlaying) {
+      pause();
+    } else if (isThisPaused) {
+      resume();
+    } else {
+      speakSingle(message, message.id);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 animate-fade-in">
+      <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest flex items-center justify-between">
+        <span>{t('chat.combatCommentary')} · {formatTimestamp(message.timestamp)}</span>
+        {isNarratorReady && (
+          <button
+            onClick={handleNarratorToggle}
+            className={`flex items-center gap-1 transition-colors ${
+              isThisPlaying ? 'text-amber-300' : 'text-on-surface-variant hover:text-amber-300'
+            }`}
+          >
+            <span className={`material-symbols-outlined text-sm ${isThisPlaying ? 'animate-pulse' : ''}`}>
+              {isThisLoading ? 'hourglass_top' : isThisPlaying ? 'pause' : isThisPaused ? 'play_arrow' : 'volume_up'}
+            </span>
+          </button>
+        )}
+      </div>
+      <div className="rounded-r-lg border-l-2 border-amber-400/40 bg-amber-400/5 px-4 py-4 space-y-3">
+        {message.dialogueSegments?.length > 0 ? (
+          <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
+        ) : (
+          <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+            <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PlayerMessage({ message, isMe }) {
   const { t } = useTranslation();
   const displayName = message.playerName || t('chat.you');
@@ -367,8 +414,8 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
 
     if (messages.length > prevMessageCount.current) {
       const newMessages = messages.slice(prevMessageCount.current);
-      const dmMessages = newMessages.filter((m) => m.role === 'dm');
-      dmMessages.forEach((msg) => {
+      const spokenMessages = newMessages.filter((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
+      spokenMessages.forEach((msg) => {
         speakScene(msg, msg.id);
       });
     }
@@ -430,6 +477,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
         )}
         {messages.map((msg) => {
           if (msg.role === 'dm') return <div key={msg.id} data-message-id={msg.id}><DmMessage message={msg} narrator={narrator} /></div>;
+          if (msg.subtype === 'combat_commentary') return <div key={msg.id} data-message-id={msg.id}><CombatCommentaryMessage message={msg} narrator={narrator} /></div>;
           if (msg.role === 'player') {
             const isMe = myOdId ? msg.odId === myOdId : true;
             return <div key={msg.id} data-message-id={msg.id}><PlayerMessage message={msg} isMe={isMe} /></div>;

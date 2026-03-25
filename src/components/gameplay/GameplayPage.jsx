@@ -389,7 +389,7 @@ export default function GameplayPage() {
     mp.clearPendingCombatManoeuvre();
     const fromPlayerId = `player_${pending.fromOdId}`;
     if (CombatPanel.resolveRemoteManoeuvre) {
-      CombatPanel.resolveRemoteManoeuvre(fromPlayerId, pending.manoeuvre, pending.targetId);
+      CombatPanel.resolveRemoteManoeuvre(fromPlayerId, pending.manoeuvre, pending.targetId, pending.customDescription);
     }
   }, [isMultiplayer, mp.state.isHost, mp.state.pendingCombatManoeuvre]);
 
@@ -738,6 +738,7 @@ export default function GameplayPage() {
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={isMultiplayer ? mpGameState.combat : state.combat}
+              gameState={isMultiplayer ? mpGameState : state}
               dispatch={dispatch}
               onEndCombat={isMultiplayer ? handleMpEndCombat : handleEndCombat}
               onSurrender={isMultiplayer ? handleMpSurrender : handleSurrender}
