@@ -86,6 +86,7 @@ export default function CampaignCreatorPage() {
   });
 
   const [isRandomizing, setIsRandomizing] = useState(false);
+  const [isGeneratingFromInput, setIsGeneratingFromInput] = useState(false);
   const [charMode, setCharMode] = useState('new');
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
@@ -185,6 +186,26 @@ export default function CampaignCreatorPage() {
       // Error handled via context
     } finally {
       setIsRandomizing(false);
+    }
+  };
+
+  const handleGenerateFromInput = async () => {
+    const seedText = form.storyPrompt.trim();
+    if (!hasApiKey || isGeneratingFromInput || !seedText) return;
+
+    setIsGeneratingFromInput(true);
+    try {
+      const prompt = await generateStoryPrompt({
+        genre: form.genre,
+        tone: form.tone,
+        style: form.style,
+        seedText,
+      });
+      updateForm((p) => ({ ...p, storyPrompt: prompt }));
+    } catch {
+      // Error handled via context
+    } finally {
+      setIsGeneratingFromInput(false);
     }
   };
 
@@ -694,16 +715,29 @@ export default function CampaignCreatorPage() {
               />
             </div>
             {!isGuest && (
-              <button
-                onClick={handleRandomize}
-                disabled={!hasApiKey || isRandomizing}
-                className="mt-3 flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
-              >
-                <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
-                  {isRandomizing ? 'progress_activity' : 'casino'}
-                </span>
-                {isRandomizing ? t('creator.randomizingPrompt') : t('creator.randomizePrompt')}
-              </button>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleRandomize}
+                  disabled={!hasApiKey || isRandomizing || isGeneratingFromInput}
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                >
+                  <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
+                    {isRandomizing ? 'progress_activity' : 'casino'}
+                  </span>
+                  {isRandomizing ? t('creator.randomizingPrompt') : t('creator.randomizePrompt')}
+                </button>
+                <button
+                  onClick={handleGenerateFromInput}
+                  disabled={!hasApiKey || !form.storyPrompt.trim() || isGeneratingFromInput || isRandomizing}
+                  title={t('creator.generatePromptFromInput')}
+                  aria-label={t('creator.generatePromptFromInput')}
+                  className="flex items-center justify-center px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
+                >
+                  <span className={`material-symbols-outlined text-base ${isGeneratingFromInput ? 'animate-spin' : ''}`}>
+                    {isGeneratingFromInput ? 'progress_activity' : 'auto_fix_high'}
+                  </span>
+                </button>
+              </div>
             )}
           </section>
 

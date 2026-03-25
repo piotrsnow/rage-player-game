@@ -388,9 +388,9 @@ export function useAI() {
   );
 
   const generateStoryPrompt = useCallback(
-    async ({ genre, tone, style }) => {
+    async ({ genre, tone, style, seedText = '' }) => {
       const { result, usage } = await aiService.generateStoryPrompt(
-        { genre, tone, style },
+        { genre, tone, style, seedText },
         aiProvider,
         apiKey,
         language,

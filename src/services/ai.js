@@ -241,15 +241,19 @@ export const aiService = {
     return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateStoryPrompt({ genre, tone, style }, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
+  async generateStoryPrompt({ genre, tone, style, seedText = '' }, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
     const model = selectModel(provider, modelTier, 'generateStoryPrompt');
     const systemPrompt = 'You are a creative RPG story idea generator. Invent original, evocative adventure premises. Always respond with valid JSON only.';
     const humorousGuidance = tone === 'Humorous'
       ? ` The humor must NOT be random absurdity or slapstick nonsense. Instead, ground the premise in a believable world and weave in 1-2 genuinely controversial, provocative, or morally ambiguous elements (e.g. corrupt religious authorities, morally grey freedom fighters, taboo social customs, ethically questionable magical practices, politically charged factions). The comedy should emerge naturally from how characters navigate these uncomfortable realities — dark irony, social satire, awkward moral dilemmas, and characters who take absurd stances on serious issues. Think Terry Pratchett or Monty Python: sharp wit wrapped around real-world controversies, not random zaniness.`
       : '';
+    const trimmedSeedText = seedText.trim();
     const userPrompt = [
       `Generate ONE unique, creative RPG story premise for a ${genre} campaign with a ${tone} tone and ${style} play style.`,
       `The premise should be 1-2 sentences, intriguing, and specific enough to spark a full campaign.${humorousGuidance}`,
+      trimmedSeedText
+        ? `Use the following user-provided words, phrases, or notes as core inspiration. Rework them into a polished adventure premise, but keep the important ideas and explicitly incorporate the provided concepts: "${trimmedSeedText}".`
+        : 'Invent the premise from scratch.',
       `Write the premise in ${language === 'pl' ? 'Polish' : 'English'}.`,
       `Respond with JSON: { "prompt": "<the story premise>" }`,
     ].join('\n');
