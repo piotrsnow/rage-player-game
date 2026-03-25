@@ -129,6 +129,8 @@
     "outOfRange": "Target too far for melee. Move closer or use Charge.",
     "outOfRangeShort": "Out of range",
     "hoverForDetails": "Hover a token for details",
+    "combatants": "Combatants",
+    "battleProgress": "Battle Progress",
     "wounds": "Wounds",
     "advantage": "Adv",
     "position": "Pos",

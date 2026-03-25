@@ -161,7 +161,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
   }, [displayValue, autoResize]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 min-h-[130px]">
       {/* Multiplayer: Solo Action Cooldown Indicator */}
       {isMultiplayer && !soloAvailable && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-tertiary/5 border border-tertiary/15 rounded-sm">

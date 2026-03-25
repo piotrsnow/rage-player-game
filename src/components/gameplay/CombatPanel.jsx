@@ -18,7 +18,6 @@ import {
   getDistance,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
-import CombatDetailPanel from './CombatDetailPanel';
 import Tooltip from '../ui/Tooltip';
 
 const MANOEUVRE_ICONS = {
@@ -436,7 +435,7 @@ export default function CombatPanel({
   };
 
   const addLogEntry = (entry) => {
-    setCombatLog((prev) => [...prev.slice(-19), entry]);
+    setCombatLog((prev) => [...prev.slice(-49), entry]);
   };
 
   useEffect(() => {
@@ -901,11 +900,6 @@ export default function CombatPanel({
     return getDistance(myCombatant, target) > MELEE_RANGE;
   }, [selectedManoeuvre, selectedTarget, combat.combatants, myCombatant]);
 
-  const hoveredCombatant = useMemo(() => {
-    if (hoveredCombatantId) return combat.combatants.find((c) => c.id === hoveredCombatantId);
-    return myCombatant;
-  }, [hoveredCombatantId, combat.combatants, myCombatant]);
-
   return (
     <div className="space-y-3">
       {/* Header */}
@@ -996,14 +990,14 @@ export default function CombatPanel({
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)] gap-3 items-start">
-        <div className="space-y-3 pt-1">
-          {/* Player Actions — my turn */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,400px)_240px_minmax(0,1fr)] gap-3 items-start">
+        {/* Column 1: Player Actions */}
+        <div className="space-y-3">
+          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
+            {t('combat.yourTurn', 'Your Turn')} — {t('combat.chooseManoeuvre', 'Choose Manoeuvre')}
+          </div>
           {isMyTurn && !combatOver && (
             <div className="space-y-3">
-              <div className="text-[11px] font-label uppercase tracking-widest text-primary">
-                {t('combat.yourTurn', 'Your Turn')} — {t('combat.chooseManoeuvre', 'Choose Manoeuvre')}
-              </div>
               <div className="grid grid-cols-2 gap-2">
                 {availableManoeuvres.map(([key, man]) => (
                   <button
@@ -1021,7 +1015,6 @@ export default function CombatPanel({
                 ))}
               </div>
 
-              {/* Target Selection (fallback) */}
               {selectedManoeuvre && (MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && (
                 <div className="space-y-1.5">
                   <div className="text-[11px] text-on-surface-variant">
@@ -1049,7 +1042,6 @@ export default function CombatPanel({
                 </div>
               )}
 
-              {/* Out of range warning */}
               {selectedTargetOutOfMeleeRange && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-sm text-[11px] text-amber-400">
                   <span className="material-symbols-outlined text-sm">warning</span>
@@ -1126,7 +1118,6 @@ export default function CombatPanel({
                 </div>
               )}
 
-              {/* Execute Button */}
               <button
                 onClick={handleExecute}
                 disabled={!selectedManoeuvre || ((MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && !selectedTarget) || selectedTargetOutOfMeleeRange}
@@ -1137,7 +1128,6 @@ export default function CombatPanel({
             </div>
           )}
 
-          {/* Waiting for another player (MP) */}
           {isMultiplayer && !isMyTurn && !combatOver && currentTurn?.type === 'player' && (
             <div className="text-center py-3 text-[12px] text-on-surface-variant rounded-sm border border-outline-variant/10 bg-surface-container/20">
               <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
@@ -1145,7 +1135,6 @@ export default function CombatPanel({
             </div>
           )}
 
-          {/* Enemy/ally acting indicator */}
           {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && isAwaitingAiTurn && (
             <div className="text-center py-3 text-[12px] text-on-surface-variant rounded-sm border border-outline-variant/10 bg-surface-container/20">
               <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
@@ -1159,7 +1148,6 @@ export default function CombatPanel({
             </div>
           )}
 
-          {/* Combat Over */}
           {combatOver && (
             <div className="text-center py-3 rounded-sm border border-outline-variant/10 bg-surface-container/20">
               <div className="text-[11px] text-on-surface-variant">
@@ -1174,27 +1162,113 @@ export default function CombatPanel({
           )}
         </div>
 
-        <div className="min-w-0 space-y-3">
-          {/* Detail Panel */}
-          <CombatDetailPanel
-            combatant={hoveredCombatant}
-            myCombatant={myCombatant}
-            allCombatants={combat.combatants}
-          />
+        {/* Column 2: Combatants List */}
+        <div className="space-y-1.5 max-h-[480px] overflow-y-auto custom-scrollbar">
+          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
+            {t('combat.combatants', 'Combatants')}
+          </div>
+          {combat.combatants
+            .slice()
+            .sort((a, b) => {
+              if (a.type === 'player' && b.type !== 'player') return -1;
+              if (a.type !== 'player' && b.type === 'player') return 1;
+              if (a.type === 'ally' && b.type === 'enemy') return -1;
+              if (a.type === 'enemy' && b.type === 'ally') return 1;
+              return 0;
+            })
+            .map((c) => {
+              const isEnemy = c.type === 'enemy';
+              const isCurrent = currentTurn?.id === c.id;
+              const healthPct = c.maxWounds > 0 ? c.wounds / c.maxWounds : 0;
+              const barColor = healthPct > 0.5
+                ? (isEnemy ? 'bg-error' : 'bg-primary')
+                : healthPct > 0.25 ? 'bg-amber-500' : 'bg-error';
+              const accentColor = isEnemy ? 'text-error' : 'text-primary';
 
-          {/* Combat Log */}
+              return (
+                <div
+                  key={c.id}
+                  className={`p-2 rounded-sm border transition-colors cursor-default ${
+                    isCurrent
+                      ? 'border-primary/40 bg-primary/5'
+                      : c.isDefeated
+                        ? 'border-outline-variant/5 bg-surface-container/10 opacity-50'
+                        : 'border-outline-variant/10 bg-surface-container/20 hover:bg-surface-container/30'
+                  }`}
+                  onMouseEnter={() => setHoveredCombatantId(c.id)}
+                  onMouseLeave={() => setHoveredCombatantId(null)}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {isCurrent && (
+                      <span className="material-symbols-outlined text-[11px] text-primary shrink-0 animate-pulse">
+                        arrow_right
+                      </span>
+                    )}
+                    <span className={`material-symbols-outlined text-[13px] shrink-0 ${accentColor}`}>
+                      {isEnemy ? 'skull' : c.type === 'ally' ? 'group' : 'shield_person'}
+                    </span>
+                    <span className={`text-[11px] font-bold truncate ${accentColor} ${c.isDefeated ? 'line-through' : ''}`}>
+                      {c.name}
+                    </span>
+                  </div>
+
+                  <div className="mt-1.5 space-y-1">
+                    <div className="flex items-center justify-between text-[9px]">
+                      <span className="text-on-surface-variant">{t('combat.wounds', 'Wounds')}</span>
+                      <span className="text-on-surface font-bold tabular-nums">
+                        {c.wounds}/{c.maxWounds}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${barColor} rounded-full transition-all duration-300`}
+                        style={{ width: `${Math.max(0, healthPct * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-1 text-[9px] text-on-surface-variant">
+                    {c.advantage > 0 && (
+                      <span>{t('combat.advantage', 'Adv')} <span className="text-primary font-bold">+{c.advantage}</span></span>
+                    )}
+                    {c.position != null && (
+                      <span>{t('combat.position', 'Pos')} <span className="font-bold text-on-surface">{c.position}y</span></span>
+                    )}
+                    {c.movementAllowance > 0 && !c.isDefeated && (
+                      <span>{t('combat.movementShort', 'Mov')} <span className="font-bold text-on-surface">{c.movementAllowance - (c.movementUsed || 0)}/{c.movementAllowance}</span></span>
+                    )}
+                  </div>
+
+                  {(c.conditions || []).filter((cond) => cond !== 'fled' || c.isDefeated).length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-1">
+                      {(c.conditions || []).filter((cond) => cond !== 'fled' || c.isDefeated).map((cond, i) => (
+                        <span key={`${c.id}_${cond}_${i}`} className="px-1 py-0.5 rounded-sm bg-surface-container text-[8px] text-on-surface-variant uppercase tracking-wider">
+                          {cond}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+
+        {/* Column 3: Combat Log */}
+        <div className="min-w-0 space-y-3">
+          <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
+            {t('combat.battleProgress', 'Battle Progress')}
+          </div>
           {combatLog.length > 0 && (
-            <div className="space-y-1 max-h-[320px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
-              {combatLog.slice(-10).map((entry) => (
+            <div className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+              {combatLog.map((entry) => (
                 <CombatLogEntry key={entry.id} entry={entry} t={t} />
               ))}
               <div ref={logEndRef} />
             </div>
           )}
 
-          {/* Old combat.log fallback (first round before any actions) */}
           {combatLog.length === 0 && combat.log.length > 0 && (
-            <div className="space-y-1 max-h-[320px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+            <div className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
               {combat.log.slice(-5).map((entry, i) => (
                 <div key={`legacy_${i}`} className="text-[11px] text-outline-variant leading-snug px-2 py-1">
                   {entry}
