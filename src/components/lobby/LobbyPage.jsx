@@ -5,6 +5,7 @@ import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
 import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { getPersistedRejoinInfo, clearPersistedRejoinInfo } from '../../services/websocket';
+import { createCampaignId } from '../../services/gameState';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModals } from '../../contexts/ModalContext';
@@ -108,6 +109,40 @@ export default function LobbyPage() {
       dispatch({ type: 'LOAD_CAMPAIGN', payload: campaigns[0] });
       navigate('/play');
     }
+  };
+
+  const handleForkFromScene = (campaignData, sceneIndex) => {
+    const baseName = (campaignData.campaign?.name || 'Campaign').replace(/\s*\(\d+\)$/, '');
+    const existingNames = new Set(campaigns.map((c) => c.campaign?.name));
+    let suffix = 2;
+    while (existingNames.has(`${baseName} (${suffix})`)) suffix++;
+    const forkedName = `${baseName} (${suffix})`;
+
+    const trimmedScenes = (campaignData.scenes || []).slice(0, sceneIndex + 1);
+    const lastSceneTimestamp = trimmedScenes[trimmedScenes.length - 1]?.timestamp;
+    const trimmedChat = lastSceneTimestamp
+      ? (campaignData.chatHistory || []).filter((m) => !m.timestamp || m.timestamp <= lastSceneTimestamp)
+      : (campaignData.chatHistory || []).slice(0, (sceneIndex + 1) * 5);
+
+    const forked = structuredClone(campaignData);
+    forked.campaign = {
+      ...forked.campaign,
+      id: createCampaignId(),
+      name: forkedName,
+      backendId: undefined,
+      forkedFrom: campaignData.campaign?.id,
+      forkedAtScene: sceneIndex,
+    };
+    forked.scenes = trimmedScenes;
+    forked.chatHistory = trimmedChat;
+    forked.combat = null;
+    forked.undoStack = [];
+    forked.lastSaved = Date.now();
+
+    storage.saveCampaign(forked);
+    setCampaigns(storage.getCampaigns());
+    dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
+    navigate('/play');
   };
 
   useEffect(() => {
@@ -287,6 +322,7 @@ export default function LobbyPage() {
                   }
                   onExportLog={() => exportAsMarkdown(c)}
                   onExportJson={() => exportAsJson(c)}
+                  onForkFromScene={(sceneIndex) => handleForkFromScene(c, sceneIndex)}
                 />
               ))}
             </div>

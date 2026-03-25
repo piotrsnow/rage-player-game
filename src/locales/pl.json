@@ -183,7 +183,11 @@
     "serverUrl": "Adres serwera",
     "loginOnMainPage": "Zaloguj się na stronie głównej",
     "connectedAs": "Połączono",
-    "adventurer": "Poszukiwaczu przygód"
+    "adventurer": "Poszukiwaczu przygód",
+    "forkFromScene": "Rozgałęź od sceny",
+    "forkFromSceneHint": "Wybierz scenę, od której chcesz zacząć nową gałąź kampanii",
+    "forkFromHere": "Graj od tutaj",
+    "currentScene": "obecna"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",

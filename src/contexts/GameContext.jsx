@@ -982,6 +982,10 @@ function gameReducer(state, action) {
           }
         }
         next.character = { ...next.character, needs };
+
+        if (changes.needsChanges.rest > 0) {
+          next.momentumBonus = 0;
+        }
       }
 
       // --- Knowledge Base updates (memory system) ---

@@ -183,7 +183,11 @@
     "serverUrl": "Server URL",
     "loginOnMainPage": "Log in on the main page",
     "connectedAs": "Connected",
-    "adventurer": "Adventurer"
+    "adventurer": "Adventurer",
+    "forkFromScene": "Fork from scene",
+    "forkFromSceneHint": "Pick a scene to branch into a new campaign copy",
+    "forkFromHere": "Play from here",
+    "currentScene": "current"
   },
   "creator": {
     "title": "Forge a New Campaign",
