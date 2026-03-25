@@ -10,15 +10,46 @@ const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stabilit
 const LOCAL_KEY_MAP = {
   openai: 'openaiApiKey',
   anthropic: 'anthropicApiKey',
-  elevenlabs: 'elevenlabsApiKey',
   stability: 'stabilityApiKey',
   gemini: 'geminiApiKey',
 };
 
 const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'geminiApiKey', 'meshyApiKey',
+  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'geminiApiKey', 'meshyApiKey',
 ];
+const SHARED_VOICE_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
+
+function sanitizeSharedVoiceSettings(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const characterVoices = Array.isArray(source.characterVoices)
+    ? source.characterVoices
+        .filter((entry) => entry && typeof entry === 'object')
+        .map((entry) => ({
+          voiceId: typeof entry.voiceId === 'string' ? entry.voiceId : '',
+          voiceName: typeof entry.voiceName === 'string' ? entry.voiceName : '',
+          gender: entry.gender === 'female' ? 'female' : 'male',
+        }))
+        .filter((entry) => entry.voiceId && entry.voiceName)
+    : [];
+
+  return {
+    elevenlabsVoiceId: typeof source.elevenlabsVoiceId === 'string' ? source.elevenlabsVoiceId : '',
+    elevenlabsVoiceName: typeof source.elevenlabsVoiceName === 'string' ? source.elevenlabsVoiceName : '',
+    characterVoices,
+  };
+}
+
+function extractSharedVoiceSettings(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const subset = {};
+  for (const key of SHARED_VOICE_KEYS) {
+    if (source[key] !== undefined) {
+      subset[key] = source[key];
+    }
+  }
+  return sanitizeSharedVoiceSettings(subset);
+}
 
 const defaultSettings = {
   aiProvider: 'openai',
@@ -29,7 +60,6 @@ const defaultSettings = {
   stabilityApiKey: '',
   geminiApiKey: '',
   language: 'pl',
-  elevenlabsApiKey: '',
   elevenlabsVoiceId: '',
   elevenlabsVoiceName: '',
   characterVoices: [],
@@ -86,6 +116,7 @@ export function SettingsProvider({ children }) {
     if (saved.imageGenEnabled !== undefined && saved.sceneVisualization === undefined) {
       merged.sceneVisualization = saved.imageGenEnabled ? 'image' : 'none';
     }
+    delete merged.elevenlabsApiKey;
     delete merged.imageGenEnabled;
     return merged;
   });
@@ -162,11 +193,26 @@ export function SettingsProvider({ children }) {
     }
   }, []);
 
+  const loadSharedVoiceSettings = useCallback(async () => {
+    if (!apiClient.isConnected()) return null;
+    try {
+      const voiceSettings = sanitizeSharedVoiceSettings(await apiClient.get('/auth/shared-voices'));
+      syncingFromBackendRef.current = true;
+      setSettings((prev) => ({ ...prev, ...voiceSettings }));
+      setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
+      return voiceSettings;
+    } catch (err) {
+      console.warn('[SettingsContext] Failed to load shared voice settings:', err.message);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && apiClient.isConnected()) {
       loadBackendUser();
+      loadSharedVoiceSettings();
     }
-  }, [settings.backendUrl, settings.useBackend, loadBackendUser]);
+  }, [settings.backendUrl, settings.useBackend, loadBackendUser, loadSharedVoiceSettings]);
 
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();
@@ -181,6 +227,7 @@ export function SettingsProvider({ children }) {
       if (accountSettings.autoPlayer) {
         merged.autoPlayer = { ...defaultSettings.autoPlayer, ...accountSettings.autoPlayer };
       }
+      delete merged.elevenlabsApiKey;
       for (const key of LOCAL_ONLY_KEYS) {
         if (prev[key] !== undefined && prev[key] !== '') {
           merged[key] = prev[key];
@@ -191,14 +238,37 @@ export function SettingsProvider({ children }) {
     setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
 
     fetchBackendKeys();
+    await loadSharedVoiceSettings();
 
     storage.syncCampaigns().catch((err) => {
       console.warn('[SettingsContext] Campaign sync after login failed:', err.message);
     });
-  }, [fetchBackendKeys]);
+  }, [fetchBackendKeys, loadSharedVoiceSettings]);
 
   const updateSettings = useCallback((updates) => {
     setSettings((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const updateSharedVoiceSettings = useCallback(async (updates) => {
+    let nextVoiceSettings = null;
+
+    setSettings((prev) => {
+      const next = { ...prev, ...updates };
+      nextVoiceSettings = extractSharedVoiceSettings(next);
+      return next;
+    });
+
+    if (!apiClient.isConnected()) {
+      return true;
+    }
+
+    try {
+      await apiClient.put('/auth/shared-voices', nextVoiceSettings);
+      return true;
+    } catch (err) {
+      console.warn('[SettingsContext] Failed to save shared voice settings:', err.message);
+      return false;
+    }
   }, []);
 
   const updateDMSettings = useCallback((updates) => {
@@ -220,7 +290,9 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const importSettings = useCallback((imported) => {
-    setSettings({ ...defaultSettings, ...imported });
+    const merged = { ...defaultSettings, ...imported };
+    delete merged.elevenlabsApiKey;
+    setSettings(merged);
   }, []);
 
   const getApiKey = useCallback(() => {
@@ -264,6 +336,7 @@ export function SettingsProvider({ children }) {
   const value = {
     settings,
     updateSettings,
+    updateSharedVoiceSettings,
     updateDMSettings,
     updateAutoPlayerSettings,
     resetSettings,

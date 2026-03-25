@@ -21,11 +21,14 @@ const POLL_INTERVAL_MS = 10_000;
 const MAX_POLL_ATTEMPTS = 180; // 30 min max per model
 const GCS_PREFIX = 'prefabs';
 const STYLE_SUFFIX = ', game-ready 3D model, stylized fantasy, centered';
+const CHARACTER_BODY_SUFFIX = ', grotesque chibi fantasy proportions, comically unnaturally dwarfish, extremely tiny body, stubby very short limbs, massively oversized head, caricature silhouette, keep full outfit and equipment readable';
+const TARGET_FORMATS = ['glb'];
 
 // ── CLI args ────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
+const FORCE = args.includes('--force');
 const categoryFilter = args.includes('--category')
   ? args[args.indexOf('--category') + 1]
   : null;
@@ -227,7 +230,11 @@ const PROMPTS = [
   { category: 'props', file: 'Rowboat.glb', prompt: 'A medieval wooden rowboat, simple, beached on shore' },
   { category: 'props', file: 'Hanging_Cage.glb', prompt: 'A medieval iron cage, hanging, dungeon torture device' },
   { category: 'props', file: 'Cauldron_Fire.glb', prompt: 'A medieval cauldron on tripod over fire, witch brewing pot' },
-];
+].map(entry => (
+  entry.category === 'characters'
+    ? { ...entry, prompt: `${entry.prompt}${CHARACTER_BODY_SUFFIX}` }
+    : entry
+));
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
 
@@ -246,6 +253,16 @@ async function createTask(prompt) {
     prompt: prompt + STYLE_SUFFIX,
     art_style: 'realistic',
     should_remesh: true,
+    target_formats: TARGET_FORMATS,
+  });
+  return data.result;
+}
+
+async function createRefineTask(previewTaskId) {
+  const data = await meshyPost('/text-to-3d', {
+    mode: 'refine',
+    preview_task_id: previewTaskId,
+    target_formats: TARGET_FORMATS,
   });
   return data.result;
 }
@@ -266,6 +283,10 @@ async function waitForTask(taskId) {
     process.stdout.write(`\r    polling ${taskId.slice(0, 8)}… ${pct}%   `);
   }
   throw new Error(`Task ${taskId} timed out after ${MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000}s`);
+}
+
+async function waitForPreview(previewTaskId) {
+  await waitForTask(previewTaskId);
 }
 
 async function downloadGlb(url) {
@@ -308,7 +329,7 @@ function logProgress(entry, status, extra = '') {
 async function processEntry(bucket, entry) {
   const path = gcsPath(entry);
 
-  const exists = await fileExistsInGCS(bucket, path);
+  const exists = FORCE ? false : await fileExistsInGCS(bucket, path);
   if (exists) {
     stats.skipped++;
     logProgress(entry, 'skip', '(already in GCS)');
@@ -322,10 +343,16 @@ async function processEntry(bucket, entry) {
   }
 
   try {
-    const taskId = await createTask(entry.prompt);
-    console.log(`    → task ${taskId} created for ${entry.category}/${entry.file}`);
+    const previewTaskId = await createTask(entry.prompt);
+    console.log(`    → preview task ${previewTaskId} created for ${entry.category}/${entry.file}`);
 
-    const glbUrl = await waitForTask(taskId);
+    await waitForPreview(previewTaskId);
+    process.stdout.write('\r' + ' '.repeat(60) + '\r');
+
+    const refineTaskId = await createRefineTask(previewTaskId);
+    console.log(`    → refine task ${refineTaskId} created for ${entry.category}/${entry.file}`);
+
+    const glbUrl = await waitForTask(refineTaskId);
     process.stdout.write('\r' + ' '.repeat(60) + '\r');
 
     const buffer = await downloadGlb(glbUrl);
@@ -395,6 +422,7 @@ async function main() {
   console.log(`║  Models:      ${String(entries.length).padEnd(35)}║`);
   console.log(`║  Concurrency: ${String(CONCURRENCY).padEnd(35)}║`);
   console.log(`║  Dry run:     ${String(DRY_RUN).padEnd(35)}║`);
+  console.log(`║  Force:       ${String(FORCE).padEnd(35)}║`);
   console.log('╠══════════════════════════════════════════════════╣');
   for (const [cat, count] of Object.entries(catCounts)) {
     console.log(`║  ${cat.padEnd(16)} ${String(count).padStart(3)} models${' '.repeat(22)}║`);

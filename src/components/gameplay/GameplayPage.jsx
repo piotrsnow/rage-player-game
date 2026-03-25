@@ -211,7 +211,16 @@ export default function GameplayPage() {
   handleActionRef.current = handleAction;
   const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
 
-  const autoPlayer = useAutoPlayer(isMultiplayer ? null : stableHandleAction);
+  const autoPlayer = useAutoPlayer(
+    isMultiplayer ? null : stableHandleAction,
+    {
+      narratorPlaybackState: narrator.playbackState,
+      shouldWaitForNarration: !isMultiplayer
+        && settings.narratorEnabled
+        && settings.narratorAutoPlay
+        && narrator.isNarratorReady,
+    }
+  );
 
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });

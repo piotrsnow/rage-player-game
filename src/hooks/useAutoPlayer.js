@@ -12,9 +12,17 @@ const DEFAULT_AUTO_PLAYER = {
   maxTurns: 0,
 };
 
-export function useAutoPlayer(handleAction) {
+const AUTO_MOVE_DELAY_WITHOUT_NARRATION = 1500;
+const AUTO_MOVE_DELAY_AFTER_NARRATION = 500;
+const AUTO_TYPING_PAUSE = 500;
+
+export function useAutoPlayer(handleAction, options = {}) {
   const { state, dispatch } = useGame();
   const { settings, getApiKey, updateSettings } = useSettings();
+  const {
+    narratorPlaybackState = 'idle',
+    shouldWaitForNarration = false,
+  } = options;
 
   const autoPlayerSettings = settings.autoPlayer || DEFAULT_AUTO_PLAYER;
 
@@ -26,10 +34,12 @@ export function useAutoPlayer(handleAction) {
   const timerRef = useRef(null);
   const typingRef = useRef(null);
   const abortRef = useRef(false);
-  const scenesLenRef = useRef(state.scenes?.length || 0);
   const enabledRef = useRef(autoPlayerSettings.enabled);
   const prevEnabledRef = useRef(autoPlayerSettings.enabled);
   const isRunningRef = useRef(false);
+  const pendingSceneCountRef = useRef(0);
+  const completedSceneCountRef = useRef(0);
+  const narrationSeenForPendingSceneRef = useRef(false);
 
   enabledRef.current = autoPlayerSettings.enabled;
 
@@ -56,6 +66,8 @@ export function useAutoPlayer(handleAction) {
       setTypingText('');
       setTurnsPlayed(0);
       setLastError(null);
+      pendingSceneCountRef.current = 0;
+      narrationSeenForPendingSceneRef.current = false;
     } else {
       abortRef.current = false;
       setTurnsPlayed(0);
@@ -68,7 +80,7 @@ export function useAutoPlayer(handleAction) {
       if (typingRef.current) clearInterval(typingRef.current);
       let i = 0;
       setTypingText('');
-      const charDelay = Math.max(15, Math.min(40, 1200 / (text.length || 1)));
+      const charDelay = Math.max(35, Math.min(90, 2200 / (text.length || 1)));
       typingRef.current = setInterval(() => {
         if (abortRef.current || !enabledRef.current) {
           clearInterval(typingRef.current);
@@ -109,7 +121,7 @@ export function useAutoPlayer(handleAction) {
       const typed = await animateTyping(result.action);
       if (!typed) return;
 
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, AUTO_TYPING_PAUSE));
       setTypingText('');
 
       if (abortRef.current || !enabledRef.current) return;
@@ -144,8 +156,6 @@ export function useAutoPlayer(handleAction) {
 
   useEffect(() => {
     const currentLen = state.scenes?.length || 0;
-    const prevLen = scenesLenRef.current;
-    scenesLenRef.current = currentLen;
 
     const justEnabled = autoPlayerSettings.enabled && !prevEnabledRef.current;
     prevEnabledRef.current = autoPlayerSettings.enabled;
@@ -162,20 +172,39 @@ export function useAutoPlayer(handleAction) {
       return;
     }
 
-    const hasNewScene = currentLen > prevLen && prevLen > 0;
-    const isFirstSceneReady = currentLen === 1 && prevLen === 0;
-    const enabledWithExistingScenes = justEnabled && currentLen > 0;
+    if (justEnabled && currentLen > completedSceneCountRef.current) {
+      pendingSceneCountRef.current = currentLen;
+      narrationSeenForPendingSceneRef.current = false;
+    }
 
-    if (!hasNewScene && !isFirstSceneReady && !enabledWithExistingScenes) return;
+    if (currentLen > pendingSceneCountRef.current && currentLen > completedSceneCountRef.current) {
+      pendingSceneCountRef.current = currentLen;
+      narrationSeenForPendingSceneRef.current = false;
+    }
+
+    const hasPendingScene = pendingSceneCountRef.current > completedSceneCountRef.current;
+    if (!hasPendingScene) return;
+
+    if (shouldWaitForNarration && narratorPlaybackState !== 'idle') {
+      narrationSeenForPendingSceneRef.current = true;
+      return;
+    }
 
     if (timerRef.current) clearTimeout(timerRef.current);
+
+    const delay = shouldWaitForNarration && narrationSeenForPendingSceneRef.current
+      ? AUTO_MOVE_DELAY_AFTER_NARRATION
+      : AUTO_MOVE_DELAY_WITHOUT_NARRATION;
+    const scheduledSceneCount = pendingSceneCountRef.current;
 
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       if (enabledRef.current && !abortRef.current) {
+        completedSceneCountRef.current = scheduledSceneCount;
+        narrationSeenForPendingSceneRef.current = false;
         playTurn();
       }
-    }, autoPlayerSettings.delay || 3000);
+    }, delay);
 
     return () => {
       if (timerRef.current) {
@@ -190,11 +219,12 @@ export function useAutoPlayer(handleAction) {
     state.campaign?.status,
     state.character?.status,
     autoPlayerSettings.enabled,
-    autoPlayerSettings.delay,
     autoPlayerSettings.maxTurns,
     turnsPlayed,
     playTurn,
     updateAutoPlayerSettings,
+    narratorPlaybackState,
+    shouldWaitForNarration,
   ]);
 
   useEffect(() => {

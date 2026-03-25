@@ -10,6 +10,10 @@ export const authPlugin = fp(async function (fastify) {
 
   fastify.decorate('authenticate', async (request, reply) => {
     try {
+      const queryToken = request.query?.token;
+      if (queryToken && !request.headers.authorization) {
+        request.headers.authorization = `Bearer ${queryToken}`;
+      }
       await request.jwtVerify();
     } catch (err) {
       reply.code(401).send({ error: 'Unauthorized', message: err.message });

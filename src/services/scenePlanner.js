@@ -1,6 +1,7 @@
 import { parseSceneCommand } from './sceneCommandSchema';
 import { getAnchor, getLocationAnchors, isKnownLocation, LOCATION_ANCHORS, getEnvironmentProps } from '../data/sceneAnchors';
 import { resolveCharacterArchetype, matchObjectType } from '../data/prefabs';
+import { selectCharacterModel, selectObjectModel } from './modelResolver3d';
 import { scene3dDebug } from './scene3dDebug';
 
 const LOCATION_KEYWORDS = {
@@ -214,10 +215,46 @@ function gatherNPCs(state) {
         species: npc.species || npc.race || 'human',
         career: npc.career || npc.occupation || '',
         gender: npc.gender || 'male',
+        model3d: npc.model3d || null,
       });
     }
   }
   return npcs;
+}
+
+function toPersistedModel(selection) {
+  if (!selection?.modelId) return null;
+  return {
+    modelId: selection.modelId,
+    modelCategory: selection.modelCategory,
+    modelFile: selection.modelFile,
+    modelUrl: selection.modelUrl,
+    matchScore: selection.matchScore || 0,
+    matchSource: selection.matchSource || 'catalog',
+  };
+}
+
+function getStoredModelSelection(storedModel) {
+  if (!storedModel?.modelId) return null;
+  return {
+    modelId: storedModel.modelId,
+    modelCategory: storedModel.modelCategory || null,
+    modelFile: storedModel.modelFile || null,
+    modelUrl: storedModel.modelUrl || null,
+    matchScore: storedModel.matchScore || 100,
+    matchSource: storedModel.matchSource || 'persisted',
+    reviewNeeded: false,
+  };
+}
+
+function resolveCoverageStatus({ hasModel, reviewNeeded }) {
+  if (!hasModel) {
+    return { status: 'missing', alreadyExists: false };
+  }
+  if (reviewNeeded) {
+    return { status: 'review', alreadyExists: false };
+  }
+  return { status: 'matched', alreadyExists: true };
 }
 
 /**
@@ -249,10 +286,14 @@ function extractSceneObjects(scene) {
   if (Array.isArray(sc.addItems)) {
     for (const item of sc.addItems) {
       const name = typeof item === 'string' ? item : (item.name || item);
+      const description = typeof item === 'object' && item
+        ? (item.description || item.notes || item.appearance || item.context || '')
+        : '';
       objects.push({
         id: `obj_${String(name).toLowerCase().replace(/\s+/g, '_')}`,
         type: matchObjectType(String(name)),
         name: String(name),
+        description,
       });
     }
   }
@@ -272,7 +313,11 @@ function extractSceneObjects(scene) {
 export function planScene(scene, state, options = {}) {
   const { prevLocationType = null } = options;
   if (!scene) {
-    return parseSceneCommand({ sceneId: 'empty', environment: {}, characters: [], objects: [], camera: {}, transitions: [] });
+    return {
+      sceneCommand: parseSceneCommand({ sceneId: 'empty', environment: {}, characters: [], objects: [], camera: {}, transitions: [] }),
+      modelAssignments: { playerModel: null, partyModels: [], npcModels: [] },
+      wantedEntries: [],
+    };
   }
 
   const world = state.world || {};
@@ -286,9 +331,20 @@ export function planScene(scene, state, options = {}) {
   const player = state.character;
   const allCharacters = [];
   const entityIds = [];
+  const modelAssignments = { playerModel: null, partyModels: [], npcModels: [] };
 
   if (player) {
     const pid = 'player';
+    const playerSelection = getStoredModelSelection(player.model3d) || selectCharacterModel({
+      name: player.name,
+      species: player.species,
+      career: player.career?.name,
+      gender: player.gender,
+      archetype: resolveCharacterArchetype(player.species, player.career?.name, player.gender),
+    });
+    if (!player.model3d && playerSelection?.modelId) {
+      modelAssignments.playerModel = toPersistedModel(playerSelection);
+    }
     entityIds.push(pid);
     allCharacters.push({
       id: pid,
@@ -297,6 +353,7 @@ export function planScene(scene, state, options = {}) {
       career: player.career?.name || '',
       gender: player.gender || 'male',
       isPlayer: true,
+      modelSelection: playerSelection,
     });
   }
 
@@ -316,14 +373,41 @@ export function planScene(scene, state, options = {}) {
   ).slice(0, 8);
 
   for (const npc of visibleNpcs) {
+    const npcSelection = getStoredModelSelection(npc.model3d) || selectCharacterModel({
+      name: npc.name,
+      species: npc.species,
+      career: npc.career,
+      gender: npc.gender,
+      archetype: resolveCharacterArchetype(npc.species, npc.career, npc.gender),
+    });
+    if (!npc.model3d && npcSelection?.modelId) {
+      modelAssignments.npcModels.push({
+        name: npc.name,
+        model3d: toPersistedModel(npcSelection),
+      });
+    }
     entityIds.push(npc.id);
-    allCharacters.push(npc);
+    allCharacters.push({ ...npc, modelSelection: npcSelection });
   }
 
   if (Array.isArray(state.party)) {
     for (const companion of state.party) {
       if (!companion || companion.name === player?.name) continue;
       const cid = `companion_${companion.name.toLowerCase().replace(/\s+/g, '_')}`;
+      const companionSelection = getStoredModelSelection(companion.model3d) || selectCharacterModel({
+        name: companion.name,
+        species: companion.species,
+        career: companion.career?.name,
+        gender: companion.gender,
+        archetype: resolveCharacterArchetype(companion.species, companion.career?.name, companion.gender),
+      });
+      if (!companion.model3d && companionSelection?.modelId) {
+        modelAssignments.partyModels.push({
+          id: companion.id || companion.name,
+          name: companion.name,
+          model3d: toPersistedModel(companionSelection),
+        });
+      }
       entityIds.push(cid);
       allCharacters.push({
         id: cid,
@@ -331,6 +415,7 @@ export function planScene(scene, state, options = {}) {
         species: companion.species || 'human',
         career: companion.career?.name || '',
         gender: companion.gender || 'male',
+        modelSelection: companionSelection,
       });
     }
   }
@@ -377,6 +462,13 @@ export function planScene(scene, state, options = {}) {
       name: c.name,
       archetype,
       assetHint,
+      modelId: c.modelSelection?.modelId,
+      modelCategory: c.modelSelection?.modelCategory,
+      modelFile: c.modelSelection?.modelFile,
+      modelUrl: c.modelSelection?.modelUrl,
+      modelMatchScore: c.modelSelection?.matchScore || 0,
+      alreadyExists: !!c.modelSelection?.modelId && !c.modelSelection?.reviewNeeded,
+      needsModelReview: !!c.modelSelection?.reviewNeeded,
       anchor,
       animation,
       facingTarget,
@@ -390,26 +482,66 @@ export function planScene(scene, state, options = {}) {
   const envProps = getEnvironmentProps(locationType);
   const envObjects = envProps
     .filter(p => !usedAnchors.has(p.anchor))
-    .map((p, i) => ({
-      id: `env_${p.type}_${i}`,
-      type: p.type,
-      name: p.type.replace(/_/g, ' '),
-      anchor: p.anchor,
-    }));
+    .map((p, i) => {
+      const selection = selectObjectModel({
+        name: p.type.replace(/_/g, ' '),
+        type: p.type,
+        environmentType: locationType,
+      });
+      return {
+        id: `env_${p.type}_${i}`,
+        type: p.type,
+        name: p.type.replace(/_/g, ' '),
+        description: '',
+        anchor: p.anchor,
+        selection,
+      };
+    });
 
   const availableObjAnchors = getLocationAnchors(locationType).filter(
     a => !usedAnchors.has(a) && !envProps.some(p => p.anchor === a)
   );
   let objAnchorIdx = 0;
 
-  const sceneSpecificObjects = sceneObjects.map(o => ({
-    id: o.id,
-    type: o.type,
-    name: o.name,
-    anchor: objAnchorIdx < availableObjAnchors.length ? availableObjAnchors[objAnchorIdx++] : undefined,
-  }));
+  const sceneSpecificObjects = sceneObjects.map(o => {
+    const selection = selectObjectModel({
+      name: `${o.name} ${o.description || ''}`.trim(),
+      type: o.type,
+      environmentType: locationType,
+    });
+    return {
+      id: o.id,
+      type: o.type,
+      name: o.name,
+      description: o.description || '',
+      modelId: selection?.modelId,
+      modelCategory: selection?.modelCategory,
+      modelFile: selection?.modelFile,
+      modelUrl: selection?.modelUrl,
+      modelMatchScore: selection?.matchScore || 0,
+      alreadyExists: !!selection?.modelId && !selection?.reviewNeeded,
+      needsModelReview: !!selection?.reviewNeeded,
+      anchor: objAnchorIdx < availableObjAnchors.length ? availableObjAnchors[objAnchorIdx++] : undefined,
+    };
+  });
 
-  const objects = [...envObjects, ...sceneSpecificObjects];
+  const objects = [
+    ...envObjects.map((o) => ({
+      id: o.id,
+      type: o.type,
+      name: o.name,
+      description: o.description,
+      modelId: o.selection?.modelId,
+      modelCategory: o.selection?.modelCategory,
+      modelFile: o.selection?.modelFile,
+      modelUrl: o.selection?.modelUrl,
+      modelMatchScore: o.selection?.matchScore || 0,
+      alreadyExists: !!o.selection?.modelId && !o.selection?.reviewNeeded,
+      needsModelReview: !!o.selection?.reviewNeeded,
+      anchor: o.anchor,
+    })),
+    ...sceneSpecificObjects,
+  ];
 
   const camera = determineCamera(scene, state);
 
@@ -426,7 +558,7 @@ export function planScene(scene, state, options = {}) {
     transitionDuration = 600;
   }
 
-  const cmd = parseSceneCommand({
+  const sceneCommand = parseSceneCommand({
     sceneId: scene.id || `scene_${Date.now()}`,
     environment: {
       type: locationType,
@@ -440,6 +572,57 @@ export function planScene(scene, state, options = {}) {
     transitions: [{ type: transitionType, duration: transitionDuration }],
   });
 
-  scene3dDebug.sceneCommand(cmd);
-  return cmd;
+  const sceneId = scene.id || `scene_${Date.now()}`;
+  const sceneText = scene.narrative || '';
+  const wantedEntries = [
+    ...characters.map((characterCommand) => {
+      const coverage = resolveCoverageStatus({
+        hasModel: !!characterCommand.modelId,
+        reviewNeeded: characterCommand.needsModelReview,
+      });
+      return {
+        sceneId,
+        sceneText,
+        entityKind: characterCommand.id === 'player'
+          ? 'player'
+          : characterCommand.id.startsWith('npc_')
+            ? 'npc'
+            : 'companion',
+        objectId: characterCommand.id,
+        objectName: characterCommand.name || 'Unknown',
+        objectType: `character:${characterCommand.archetype}`,
+        objectDescription: characterCommand.archetype || '',
+        suggestedModelId: characterCommand.modelId || null,
+        suggestedCategory: characterCommand.modelCategory || null,
+        suggestedFile: characterCommand.modelFile || null,
+        matchScore: characterCommand.modelMatchScore || 0,
+        alreadyExists: coverage.alreadyExists,
+        status: coverage.status,
+      };
+    }),
+    ...objects.map((objectCommand) => {
+      const coverage = resolveCoverageStatus({
+        hasModel: !!objectCommand.modelId,
+        reviewNeeded: objectCommand.needsModelReview,
+      });
+      return {
+        sceneId,
+        sceneText,
+        entityKind: 'object',
+        objectId: objectCommand.id,
+        objectName: objectCommand.name || objectCommand.type,
+        objectType: objectCommand.type,
+        objectDescription: objectCommand.description || '',
+        suggestedModelId: objectCommand.modelId || null,
+        suggestedCategory: objectCommand.modelCategory || null,
+        suggestedFile: objectCommand.modelFile || null,
+        matchScore: objectCommand.modelMatchScore || 0,
+        alreadyExists: coverage.alreadyExists,
+        status: coverage.status,
+      };
+    }),
+  ];
+
+  scene3dDebug.sceneCommand(sceneCommand);
+  return { sceneCommand, modelAssignments, wantedEntries };
 }

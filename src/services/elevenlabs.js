@@ -1,7 +1,5 @@
 import { apiClient } from './apiClient';
 
-const BASE_URL = 'https://api.elevenlabs.io/v1';
-
 function resolveMediaUrl(url) {
   if (!url) return null;
   if (url.startsWith('http') || url.startsWith('blob:')) return url;
@@ -43,7 +41,7 @@ function parseAlignmentWords(alignment) {
 }
 
 export const elevenlabsService = {
-  async getVoices(apiKey) {
+  async getVoices() {
     if (apiClient.isConnected()) {
       const data = await apiClient.get('/proxy/elevenlabs/voices');
       return data.voices.map((v) => ({
@@ -54,94 +52,30 @@ export const elevenlabsService = {
         previewUrl: v.preview_url,
       }));
     }
-
-    const response = await fetch(`${BASE_URL}/voices`, {
-      headers: { 'xi-api-key': apiKey },
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail?.message || `ElevenLabs API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.voices.map((v) => ({
-      voiceId: v.voice_id,
-      name: v.name,
-      category: v.category,
-      labels: v.labels,
-      previewUrl: v.preview_url,
-    }));
+    throw new Error('ElevenLabs requires backend connection');
   },
 
-  async generateSoundEffect(apiKey, text, durationSeconds = 4, campaignId = null) {
+  async generateSoundEffect(_apiKey, text, durationSeconds = 4, campaignId = null) {
     if (apiClient.isConnected()) {
       const body = { text, durationSeconds };
       if (campaignId) body.campaignId = campaignId;
       const data = await apiClient.post('/proxy/elevenlabs/sfx', body);
       return resolveMediaUrl(data.url);
     }
-
-    const response = await fetch(`${BASE_URL}/sound-generation`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        duration_seconds: durationSeconds,
-        prompt_influence: 0.3,
-        output_format: 'mp3_44100_128',
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail?.message || `ElevenLabs SFX error: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    throw new Error('ElevenLabs requires backend connection');
   },
 
-  async textToSpeechStream(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
+  async textToSpeechStream(_apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
       const body = { voiceId, text, modelId };
       if (campaignId) body.campaignId = campaignId;
       const data = await apiClient.post('/proxy/elevenlabs/tts-stream', body);
       return resolveMediaUrl(data.url);
     }
-
-    const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          style: 0.0,
-          use_speaker_boost: true,
-        },
-        output_format: 'mp3_44100_128',
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail?.message || `ElevenLabs TTS error: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    return URL.createObjectURL(blob);
+    throw new Error('ElevenLabs requires backend connection');
   },
 
-  async textToSpeechWithTimestamps(apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
+  async textToSpeechWithTimestamps(_apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
     if (apiClient.isConnected()) {
       const body = { voiceId, text, modelId };
       if (campaignId) body.campaignId = campaignId;
@@ -150,42 +84,7 @@ export const elevenlabsService = {
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
       return { audioUrl, words };
     }
-
-    const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}/with-timestamps`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        model_id: modelId,
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-          style: 0.0,
-          use_speaker_boost: true,
-        },
-        output_format: 'mp3_44100_128',
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail?.message || `ElevenLabs TTS error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const audioBytes = atob(data.audio_base64);
-    const audioArray = new Uint8Array(audioBytes.length);
-    for (let i = 0; i < audioBytes.length; i++) {
-      audioArray[i] = audioBytes.charCodeAt(i);
-    }
-    const blob = new Blob([audioArray], { type: 'audio/mpeg' });
-    const audioUrl = URL.createObjectURL(blob);
-    const words = parseAlignmentWords(data.alignment);
-
-    return { audioUrl, words };
+    throw new Error('ElevenLabs requires backend connection');
   },
 
   splitIntoParagraphs(text) {

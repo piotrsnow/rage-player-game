@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-const LIGHTING_PRESETS = {
+export const LIGHTING_PRESETS = {
   dawn: {
     ambientColor: '#FFE4C4',
     ambientIntensity: 0.4,

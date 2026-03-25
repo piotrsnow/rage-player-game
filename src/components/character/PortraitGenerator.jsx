@@ -17,7 +17,8 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   const provider = settings.imageProvider || 'dalle';
   const isDalle = provider === 'dalle';
   const isGemini = provider === 'gemini';
-  const isTextOnly = isDalle || isGemini;
+  const canUseReferenceImage = isGemini || provider === 'stability';
+  const requiresReferenceImage = provider === 'stability';
   const apiKey = isDalle ? settings.openaiApiKey : isGemini ? settings.geminiApiKey : settings.stabilityApiKey;
   const keyProvider = isDalle ? 'openai' : isGemini ? 'gemini' : 'stability';
   const hasKey = !!(apiKey || (settings.useBackend && hasApiKey(keyProvider)));
@@ -28,6 +29,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   const [generatedUrl, setGeneratedUrl] = useState(initialPortrait || null);
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
+  const [captureSession, setCaptureSession] = useState(0);
 
   const abortRef = useRef(false);
 
@@ -38,14 +40,14 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   }, []);
 
   const handleGenerate = useCallback(async () => {
-    if (!isTextOnly && !photoBlob) return;
+    if (requiresReferenceImage && !photoBlob) return;
     setGenerating(true);
     setError(null);
     abortRef.current = false;
 
     try {
       const url = await imageService.generatePortrait(
-        isTextOnly ? null : photoBlob,
+        canUseReferenceImage ? photoBlob : null,
         { species, gender, careerName, genre },
         apiKey,
         strength,
@@ -67,7 +69,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, isTextOnly, t]);
+  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);
@@ -75,18 +77,20 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
 
   const handleRetry = useCallback(() => {
     setGeneratedUrl(null);
-    setShowCapture(true);
+    setShowCapture(canUseReferenceImage);
     setPhotoBlob(null);
+    setCaptureSession((value) => value + 1);
     setError(null);
-  }, []);
+  }, [canUseReferenceImage]);
 
   const handleRemove = useCallback(() => {
     setGeneratedUrl(null);
     setPhotoBlob(null);
-    setShowCapture(true);
+    setShowCapture(canUseReferenceImage);
+    setCaptureSession((value) => value + 1);
     setError(null);
     onPortraitReady(null);
-  }, [onPortraitReady]);
+  }, [onPortraitReady, canUseReferenceImage]);
 
   if (!hasKey) {
     return (
@@ -137,11 +141,11 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     );
   }
 
-  if (isTextOnly) {
+  if (isDalle) {
     return (
       <div className="flex flex-col items-center gap-4">
         <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
-          {isGemini ? t('charCreator.portraitDescGemini') : t('charCreator.portraitDescDalle')}
+          {t('charCreator.portraitDescDalle')}
         </p>
 
         {error && (
@@ -173,46 +177,83 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
-        {t('charCreator.portraitDesc')}
+        {isGemini ? t('charCreator.portraitDescGemini') : t('charCreator.portraitDesc')}
       </p>
-      <WebcamCapture onCapture={handleCapture} />
 
-      {photoBlob && (
+      {canUseReferenceImage && (
         <div className="w-full max-w-[280px] space-y-3">
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
-                {t('charCreator.fantasyIntensity')}
-              </span>
-              <span className="text-xs font-bold text-primary tabular-nums">
-                {Math.round(strength * 100)}%
-              </span>
-            </div>
-            <input
-              type="range"
-              min={20}
-              max={70}
-              value={Math.round(strength * 100)}
-              onChange={(e) => setStrength(Number(e.target.value) / 100)}
-              className="w-full appearance-none mana-slider bg-transparent cursor-pointer"
-            />
-            <div className="flex justify-between mt-1">
-              {STRENGTH_PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setStrength(p.value)}
-                  className={`text-[10px] font-label transition-colors ${
-                    Math.abs(strength - p.value) < 0.05
-                      ? 'text-primary'
-                      : 'text-outline hover:text-on-surface-variant'
-                  }`}
-                >
-                  {t(p.labelKey)}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+              {t(
+                requiresReferenceImage
+                  ? 'charCreator.referencePhotoRequired'
+                  : 'charCreator.referencePhotoOptional',
+              )}
+            </span>
+            {!requiresReferenceImage && photoBlob && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPhotoBlob(null);
+                  setShowCapture(true);
+                  setCaptureSession((value) => value + 1);
+                }}
+                className="text-[10px] font-label text-tertiary hover:text-primary transition-colors"
+              >
+                {t('charCreator.clearReferencePhoto')}
+              </button>
+            )}
           </div>
+          {showCapture && (
+            <WebcamCapture key={captureSession} onCapture={handleCapture} />
+          )}
+        </div>
+      )}
+
+      {(photoBlob || !requiresReferenceImage) && (
+        <div className="w-full max-w-[280px] space-y-3">
+          {requiresReferenceImage && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+                  {t('charCreator.fantasyIntensity')}
+                </span>
+                <span className="text-xs font-bold text-primary tabular-nums">
+                  {Math.round(strength * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={20}
+                max={70}
+                value={Math.round(strength * 100)}
+                onChange={(e) => setStrength(Number(e.target.value) / 100)}
+                className="w-full appearance-none mana-slider bg-transparent cursor-pointer"
+              />
+              <div className="flex justify-between mt-1">
+                {STRENGTH_PRESETS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setStrength(p.value)}
+                    className={`text-[10px] font-label transition-colors ${
+                      Math.abs(strength - p.value) < 0.05
+                        ? 'text-primary'
+                        : 'text-outline hover:text-on-surface-variant'
+                    }`}
+                  >
+                    {t(p.labelKey)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isGemini && !photoBlob && (
+            <p className="text-[11px] text-on-surface-variant text-center">
+              {t('charCreator.referencePhotoHintGemini')}
+            </p>
+          )}
 
           {error && (
             <p className="text-xs text-error text-center">{error}</p>

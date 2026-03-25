@@ -160,75 +160,26 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
     [scene?.image]
   );
 
-  const currentImageRef = useRef(imageSrc);
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
-  const [imgOpacity, setImgOpacity] = useState(imageSrc ? 1 : 0);
-  const pendingImageRef = useRef(null);
-  const phaseRef = useRef('idle');
 
   useEffect(() => {
-    if (!imageSrc || imageSrc === currentImageRef.current) return;
+    if (!imageSrc || imageSrc === displayedSrc) return;
 
     let cancelled = false;
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      pendingImageRef.current = imageSrc;
-
-      if (!currentImageRef.current) {
-        currentImageRef.current = imageSrc;
-        pendingImageRef.current = null;
-        phaseRef.current = 'fading-in';
-        setDisplayedSrc(imageSrc);
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          requestAnimationFrame(() => {
-            if (cancelled) return;
-            setImgOpacity(1);
-          });
-        });
-      } else if (phaseRef.current === 'idle') {
-        phaseRef.current = 'fading-out';
-        setImgOpacity(0);
-      }
+      setDisplayedSrc(imageSrc);
     };
     img.onerror = () => {};
     img.src = imageSrc;
 
     return () => { cancelled = true; };
-  }, [imageSrc]);
-
-  const handleImgTransitionEnd = useCallback((e) => {
-    if (e.propertyName !== 'opacity') return;
-    const pending = pendingImageRef.current;
-
-    if (phaseRef.current === 'fading-out' && pending) {
-      pendingImageRef.current = null;
-      currentImageRef.current = pending;
-      phaseRef.current = 'fading-in';
-      setDisplayedSrc(pending);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setImgOpacity(1);
-        });
-      });
-    } else if (phaseRef.current === 'fading-in') {
-      if (pending) {
-        phaseRef.current = 'fading-out';
-        setImgOpacity(0);
-      } else {
-        phaseRef.current = 'idle';
-      }
-    }
-  }, []);
+  }, [imageSrc, displayedSrc]);
 
   const handleImageError = useCallback(() => {
     if (scene?.id && scene?.image) {
-      currentImageRef.current = null;
-      pendingImageRef.current = null;
-      phaseRef.current = 'idle';
       setDisplayedSrc(null);
-      setImgOpacity(1);
       dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
       onImageError?.(scene.id);
     }
@@ -300,7 +251,6 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   return (
     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
       {/* Scene background: 3D, AI image, canvas 2D, or placeholder */}
-      {/* 3D mode temporarily disabled
       {(settings.sceneVisualization || 'image') === '3d' ? (
         <Suspense fallback={
           <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
@@ -312,16 +262,13 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
             onError={() => updateSettings({ sceneVisualization: 'image' })}
           />
         </Suspense>
-      ) : */}
-      {(settings.sceneVisualization || 'image') === 'canvas' ? (
+      ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
       ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
         <img
           src={displayedSrc}
           alt="Scene"
-          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ease-in-out"
-          style={{ opacity: imgOpacity }}
-          onTransitionEnd={handleImgTransitionEnd}
+          className="absolute inset-0 w-full h-full object-cover"
           onError={handleImageError}
         />
       ) : (

@@ -22,7 +22,6 @@ export default function KeysModal({ onClose }) {
     stabilityApiKey: settings.stabilityApiKey,
     geminiApiKey: settings.geminiApiKey,
   });
-  const [elevenlabsKey, setElevenlabsKey] = useState(settings.elevenlabsApiKey || '');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -40,7 +39,7 @@ export default function KeysModal({ onClose }) {
       anthropicApiKey: localKeys.anthropicApiKey,
       stabilityApiKey: localKeys.stabilityApiKey,
       geminiApiKey: localKeys.geminiApiKey,
-      elevenlabsApiKey: elevenlabsKey,
+      elevenlabsApiKey: '',
     });
 
     if (apiClient.isConnected()) {
@@ -51,7 +50,6 @@ export default function KeysModal({ onClose }) {
             anthropic: localKeys.anthropicApiKey || '',
             stability: localKeys.stabilityApiKey || '',
             gemini: localKeys.geminiApiKey || '',
-            elevenlabs: elevenlabsKey || '',
           },
         });
         fetchBackendKeys();
@@ -436,25 +434,6 @@ export default function KeysModal({ onClose }) {
                       )}
                     </div>
 
-                    <div>
-                      <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                        {t('settings.elevenlabsApiKey')}
-                      </label>
-                      <input
-                        type="password"
-                        value={elevenlabsKey}
-                        onChange={(e) => setElevenlabsKey(e.target.value)}
-                        placeholder={backendKeys.elevenlabs ? backendKeys.elevenlabs : 'xi-...'}
-                        className="w-full bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-sm py-3 px-1 placeholder:text-outline/30 font-mono"
-                      />
-                      {!elevenlabsKey && backendKeys.elevenlabs && (
-                        <p className="text-[10px] text-primary/70 mt-1 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">cloud_done</span>
-                          {t('settings.serverKeyHint', { masked: backendKeys.elevenlabs })}
-                        </p>
-                      )}
-                    </div>
-
                   </div>
                 </div>
 
@@ -465,6 +444,9 @@ export default function KeysModal({ onClose }) {
                       <h3 className="font-headline text-tertiary text-sm mb-2">{t('settings.apiKeysTitle')}</h3>
                       <p className="text-xs text-on-surface-variant leading-relaxed">
                         {t('settings.apiKeysDescription')}
+                      </p>
+                      <p className="text-xs text-on-surface-variant leading-relaxed mt-3">
+                        {t('settings.elevenlabsServerOnly')}
                       </p>
                     </div>
                   </div>

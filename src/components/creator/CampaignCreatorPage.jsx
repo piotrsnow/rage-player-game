@@ -12,6 +12,7 @@ import Button from '../ui/Button';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
+import PortraitGenerator from '../character/PortraitGenerator';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
@@ -91,6 +92,7 @@ export default function CampaignCreatorPage() {
   const [charsLoaded, setCharsLoaded] = useState(false);
   const [showCharModal, setShowCharModal] = useState(false);
   const [createdCharacter, setCreatedCharacter] = useState(null);
+  const [editingSelectedPortrait, setEditingSelectedPortrait] = useState(false);
 
   const hasCharacter = charMode === 'new' ? !!createdCharacter : !!selectedCharacter;
 
@@ -206,6 +208,40 @@ export default function CampaignCreatorPage() {
     });
     setTimeout(() => mp.startGame(settings.language || 'en'), 200);
   };
+
+  const persistSelectedCharacter = useCallback(async (updates) => {
+    if (!selectedCharacter) return null;
+
+    const nextCharacter = { ...selectedCharacter, ...updates };
+    const saved = await storage.saveCharacter(nextCharacter);
+    const normalized = {
+      ...nextCharacter,
+      ...saved,
+      career: saved?.career || saved?.careerData || nextCharacter.career,
+    };
+    const previousId = selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id;
+    const nextId = normalized.backendId || normalized.localId || normalized.id || previousId;
+
+    setSelectedCharacter(normalized);
+    setSavedCharacters((prev) => {
+      let replaced = false;
+      const updated = prev.map((entry) => {
+        const entryId = entry.backendId || entry.localId || entry.id;
+        if (entryId === previousId || entryId === nextId) {
+          replaced = true;
+          return {
+            ...entry,
+            ...normalized,
+            careerData: normalized.career || normalized.careerData || entry.careerData,
+          };
+        }
+        return entry;
+      });
+      return replaced ? updated : [normalized, ...updated];
+    });
+
+    return normalized;
+  }, [selectedCharacter]);
 
   const handleSubmit = async () => {
     if (!form.storyPrompt.trim()) return;
@@ -357,7 +393,11 @@ export default function CampaignCreatorPage() {
 
             <div className="flex gap-3 mb-6">
               <button
-                onClick={() => { setCharMode('new'); setSelectedCharacter(null); }}
+                onClick={() => {
+                  setCharMode('new');
+                  setSelectedCharacter(null);
+                  setEditingSelectedPortrait(false);
+                }}
                 className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
                   charMode === 'new'
                     ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
@@ -371,7 +411,10 @@ export default function CampaignCreatorPage() {
                 <p className="text-[10px] opacity-70">{t('characterPicker.createNewDesc')}</p>
               </button>
               <button
-                onClick={() => setCharMode('existing')}
+                onClick={() => {
+                  setCharMode('existing');
+                  setEditingSelectedPortrait(false);
+                }}
                 className={`flex-1 px-4 py-4 rounded-sm border transition-all duration-300 text-left ${
                   charMode === 'existing'
                     ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
@@ -405,8 +448,12 @@ export default function CampaignCreatorPage() {
                       </button>
                     </div>
                     <div className="flex items-start gap-4">
-                      <div className="w-12 h-12 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
-                        <span className="material-symbols-outlined text-2xl text-primary/60">person</span>
+                      <div className="w-14 h-[72px] bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
+                        {createdCharacter.portraitUrl ? (
+                          <img src={createdCharacter.portraitUrl} alt={createdCharacter.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="material-symbols-outlined text-2xl text-primary/60">person</span>
+                        )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="font-headline text-lg text-tertiary">{createdCharacter.name}</p>
@@ -465,6 +512,7 @@ export default function CampaignCreatorPage() {
                           onClick={async () => {
                             if (isSelected) {
                               setSelectedCharacter(null);
+                              setEditingSelectedPortrait(false);
                             } else {
                               const id = ch.backendId || ch.localId || ch.id;
                               let fullChar;
@@ -481,12 +529,17 @@ export default function CampaignCreatorPage() {
                                 localId: base.localId || ch.localId || ch.id,
                               };
                               setSelectedCharacter(normalized);
+                              setEditingSelectedPortrait(false);
                             }
                           }}
                         >
                           <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
-                              <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+                            <div className="w-12 h-16 bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
+                              {ch.portraitUrl ? (
+                                <img src={ch.portraitUrl} alt={ch.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className={`font-headline text-sm truncate ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
@@ -508,6 +561,72 @@ export default function CampaignCreatorPage() {
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {selectedCharacter && (
+                  <div className="mt-4 p-4 bg-surface-container-high/30 border border-primary/20 rounded-sm">
+                    <div className="flex items-center justify-between mb-3 gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary">check_circle</span>
+                        <span className="text-xs font-bold text-primary uppercase tracking-wider">
+                          {t('characterPicker.selectedCharacter')}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSelectedPortrait((prev) => !prev)}
+                        className="flex items-center gap-1 text-xs text-tertiary hover:text-primary transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">photo_camera</span>
+                        {t('character.updatePortrait')}
+                      </button>
+                    </div>
+
+                    <div className="flex items-start gap-4">
+                      <div className="w-16 h-[85px] bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
+                        {selectedCharacter.portraitUrl ? (
+                          <img src={selectedCharacter.portraitUrl} alt={selectedCharacter.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="material-symbols-outlined text-3xl text-primary/60">person</span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-headline text-lg text-tertiary">{selectedCharacter.name}</p>
+                        <p className="text-xs text-on-surface-variant">
+                          {t(`species.${selectedCharacter.species}`, { defaultValue: selectedCharacter.species })} · {translateCareer(selectedCharacter.career?.name, t)}
+                          <span className="mx-1 opacity-50">·</span>
+                          {translateTierName(selectedCharacter.career?.tierName, t)}
+                        </p>
+                        <div className="flex flex-wrap gap-3 mt-2">
+                          {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (
+                            <span key={key} className="text-[10px] text-on-surface-variant">
+                              {short}: <strong className="text-tertiary">{selectedCharacter.characteristics?.[key]}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {editingSelectedPortrait && (
+                      <div className="mt-4 pt-4 border-t border-outline-variant/10">
+                        <PortraitGenerator
+                          species={selectedCharacter.species}
+                          gender={selectedCharacter.gender}
+                          careerName={selectedCharacter.career?.name}
+                          genre={form.genre}
+                          initialPortrait={selectedCharacter.portraitUrl}
+                          onPortraitReady={async (url) => {
+                            try {
+                              await persistSelectedCharacter({ portraitUrl: url || '' });
+                              setEditingSelectedPortrait(false);
+                            } catch {
+                              // Keep the editor open so the user can retry.
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,9 +1,9 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { getAnchor } from '../../../data/sceneAnchors';
 import { getObjectPrefab } from '../../../data/prefabs';
+import { resolveSceneModelSync } from '../../../services/assetManager';
 import { scene3dDebug } from '../../../services/scene3dDebug';
-import { getLocalModel } from '../../../services/localModels';
 import PlaceholderMesh from './PlaceholderMesh';
 import GLBModel from './GLBModel';
 
@@ -21,13 +21,9 @@ const ENTRANCE_DURATION = 0.5;
 export default function Object3D({ command, environmentType, meshySettings = {} }) {
   const groupRef = useRef();
   const entranceRef = useRef({ elapsed: 0 });
+  const [modelUrl, setModelUrl] = useState(command.modelUrl || null);
 
   const prefab = useMemo(() => getObjectPrefab(command.type), [command.type]);
-
-  const modelUrl = useMemo(
-    () => getLocalModel(command.id, 'object'),
-    [command.id]
-  );
 
   const anchor = useMemo(
     () => getAnchor(environmentType, command.anchor),
@@ -51,6 +47,19 @@ export default function Object3D({ command, environmentType, meshySettings = {} 
     if (FLOAT_TYPES.has(t)) return 'float';
     return 'breathe';
   }, [command.type]);
+
+  useEffect(() => {
+    const resolved = resolveSceneModelSync({
+      directUrl: command.modelUrl || null,
+      assetKey: command.type ? `obj:${command.type}` : null,
+      category: 'obj',
+      type: command.type,
+    }, {
+      ...meshySettings,
+      onReady: setModelUrl,
+    });
+    setModelUrl(resolved.url || null);
+  }, [command.modelUrl, command.type, meshySettings]);
 
   useEffect(() => {
     scene3dDebug.spawn('object', command.id, command.anchor);

@@ -90,7 +90,7 @@
     "title": "Klucze API",
     "subtitle": "Skonfiguruj klucze dostawców AI i preferencje modeli.",
     "apiKeys": "Klucze API",
-    "configureElevenlabs": "Ustaw klucz API ElevenLabs w panelu Klucze, aby korzystać z narracji głosowej.",
+    "configureElevenlabs": "Narracja ElevenLabs wymaga połączenia z backendem i klucza `ELEVENLABS_API_KEY` ustawionego w zmiennych środowiskowych serwera.",
     "configureSuno": "Ustaw klucz API Suno w panelu Klucze, aby generować muzykę."
   },
   "lobby": {
@@ -448,6 +448,7 @@
     "modelCustomDesc": "Wybierz konkretny model z listy",
     "apiKeysTitle": "Klucze API",
     "apiKeysDescription": "Klucze są przechowywane lokalnie w przeglądarce i nigdy nie są wysyłane na żaden serwer poza dostawcą AI. Potrzebujesz co najmniej jednego klucza, aby grać.",
+    "elevenlabsServerOnly": "Klucz ElevenLabs nie jest już konfigurowany w formularzu. Backend odczytuje go wyłącznie z zmiennej środowiskowej `ELEVENLABS_API_KEY`.",
     "activeProvider": "Aktywny Dostawca",
     "status": "Status",
     "keyConfigured": "Klucz Skonfigurowany",
@@ -480,6 +481,7 @@
     "languageDesc": "Język interfejsu i narracji AI",
     "narrator": "Narrator",
     "narratorDesc": "ElevenLabs synteza mowy dla narracji MG",
+    "sharedVoiceSettingsHint": "Te ustawienia głosów są współdzielone globalnie dla wszystkich graczy podłączonych do backendu.",
     "narratorEnabled": "Włącz Narratora",
     "narratorAutoPlay": "Auto-odtwarzanie Wiadomości MG",
     "narratorAutoPlayDesc": "Automatycznie czytaj nowe wiadomości MG",
@@ -928,10 +930,14 @@
     "portraitNeedsKey": "Generowanie portretu wymaga klucza API Stability AI. Skonfiguruj go w Ustawieniach.",
     "portraitNeedsKeyDalle": "Generowanie portretu wymaga klucza API OpenAI. Skonfiguruj go w Ustawieniach.",
     "portraitNeedsKeyGemini": "Generowanie portretu wymaga klucza API Google AI. Skonfiguruj go w Ustawieniach.",
-    "portraitDescGemini": "AI wygeneruje portret fantasy twojej postaci na podstawie wybranej rasy, płci i profesji.",
+    "portraitDescGemini": "AI wygeneruje portret fantasy twojej postaci na podstawie wybranej rasy, płci i profesji. Możesz też dodać zdjęcie referencyjne lub fotkę z kamerki, aby zachować podobieństwo twarzy.",
     "portraitDescDalle": "AI wygeneruje portret fantasy twojej postaci na podstawie wybranej rasy, płci i profesji.",
     "portraitFiltered": "Obraz został odfiltrowany przez system bezpieczeństwa AI. Spróbuj z innym zdjęciem.",
-    "cameraError": "Nie można uzyskać dostępu do kamery. Spróbuj wgrać zdjęcie."
+    "cameraError": "Nie można uzyskać dostępu do kamery. Spróbuj wgrać zdjęcie.",
+    "referencePhotoRequired": "Zdjęcie referencyjne",
+    "referencePhotoOptional": "Zdjęcie referencyjne opcjonalne",
+    "clearReferencePhoto": "Wyczyść zdjęcie",
+    "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy."
   },
   "characterPicker": {
     "title": "Twoja Postać",
@@ -945,7 +951,8 @@
     "tierLabel": "Szczebel",
     "xpLabel": "PD",
     "campaigns": "kampanii",
-    "deselect": "Odznacz"
+    "deselect": "Odznacz",
+    "selectedCharacter": "Wybrana postać"
   },
   "system": {
     "diceRollMessage": "Test {{skill}}: k100 wynik {{roll}} vs cel {{target}} — PS {{sl}} — {{result}}",

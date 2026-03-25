@@ -90,7 +90,7 @@
     "title": "API Keys",
     "subtitle": "Configure your AI provider keys and model preferences.",
     "apiKeys": "API Keys",
-    "configureElevenlabs": "Set your ElevenLabs API key in the Keys panel to use voice narration.",
+    "configureElevenlabs": "ElevenLabs narration requires a backend connection and an `ELEVENLABS_API_KEY` environment variable on the server.",
     "configureSuno": "Set your Suno API key in the Keys panel to generate music."
   },
   "lobby": {
@@ -448,6 +448,7 @@
     "modelCustomDesc": "Pick a specific model from the list",
     "apiKeysTitle": "API Keys",
     "apiKeysDescription": "Keys are stored locally in your browser and never sent to any server besides the AI provider. You need at least one key to play.",
+    "elevenlabsServerOnly": "The ElevenLabs key is no longer configured in the form. The backend reads it only from the `ELEVENLABS_API_KEY` environment variable.",
     "activeProvider": "Active Provider",
     "status": "Status",
     "keyConfigured": "Key Configured",
@@ -480,6 +481,7 @@
     "languageDesc": "Interface and AI narration language",
     "narrator": "Narrator",
     "narratorDesc": "ElevenLabs text-to-speech for DM narration",
+    "sharedVoiceSettingsHint": "These voice settings are shared globally for all players connected to the backend.",
     "narratorEnabled": "Enable Narrator",
     "narratorAutoPlay": "Auto-play DM Messages",
     "narratorAutoPlayDesc": "Automatically narrate new DM messages",
@@ -928,10 +930,14 @@
     "portraitNeedsKey": "Portrait generation requires a Stability AI API key. Configure it in Settings.",
     "portraitNeedsKeyDalle": "Portrait generation requires an OpenAI API key. Configure it in Settings.",
     "portraitNeedsKeyGemini": "Portrait generation requires a Google AI API key. Configure it in Settings.",
-    "portraitDescGemini": "AI will generate a fantasy portrait of your character based on the selected species, gender, and career.",
+    "portraitDescGemini": "AI will generate a fantasy portrait of your character based on the selected species, gender, and career. You can also add a reference image or webcam photo to preserve facial likeness.",
     "portraitDescDalle": "AI will generate a fantasy portrait of your character based on the selected species, gender, and career.",
     "portraitFiltered": "The image was filtered by the AI safety system. Please try with a different photo.",
-    "cameraError": "Could not access camera. Try uploading a photo instead."
+    "cameraError": "Could not access camera. Try uploading a photo instead.",
+    "referencePhotoRequired": "Reference photo",
+    "referencePhotoOptional": "Reference photo optional",
+    "clearReferencePhoto": "Clear photo",
+    "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance."
   },
   "characterPicker": {
     "title": "Your Character",
@@ -945,7 +951,8 @@
     "tierLabel": "Tier",
     "xpLabel": "XP",
     "campaigns": "campaigns",
-    "deselect": "Deselect"
+    "deselect": "Deselect",
+    "selectedCharacter": "Selected character"
   },
   "system": {
     "diceRollMessage": "{{skill}} test: d100 roll {{roll}} vs target {{target}} — SL {{sl}} — {{result}}",

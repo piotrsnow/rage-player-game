@@ -5,6 +5,8 @@ const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 120;
 const MAX_CONCURRENT = 2;
+const CACHE_VERSION = 'textured-v2';
+const TARGET_FORMATS = ['glb'];
 
 /** @type {Map<string, MeshyTask>} */
 const activeTasks = new Map();
@@ -34,7 +36,12 @@ let runningCount = 0;
  */
 async function createTextTo3DTask(prompt, apiKey, assetKey, campaignId) {
   if (apiClient.isConnected()) {
-    const data = await apiClient.post('/proxy/meshy/text-to-3d', { prompt, assetKey, campaignId });
+    const data = await apiClient.post('/proxy/meshy/text-to-3d', {
+      prompt,
+      assetKey,
+      campaignId,
+      cacheVersion: CACHE_VERSION,
+    });
     return { taskId: data.taskId, cacheKey: data.key, cached: !!data.cached, url: data.url || null };
   }
 
@@ -47,8 +54,9 @@ async function createTextTo3DTask(prompt, apiKey, assetKey, campaignId) {
     body: JSON.stringify({
       mode: 'preview',
       prompt,
-        art_style: 'realistic',
+      art_style: 'realistic',
       should_remesh: true,
+      target_formats: TARGET_FORMATS,
     }),
   });
 
@@ -59,6 +67,40 @@ async function createTextTo3DTask(prompt, apiKey, assetKey, campaignId) {
 
   const data = await response.json();
   return { taskId: data.result, cacheKey: null, cached: false, url: null };
+}
+
+/**
+ * @param {string} previewTaskId
+ * @param {string} apiKey
+ * @returns {Promise<string>}
+ */
+async function createRefineTask(previewTaskId, apiKey) {
+  if (apiClient.isConnected()) {
+    const data = await apiClient.post('/proxy/meshy/refine', { previewTaskId });
+    return data.taskId;
+  }
+
+  const response = await fetch(`${MESHY_API_BASE}/text-to-3d`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      mode: 'refine',
+      preview_task_id: previewTaskId,
+      target_formats: TARGET_FORMATS,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message || `Meshy refine error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data.result) throw new Error('No refine task ID returned from Meshy');
+  return data.result;
 }
 
 /**
@@ -93,6 +135,33 @@ async function pollTaskStatus(taskId, apiKey) {
 }
 
 /**
+ * Poll a Meshy task until it succeeds or fails.
+ * @param {string} taskId
+ * @param {string} apiKey
+ * @param {(message: string) => void} onStatus
+ * @param {string} timeoutLabel
+ * @returns {Promise<{status: string, glbUrl: string|null, progress: number}>}
+ */
+async function waitForTaskCompletion(taskId, apiKey, onStatus, timeoutLabel) {
+  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+    const result = await pollTaskStatus(taskId, apiKey);
+    onStatus(`${result.status} (${result.progress}%)`);
+
+    if (result.status === 'SUCCEEDED') {
+      return result;
+    }
+
+    if (result.status === 'FAILED' || result.status === 'EXPIRED') {
+      throw new Error(`Task ${result.status}`);
+    }
+  }
+
+  throw new Error(timeoutLabel);
+}
+
+/**
  * Store the generated GLB to backend for persistent campaign storage.
  * @param {string} glbUrl - Meshy CDN URL for the GLB
  * @param {string} cacheKey - Backend cache key
@@ -111,6 +180,7 @@ async function storeToBackend(glbUrl, cacheKey, assetKey, campaignId, prompt) {
       assetKey,
       campaignId,
       prompt,
+      cacheVersion: CACHE_VERSION,
     });
     return data.url || null;
   } catch (err) {
@@ -130,7 +200,12 @@ export async function checkBackendCache(prompt, assetKey, campaignId) {
   if (!apiClient.isConnected()) return { cached: false, url: null, key: '' };
 
   try {
-    const data = await apiClient.post('/proxy/meshy/check', { prompt, assetKey, campaignId });
+    const data = await apiClient.post('/proxy/meshy/check', {
+      prompt,
+      assetKey,
+      campaignId,
+      cacheVersion: CACHE_VERSION,
+    });
     return { cached: !!data.cached, url: data.url || null, key: data.key || '' };
   } catch {
     return { cached: false, url: null, key: '' };
@@ -172,70 +247,71 @@ function processQueue(apiKey, campaignId) {
 async function executeGeneration(assetKey, prompt, apiKey, campaignId) {
   scene3dDebug.meshyRequest(prompt, assetKey);
 
-  const createResult = await createTextTo3DTask(prompt, apiKey, assetKey, campaignId);
+  const previewResult = await createTextTo3DTask(prompt, apiKey, assetKey, campaignId);
 
-  if (createResult.cached && createResult.url) {
+  if (previewResult.cached && previewResult.url) {
     const task = {
       taskId: '', assetKey, status: 'ready',
-      glbUrl: null, storedUrl: createResult.url, error: null, createdAt: Date.now(),
+      glbUrl: null, storedUrl: previewResult.url, error: null, createdAt: Date.now(),
     };
     activeTasks.set(assetKey, task);
     scene3dDebug.meshyComplete('(cached)', assetKey);
-    return { blob: null, mimeType: 'model/gltf-binary', storedUrl: createResult.url };
+    return { blob: null, mimeType: 'model/gltf-binary', storedUrl: previewResult.url };
   }
 
-  const taskId = createResult.taskId;
-  if (!taskId) throw new Error('No task ID returned from Meshy');
+  const previewTaskId = previewResult.taskId;
+  if (!previewTaskId) throw new Error('No preview task ID returned from Meshy');
 
   const task = {
-    taskId, assetKey, status: 'generating',
+    taskId: previewTaskId, assetKey, status: 'generating',
     glbUrl: null, storedUrl: null, error: null, createdAt: Date.now(),
   };
   activeTasks.set(assetKey, task);
-  scene3dDebug.meshyStatus(taskId, 'generating');
+  scene3dDebug.meshyStatus(previewTaskId, 'preview');
 
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+  try {
+    await waitForTaskCompletion(
+      previewTaskId,
+      apiKey,
+      (message) => scene3dDebug.meshyStatus(previewTaskId, `preview ${message}`),
+      'Timed out waiting for preview generation'
+    );
 
-    try {
-      const result = await pollTaskStatus(taskId, apiKey);
-      scene3dDebug.meshyStatus(taskId, `${result.status} (${result.progress}%)`);
+    const refineTaskId = await createRefineTask(previewTaskId, apiKey);
+    task.taskId = refineTaskId;
+    scene3dDebug.meshyStatus(refineTaskId, 'refine');
 
-      if (result.status === 'SUCCEEDED' && result.glbUrl) {
-        const storedUrl = await storeToBackend(
-          result.glbUrl,
-          createResult.cacheKey || assetKey,
-          assetKey,
-          campaignId,
-          prompt
-        );
+    const refineStatus = await waitForTaskCompletion(
+      refineTaskId,
+      apiKey,
+      (message) => scene3dDebug.meshyStatus(refineTaskId, `refine ${message}`),
+      'Timed out waiting for refine generation'
+    );
 
-        const blob = await downloadGLB(storedUrl || result.glbUrl);
-        task.status = 'ready';
-        task.glbUrl = result.glbUrl;
-        task.storedUrl = storedUrl;
-        scene3dDebug.meshyComplete(taskId, assetKey);
-        return { blob, mimeType: 'model/gltf-binary', storedUrl };
-      }
-
-      if (result.status === 'FAILED' || result.status === 'EXPIRED') {
-        task.status = 'failed';
-        task.error = `Task ${result.status}`;
-        scene3dDebug.meshyError(taskId, task.error);
-        throw new Error(task.error);
-      }
-    } catch (err) {
-      if (err.message.includes('Task FAILED') || err.message.includes('Task EXPIRED')) {
-        throw err;
-      }
-      scene3dDebug.meshyStatus(taskId, `poll error: ${err.message}`);
+    if (!refineStatus.glbUrl) {
+      throw new Error('Refine task succeeded without a GLB URL');
     }
-  }
 
-  task.status = 'failed';
-  task.error = 'Timed out waiting for generation';
-  scene3dDebug.meshyError(taskId, task.error);
-  throw new Error(task.error);
+    const storedUrl = await storeToBackend(
+      refineStatus.glbUrl,
+      previewResult.cacheKey || `${assetKey}:${CACHE_VERSION}`,
+      assetKey,
+      campaignId,
+      prompt
+    );
+
+    const blob = await downloadGLB(storedUrl || refineStatus.glbUrl);
+    task.status = 'ready';
+    task.glbUrl = refineStatus.glbUrl;
+    task.storedUrl = storedUrl;
+    scene3dDebug.meshyComplete(refineTaskId, assetKey);
+    return { blob, mimeType: 'model/gltf-binary', storedUrl };
+  } catch (err) {
+    task.status = 'failed';
+    task.error = err.message || 'Meshy generation failed';
+    scene3dDebug.meshyError(task.taskId || previewTaskId, task.error);
+    throw err;
+  }
 }
 
 /**

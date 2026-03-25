@@ -3,8 +3,8 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { getAnchor, getFacingRotation } from '../../../data/sceneAnchors';
 import { getCharacterPrefab } from '../../../data/prefabs';
+import { resolveSceneModelSync } from '../../../services/assetManager';
 import { scene3dDebug } from '../../../services/scene3dDebug';
-import { getLocalModel } from '../../../services/localModels';
 import PlaceholderMesh from './PlaceholderMesh';
 import GLBModel from './GLBModel';
 
@@ -34,10 +34,7 @@ export default function Character3D({ command, environmentType, meshySettings = 
 
   const prefab = useMemo(() => getCharacterPrefab(command.archetype), [command.archetype]);
 
-  const modelUrl = useMemo(
-    () => getLocalModel(command.id, 'character'),
-    [command.id]
-  );
+  const [modelUrl, setModelUrl] = useState(command.modelUrl || null);
 
   const anchor = useMemo(
     () => getAnchor(environmentType, command.anchor),
@@ -58,6 +55,19 @@ export default function Character3D({ command, environmentType, meshySettings = 
     const pos = command.position || anchor.position;
     return new THREE.Vector3(pos[0], pos[1] + (prefab?.yOffset || 0), pos[2]);
   }, [command.position, anchor, prefab]);
+
+  useEffect(() => {
+    const resolved = resolveSceneModelSync({
+      directUrl: command.modelUrl || null,
+      assetKey: command.assetHint ? `char:${command.assetHint}` : null,
+      category: 'char',
+      type: command.archetype,
+    }, {
+      ...meshySettings,
+      onReady: setModelUrl,
+    });
+    setModelUrl(resolved.url || null);
+  }, [command.modelUrl, command.assetHint, command.archetype, meshySettings]);
 
   useEffect(() => {
     if (command.moveTo) {
@@ -173,10 +183,7 @@ export default function Character3D({ command, environmentType, meshySettings = 
   return (
     <group ref={groupRef} position={initialPosition.toArray()} rotation={[0, targetRotation, 0]} scale={[0, 0, 0]}>
       <group scale={[scale, scale, scale]}>
-        <GLBModel
-          url={modelUrl}
-          fallback={<PlaceholderMesh prefab={prefab} label={command.name} />}
-        />
+        <GLBModel url={modelUrl} fallback={<PlaceholderMesh prefab={prefab} label={command.name} />} />
         {command.highlighted && (
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -(prefab?.yOffset || 0) + 0.02, 0]}>
             <ringGeometry args={[0.35, 0.45, 24]} />

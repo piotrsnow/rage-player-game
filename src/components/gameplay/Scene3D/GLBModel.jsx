@@ -17,6 +17,10 @@ export default function GLBModel({ url, fallback = null }) {
   const [gltf, setGltf] = useState(null);
 
   useEffect(() => {
+    setFailed(false);
+    setGltf(null);
+    if (!url) return undefined;
+
     let cancelled = false;
     const loader = new GLTFLoader();
 

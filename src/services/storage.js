@@ -9,10 +9,20 @@ const MIGRATION_PREFIX = 'nikczemny_krzemuch_migrated_';
 
 const LOCAL_ONLY_SETTINGS_KEYS = [
   'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey',
+  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey',
 ];
+const GLOBAL_VOICE_SETTINGS_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
 const _pendingBackendSaves = new Map();
+
+function sanitizeSettings(settings) {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return settings;
+  }
+  const next = { ...settings };
+  delete next.elevenlabsApiKey;
+  return next;
+}
 
 export const storage = {
   getCampaigns() {
@@ -345,14 +355,14 @@ export const storage = {
   getSettings() {
     try {
       const data = localStorage.getItem(SETTINGS_KEY);
-      return data ? JSON.parse(data) : null;
+      return data ? sanitizeSettings(JSON.parse(data)) : null;
     } catch {
       return null;
     }
   },
 
   saveSettings(settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(sanitizeSettings(settings)));
   },
 
   getLastCharacterName() {
@@ -563,7 +573,7 @@ export const storage = {
     if (!apiClient.isConnected()) return false;
     try {
       const uiSettings = { ...settings };
-      for (const key of LOCAL_ONLY_SETTINGS_KEYS) {
+      for (const key of [...LOCAL_ONLY_SETTINGS_KEYS, ...GLOBAL_VOICE_SETTINGS_KEYS]) {
         delete uiSettings[key];
       }
       await apiClient.put('/auth/settings', { settings: uiSettings });
@@ -651,7 +661,7 @@ export const storage = {
         version: 1,
         exportedAt: new Date().toISOString(),
       },
-      settings: this.getSettings(),
+      settings: sanitizeSettings(this.getSettings()),
       campaigns: this.getCampaigns(),
       activeCampaignId: this.getActiveCampaignId(),
     };
@@ -679,7 +689,7 @@ export const storage = {
           }
 
           if (data.settings) {
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(data.settings));
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(sanitizeSettings(data.settings)));
           }
           if (data.campaigns) {
             localStorage.setItem(CAMPAIGNS_KEY, JSON.stringify(data.campaigns));
@@ -688,7 +698,7 @@ export const storage = {
             localStorage.setItem(ACTIVE_CAMPAIGN_KEY, data.activeCampaignId);
           }
 
-          resolve(data.settings);
+          resolve(sanitizeSettings(data.settings));
         } catch {
           reject(new Error('Failed to parse config file'));
         }

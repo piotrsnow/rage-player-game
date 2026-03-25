@@ -6,6 +6,16 @@ import { config } from '../../config.js';
 
 const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const store = createMediaStore(config);
+const TARGET_FORMATS = ['glb'];
+
+function buildCacheParams(prompt, assetKey, cacheVersion) {
+  return {
+    provider: 'meshy',
+    prompt: prompt || '',
+    assetKey: assetKey || '',
+    cacheVersion: cacheVersion || 'legacy',
+  };
+}
 
 export async function meshyProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -27,10 +37,10 @@ export async function meshyProxyRoutes(fastify) {
     const apiKey = await getMeshyKey(request, reply);
     if (!apiKey) return;
 
-    const { prompt, assetKey, campaignId } = request.body;
+    const { prompt, assetKey, campaignId, cacheVersion } = request.body;
     if (!prompt) return reply.code(400).send({ error: 'Prompt is required' });
 
-    const cacheParams = { provider: 'meshy', prompt, assetKey: assetKey || '' };
+    const cacheParams = buildCacheParams(prompt, assetKey, cacheVersion);
     const cacheKey = generateKey('model3d', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -50,6 +60,7 @@ export async function meshyProxyRoutes(fastify) {
         prompt,
         art_style: 'realistic',
         should_remesh: true,
+        target_formats: TARGET_FORMATS,
       }),
     });
 
@@ -63,6 +74,38 @@ export async function meshyProxyRoutes(fastify) {
 
     const data = await response.json();
     return { cached: false, taskId: data.result, key: cacheKey };
+  });
+
+  fastify.post('/refine', async (request, reply) => {
+    const apiKey = await getMeshyKey(request, reply);
+    if (!apiKey) return;
+
+    const { previewTaskId } = request.body;
+    if (!previewTaskId) return reply.code(400).send({ error: 'previewTaskId is required' });
+
+    const response = await fetch(`${MESHY_API_BASE}/text-to-3d`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        mode: 'refine',
+        preview_task_id: previewTaskId,
+        target_formats: TARGET_FORMATS,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      fastify.log.error({ err, status: response.status }, 'Meshy refine failed');
+      return reply.code(response.status).send({
+        error: err.message || `Meshy API error: ${response.status}`,
+      });
+    }
+
+    const data = await response.json();
+    return { taskId: data.result };
   });
 
   fastify.get('/tasks/:taskId', async (request, reply) => {
@@ -93,7 +136,7 @@ export async function meshyProxyRoutes(fastify) {
   });
 
   fastify.post('/store', async (request, reply) => {
-    const { glbUrl, cacheKey, assetKey, campaignId, prompt } = request.body;
+    const { glbUrl, cacheKey, assetKey, campaignId, prompt, cacheVersion } = request.body;
     if (!glbUrl || !cacheKey) {
       return reply.code(400).send({ error: 'glbUrl and cacheKey are required' });
     }
@@ -128,6 +171,7 @@ export async function meshyProxyRoutes(fastify) {
           provider: 'meshy',
           prompt: prompt || '',
           assetKey: assetKey || '',
+          cacheVersion: cacheVersion || 'legacy',
         }),
       },
     });
@@ -136,8 +180,8 @@ export async function meshyProxyRoutes(fastify) {
   });
 
   fastify.post('/check', async (request, reply) => {
-    const { prompt, assetKey, campaignId } = request.body;
-    const cacheParams = { provider: 'meshy', prompt: prompt || '', assetKey: assetKey || '' };
+    const { prompt, assetKey, campaignId, cacheVersion } = request.body;
+    const cacheParams = buildCacheParams(prompt, assetKey, cacheVersion);
     const cacheKey = generateKey('model3d', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -147,5 +191,25 @@ export async function meshyProxyRoutes(fastify) {
     }
 
     return { cached: false, key: cacheKey };
+  });
+
+  fastify.get('/prefabs/:category/:file', async (request, reply) => {
+    const { category, file } = request.params;
+    if (!category || !file) {
+      return reply.code(400).send({ error: 'category and file are required' });
+    }
+
+    const safeCategory = String(category).replace(/[^a-zA-Z0-9_-]/g, '');
+    const safeFile = String(file).replace(/[^a-zA-Z0-9_.-]/g, '');
+    const storagePath = `prefabs/${safeCategory}/${safeFile}`;
+    const result = await store.get(storagePath);
+
+    if (!result?.buffer) {
+      return reply.code(404).send({ error: 'Prefab model not found' });
+    }
+
+    reply.header('Content-Type', 'model/gltf-binary');
+    reply.header('Cache-Control', 'public, max-age=86400');
+    return reply.send(result.buffer);
   });
 }

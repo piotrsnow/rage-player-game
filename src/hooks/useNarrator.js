@@ -197,8 +197,8 @@ export function useNarrator() {
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
-    const { elevenlabsApiKey, elevenlabsVoiceId, characterVoices, sfxEnabled, sfxVolume, dialogueSpeed } = settings;
-    if (!(elevenlabsApiKey || hasApiKey('elevenlabs')) || !elevenlabsVoiceId) {
+      const { elevenlabsVoiceId, characterVoices, sfxEnabled, sfxVolume, dialogueSpeed } = settings;
+      if (!hasApiKey('elevenlabs') || !elevenlabsVoiceId) {
       queueRef.current.shift();
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
@@ -211,7 +211,7 @@ export function useNarrator() {
       const campaignId = state.campaign?.backendId || null;
       if (sfxEnabled && soundEffect) {
         try {
-          const sfxUrl = await elevenlabsService.generateSoundEffect(elevenlabsApiKey, soundEffect, 4, campaignId);
+          const sfxUrl = await elevenlabsService.generateSoundEffect(undefined, soundEffect, 4, campaignId);
           if (generationRef.current !== myGeneration) return;
           dispatch({ type: 'ADD_AI_COST', payload: calculateCost('sfx', {}) });
           objectUrlsRef.current.push(sfxUrl);
@@ -303,7 +303,7 @@ export function useNarrator() {
         }
 
         const chunks = elevenlabsService.splitIntoParagraphs(text);
-        await playChunkPipeline(chunks, voiceId, elevenlabsApiKey, i, messageId, dialogueSpeed, text, campaignId, myGeneration);
+        await playChunkPipeline(chunks, voiceId, undefined, i, messageId, dialogueSpeed, text, campaignId, myGeneration);
         if (generationRef.current !== myGeneration) return;
       }
 
@@ -398,7 +398,7 @@ export function useNarrator() {
     currentCharacter,
     highlightInfo,
     currentChunk,
-    isNarratorReady: !!(settings.narratorEnabled && (settings.elevenlabsApiKey || hasApiKey('elevenlabs')) && settings.elevenlabsVoiceId),
+    isNarratorReady: !!(settings.narratorEnabled && hasApiKey('elevenlabs') && settings.elevenlabsVoiceId),
     speak,
     speakScene,
     speakSingle,

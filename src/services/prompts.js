@@ -1164,7 +1164,7 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   return `ART STYLE: ${styleDirective}. ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting') {
+export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isGemini = provider === 'gemini';
@@ -1180,13 +1180,16 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
   const styleDirective = getImageStyleDirective(imageStyle, 'portrait');
   const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
   const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
+  const likenessDirective = hasReferenceImage
+    ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
+    : '';
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition. No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition. No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
   return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;

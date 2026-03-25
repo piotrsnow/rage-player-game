@@ -70,6 +70,40 @@ export function resolveAssetSync(assetKey, options = {}) {
 }
 
 /**
+ * Resolve a scene model that may already point at a concrete backend/GCP URL.
+ * Falls back to Meshy-backed asset resolution when only an asset key is available.
+ *
+ * @param {Object} modelRef
+ * @param {string|null} [modelRef.directUrl]
+ * @param {string|null} [modelRef.assetKey]
+ * @param {'char'|'obj'|'env'} [modelRef.category]
+ * @param {string|null} [modelRef.type]
+ * @param {Object} options
+ * @returns {ResolvedAsset}
+ */
+export function resolveSceneModelSync(modelRef = {}, options = {}) {
+  const { directUrl = null, assetKey = null } = modelRef;
+  if (directUrl) {
+    return {
+      source: 'cached',
+      url: apiClient.resolveMediaUrl(directUrl),
+      prefab: null,
+      loading: false,
+    };
+  }
+  if (assetKey) {
+    return resolveAssetSync(assetKey, options);
+  }
+
+  const category = modelRef.category || 'obj';
+  const type = modelRef.type || '';
+  const prefab = category === 'char' ? getCharacterPrefab(type) :
+    category === 'obj' ? getObjectPrefab(type) : null;
+
+  return { source: 'prefab', url: null, prefab, loading: false };
+}
+
+/**
  * Async resolve — checks backend, then local cache, then optionally generates.
  * @param {string} assetKey
  * @param {Object} options

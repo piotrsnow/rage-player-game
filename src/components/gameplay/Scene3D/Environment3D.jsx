@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { LIGHTING_PRESETS } from './Lighting3D';
 
 const GROUND_COLORS = {
   tavern:       '#5C3A1E',
@@ -91,6 +92,28 @@ export default function Environment3D({ environment }) {
     return objs;
   }, [type]);
 
+  const celestialBody = useMemo(() => {
+    if (isIndoor) return null;
+    const preset = LIGHTING_PRESETS[timeOfDay] || LIGHTING_PRESETS.afternoon;
+    const [x, y, z] = preset.sunPosition || [0, 8, -5];
+    if (timeOfDay === 'night') {
+      return {
+        kind: 'moon',
+        position: [x * 3.2, Math.max(12, y * 2.8), z * 5],
+        color: '#E6F0FF',
+        glow: '#9DB4FF',
+        size: 1.25,
+      };
+    }
+    return {
+      kind: 'sun',
+      position: [x * 3, Math.max(10, y * 2.5), z * 5],
+      color: preset.sunColor || '#FFD700',
+      glow: '#FFD27F',
+      size: timeOfDay === 'afternoon' ? 1.5 : 1.2,
+    };
+  }, [isIndoor, timeOfDay]);
+
   return (
     <group>
       {/* Ground plane */}
@@ -105,6 +128,19 @@ export default function Environment3D({ environment }) {
           <sphereGeometry args={[50, 16, 16]} />
           <meshBasicMaterial color={skyColor} side={1} />
         </mesh>
+      )}
+
+      {!isIndoor && celestialBody && (
+        <group position={celestialBody.position}>
+          <mesh>
+            <sphereGeometry args={[celestialBody.size, 20, 20]} />
+            <meshBasicMaterial color={celestialBody.color} />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[celestialBody.size * 1.8, 20, 20]} />
+            <meshBasicMaterial color={celestialBody.glow} transparent opacity={0.12} />
+          </mesh>
+        </group>
       )}
 
       {/* Ceiling (indoor) */}

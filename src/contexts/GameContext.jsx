@@ -216,6 +216,33 @@ function gameReducer(state, action) {
         character: { ...state.character, ...action.payload },
       };
 
+    case 'UPSERT_3D_MODEL_ASSIGNMENTS': {
+      const { playerModel, partyModels = [], npcModels = [] } = action.payload || {};
+      const nextCharacter = playerModel && state.character
+        ? { ...state.character, model3d: playerModel }
+        : state.character;
+
+      const nextParty = (state.party || []).map((member) => {
+        const match = partyModels.find((item) => (item.id && (member.id || member.name) === item.id) || item.name === member.name);
+        return match?.model3d ? { ...member, model3d: match.model3d } : member;
+      });
+
+      const nextNpcs = (state.world?.npcs || []).map((npc) => {
+        const match = npcModels.find((item) => item.name?.toLowerCase() === npc.name?.toLowerCase());
+        return match?.model3d ? { ...npc, model3d: match.model3d } : npc;
+      });
+
+      return {
+        ...state,
+        character: nextCharacter,
+        party: nextParty,
+        world: {
+          ...state.world,
+          npcs: nextNpcs,
+        },
+      };
+    }
+
     case 'UPDATE_CHARACTER_STATS':
       return {
         ...state,

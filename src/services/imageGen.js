@@ -302,7 +302,7 @@ export const imageService = {
   },
 
   async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting') {
-    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle);
+    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle, Boolean(imageBlob));
 
     if (provider === 'dalle') {
       if (apiClient.isConnected()) {

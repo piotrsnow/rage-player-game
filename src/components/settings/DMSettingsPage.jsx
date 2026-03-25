@@ -11,7 +11,7 @@ import Button from '../ui/Button';
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount, hasApiKey, backendUser, backendLogout } = useSettings();
+  const { settings, updateSettings, updateSharedVoiceSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount, hasApiKey, backendUser, backendLogout } = useSettings();
 
   const [voices, setVoices] = useState([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -75,7 +75,7 @@ export default function DMSettingsPage({ onClose }) {
     setLoadingVoices(true);
     setVoiceError(null);
     try {
-      const voiceList = await elevenlabsService.getVoices(settings.elevenlabsApiKey);
+      const voiceList = await elevenlabsService.getVoices();
       setVoices(voiceList);
     } catch (err) {
       setVoiceError(err.message);
@@ -85,7 +85,7 @@ export default function DMSettingsPage({ onClose }) {
   };
 
   const handleSelectVoice = (voice) => {
-    updateSettings({
+    updateSharedVoiceSettings({
       elevenlabsVoiceId: voice.voiceId,
       elevenlabsVoiceName: voice.name,
     });
@@ -95,15 +95,15 @@ export default function DMSettingsPage({ onClose }) {
     const current = settings.characterVoices || [];
     const exists = current.some((v) => v.voiceId === voice.voiceId);
     if (exists) {
-      updateSettings({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
+      updateSharedVoiceSettings({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
     } else {
-      updateSettings({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
+      updateSharedVoiceSettings({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
     }
   };
 
   const handleToggleVoiceGender = (voiceId) => {
     const current = settings.characterVoices || [];
-    updateSettings({
+    updateSharedVoiceSettings({
       characterVoices: current.map((v) =>
         v.voiceId === voiceId
           ? { ...v, gender: v.gender === 'female' ? 'male' : 'female' }
@@ -123,12 +123,11 @@ export default function DMSettingsPage({ onClose }) {
 
   const handleTestVoice = async () => {
     const voiceId = settings.elevenlabsVoiceId;
-    const apiKey = settings.elevenlabsApiKey;
-    if (!voiceId || !apiKey) return;
+    if (!voiceId || !hasApiKey('elevenlabs')) return;
     setTestingVoice(true);
     try {
       const audioUrl = await elevenlabsService.textToSpeechStream(
-        apiKey,
+        undefined,
         voiceId,
         settings.language === 'pl'
           ? 'Witaj, poszukiwaczu przygód. Jestem twoim Mistrzem Gry.'
@@ -527,6 +526,11 @@ export default function DMSettingsPage({ onClose }) {
                     {t('settings.narrator')}
                   </h2>
                   <p className="text-xs text-on-surface-variant mb-6">{t('settings.narratorDesc')}</p>
+                  {backendUser && (
+                    <div className="mb-6 rounded-sm border border-tertiary/20 bg-tertiary/5 px-4 py-3 text-xs text-tertiary">
+                      {t('settings.sharedVoiceSettingsHint')}
+                    </div>
+                  )}
 
                   {/* Enable Narrator Toggle */}
                   <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">

@@ -37,6 +37,7 @@ export function decrypt(encryptedText) {
 export function resolveApiKey(encryptedUserKeys, keyName) {
   const serverKey = config.apiKeys[keyName];
   if (serverKey) return serverKey;
+  if (keyName === 'elevenlabs') return '';
 
   try {
     const userKeys = JSON.parse(decrypt(encryptedUserKeys));

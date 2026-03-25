@@ -21,6 +21,16 @@ model User {
   mediaAssets           MediaAsset[]
   achievements          Achievement[]
   multiplayerSessions   MultiplayerSession[]
+  wanted3dEntries       Wanted3D[]
+}
+
+model SharedConfig {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  scope           String   @unique
+  value           String   @default("{}") // JSON blob for shared/global settings
+  updatedByUserId String?  @db.ObjectId
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Achievement {
@@ -122,4 +132,34 @@ model MediaAsset {
   @@index([userId])
   @@index([type])
   @@index([campaignId])
+}
+
+model Wanted3D {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String   @db.ObjectId
+  campaignId       String?  @db.ObjectId
+  objectKey        String   @unique
+  entityKind       String   @default("object")
+  objectId         String
+  objectName       String
+  objectType       String
+  objectDescription String  @default("")
+  sceneId          String   @default("")
+  sceneText        String   @default("")
+  suggestedModelId String   @default("")
+  suggestedCategory String  @default("")
+  suggestedFile    String   @default("")
+  matchScore       Int      @default(0)
+  alreadyExists    Boolean  @default(false)
+  status           String   @default("review")
+  requestCount     Int      @default(1)
+  firstSeenAt      DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([campaignId])
+  @@index([status])
+  @@map("3dwanted")
 }
