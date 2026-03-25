@@ -95,17 +95,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {hasActiveGame && (
-        <div className="p-6">
-          <Link
-            to="/play"
-            className="w-full py-3 bg-surface-tint text-on-primary font-bold text-xs tracking-widest uppercase rounded-sm shadow-[0_0_15px_rgba(197,154,255,0.3)] active:scale-95 duration-200 flex items-center justify-center gap-2 animate-pulse-glow hover:shadow-[0_0_25px_rgba(197,154,255,0.5)] transition-shadow"
-          >
-            <span className="material-symbols-outlined text-sm">auto_fix_high</span>
-            {t('nav.play')}
-          </Link>
-        </div>
-      )}
     </aside>
   );
 }

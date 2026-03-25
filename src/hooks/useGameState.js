@@ -148,6 +148,9 @@ export function useGameState() {
               ...obj,
               completed: obj.completed ?? false,
             })),
+            questItems: (aiResult.initialQuest.questItems || []).map((item) => ({
+              ...item,
+            })),
           }
         : null;
 
@@ -156,8 +159,25 @@ export function useGameState() {
         completed: [],
       };
 
+      const initialNPCs = (aiResult.initialNPCs || []).map((npc) => ({
+        id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: npc.name,
+        gender: npc.gender || 'unknown',
+        role: npc.role || '',
+        personality: npc.personality || '',
+        attitude: npc.attitude || 'neutral',
+        lastLocation: npc.location || '',
+        alive: true,
+        notes: '',
+        disposition: 0,
+        factionId: npc.factionId || null,
+        relatedQuestIds: initialQuest ? [initialQuest.id] : [],
+        relationships: npc.relationships || [],
+      }));
+
       const world = {
         locations: [],
+        npcs: initialNPCs,
         facts: aiResult.initialWorldFacts || [],
         eventHistory: aiResult.firstScene?.journalEntries || [],
       };

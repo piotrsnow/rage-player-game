@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
@@ -27,6 +27,8 @@ import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
 import { useModals } from '../../contexts/ModalContext';
 import { translateCareer } from '../../utils/wfrpTranslate';
 import { createMultiplayerCombatState } from '../../services/combatEngine';
+import { useAutoPlayer } from '../../hooks/useAutoPlayer';
+import AutoPlayerPanel from './AutoPlayerPanel';
 
 export default function GameplayPage() {
   const navigate = useNavigate();
@@ -145,6 +147,7 @@ export default function GameplayPage() {
   }, [campaign, isMultiplayer, navigate]);
 
   useEffect(() => {
+    if ((settings.sceneVisualization || 'image') !== 'image') return;
     if (
       currentScene &&
       !currentScene.image &&
@@ -167,7 +170,7 @@ export default function GameplayPage() {
         }
       });
     }
-  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign]);
+  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign, settings.sceneVisualization]);
 
   useEffect(() => {
     if (!isMultiplayer) return;
@@ -218,6 +221,12 @@ export default function GameplayPage() {
       // Error displayed in UI via context
     }
   };
+
+  const handleActionRef = useRef(handleAction);
+  handleActionRef.current = handleAction;
+  const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
+
+  const autoPlayer = useAutoPlayer(isMultiplayer ? null : stableHandleAction);
 
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
@@ -823,11 +832,28 @@ export default function GameplayPage() {
           </div>
         )}
 
+        {/* Auto-Player Panel (solo only) */}
+        {!isMultiplayer && currentScene && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
+          <div className="px-2 animate-fade-in">
+            <AutoPlayerPanel
+              isAutoPlaying={autoPlayer.isAutoPlaying}
+              isThinking={autoPlayer.isThinking}
+              turnsPlayed={autoPlayer.turnsPlayed}
+              lastError={autoPlayer.lastError}
+              toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
+              autoPlayerSettings={autoPlayer.autoPlayerSettings}
+              updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
+              characterName={character?.name}
+              isGeneratingScene={isGeneratingScene}
+            />
+          </div>
+        )}
+
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
-          <div className="px-2 animate-fade-in">
+          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !isMultiplayer ? 'opacity-50 pointer-events-none' : ''}`}>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-              {t('gameplay.chooseAction')}
+              {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}
             </label>
             <ActionPanel
               actions={currentScene.actions}

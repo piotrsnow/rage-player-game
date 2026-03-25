@@ -24,7 +24,7 @@ const defaultSettings = {
   aiProvider: 'openai',
   openaiApiKey: '',
   anthropicApiKey: '',
-  imageGenEnabled: true,
+  sceneVisualization: 'image',
   imageProvider: 'dalle',
   stabilityApiKey: '',
   language: 'pl',
@@ -52,6 +52,14 @@ const defaultSettings = {
   localLLMModel: '',
   localLLMReducedPrompt: true,
   aiModelTier: 'premium',
+  autoPlayer: {
+    enabled: false,
+    style: 'balanced',
+    delay: 3000,
+    verbosity: 'medium',
+    customInstructions: '',
+    maxTurns: 0,
+  },
   dmSettings: {
     narrativeStyle: 50,
     responseLength: 50,
@@ -70,7 +78,14 @@ export function SettingsProvider({ children }) {
   const { i18n } = useTranslation();
   const [settings, setSettings] = useState(() => {
     const saved = storage.getSettings();
-    return saved ? { ...defaultSettings, ...saved } : defaultSettings;
+    if (!saved) return defaultSettings;
+    const merged = { ...defaultSettings, ...saved };
+    // Migrate legacy imageGenEnabled → sceneVisualization
+    if (saved.imageGenEnabled !== undefined && saved.sceneVisualization === undefined) {
+      merged.sceneVisualization = saved.imageGenEnabled ? 'image' : 'none';
+    }
+    delete merged.imageGenEnabled;
+    return merged;
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
@@ -144,6 +159,9 @@ export function SettingsProvider({ children }) {
       if (accountSettings.dmSettings) {
         merged.dmSettings = { ...defaultSettings.dmSettings, ...accountSettings.dmSettings };
       }
+      if (accountSettings.autoPlayer) {
+        merged.autoPlayer = { ...defaultSettings.autoPlayer, ...accountSettings.autoPlayer };
+      }
       for (const key of LOCAL_ONLY_KEYS) {
         if (prev[key] !== undefined && prev[key] !== '') {
           merged[key] = prev[key];
@@ -171,6 +189,13 @@ export function SettingsProvider({ children }) {
     }));
   }, []);
 
+  const updateAutoPlayerSettings = useCallback((updates) => {
+    setSettings((prev) => ({
+      ...prev,
+      autoPlayer: { ...prev.autoPlayer, ...updates },
+    }));
+  }, []);
+
   const resetSettings = useCallback(() => {
     setSettings(defaultSettings);
   }, []);
@@ -195,6 +220,7 @@ export function SettingsProvider({ children }) {
     settings,
     updateSettings,
     updateDMSettings,
+    updateAutoPlayerSettings,
     resetSettings,
     importSettings,
     getApiKey,

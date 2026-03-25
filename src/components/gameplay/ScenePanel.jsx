@@ -7,6 +7,7 @@ import EffectEngine from '../../effects/EffectEngine';
 import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import DiceRoller from '../../effects/DiceRoller';
+import SceneCanvas from './SceneCanvas';
 import { translateSkill } from '../../utils/wfrpTranslate';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 
@@ -247,8 +248,10 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
 
   return (
     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
-      {/* Scene Image */}
-      {currentImage || prevImage ? (
+      {/* Scene background: AI image, canvas 2D, or placeholder */}
+      {(settings.sceneVisualization || 'image') === 'canvas' ? (
+        <SceneCanvas scene={scene} />
+      ) : (settings.sceneVisualization || 'image') === 'image' && (currentImage || prevImage) ? (
         <>
           {prevImage && (
             <img
@@ -269,7 +272,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         </>
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
-          {isGeneratingImage ? (
+          {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
             <LoadingSpinner size="md" text={t('gameplay.conjuringVision')} />
           ) : (
             <span className="material-symbols-outlined text-6xl text-outline/20">landscape</span>

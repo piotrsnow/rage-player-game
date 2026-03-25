@@ -94,6 +94,31 @@ const QuestSchema = z.object({
   type: z.enum(['main', 'side', 'personal']).optional().default('side'),
 }).passthrough();
 
+const QuestItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string().optional(),
+  description: z.string().optional(),
+  relatedObjectiveId: z.string().optional(),
+  location: z.string().optional(),
+}).passthrough();
+
+const InitialQuestSchema = QuestSchema.extend({
+  questItems: z.array(QuestItemSchema).optional().default([]),
+}).passthrough();
+
+const InitialNpcSchema = z.object({
+  name: z.string(),
+  gender: z.string().optional(),
+  role: z.string().optional(),
+  personality: z.string().optional(),
+  location: z.string().optional(),
+  attitude: z.string().optional(),
+  relatedObjectiveIds: z.array(z.string()).optional().default([]),
+  factionId: z.string().nullable().optional(),
+  relationships: z.array(NpcRelationshipSchema).optional().default([]),
+}).passthrough();
+
 const QuestOfferSchema = QuestSchema.extend({
   offeredBy: z.string().optional(),
 });
@@ -189,7 +214,8 @@ export const CampaignResponseSchema = z.object({
     atmosphere: AtmosphereSchema,
     journalEntries: z.array(z.string()).optional().default([]),
   }).passthrough(),
-  initialQuest: z.any().optional(),
+  initialQuest: InitialQuestSchema.optional(),
+  initialNPCs: z.array(InitialNpcSchema).optional().default([]),
   initialWorldFacts: z.array(z.string()).optional().default([]),
   campaignStructure: z.any().nullable().optional(),
 }).passthrough();

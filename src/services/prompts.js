@@ -135,6 +135,13 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
         line += `\n    [${obj.completed ? 'X' : ' '}] ${obj.description}`;
       }
     }
+    if (q.questItems?.length > 0) {
+      line += `\n  Quest items:`;
+      for (const item of q.questItems) {
+        line += `\n    - ${item.name}: ${item.description || 'No description'}`;
+        if (item.location) line += ` (at: ${item.location})`;
+      }
+    }
     return line;
   }).join('\n') || 'None';
   const worldFacts = (world?.facts || []).slice(-20).join('\n') || 'No known facts yet.';
@@ -450,6 +457,7 @@ INSTRUCTIONS:
 ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
 - IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If the player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), set diceRoll to null and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc. Do NOT waste a dice roll on an impossible action.
 - TRIVIAL ACTIONS (auto-success, NO dice roll): If the action is trivially easy with no meaningful chance of failure (e.g., walking a short distance on flat ground, picking up an object at your feet, opening an unlocked door, sitting down), set diceRoll to null and narrate the success directly. These do not need mechanical resolution.
+- ROUTINE ACTIONS (auto-success, NEVER roll — regardless of dice frequency): Everyday mundane activities that any healthy person can do without skill or effort. These NEVER require a dice roll, even at 80%+ frequency. Always set diceRoll to null. Examples: eating, drinking, sleeping, resting, sitting down, using a toilet/latrine, bathing, casual conversation, greeting someone, looking around, walking short distances, getting dressed, packing/unpacking belongings, setting up camp (basic), lighting a fire with proper tools. If the needs system is active, apply needsChanges as appropriate.
 - UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
 - EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules. If the player attempts to call someone who could plausibly hear them or arrive shortly, narrate the attempt and its result.
 - suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere.
@@ -760,7 +768,7 @@ Resolve this action and advance the story. Determine outcomes, describe the cons
 
 FEASIBILITY CHECK: Before rolling dice, verify the action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (diceRoll=null). Trivial/certain actions auto-succeed (diceRoll=null). Only roll for uncertain outcomes.
 
-DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), even trivial actions like stepping over a threshold or opening a door require a roll — use high target numbers (70-90+) so success is very likely but never guaranteed. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. The "target" number in the diceRoll output is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
+DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), most actions require a roll (stepping over a threshold, opening a door, etc.) with high target numbers (70-90+) so success is very likely but never guaranteed — but ROUTINE ACTIONS (eating, resting, sleeping, bodily needs, casual conversation) are ALWAYS exempt and must use diceRoll=null. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. The "target" number in the diceRoll output is the FINAL EFFECTIVE target used for success comparison (for custom actions: characteristic + skill advances + creativity bonus; for normal actions: characteristic + skill advances). Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
 NPC DISPOSITION MODIFIERS: When this roll involves direct interaction with a known NPC (social, trade, persuasion, etc.), apply the NPC's disposition as a target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll output with the applied modifier value.
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null in your response. Do not invent or include any dice check.' : (preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).')}
 ${isCustomAction ? `
@@ -842,7 +850,7 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll. Format: {"type": "d100", "roll": <number 1-100>, "characteristic": "<characteristic key: ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in tested skill, 0 if untrained>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristicValue + skillAdvances>, "creativityBonus": <number 5-25>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. MANDATORY: "characteristic", "characteristicValue", and "skillAdvances" must ALWAYS be present when diceRoll is not null. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristicValue + skillAdvances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" = characteristicValue + skillAdvances.` : `"target" = characteristicValue + skillAdvances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll — except routine mundane actions (eating, resting, sleeping, bodily needs, casual conversation) which NEVER get a roll. Format: {"type": "d100", "roll": <number 1-100>, "characteristic": "<characteristic key: ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in tested skill, 0 if untrained>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"baseTarget": <number — characteristicValue + skillAdvances>, "creativityBonus": <number 5-25>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. MANDATORY: "characteristic", "characteristicValue", and "skillAdvances" must ALWAYS be present when diceRoll is not null. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (characteristicValue + skillAdvances + creativityBonus${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable). "baseTarget" = characteristicValue + skillAdvances.` : `"target" = characteristicValue + skillAdvances${momentumBonus > 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable.`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
@@ -973,23 +981,43 @@ Respond with ONLY valid JSON:
   },
   "initialQuest": {
     "name": "${language === 'pl' ? 'Nazwa głównego zadania' : 'Main quest name'}",
-    "description": "${language === 'pl' ? 'Krótki opis zadania' : 'Brief quest description'}",
+    "description": "${language === 'pl' ? 'Rozbudowany opis zadania z kontekstem fabularnym' : 'Detailed quest description with story context'}",
     "completionCondition": "${language === 'pl' ? 'Co trzeba zrobić, aby ukończyć to zadanie' : 'What must be done to complete this quest'}",
     "type": "main",
     "questGiverId": "${language === 'pl' ? 'Imię NPC zlecającego' : 'Quest giver NPC name'}",
+    "turnInNpcId": "${language === 'pl' ? 'Imię NPC do zdania raportu' : 'NPC name to report completion to'}",
+    "locationId": "${language === 'pl' ? 'Główna lokalizacja zadania' : 'Main quest location'}",
     "reward": {
-      "xp": 150,
-      "money": {"gold": 2, "silver": 0, "copper": 0},
-      "items": [],
-      "description": "${language === 'pl' ? '150 PD i 2 Złote Korony' : '150 XP and 2 Gold Crowns'}"
+      "xp": 200,
+      "money": {"gold": 5, "silver": 10, "copper": 0},
+      "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Opis nagrody' : 'Reward item description'}", "rarity": "uncommon"}],
+      "description": "${language === 'pl' ? '200 PD, 5 Złotych Koron, 10 Srebrnych Szylingów i przedmiot' : '200 XP, 5 Gold Crowns, 10 Silver Shillings and an item'}"
     },
     "objectives": [
-      {"id": "obj_1", "description": "${language === 'pl' ? 'Pierwszy etap historii' : 'First milestone along the story'}"},
-      {"id": "obj_2", "description": "${language === 'pl' ? 'Drugi etap' : 'Second milestone'}"},
-      {"id": "obj_3", "description": "${language === 'pl' ? 'Trzeci etap' : 'Third milestone'}"}
+      {"id": "obj_1", "description": "${language === 'pl' ? 'Spotkaj się z NPC_1 w lokalizacji_1 — dowiedz się o problemie' : 'Meet NPC_1 at location_1 — learn about the problem'}"},
+      {"id": "obj_2", "description": "${language === 'pl' ? 'Zbierz informacje od NPC_2 w lokalizacji_2' : 'Gather information from NPC_2 at location_2'}"},
+      {"id": "obj_3", "description": "${language === 'pl' ? 'Zdobądź kluczowy przedmiot (qitem_1) z lokalizacji_3' : 'Obtain key item (qitem_1) from location_3'}"},
+      {"id": "obj_4", "description": "${language === 'pl' ? 'Przeszukaj lokalizację_4 w poszukiwaniu wskazówek' : 'Search location_4 for clues'}"},
+      {"id": "obj_5", "description": "${language === 'pl' ? 'Porozmawiaj z NPC_3 — przekonaj go do pomocy' : 'Talk to NPC_3 — convince them to help'}"},
+      {"id": "obj_6", "description": "${language === 'pl' ? 'Dostarcz przedmiot (qitem_2) do NPC_4 w lokalizacji_5' : 'Deliver item (qitem_2) to NPC_4 at location_5'}"},
+      {"id": "obj_7", "description": "${language === 'pl' ? 'Zmierz się z przeszkodą lub wrogiem w lokalizacji_6' : 'Face an obstacle or enemy at location_6'}"},
+      {"id": "obj_8", "description": "${language === 'pl' ? 'Użyj zdobytej wiedzy/przedmiotu aby rozwiązać zagadkę' : 'Use acquired knowledge/item to solve the puzzle'}"},
+      {"id": "obj_9", "description": "${language === 'pl' ? 'Wróć do zleceniodawcy z dowodem wykonania zadania' : 'Return to quest giver with proof of completion'}"}
+    ],
+    "questItems": [
+      {"id": "qitem_1", "name": "${language === 'pl' ? 'Nazwa przedmiotu 1' : 'Item 1 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_3", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
+      {"id": "qitem_2", "name": "${language === 'pl' ? 'Nazwa przedmiotu 2' : 'Item 2 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_6", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"},
+      {"id": "qitem_3", "name": "${language === 'pl' ? 'Nazwa przedmiotu 3' : 'Item 3 name'}", "type": "key_item|document|artifact|tool|ingredient", "description": "${language === 'pl' ? 'Co to jest i dlaczego jest ważne' : 'What it is and why it matters'}", "relatedObjectiveId": "obj_8", "location": "${language === 'pl' ? 'Gdzie go znaleźć lub kto go posiada' : 'Where to find it or who has it'}"}
     ]
   },
-  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3"],
+  "initialNPCs": [
+    {"name": "NPC_1 full name", "gender": "male|female", "role": "${language === 'pl' ? 'rola fabularna (np. zleceniodawca, informator, kupiec)' : 'story role (e.g. quest giver, informant, merchant)'}", "personality": "${language === 'pl' ? 'Krótki opis osobowości' : 'Brief personality description'}", "location": "${language === 'pl' ? 'Gdzie można go znaleźć' : 'Where they can be found'}", "attitude": "friendly|neutral|hostile|suspicious", "relatedObjectiveIds": ["obj_1"]},
+    {"name": "NPC_2 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_2"]},
+    {"name": "NPC_3 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_5"]},
+    {"name": "NPC_4 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_6"]},
+    {"name": "NPC_5 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_7"]}
+  ],
+  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3", "Fact 4", "Fact 5"],
   "campaignStructure": {
     "acts": [
       {"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},
@@ -1005,6 +1033,20 @@ IMPORTANT for campaignStructure:
 - Base the act structure on the campaign length: Short (~15 scenes, 3 acts: 5/7/3), Medium (~25 scenes, 3 acts: 8/12/5), Long (~40 scenes, 3 acts: 12/18/10), Epic (~60+ scenes, 4 acts: 15/20/15/10).
 - Each act needs a name, target scene count, and brief description of its narrative purpose.
 - totalTargetScenes should be the sum of all act target scenes.
+
+IMPORTANT for initialQuest and initialNPCs:
+- The initialQuest MUST have 9-12 objectives forming a coherent multi-step story arc — NOT generic placeholders.
+- Mix objective types: NPC conversations/meetings (at least 4), item retrieval (at least 2), location exploration/investigation (at least 1), combat/confrontation (at least 1), puzzle/skill challenge (at least 1).
+- Each objective referencing an NPC meeting MUST correspond to a named NPC in initialNPCs. Use the NPC's actual name in the objective description.
+- Each objective referencing an item MUST correspond to an entry in questItems. Use the item's actual name in the objective description.
+- Objectives should follow a logical narrative order: early objectives involve gathering information and allies, middle objectives involve acquiring items and overcoming obstacles, late objectives involve confrontation and resolution.
+- initialNPCs must contain 5-8 unique NPCs with distinct names, roles, personalities, and locations. Spread them across different locations in the starting area.
+- Each NPC's relatedObjectiveIds must list the objective IDs they are involved in.
+- questItems must contain 3-5 items that are central to the quest. Each item must have a relatedObjectiveId linking it to the objective where it's obtained or used.
+- questItems represent things to find/acquire during the quest — they are NOT in the player's inventory at the start.
+- reward.items should include at least one meaningful reward item (weapon, armor, trinket, or special item).
+- initialWorldFacts should include 5+ facts that establish the world context relevant to the quest.
+- The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 
 IMPORTANT for characterSuggestion:
 - Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.

@@ -469,29 +469,33 @@ export default function DMSettingsPage({ onClose }) {
 
           {/* Toggles */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
-              <div>
-                <p className="font-headline text-tertiary">{t('settings.imageGeneration')}</p>
+            <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
+              <div className="mb-3">
+                <p className="font-headline text-tertiary">{t('settings.sceneVisualization')}</p>
                 <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                  {t('settings.imageGenerationDesc')}
+                  {t('settings.sceneVisualizationDesc')}
                 </p>
               </div>
-              <button
-                onClick={() => updateSettings({ imageGenEnabled: !settings.imageGenEnabled })}
-                className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                  settings.imageGenEnabled
-                    ? 'bg-primary-dim/20 border-primary/30'
-                    : 'bg-surface-container-highest border-outline-variant/30'
-                }`}
-              >
-                <div
-                  className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                    settings.imageGenEnabled
-                      ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                      : 'left-1 bg-on-surface-variant'
-                  }`}
-                />
-              </button>
+              <div className="flex gap-2">
+                {[
+                  { id: 'image', icon: 'image', label: t('settings.sceneVisImage') },
+                  { id: 'canvas', icon: 'brush', label: t('settings.sceneVisCanvas') },
+                  { id: 'none', icon: 'visibility_off', label: t('settings.sceneVisNone') },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => updateSettings({ sceneVisualization: opt.id })}
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border text-center transition-all ${
+                      (settings.sceneVisualization || 'image') === opt.id
+                        ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-sm">{opt.icon}</span>
+                    <span className="font-headline text-xs">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
@@ -1077,8 +1081,8 @@ export default function DMSettingsPage({ onClose }) {
             </div>
           </div>
 
-          {/* Image Provider */}
-          <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
+          {/* Image Provider — only shown when scene visualization is 'image' */}
+          {(settings.sceneVisualization || 'image') === 'image' && <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
             <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
               <span className="material-symbols-outlined text-primary-dim">image</span>
               {t('settings.imageProvider')}
@@ -1135,7 +1139,7 @@ export default function DMSettingsPage({ onClose }) {
                 )}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Backend Server */}
           <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
