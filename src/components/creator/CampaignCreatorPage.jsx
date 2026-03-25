@@ -112,6 +112,21 @@ export default function CampaignCreatorPage() {
   const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
   const isBackendConnected = apiClient.isConnected();
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const genreFilters = {
+      'Sci-Fi': 'hue-rotate(-45deg) saturate(1.35) brightness(1.05)',
+      Horror: 'hue-rotate(160deg) saturate(0.7) brightness(0.92)',
+    };
+    const filter = genreFilters[form.genre] || '';
+    root.style.transition = 'filter 0.8s cubic-bezier(.4,0,.2,1)';
+    root.style.filter = filter;
+    return () => {
+      root.style.filter = '';
+      root.style.transition = '';
+    };
+  }, [form.genre]);
+
   // Guest: sync local form from host's room settings
   const roomSettings = mp.state.roomSettings;
   useEffect(() => {

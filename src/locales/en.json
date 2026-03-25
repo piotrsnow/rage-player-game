@@ -307,7 +307,10 @@
     "dungeonMasterAi": "Dungeon Master AI",
     "awaitingFirstMove": "The DM awaits your first move...",
     "narratorPlaying": "Playing...",
-    "narratorPaused": "Paused"
+    "narratorPaused": "Paused",
+    "sessionTime": "Session",
+    "totalPlayTime": "Total",
+    "narrationTime": "Narration"
   },
   "character": {
     "bonus": "B",

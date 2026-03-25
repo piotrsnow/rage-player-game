@@ -307,7 +307,10 @@
     "dungeonMasterAi": "Mistrz Gry AI",
     "awaitingFirstMove": "MG czeka na twój pierwszy ruch...",
     "narratorPlaying": "Odtwarzanie...",
-    "narratorPaused": "Wstrzymano"
+    "narratorPaused": "Wstrzymano",
+    "sessionTime": "Sesja",
+    "totalPlayTime": "Łącznie",
+    "narrationTime": "Narracja"
   },
   "character": {
     "bonus": "B",

@@ -520,7 +520,15 @@ function TypingIndicator({ typingPlayers }) {
   );
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null, typingPlayers = {} }) {
+function formatDuration(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null, typingPlayers = {}, sessionSeconds = 0, totalPlayTime = 0, narrationTime = 0 }) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -572,8 +580,26 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
         </div>
         <div className="flex-1">
           <h3 className="font-headline text-sm font-bold text-tertiary">{t('chat.dungeonMasterAi')}</h3>
-          <div className="text-[10px] text-primary font-bold uppercase tracking-wider flex items-center gap-1">
-            <span className="w-1 h-1 rounded-full bg-primary" /> {t('common.online')}
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-primary font-bold uppercase tracking-wider flex items-center gap-1">
+              <span className="w-1 h-1 rounded-full bg-primary" /> {t('common.online')}
+            </span>
+            <span
+              className="text-[9px] text-on-surface-variant/50 flex items-center gap-1"
+              title={`${t('chat.sessionTime')}: ${formatDuration(sessionSeconds)} / ${t('chat.totalPlayTime')}: ${formatDuration(totalPlayTime)}`}
+            >
+              <span className="material-symbols-outlined text-[11px]">timer</span>
+              {formatDuration(sessionSeconds)}
+              {totalPlayTime > sessionSeconds && (
+                <span className="text-on-surface-variant/35">/ {formatDuration(totalPlayTime)}</span>
+              )}
+            </span>
+            {narrationTime > 0 && (
+              <span className="text-[9px] text-on-surface-variant/50 flex items-center gap-1" title={t('chat.narrationTime')}>
+                <span className="material-symbols-outlined text-[11px]">record_voice_over</span>
+                {formatDuration(Math.round(narrationTime))}
+              </span>
+            )}
           </div>
         </div>
         {narrator?.isNarratorReady && narrator.playbackState !== narrator.STATES.IDLE && (
@@ -614,14 +640,14 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
           </div>
         )}
         {messages.map((msg) => {
-          if (msg.role === 'dm') return <div key={msg.id} data-message-id={msg.id}><DmMessage message={msg} narrator={narrator} /></div>;
-          if (msg.subtype === 'combat_commentary') return <div key={msg.id} data-message-id={msg.id}><CombatCommentaryMessage message={msg} narrator={narrator} /></div>;
+          if (msg.role === 'dm') return <div key={msg.id} data-message-id={msg.id} className="px-2"><DmMessage message={msg} narrator={narrator} /></div>;
+          if (msg.subtype === 'combat_commentary') return <div key={msg.id} data-message-id={msg.id} className="px-2"><CombatCommentaryMessage message={msg} narrator={narrator} /></div>;
           if (msg.role === 'player') {
             const isMe = myOdId ? msg.odId === myOdId : true;
-            return <div key={msg.id} data-message-id={msg.id}><PlayerMessage message={msg} isMe={isMe} /></div>;
+            return <div key={msg.id} data-message-id={msg.id} className="px-2"><PlayerMessage message={msg} isMe={isMe} /></div>;
           }
-          if (msg.subtype === 'dice_roll') return <div key={msg.id} data-message-id={msg.id}><DiceRollMessage message={msg} /></div>;
-          return <div key={msg.id} data-message-id={msg.id}><SystemMessage message={msg} /></div>;
+          if (msg.subtype === 'dice_roll') return <div key={msg.id} data-message-id={msg.id} className="px-3"><DiceRollMessage message={msg} /></div>;
+          return <div key={msg.id} data-message-id={msg.id} className="px-2"><SystemMessage message={msg} /></div>;
         })}
         <TypingIndicator typingPlayers={typingPlayers} />
         <div ref={bottomRef} />

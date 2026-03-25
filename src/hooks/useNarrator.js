@@ -122,12 +122,18 @@ export function useNarrator() {
 
       startHighlightLoop(audio, result.words, segmentIndex, messageId, wordOffset, fullText, chunk);
 
+      const playStart = performance.now();
       await new Promise((resolve) => {
         audio.onended = resolve;
         audio.onerror = resolve;
         audio.play().catch(resolve);
       });
       if (generationRef.current !== generation) break;
+
+      const wallSeconds = (performance.now() - playStart) / 1000;
+      if (wallSeconds > 0.1) {
+        dispatch({ type: 'ADD_NARRATION_TIME', payload: wallSeconds });
+      }
 
       wordOffset += result.words.length;
       stopHighlightLoop();

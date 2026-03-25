@@ -6,7 +6,7 @@ import { createMediaStore } from '../services/mediaStore.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MUSIC_ROOT = resolve(__dirname, '..', '..', 'public', 'music');
-const ALLOWED_FOLDERS = new Set(['lobby']);
+const ALLOWED_FOLDERS = new Set(['lobby', 'scifi']);
 const GCS_MUSIC_PREFIX = 'music/';
 
 function setMusicResponseHeaders(reply) {

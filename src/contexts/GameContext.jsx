@@ -131,6 +131,8 @@ const initialState = {
   undoStack: [],
   achievements: createDefaultAchievementState(),
   magic: { storedWindPoints: 0, activeSpells: [], knownSpells: [] },
+  narrationTime: 0,
+  totalPlayTime: 0,
 };
 
 function gameReducer(state, action) {
@@ -180,6 +182,8 @@ function gameReducer(state, action) {
       }
       if (!loaded.achievements) loaded.achievements = createDefaultAchievementState();
       if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };
+      if (loaded.narrationTime == null) loaded.narrationTime = 0;
+      if (loaded.totalPlayTime == null) loaded.totalPlayTime = 0;
       if (!loaded.party) loaded.party = [];
       if (loaded.world && !loaded.world.exploredLocations) loaded.world.exploredLocations = [];
       if (loaded.world && !loaded.world.weather) loaded.world.weather = null;
@@ -1365,6 +1369,14 @@ function gameReducer(state, action) {
 
     case 'UPDATE_ACHIEVEMENTS': {
       return { ...state, achievements: { ...state.achievements, ...action.payload } };
+    }
+
+    case 'ADD_NARRATION_TIME': {
+      return { ...state, narrationTime: (state.narrationTime || 0) + (action.payload || 0) };
+    }
+
+    case 'SET_PLAY_TIME': {
+      return { ...state, totalPlayTime: action.payload || 0 };
     }
 
     case 'UPDATE_MAGIC': {

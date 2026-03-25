@@ -51,6 +51,31 @@ export default function GameplayPage() {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
 
+  const [sessionStartTime] = useState(() => Date.now());
+  const [sessionSeconds, setSessionSeconds] = useState(0);
+  const initialTotalPlayTimeRef = useRef(state.totalPlayTime || 0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSessionSeconds(Math.floor((Date.now() - sessionStartTime) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [sessionStartTime]);
+
+  useEffect(() => {
+    const flush = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
+    }, 30000);
+    return () => {
+      clearInterval(flush);
+      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
+    };
+  }, [sessionStartTime, dispatch]);
+
+  const totalPlayTime = initialTotalPlayTimeRef.current + sessionSeconds;
+
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
@@ -943,6 +968,9 @@ export default function GameplayPage() {
             : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
           typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
+          sessionSeconds={sessionSeconds}
+          totalPlayTime={totalPlayTime}
+          narrationTime={state.narrationTime || 0}
         />
       </aside>
 

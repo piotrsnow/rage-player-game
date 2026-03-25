@@ -1,21 +1,27 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSettings } from './SettingsContext';
+import { useGame } from './GameContext';
 import { useLocalMusic } from '../hooks/useLocalMusic';
+
+const GENRE_MUSIC_FOLDER = { 'Sci-Fi': 'scifi' };
 
 const MusicContext = createContext(null);
 
 export function MusicProvider({ children }) {
   const location = useLocation();
   const { settings, updateSettings } = useSettings();
+  const { state: gameState } = useGame();
 
   const [narratorState, setNarratorState] = useState(null);
 
   const isGameplay = location.pathname === '/play';
   const prevIsGameplayRef = useRef(isGameplay);
 
+  const campaignMusicFolder = GENRE_MUSIC_FOLDER[gameState.campaign?.genre] || undefined;
+
   const ambient = useLocalMusic(null, { folder: 'lobby', active: !isGameplay });
-  const campaign = useLocalMusic(isGameplay ? narratorState : null, { active: isGameplay });
+  const campaign = useLocalMusic(isGameplay ? narratorState : null, { folder: campaignMusicFolder, active: isGameplay });
 
   useEffect(() => {
     const wasGameplay = prevIsGameplayRef.current;
