@@ -43,6 +43,7 @@ COPY --from=frontend-build /app/dist ./public/dist
 # Copy frontend source files that the backend imports at runtime
 COPY src/services/diceRollInference.js /app/src/services/diceRollInference.js
 COPY src/data/wfrp.js /app/src/data/wfrp.js
+COPY src/data/wfrpTalents.js /app/src/data/wfrpTalents.js
 COPY src/locales/pl.json /app/src/locales/pl.json
 
 ENV NODE_ENV=production
