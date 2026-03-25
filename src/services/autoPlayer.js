@@ -15,6 +15,27 @@ const VERBOSITY_CHANCE = {
   high: 0.8,
 };
 
+function normalizeAutoPlayerChatMessage(message) {
+  if (typeof message !== 'string') return null;
+
+  const trimmed = message.trim();
+  if (!trimmed) return null;
+
+  let normalized = trimmed
+    .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"')
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+
+  if (/^".*"$/.test(normalized)) {
+    return normalized;
+  }
+
+  if (/^[^"]+$/.test(normalized)) {
+    return `"${normalized}"`;
+  }
+
+  return normalized;
+}
+
 function formatCharacterSummary(character) {
   if (!character) return 'No character data.';
   const lines = [];
@@ -81,7 +102,7 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
   const shouldSpeak = Math.random() < (VERBOSITY_CHANCE[autoPlayerSettings.verbosity] || 0.45);
   const langNote = language === 'pl'
     ? 'Respond in Polish. The action text and chatMessage must be in Polish.'
-    : 'Respond in English.';
+    : 'Respond in English. The action text and chatMessage must be in English.';
 
   const systemPrompt = [
     'You are an AI playing as a character in a tabletop RPG. You must choose what action to take next, staying fully in character.',
@@ -112,17 +133,20 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
     actionsList,
     '',
     shouldSpeak
-      ? 'Also write a short in-character line of dialogue or thought your character would say/think right now.'
+      ? 'Also write a short in-character spoken line your character says aloud right now.'
       : 'Do NOT include a chatMessage in your response.',
     '',
     langNote,
+    shouldSpeak
+      ? 'If you include chatMessage, it MUST be direct speech wrapped in straight double quotes like "Example line". Do not use Polish quotes, smart quotes, guillemets, or narration outside the quotes.'
+      : '',
     '',
     'Respond with ONLY valid JSON in this exact format:',
     '{',
     '  "action": "the action text you choose or write",',
     '  "isCustom": true/false (false if picking a suggested action verbatim, true if custom),',
     '  "reasoning": "1 sentence why you chose this"',
-    shouldSpeak ? '  ,"chatMessage": "short in-character dialogue or thought"' : '',
+    shouldSpeak ? '  ,"chatMessage": "\\"short in-character spoken dialogue in straight double quotes\\""' : '',
     '}',
   ].join('\n');
 
@@ -227,6 +251,8 @@ export async function decideAction(gameState, settings, autoPlayerSettings, apiK
   return {
     action: result.data.action,
     isCustom: !!result.data.isCustom,
-    chatMessage: result.data.chatMessage || null,
+    chatMessage: normalizeAutoPlayerChatMessage(result.data.chatMessage),
   };
 }
+
+export { normalizeAutoPlayerChatMessage };
