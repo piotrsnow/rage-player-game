@@ -173,20 +173,20 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
       {/* Suggested Actions */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="space-y-2">
-          {/* Row 1: 4 action buttons */}
-          <div className="grid grid-cols-4 gap-1.5">
-            {actions.map((action, i) => (
+          {/* Row 1: 3 action buttons */}
+          <div className="grid grid-cols-3 gap-2">
+            {actions.slice(0, 3).map((action, i) => (
               <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
                 <button
                   onClick={() => handleSuggestedAction(action)}
                   disabled={disabled || hasPendingAction}
-                  className="flex-1 text-left px-2 py-2 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+                  className="flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-2">
                     <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-xs leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                       {i + 1}
                     </span>
-                    <p className="text-[11px] text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
+                    <p className="text-xs font-medium text-on-surface-variant group-hover:text-on-surface transition-colors leading-snug line-clamp-2">
                       {action}
                     </p>
                   </div>
