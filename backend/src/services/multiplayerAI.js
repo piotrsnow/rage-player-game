@@ -2,6 +2,7 @@ import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
 import { resolveDiceRollCharacteristic } from '../../../src/services/diceRollInference.js';
+import { getApplicableTalentBonus } from '../../../src/data/wfrpTalents.js';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -57,6 +58,15 @@ function buildMultiplayerUnmetNeedsBlock(characters) {
 const QUOTE_OPEN = '„"«"';
 const QUOTE_CLOSE = '""»"';
 const QUOTE_RE = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
+
+const REFERENCE_TAIL = /(?:^|\s)(?:o|na|w|z|od|do|za|pod|nad|przed|po|przy|między|przez|dla|bez|jako|czyli|pt\.?|tzw\.?|zwan\w*|określ[ao]n\w*|nazwan\w*|zatytułowan\w*|podpisan\w*|oznaczon\w*|napis\w*|słow[aoy]|hasł[oaem]|about|of|on|in|with|from|to|as|titled|called|named|aka)[\s,:;]*$/i;
+const SHORT_CONNECTOR = /^[\s,;]*(?:i|lub|albo|oraz|a|ani|czy|or|and)?\s*$/;
+
+function isLikelyReference(textBetween, prevWasReference) {
+  if (REFERENCE_TAIL.test(textBetween)) return true;
+  if (prevWasReference && SHORT_CONNECTOR.test(textBetween)) return true;
+  return false;
+}
 
 function findSpeakerInText(textBefore, knownNames) {
   const words = textBefore.trim().split(/\s+/);
@@ -114,7 +124,17 @@ function repairDialogueSegments(narrative, segments, knownNpcs = []) {
     let lastIndex = 0;
     let match;
     const parts = [];
+    let prevMatchEnd = 0;
+    let prevWasReference = false;
     while ((match = QUOTE_RE.exec(seg.text)) !== null) {
+      const textBetween = seg.text.slice(prevMatchEnd, match.index);
+      if (isLikelyReference(textBetween, prevWasReference)) {
+        prevWasReference = true;
+        prevMatchEnd = match.index + match[0].length;
+        continue;
+      }
+      prevWasReference = false;
+      prevMatchEnd = match.index + match[0].length;
       const before = seg.text.slice(lastIndex, match.index);
       if (before.trim()) parts.push({ type: 'narration', text: before.trimEnd() });
       const speaker = findSpeakerInText(seg.text.slice(0, match.index), knownNames);
@@ -1004,11 +1024,22 @@ export async function generateMultiplayerScene(gameState, settings, players, act
         dr.skillAdvances = Math.max(0, baseTarget - dr.characteristicValue);
       }
 
+      const characterName = dr.character || null;
+      const characterData = characterByName.get(characterName) || null;
+      const talentResult = getApplicableTalentBonus(
+        characterData?.talents,
+        dr.characteristic,
+        dr.skill,
+      );
+      const talentBonus = talentResult ? talentResult.bonus : 0;
+      dr.talentBonus = talentBonus;
+      dr.applicableTalent = talentResult ? talentResult.talent : null;
+
       const totalBonus = bonus + momentum + disposition;
       const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-      const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
+      const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - talentBonus - cappedBonus);
       dr.difficultyModifier = difficultyModifier;
-      const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
+      const effectiveTarget = baseTarget + talentBonus + cappedBonus + difficultyModifier;
       dr.target = effectiveTarget;
 
       const isCriticalSuccess = roll >= 1 && roll <= 4;

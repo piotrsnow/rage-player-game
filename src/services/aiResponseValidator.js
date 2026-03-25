@@ -33,6 +33,8 @@ const DiceRollSchema = z.object({
   criticalFailure: z.boolean().optional().default(false),
   difficultyModifier: z.number().min(-40).max(40).optional(),
   dispositionBonus: z.number().optional(),
+  applicableTalent: z.string().nullable().optional(),
+  talentBonus: z.number().optional().default(0),
 }).passthrough().nullable().optional();
 
 const NpcRelationshipSchema = z.object({
@@ -316,6 +318,15 @@ const QUOTE_OPEN = '„\u201C«"';
 const QUOTE_CLOSE = '\u201D"»\u201C';
 const QUOTE_PATTERN = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
 
+const REFERENCE_TAIL = /(?:^|\s)(?:o|na|w|z|od|do|za|pod|nad|przed|po|przy|między|przez|dla|bez|jako|czyli|pt\.?|tzw\.?|zwan\w*|określ[ao]n\w*|nazwan\w*|zatytułowan\w*|podpisan\w*|oznaczon\w*|napis\w*|słow[aoy]|hasł[oaem]|about|of|on|in|with|from|to|as|titled|called|named|aka)[\s,:;]*$/i;
+const SHORT_CONNECTOR = /^[\s,;]*(?:i|lub|albo|oraz|a|ani|czy|or|and)?\s*$/;
+
+function isLikelyReference(textBetween, prevWasReference) {
+  if (REFERENCE_TAIL.test(textBetween)) return true;
+  if (prevWasReference && SHORT_CONNECTOR.test(textBetween)) return true;
+  return false;
+}
+
 function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
   const words = textBefore.trim().split(/\s+/);
 
@@ -399,8 +410,21 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     let lastIndex = 0;
     let match;
     const parts = [];
+    let prevMatchEnd = 0;
+    let prevWasReference = false;
 
     while ((match = QUOTE_PATTERN.exec(seg.text)) !== null) {
+      const textBetween = seg.text.slice(prevMatchEnd, match.index);
+
+      if (isLikelyReference(textBetween, prevWasReference)) {
+        prevWasReference = true;
+        prevMatchEnd = match.index + match[0].length;
+        continue;
+      }
+
+      prevWasReference = false;
+      prevMatchEnd = match.index + match[0].length;
+
       const before = seg.text.slice(lastIndex, match.index);
       if (before.trim()) {
         parts.push({ type: 'narration', text: before.trimEnd() });

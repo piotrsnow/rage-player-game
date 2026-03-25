@@ -4,6 +4,7 @@ import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
 import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { buildUnmetNeedsBlock, buildNeedsEnforcementReminder } from './prompts';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
+import { formatTalentsForPrompt } from '../data/wfrpTalents';
 
 function normalizeEndpoint(endpoint) {
   return String(endpoint || '').replace(/\/+$/, '');
@@ -289,7 +290,7 @@ PC: ${character?.name || '?'} (${character?.species || 'Human'}) — ${careerInf
 XP ${character?.xp || 0} (spent ${character?.xpSpent || 0}) | Wounds ${character?.wounds ?? 0}/${character?.maxWounds ?? 0} | M ${character?.movement ?? 4} | Fate ${character?.fate ?? 0} Fortune ${character?.fortune ?? 0}
 Chars: ${charCompact}
 Skills: ${skillList}
-Talents: ${(character?.talents || []).slice(0, 12).join(', ') || 'None'}
+Talents: ${formatTalentsForPrompt((character?.talents || []).slice(0, 12))}
 Inv: ${inventory} | Money: ${moneyDisplay} | Status: ${statuses}
 ${critBlock}${needsBlock}
 Loc: ${currentLoc}
@@ -304,7 +305,7 @@ Quests:\n${activeQuests}
 ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
-Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained). For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, set diceRoll to null.
+Rules (short): d100, target = characteristic + skill advances + talentBonus; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained). Check the character's Talents for [+X] bonuses — if a talent matches the characteristic or skill, include "applicableTalent" and "talentBonus" in diceRoll. For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, set diceRoll to null.
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
@@ -369,7 +370,7 @@ JSON only — no dialogueSegments, soundEffect, musicPrompt, atmosphere, or imag
 
 ${reducedStateJson}
 
-diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
+diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,"applicableTalent":"<talent name or null>","talentBonus":<number or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. Check character Talents for matching [+X] bonuses. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}

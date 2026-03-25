@@ -274,6 +274,7 @@
     "rollEdge": "Przewaga {{value}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Przychylność {{bonus}}",
+    "talentBonus": "{{talent}} {{bonus}}",
     "momentumActive": "Momentum {{bonus}} w następnym rzucie",
     "exportLog": "Pobierz Log Rozgrywki",
     "generatingMusic": "Generowanie muzyki...",

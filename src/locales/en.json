@@ -274,6 +274,7 @@
     "rollEdge": "Edge {{value}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Disposition {{bonus}}",
+    "talentBonus": "{{talent}} {{bonus}}",
     "momentumActive": "Momentum {{bonus}} on next roll",
     "exportLog": "Download Game Log",
     "generatingMusic": "Generating music...",

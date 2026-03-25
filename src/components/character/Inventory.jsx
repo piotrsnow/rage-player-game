@@ -97,7 +97,7 @@ function ItemDetailBox({ item }) {
 export default function Inventory({ items = [], money }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
-  const maxSlots = 12;
+  const maxSlots = 20;
   const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const selectedItem = items.find(i => i.id === selectedItemId) || null;

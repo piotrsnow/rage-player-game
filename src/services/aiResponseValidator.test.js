@@ -160,6 +160,62 @@ describe('repairDialogueSegments', () => {
     expect(narrations.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('keeps quotes preceded by preposition "o" as narration (references, not dialogue)', () => {
+    const segments = [
+      { type: 'narration', text: 'Przy Starszym Szeptaczu zaś cienki, wilgotny plik zapisków, zapisany drobnym, nerwowym pismem o „otwarciu turnieju", „krwi upartego" i kimś określonym tylko jako „Mistrz Pindola".' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Szeptacz' }]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('narration');
+    expect(result[0].text).toContain('otwarciu turnieju');
+    expect(result[0].text).toContain('krwi upartego');
+    expect(result[0].text).toContain('Mistrz Pindola');
+  });
+
+  it('keeps quotes preceded by "jako" as narration', () => {
+    const segments = [
+      { type: 'narration', text: 'Był znany jako „Rzeźnik z Altdorfu" w całym mieście.' },
+    ];
+    const result = repairDialogueSegments('...', segments);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('narration');
+    expect(result[0].text).toContain('Rzeźnik z Altdorfu');
+  });
+
+  it('keeps quotes preceded by "na" as narration', () => {
+    const segments = [
+      { type: 'narration', text: 'Na pergaminie widniał napis na „Kronikę Imperium" i datę sprzed wieków.' },
+    ];
+    const result = repairDialogueSegments('...', segments);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('narration');
+  });
+
+  it('keeps list of reference quotes connected by commas and conjunctions as narration', () => {
+    const segments = [
+      { type: 'narration', text: 'Czytając o „Mrozie", „Głodzie" i „Ciemności", Barnaba poczuł dreszcz.' },
+    ];
+    const result = repairDialogueSegments('...', segments);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(0);
+  });
+
+  it('still splits actual dialogue even when references exist in other segments', () => {
+    const segments = [
+      { type: 'narration', text: 'Czytając o „Mroku" Barnaba usłyszał głos. Szeptacz mruknął: „To nie wróży dobrze."' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Szeptacz', gender: 'male' }]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].text).toBe('To nie wróży dobrze.');
+    expect(dialogues[0].character).toBe('Szeptacz');
+  });
+
   it('generates single narration segment from narrative without quotes when segments are empty', () => {
     const narrative = 'Wiatr wiał przez drzewa. Barnaba szedł drogą w stronę karczmy.';
     const result = repairDialogueSegments(narrative, []);

@@ -14,6 +14,7 @@ import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResp
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent } from '../services/prompts';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
+import { getApplicableTalentBonus } from '../data/wfrpTalents';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -186,11 +187,20 @@ export function useAI() {
                 if (inferred) result.diceRoll.skill = inferred;
               }
 
+              const talentResult = getApplicableTalentBonus(
+                state.character?.talents,
+                resolvedCharacteristic,
+                result.diceRoll.skill,
+              );
+              const talentBonus = talentResult ? talentResult.bonus : 0;
+              result.diceRoll.talentBonus = talentBonus;
+              result.diceRoll.applicableTalent = talentResult ? talentResult.talent : null;
+
               const totalBonus = bonus + momentum + disposition;
               const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-              const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
+              const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - talentBonus - cappedBonus);
               result.diceRoll.difficultyModifier = difficultyModifier;
-              const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
+              const effectiveTarget = baseTarget + talentBonus + cappedBonus + difficultyModifier;
               result.diceRoll.target = effectiveTarget;
 
               const isCriticalSuccess = roll >= 1 && roll <= 4;
