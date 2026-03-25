@@ -11,8 +11,9 @@ import SceneCanvas from './SceneCanvas';
 import { translateSkill } from '../../utils/wfrpTranslate';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
-const NEW_IMAGE_DELAY_MS = 300;
-function CompactBonusTags({ dr, t }) {
+const NEW_IMAGE_DELAY_MS = 1000;
+
+function CompactBonusTags({ dr, t, className = '' }) {
   const hasTags = (dr.characteristic && dr.characteristicValue != null)
     || dr.skillAdvances > 0
     || dr.creativityBonus > 0
@@ -21,7 +22,7 @@ function CompactBonusTags({ dr, t }) {
     || (dr.dispositionBonus != null && dr.dispositionBonus !== 0);
   if (!hasTags) return null;
   return (
-    <div className="flex items-center gap-1 flex-wrap mt-0.5">
+    <div className={`flex items-center gap-1 flex-wrap mt-0.5 ${className}`.trim()}>
       {dr.characteristic && dr.characteristicValue != null && (
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/30">
           {t(`stats.${dr.characteristic}Long`)} {dr.characteristicValue}
@@ -64,6 +65,173 @@ function CompactBonusTags({ dr, t }) {
           {t('gameplay.dispositionBonus', { bonus: (dr.dispositionBonus > 0 ? '+' : '') + dr.dispositionBonus })}
         </span>
       )}
+    </div>
+  );
+}
+
+function OverlayModifierList({ dr, t }) {
+  const RESERVED_MODIFIER_SLOTS = 4;
+  const modifiers = [];
+
+  if (dr.characteristic && dr.characteristicValue != null) {
+    modifiers.push({
+      key: 'characteristic',
+      label: `${t(`stats.${dr.characteristic}Long`)} ${dr.characteristicValue}`,
+      className: 'bg-purple-400/15 text-purple-300 border-purple-400/30',
+    });
+  }
+  if (dr.skillAdvances > 0) {
+    modifiers.push({
+      key: 'skill',
+      label: `${translateSkill(dr.skill, t)} +${dr.skillAdvances}`,
+      className: 'bg-emerald-400/15 text-emerald-300 border-emerald-400/30',
+    });
+  }
+  if (dr.creativityBonus > 0) {
+    modifiers.push({
+      key: 'creativity',
+      label: t('gameplay.creativityBonus', { bonus: dr.creativityBonus }),
+      className: 'bg-amber-400/15 text-amber-300 border-amber-400/30',
+    });
+  }
+  if (dr.difficultyModifier != null && dr.difficultyModifier !== 0) {
+    modifiers.push({
+      key: 'difficulty',
+      label: t('gameplay.difficultyModifier', { bonus: (dr.difficultyModifier > 0 ? '+' : '') + dr.difficultyModifier }),
+      className: dr.difficultyModifier > 0
+        ? 'bg-teal-400/15 text-teal-300 border-teal-400/30'
+        : 'bg-rose-400/15 text-rose-300 border-rose-400/30',
+    });
+  }
+  if (dr.momentumBonus != null && dr.momentumBonus !== 0) {
+    modifiers.push({
+      key: 'momentum',
+      label: t('gameplay.momentumBonus', { bonus: (dr.momentumBonus > 0 ? '+' : '') + dr.momentumBonus }),
+      className: dr.momentumBonus > 0
+        ? 'bg-blue-400/15 text-blue-300 border-blue-400/30'
+        : 'bg-red-400/15 text-red-300 border-red-400/30',
+    });
+  }
+  if (dr.dispositionBonus != null && dr.dispositionBonus !== 0) {
+    modifiers.push({
+      key: 'disposition',
+      label: t('gameplay.dispositionBonus', { bonus: (dr.dispositionBonus > 0 ? '+' : '') + dr.dispositionBonus }),
+      className: dr.dispositionBonus > 0
+        ? 'bg-pink-400/15 text-pink-300 border-pink-400/30'
+        : 'bg-orange-400/15 text-orange-300 border-orange-400/30',
+    });
+  }
+
+  const reservedModifiers = [
+    ...modifiers,
+    ...Array.from(
+      { length: Math.max(0, RESERVED_MODIFIER_SLOTS - modifiers.length) },
+      (_, idx) => ({
+        key: `placeholder-${idx}`,
+        label: '\u00A0',
+        className: 'border-transparent bg-transparent text-transparent',
+        isPlaceholder: true,
+      })
+    ),
+  ];
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {reservedModifiers.map((modifier) => (
+        <span
+          key={modifier.key}
+          aria-hidden={modifier.isPlaceholder ? 'true' : undefined}
+          className={`w-[158px] text-right text-[10px] font-bold px-2 py-1 rounded-full border ${modifier.className}`}
+        >
+          {modifier.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function OverlayOutcomeTarget({ dr, t }) {
+  const target = dr.target || dr.dc;
+  const isSuccess = Boolean(dr.success || dr.criticalSuccess);
+  const indicatorTone = dr.criticalSuccess
+    ? 'text-amber-300 border-amber-400/35 bg-amber-400/12'
+    : dr.criticalFailure
+      ? 'text-red-300 border-red-500/35 bg-red-500/10'
+      : isSuccess
+        ? 'text-primary border-primary/35 bg-primary/10'
+        : 'text-error border-error/35 bg-error/10';
+
+  return (
+    <div className="relative w-28 h-20 flex items-end justify-center">
+      <div className={`absolute left-1/2 -translate-x-1/2 w-16 h-16 rounded-full border bg-surface-container-high/55 flex flex-col items-center justify-center ${
+        isSuccess ? 'border-primary/35 shadow-[0_0_18px_rgba(197,154,255,0.12)]' : 'border-outline-variant/25'
+      }`}>
+        <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-on-surface-variant">
+          {dr.characteristic ? t(`stats.${dr.characteristic}Long`) : t('common.target', 'Cel')}
+        </span>
+        <span className="font-mono text-lg font-black text-on-surface leading-none">
+          {target}
+        </span>
+      </div>
+
+      <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 ease-out ${
+        isSuccess ? 'bottom-5' : '-top-1'
+      }`}>
+        <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${indicatorTone}`}>
+          <span className="font-mono text-[11px] font-black leading-none text-on-surface">
+            {dr.roll}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OverlayDiceCard({ dr, t, showCharacter = false, isVisible = true }) {
+  const target = dr?.target || dr?.dc;
+  return (
+    <div className={`glass-panel-elevated relative w-max max-w-[min(92vw,22rem)] overflow-visible rounded-xl px-4 py-3 flex flex-col gap-2 transition-all duration-300 ${
+      isVisible ? 'opacity-100 translate-y-0 scale-100' : 'pointer-events-none opacity-0 translate-y-1 scale-95'
+    }`}>
+      {dr ? (
+        <div className="w-full text-center">
+          {showCharacter && dr.character ? (
+            <p className="text-[10px] font-bold text-on-surface uppercase tracking-[0.2em] truncate">
+              {dr.character}
+            </p>
+          ) : null}
+          <p className={`font-bold text-on-surface-variant uppercase tracking-[0.18em] truncate ${showCharacter && dr.character ? 'mt-1 text-[11px]' : 'text-xs'}`}>
+            {t('gameplay.diceCheck', { skill: translateSkill(dr.skill, t) })}
+          </p>
+        </div>
+      ) : null}
+
+      {target != null && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden rounded-xl select-none font-mono text-[9rem] font-black leading-none text-on-surface/[0.07] blur-[2px] animate-target-shimmer">
+          {target}
+        </span>
+      )}
+
+      <div className="flex items-end gap-3">
+        <div className="relative h-[68px] w-[84px] shrink-0 overflow-visible">
+          <div className="absolute left-1/2 top-1/2 h-[168px] w-[186px] -translate-x-1/2 -translate-y-1/2 overflow-visible">
+            <DiceRoller
+              diceRoll={dr}
+              showOverlayResult={false}
+              sizeMultiplier={2.3}
+              durationMultiplier={1.5}
+              variant="overlay"
+              isVisible={isVisible}
+            />
+          </div>
+        </div>
+
+        {dr ? (
+          <div className="flex min-w-0 w-[200px] shrink-0 justify-end">
+            <OverlayModifierList dr={dr} t={t} />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -173,6 +341,10 @@ export default function ScenePanel({
   }, [currentChunk, highlightInfo]);
 
   const sentenceWordOffset = lastOffsetRef.current;
+  const currentOverlayRolls = useMemo(() => {
+    if (diceRolls && diceRolls.length > 0) return diceRolls;
+    return diceRoll ? [diceRoll] : [];
+  }, [diceRoll, diceRolls]);
 
   const imageSrc = useMemo(
     () => apiClient.resolveMediaUrl(scene?.image),
@@ -182,17 +354,32 @@ export default function ScenePanel({
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
   const [incomingSrc, setIncomingSrc] = useState(null);
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const [overlaySlotCount, setOverlaySlotCount] = useState(() => Math.max(1, currentOverlayRolls.length));
   const revealTimeoutRef = useRef(null);
+  const overlaySlots = useMemo(
+    () => Array.from({ length: overlaySlotCount }, (_, idx) => currentOverlayRolls[idx] ?? null),
+    [overlaySlotCount, currentOverlayRolls]
+  );
 
   useEffect(() => {
-    const resetTimeoutId = window.setTimeout(() => {
-      setDisplayedSrc(null);
-    }, 200);
+    if (revealTimeoutRef.current) {
+      window.clearTimeout(revealTimeoutRef.current);
+      revealTimeoutRef.current = null;
+    }
+    setDisplayedSrc(null);
     setIncomingSrc(null);
     setIsCrossfading(false);
-
-    return () => window.clearTimeout(resetTimeoutId);
   }, [scene?.id]);
+
+  useEffect(() => {
+    setOverlaySlotCount(1);
+  }, [scene?.id]);
+
+  useEffect(() => {
+    if (currentOverlayRolls.length > 0) {
+      setOverlaySlotCount((prev) => Math.max(prev, currentOverlayRolls.length));
+    }
+  }, [currentOverlayRolls.length]);
 
   useEffect(() => {
     if (!imageSrc) {
@@ -247,27 +434,12 @@ export default function ScenePanel({
     };
   }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage]);
 
-  useEffect(() => {
-    if (!incomingSrc || !isCrossfading) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setDisplayedSrc(incomingSrc);
-      setIncomingSrc(null);
-      setIsCrossfading(false);
-    }, 450);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [incomingSrc, isCrossfading]);
-
   const handleImageError = useCallback(() => {
-    if (scene?.id && scene?.image) {
-      setDisplayedSrc(null);
-      setIncomingSrc(null);
-      setIsCrossfading(false);
-      dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
-      onImageError?.(scene.id);
-    }
+    if (!scene?.id || !scene?.image) return;
+    dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
+    onImageError?.(scene.id);
   }, [scene?.id, scene?.image, dispatch, onImageError]);
+
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const prevSceneIdRef = useRef(null);
@@ -423,53 +595,22 @@ export default function ScenePanel({
       )}
 
       {/* Dice Roll Overlay — top-right */}
-      {(diceRoll || (diceRolls && diceRolls.length > 0)) && (
-        <div className="absolute top-3 right-3 flex flex-col items-end gap-2 animate-scale-in" style={{ zIndex: 4 }}>
-          {diceRolls && diceRolls.length > 0 ? (
-            diceRolls.map((dr, idx) => (
-              <div key={idx} className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[340px]">
-                <div className="w-14 h-14 shrink-0">
-                  <DiceRoller diceRoll={dr} />
-                </div>
-                <div className="flex flex-col min-w-0 gap-0.5">
-                  <p className="text-xs font-bold text-on-surface uppercase tracking-widest truncate">
-                    {dr.character}
-                  </p>
-                  <p className="text-xs text-on-surface-variant">
-                    {translateSkill(dr.skill, t)}: <span className="font-mono font-bold text-on-surface">{dr.roll}</span> {t('common.vs')} <span className="font-mono font-bold text-on-surface">{dr.target || dr.dc}</span>
-                  </p>
-                  <CompactBonusTags dr={dr} t={t} />
-                  <p className={`text-xs font-bold ${
-                    dr.criticalSuccess ? 'text-amber-400' : dr.criticalFailure ? 'text-red-700' : dr.success ? 'text-primary' : 'text-error'
-                  }`}>
-                    SL {dr.sl ?? 0} — {dr.criticalSuccess ? t('common.criticalSuccess') : dr.criticalFailure ? t('common.criticalFailure') : dr.success ? t('common.success') : t('common.failure')}
-                  </p>
-                </div>
-              </div>
-            ))
-          ) : diceRoll ? (
-            <div className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[340px]">
-              <div className="w-14 h-14 shrink-0">
-                <DiceRoller diceRoll={diceRoll} />
-              </div>
-              <div className="flex flex-col min-w-0 gap-0.5">
-                <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest truncate">
-                  {t('gameplay.diceCheck', { skill: translateSkill(diceRoll.skill, t) })}
-                </p>
-                <p className="text-xs text-on-surface-variant">
-                  <span className="font-mono font-bold text-on-surface">{diceRoll.roll}</span> {t('common.vs')} <span className="font-mono font-bold text-on-surface">{diceRoll.target || diceRoll.dc}</span> · SL {diceRoll.sl ?? 0}
-                </p>
-                <CompactBonusTags dr={diceRoll} t={t} />
-                <p className={`text-xs font-bold ${
-                  diceRoll.criticalSuccess ? 'text-amber-400' : diceRoll.criticalFailure ? 'text-red-700' : diceRoll.success ? 'text-primary' : 'text-error'
-                }`}>
-                  {diceRoll.criticalSuccess ? t('common.criticalSuccess') : diceRoll.criticalFailure ? t('common.criticalFailure') : diceRoll.success ? t('common.success') : t('common.failure')}
-                </p>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
+      <div
+        className={`absolute top-3 right-3 flex flex-col items-end gap-2 overflow-visible transition-opacity duration-300 ${
+          currentOverlayRolls.length > 0 ? 'opacity-100 animate-scale-in' : 'pointer-events-none opacity-0'
+        }`}
+        style={{ zIndex: 4 }}
+      >
+        {overlaySlots.map((dr, idx) => (
+          <OverlayDiceCard
+            key={idx}
+            dr={dr}
+            t={t}
+            showCharacter={currentOverlayRolls.length > 1}
+            isVisible={Boolean(dr)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

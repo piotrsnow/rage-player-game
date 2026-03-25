@@ -304,7 +304,7 @@ Quests:\n${activeQuests}
 ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
-Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained).
+Rules (short): d100, target = characteristic + skill advances; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained). For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, set diceRoll to null.
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
@@ -369,7 +369,7 @@ JSON only — no dialogueSegments, soundEffect, musicPrompt, atmosphere, or imag
 
 ${reducedStateJson}
 
-diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances.
+diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}

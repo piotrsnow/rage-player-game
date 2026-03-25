@@ -18,6 +18,10 @@ const BREATH_FREQUENCY = 1.5;
 const BREATH_AMPLITUDE = 0.015;
 const SNAP_DISTANCE = 8.0;
 const ENTRANCE_DURATION = 0.6;
+const CIRCLE_WALK_RADIUS = 0.45;
+const CIRCLE_WALK_ANGULAR_SPEED = 0.35;
+const CIRCLE_WALK_POSITION_LERP = 4.5;
+const CIRCLE_WALK_ANIMATIONS = new Set(['idle', 'walk']);
 
 /**
  * @param {Object} props
@@ -40,6 +44,8 @@ export default function Character3D({
   const prevAnimation = useRef(command.animation);
   const prevPositionRef = useRef(null);
   const entranceRef = useRef({ active: true, elapsed: 0 });
+  const circleWalkPhaseRef = useRef(Math.random() * Math.PI * 2);
+  const circleWalkActiveRef = useRef(false);
 
   const prefab = useMemo(() => getCharacterPrefab(command.archetype), [command.archetype]);
 
@@ -66,6 +72,12 @@ export default function Character3D({
     const pos = command.position || anchor.position;
     return new THREE.Vector3(pos[0], pos[1] + (prefab?.yOffset || 0), pos[2]);
   }, [command.position, anchor, prefab]);
+
+  const shouldCircleWalk = useMemo(() => (
+    command.id === 'player'
+    && !command.moveTo
+    && CIRCLE_WALK_ANIMATIONS.has(command.animation || 'idle')
+  ), [command.id, command.moveTo, command.animation]);
 
   useEffect(() => {
     setFailedModelIds([]);
@@ -134,6 +146,23 @@ export default function Character3D({
   }, [command.animation, command.id]);
 
   useEffect(() => {
+    const wasCircleWalking = circleWalkActiveRef.current;
+    circleWalkActiveRef.current = shouldCircleWalk;
+
+    if (shouldCircleWalk) {
+      if (!targetPositionRef.current) {
+        setCurrentAnimation('walk');
+      }
+      return;
+    }
+
+    if (wasCircleWalking && !targetPositionRef.current) {
+      targetPositionRef.current = initialPosition.clone();
+      setCurrentAnimation('walk');
+    }
+  }, [shouldCircleWalk, initialPosition, command.animation]);
+
+  useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
 
@@ -165,7 +194,7 @@ export default function Character3D({
     scene3dDebug.spawn('character', command.id, command.anchor);
   }, [initialPosition, targetRotation, command.id, command.anchor]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const group = groupRef.current;
     if (!group) return;
 
@@ -178,6 +207,23 @@ export default function Character3D({
         entranceRef.current.active = false;
         group.scale.setScalar(1);
       }
+      return;
+    }
+
+    if (shouldCircleWalk && !targetPositionRef.current) {
+      const elapsed = state.clock.getElapsedTime();
+      const orbitAngle = elapsed * Math.PI * 2 * CIRCLE_WALK_ANGULAR_SPEED + circleWalkPhaseRef.current;
+      const nextX = initialPosition.x + Math.cos(orbitAngle) * CIRCLE_WALK_RADIUS;
+      const nextZ = initialPosition.z + Math.sin(orbitAngle) * CIRCLE_WALK_RADIUS;
+      const bobOffset = Math.sin(elapsed * BOB_FREQUENCY * Math.PI * 2) * BOB_AMPLITUDE;
+      const desiredPosition = new THREE.Vector3(nextX, initialPosition.y + bobOffset, nextZ);
+
+      group.position.lerp(desiredPosition, Math.min(CIRCLE_WALK_POSITION_LERP * delta, 1));
+
+      const tangentX = -Math.sin(orbitAngle);
+      const tangentZ = Math.cos(orbitAngle);
+      const targetRot = Math.atan2(tangentX, tangentZ);
+      group.rotation.y = THREE.MathUtils.lerp(group.rotation.y, targetRot, ROTATION_SPEED * delta);
       return;
     }
 

@@ -11,7 +11,19 @@ import Button from '../ui/Button';
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateSharedVoiceSettings, updateDMSettings, resetSettings, importSettings, loadFromAccount, hasApiKey, backendUser, backendLogout } = useSettings();
+  const {
+    settings,
+    updateSettings,
+    updateSharedVoiceSettings,
+    updateDMSettings,
+    resetSettings,
+    importSettings,
+    loadFromAccount,
+    hasApiKey,
+    backendUser,
+    backendAuthChecking,
+    backendLogout,
+  } = useSettings();
 
   const [voices, setVoices] = useState([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -850,7 +862,16 @@ export default function DMSettingsPage({ onClose }) {
                   </h2>
                   <p className="text-xs text-on-surface-variant mb-6">{t('settings.backendDesc')}</p>
 
-                  {backendUser ? (
+                  {backendAuthChecking ? (
+                    <div className="flex items-center gap-3 p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
+                      <span className="material-symbols-outlined text-primary/60 animate-spin">progress_activity</span>
+                      <div className="flex-1">
+                        <p className="text-on-surface-variant text-xs">
+                          {t('common.loading')}
+                        </p>
+                      </div>
+                    </div>
+                  ) : backendUser ? (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
                         <div>

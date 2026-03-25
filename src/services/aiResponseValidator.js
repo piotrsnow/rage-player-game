@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { CHARACTERISTIC_KEYS } from '../data/wfrp.js';
+
+const CharacteristicKeySchema = z.enum(CHARACTERISTIC_KEYS);
 
 const AtmosphereSchema = z.object({
   weather: z.string().optional().default('clear'),
@@ -21,7 +24,7 @@ const DiceRollSchema = z.object({
   target: z.number().optional(),
   sl: z.number().optional(),
   skill: z.string().optional(),
-  characteristic: z.string().optional(),
+  characteristic: CharacteristicKeySchema.optional(),
   characteristicValue: z.number().optional(),
   skillAdvances: z.number().optional(),
   success: z.boolean().optional(),

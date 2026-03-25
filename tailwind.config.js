@@ -68,6 +68,15 @@ export default {
         xl: '0.5rem',
         full: '0.75rem',
       },
+      keyframes: {
+        'target-shimmer': {
+          '0%, 100%': { opacity: '0.06', filter: 'blur(2px)', transform: 'scale(1)' },
+          '50%': { opacity: '0.09', filter: 'blur(1.5px)', transform: 'scale(1.03)' },
+        },
+      },
+      animation: {
+        'target-shimmer': 'target-shimmer 3.5s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

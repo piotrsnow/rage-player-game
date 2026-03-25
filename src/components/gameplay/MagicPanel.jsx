@@ -262,7 +262,18 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
               — {lastChannelResult.success ? `${t('magic.success', 'Success')} (+${lastChannelResult.windPoints} ${t('magic.wind', 'Wind')})` : t('magic.fail', 'Fail')}
             </span>
             {lastChannelResult.success && (
-              <span className="text-on-surface-variant"> — SL {lastChannelResult.sl}</span>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ml-1 ${
+                lastChannelResult.sl > 0
+                  ? 'text-primary bg-primary/12 border-primary/20'
+                  : lastChannelResult.sl < 0
+                    ? 'text-error bg-error/12 border-error/20'
+                    : 'text-on-surface-variant bg-surface-container-high/40 border-outline-variant/20'
+              }`}>
+                <span className="material-symbols-outlined text-[11px] leading-none">fitness_center</span>
+                <span className="font-bold">
+                  {t('gameplay.rollEdge', { value: `${lastChannelResult.sl > 0 ? '+' : ''}${lastChannelResult.sl}` })}
+                </span>
+              </span>
             )}
           </div>
         )}

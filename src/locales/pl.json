@@ -256,6 +256,7 @@
     "voiceListening": "Słucham...",
     "creativityBonus": "Kreatywność +{{bonus}}",
     "difficultyModifier": "Trudność {{bonus}}",
+    "rollEdge": "Przewaga {{value}}",
     "momentumBonus": "Momentum {{bonus}}",
     "dispositionBonus": "Przychylność {{bonus}}",
     "momentumActive": "Momentum {{bonus}} w następnym rzucie",

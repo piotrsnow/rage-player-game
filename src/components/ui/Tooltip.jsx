@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
-export default function Tooltip({ children, content, className = '' }) {
+export default function Tooltip({ children, content, className = '', tooltipClassName = '' }) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
@@ -81,7 +81,7 @@ export default function Tooltip({ children, content, className = '' }) {
             ref={tooltipRef}
             role="tooltip"
             style={{ top: coords.top, left: coords.left }}
-            className="fixed z-[9999] max-w-sm px-4 py-3 text-sm leading-relaxed text-on-surface bg-surface-container-highest border border-outline-variant/20 rounded-sm shadow-xl backdrop-blur-xl animate-fade-in pointer-events-none"
+            className={`fixed z-[9999] max-w-sm px-4 py-3 text-sm leading-relaxed text-on-surface bg-surface-container-highest border border-outline-variant/20 rounded-sm shadow-xl backdrop-blur-xl animate-fade-in pointer-events-none ${tooltipClassName}`.trim()}
           >
             {content}
           </div>,

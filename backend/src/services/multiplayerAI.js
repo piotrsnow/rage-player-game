@@ -1,6 +1,7 @@
 import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
+import { resolveDiceRollCharacteristic } from '../../../src/services/diceRollInference.js';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -14,6 +15,11 @@ function normalizeDifficultyModifier(value) {
   return typeof value === 'number' && Number.isFinite(value)
     ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
     : 0;
+}
+
+function snapDifficultyModifier(value) {
+  if (!Number.isFinite(value)) return 0;
+  return clamp(Math.round(value / 10) * 10, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER);
 }
 
 const NEEDS_LABELS = {
@@ -485,8 +491,10 @@ If the input has NO quotation marks at all, the character does not speak (unless
 Resolve ALL player actions simultaneously. Describe what happens to each character.
 
 FEASIBILITY CHECK: Before rolling dice, verify each action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (no diceRolls entry). Trivial/certain actions auto-succeed (no diceRolls entry). Only roll for uncertain outcomes.
+Simple repositioning or low-risk movement such as taking a step back, moving aside, or cautiously backing away is usually trivial. Prefer no dice roll unless the scene is actively dangerous; if you do require a roll, expose that ease with difficultyModifier +20 or +30.
 
 DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. Build each roll like this: "baseTarget" = characteristic + skill advances, "difficultyModifier" = an explicit difficulty step, and "target" = the final effective target used for success comparison.
+CHARACTERISTIC RULE: Every diceRolls entry MUST include a valid WFRP characteristic key: ws, bs, s, t, i, ag, dex, int, wp, or fel. For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, omit that character from diceRolls instead of guessing.
 DIFFICULTY MODIFIER: Always expose task difficulty explicitly via "difficultyModifier" instead of hiding it inside "target". Use only one of these values: +40, +30, +20, +10, 0, -10, -20, -30, -40. Guide: +40 routine, +30 easy, +20 favorable, +10 slightly favorable, 0 standard, -10 challenging, -20 hard, -30 very hard, -40 extreme / nearly suicidal.
 NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a separate target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.
 ${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
@@ -559,7 +567,7 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 LOOT RARITY GATING: Scenes 1-15: only "common"/"uncommon" items. Scenes 16-30: "rare" allowed. Scenes 31+: "exotic" possible but with narrative cost (thieves, faction interest, rumors). Always set the "rarity" field.
 ITEM VALIDATION: Characters can ONLY use items currently in their inventory. If a player references an item they don't have, the action MUST fail narratively. Only include items in removeItems that exist in the character's inventory.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "baseTarget": <number — characteristic + skill advances only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "characteristic": "<ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in the tested skill, 0 if untrained>, "baseTarget": <number — characteristic + skill advances only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For social speech and persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, omit that character from diceRolls. For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
@@ -932,6 +940,8 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
 export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
+  const actionByName = new Map(actions.map((action) => [action.name, action]));
+  const characterByName = new Map((gameState.characters || []).map((character) => [character.name, character]));
 
   const testsFrequency = dmSettings?.testsFrequency ?? 50;
   const preRolledDice = {};
@@ -953,14 +963,33 @@ export async function generateMultiplayerScene(gameState, settings, players, act
 
   const result = await callAI(messages, encryptedApiKeys);
 
+  function normalizeDiceRoll(dr, fallbackCharacterName = null) {
+    if (!dr || dr.roll == null || dr.target == null) return dr;
+
+    const characterName = dr.character || fallbackCharacterName;
+    const actionText = actionByName.get(characterName)?.action || actions[0]?.action || '';
+    const characterData = characterByName.get(characterName) || null;
+    const resolvedCharacteristic = resolveDiceRollCharacteristic(dr, actionText);
+    if (!resolvedCharacteristic) return null;
+
+    dr.characteristic = resolvedCharacteristic;
+    if (dr.characteristicValue == null) {
+      dr.characteristicValue = characterData?.characteristics?.[resolvedCharacteristic] ?? null;
+    }
+
+    return dr.characteristicValue == null ? null : dr;
+  }
+
   function recalcDiceRoll(dr) {
     if (dr && dr.roll != null && dr.target != null) {
+      const originalTarget = dr.target;
       const roll = dr.roll;
       const bonus = dr.creativityBonus || 0;
       const momentum = dr.momentumBonus || 0;
       const disposition = dr.dispositionBonus || 0;
-      const difficultyModifier = normalizeDifficultyModifier(dr.difficultyModifier);
-      dr.difficultyModifier = difficultyModifier;
+      const providedDifficultyModifier = dr.difficultyModifier != null
+        ? normalizeDifficultyModifier(dr.difficultyModifier)
+        : null;
 
       let baseTarget;
       if (dr.baseTarget) {
@@ -968,7 +997,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       } else if (dr.characteristicValue != null && dr.skillAdvances != null) {
         baseTarget = dr.characteristicValue + dr.skillAdvances;
       } else {
-        baseTarget = dr.target - bonus - momentum - disposition - difficultyModifier;
+        baseTarget = dr.target - bonus - momentum - disposition - (providedDifficultyModifier ?? 0);
       }
       dr.baseTarget = baseTarget;
 
@@ -978,6 +1007,8 @@ export async function generateMultiplayerScene(gameState, settings, players, act
 
       const totalBonus = bonus + momentum + disposition;
       const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
+      const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
+      dr.difficultyModifier = difficultyModifier;
       const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
       dr.target = effectiveTarget;
 
@@ -991,12 +1022,14 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   }
 
   if (result.diceRolls?.length) {
-    for (const dr of result.diceRolls) {
-      recalcDiceRoll(dr);
-    }
+    result.diceRolls = result.diceRolls
+      .map((dr) => normalizeDiceRoll(dr))
+      .filter(Boolean);
+    for (const dr of result.diceRolls) recalcDiceRoll(dr);
   }
   if (result.diceRoll) {
-    recalcDiceRoll(result.diceRoll);
+    result.diceRoll = normalizeDiceRoll(result.diceRoll, actions[0]?.name);
+    if (result.diceRoll) recalcDiceRoll(result.diceRoll);
   }
 
   const worldNpcs = gameState?.world?.npcs || [];

@@ -83,6 +83,10 @@ function extractSharedVoiceSettings(value) {
   return sanitizeSharedVoiceSettings(subset);
 }
 
+function shouldCheckBackendSession(settings) {
+  return Boolean(settings?.backendUrl && settings?.useBackend && apiClient.getToken());
+}
+
 const defaultSettings = {
   aiProvider: 'openai',
   openaiApiKey: '',
@@ -149,6 +153,7 @@ export function SettingsProvider({ children }) {
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const [backendUser, setBackendUser] = useState(null);
+  const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
   const saveTimerRef = useRef(null);
 
@@ -175,8 +180,20 @@ export function SettingsProvider({ children }) {
       apiClient.configure({ baseUrl: settings.backendUrl });
     } else {
       apiClient.configure({ baseUrl: '', token: '' });
+      setBackendUser(null);
+      setBackendKeys(EMPTY_BACKEND_KEYS);
+      setBackendAuthChecking(false);
     }
   }, [settings.backendUrl, settings.useBackend]);
+
+  useEffect(() => {
+    if (!settings.backendUrl || !settings.useBackend) return;
+    if (backendUser) {
+      setBackendAuthChecking(false);
+      return;
+    }
+    setBackendAuthChecking(shouldCheckBackendSession(settings));
+  }, [settings, backendUser]);
 
   const fetchBackendKeys = useCallback(async () => {
     if (!apiClient.isConnected()) {
@@ -210,12 +227,21 @@ export function SettingsProvider({ children }) {
   }, [settings.language, i18n]);
 
   const loadBackendUser = useCallback(async () => {
-    if (!apiClient.isConnected()) return;
+    if (!apiClient.isConnected()) {
+      setBackendUser(null);
+      setBackendAuthChecking(false);
+      return null;
+    }
+    setBackendAuthChecking(true);
     try {
       const user = await apiClient.get('/auth/me');
       setBackendUser(user);
+      return user;
     } catch {
       setBackendUser(null);
+      return null;
+    } finally {
+      setBackendAuthChecking(false);
     }
   }, []);
 
@@ -329,6 +355,7 @@ export function SettingsProvider({ children }) {
     const data = await apiClient.login(email, password);
     setSettings((prev) => ({ ...prev, backendUrl: url, useBackend: true }));
     setBackendUser(data.user);
+    setBackendAuthChecking(false);
     await storage.migrateLocalDataToAccount(data.user.id);
     await loadFromAccount();
     return data;
@@ -339,6 +366,7 @@ export function SettingsProvider({ children }) {
     const data = await apiClient.register(email, password);
     setSettings((prev) => ({ ...prev, backendUrl: url, useBackend: true }));
     setBackendUser(data.user);
+    setBackendAuthChecking(false);
     await storage.migrateLocalDataToAccount(data.user.id);
     await loadFromAccount();
     return data;
@@ -348,6 +376,7 @@ export function SettingsProvider({ children }) {
     apiClient.logout();
     setSettings((prev) => ({ ...prev, useBackend: false }));
     setBackendUser(null);
+    setBackendAuthChecking(false);
   }, []);
 
   const value = {
@@ -364,6 +393,7 @@ export function SettingsProvider({ children }) {
     fetchBackendKeys,
     loadFromAccount,
     backendUser,
+    backendAuthChecking,
     loadBackendUser,
     backendLogin,
     backendRegister,

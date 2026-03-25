@@ -5,7 +5,6 @@ import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
 import { createSceneId, calculateSL, rollD100 } from '../services/gameState';
-import { getSkillCharacteristic } from '../data/wfrp';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -14,6 +13,7 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent } from '../services/prompts';
+import { resolveDiceRollCharacteristic } from '../services/diceRollInference';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -27,6 +27,11 @@ function normalizeDifficultyModifier(value) {
   return typeof value === 'number' && Number.isFinite(value)
     ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
     : 0;
+}
+
+function snapDifficultyModifier(value) {
+  if (!Number.isFinite(value)) return 0;
+  return clamp(Math.round(value / 10) * 10, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER);
 }
 
 export function useAI() {
@@ -111,51 +116,63 @@ export function useAI() {
         }
 
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
-          const roll = result.diceRoll.roll;
-          const bonus = result.diceRoll.creativityBonus || 0;
-          const momentum = result.diceRoll.momentumBonus || 0;
-          const disposition = result.diceRoll.dispositionBonus || 0;
-          const difficultyModifier = normalizeDifficultyModifier(result.diceRoll.difficultyModifier);
-          result.diceRoll.difficultyModifier = difficultyModifier;
-
-          if (!result.diceRoll.characteristic && result.diceRoll.skill) {
-            result.diceRoll.characteristic = getSkillCharacteristic(result.diceRoll.skill);
-          }
-          if (result.diceRoll.characteristic && result.diceRoll.characteristicValue == null) {
-            result.diceRoll.characteristicValue = state.character?.characteristics?.[result.diceRoll.characteristic] || 0;
-          }
-
-          let baseTarget;
-          if (result.diceRoll.baseTarget) {
-            baseTarget = result.diceRoll.baseTarget;
-          } else if (result.diceRoll.characteristicValue != null && result.diceRoll.skillAdvances != null) {
-            baseTarget = result.diceRoll.characteristicValue + result.diceRoll.skillAdvances;
+          const resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
+          if (!resolvedCharacteristic) {
+            result.diceRoll = null;
           } else {
-            baseTarget = result.diceRoll.target - bonus - momentum - disposition - difficultyModifier;
+            result.diceRoll.characteristic = resolvedCharacteristic;
+
+            if (result.diceRoll.characteristicValue == null) {
+              result.diceRoll.characteristicValue = state.character?.characteristics?.[resolvedCharacteristic] ?? null;
+            }
+
+            if (result.diceRoll.characteristicValue == null) {
+              result.diceRoll = null;
+            } else {
+              const originalTarget = result.diceRoll.target;
+              const roll = result.diceRoll.roll;
+              const bonus = result.diceRoll.creativityBonus || 0;
+              const momentum = result.diceRoll.momentumBonus || 0;
+              const disposition = result.diceRoll.dispositionBonus || 0;
+              const providedDifficultyModifier = result.diceRoll.difficultyModifier != null
+                ? normalizeDifficultyModifier(result.diceRoll.difficultyModifier)
+                : null;
+
+              let baseTarget;
+              if (result.diceRoll.baseTarget) {
+                baseTarget = result.diceRoll.baseTarget;
+              } else if (result.diceRoll.characteristicValue != null && result.diceRoll.skillAdvances != null) {
+                baseTarget = result.diceRoll.characteristicValue + result.diceRoll.skillAdvances;
+              } else {
+                baseTarget = result.diceRoll.target - bonus - momentum - disposition - (providedDifficultyModifier ?? 0);
+              }
+              result.diceRoll.baseTarget = baseTarget;
+
+              if (result.diceRoll.skillAdvances == null && result.diceRoll.characteristicValue != null) {
+                result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
+              }
+
+              const totalBonus = bonus + momentum + disposition;
+              const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
+              const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
+              result.diceRoll.difficultyModifier = difficultyModifier;
+              const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
+              result.diceRoll.target = effectiveTarget;
+
+              const isCriticalSuccess = roll >= 1 && roll <= 4;
+              const isCriticalFailure = roll >= 96 && roll <= 100;
+              const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
+
+              result.diceRoll.success = isSuccess;
+              result.diceRoll.criticalSuccess = isCriticalSuccess;
+              result.diceRoll.criticalFailure = isCriticalFailure;
+              result.diceRoll.sl = calculateSL(roll, effectiveTarget);
+
+              const sl = result.diceRoll.sl;
+              const rawMomentum = sl * 5;
+              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-40, Math.min(40, rawMomentum)) });
+            }
           }
-          result.diceRoll.baseTarget = baseTarget;
-
-          if (result.diceRoll.skillAdvances == null && result.diceRoll.characteristicValue != null) {
-            result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
-          }
-
-          const totalBonus = bonus + momentum + disposition;
-          const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-          const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
-          result.diceRoll.target = effectiveTarget;
-
-          const isCriticalSuccess = roll >= 1 && roll <= 4;
-          const isCriticalFailure = roll >= 96 && roll <= 100;
-          const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
-
-          result.diceRoll.success = isSuccess;
-          result.diceRoll.criticalSuccess = isCriticalSuccess;
-          result.diceRoll.criticalFailure = isCriticalFailure;
-          result.diceRoll.sl = calculateSL(roll, effectiveTarget);
-
-          const sl = result.diceRoll.sl;
-          const rawMomentum = sl * 5;
-          dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-40, Math.min(40, rawMomentum)) });
         }
 
         const repairedSegments = repairDialogueSegments(

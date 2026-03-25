@@ -61,6 +61,21 @@ function LoggedInBanner({ user, onLogout }) {
   );
 }
 
+function SessionCheckBanner() {
+  const { t } = useTranslation();
+
+  return (
+    <div className="text-center py-6">
+      <span className="material-symbols-outlined text-primary/50 text-4xl mb-3 block animate-spin">
+        progress_activity
+      </span>
+      <h3 className="font-headline text-tertiary text-lg tracking-wide">
+        {t('common.loading')}
+      </h3>
+    </div>
+  );
+}
+
 function LoginForm() {
   const { t } = useTranslation();
   const { backendLogin, backendRegister } = useSettings();
@@ -201,12 +216,14 @@ function LoginForm() {
 }
 
 export default function AuthPanel() {
-  const { backendUser, backendLogout } = useSettings();
+  const { backendUser, backendLogout, backendAuthChecking } = useSettings();
 
   return (
     <div className="w-full max-w-md animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
       <GlassCard elevated className="p-8 md:p-10">
-        {backendUser ? (
+        {backendAuthChecking ? (
+          <SessionCheckBanner />
+        ) : backendUser ? (
           <LoggedInBanner user={backendUser} onLogout={backendLogout} />
         ) : (
           <LoginForm />
