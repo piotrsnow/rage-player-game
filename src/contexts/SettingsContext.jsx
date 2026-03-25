@@ -103,6 +103,19 @@ export function SettingsProvider({ children }) {
     }
   }, [settings.backendUrl, settings.useBackend]);
 
+  const fetchBackendKeys = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setBackendKeys(EMPTY_BACKEND_KEYS);
+      return;
+    }
+    try {
+      const keys = await apiClient.get('/auth/api-keys');
+      setBackendKeys({ ...EMPTY_BACKEND_KEYS, ...keys });
+    } catch {
+      setBackendKeys(EMPTY_BACKEND_KEYS);
+    }
+  }, []);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend) {
       const timer = setTimeout(() => {
@@ -120,19 +133,6 @@ export function SettingsProvider({ children }) {
     }
     document.documentElement.lang = settings.language || 'en';
   }, [settings.language, i18n]);
-
-  const fetchBackendKeys = useCallback(async () => {
-    if (!apiClient.isConnected()) {
-      setBackendKeys(EMPTY_BACKEND_KEYS);
-      return;
-    }
-    try {
-      const keys = await apiClient.get('/auth/api-keys');
-      setBackendKeys({ ...EMPTY_BACKEND_KEYS, ...keys });
-    } catch {
-      setBackendKeys(EMPTY_BACKEND_KEYS);
-    }
-  }, []);
 
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();
