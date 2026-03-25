@@ -227,7 +227,7 @@ function OverlayDiceCard({ dr, t, showCharacter = false, isVisible = true }) {
 
       <div className="flex items-end gap-3">
         <div className="relative h-[68px] w-[84px] shrink-0 overflow-visible">
-          <div className="absolute left-1/2 top-1/2 h-[168px] w-[186px] -translate-x-1/2 -translate-y-1/2 overflow-visible">
+          <div className="absolute left-[calc(50%+24px)] top-[calc(50%-24px)] h-[168px] w-[186px] -translate-x-1/2 -translate-y-1/2 overflow-visible">
             <DiceRoller
               diceRoll={dr}
               showOverlayResult={false}

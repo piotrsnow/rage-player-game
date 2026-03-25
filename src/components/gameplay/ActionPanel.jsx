@@ -149,7 +149,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
   };
 
   const handleInitiateDialogue = () => {
-    if (selectedDialogueNpcs.length < 2) return;
+    if (selectedDialogueNpcs.length < 1) return;
     setDialoguePickerOpen(false);
     const npcList = selectedDialogueNpcs.join(', ');
     if (isMultiplayer) {
@@ -160,7 +160,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
     setSelectedDialogueNpcs([]);
   };
 
-  const canDialogue = npcs.length >= 2 && dialogueCooldown <= 0;
+  const canDialogue = npcs.length >= 1 && dialogueCooldown <= 0;
 
   const textareaRef = useRef(null);
 
@@ -307,7 +307,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                 {t('dialogue.selectNpcs')}
               </label>
 
-              {npcs.length >= 2 ? (
+              {npcs.length >= 1 ? (
                 <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
                   {npcs.map((npc) => {
                     const isSelected = selectedDialogueNpcs.includes(npc.name);
@@ -345,11 +345,11 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
 
               <button
                 onClick={handleInitiateDialogue}
-                disabled={disabled || selectedDialogueNpcs.length < 2}
+                disabled={disabled || selectedDialogueNpcs.length < 1}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-label text-on-surface bg-tertiary/15 hover:bg-tertiary/25 border border-tertiary/30 hover:border-tertiary/50 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-sm text-tertiary">forum</span>
-                {t('dialogue.startDialogue')} ({selectedDialogueNpcs.length}/2+)
+                {t('dialogue.startDialogue')} ({selectedDialogueNpcs.length}/1+)
               </button>
 
               <button
@@ -425,7 +425,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
             type="button"
             onClick={() => { setDialoguePickerOpen((v) => !v); setCombatPickerOpen(false); }}
             disabled={disabled || hasPendingAction || !canDialogue}
-            title={dialogueCooldown > 0 ? t('dialogue.cooldownHint', { scenes: dialogueCooldown }) : npcs.length < 2 ? t('dialogue.notEnoughNpcs') : t('dialogue.startDialogue')}
+            title={dialogueCooldown > 0 ? t('dialogue.cooldownHint', { scenes: dialogueCooldown }) : npcs.length < 1 ? t('dialogue.notEnoughNpcs') : t('dialogue.startDialogue')}
             className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-tertiary/80 hover:text-tertiary bg-tertiary/5 hover:bg-tertiary/10 border border-tertiary/10 hover:border-tertiary/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
           >
             <span className="material-symbols-outlined text-sm">forum</span>

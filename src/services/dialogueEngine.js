@@ -11,7 +11,7 @@ export function computeDialogueStats(character) {
 
 export function canStartDialogue(character, currentCooldown, availableNpcCount) {
   if (currentCooldown > 0) return false;
-  if (availableNpcCount < 2) return false;
+  if (availableNpcCount < 1) return false;
   const { maxRounds } = computeDialogueStats(character);
   return maxRounds >= 1;
 }
