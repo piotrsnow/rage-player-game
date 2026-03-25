@@ -715,6 +715,7 @@ export default function GameplayPage() {
               actions={currentScene.actions}
               onAction={handleAction}
               disabled={isGeneratingScene}
+              npcs={(state.world?.npcs || []).filter((npc) => npc.alive !== false && npc.lastLocation === state.world?.currentLocation)}
             />
           </div>
         )}

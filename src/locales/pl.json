@@ -197,7 +197,16 @@
     "sceneReview": "Przegląd sceny",
     "firstScene": "Pierwsza scena",
     "autoPlayScenes": "Odtwarzaj wszystkie sceny",
-    "stopAutoPlay": "Zatrzymaj odtwarzanie"
+    "stopAutoPlay": "Zatrzymaj odtwarzanie",
+    "initiateCombat": "Rozpocznij walkę",
+    "attackNpc": "Atakuj",
+    "generalCombat": "Walka ogólna — AI ustali wrogów",
+    "selectTarget": "Wybierz cel ataku",
+    "cancelCombat": "Anuluj",
+    "noNpcsNearby": "Brak postaci w pobliżu",
+    "attitudeHostile": "Wrogi",
+    "attitudeNeutral": "Neutralny",
+    "attitudeFriendly": "Przyjazny"
   },
   "chat": {
     "dmAi": "MG AI",

@@ -197,7 +197,16 @@
     "sceneReview": "Scene review",
     "firstScene": "First scene",
     "autoPlayScenes": "Auto-play all scenes",
-    "stopAutoPlay": "Stop auto-play"
+    "stopAutoPlay": "Stop auto-play",
+    "initiateCombat": "Initiate Combat",
+    "attackNpc": "Attack",
+    "generalCombat": "General combat — AI decides enemies",
+    "selectTarget": "Select attack target",
+    "cancelCombat": "Cancel",
+    "noNpcsNearby": "No characters nearby",
+    "attitudeHostile": "Hostile",
+    "attitudeNeutral": "Neutral",
+    "attitudeFriendly": "Friendly"
   },
   "chat": {
     "dmAi": "DM AI",

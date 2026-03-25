@@ -12,6 +12,7 @@ export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęi�
 export function detectCombatIntent(playerAction) {
   if (!playerAction) return false;
   if (playerAction.startsWith('[Combat resolved:')) return false;
+  if (playerAction.startsWith('[INITIATE COMBAT]') || playerAction.startsWith('[ATTACK:')) return true;
   return COMBAT_INTENT_REGEX.test(playerAction);
 }
 
@@ -715,13 +716,38 @@ The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
       : `The player's action: ${playerAction}`;
 
   const combatIntentDetected = !isPostCombat && detectCombatIntent(playerAction);
-  const combatReminder = combatIntentDetected
-    ? `\n\nCOMBAT INTENT DETECTED — MANDATORY RESPONSE REQUIREMENT:
+  const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
+  const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
+  const attackedNpcName = attackNpcMatch?.[1];
+
+  let combatReminder = '';
+  if (isGeneralCombatInitiation) {
+    combatReminder = `\n\nPLAYER INITIATED COMBAT — MANDATORY RESPONSE REQUIREMENT:
+The player pressed the "Initiate Combat" button. You MUST analyze ALL NPCs present in this scene and determine who is hostile based on their attitude, disposition, and relationships:
+- NPCs with attitude "hostile" or negative disposition MUST become enemies.
+- NPCs with attitude "neutral" or "friendly" should generally NOT become enemies unless the narrative context demands it (e.g. they are secretly working with the hostile NPCs, or story logic dictates they would join the fight).
+- If there are no hostile NPCs present, introduce contextually appropriate enemies (bandits ambush, creatures emerge, etc.) or narrate that there is no immediate threat and do NOT include combatUpdate.
+- You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array with full stat blocks.
+- For any NPC that becomes an enemy, also include them in stateChanges.npcs with action "update" and attitude "hostile".
+Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`;
+  } else if (attackedNpcName) {
+    combatReminder = `\n\nPLAYER ATTACKS SPECIFIC NPC — MANDATORY RESPONSE REQUIREMENT:
+The player is deliberately attacking "${attackedNpcName}". This NPC MUST be included in combatUpdate.enemies with appropriate stat blocks, regardless of their current attitude (even if friendly or neutral).
+- "${attackedNpcName}" becomes hostile. Include them in stateChanges.npcs with action "update" and attitude "hostile".
+- Check if "${attackedNpcName}" has allies, guards, or companions present in the scene. If so, those allies should also join as enemies in combatUpdate (and also be set to hostile in stateChanges.npcs).
+- Other NPCs who are NOT allied with the target should react appropriately: bystanders flee, authorities may intervene later, witnesses remember.
+- The narrative should describe the moment of aggression — the player strikes first, the target's shock or readiness, the chaos that ensues.
+- You MUST include "combatUpdate" in stateChanges with "active": true and the enemies array.
+Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "${attackedNpcName}", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 12, "maxWounds": 12, "skills": {}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "Player attacked ${attackedNpcName}"}\n`;
+  } else if (combatIntentDetected) {
+    combatReminder = `\n\nCOMBAT INTENT DETECTED — MANDATORY RESPONSE REQUIREMENT:
 The player is explicitly initiating combat. You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array containing stat blocks for the opponents.
 Use NPCs present in the scene as enemies. If no specific NPCs are present, use contextually appropriate opponents (tavern patrons, guards, etc.).
 Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "Tavern Thug", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`
-    : '';
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "Tavern Thug", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`;
+  }
 
   return `${needsReminder}${actionBlock}${combatReminder}
 ${isPostCombat ? '' : `
