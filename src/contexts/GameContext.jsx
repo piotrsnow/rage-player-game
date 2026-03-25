@@ -2,6 +2,7 @@ import { createContext, useContext, useReducer, useCallback, useRef, useEffect }
 import { storage } from '../services/storage';
 import { calculateWounds, normalizeMoney } from '../services/gameState';
 import { createCombatState } from '../services/combatEngine';
+import { createDialogueState } from '../services/dialogueEngine';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils';
 import {
   getAdvancementCost,
@@ -129,6 +130,8 @@ const initialState = {
   isGeneratingScene: false,
   isGeneratingImage: false,
   combat: null,
+  dialogue: null,
+  dialogueCooldown: 0,
   undoStack: [],
   achievements: createDefaultAchievementState(),
   magic: { storedWindPoints: 0, activeSpells: [], knownSpells: [] },
@@ -185,6 +188,8 @@ function gameReducer(state, action) {
       if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };
       if (loaded.narrationTime == null) loaded.narrationTime = 0;
       if (loaded.totalPlayTime == null) loaded.totalPlayTime = 0;
+      if (!loaded.dialogue) loaded.dialogue = null;
+      if (loaded.dialogueCooldown == null) loaded.dialogueCooldown = 0;
       if (!loaded.party) loaded.party = [];
       if (loaded.world && !loaded.world.exploredLocations) loaded.world.exploredLocations = [];
       if (loaded.world && !loaded.world.weather) loaded.world.weather = null;
@@ -210,11 +215,16 @@ function gameReducer(state, action) {
     case 'RESET':
       return initialState;
 
-    case 'ADD_SCENE':
+    case 'ADD_SCENE': {
+      const nextCooldown = (!state.dialogue?.active && state.dialogueCooldown > 0)
+        ? state.dialogueCooldown - 1
+        : state.dialogueCooldown;
       return {
         ...state,
         scenes: [...state.scenes, action.payload],
+        dialogueCooldown: nextCooldown,
       };
+    }
 
     case 'UPDATE_SCENE_IMAGE': {
       const scenes = [...state.scenes];
@@ -1201,6 +1211,28 @@ function gameReducer(state, action) {
         next.combat = null;
       }
 
+      if (changes.dialogueUpdate && changes.dialogueUpdate.active) {
+        const dialogueNpcs = (changes.dialogueUpdate.npcs || []).map((npc) => {
+          const worldNpc = (next.world?.npcs || []).find(
+            (n) => n.name?.toLowerCase() === npc.name?.toLowerCase()
+          );
+          return {
+            name: npc.name,
+            attitude: npc.attitude || worldNpc?.attitude || 'neutral',
+            role: worldNpc?.role || '',
+            personality: worldNpc?.personality || '',
+            goal: npc.goal || '',
+          };
+        });
+        next.dialogue = createDialogueState(next.character, dialogueNpcs);
+        next.dialogue.reason = changes.dialogueUpdate.reason || '';
+      } else if (changes.dialogueUpdate && !changes.dialogueUpdate.active) {
+        if (next.dialogue) {
+          next.dialogueCooldown = next.dialogue.cooldownTotal || 0;
+        }
+        next.dialogue = null;
+      }
+
       if (changes.weatherUpdate) {
         next.world = { ...next.world, weather: changes.weatherUpdate };
       }
@@ -1337,6 +1369,20 @@ function gameReducer(state, action) {
 
     case 'END_COMBAT': {
       return { ...state, combat: null };
+    }
+
+    case 'START_DIALOGUE': {
+      return { ...state, dialogue: action.payload };
+    }
+
+    case 'UPDATE_DIALOGUE': {
+      if (!state.dialogue) return state;
+      return { ...state, dialogue: { ...state.dialogue, ...action.payload } };
+    }
+
+    case 'END_DIALOGUE': {
+      const cooldown = state.dialogue?.cooldownTotal || 0;
+      return { ...state, dialogue: null, dialogueCooldown: cooldown };
     }
 
     case 'UPDATE_FACTIONS': {

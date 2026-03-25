@@ -138,6 +138,24 @@
     "criticalWound": "Critical wound",
     "defeated": "KO"
   },
+  "dialogue": {
+    "title": "Dialogue Mode",
+    "round": "Round",
+    "endDialogue": "End Dialogue",
+    "yourTurn": "Your turn to speak",
+    "replyPlaceholder": "Type your reply...",
+    "roundsRemaining_one": "{{count}} round remaining",
+    "roundsRemaining_other": "{{count}} rounds remaining",
+    "roundsRemaining": "{{count}} round(s) remaining",
+    "lastRound": "Last round of dialogue",
+    "startDialogue": "Dialogue",
+    "selectNpcs": "Select NPCs to talk to (2+)",
+    "notEnoughNpcs": "Not enough NPCs nearby for dialogue mode",
+    "cooldownHint": "Dialogue mode on cooldown ({{scenes}} scenes remaining)",
+    "cooldownShort": "Dialogue ({{scenes}})",
+    "endedEarly": "Dialogue ended early after {{rounds}}/{{maxRounds}} rounds.",
+    "completed": "Dialogue completed after {{rounds}} rounds."
+  },
   "nav": {
     "lobby": "Lobby",
     "grimoire": "Grimoire",

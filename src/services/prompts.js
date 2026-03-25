@@ -17,6 +17,16 @@ export function detectCombatIntent(playerAction) {
   return COMBAT_INTENT_REGEX.test(playerAction);
 }
 
+export const DIALOGUE_INTENT_REGEX = /\b(rozmawiam|porozmawia[jm]|zagaduj[eę]?|negocjuj[eę]?|przekonuj[eę]?|perswaduj[eę]?|dyskutuj[eę]?|targu[jJeę]|pytam|zagaj|rozmawiaj|talk|speak|negotiate|persuade|discuss|converse|haggle|parley|chat\s+with|bargain|ask\s+about)\b/i;
+
+export function detectDialogueIntent(playerAction) {
+  if (!playerAction) return false;
+  if (playerAction.startsWith('[Dialogue ended:')) return false;
+  if (playerAction.startsWith('[INITIATE DIALOGUE')) return true;
+  if (playerAction.startsWith('[TALK:')) return true;
+  return DIALOGUE_INTENT_REGEX.test(playerAction);
+}
+
 function formatCombatantForCommentary(combatant) {
   const status = combatant.isDefeated
     ? 'defeated'
@@ -723,10 +733,25 @@ When the player's action explicitly involves attacking, starting a fight, initia
 - Respect player agency: if the player wants to fight, they fight. The consequences of attacking innocents or authorities should come AFTER combat (reputation, bounties, story consequences), not prevent the combat from starting.
 
 FACTION & REPUTATION:
-When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.`;
+When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.
+
+DIALOGUE MODE:
+When the player requests a structured dialogue (negotiation, parley, group conversation) with 2+ NPCs, include "dialogueUpdate" in stateChanges:
+{
+  "dialogueUpdate": {
+    "active": true,
+    "npcs": [
+      {"name": "NPC Name", "attitude": "friendly", "goal": "what this NPC wants from the conversation"},
+      {"name": "Other NPC", "attitude": "neutral", "goal": "their conversational agenda"}
+    ],
+    "reason": "Short description of why dialogue mode started"
+  }
+}
+Include dialogueUpdate when the player explicitly asks to enter dialogue mode, negotiate with a group, or talk to multiple NPCs. The client-side dialogue engine handles round-by-round conversation flow.
+When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be dialogue options: things the player can say, ask, argue, propose, or respond with.`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {}, dmSettings = null) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0 } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
@@ -875,7 +900,57 @@ Do NOT narrate combat without including combatUpdate — the client combat engin
 Example: "combatUpdate": {"active": true, "enemies": [{"name": "Tavern Thug", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`;
   }
 
-  return `${needsReminder}${actionBlock}${combatReminder}
+  const isPostDialogue = playerAction && playerAction.startsWith('[Dialogue ended:');
+  const isDialogueActive = dialogue?.active;
+  const isDialogueInitiation = playerAction?.startsWith('[INITIATE DIALOGUE');
+  const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
+  const dialogueIntentDetected = !isPostCombat && !isPostDialogue && detectDialogueIntent(playerAction);
+
+  let dialogueReminder = '';
+  if (isDialogueActive) {
+    const npcNames = (dialogue.npcs || []).map((n) => n.name).join(', ');
+    const npcGoals = (dialogue.npcs || []).map((n) => `${n.name} (${n.attitude}): ${n.goal || 'engaging in conversation'}`).join('\n');
+    dialogueReminder = `\n\nDIALOGUE MODE ACTIVE — Round ${dialogue.round}/${dialogue.maxRounds}
+NPCs in conversation: ${npcNames}
+NPC goals:
+${npcGoals}
+
+MANDATORY DIALOGUE MODE RULES:
+- The narrator/GM MUST stay completely silent — NO narrator prose or description.
+- ONLY NPCs speak. The "narrative" must contain ONLY the NPCs' spoken dialogue lines.
+- ALL dialogueSegments must be type "dialogue" with an NPC character name and gender. Do NOT include any "narration" segments.
+- Each NPC should respond in character based on their personality, attitude, and conversational goal.
+- suggestedActions must be dialogue options: things the player can SAY, ASK, ARGUE, PROPOSE, or RESPOND with — NOT physical actions.
+- Do NOT include combatUpdate.
+- diceRoll should be null unless a Charm/Fellowship test is contextually critical.
+- ${dialogue.round >= dialogue.maxRounds ? 'This is the LAST round. NPCs should wrap up the conversation naturally. Include "dialogueUpdate": {"active": false} in stateChanges to end dialogue mode.' : `${dialogue.maxRounds - dialogue.round} round(s) remaining.`}\n`;
+  } else if (isPostDialogue) {
+    dialogueReminder = `\n\nDIALOGUE JUST ENDED — ${playerAction}
+
+POST-DIALOGUE RULES (MANDATORY):
+- Do NOT include "dialogueUpdate" in stateChanges — dialogue has JUST ended.
+- Return to normal narration: narrator describes the aftermath and consequences of the conversation.
+- Reflect the outcome of the dialogue: agreements reached, information gained, NPC disposition changes, rejected proposals, etc.
+- suggestedActions should be normal exploration/action options based on the dialogue outcome.
+- diceRoll should be null for this transition scene.\n`;
+  } else if (isDialogueInitiation) {
+    const npcListMatch = playerAction.match(/\[INITIATE DIALOGUE:\s*(.+?)\]/);
+    const requestedNpcs = npcListMatch ? npcListMatch[1] : 'nearby NPCs';
+    dialogueReminder = `\n\nPLAYER INITIATED DIALOGUE MODE — MANDATORY RESPONSE REQUIREMENT:
+The player wants to enter a structured dialogue with: ${requestedNpcs}.
+You MUST include "dialogueUpdate" in stateChanges with "active": true and an "npcs" array listing the conversation participants (at least 2 NPCs).
+Each NPC entry needs: {"name": "NPC Name", "attitude": "friendly|neutral|hostile", "goal": "what this NPC wants from the conversation"}.
+The narrative should set up the conversation — NPCs notice the player approaching and begin to engage.
+Example: "dialogueUpdate": {"active": true, "npcs": [{"name": "Merchant Hans", "attitude": "friendly", "goal": "sell wares at a premium"}, {"name": "Guard Captain", "attitude": "neutral", "goal": "maintain order"}], "reason": "Player initiated group dialogue"}\n`;
+  } else if (talkNpcMatch) {
+    dialogueReminder = `\n\nPLAYER WANTS TO TALK TO "${talkNpcMatch[1]}" — consider including "dialogueUpdate" in stateChanges if there are 2+ NPCs available for a structured conversation. Otherwise proceed with normal narrative dialogue.\n`;
+  } else if (dialogueIntentDetected && dialogueCooldown <= 0) {
+    dialogueReminder = `\n\nDIALOGUE INTENT DETECTED: The player wants to talk/negotiate. If 2+ NPCs are present, consider including "dialogueUpdate" in stateChanges to start dialogue mode. Otherwise, narrate the conversation normally.\n`;
+  } else if (dialogueCooldown > 0 && dialogueIntentDetected) {
+    dialogueReminder = `\n\nDIALOGUE MODE ON COOLDOWN (${dialogueCooldown} scenes remaining). The character needs time to recover their social energy. Narrate the conversation normally without entering dialogue mode — do NOT include dialogueUpdate.\n`;
+  }
+
+  return `${needsReminder}${actionBlock}${combatReminder}${dialogueReminder}
 ${isPostCombat ? '' : `
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
 RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
@@ -966,6 +1041,7 @@ Respond with ONLY valid JSON in this exact format:
     "currentLocation": "Current Location Name",
     "factionChanges": null,
     "combatUpdate": "INCLUDE combatUpdate OBJECT WITH active:true AND enemies ARRAY WHEN COMBAT STARTS — omit or set null when no combat",
+    "dialogueUpdate": "INCLUDE dialogueUpdate OBJECT WITH active:true AND npcs ARRAY WHEN DIALOGUE MODE STARTS — omit or set null when no dialogue mode",
     "knowledgeUpdates": null,
     "codexUpdates": [],
     "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}

@@ -12,7 +12,7 @@ import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
-import { detectCombatIntent } from '../services/prompts';
+import { detectCombatIntent, detectDialogueIntent } from '../services/prompts';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
 
@@ -114,6 +114,29 @@ export function useAI() {
               }
             } catch (retryErr) {
               console.warn('[useAI] Combat retry failed, using original response:', retryErr.message);
+            }
+          }
+        }
+
+        if (!isFirstScene && !isIdleWorldEvent && detectDialogueIntent(playerAction) && (state.dialogueCooldown || 0) <= 0) {
+          const hasDialogueUpdate = result.stateChanges?.dialogueUpdate && result.stateChanges.dialogueUpdate.active === true;
+          if (!hasDialogueUpdate && (playerAction?.startsWith('[INITIATE DIALOGUE') || playerAction?.startsWith('[TALK:'))) {
+            console.warn('[useAI] Dialogue intent detected but AI omitted dialogueUpdate — retrying with reinforced prompt');
+            try {
+              const retryAction = `[SYSTEM: DIALOGUE MODE MUST START THIS SCENE] ${playerAction}`;
+              const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
+                state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
+                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+              );
+              if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
+              if (retryResult.stateChanges?.dialogueUpdate?.active === true) {
+                console.log('[useAI] Retry succeeded — dialogueUpdate present');
+                Object.assign(result, retryResult);
+              } else {
+                console.warn('[useAI] Retry also omitted dialogueUpdate — using original response');
+              }
+            } catch (retryErr) {
+              console.warn('[useAI] Dialogue retry failed, using original response:', retryErr.message);
             }
           }
         }

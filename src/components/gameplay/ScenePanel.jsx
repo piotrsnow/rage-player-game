@@ -609,7 +609,7 @@ export default function ScenePanel({
 
       {/* Dice Roll Overlay — top-right */}
       <div
-        className={`absolute top-0 right-0 flex flex-col items-end gap-2 overflow-visible transition-opacity duration-300 ${
+        className={`absolute top-3 right-3 flex flex-col items-end gap-2 overflow-visible transition-opacity duration-300 ${
           currentOverlayRolls.length > 0 ? 'opacity-100 animate-scale-in' : 'pointer-events-none opacity-0'
         }`}
         style={{ zIndex: 4 }}

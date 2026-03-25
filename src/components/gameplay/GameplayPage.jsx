@@ -19,6 +19,7 @@ import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
 import AdvancementPanel from '../character/AdvancementPanel';
 import CombatPanel from './CombatPanel';
+import DialoguePanel from './DialoguePanel';
 import MagicPanel from './MagicPanel';
 import PartyPanel from './PartyPanel';
 import AchievementsPanel from '../character/AchievementsPanel';
@@ -379,6 +380,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const idlePaused = isMultiplayer
     || isGeneratingScene
     || !!(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)
+    || !!state.dialogue?.active
     || autoPlayer.isAutoPlaying
     || isReviewingPastScene
     || (campaign?.status && campaign.status !== 'active')
@@ -477,6 +479,37 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
+  };
+
+  const handleEndDialogue = (summary) => {
+    dispatch({ type: 'END_DIALOGUE' });
+
+    const npcList = (summary.npcs || []).join(', ');
+    const journalEntry = summary.endedEarly
+      ? `Dialogue: Ended conversation early with ${npcList} after ${summary.rounds}/${summary.maxRounds} rounds.`
+      : `Dialogue: Completed conversation with ${npcList} over ${summary.rounds} rounds.`;
+
+    dispatch({
+      type: 'APPLY_STATE_CHANGES',
+      payload: { journalEntries: [journalEntry] },
+    });
+
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
+        id: `msg_${Date.now()}_dialogue_end`,
+        role: 'system',
+        subtype: 'dialogue_end',
+        content: summary.endedEarly
+          ? t('dialogue.endedEarly', { rounds: summary.rounds, maxRounds: summary.maxRounds })
+          : t('dialogue.completed', { rounds: summary.rounds }),
+        timestamp: Date.now(),
+      },
+    });
+    setTimeout(() => autoSave(), 300);
+
+    const dialogueActionText = `[Dialogue ended: ${summary.endedEarly ? 'ended early' : 'completed'} after ${summary.rounds} rounds with ${npcList}. Resume normal narration — describe the aftermath and consequences of the conversation.]`;
+    generateScene(dialogueActionText, false, false).catch(() => {});
   };
 
   // --- Multiplayer combat handlers (host-only) ---
@@ -1030,8 +1063,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
           </div>
         )}
 
+        {/* Dialogue Panel */}
+        {state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <DialoguePanel
+              dialogue={state.dialogue}
+              gameState={state}
+              onAction={handleAction}
+              onEndDialogue={handleEndDialogue}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
         {/* Magic Panel */}
-        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {hasMagic && !isMultiplayer && !state.combat?.active && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <MagicPanel
               character={character}
@@ -1095,7 +1141,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         )}
 
         {/* Quest Offers */}
-        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <QuestOffersPanel
               offers={currentScene.questOffers}
@@ -1109,7 +1155,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         {/* Bottom panel — always visible */}
         <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
+        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
@@ -1132,6 +1178,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
               npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
+              dialogueCooldown={state.dialogueCooldown || 0}
+              character={character}
             />
           </div>
         )}

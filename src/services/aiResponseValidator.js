@@ -178,6 +178,15 @@ const StateChangesSchema = z.object({
     }).passthrough()).optional().default([]),
     reason: z.string().optional(),
   }).passthrough().nullable().optional(),
+  dialogueUpdate: z.object({
+    active: z.boolean(),
+    npcs: z.array(z.object({
+      name: z.string(),
+      attitude: z.string().optional(),
+      goal: z.string().optional(),
+    }).passthrough()).optional().default([]),
+    reason: z.string().optional(),
+  }).passthrough().nullable().optional(),
   needsChanges: z.any().nullable().optional(),
   knowledgeUpdates: z.any().nullable().optional(),
   codexUpdates: z.array(CodexUpdateSchema).optional().default([]),

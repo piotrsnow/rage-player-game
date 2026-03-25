@@ -138,6 +138,25 @@
     "criticalWound": "Rana krytyczna",
     "defeated": "Pokonany"
   },
+  "dialogue": {
+    "title": "Tryb dialogu",
+    "round": "Runda",
+    "endDialogue": "Zakończ dialog",
+    "yourTurn": "Twoja kolej na odpowiedź",
+    "replyPlaceholder": "Wpisz swoją odpowiedź...",
+    "roundsRemaining_one": "Pozostała {{count}} runda",
+    "roundsRemaining_few": "Pozostały {{count}} rundy",
+    "roundsRemaining_many": "Pozostało {{count}} rund",
+    "roundsRemaining": "Pozostało {{count}} rund(y)",
+    "lastRound": "Ostatnia runda dialogu",
+    "startDialogue": "Dialog",
+    "selectNpcs": "Wybierz NPC do rozmowy (2+)",
+    "notEnoughNpcs": "Za mało NPC w pobliżu na tryb dialogu",
+    "cooldownHint": "Tryb dialogu na odnowieniu ({{scenes}} scen do odblokowania)",
+    "cooldownShort": "Dialog ({{scenes}})",
+    "endedEarly": "Dialog zakończony wcześniej po {{rounds}}/{{maxRounds}} rundach.",
+    "completed": "Dialog ukończony po {{rounds}} rundach."
+  },
   "nav": {
     "lobby": "Lobby",
     "grimoire": "Grimuar",
