@@ -80,7 +80,6 @@ await fastify.register(async function musicScope(app) {
 await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
 
 startRoomCleanup();
-await loadActiveSessionsFromDB();
 
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
@@ -108,3 +107,7 @@ try {
   fastify.log.error(err);
   process.exit(1);
 }
+
+loadActiveSessionsFromDB().catch((err) => {
+  fastify.log.warn(`Failed to load active sessions from DB: ${err.message}`);
+});

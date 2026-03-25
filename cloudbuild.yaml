@@ -29,6 +29,7 @@ steps:
       - '--max-instances=1'
       - '--timeout=3600'
       - '--session-affinity'
+      - '--cpu-boost'
       - '--set-env-vars=NODE_ENV=production'
       - '--set-secrets=JWT_SECRET=rpgon-jwt-secret:latest,API_KEY_ENCRYPTION_SECRET=rpgon-encryption-secret:latest,DATABASE_URL=rpgon-database-url:latest,GCS_BUCKET_NAME=rpgon-gcs-bucket:latest'
 
