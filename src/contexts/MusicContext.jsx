@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import { useLocation } from 'react-router-dom';
 import { useSettings } from './SettingsContext';
 import { useLocalMusic } from '../hooks/useLocalMusic';
-import { useMusic } from '../hooks/useMusic';
 
 const MusicContext = createContext(null);
 
@@ -17,7 +16,6 @@ export function MusicProvider({ children }) {
 
   const ambient = useLocalMusic(null, { folder: 'lobby', active: !isGameplay });
   const campaign = useLocalMusic(isGameplay ? narratorState : null, { active: isGameplay });
-  const suno = useMusic(isGameplay ? narratorState : null);
 
   useEffect(() => {
     const wasGameplay = prevIsGameplayRef.current;
@@ -25,10 +23,9 @@ export function MusicProvider({ children }) {
 
     if (isGameplay && !wasGameplay) {
       ambient.pause();
-      if (!settings.musicEnabled && campaign.hasMusic) campaign.resume();
+      if (campaign.hasMusic) campaign.resume();
     } else if (!isGameplay && wasGameplay) {
       campaign.pause();
-      suno.stop();
       if (ambient.hasMusic) ambient.resume();
     }
   }, [isGameplay]);
@@ -37,55 +34,36 @@ export function MusicProvider({ children }) {
     if (!isGameplay) setNarratorState(null);
   }, [isGameplay]);
 
-  const sunoActive = settings.musicEnabled && isGameplay;
-  const active = isGameplay ? (sunoActive ? null : campaign) : ambient;
+  const active = isGameplay ? campaign : ambient;
 
   const setVolume = useCallback((vol) => {
     ambient.setVolume(vol);
     campaign.setVolume(vol);
-    suno.setVolume(vol);
     updateSettings({ musicVolume: vol });
-  }, [ambient, campaign, suno, updateSettings]);
+  }, [ambient, campaign, updateSettings]);
 
   const togglePlayPause = useCallback(() => {
-    if (sunoActive) {
-      suno.togglePlayPause();
-    } else if (active) {
-      active.togglePlayPause();
-    }
-  }, [sunoActive, suno, active]);
+    if (active) active.togglePlayPause();
+  }, [active]);
 
   const skip = useCallback(() => {
     if (active) active.skip();
   }, [active]);
 
-  const triggerSceneMusic = useCallback((mood, genre, tone, musicPrompt) => {
-    if (sunoActive) {
-      campaign.pause();
-      suno.ensureMusicForMood(mood, genre, tone, musicPrompt);
-    }
-  }, [sunoActive, suno, campaign]);
-
   return (
     <MusicContext.Provider
       value={{
-        isPlaying: sunoActive ? suno.isPlaying : (active?.isPlaying || false),
-        currentTrack: sunoActive
-          ? (suno.currentTrackTitle ? { name: suno.currentTrackTitle } : null)
-          : (active?.currentTrack || null),
-        hasMusic: ambient.hasMusic || campaign.hasMusic || settings.musicEnabled || (settings.localMusicEnabled && settings.useBackend),
-        hasActiveMusic: sunoActive ? suno.isPlaying || suno.isGenerating : (active?.hasMusic || false),
+        isPlaying: active?.isPlaying || false,
+        currentTrack: active?.currentTrack || null,
+        hasMusic: ambient.hasMusic || campaign.hasMusic || (settings.localMusicEnabled && settings.useBackend),
+        hasActiveMusic: active?.hasMusic || false,
         isGameplay,
-        isGeneratingMusic: suno.isGenerating,
-        sunoError: suno.error,
         togglePlayPause,
         skip,
         setVolume,
         setNarratorState,
-        triggerSceneMusic,
         ambient,
         campaign,
-        suno,
       }}
     >
       {children}

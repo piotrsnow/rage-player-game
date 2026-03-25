@@ -31,7 +31,7 @@ export const config = {
     anthropic: process.env.ANTHROPIC_API_KEY || '',
     elevenlabs: process.env.ELEVENLABS_API_KEY || '',
     stability: process.env.STABILITY_API_KEY || '',
-    suno: process.env.SUNO_API_KEY || '',
+    gemini: process.env.GEMINI_API_KEY || '',
   },
 
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,

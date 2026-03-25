@@ -112,7 +112,6 @@ const initialState = {
   momentumBonus: 0,
   isGeneratingScene: false,
   isGeneratingImage: false,
-  isGeneratingMusic: false,
   combat: null,
   undoStack: [],
   achievements: createDefaultAchievementState(),
@@ -149,7 +148,6 @@ function gameReducer(state, action) {
       loaded.isLoading = false;
       loaded.isGeneratingScene = false;
       loaded.isGeneratingImage = false;
-      loaded.isGeneratingMusic = false;
       loaded.error = null;
       loaded.aiCosts = { ...defaultCosts, ...loaded.aiCosts };
       if (loaded.character && !loaded.character.needs) {
@@ -495,9 +493,6 @@ function gameReducer(state, action) {
 
     case 'SET_GENERATING_IMAGE':
       return { ...state, isGeneratingImage: action.payload };
-
-    case 'SET_GENERATING_MUSIC':
-      return { ...state, isGeneratingMusic: action.payload };
 
     case 'SET_MOMENTUM':
       return { ...state, momentumBonus: action.payload };

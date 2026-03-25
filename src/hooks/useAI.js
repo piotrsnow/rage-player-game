@@ -21,11 +21,13 @@ export function useAI() {
   const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
-  const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium' } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
+  const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const imageGenEnabled = sceneVisualization === 'image';
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
-  const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : openaiApiKey;
+  const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
+  const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
   const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
 
   const generateScene = useCallback(
@@ -67,7 +69,7 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
+          { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
@@ -79,7 +81,7 @@ export function useAI() {
               const retryAction = `[SYSTEM: COMBAT MUST START THIS SCENE] ${playerAction}`;
               const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
                 state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey }
+                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
               );
               if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
               if (retryResult.stateChanges?.combatUpdate?.active === true) {
@@ -323,7 +325,7 @@ export function useAI() {
           });
         }
 
-        const hasImageKey = imageApiKey || hasApiKey(imageProvider === 'stability' ? 'stability' : 'openai');
+        const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
         if (imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
@@ -334,7 +336,8 @@ export function useAI() {
               imageApiKey,
               imageProvider,
               result.imagePrompt,
-              state.campaign?.backendId
+              state.campaign?.backendId,
+              imageStyle
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -356,7 +359,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, language, needsSystemEnabled, aiModelTier, hasApiKey, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -370,7 +373,7 @@ export function useAI() {
           apiKey,
           language,
           aiModelTier,
-          { alternateApiKey }
+          { alternateApiKey, explicitModel: aiModel || null }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         return result;
@@ -381,7 +384,7 @@ export function useAI() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
+    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, aiModel, dispatch]
   );
 
   const generateStoryPrompt = useCallback(
@@ -402,7 +405,7 @@ export function useAI() {
 
   const generateImageForScene = useCallback(
     async (sceneId, narrative, imagePrompt, campaignOverride) => {
-      const hasImgKey = imageApiKey || hasApiKey(imageProvider === 'stability' ? 'stability' : 'openai');
+      const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
       if (!imageGenEnabled || !hasImgKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
       try {
@@ -416,7 +419,8 @@ export function useAI() {
           imageApiKey,
           imageProvider,
           sceneImagePrompt,
-          state.campaign?.backendId
+          state.campaign?.backendId,
+          imageStyle
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -432,7 +436,7 @@ export function useAI() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, hasApiKey, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, imageStyle, hasApiKey, dispatch, autoSave]
   );
 
   const verifyQuestObjective = useCallback(

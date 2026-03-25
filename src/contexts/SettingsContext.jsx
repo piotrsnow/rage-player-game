@@ -5,19 +5,19 @@ import { apiClient } from '../services/apiClient';
 
 const SettingsContext = createContext(null);
 
-const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', suno: '' };
+const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', gemini: '' };
 
 const LOCAL_KEY_MAP = {
   openai: 'openaiApiKey',
   anthropic: 'anthropicApiKey',
   elevenlabs: 'elevenlabsApiKey',
   stability: 'stabilityApiKey',
-  suno: 'sunoApiKey',
+  gemini: 'geminiApiKey',
 };
 
 const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'sunoApiKey',
+  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'geminiApiKey',
 ];
 
 const defaultSettings = {
@@ -27,6 +27,7 @@ const defaultSettings = {
   sceneVisualization: 'image',
   imageProvider: 'dalle',
   stabilityApiKey: '',
+  geminiApiKey: '',
   language: 'pl',
   elevenlabsApiKey: '',
   elevenlabsVoiceId: '',
@@ -39,10 +40,7 @@ const defaultSettings = {
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
-  sunoApiKey: '',
-  musicEnabled: false,
   musicVolume: 40,
-  sunoModel: 'V4_5',
   localMusicEnabled: true,
   needsSystemEnabled: false,
   backendUrl: 'http://localhost:3001',
@@ -52,6 +50,7 @@ const defaultSettings = {
   localLLMModel: '',
   localLLMReducedPrompt: true,
   aiModelTier: 'premium',
+  aiModel: '',
   autoPlayer: {
     enabled: false,
     style: 'balanced',
@@ -59,7 +58,7 @@ const defaultSettings = {
     verbosity: 'medium',
     customInstructions: '',
     maxTurns: 0,
-    modelTier: 'standard',
+    model: '',
   },
   dmSettings: {
     narrativeStyle: 50,
@@ -72,6 +71,7 @@ const defaultSettings = {
     narratorDetail: 50,
     narratorHumor: 20,
     narratorDrama: 50,
+    imageStyle: 'painting',
   },
 };
 
@@ -81,7 +81,6 @@ export function SettingsProvider({ children }) {
     const saved = storage.getSettings();
     if (!saved) return defaultSettings;
     const merged = { ...defaultSettings, ...saved };
-    // Migrate legacy imageGenEnabled → sceneVisualization
     if (saved.imageGenEnabled !== undefined && saved.sceneVisualization === undefined) {
       merged.sceneVisualization = saved.imageGenEnabled ? 'image' : 'none';
     }
@@ -90,6 +89,7 @@ export function SettingsProvider({ children }) {
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
+  const [backendUser, setBackendUser] = useState(null);
   const syncingFromBackendRef = useRef(false);
   const saveTimerRef = useRef(null);
 
@@ -149,6 +149,22 @@ export function SettingsProvider({ children }) {
     }
     document.documentElement.lang = settings.language || 'en';
   }, [settings.language, i18n]);
+
+  const loadBackendUser = useCallback(async () => {
+    if (!apiClient.isConnected()) return;
+    try {
+      const user = await apiClient.get('/auth/me');
+      setBackendUser(user);
+    } catch {
+      setBackendUser(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (settings.backendUrl && settings.useBackend && apiClient.isConnected()) {
+      loadBackendUser();
+    }
+  }, [settings.backendUrl, settings.useBackend, loadBackendUser]);
 
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();
@@ -217,6 +233,32 @@ export function SettingsProvider({ children }) {
     return apiClient.isConnected() && !!backendKeys[provider];
   }, [settings, backendKeys]);
 
+  const backendLogin = useCallback(async (url, email, password) => {
+    apiClient.configure({ baseUrl: url });
+    const data = await apiClient.login(email, password);
+    setSettings((prev) => ({ ...prev, backendUrl: url, useBackend: true }));
+    setBackendUser(data.user);
+    await storage.migrateLocalDataToAccount(data.user.id);
+    await loadFromAccount();
+    return data;
+  }, [loadFromAccount]);
+
+  const backendRegister = useCallback(async (url, email, password) => {
+    apiClient.configure({ baseUrl: url });
+    const data = await apiClient.register(email, password);
+    setSettings((prev) => ({ ...prev, backendUrl: url, useBackend: true }));
+    setBackendUser(data.user);
+    await storage.migrateLocalDataToAccount(data.user.id);
+    await loadFromAccount();
+    return data;
+  }, [loadFromAccount]);
+
+  const backendLogout = useCallback(() => {
+    apiClient.logout();
+    setSettings((prev) => ({ ...prev, useBackend: false }));
+    setBackendUser(null);
+  }, []);
+
   const value = {
     settings,
     updateSettings,
@@ -229,6 +271,11 @@ export function SettingsProvider({ children }) {
     backendKeys,
     fetchBackendKeys,
     loadFromAccount,
+    backendUser,
+    loadBackendUser,
+    backendLogin,
+    backendRegister,
+    backendLogout,
   };
 
   return (

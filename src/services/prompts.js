@@ -1079,45 +1079,95 @@ function sanitizeForImageGen(text) {
   return sanitized.replace(/\s{2,}/g, ' ').trim();
 }
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle') {
-  const isSD = provider === 'stability';
+const IMAGE_STYLE_PROMPTS = {
+  illustration: {
+    prompt: 'digital illustration, clean defined linework, vibrant saturated colors, fantasy book illustration, detailed ink-and-color art style',
+    portrait: 'detailed character illustration, clean linework, vibrant colors, fantasy book art style',
+    negative: 'photograph, photorealistic, 3d render, blurry',
+  },
+  pencil: {
+    prompt: 'pencil sketch on textured paper, graphite drawing, expressive crosshatching, delicate shading, monochrome pencil art, hand-drawn feel',
+    portrait: 'graphite pencil portrait, crosshatching, paper texture, monochrome sketch, detailed shading',
+    negative: 'color, photograph, photorealistic, digital art, painting',
+  },
+  noir: {
+    prompt: 'film noir style, stark high-contrast black and white, dramatic deep shadows, chiaroscuro lighting, 1940s hard-boiled detective aesthetic, venetian blind light',
+    portrait: 'film noir portrait, high contrast black and white, dramatic shadow across face, chiaroscuro, smoky atmosphere',
+    negative: 'color, bright, cheerful, cartoon, anime',
+  },
+  anime: {
+    prompt: 'anime art style, cel-shaded, vivid colors, expressive eyes, dynamic composition, detailed anime background, Studio Ghibli quality',
+    portrait: 'anime character portrait, cel-shaded, large expressive eyes, vivid colors, clean lines, detailed anime style',
+    negative: 'photorealistic, photograph, 3d render, western cartoon',
+  },
+  painting: {
+    prompt: 'classical oil painting, rich impasto brushstrokes, Renaissance chiaroscuro, deep warm palette, museum-quality fine art, canvas texture visible',
+    portrait: 'oil painting portrait, rich brushwork, warm candlelight, Renaissance master style, deep colors, visible canvas texture',
+    negative: 'photograph, digital art, cartoon, anime, sketch, flat colors',
+  },
+  watercolor: {
+    prompt: 'delicate watercolor painting, soft translucent washes, wet-on-wet bleeding edges, visible paper grain, gentle pastel palette, impressionistic atmosphere',
+    portrait: 'watercolor portrait, soft translucent washes, bleeding edges, visible paper texture, pastel tones, impressionistic',
+    negative: 'photograph, photorealistic, digital art, sharp lines, anime',
+  },
+  comic: {
+    prompt: 'comic book art style, bold black outlines, flat cel colors, halftone dot shading, dynamic panel composition, action-packed graphic novel aesthetic',
+    portrait: 'comic book character portrait, bold ink outlines, flat cel colors, halftone shading, dynamic superhero comic style',
+    negative: 'photorealistic, photograph, watercolor, oil painting, soft',
+  },
+  darkFantasy: {
+    prompt: 'dark fantasy art, Beksinski-inspired eldritch atmosphere, oppressive gothic architecture, sickly muted palette, visceral organic textures, nightmarish surreal composition',
+    portrait: 'dark fantasy portrait, haunted hollow eyes, scarred weathered face, gothic atmosphere, sickly palette, nightmarish eldritch details',
+    negative: 'bright, cheerful, cartoon, anime, clean, happy',
+  },
+  photoreal: {
+    prompt: 'photorealistic cinematic photograph, shallow depth of field, RAW photo quality, 8K UHD, DSLR, natural film grain, realistic lighting and materials',
+    portrait: 'photorealistic portrait photograph, DSLR quality, shallow depth of field, natural skin texture, cinematic lighting, 8K detail',
+    negative: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art',
+  },
+  retro: {
+    prompt: '16-bit pixel art, retro SNES-era RPG scene, limited color palette, dithering, nostalgic low-resolution aesthetic, crisp individual pixels visible',
+    portrait: '16-bit pixel art character portrait, retro RPG style, limited palette, clean pixel work, nostalgic SNES aesthetic',
+    negative: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render',
+  },
+};
 
-  const styleMap = isSD
-    ? {
-        Fantasy: 'photorealistic fantasy scene, cinematic photograph, realistic lighting, RAW photo, 8k uhd, dslr',
-        'Sci-Fi': 'photorealistic sci-fi scene, cinematic photograph, futuristic, realistic neon lighting, RAW photo, 8k uhd',
-        Horror: 'photorealistic horror scene, cinematic photograph, eerie realistic lighting, RAW photo, 8k uhd',
-      }
-    : {
-        Fantasy: 'fantasy oil painting, medieval, magical atmosphere',
-        'Sci-Fi': 'cinematic sci-fi concept art, futuristic, neon-lit',
-        Horror: 'gothic illustration, atmospheric, eerie lighting',
-      };
+const TONE_MODIFIERS = {
+  Dark: 'moody, desaturated colors, deep shadows, somber ominous atmosphere',
+  Epic: 'grand scale, dramatic golden-hour lighting, heroic composition, sweeping vista',
+  Humorous: 'warm vibrant colors, whimsical playful details, lighthearted cheerful mood',
+};
 
-  const toneMap = isSD
-    ? {
-        Dark: 'moody, desaturated colors, deep shadows, film grain',
-        Epic: 'grand scale, dramatic golden-hour lighting, heroic composition, cinematic depth of field',
-        Humorous: 'bright natural lighting, vivid colors, warm tones',
-      }
-    : {
-        Dark: 'moody, desaturated, ominous shadows',
-        Epic: 'grand scale, dramatic lighting, heroic composition',
-        Humorous: 'whimsical, colorful, lighthearted',
-      };
+function getImageStyleDirective(imageStyle, field = 'prompt') {
+  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
+  return entry[field] || entry.prompt;
+}
 
-  const style = styleMap[genre] || styleMap.Fantasy;
-  const mood = toneMap[tone] || toneMap.Epic;
+export function getImageStyleNegative(imageStyle) {
+  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
+  return entry.negative || '';
+}
+
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting') {
+  const isGemini = provider === 'gemini';
+
+  const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
+  const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
   const sceneDesc = sanitizeForImageGen(rawDesc);
 
-  return `${style}, ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  if (isGemini) {
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
+  }
+
+  return `ART STYLE: ${styleDirective}. ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability') {
+export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting') {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
+  const isGemini = provider === 'gemini';
 
   const speciesTraits = {
     Human: 'human, weathered skin, visible pores and skin texture',
@@ -1127,27 +1177,19 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
     'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
   };
 
-  const genreStyle = isSD
-    ? {
-        Fantasy: 'epic high fantasy character portrait, dramatic chiaroscuro lighting, Warhammer Fantasy art style, dark atmospheric oil painting, rich deep colors, ornate costume details',
-        'Sci-Fi': 'sci-fi character portrait, cinematic lighting, futuristic, holographic accents, detailed face',
-        Horror: 'dark gothic portrait, eerie candlelight, moody shadows, gritty realism, haunted eyes',
-      }
-    : {
-        Fantasy: 'medieval fantasy character portrait, detailed oil painting, warm candlelight, RPG character art, painterly style',
-        'Sci-Fi': 'sci-fi character portrait, cinematic concept art, futuristic holographic accents',
-        Horror: 'dark gothic character portrait, eerie candlelight, moody atmospheric shadows',
-      };
-
+  const styleDirective = getImageStyleDirective(imageStyle, 'portrait');
   const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
-  const style = genreStyle[genre] || genreStyle.Fantasy;
   const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
 
   if (isSD) {
-    return `${style}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate fantasy costume, moody atmospheric background, head and shoulders composition, 4k masterpiece. No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition. No text, no watermarks.`;
   }
 
-  return `${style}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;
+  if (isGemini) {
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. Square 1:1 aspect ratio. No text, no watermarks.`;
+  }
+
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en') {

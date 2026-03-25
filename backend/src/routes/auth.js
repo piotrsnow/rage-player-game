@@ -110,7 +110,7 @@ export async function authRoutes(fastify) {
     });
 
     const resolved = {};
-    const keyNames = ['openai', 'anthropic', 'elevenlabs', 'stability', 'suno'];
+    const keyNames = ['openai', 'anthropic', 'elevenlabs', 'stability', 'gemini'];
     for (const name of keyNames) {
       const key = resolveApiKey(user?.apiKeys || '{}', name);
       resolved[name] = key ? '••••' + key.slice(-4) : '';

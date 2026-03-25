@@ -12,6 +12,7 @@ import QuestLog from './QuestLog';
 import CodexPanel from './CodexPanel';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
+import PortraitGenerator from './PortraitGenerator';
 import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
 import Tooltip from '../ui/Tooltip';
 
@@ -27,7 +28,10 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime', color: 'tertiary' },
 ];
 
-function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer }) {
+function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer, onPortraitChange, campaign }) {
+  const [editingPortrait, setEditingPortrait] = useState(false);
+  const canEditPortrait = !!onPortraitChange && !isMultiplayer;
+
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -42,6 +46,16 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                   <span className="material-symbols-outlined text-8xl text-outline/20">person</span>
                 </div>
               )}
+              {canEditPortrait && (
+                <button
+                  onClick={() => setEditingPortrait(true)}
+                  className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all duration-300 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-3xl text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 drop-shadow-lg">
+                    photo_camera
+                  </span>
+                </button>
+              )}
               <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
                 <div className="flex justify-between items-end">
                   <div>
@@ -55,7 +69,44 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                 </div>
               </div>
             </div>
+            {canEditPortrait && !editingPortrait && (
+              <button
+                onClick={() => setEditingPortrait(true)}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-label text-on-surface-variant hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10"
+              >
+                <span className="material-symbols-outlined text-sm">photo_camera</span>
+                {t('character.updatePortrait')}
+              </button>
+            )}
           </div>
+
+          {editingPortrait && (
+            <div className="bg-surface-container-low p-4 border border-primary/20 rounded-sm animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-tertiary font-headline text-sm flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">photo_camera</span>
+                  {t('character.updatePortrait')}
+                </h3>
+                <button
+                  onClick={() => setEditingPortrait(false)}
+                  className="text-on-surface-variant hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+              <PortraitGenerator
+                species={character.species}
+                gender={character.gender}
+                careerName={character.career?.name}
+                genre={campaign?.genre}
+                initialPortrait={character.portraitUrl}
+                onPortraitReady={(url) => {
+                  onPortraitChange(url);
+                  if (url !== null) setEditingPortrait(false);
+                }}
+              />
+            </div>
+          )}
 
           <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
             <div className="flex items-center justify-between mb-4">
@@ -578,6 +629,11 @@ export default function CharacterSheet({ onClose }) {
                 setShowAdvancement={setShowAdvancement}
                 dispatch={dispatch}
                 isMultiplayer={isMultiplayer}
+                campaign={campaign}
+                onPortraitChange={(url) => {
+                  dispatch({ type: 'UPDATE_CHARACTER', payload: { portraitUrl: url } });
+                  setTimeout(() => autoSave(), 300);
+                }}
                 onVoiceChange={(charName, voiceId, gender) => {
                   const voice = (settings.characterVoices || []).find((v) => v.voiceId === voiceId);
                   dispatch({

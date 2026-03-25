@@ -12,7 +12,7 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openSettings } = useModals();
+  const { openCharacterSheet, openSettings, openKeys } = useModals();
   const { state } = useGame();
   const mp = useMultiplayer();
   const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -45,7 +45,7 @@ export default function Header() {
           to="/"
           className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
         >
-          <img src="/nikczemnu_logo.png" alt={t('common.appName')} className="h-24 w-auto" />
+          <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('common.appName')} className="h-24 w-auto" />
         </Link>
       </div>
       <div className="flex items-center gap-6">
@@ -79,30 +79,22 @@ export default function Header() {
         </nav>
 
         {/* Global Music Controls */}
-        {((settings.localMusicEnabled && music.hasMusic) || (settings.musicEnabled && (music.isPlaying || music.isGeneratingMusic))) && (
+        {settings.localMusicEnabled && music.hasMusic && (
           <div className="flex items-center gap-2">
-            {music.isGeneratingMusic ? (
-              <span className="material-symbols-outlined text-lg text-primary animate-pulse w-8 h-8 flex items-center justify-center">
-                music_note
-              </span>
-            ) : (
-              <button
-                onClick={music.togglePlayPause}
-                className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
-              >
-                {music.isPlaying ? 'pause' : 'play_arrow'}
-              </button>
-            )}
-            {!settings.musicEnabled && (
-              <button
-                onClick={music.skip}
-                className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
-                title={t('gameplay.musicSkip', 'Next')}
-              >
-                skip_next
-              </button>
-            )}
+            <button
+              onClick={music.togglePlayPause}
+              className="material-symbols-outlined text-lg text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              title={music.isPlaying ? t('common.pause', 'Pause') : t('common.play', 'Play')}
+            >
+              {music.isPlaying ? 'pause' : 'play_arrow'}
+            </button>
+            <button
+              onClick={music.skip}
+              className="material-symbols-outlined text-base text-on-surface-variant hover:text-primary transition-colors active:scale-95 duration-200 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              title={t('gameplay.musicSkip', 'Next')}
+            >
+              skip_next
+            </button>
             <div className="relative" ref={volumeRef}>
               <button
                 onClick={() => setVolumeOpen((v) => !v)}
@@ -143,6 +135,14 @@ export default function Header() {
               auto_awesome
             </Link>
           )}
+          <button
+            type="button"
+            onClick={openKeys}
+            aria-label={t('nav.keys')}
+            className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+          >
+            vpn_key
+          </button>
           <button
             type="button"
             onClick={openSettings}

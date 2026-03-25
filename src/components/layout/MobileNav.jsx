@@ -7,7 +7,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 export default function MobileNav() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { openCharacterSheet, openSettings } = useModals();
+  const { openCharacterSheet, openSettings, openKeys } = useModals();
   const { state } = useGame();
   const mp = useMultiplayer();
   const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -15,11 +15,13 @@ export default function MobileNav() {
   const modalActions = {
     '/character': openCharacterSheet,
     '/settings': openSettings,
+    '/keys': openKeys,
   };
 
   const mobileItems = [
     hasActiveGame && { path: '/play', icon: 'casino', label: t('nav.play') },
     { path: '/character', icon: 'backpack', label: t('nav.character') },
+    { path: '/keys', icon: 'vpn_key', label: t('nav.keys') },
     { path: '/settings', icon: 'psychology', label: t('nav.settings') },
     { path: '/', icon: 'home', label: t('nav.lobby') },
   ].filter(Boolean);

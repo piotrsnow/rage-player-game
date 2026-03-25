@@ -8,13 +8,15 @@ import ErrorBoundary from '../ui/ErrorBoundary';
 import VersionBadge from '../ui/VersionBadge';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
+import KeysModal from '../settings/KeysModal';
 
 function ModalLayer() {
-  const { characterSheetOpen, closeCharacterSheet, settingsOpen, closeSettings } = useModals();
+  const { characterSheetOpen, closeCharacterSheet, settingsOpen, closeSettings, keysOpen, closeKeys } = useModals();
   return (
     <>
       {characterSheetOpen && <CharacterSheet onClose={closeCharacterSheet} />}
       {settingsOpen && <DMSettingsPage onClose={closeSettings} />}
+      {keysOpen && <KeysModal onClose={closeKeys} />}
     </>
   );
 }

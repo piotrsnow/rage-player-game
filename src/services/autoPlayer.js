@@ -1,4 +1,4 @@
-import { selectModel } from './ai';
+import { resolveModel } from './ai';
 import { apiClient } from './apiClient';
 import { safeParseJSON } from './aiResponseValidator';
 
@@ -209,7 +209,7 @@ async function callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, mode
 export async function decideAction(gameState, settings, autoPlayerSettings, apiKey, provider) {
   const language = settings.language || 'en';
   const { systemPrompt, userPrompt } = buildAutoPlayerPrompt(gameState, autoPlayerSettings, language);
-  const model = selectModel(provider, autoPlayerSettings.modelTier || 'standard', 'autoPlayer');
+  const model = autoPlayerSettings.model || resolveModel(provider, null);
 
   const result = await callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, model);
 

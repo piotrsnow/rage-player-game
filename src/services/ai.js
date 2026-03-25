@@ -7,6 +7,24 @@ import {
   RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema,
 } from './aiResponseValidator';
 
+export const AI_MODELS = [
+  { id: 'gpt-4o',                     provider: 'openai',    label: 'GPT-4o',              cost: '~$2.50 / $10 per 1M tokens', tier: 'premium' },
+  { id: 'gpt-4o-mini',                provider: 'openai',    label: 'GPT-4o Mini',          cost: '~$0.15 / $0.60 per 1M tokens', tier: 'standard' },
+  { id: 'gpt-4.1',                    provider: 'openai',    label: 'GPT-4.1',              cost: '~$2.00 / $8.00 per 1M tokens', tier: 'premium' },
+  { id: 'gpt-4.1-mini',              provider: 'openai',    label: 'GPT-4.1 Mini',         cost: '~$0.40 / $1.60 per 1M tokens', tier: 'standard' },
+  { id: 'gpt-4.1-nano',              provider: 'openai',    label: 'GPT-4.1 Nano',         cost: '~$0.10 / $0.40 per 1M tokens', tier: 'standard' },
+  { id: 'o4-mini',                    provider: 'openai',    label: 'o4-mini',               cost: '~$1.10 / $4.40 per 1M tokens', tier: 'premium' },
+  { id: 'o3-mini',                    provider: 'openai',    label: 'o3-mini',               cost: '~$1.10 / $4.40 per 1M tokens', tier: 'premium' },
+  { id: 'claude-sonnet-4-20250514',   provider: 'anthropic', label: 'Claude Sonnet 4',      cost: '~$3.00 / $15 per 1M tokens', tier: 'premium' },
+  { id: 'claude-3-5-haiku-20241022',  provider: 'anthropic', label: 'Claude 3.5 Haiku',     cost: '~$0.80 / $4.00 per 1M tokens', tier: 'standard' },
+  { id: 'claude-3-7-sonnet-20250219', provider: 'anthropic', label: 'Claude 3.7 Sonnet',    cost: '~$3.00 / $15 per 1M tokens', tier: 'premium' },
+];
+
+export const RECOMMENDED_MODELS = {
+  openai: 'gpt-4o',
+  anthropic: 'claude-sonnet-4-20250514',
+};
+
 const MODEL_MAP = {
   openai:    { standard: 'gpt-4o-mini',              premium: 'gpt-4o' },
   anthropic: { standard: 'claude-3-5-haiku-20241022', premium: 'claude-sonnet-4-20250514' },
@@ -24,6 +42,11 @@ export function selectModel(provider, tier, taskType) {
   const effectiveTier = TASK_TIER_OVERRIDE[taskType] || tier || 'premium';
   const providerModels = MODEL_MAP[provider] || MODEL_MAP.openai;
   return providerModels[effectiveTier] || providerModels.premium;
+}
+
+export function resolveModel(provider, explicitModelId) {
+  if (explicitModelId) return explicitModelId;
+  return RECOMMENDED_MODELS[provider] || RECOMMENDED_MODELS.openai;
 }
 
 function parseAIContent(content) {
@@ -171,8 +194,8 @@ async function callAI(provider, apiKey, systemPrompt, userPrompt, maxTokens, { l
 }
 
 export const aiService = {
-  async generateCampaign(settings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
-    const model = selectModel(provider, modelTier, 'generateCampaign');
+  async generateCampaign(settings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null, explicitModel = null } = {}) {
+    const model = explicitModel || selectModel(provider, modelTier, 'generateCampaign');
     const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
     const userPrompt = buildCampaignCreationPrompt(settings, language);
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 4000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
@@ -180,8 +203,8 @@ export const aiService = {
     return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null } = {}) {
-    const model = selectModel(provider, modelTier, 'generateScene');
+  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null, explicitModel = null } = {}) {
+    const model = explicitModel || selectModel(provider, modelTier, 'generateScene');
     const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus };
 
     let systemPrompt, userPrompt;

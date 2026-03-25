@@ -5,12 +5,5 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    proxy: {
-      '/suno-api': {
-        target: 'https://api.sunoapi.org',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/suno-api/, ''),
-      },
-    },
   },
 });

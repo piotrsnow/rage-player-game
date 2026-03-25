@@ -12,6 +12,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
+import AuthPanel from './AuthPanel';
 
 function FloatingRune({ delay, className }) {
   return (
@@ -148,7 +149,7 @@ export default function LobbyPage() {
 
       {/* Hero Section */}
       <div className="text-center mb-16 max-w-2xl animate-slide-up relative z-10">
-        <img src="/nikczemnu_logo.png" alt={t('lobby.title')} className="h-56 md:h-80 w-auto mx-auto mb-6 drop-shadow-2xl" />
+        <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('lobby.title')} className="h-56 md:h-80 w-auto mx-auto mb-6 drop-shadow-2xl" />
 
         {/* Ornamental divider */}
         <div className="flex items-center justify-center gap-3 mb-6">
@@ -162,8 +163,13 @@ export default function LobbyPage() {
         </p>
       </div>
 
+      {/* Auth Panel */}
+      <div className="mb-12 w-full flex justify-center animate-slide-up relative z-10" style={{ animationDelay: '0.12s' }}>
+        <AuthPanel />
+      </div>
+
       {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-6 items-center mb-16 animate-slide-up relative z-10" style={{ animationDelay: '0.15s' }}>
+      <div className="flex flex-col sm:flex-row gap-6 items-center mb-16 animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
         <Button size="lg" onClick={() => navigate('/create')}>
           {t('lobby.newCampaign')}
         </Button>

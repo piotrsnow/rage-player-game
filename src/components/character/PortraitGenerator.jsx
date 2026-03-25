@@ -16,10 +16,11 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
 
   const provider = settings.imageProvider || 'dalle';
   const isDalle = provider === 'dalle';
-  const apiKey = isDalle ? settings.openaiApiKey : settings.stabilityApiKey;
-  const hasKey = isDalle
-    ? !!(settings.openaiApiKey || (settings.useBackend && hasApiKey('openai')))
-    : !!(settings.stabilityApiKey || (settings.useBackend && hasApiKey('stability')));
+  const isGemini = provider === 'gemini';
+  const isTextOnly = isDalle || isGemini;
+  const apiKey = isDalle ? settings.openaiApiKey : isGemini ? settings.geminiApiKey : settings.stabilityApiKey;
+  const keyProvider = isDalle ? 'openai' : isGemini ? 'gemini' : 'stability';
+  const hasKey = !!(apiKey || (settings.useBackend && hasApiKey(keyProvider)));
 
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
@@ -37,18 +38,19 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   }, []);
 
   const handleGenerate = useCallback(async () => {
-    if (!isDalle && !photoBlob) return;
+    if (!isTextOnly && !photoBlob) return;
     setGenerating(true);
     setError(null);
     abortRef.current = false;
 
     try {
       const url = await imageService.generatePortrait(
-        isDalle ? null : photoBlob,
+        isTextOnly ? null : photoBlob,
         { species, gender, careerName, genre },
         apiKey,
         strength,
         provider,
+        settings.dmSettings?.imageStyle || 'painting',
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);
@@ -65,7 +67,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, isDalle, t]);
+  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, isTextOnly, t]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);
@@ -91,7 +93,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
       <div className="flex items-center gap-2 p-3 bg-surface-container-high/20 border border-outline-variant/10 rounded-sm">
         <span className="material-symbols-outlined text-sm text-outline">info</span>
         <p className="text-xs text-on-surface-variant">
-          {isDalle ? t('charCreator.portraitNeedsKeyDalle') : t('charCreator.portraitNeedsKey')}
+          {isDalle ? t('charCreator.portraitNeedsKeyDalle') : isGemini ? t('charCreator.portraitNeedsKeyGemini') : t('charCreator.portraitNeedsKey')}
         </p>
       </div>
     );
@@ -135,11 +137,11 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     );
   }
 
-  if (isDalle) {
+  if (isTextOnly) {
     return (
       <div className="flex flex-col items-center gap-4">
         <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
-          {t('charCreator.portraitDescDalle')}
+          {isGemini ? t('charCreator.portraitDescGemini') : t('charCreator.portraitDescDalle')}
         </p>
 
         {error && (

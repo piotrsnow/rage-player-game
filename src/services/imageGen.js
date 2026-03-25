@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildPortraitPrompt } from './prompts';
+import { buildImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './prompts';
 import { apiClient } from './apiClient';
 
 async function generateWithDalle(prompt, apiKey) {
@@ -28,10 +28,10 @@ async function generateWithDalle(prompt, apiKey) {
   return b64 ? `data:image/png;base64,${b64}` : null;
 }
 
-async function generateWithStability(prompt, apiKey) {
+async function generateWithStability(prompt, apiKey, negativePrompt) {
   const formData = new FormData();
   formData.append('prompt', prompt);
-  formData.append('negative_prompt', 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, oil painting, digital art, unrealistic, blurry, low quality, text, watermark, signature');
+  formData.append('negative_prompt', negativePrompt || 'blurry, low quality, text, watermark, signature');
   formData.append('model', 'sd3.5-large-turbo');
   formData.append('aspect_ratio', '16:9');
   formData.append('output_format', 'jpeg');
@@ -60,12 +60,83 @@ async function generateWithStability(prompt, apiKey) {
   return `data:image/jpeg;base64,${data.image}`;
 }
 
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-image-generation:generateContent';
+
+async function generateWithGemini(prompt, apiKey) {
+  const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    const msg = err.error?.message || `Gemini API error: ${response.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts) throw new Error('Gemini returned no content');
+
+  const imagePart = parts.find((p) => p.inlineData);
+  if (!imagePart) throw new Error('Gemini returned no image');
+
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType || 'image/png'};base64,${b64}`;
+}
+
+async function generatePortraitWithGemini(prompt, apiKey) {
+  return generateWithGemini(prompt, apiKey);
+}
+
+async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
+  const buf = await imageBlob.arrayBuffer();
+  const b64Image = btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+  const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { inlineData: { mimeType: 'image/jpeg', data: b64Image } },
+          { text: prompt },
+        ],
+      }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts;
+  if (!parts) throw new Error('Gemini returned no content');
+
+  const imagePart = parts.find((p) => p.inlineData);
+  if (!imagePart) throw new Error('Gemini returned no image');
+
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType || 'image/png'};base64,${b64}`;
+}
+
 async function generateViaProxy(prompt, provider, campaignId) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
 
   if (provider === 'stability') {
     const data = await apiClient.post('/proxy/stability/generate', body);
+    return resolveMediaUrl(data.url);
+  }
+  if (provider === 'gemini') {
+    const data = await apiClient.post('/proxy/gemini/generate', body);
     return resolveMediaUrl(data.url);
   }
   const data = await apiClient.post('/proxy/openai/images', body);
@@ -159,9 +230,26 @@ async function generatePortraitViaProxyDalle(prompt) {
   return resolveMediaUrl(data.url);
 }
 
+async function generatePortraitViaProxyGemini(prompt) {
+  const data = await apiClient.post('/proxy/gemini/portrait', { prompt });
+  return resolveMediaUrl(data.url);
+}
+
+async function generatePortraitViaProxyGeminiImg2Img(imageBlob, prompt) {
+  const formData = new FormData();
+  formData.append('image', imageBlob, 'photo.jpg');
+  formData.append('prompt', prompt);
+
+  const data = await apiClient.request('/proxy/gemini/portrait', {
+    method: 'POST',
+    body: formData,
+  });
+  return resolveMediaUrl(data.url);
+}
+
 export const imageService = {
-  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null) {
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider);
+  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting') {
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle);
 
     if (apiClient.isConnected()) {
       return generateViaProxy(prompt, provider, campaignId);
@@ -172,13 +260,17 @@ export const imageService = {
     }
 
     if (provider === 'stability') {
-      return generateWithStability(prompt, apiKey);
+      const negativePrompt = getImageStyleNegative(imageStyle) + ', blurry, low quality, text, watermark, signature';
+      return generateWithStability(prompt, apiKey, negativePrompt);
+    }
+    if (provider === 'gemini') {
+      return generateWithGemini(prompt, apiKey);
     }
     return generateWithDalle(prompt, apiKey);
   },
 
-  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability') {
-    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider);
+  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting') {
+    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle);
 
     if (provider === 'dalle') {
       if (apiClient.isConnected()) {
@@ -188,6 +280,20 @@ export const imageService = {
         throw new Error('OpenAI API key required for portrait generation.');
       }
       return generatePortraitWithDalle(prompt, apiKey);
+    }
+
+    if (provider === 'gemini') {
+      if (apiClient.isConnected()) {
+        return imageBlob
+          ? generatePortraitViaProxyGeminiImg2Img(imageBlob, prompt)
+          : generatePortraitViaProxyGemini(prompt);
+      }
+      if (!apiKey) {
+        throw new Error('Google AI API key required for portrait generation.');
+      }
+      return imageBlob
+        ? generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey)
+        : generatePortraitWithGemini(prompt, apiKey);
     }
 
     if (apiClient.isConnected()) {

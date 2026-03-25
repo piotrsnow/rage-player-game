@@ -39,9 +39,8 @@ export default function GameplayPage() {
   const mp = useMultiplayer();
   const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
   const narrator = useNarrator();
-  const { setNarratorState, triggerSceneMusic } = useGlobalMusic();
+  const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
-  const musicTriggeredRef = useRef(new Set());
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
@@ -90,20 +89,6 @@ export default function GameplayPage() {
   const error = isMultiplayer ? mp.state.error : state.error;
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
-
-  useEffect(() => {
-    if (
-      currentScene &&
-      !musicTriggeredRef.current.has(currentScene.id) &&
-      !isGeneratingScene
-    ) {
-      musicTriggeredRef.current.add(currentScene.id);
-      const mood = currentScene.atmosphere?.mood;
-      if (mood) {
-        triggerSceneMusic(mood, campaign?.genre, campaign?.tone, currentScene.musicPrompt);
-      }
-    }
-  }, [currentScene, isGeneratingScene, triggerSceneMusic, campaign]);
 
   useEffect(() => {
     if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {

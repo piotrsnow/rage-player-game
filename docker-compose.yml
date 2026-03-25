@@ -33,7 +33,6 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
-      SUNO_API_KEY: "${SUNO_API_KEY:-}"
     volumes:
       - media-data:/data/media
 

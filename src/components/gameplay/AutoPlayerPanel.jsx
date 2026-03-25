@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AI_MODELS, RECOMMENDED_MODELS } from '../../services/ai';
+import { useSettings } from '../../contexts/SettingsContext';
 
 const STYLES = ['cautious', 'balanced', 'aggressive', 'chaotic'];
 const VERBOSITY_LEVELS = ['low', 'medium', 'high'];
-const MODEL_TIERS = ['standard', 'premium'];
 
 export default function AutoPlayerPanel({
   isAutoPlaying,
@@ -16,6 +17,7 @@ export default function AutoPlayerPanel({
   characterName,
   isGeneratingScene,
 }) {
+  const { settings } = useSettings();
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
@@ -159,26 +161,49 @@ export default function AutoPlayerPanel({
             </div>
           </div>
 
-          {/* Model Tier */}
+          {/* Model Selection */}
           <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-                {t('autoPlayer.modelTier')}
-              </label>
-              <span className="text-[9px] text-outline">{t('autoPlayer.modelTierHint')}</span>
-            </div>
-            <div className="flex gap-1">
-              {MODEL_TIERS.map((tier) => (
+            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+              {t('autoPlayer.model')}
+            </label>
+            <div className="space-y-1">
+              <button
+                onClick={() => updateAutoPlayerSettings({ model: '' })}
+                className={`w-full p-2 rounded-sm border text-left flex items-center gap-2 transition-all ${
+                  !autoPlayerSettings.model
+                    ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                }`}
+              >
+                <span className="material-symbols-outlined text-xs">auto_awesome</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-headline block">{t('autoPlayer.modelRecommended')}</span>
+                  <span className="text-[9px] opacity-60 truncate block">
+                    {AI_MODELS.find((m) => m.id === RECOMMENDED_MODELS[settings.aiProvider])?.label || RECOMMENDED_MODELS[settings.aiProvider]}
+                  </span>
+                </div>
+                {!autoPlayerSettings.model && (
+                  <span className="material-symbols-outlined text-primary text-xs">check_circle</span>
+                )}
+              </button>
+              {AI_MODELS.filter((m) => m.provider === settings.aiProvider).map((m) => (
                 <button
-                  key={tier}
-                  onClick={() => updateAutoPlayerSettings({ modelTier: tier })}
-                  className={`flex-1 py-1.5 text-[10px] font-label uppercase tracking-wider rounded-sm border transition-all ${
-                    (autoPlayerSettings.modelTier || 'standard') === tier
-                      ? 'border-primary/30 bg-primary/10 text-primary'
-                      : 'border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary'
+                  key={m.id}
+                  onClick={() => updateAutoPlayerSettings({ model: m.id })}
+                  className={`w-full p-2 rounded-sm border text-left flex items-center gap-2 transition-all ${
+                    autoPlayerSettings.model === m.id
+                      ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                      : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
                   }`}
                 >
-                  {t(`autoPlayer.modelTier_${tier}`)}
+                  <span className="material-symbols-outlined text-xs">{m.tier === 'premium' ? 'diamond' : 'bolt'}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[10px] font-headline block">{m.label}</span>
+                    <span className="text-[9px] opacity-60 block">{m.cost}</span>
+                  </div>
+                  {autoPlayerSettings.model === m.id && (
+                    <span className="material-symbols-outlined text-primary text-xs">check_circle</span>
+                  )}
                 </button>
               ))}
             </div>
