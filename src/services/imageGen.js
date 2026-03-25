@@ -318,8 +318,8 @@ async function generatePortraitViaProxyGeminiImg2Img(imageBlob, prompt) {
 }
 
 export const imageService = {
-  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting') {
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle);
+  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false) {
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette);
 
     if (apiClient.isConnected()) {
       return generateViaProxy(prompt, provider, campaignId);
@@ -342,8 +342,8 @@ export const imageService = {
     return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
   },
 
-  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting') {
-    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle, Boolean(imageBlob));
+  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false) {
+    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette);
 
     if (provider === 'dalle') {
       if (apiClient.isConnected()) {

@@ -597,20 +597,20 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-col items-end gap-1">
           <span
-            className="text-[9px] text-on-surface-variant/50 flex items-center gap-1"
+            className="text-xs text-on-surface-variant/50 flex items-center gap-1.5"
             title={`${t('chat.sessionTime')}: ${formatDuration(sessionSeconds)} / ${t('chat.totalPlayTime')}: ${formatDuration(totalPlayTime)}`}
           >
-            <span className="material-symbols-outlined text-[11px]">timer</span>
+            <span className="material-symbols-outlined text-sm">timer</span>
             {formatDuration(sessionSeconds)}
             {totalPlayTime > sessionSeconds && (
               <span className="text-on-surface-variant/35">/ {formatDuration(totalPlayTime)}</span>
             )}
           </span>
           {narrationTime > 0 && (
-            <span className="text-[9px] text-on-surface-variant/50 flex items-center gap-1" title={t('chat.narrationTime')}>
-              <span className="material-symbols-outlined text-[11px]">record_voice_over</span>
+            <span className="text-xs text-on-surface-variant/50 flex items-center gap-1.5" title={t('chat.narrationTime')}>
+              <span className="material-symbols-outlined text-sm">record_voice_over</span>
               {formatDuration(Math.round(narrationTime))}
             </span>
           )}

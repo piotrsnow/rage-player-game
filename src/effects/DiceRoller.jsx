@@ -10,14 +10,14 @@ const SCRIPT_URLS = [
 let diceLibraryPromise = null;
 const PRE_ROLL_REVEAL_MS = 520;
 const OVERLAY_THEME = {
-  materialColor: 0xf0f0f0,
-  materialSpecular: 0x172022,
-  labelColor: '#aaaaaa',
-  diceColor: '#202020',
-  ambientLightColor: 0xf0f0f0,
-  ambientLightIntensity: 1,
-  spotLightColor: 0xefefef,
-  spotLightIntensity: 2,
+  materialColor: 0xd0b0ff,
+  materialSpecular: 0xcc44ff,
+  labelColor: '#ccbbdd',
+  diceColor: '#2a0845',
+  ambientLightColor: 0xa070ff,
+  ambientLightIntensity: 1.2,
+  spotLightColor: 0xe8d0ff,
+  spotLightIntensity: 1.5,
   deskColor: '#1a0624',
   useShadows: false,
   disableSpotLight: false,
@@ -163,7 +163,7 @@ export default function DiceRoller({
       <div
         ref={containerRef}
         className="absolute inset-0 h-full w-full overflow-visible bg-transparent [&_canvas]:!bg-transparent"
-        style={variant === 'overlay' ? { filter: 'drop-shadow(0 0 10px rgba(170, 36, 110, 0.18)) brightness(0.98)' } : undefined}
+        style={variant === 'overlay' ? { filter: 'drop-shadow(0 0 10px rgba(140, 60, 200, 0.22)) brightness(0.98)' } : undefined}
       />
       {!ready && showDice && isVisible ? (
         <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.18em] text-on-surface-variant">

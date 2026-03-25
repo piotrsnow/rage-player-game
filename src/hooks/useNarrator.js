@@ -192,7 +192,7 @@ export function useNarrator() {
 
           if (fullNarrative && allSegmentsText.length < fullNarrative.length * 0.7) {
             const narrativeNoQuotes = fullNarrative
-              .replace(/["""„«»\u2018\u2019'][^"""„«»\u2018\u2019']*["""„«»\u2018\u2019']/g, '')
+              .replace(/["""\u201C„«»][^"""\u201C„«»]*["""\u201C„«»]/g, '')
               .replace(/\s{2,}/g, ' ')
               .trim();
 
@@ -219,12 +219,20 @@ export function useNarrator() {
 
       const localVoiceMap = new Map();
 
+      const playerCharNames = (state.party || [state.character])
+        .map(c => c?.name?.toLowerCase())
+        .filter(Boolean);
+
       for (let i = 0; i < segments.length; i++) {
         if (abortRef.current || generationRef.current !== myGeneration) break;
 
         const seg = segments[i];
         const text = seg.text?.trim();
         if (!text) continue;
+
+        if (seg.type === 'dialogue' && seg.character && playerCharNames.includes(seg.character.toLowerCase())) {
+          continue;
+        }
 
         setCurrentSegmentIndex(i);
         setCurrentCharacter(seg.type === 'dialogue' ? seg.character : null);
@@ -263,7 +271,7 @@ export function useNarrator() {
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, state.campaign, dispatch, cleanup, playChunkPipeline]);
+  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, dispatch, cleanup, playChunkPipeline]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({

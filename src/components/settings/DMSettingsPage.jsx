@@ -464,6 +464,34 @@ export default function DMSettingsPage({ onClose }) {
                           </button>
                         ))}
                       </div>
+
+                      <div className="flex items-center justify-between mt-4 p-3 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-sm text-primary-dim">dark_mode</span>
+                          <div>
+                            <p className="font-headline text-tertiary text-sm">{t('settings.darkPalette')}</p>
+                            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-0.5">
+                              {t('settings.darkPaletteDesc')}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => updateDMSettings({ darkPalette: !settings.dmSettings.darkPalette })}
+                          className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
+                            settings.dmSettings.darkPalette
+                              ? 'bg-primary-dim/20 border-primary/30'
+                              : 'bg-surface-container-highest border-outline-variant/30'
+                          }`}
+                        >
+                          <div
+                            className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
+                              settings.dmSettings.darkPalette
+                                ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
+                                : 'left-1 bg-on-surface-variant'
+                            }`}
+                          />
+                        </button>
+                      </div>
                     </div>
                   )}
 

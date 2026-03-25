@@ -620,7 +620,7 @@ async function callAI(messages, encryptedApiKeys) {
             Authorization: `Bearer ${openaiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: 'gpt-5.4',
             messages,
             temperature: 0.8,
             response_format: { type: 'json_object' },

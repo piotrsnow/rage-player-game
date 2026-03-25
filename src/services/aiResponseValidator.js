@@ -312,12 +312,11 @@ function getSchemaDefaults(schema) {
   return {};
 }
 
-const QUOTE_OPEN = '„\u201C«"\u2018\u2019\'';
-const QUOTE_CLOSE = '\u201D"»\u201C\u2019\u2018\'';
+const QUOTE_OPEN = '„\u201C«"';
+const QUOTE_CLOSE = '\u201D"»\u201C';
 const QUOTE_PATTERN = new RegExp(`[${QUOTE_OPEN}]([^${QUOTE_OPEN}${QUOTE_CLOSE}]+)[${QUOTE_CLOSE}]`, 'g');
 
-function findSpeakerInText(textBefore, knownNames) {
-  const nameLower = knownNames.map(n => n.toLowerCase());
+function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
   const words = textBefore.trim().split(/\s+/);
 
   for (let i = words.length - 1; i >= 0; i--) {
@@ -333,7 +332,12 @@ function findSpeakerInText(textBefore, knownNames) {
 
     if (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase()) {
       const isFirstWord = i === 0 || /[.!?…]$/.test(words[i - 1] || '');
-      if (!isFirstWord) return raw;
+      if (!isFirstWord) {
+        const isPlayerName = excludeNames.some(name =>
+          name.toLowerCase().split(/\s+/).some(p => p.toLowerCase() === raw.toLowerCase())
+        );
+        if (!isPlayerName) return raw;
+      }
     }
   }
   return null;
@@ -361,7 +365,7 @@ function lookupGender(name, knownNpcs, existingDialogueSegments) {
   return undefined;
 }
 
-export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
+export function repairDialogueSegments(narrative, segments, knownNpcs = [], excludeNames = []) {
   if (!segments || segments.length === 0) {
     if (narrative && narrative.trim()) {
       segments = [{ type: 'narration', text: narrative }];
@@ -405,7 +409,8 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
       const spokenText = match[1].trim();
       const speakerName = findSpeakerInText(
         seg.text.slice(0, match.index),
-        knownNames
+        knownNames,
+        excludeNames
       );
       const gender = lookupGender(speakerName, knownNpcs, existingDialogueSegments);
 
@@ -438,7 +443,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = []) {
         && segments[0].type === 'narration'
         && segments[0].text === narrative;
       if (!alreadySynthetic) {
-        return repairDialogueSegments(narrative, [{ type: 'narration', text: narrative }], knownNpcs);
+        return repairDialogueSegments(narrative, [{ type: 'narration', text: narrative }], knownNpcs, excludeNames);
       }
     }
   }

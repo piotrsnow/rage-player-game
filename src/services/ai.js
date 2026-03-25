@@ -8,6 +8,9 @@ import {
 } from './aiResponseValidator';
 
 export const AI_MODELS = [
+  { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$2.50 / $15 per 1M tokens', tier: 'premium' },
+  { id: 'gpt-5.4-mini',              provider: 'openai',    label: 'GPT-5.4 Mini',         cost: '~$0.75 / $4.50 per 1M tokens', tier: 'standard' },
+  { id: 'gpt-5.4-nano',              provider: 'openai',    label: 'GPT-5.4 Nano',         cost: '~$0.20 / $1.25 per 1M tokens', tier: 'standard' },
   { id: 'gpt-4o',                     provider: 'openai',    label: 'GPT-4o',              cost: '~$2.50 / $10 per 1M tokens', tier: 'premium' },
   { id: 'gpt-4o-mini',                provider: 'openai',    label: 'GPT-4o Mini',          cost: '~$0.15 / $0.60 per 1M tokens', tier: 'standard' },
   { id: 'gpt-4.1',                    provider: 'openai',    label: 'GPT-4.1',              cost: '~$2.00 / $8.00 per 1M tokens', tier: 'premium' },
@@ -21,12 +24,12 @@ export const AI_MODELS = [
 ];
 
 export const RECOMMENDED_MODELS = {
-  openai: 'gpt-4o',
+  openai: 'gpt-5.4',
   anthropic: 'claude-sonnet-4-20250514',
 };
 
 const MODEL_MAP = {
-  openai:    { standard: 'gpt-4o-mini',              premium: 'gpt-4o' },
+  openai:    { standard: 'gpt-5.4-mini',             premium: 'gpt-5.4' },
   anthropic: { standard: 'claude-3-5-haiku-20241022', premium: 'claude-sonnet-4-20250514' },
 };
 
@@ -56,7 +59,7 @@ function parseAIContent(content) {
   return result.data;
 }
 
-async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-4o') {
+async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-5.4') {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -118,7 +121,7 @@ async function callAnthropic(apiKey, systemPrompt, userPrompt, maxTokens = 2000,
   return { result: parseAIContent(content), usage };
 }
 
-async function callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-4o') {
+async function callOpenAIViaProxy(systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-5.4') {
   const data = await apiClient.post('/proxy/openai/chat', {
     messages: [
       { role: 'system', content: systemPrompt },

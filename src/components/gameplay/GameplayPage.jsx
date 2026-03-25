@@ -8,6 +8,7 @@ import { useAI } from '../../hooks/useAI';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { exportAsMarkdown } from '../../services/exportLog';
+import { apiClient } from '../../services/apiClient';
 import ScenePanel from './ScenePanel';
 import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
@@ -30,9 +31,10 @@ import { createMultiplayerCombatState } from '../../services/combatEngine';
 import { useAutoPlayer } from '../../hooks/useAutoPlayer';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import AutoPlayerPanel from './AutoPlayerPanel';
+import TypewriterActionOverlay from './TypewriterActionOverlay';
 import IdleTimer from './IdleTimer';
 
-export default function GameplayPage() {
+export default function GameplayPage({ readOnly = false }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
@@ -86,6 +88,8 @@ export default function GameplayPage() {
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
   const prevScenesLenRef = useRef(0);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
@@ -129,37 +133,72 @@ export default function GameplayPage() {
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
 
+  const [typewriterAction, setTypewriterAction] = useState(null);
+  const typewriterNextIndexRef = useRef(null);
+
   autoPlayRef.current = autoPlayScenes;
   displayedSceneIndexRef.current = displayedSceneIndex;
+
+  const getSceneActionText = useCallback((scene) => {
+    if (!scene) return null;
+    return scene.chosenAction
+      || (scene.playerActions && Object.values(scene.playerActions).filter(Boolean).join(' \u2022 '))
+      || null;
+  }, []);
+
+  const navigateWithTypewriter = useCallback((nextIdx) => {
+    if (typewriterAction) return;
+    const nextScene = scenes[nextIdx];
+    const actionText = getSceneActionText(nextScene);
+    if (actionText) {
+      typewriterNextIndexRef.current = nextIdx;
+      setTypewriterAction(actionText);
+    } else {
+      const targetIdx = nextIdx >= scenes.length - 1 ? null : nextIdx;
+      setViewingSceneIndex(targetIdx);
+      handleSceneNavRef.current?.(nextIdx);
+    }
+  }, [typewriterAction, scenes, getSceneActionText]);
 
   useEffect(() => {
     if (
       narrator.playbackState === 'idle' &&
       autoPlayRef.current &&
-      scenes.length > 0
+      scenes.length > 0 &&
+      !typewriterAction
     ) {
       const currentIdx = displayedSceneIndexRef.current;
       if (currentIdx < scenes.length - 1) {
         const timer = setTimeout(() => {
           if (!autoPlayRef.current) return;
-          const nextIdx = currentIdx + 1;
-          setViewingSceneIndex(nextIdx);
-          handleSceneNavRef.current?.(nextIdx);
+          navigateWithTypewriter(currentIdx + 1);
         }, 1500);
         return () => clearTimeout(timer);
       } else {
         setAutoPlayScenes(false);
       }
     }
-  }, [narrator.playbackState, scenes.length]);
+  }, [narrator.playbackState, scenes.length, typewriterAction, navigateWithTypewriter]);
+
+  const handleTypewriterComplete = useCallback(() => {
+    const nextIdx = typewriterNextIndexRef.current;
+    typewriterNextIndexRef.current = null;
+    setTypewriterAction(null);
+    if (nextIdx != null) {
+      const targetIdx = nextIdx >= scenes.length - 1 ? null : nextIdx;
+      setViewingSceneIndex(targetIdx);
+      handleSceneNavRef.current?.(nextIdx);
+    }
+  }, [scenes.length]);
 
   useEffect(() => {
-    if (!campaign && !isMultiplayer) {
+    if (!campaign && !isMultiplayer && !readOnly) {
       navigate('/');
     }
-  }, [campaign, isMultiplayer, navigate]);
+  }, [campaign, isMultiplayer, readOnly, navigate]);
 
   useEffect(() => {
+    if (readOnly) return;
     if ((settings.sceneVisualization || 'image') !== 'image') return;
     if (
       currentScene &&
@@ -473,12 +512,37 @@ export default function GameplayPage() {
     setAdvancementOpen(false);
   };
 
+  const handleShare = async () => {
+    const backendId = campaign?.backendId;
+    if (!backendId || !apiClient.isConnected()) return;
+    setShareLoading(true);
+    try {
+      const { shareToken } = await apiClient.post(`/campaigns/${backendId}/share`);
+      const sceneIdx = displayedSceneIndex;
+      const url = `${window.location.origin}/view/${shareToken}?scene=${sceneIdx}`;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      console.error('[Share] Failed:', err);
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
   if (!campaign) return null;
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
+      {/* Read-only banner */}
+      {readOnly && (
+        <div className="flex items-center justify-center gap-2 py-1.5 bg-tertiary/10 border-t border-tertiary/20 text-tertiary text-xs font-bold tracking-wider uppercase shrink-0 w-full lg:absolute lg:bottom-0 lg:left-0 lg:right-0 lg:z-50">
+          <span className="material-symbols-outlined text-sm">visibility</span>
+          {t('viewer.readOnlyBanner')}
+        </div>
+      )}
       {/* Main Game Area */}
-      <div className="flex-1 flex flex-col p-4 md:p-6 gap-6 overflow-y-auto custom-scrollbar">
+      <div className={`flex-1 flex flex-col p-4 md:p-6 gap-6 overflow-y-auto custom-scrollbar ${readOnly ? 'lg:mt-8' : ''}`}>
         {/* Scene Counter */}
         {scenes.length > 0 && (
           <div className="flex items-center justify-between px-2">
@@ -496,7 +560,7 @@ export default function GameplayPage() {
                   disabled={displayedSceneIndex <= 0}
                   title={t('gameplay.firstScene', 'First scene')}
                   aria-label={t('gameplay.firstScene', 'First scene')}
-                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
                 >
                   first_page
                 </button>
@@ -509,11 +573,11 @@ export default function GameplayPage() {
                   disabled={displayedSceneIndex <= 0}
                   title={t('gameplay.previousScene', 'Previous scene')}
                   aria-label={t('gameplay.previousScene', 'Previous scene')}
-                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
                 >
                   chevron_left
                 </button>
-                <span className={`text-[10px] ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
+                <span className={`text-xs ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
                   {t('common.scene')} {displayedSceneIndex + 1} / {scenes.length}
                 </span>
                 <button
@@ -526,9 +590,21 @@ export default function GameplayPage() {
                   disabled={displayedSceneIndex >= scenes.length - 1}
                   title={t('gameplay.nextScene', 'Next scene')}
                   aria-label={t('gameplay.nextScene', 'Next scene')}
-                  className="material-symbols-outlined text-xs text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
                 >
                   chevron_right
+                </button>
+                <button
+                  onClick={() => {
+                    setViewingSceneIndex(null);
+                    handleSceneNavigation(scenes.length - 1);
+                  }}
+                  disabled={displayedSceneIndex >= scenes.length - 1}
+                  title={t('gameplay.lastScene', 'Last scene')}
+                  aria-label={t('gameplay.lastScene', 'Last scene')}
+                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
+                >
+                  last_page
                 </button>
                 {isReviewingPastScene && settings.narratorEnabled && narrator.isNarratorReady && (
                   <button
@@ -606,10 +682,10 @@ export default function GameplayPage() {
               )}
             </div>
             <div className="flex items-center gap-4">
-              {aiCosts?.total > 0 && (
+              {!readOnly && aiCosts?.total > 0 && (
                 <CostBadge costs={aiCosts} />
               )}
-              {availableXp > 0 && (
+              {!readOnly && availableXp > 0 && (
                 <button
                   onClick={handleAdvancementOpen}
                   className="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
@@ -619,138 +695,163 @@ export default function GameplayPage() {
                 </button>
               )}
               {isMultiplayer && allCharacters.length > 0 ? (
-                <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
+                <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
                   {allCharacters.map((c) => (
                     <span key={c.name}>{c.name} W:{c.wounds}/{c.maxWounds}</span>
                   ))}
                 </div>
               ) : displayCharacter ? (
-                <div className="hidden lg:flex items-center gap-4 text-[10px] text-on-surface-variant">
+                <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
                   <span>{displayCharacter.name}</span>
                   <span>{translateCareer(displayCharacter.career?.name, t)}</span>
                   {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
                 </div>
               ) : null}
-              {/* Auto-Player toggle (solo only) */}
-              {!isMultiplayer && currentScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
-                <div className="flex items-center gap-1.5">
+              {!readOnly && (
+                <>
+                  {/* Auto-Player toggle (solo only) */}
+                  {!isMultiplayer && currentScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={autoPlayer.toggleAutoPlayer}
+                        title={t('autoPlayer.toggle')}
+                        aria-label={t('autoPlayer.toggle')}
+                        className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${
+                          autoPlayer.isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-on-primary transition-transform duration-200 ${
+                            autoPlayer.isAutoPlaying ? 'translate-x-[14px]' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                      {autoPlayer.isAutoPlaying && autoPlayer.isThinking && (
+                        <span className="material-symbols-outlined text-xs text-primary animate-spin">progress_activity</span>
+                      )}
+                      <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant hidden xl:inline">
+                        {t('autoPlayer.title')}
+                      </span>
+                      {autoPlayer.isAutoPlaying && (
+                        <span className="text-[9px] text-outline tabular-nums">
+                          {autoPlayer.turnsPlayed}{autoPlayer.autoPlayerSettings.maxTurns > 0 ? `/${autoPlayer.autoPlayerSettings.maxTurns}` : ''}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setAutoPlayerSettingsOpen(true)}
+                        title={t('autoPlayer.settings')}
+                        aria-label={t('autoPlayer.settings')}
+                        className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                      >
+                        tune
+                      </button>
+                    </div>
+                  )}
                   <button
-                    onClick={autoPlayer.toggleAutoPlayer}
-                    title={t('autoPlayer.toggle')}
-                    aria-label={t('autoPlayer.toggle')}
-                    className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${
-                      autoPlayer.isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
+                    onClick={() => setMpPanelOpen(true)}
+                    title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
+                    aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
+                    className={`material-symbols-outlined text-sm transition-colors ${
+                      isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
                     }`}
                   >
-                    <span
-                      className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-on-primary transition-transform duration-200 ${
-                        autoPlayer.isAutoPlaying ? 'translate-x-[14px]' : 'translate-x-0'
-                      }`}
-                    />
+                    {isMultiplayer ? 'group' : 'group_add'}
                   </button>
-                  {autoPlayer.isAutoPlaying && autoPlayer.isThinking && (
-                    <span className="material-symbols-outlined text-xs text-primary animate-spin">progress_activity</span>
+                  {isMultiplayer && (
+                    <button
+                      onClick={() => setVideoPanelOpen((v) => !v)}
+                      title={t('webcam.videoChat')}
+                      aria-label={t('webcam.videoChat')}
+                      className={`material-symbols-outlined text-sm transition-colors ${
+                        videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
+                      }`}
+                    >
+                      video_camera_front
+                    </button>
                   )}
-                  <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant hidden xl:inline">
-                    {t('autoPlayer.title')}
-                  </span>
-                  {autoPlayer.isAutoPlaying && (
-                    <span className="text-[9px] text-outline tabular-nums">
-                      {autoPlayer.turnsPlayed}{autoPlayer.autoPlayerSettings.maxTurns > 0 ? `/${autoPlayer.autoPlayerSettings.maxTurns}` : ''}
-                    </span>
+                  {campaign?.backendId && apiClient.isConnected() && (
+                    <button
+                      onClick={handleShare}
+                      disabled={shareLoading}
+                      title={shareCopied ? t('gameplay.shareCopied') : t('gameplay.share')}
+                      aria-label={t('gameplay.share')}
+                      className={`material-symbols-outlined text-sm transition-colors ${
+                        shareCopied ? 'text-emerald-400' : shareLoading ? 'text-outline/50 animate-pulse' : 'text-outline hover:text-primary'
+                      }`}
+                    >
+                      {shareCopied ? 'check' : 'share'}
+                    </button>
                   )}
                   <button
-                    onClick={() => setAutoPlayerSettingsOpen(true)}
-                    title={t('autoPlayer.settings')}
-                    aria-label={t('autoPlayer.settings')}
+                    onClick={() => setAchievementsOpen(true)}
+                    title={t('achievements.title', 'Achievements')}
+                    aria-label={t('achievements.title', 'Achievements')}
                     className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
                   >
-                    tune
+                    emoji_events
                   </button>
-                </div>
+                  <button
+                    onClick={() => setWorldModalOpen(true)}
+                    title={t('worldState.title')}
+                    aria-label={t('worldState.title')}
+                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                  >
+                    public
+                  </button>
+                  <button
+                    onClick={() => setGmModalOpen(true)}
+                    title={t('gmModal.title')}
+                    aria-label={t('gmModal.title')}
+                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                  >
+                    auto_stories
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (isMultiplayer && mpGameState) {
+                        exportAsMarkdown({
+                          campaign: mpGameState.campaign,
+                          character: character,
+                          scenes: mpGameState.scenes,
+                          chatHistory: mpGameState.chatHistory,
+                          quests: mpGameState.quests,
+                          world: mpGameState.world,
+                        });
+                      } else {
+                        exportAsMarkdown(state);
+                      }
+                    }}
+                    title={t('gameplay.exportLog')}
+                    aria-label={t('gameplay.exportLog')}
+                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                  >
+                    download
+                  </button>
+                </>
               )}
-              <button
-                onClick={() => setMpPanelOpen(true)}
-                title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-                aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-                className={`material-symbols-outlined text-sm transition-colors ${
-                  isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-                }`}
-              >
-                {isMultiplayer ? 'group' : 'group_add'}
-              </button>
-              {isMultiplayer && (
-                <button
-                  onClick={() => setVideoPanelOpen((v) => !v)}
-                  title={t('webcam.videoChat')}
-                  aria-label={t('webcam.videoChat')}
-                  className={`material-symbols-outlined text-sm transition-colors ${
-                    videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-                  }`}
-                >
-                  video_camera_front
-                </button>
-              )}
-              <button
-                onClick={() => setAchievementsOpen(true)}
-                title={t('achievements.title', 'Achievements')}
-                aria-label={t('achievements.title', 'Achievements')}
-                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-              >
-                emoji_events
-              </button>
-              <button
-                onClick={() => setWorldModalOpen(true)}
-                title={t('worldState.title')}
-                aria-label={t('worldState.title')}
-                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-              >
-                public
-              </button>
-              <button
-                onClick={() => setGmModalOpen(true)}
-                title={t('gmModal.title')}
-                aria-label={t('gmModal.title')}
-                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-              >
-                auto_stories
-              </button>
-              <button
-                onClick={() => {
-                  if (isMultiplayer && mpGameState) {
-                    exportAsMarkdown({
-                      campaign: mpGameState.campaign,
-                      character: character,
-                      scenes: mpGameState.scenes,
-                      chatHistory: mpGameState.chatHistory,
-                      quests: mpGameState.quests,
-                      world: mpGameState.world,
-                    });
-                  } else {
-                    exportAsMarkdown(state);
-                  }
-                }}
-                title={t('gameplay.exportLog')}
-                aria-label={t('gameplay.exportLog')}
-                className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-              >
-                download
-              </button>
             </div>
           </div>
         )}
 
         {/* Scene Panel */}
-        <ScenePanel
-          scene={viewedScene}
-          combat={isMultiplayer ? mpGameState?.combat : state.combat}
-          isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
-          highlightInfo={narrator.highlightInfo}
-          currentChunk={narrator.currentChunk}
-          diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
-          diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
-          onImageError={isMultiplayer ? (sceneId) => mp.updateSceneImage(sceneId, null) : undefined}
-        />
+        <div className="relative">
+          <ScenePanel
+            scene={viewedScene}
+            combat={isMultiplayer ? mpGameState?.combat : state.combat}
+            isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
+            highlightInfo={narrator.highlightInfo}
+            currentChunk={narrator.currentChunk}
+            diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
+            diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
+            onImageError={isMultiplayer ? (sceneId) => mp.updateSceneImage(sceneId, null) : undefined}
+          />
+          {typewriterAction && (
+            <TypewriterActionOverlay
+              text={typewriterAction}
+              onComplete={handleTypewriterComplete}
+            />
+          )}
+        </div>
 
         {/* Past Scene Narrative Review */}
         {isReviewingPastScene && viewedScene?.narrative && (
@@ -788,14 +889,14 @@ export default function GameplayPage() {
         )}
 
         {/* Loading State */}
-        {isGeneratingScene && (
+        {isGeneratingScene && !readOnly && (
           <div className="flex items-center justify-center py-8 animate-fade-in">
             <LoadingSpinner text={t('gameplay.dmWeavesFate')} />
           </div>
         )}
 
         {/* Error Display */}
-        {error && (
+        {error && !readOnly && (
           <div className="bg-error-container/20 border border-error/20 p-4 rounded-sm mx-2 animate-fade-in">
             <div className="flex items-start justify-between gap-3">
               <p className="text-error text-sm flex items-center gap-2">
@@ -818,7 +919,7 @@ export default function GameplayPage() {
         )}
 
         {/* Party Panel */}
-        {hasParty && !isMultiplayer && !isReviewingPastScene && (
+        {hasParty && !isMultiplayer && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <PartyPanel
               party={[{ ...character, type: 'player', id: character?.name }, ...party]}
@@ -831,7 +932,7 @@ export default function GameplayPage() {
         )}
 
         {/* Combat Panel */}
-        {((isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)) && !isViewingCompanion && !isReviewingPastScene && (
+        {((isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)) && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={isMultiplayer ? mpGameState.combat : state.combat}
@@ -852,7 +953,7 @@ export default function GameplayPage() {
         )}
 
         {/* Magic Panel */}
-        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (
+        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <MagicPanel
               character={character}
@@ -916,7 +1017,7 @@ export default function GameplayPage() {
         )}
 
         {/* Quest Offers */}
-        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && (
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <QuestOffersPanel
               offers={currentScene.questOffers}
@@ -927,7 +1028,7 @@ export default function GameplayPage() {
         )}
 
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && (
+        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
@@ -955,7 +1056,7 @@ export default function GameplayPage() {
         )}
 
         {/* Dead character notice (solo) */}
-        {character?.status === 'dead' && !isMultiplayer && (!campaign?.status || campaign.status === 'active') && (
+        {character?.status === 'dead' && !isMultiplayer && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-error">skull</span>
@@ -966,7 +1067,7 @@ export default function GameplayPage() {
         )}
 
         {/* MP Spectator mode for dead player */}
-        {isMultiplayer && mp.state.isDead && (!campaign?.status || campaign.status === 'active') && (
+        {isMultiplayer && mp.state.isDead && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-error">skull</span>
@@ -996,56 +1097,60 @@ export default function GameplayPage() {
         />
       </aside>
 
-      {worldModalOpen && (
-        <WorldStateModal
-          world={isMultiplayer ? mpGameState?.world : state.world}
-          quests={isMultiplayer ? mpGameState?.quests : state.quests}
-          characterVoiceMap={state.characterVoiceMap}
-          characterVoices={settings.characterVoices}
-          dispatch={dispatch}
-          onClose={() => setWorldModalOpen(false)}
-        />
-      )}
+      {!readOnly && (
+        <>
+          {worldModalOpen && (
+            <WorldStateModal
+              world={isMultiplayer ? mpGameState?.world : state.world}
+              quests={isMultiplayer ? mpGameState?.quests : state.quests}
+              characterVoiceMap={state.characterVoiceMap}
+              characterVoices={settings.characterVoices}
+              dispatch={dispatch}
+              onClose={() => setWorldModalOpen(false)}
+            />
+          )}
 
-      {gmModalOpen && (
-        <GMModal onClose={() => setGmModalOpen(false)} />
-      )}
+          {gmModalOpen && (
+            <GMModal onClose={() => setGmModalOpen(false)} />
+          )}
 
-      {mpPanelOpen && (
-        <MultiplayerPanel onClose={() => setMpPanelOpen(false)} />
-      )}
+          {mpPanelOpen && (
+            <MultiplayerPanel onClose={() => setMpPanelOpen(false)} />
+          )}
 
-      {advancementOpen && (
-        <AdvancementPanel onClose={handleAdvancementClose} />
-      )}
+          {advancementOpen && (
+            <AdvancementPanel onClose={handleAdvancementClose} />
+          )}
 
-      {achievementsOpen && (
-        <AchievementsPanel
-          achievementState={state.achievements}
-          onClose={() => setAchievementsOpen(false)}
-        />
-      )}
+          {achievementsOpen && (
+            <AchievementsPanel
+              achievementState={state.achievements}
+              onClose={() => setAchievementsOpen(false)}
+            />
+          )}
 
-      {autoPlayerSettingsOpen && (
-        <AutoPlayerPanel
-          isAutoPlaying={autoPlayer.isAutoPlaying}
-          isThinking={autoPlayer.isThinking}
-          turnsPlayed={autoPlayer.turnsPlayed}
-          lastError={autoPlayer.lastError}
-          toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
-          autoPlayerSettings={autoPlayer.autoPlayerSettings}
-          updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
-          characterName={character?.name}
-          isGeneratingScene={isGeneratingScene}
-          onClose={() => setAutoPlayerSettingsOpen(false)}
-        />
-      )}
+          {autoPlayerSettingsOpen && (
+            <AutoPlayerPanel
+              isAutoPlaying={autoPlayer.isAutoPlaying}
+              isThinking={autoPlayer.isThinking}
+              turnsPlayed={autoPlayer.turnsPlayed}
+              lastError={autoPlayer.lastError}
+              toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
+              autoPlayerSettings={autoPlayer.autoPlayerSettings}
+              updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
+              characterName={character?.name}
+              isGeneratingScene={isGeneratingScene}
+              onClose={() => setAutoPlayerSettingsOpen(false)}
+            />
+          )}
 
-      {isMultiplayer && (
-        <FloatingVideoPanel
-          visible={videoPanelOpen}
-          onClose={() => setVideoPanelOpen(false)}
-        />
+          {isMultiplayer && (
+            <FloatingVideoPanel
+              visible={videoPanelOpen}
+              onClose={() => setVideoPanelOpen(false)}
+            />
+          )}
+        </>
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
 
 const MAX_RETRIES = 3;
@@ -16,7 +17,8 @@ async function withRetry(fn) {
 }
 
 export async function campaignRoutes(fastify) {
-  // Public endpoint — no auth required
+  // ── Public routes (no auth) ──────────────────────────────────────────
+
   fastify.get('/public', async (request) => {
     const { genre, tone, sort = 'newest', q, limit = 50, offset = 0 } = request.query;
     const where = { isPublic: true };
@@ -93,99 +95,162 @@ export async function campaignRoutes(fastify) {
     return { ...campaign, data: parsed };
   });
 
-  fastify.addHook('onRequest', fastify.authenticate);
-
-  fastify.get('/', async (request) => {
-    const campaigns = await prisma.campaign.findMany({
-      where: { userId: request.user.id },
-      select: { id: true, name: true, genre: true, tone: true, lastSaved: true, createdAt: true },
-      orderBy: { lastSaved: 'desc' },
+  fastify.get('/share/:token', async (request, reply) => {
+    const campaign = await prisma.campaign.findUnique({
+      where: { shareToken: request.params.token },
+      select: {
+        id: true, name: true, genre: true, tone: true,
+        data: true, createdAt: true,
+        user: { select: { email: true } },
+      },
     });
-    return campaigns;
-  });
-
-  fastify.get('/:id', async (request, reply) => {
-    const campaign = await prisma.campaign.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
-    });
-    if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
+    if (!campaign) return reply.code(404).send({ error: 'Campaign not found or link expired' });
 
     let parsed = {};
     try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-    return { ...campaign, data: parsed };
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      genre: campaign.genre,
+      tone: campaign.tone,
+      createdAt: campaign.createdAt,
+      author: campaign.user?.email ? campaign.user.email.slice(0, 2) + '***' : 'Anonymous',
+      data: parsed,
+    };
   });
 
-  fastify.post('/', async (request) => {
-    const { name, genre, tone, data } = request.body;
+  // ── Authenticated routes (wrapped in a child scope with auth hook) ───
 
-    const campaign = await prisma.campaign.create({
-      data: {
-        userId: request.user.id,
-        name: name || '',
-        genre: genre || '',
-        tone: tone || '',
-        data: JSON.stringify(data || {}),
-        lastSaved: new Date(),
-      },
+  fastify.register(async function authedCampaignRoutes(app) {
+    app.addHook('onRequest', app.authenticate);
+
+    app.get('/', async (request) => {
+      const campaigns = await prisma.campaign.findMany({
+        where: { userId: request.user.id },
+        select: { id: true, name: true, genre: true, tone: true, lastSaved: true, createdAt: true },
+        orderBy: { lastSaved: 'desc' },
+      });
+      return campaigns;
     });
 
-    let parsedData = {};
-    try { parsedData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-    return { ...campaign, data: parsedData };
-  });
+    app.get('/:id', async (request, reply) => {
+      const campaign = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
-  fastify.put('/:id', async (request, reply) => {
-    const existing = await prisma.campaign.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
+      let parsed = {};
+      try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+      return { ...campaign, data: parsed };
     });
-    if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-    const { name, genre, tone, data } = request.body;
-    const updateData = { lastSaved: new Date() };
+    app.post('/', async (request) => {
+      const { name, genre, tone, data } = request.body;
 
-    if (name !== undefined) updateData.name = name;
-    if (genre !== undefined) updateData.genre = genre;
-    if (tone !== undefined) updateData.tone = tone;
-    if (data !== undefined) updateData.data = JSON.stringify(data);
+      const campaign = await prisma.campaign.create({
+        data: {
+          userId: request.user.id,
+          name: name || '',
+          genre: genre || '',
+          tone: tone || '',
+          data: JSON.stringify(data || {}),
+          lastSaved: new Date(),
+        },
+      });
 
-    const campaign = await withRetry(() =>
-      prisma.campaign.update({
-        where: { id: request.params.id },
-        data: updateData,
-      }),
-    );
-
-    let parsedPutData = {};
-    try { parsedPutData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-    return { ...campaign, data: parsedPutData };
-  });
-
-  fastify.delete('/:id', async (request, reply) => {
-    const existing = await prisma.campaign.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
+      let parsedData = {};
+      try { parsedData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+      return { ...campaign, data: parsedData };
     });
-    if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-    await prisma.campaign.delete({ where: { id: request.params.id } });
-    return { success: true };
-  });
+    app.put('/:id', async (request, reply) => {
+      const existing = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-  fastify.patch('/:id/publish', async (request, reply) => {
-    const existing = await prisma.campaign.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
+      const { name, genre, tone, data } = request.body;
+      const updateData = { lastSaved: new Date() };
+
+      if (name !== undefined) updateData.name = name;
+      if (genre !== undefined) updateData.genre = genre;
+      if (tone !== undefined) updateData.tone = tone;
+      if (data !== undefined) updateData.data = JSON.stringify(data);
+
+      const campaign = await withRetry(() =>
+        prisma.campaign.update({
+          where: { id: request.params.id },
+          data: updateData,
+        }),
+      );
+
+      let parsedPutData = {};
+      try { parsedPutData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+      return { ...campaign, data: parsedPutData };
     });
-    if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-    const { isPublic } = request.body;
-    if (typeof isPublic !== 'boolean') {
-      return reply.code(400).send({ error: 'isPublic must be a boolean' });
-    }
-    const campaign = await withRetry(() =>
-      prisma.campaign.update({
-        where: { id: request.params.id },
-        data: { isPublic },
-      }),
-    );
-    return { id: campaign.id, isPublic: campaign.isPublic };
+    app.delete('/:id', async (request, reply) => {
+      const existing = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
+
+      await prisma.campaign.delete({ where: { id: request.params.id } });
+      return { success: true };
+    });
+
+    app.post('/:id/share', async (request, reply) => {
+      const existing = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
+
+      if (existing.shareToken) {
+        return { shareToken: existing.shareToken };
+      }
+
+      const shareToken = crypto.randomUUID();
+      await withRetry(() =>
+        prisma.campaign.update({
+          where: { id: request.params.id },
+          data: { shareToken },
+        }),
+      );
+      return { shareToken };
+    });
+
+    app.delete('/:id/share', async (request, reply) => {
+      const existing = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
+
+      await withRetry(() =>
+        prisma.campaign.update({
+          where: { id: request.params.id },
+          data: { shareToken: null },
+        }),
+      );
+      return { success: true };
+    });
+
+    app.patch('/:id/publish', async (request, reply) => {
+      const existing = await prisma.campaign.findFirst({
+        where: { id: request.params.id, userId: request.user.id },
+      });
+      if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
+
+      const { isPublic } = request.body;
+      if (typeof isPublic !== 'boolean') {
+        return reply.code(400).send({ error: 'isPublic must be a boolean' });
+      }
+      const campaign = await withRetry(() =>
+        prisma.campaign.update({
+          where: { id: request.params.id },
+          data: { isPublic },
+        }),
+      );
+      return { id: campaign.id, isPublic: campaign.isPublic };
+    });
   });
 }

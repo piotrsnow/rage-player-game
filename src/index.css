@@ -266,6 +266,52 @@
   animation: combatGlyphPop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes typewriterZoomOut {
+  0% { transform: scale(1.18) translateY(6px); opacity: 0; filter: blur(2px); }
+  40% { opacity: 1; filter: blur(0); }
+  100% { transform: scale(1.0) translateY(0); opacity: 1; filter: blur(0); }
+}
+
+@keyframes typewriterFadeOut {
+  0% { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(0.97); filter: blur(3px); }
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes typewriterCharIn {
+  0% { opacity: 0; transform: translateY(2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes typewriterGlow {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+.animate-typewriter-zoom-out {
+  animation: typewriterZoomOut cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-typewriter-fade-out {
+  animation: typewriterFadeOut 600ms ease-in-out forwards;
+}
+
+.animate-cursor-blink {
+  animation: cursorBlink 600ms step-end infinite;
+}
+
+.animate-typewriter-char-in {
+  animation: typewriterCharIn 80ms ease-out both;
+}
+
+.animate-typewriter-glow {
+  animation: typewriterGlow 4s ease-in-out infinite;
+}
+
 @keyframes micPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.4); }
   50% { box-shadow: 0 0 0 8px rgba(255, 82, 82, 0); }

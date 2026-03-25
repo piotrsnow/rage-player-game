@@ -278,6 +278,7 @@
     "questType_personal": "Personal",
     "previousScene": "Previous scene",
     "nextScene": "Next scene",
+    "nextSceneWithAction": "Next scene (with action)",
     "backToCurrent": "Back to current scene",
     "replayNarration": "Replay narration",
     "sceneReview": "Scene review",
@@ -298,7 +299,9 @@
     "campaignFailed": "Campaign Failed",
     "newCampaign": "New Campaign",
     "characterDead": "Your character has fallen",
-    "characterDeadDesc": "With no Fate points remaining, death is final."
+    "characterDeadDesc": "With no Fate points remaining, death is final.",
+    "share": "Share campaign link",
+    "shareCopied": "Link copied to clipboard!"
   },
   "chat": {
     "dmAi": "DM AI",
@@ -626,6 +629,8 @@
       "retro": "Retro Style",
       "gothic": "Gothic"
     },
+    "darkPalette": "Dark Color Palette",
+    "darkPaletteDesc": "Prefer dark, moody colors in generated images",
     "sfxTitle": "Sound Effects",
     "sfxDesc": "AI-generated sound effects via ElevenLabs for impactful moments",
     "sfxEnabled": "Enable Sound Effects",
@@ -2077,5 +2082,14 @@
       "Relentless": "Relentless pursuit. The target cannot escape when you track them.",
       "Seasoned Traveller": "Experienced traveller. Bonus to navigation and survival tests while travelling."
     }
+  },
+  "viewer": {
+    "loading": "Loading campaign...",
+    "notFound": "Campaign not found or link has expired",
+    "backendRequired": "Backend connection required to view shared campaigns",
+    "goHome": "Go to home page",
+    "readOnlyBanner": "Read-only view",
+    "scenes": "scenes",
+    "test": "Test"
   }
 }

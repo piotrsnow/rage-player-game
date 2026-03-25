@@ -36,7 +36,7 @@ window.DICE = (function() {
             shininess: 40,
             shading: THREE.FlatShading,
         },
-        label_color: '#aaaaaa', //numbers on dice
+        label_color: '#000000', //numbers on dice
         dice_color: '#202020',
         ambient_light_color: 0xf0f0f0,
         ambient_light_intensity: 1,

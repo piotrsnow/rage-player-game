@@ -1,4 +1,4 @@
-export const DECAY_PER_HOUR = { hunger: 4.2, thirst: 5.5, bladder: 13, hygiene: 2, rest: 5.5 };
+export const DECAY_PER_HOUR = { hunger: 1.68, thirst: 3.67, bladder: 8.67, hygiene: 1.6, rest: 5.5 };
 
 export function hourToPeriod(hour) {
   if (hour >= 6 && hour < 12) return 'morning';

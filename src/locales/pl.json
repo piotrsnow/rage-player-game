@@ -278,6 +278,7 @@
     "questType_personal": "Osobiste",
     "previousScene": "Poprzednia scena",
     "nextScene": "Następna scena",
+    "nextSceneWithAction": "Następna scena (z akcją)",
     "backToCurrent": "Wróć do aktualnej sceny",
     "replayNarration": "Odtwórz narrację",
     "sceneReview": "Przegląd sceny",
@@ -298,7 +299,9 @@
     "campaignFailed": "Kampania Przegrana",
     "newCampaign": "Nowa Kampania",
     "characterDead": "Twoja postać poległa",
-    "characterDeadDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna."
+    "characterDeadDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna.",
+    "share": "Udostępnij link do kampanii",
+    "shareCopied": "Link skopiowany do schowka!"
   },
   "chat": {
     "dmAi": "MG AI",
@@ -626,6 +629,8 @@
       "retro": "Styl retro",
       "gothic": "Gotyk"
     },
+    "darkPalette": "Ciemna paleta kolorów",
+    "darkPaletteDesc": "Preferuj ciemne, mroczne kolory w generowanych obrazach",
     "sfxTitle": "Efekty Dźwiękowe",
     "sfxDesc": "Efekty dźwiękowe generowane przez AI (ElevenLabs) dla klimatycznych momentów",
     "sfxEnabled": "Włącz Efekty Dźwiękowe",
@@ -2077,5 +2082,14 @@
       "Relentless": "Nieugięty pościg. Cel nie może uciec gdy go tropiasz.",
       "Seasoned Traveller": "Doświadczony podróżnik. Bonus do testów nawigacji i przetrwania w podróży."
     }
+  },
+  "viewer": {
+    "loading": "Ładowanie kampanii...",
+    "notFound": "Kampania nie została znaleziona lub link wygasł",
+    "backendRequired": "Wymagane połączenie z backendem aby wyświetlić udostępnione kampanie",
+    "goHome": "Wróć na stronę główną",
+    "readOnlyBanner": "Tryb podglądu",
+    "scenes": "scen",
+    "test": "Test"
   }
 }

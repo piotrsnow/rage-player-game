@@ -141,6 +141,7 @@ const defaultSettings = {
     narratorHumor: 20,
     narratorDrama: 50,
     imageStyle: 'painting',
+    darkPalette: false,
   },
 };
 

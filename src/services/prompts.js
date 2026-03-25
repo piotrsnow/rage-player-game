@@ -1279,23 +1279,24 @@ export function getImageStyleNegative(imageStyle) {
   return entry.negative || '';
 }
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting') {
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false) {
   const isGemini = provider === 'gemini';
 
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
+  const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones, and dark atmospheric hues.' : '';
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
   const sceneDesc = sanitizeForImageGen(rawDesc);
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}. Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false) {
+export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isGemini = provider === 'gemini';
@@ -1314,16 +1315,17 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
   const likenessDirective = hasReferenceImage
     ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
     : '';
+  const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition. No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background. No text, no watermarks, no borders.`;
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en') {

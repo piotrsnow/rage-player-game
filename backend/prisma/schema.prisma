@@ -53,13 +53,14 @@ model Campaign {
   name      String   @default("")
   genre     String   @default("")
   tone      String   @default("")
-  data      String   // Full game state JSON
-  isPublic  Boolean  @default(false)
-  rating    Float    @default(0)
-  playCount Int      @default(0)
-  lastSaved DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  data       String   // Full game state JSON
+  isPublic   Boolean  @default(false)
+  shareToken String?  @unique
+  rating     Float    @default(0)
+  playCount  Int      @default(0)
+  lastSaved  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

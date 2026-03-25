@@ -42,6 +42,7 @@ export function useAI() {
   const compressionGenRef = useRef(0);
   const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
+  const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageGenEnabled = sceneVisualization === 'image';
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
@@ -225,13 +226,15 @@ export function useAI() {
           }
         }
 
+        const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
+        const playerNames = (state.party || [state.character]).map(c => c?.name).filter(Boolean);
+
         const repairedSegments = repairDialogueSegments(
           result.narrative,
           result.dialogueSegments || [],
-          [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])]
+          [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])],
+          playerNames
         );
-
-        const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
         const finalSegments = (!isFirstScene && !isIdleWorldEvent)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
@@ -432,7 +435,8 @@ export function useAI() {
               imageProvider,
               result.imagePrompt,
               state.campaign?.backendId,
-              imageStyle
+              imageStyle,
+              darkPalette
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -454,7 +458,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t]
   );
 
   const generateCampaign = useCallback(
@@ -515,7 +519,8 @@ export function useAI() {
           imageProvider,
           sceneImagePrompt,
           state.campaign?.backendId,
-          imageStyle
+          imageStyle,
+          darkPalette
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -531,7 +536,7 @@ export function useAI() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, imageStyle, hasApiKey, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, hasApiKey, dispatch, autoSave]
   );
 
   const generateCombatCommentary = useCallback(

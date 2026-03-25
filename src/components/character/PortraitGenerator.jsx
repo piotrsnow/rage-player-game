@@ -53,6 +53,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
         strength,
         provider,
         settings.dmSettings?.imageStyle || 'painting',
+        settings.dmSettings?.darkPalette || false,
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);

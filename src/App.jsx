@@ -5,6 +5,7 @@ import CampaignCreatorPage from './components/creator/CampaignCreatorPage';
 import GameplayPage from './components/gameplay/GameplayPage';
 import JoinRoomPage from './components/multiplayer/JoinRoomPage';
 import GalleryPage from './components/gallery/GalleryPage';
+import CampaignViewerPage from './components/viewer/CampaignViewerPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/play" element={<GameplayPage />} />
         <Route path="/join/:code?" element={<JoinRoomPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
+        <Route path="/view/:shareToken" element={<CampaignViewerPage />} />
       </Route>
     </Routes>
   );
