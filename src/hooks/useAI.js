@@ -13,6 +13,7 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent, detectDialogueIntent } from '../services/prompts';
+import { advanceDialogueRound } from '../services/dialogueEngine';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
 
@@ -430,6 +431,15 @@ export function useAI() {
             if (ach.xpReward && state.character) {
               dispatch({ type: 'APPLY_STATE_CHANGES', payload: { xp: ach.xpReward } });
             }
+          }
+        }
+
+        if (state.dialogue?.active && result.stateChanges?.dialogueUpdate?.active !== false) {
+          const advanced = advanceDialogueRound(state.dialogue);
+          if (!advanced.active) {
+            dispatch({ type: 'END_DIALOGUE' });
+          } else {
+            dispatch({ type: 'UPDATE_DIALOGUE', payload: { round: advanced.round } });
           }
         }
 

@@ -1228,7 +1228,7 @@ function gameReducer(state, action) {
         next.dialogue.reason = changes.dialogueUpdate.reason || '';
       } else if (changes.dialogueUpdate && !changes.dialogueUpdate.active) {
         if (next.dialogue) {
-          next.dialogueCooldown = next.dialogue.cooldownTotal || 0;
+          next.dialogueCooldown = next.dialogue.round || 0;
         }
         next.dialogue = null;
       }
@@ -1381,7 +1381,7 @@ function gameReducer(state, action) {
     }
 
     case 'END_DIALOGUE': {
-      const cooldown = state.dialogue?.cooldownTotal || 0;
+      const cooldown = state.dialogue?.round || 0;
       return { ...state, dialogue: null, dialogueCooldown: cooldown };
     }
 
