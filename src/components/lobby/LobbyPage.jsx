@@ -259,9 +259,9 @@ export default function LobbyPage() {
               <span className="ml-auto text-xs text-outline font-label">{campaigns.length}</span>
             </h3>
             <div className="space-y-1">
-              {campaigns.map((c) => (
+              {campaigns.map((c, i) => (
                 <CampaignCard
-                  key={c.campaign.id}
+                  key={c.campaign?.id || c.campaign?.backendId || i}
                   campaign={c}
                   onLoad={() => handleLoad(c)}
                   onDelete={() =>

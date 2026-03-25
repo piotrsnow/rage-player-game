@@ -333,6 +333,7 @@ export default function DMSettingsPage({ onClose }) {
                     <div className="flex gap-2">
                       {[
                         { id: 'image', icon: 'image', label: t('settings.sceneVisImage') },
+                        // { id: '3d', icon: 'view_in_ar', label: t('settings.sceneVis3D') }, // temporarily hidden
                         { id: 'canvas', icon: 'brush', label: t('settings.sceneVisCanvas') },
                         { id: 'none', icon: 'visibility_off', label: t('settings.sceneVisNone') },
                       ].map((opt) => (
@@ -351,6 +352,55 @@ export default function DMSettingsPage({ onClose }) {
                       ))}
                     </div>
                   </div>
+
+                  {/* Meshy 3D generation settings — hidden, using local models for now
+                  {(settings.sceneVisualization || 'image') === '3d' && (
+                    <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
+                      <div className="mb-3">
+                        <p className="font-headline text-tertiary">{t('settings.meshySettings')}</p>
+                        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                          {t('settings.meshySettingsDesc')}
+                        </p>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm text-on-surface">{t('settings.meshyEnabled')}</p>
+                            <p className="text-[10px] text-on-surface-variant">{t('settings.meshyEnabledDesc')}</p>
+                          </div>
+                          <button
+                            onClick={() => updateSettings({ meshyEnabled: !settings.meshyEnabled })}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.meshyEnabled ? 'bg-primary' : 'bg-outline-variant/30'}`}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.meshyEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                          </button>
+                        </div>
+                        {settings.meshyEnabled && (
+                          <div>
+                            <label className="text-sm text-on-surface block mb-1">{t('settings.meshyApiKey')}</label>
+                            <input
+                              type="password"
+                              value={settings.meshyApiKey || ''}
+                              onChange={(e) => updateSettings({ meshyApiKey: e.target.value })}
+                              placeholder={t('settings.meshyApiKeyPlaceholder')}
+                              className="w-full bg-surface-container-highest/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/40"
+                            />
+                          </div>
+                        )}
+                        <button
+                          onClick={async () => {
+                            const { clearCache } = await import('../../services/assetCache');
+                            await clearCache();
+                            alert(t('settings.assetCacheCleared'));
+                          }}
+                          className="text-xs text-on-surface-variant hover:text-primary transition-colors underline"
+                        >
+                          {t('settings.clearAssetCache')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  */}
 
                   {(settings.sceneVisualization || 'image') === 'image' && (
                     <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">

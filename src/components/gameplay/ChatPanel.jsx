@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/wfrpTranslate';
 import { parseActionSegments } from '../../services/actionParser';
-import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
   const hi = highlightInfo;
@@ -191,21 +190,44 @@ const SUBTYPE_STYLES = {
   combat_end:       { icon: 'flag',         color: 'text-primary',     line: 'to-primary/30' },
 };
 
-function buildTargetBreakdown(d) {
-  const charKey = d.characteristic;
-  const charLabel = charKey ? (CHARACTERISTIC_SHORT[charKey] || charKey.toUpperCase()) : null;
-  const charVal = d.characteristicValue;
-  const skillAdv = d.skillAdvances;
-
-  if (charLabel == null || charVal == null) return null;
-
-  const parts = [`${charLabel} ${charVal}`];
-  if (skillAdv > 0) parts.push(`+${skillAdv}`);
-  if (d.creativityBonus > 0) parts.push(`+${d.creativityBonus}`);
-  if (d.momentumBonus != null && d.momentumBonus !== 0) parts.push(`${d.momentumBonus > 0 ? '+' : ''}${d.momentumBonus}`);
-  if (d.dispositionBonus != null && d.dispositionBonus !== 0) parts.push(`${d.dispositionBonus > 0 ? '+' : ''}${d.dispositionBonus}`);
-
-  return `${parts.join(' ')} = ${d.target || d.dc}`;
+function BonusTags({ d, t }) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {d.characteristic && d.characteristicValue != null && (
+        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/30">
+          {t(`character.${d.characteristic}Long`)} {d.characteristicValue}
+        </span>
+      )}
+      {d.skillAdvances > 0 && (
+        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
+          {translateSkill(d.skill, t)} +{d.skillAdvances}
+        </span>
+      )}
+      {d.creativityBonus > 0 && (
+        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
+          {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
+        </span>
+      )}
+      {d.momentumBonus != null && d.momentumBonus !== 0 && (
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+          d.momentumBonus > 0
+            ? 'bg-blue-400/15 text-blue-300 border-blue-400/30'
+            : 'bg-red-400/15 text-red-300 border-red-400/30'
+        }`}>
+          {t('gameplay.momentumBonus', { bonus: (d.momentumBonus > 0 ? '+' : '') + d.momentumBonus })}
+        </span>
+      )}
+      {d.dispositionBonus != null && d.dispositionBonus !== 0 && (
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+          d.dispositionBonus > 0
+            ? 'bg-pink-400/15 text-pink-300 border-pink-400/30'
+            : 'bg-orange-400/15 text-orange-300 border-orange-400/30'
+        }`}>
+          {t('gameplay.dispositionBonus', { bonus: (d.dispositionBonus > 0 ? '+' : '') + d.dispositionBonus })}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function DiceRollMessage({ message }) {
@@ -220,7 +242,6 @@ function DiceRollMessage({ message }) {
   const accentColor = success ? 'text-primary' : 'text-error';
   const bgGlow = success ? 'from-primary/10 via-transparent to-primary/10' : 'from-error/10 via-transparent to-error/10';
   const borderColor = success ? 'border-primary/40' : 'border-error/40';
-  const breakdown = buildTargetBreakdown(d);
 
   return (
     <div className="animate-fade-in my-2">
@@ -239,35 +260,15 @@ function DiceRollMessage({ message }) {
               </span>
               <span className="text-on-surface-variant text-sm">{t('common.vs')}</span>
               <span className="font-mono text-lg font-bold text-on-surface">
-                {breakdown || (d.target || d.dc)}
+                {d.target || d.dc}
               </span>
-              {d.creativityBonus > 0 && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
-                  {t('gameplay.creativityBonus', { bonus: d.creativityBonus })}
-                </span>
-              )}
-              {d.momentumBonus != null && d.momentumBonus !== 0 && (
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
-                  d.momentumBonus > 0
-                    ? 'bg-blue-400/15 text-blue-300 border-blue-400/30'
-                    : 'bg-red-400/15 text-red-300 border-red-400/30'
-                }`}>
-                  {t('gameplay.momentumBonus', { bonus: (d.momentumBonus > 0 ? '+' : '') + d.momentumBonus })}
-                </span>
-              )}
-              {d.dispositionBonus != null && d.dispositionBonus !== 0 && (
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
-                  d.dispositionBonus > 0
-                    ? 'bg-pink-400/15 text-pink-300 border-pink-400/30'
-                    : 'bg-orange-400/15 text-orange-300 border-orange-400/30'
-                }`}>
-                  {t('gameplay.dispositionBonus', { bonus: (d.dispositionBonus > 0 ? '+' : '') + d.dispositionBonus })}
-                </span>
-              )}
               <span className="text-on-surface-variant">·</span>
               <span className={`text-base font-bold ${accentColor}`}>
                 SL {d.sl ?? 0}
               </span>
+            </div>
+            <div className="mt-1.5">
+              <BonusTags d={d} t={t} />
             </div>
           </div>
           <div className={`text-sm font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg ${

@@ -17,7 +17,7 @@ const LOCAL_KEY_MAP = {
 
 const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'geminiApiKey',
+  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey', 'geminiApiKey', 'meshyApiKey',
 ];
 
 const defaultSettings = {
@@ -51,6 +51,8 @@ const defaultSettings = {
   localLLMReducedPrompt: true,
   aiModelTier: 'premium',
   aiModel: '',
+  meshyApiKey: '',
+  meshyEnabled: false,
   autoPlayer: {
     enabled: false,
     style: 'balanced',

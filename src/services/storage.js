@@ -12,11 +12,15 @@ const LOCAL_ONLY_SETTINGS_KEYS = [
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'elevenlabsApiKey',
 ];
 
+const _pendingBackendSaves = new Map();
+
 export const storage = {
   getCampaigns() {
     try {
       const data = localStorage.getItem(CAMPAIGNS_KEY);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const all = JSON.parse(data);
+      return all.filter((c) => !this._isEmptyCampaign(c));
     } catch {
       return [];
     }
@@ -68,6 +72,26 @@ export const storage = {
   },
 
   async _saveCampaignToBackend(gameState) {
+    const campaignId = gameState.campaign?.id;
+    if (!campaignId) return;
+
+    const existing = _pendingBackendSaves.get(campaignId);
+    if (existing) {
+      try { await existing; } catch { /* ignore */ }
+    }
+
+    const promise = this._doSaveCampaignToBackend(gameState);
+    _pendingBackendSaves.set(campaignId, promise);
+    try {
+      await promise;
+    } finally {
+      if (_pendingBackendSaves.get(campaignId) === promise) {
+        _pendingBackendSaves.delete(campaignId);
+      }
+    }
+  },
+
+  async _doSaveCampaignToBackend(gameState) {
     try {
       const payload = {
         name: gameState.campaign?.name || '',
@@ -76,9 +100,13 @@ export const storage = {
         data: gameState,
       };
 
-      const backendId = gameState.campaign?.backendId;
+      const backendId = gameState.campaign?.backendId
+        || this._getLocalBackendId(gameState.campaign.id);
       if (backendId) {
         await apiClient.put(`/campaigns/${backendId}`, payload);
+        if (!gameState.campaign.backendId) {
+          gameState.campaign.backendId = backendId;
+        }
       } else {
         const created = await apiClient.post('/campaigns', payload);
         if (gameState.campaign) {
@@ -88,6 +116,16 @@ export const storage = {
       }
     } catch (err) {
       console.warn('[storage] Backend save failed:', err.message);
+    }
+  },
+
+  _getLocalBackendId(campaignId) {
+    try {
+      const campaigns = this.getCampaigns();
+      const match = campaigns.find((c) => c.campaign?.id === campaignId);
+      return match?.campaign?.backendId || null;
+    } catch {
+      return null;
     }
   },
 
@@ -177,6 +215,15 @@ export const storage = {
     }
   },
 
+  _isEmptyCampaign(entry) {
+    if (!entry?.campaign) return true;
+    const { campaign, character, scenes } = entry;
+    const hasName = !!campaign.name;
+    const hasCharacter = !!character?.name;
+    const hasScenes = Array.isArray(scenes) && scenes.length > 0;
+    return !hasName && !hasCharacter && !hasScenes;
+  },
+
   async syncCampaigns() {
     if (!apiClient.isConnected()) return this.getCampaigns();
 
@@ -200,12 +247,18 @@ export const storage = {
       const matchedLocalCampaignIds = new Set();
       const seenBackendCampaignIds = new Map();
       const duplicateBackendIds = [];
+      const emptyBackendIds = [];
 
       for (const bc of backendList) {
         const full = await apiClient.get(`/campaigns/${bc.id}`);
         const data = full.data || full;
         const frontendId = data.campaign?.id;
         const backendTime = new Date(bc.lastSaved).getTime();
+
+        if (this._isEmptyCampaign(data)) {
+          emptyBackendIds.push(bc.id);
+          continue;
+        }
 
         if (frontendId && seenBackendCampaignIds.has(frontendId)) {
           const prev = seenBackendCampaignIds.get(frontendId);
@@ -252,9 +305,14 @@ export const storage = {
       for (const dupId of duplicateBackendIds) {
         apiClient.del(`/campaigns/${dupId}`).catch(() => {});
       }
+      for (const emptyId of emptyBackendIds) {
+        console.warn('[storage] Deleting empty backend campaign:', emptyId);
+        apiClient.del(`/campaigns/${emptyId}`).catch(() => {});
+      }
 
       for (const lc of local) {
         if (!matchedLocalCampaignIds.has(lc.campaign?.id)) {
+          if (this._isEmptyCampaign(lc)) continue;
           merged.push(lc);
           if (!lc.campaign?.backendId) {
             this._saveCampaignToBackend(lc);

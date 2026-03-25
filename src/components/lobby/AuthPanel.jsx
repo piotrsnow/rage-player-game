@@ -68,7 +68,7 @@ function LoginForm() {
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const defaultUrl = isLocalhost ? 'http://localhost:3001' : window.location.origin;
 
-  const [serverUrl, setServerUrl] = useState(defaultUrl);
+  const serverUrl = defaultUrl;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -134,23 +134,12 @@ function LoginForm() {
       <div className="space-y-4">
         <div>
           <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
-            {t('lobby.serverUrl')}
-          </label>
-          <input
-            type="text"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            placeholder={t('settings.backendUrlPlaceholder')}
-            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-[11px] py-2 px-1 placeholder:text-outline/20 font-mono text-on-surface-variant"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
             {t('settings.backendEmail')}
           </label>
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -165,6 +154,8 @@ function LoginForm() {
           </label>
           <input
             type="password"
+            name="password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={handleKeyDown}

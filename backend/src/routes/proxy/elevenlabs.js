@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey } from '../../services/hashService.js';
+import { generateKey, toObjectId } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -87,7 +87,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
-        campaignId: campaignId || undefined,
+        campaignId: toObjectId(campaignId),
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
@@ -158,7 +158,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
-        campaignId: streamCampaignId || undefined,
+        campaignId: toObjectId(streamCampaignId),
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
@@ -219,7 +219,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
-        campaignId: sfxCampaignId || undefined,
+        campaignId: toObjectId(sfxCampaignId),
         key: cacheKey,
         type: 'sfx',
         contentType: 'audio/mpeg',

@@ -12,6 +12,7 @@ const PRICING = {
   },
   tts: { perChar: 0.30 / 1000 },
   sfx: { perGeneration: 0.10 },
+  meshy: { perGeneration: 0.10 },
 };
 
 export function calculateCost(type, metadata = {}) {
@@ -41,6 +42,9 @@ export function calculateCost(type, metadata = {}) {
     }
     case 'sfx': {
       return { type, model: 'elevenlabs', cost: PRICING.sfx.perGeneration, timestamp };
+    }
+    case 'meshy': {
+      return { type, model: 'meshy-text-to-3d', cost: PRICING.meshy.perGeneration, timestamp };
     }
     default:
       return { type, cost: 0, timestamp };

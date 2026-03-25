@@ -323,6 +323,22 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
       {/* Custom Action Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <form onSubmit={handleCustomSubmit} className="relative">
+          {/* Dialogue tag */}
+          <div
+            className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ${
+              hasDialogueText ? 'max-h-10 opacity-100 mb-1.5' : 'max-h-0 opacity-0 mb-0'
+            }`}
+          >
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-amber-400/15 border border-amber-400/30 shadow-[0_0_10px_rgba(251,191,36,0.08)]">
+              <span className="material-symbols-outlined text-amber-300 text-sm">chat_bubble</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                {t('gameplay.dialogueTag')}
+              </span>
+            </span>
+            <span className="text-[10px] text-amber-300/50 italic">
+              {t('gameplay.dialogueHint')}
+            </span>
+          </div>
           <div className="relative">
             <div
               aria-hidden="true"
@@ -332,7 +348,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
                 seg.type === 'dialogue' ? (
                   <span
                     key={i}
-                    className="bg-amber-400/10 rounded-sm text-amber-300/90 transition-colors"
+                    className="bg-amber-400/15 rounded-sm text-amber-300 border-b border-amber-400/40 transition-colors"
                   >{seg.text}</span>
                 ) : (
                   <span key={i} className="text-on-surface">{seg.text}</span>
@@ -360,11 +376,13 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
               readOnly={listening}
               style={hasDialogueText ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
               className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-3 px-1 resize-none placeholder:text-outline/40 custom-scrollbar disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
-                hasDialogueText ? 'selection:bg-primary/30' : ''
+                hasDialogueText ? 'selection:bg-amber-400/30' : ''
               } ${
                 listening
                   ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
-                  : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
+                  : hasDialogueText
+                    ? 'border-amber-400/40 shadow-[0_2px_8px_rgba(251,191,36,0.08)]'
+                    : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
               }`}
             />
           </div>

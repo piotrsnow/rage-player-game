@@ -5,6 +5,7 @@ const EXT_MAP = {
   music: 'mp3',
   sfx: 'mp3',
   tts: 'mp3',
+  model3d: 'glb',
 };
 
 export function generateKey(type, params, campaignId = null) {
@@ -18,4 +19,11 @@ export function generateKey(type, params, campaignId = null) {
 export function hashFromParams(params) {
   const normalized = JSON.stringify(params, Object.keys(params).sort());
   return createHash('sha256').update(normalized).digest('hex').substring(0, 24);
+}
+
+const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+
+/** Return `val` if it's a valid MongoDB ObjectID hex string, otherwise `undefined`. */
+export function toObjectId(val) {
+  return typeof val === 'string' && OBJECT_ID_RE.test(val) ? val : undefined;
 }

@@ -18,6 +18,7 @@ import { anthropicProxyRoutes } from './routes/proxy/anthropic.js';
 import { elevenlabsProxyRoutes } from './routes/proxy/elevenlabs.js';
 import { stabilityProxyRoutes } from './routes/proxy/stability.js';
 import { geminiProxyRoutes } from './routes/proxy/gemini.js';
+import { meshyProxyRoutes } from './routes/proxy/meshy.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
@@ -64,6 +65,7 @@ await fastify.register(async function proxyScope(app) {
   app.register(elevenlabsProxyRoutes, { prefix: '/elevenlabs' });
   app.register(stabilityProxyRoutes, { prefix: '/stability' });
   app.register(geminiProxyRoutes, { prefix: '/gemini' });
+  app.register(meshyProxyRoutes, { prefix: '/meshy' });
 }, { prefix: '/proxy' });
 
 await fastify.register(async function musicScope(app) {

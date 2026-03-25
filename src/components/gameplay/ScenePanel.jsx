@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGame } from '../../contexts/GameContext';
@@ -9,19 +9,53 @@ import LoadingSpinner from '../ui/LoadingSpinner';
 import DiceRoller from '../../effects/DiceRoller';
 import SceneCanvas from './SceneCanvas';
 import { translateSkill } from '../../utils/wfrpTranslate';
-import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 
-function compactBreakdown(dr) {
-  const charKey = dr.characteristic;
-  const label = charKey ? (CHARACTERISTIC_SHORT[charKey] || charKey.toUpperCase()) : null;
-  const val = dr.characteristicValue;
-  if (label == null || val == null) return String(dr.target || dr.dc);
-  const parts = [`${label} ${val}`];
-  if (dr.skillAdvances > 0) parts.push(`+${dr.skillAdvances}`);
-  if (dr.creativityBonus > 0) parts.push(`+${dr.creativityBonus}`);
-  if (dr.momentumBonus != null && dr.momentumBonus !== 0) parts.push(`${dr.momentumBonus > 0 ? '+' : ''}${dr.momentumBonus}`);
-  if (dr.dispositionBonus != null && dr.dispositionBonus !== 0) parts.push(`${dr.dispositionBonus > 0 ? '+' : ''}${dr.dispositionBonus}`);
-  return `${parts.join(' ')}=${dr.target || dr.dc}`;
+const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
+
+function CompactBonusTags({ dr, t }) {
+  const hasTags = (dr.characteristic && dr.characteristicValue != null)
+    || dr.skillAdvances > 0
+    || dr.creativityBonus > 0
+    || (dr.momentumBonus != null && dr.momentumBonus !== 0)
+    || (dr.dispositionBonus != null && dr.dispositionBonus !== 0);
+  if (!hasTags) return null;
+  return (
+    <div className="flex items-center gap-1 flex-wrap mt-0.5">
+      {dr.characteristic && dr.characteristicValue != null && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-400/15 text-purple-300 border border-purple-400/30">
+          {t(`character.${dr.characteristic}Long`)} {dr.characteristicValue}
+        </span>
+      )}
+      {dr.skillAdvances > 0 && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
+          {translateSkill(dr.skill, t)} +{dr.skillAdvances}
+        </span>
+      )}
+      {dr.creativityBonus > 0 && (
+        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/30">
+          {t('gameplay.creativityBonus', { bonus: dr.creativityBonus })}
+        </span>
+      )}
+      {dr.momentumBonus != null && dr.momentumBonus !== 0 && (
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+          dr.momentumBonus > 0
+            ? 'bg-blue-400/15 text-blue-300 border-blue-400/30'
+            : 'bg-red-400/15 text-red-300 border-red-400/30'
+        }`}>
+          {t('gameplay.momentumBonus', { bonus: (dr.momentumBonus > 0 ? '+' : '') + dr.momentumBonus })}
+        </span>
+      )}
+      {dr.dispositionBonus != null && dr.dispositionBonus !== 0 && (
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+          dr.dispositionBonus > 0
+            ? 'bg-pink-400/15 text-pink-300 border-pink-400/30'
+            : 'bg-orange-400/15 text-orange-300 border-orange-400/30'
+        }`}>
+          {t('gameplay.dispositionBonus', { bonus: (dr.dispositionBonus > 0 ? '+' : '') + dr.dispositionBonus })}
+        </span>
+      )}
+    </div>
+  );
 }
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
@@ -77,7 +111,7 @@ function HighlightedNarrative({ text, highlightInfo }) {
 
 export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, currentChunk, diceRoll, diceRolls, onImageError }) {
   const { t } = useTranslation();
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const { state, dispatch } = useGame();
 
   const lastSentenceRef = useRef(null);
@@ -127,57 +161,74 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
   );
 
   const currentImageRef = useRef(imageSrc);
-  const [currentImage, setCurrentImage] = useState(imageSrc);
-  const [prevImage, setPrevImage] = useState(null);
-  const [showCurrent, setShowCurrent] = useState(true);
+  const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
+  const [imgOpacity, setImgOpacity] = useState(imageSrc ? 1 : 0);
+  const pendingImageRef = useRef(null);
+  const phaseRef = useRef('idle');
 
   useEffect(() => {
-    if (!imageSrc) {
-      currentImageRef.current = null;
-      setCurrentImage(null);
-      setPrevImage(null);
-      setShowCurrent(true);
-      return;
-    }
-    if (imageSrc === currentImageRef.current) return;
+    if (!imageSrc || imageSrc === currentImageRef.current) return;
 
     let cancelled = false;
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      setPrevImage(currentImageRef.current);
-      currentImageRef.current = imageSrc;
-      setCurrentImage(imageSrc);
-      setShowCurrent(false);
+      pendingImageRef.current = imageSrc;
+
+      if (!currentImageRef.current) {
+        currentImageRef.current = imageSrc;
+        pendingImageRef.current = null;
+        phaseRef.current = 'fading-in';
+        setDisplayedSrc(imageSrc);
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          requestAnimationFrame(() => {
+            if (cancelled) return;
+            setImgOpacity(1);
+          });
+        });
+      } else if (phaseRef.current === 'idle') {
+        phaseRef.current = 'fading-out';
+        setImgOpacity(0);
+      }
     };
-    img.onerror = () => {
-      if (cancelled) return;
-    };
+    img.onerror = () => {};
     img.src = imageSrc;
 
     return () => { cancelled = true; };
   }, [imageSrc]);
 
-  useEffect(() => {
-    if (!showCurrent && currentImage) {
-      let cancelled = false;
+  const handleImgTransitionEnd = useCallback((e) => {
+    if (e.propertyName !== 'opacity') return;
+    const pending = pendingImageRef.current;
+
+    if (phaseRef.current === 'fading-out' && pending) {
+      pendingImageRef.current = null;
+      currentImageRef.current = pending;
+      phaseRef.current = 'fading-in';
+      setDisplayedSrc(pending);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (!cancelled) setShowCurrent(true);
+          setImgOpacity(1);
         });
       });
-      return () => { cancelled = true; };
-    }
-  }, [showCurrent, currentImage]);
-
-  const handleTransitionEnd = useCallback((e) => {
-    if (e.propertyName === 'opacity') {
-      setPrevImage(null);
+    } else if (phaseRef.current === 'fading-in') {
+      if (pending) {
+        phaseRef.current = 'fading-out';
+        setImgOpacity(0);
+      } else {
+        phaseRef.current = 'idle';
+      }
     }
   }, []);
 
   const handleImageError = useCallback(() => {
     if (scene?.id && scene?.image) {
+      currentImageRef.current = null;
+      pendingImageRef.current = null;
+      phaseRef.current = 'idle';
+      setDisplayedSrc(null);
+      setImgOpacity(1);
       dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: scene.id, image: null } });
       onImageError?.(scene.id);
     }
@@ -248,28 +299,31 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
 
   return (
     <div className="relative w-full aspect-video rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
-      {/* Scene background: AI image, canvas 2D, or placeholder */}
+      {/* Scene background: 3D, AI image, canvas 2D, or placeholder */}
+      {/* 3D mode temporarily disabled
+      {(settings.sceneVisualization || 'image') === '3d' ? (
+        <Suspense fallback={
+          <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
+            <LoadingSpinner size="md" text="Loading 3D..." />
+          </div>
+        }>
+          <Scene3DPanel
+            scene={scene}
+            onError={() => updateSettings({ sceneVisualization: 'image' })}
+          />
+        </Suspense>
+      ) : */}
       {(settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
-      ) : (settings.sceneVisualization || 'image') === 'image' && (currentImage || prevImage) ? (
-        <>
-          {prevImage && (
-            <img
-              src={prevImage}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          )}
-          {currentImage && (
-            <img
-              src={currentImage}
-              alt="Scene"
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${showCurrent ? 'opacity-100' : 'opacity-0'}`}
-              onTransitionEnd={handleTransitionEnd}
-              onError={handleImageError}
-            />
-          )}
-        </>
+      ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
+        <img
+          src={displayedSrc}
+          alt="Scene"
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ease-in-out"
+          style={{ opacity: imgOpacity }}
+          onTransitionEnd={handleImgTransitionEnd}
+          onError={handleImageError}
+        />
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
@@ -325,7 +379,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
         <div className="absolute top-3 right-3 flex flex-col items-end gap-2 animate-scale-in" style={{ zIndex: 4 }}>
           {diceRolls && diceRolls.length > 0 ? (
             diceRolls.map((dr, idx) => (
-              <div key={idx} className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[280px]">
+              <div key={idx} className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[340px]">
                 <div className="w-14 h-14 shrink-0">
                   <DiceRoller diceRoll={dr} />
                 </div>
@@ -333,9 +387,10 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                   <p className="text-xs font-bold text-on-surface uppercase tracking-widest truncate">
                     {dr.character}
                   </p>
-                  <p className="text-xs text-on-surface-variant truncate">
-                    {translateSkill(dr.skill, t)}: {dr.roll} {t('common.vs')} {compactBreakdown(dr)}
+                  <p className="text-xs text-on-surface-variant">
+                    {translateSkill(dr.skill, t)}: <span className="font-mono font-bold text-on-surface">{dr.roll}</span> {t('common.vs')} <span className="font-mono font-bold text-on-surface">{dr.target || dr.dc}</span>
                   </p>
+                  <CompactBonusTags dr={dr} t={t} />
                   <p className={`text-xs font-bold ${
                     dr.criticalSuccess ? 'text-amber-400' : dr.criticalFailure ? 'text-red-700' : dr.success ? 'text-primary' : 'text-error'
                   }`}>
@@ -345,7 +400,7 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
               </div>
             ))
           ) : diceRoll ? (
-            <div className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[280px]">
+            <div className="glass-panel-elevated rounded-xl px-4 py-3 flex items-center gap-3 max-w-[340px]">
               <div className="w-14 h-14 shrink-0">
                 <DiceRoller diceRoll={diceRoll} />
               </div>
@@ -354,8 +409,9 @@ export default function ScenePanel({ scene, isGeneratingImage, highlightInfo, cu
                   {t('gameplay.diceCheck', { skill: translateSkill(diceRoll.skill, t) })}
                 </p>
                 <p className="text-xs text-on-surface-variant">
-                  {diceRoll.roll} {t('common.vs')} {compactBreakdown(diceRoll)} (SL {diceRoll.sl ?? 0})
+                  <span className="font-mono font-bold text-on-surface">{diceRoll.roll}</span> {t('common.vs')} <span className="font-mono font-bold text-on-surface">{diceRoll.target || diceRoll.dc}</span> · SL {diceRoll.sl ?? 0}
                 </p>
+                <CompactBonusTags dr={diceRoll} t={t} />
                 <p className={`text-xs font-bold ${
                   diceRoll.criticalSuccess ? 'text-amber-400' : diceRoll.criticalFailure ? 'text-red-700' : diceRoll.success ? 'text-primary' : 'text-error'
                 }`}>

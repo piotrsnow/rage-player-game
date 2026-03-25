@@ -10,7 +10,9 @@
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio",
-    "db:seed": "node prisma/seed.js"
+    "db:seed": "node prisma/seed.js",
+    "generate:prefabs": "node scripts/generatePrefabs.js",
+    "generate:prefabs:dry": "node scripts/generatePrefabs.js --dry-run"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { createMediaStore } from '../services/mediaStore.js';
-import { generateKey } from '../services/hashService.js';
+import { generateKey, toObjectId } from '../services/hashService.js';
 import { config } from '../config.js';
 const store = createMediaStore(config);
 
@@ -44,7 +44,7 @@ export async function mediaRoutes(fastify) {
       where: { key },
       create: {
         userId: request.user.id,
-        campaignId: campaignId || undefined,
+        campaignId: toObjectId(campaignId),
         key,
         type,
         contentType,

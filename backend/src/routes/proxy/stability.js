@@ -1,7 +1,7 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey } from '../../services/hashService.js';
+import { generateKey, toObjectId } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -62,7 +62,7 @@ export async function stabilityProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
-        campaignId: campaignId || undefined,
+        campaignId: toObjectId(campaignId),
         key: cacheKey,
         type: 'image',
         contentType: 'image/jpeg',

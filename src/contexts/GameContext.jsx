@@ -195,6 +195,15 @@ function gameReducer(state, action) {
       return { ...state, scenes };
     }
 
+    case 'UPDATE_SCENE_COMMAND': {
+      const scenes = [...state.scenes];
+      const idx = scenes.findIndex((s) => s.id === action.payload.sceneId);
+      if (idx >= 0) {
+        scenes[idx] = { ...scenes[idx], sceneCommand: action.payload.sceneCommand };
+      }
+      return { ...state, scenes };
+    }
+
     case 'ADD_CHAT_MESSAGE':
       return {
         ...state,

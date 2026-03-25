@@ -1,12 +1,12 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey } from '../../services/hashService.js';
+import { generateKey, toObjectId } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
 const store = createMediaStore(config);
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-image-generation:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
 function extractImageFromResponse(data) {
   const parts = data.candidates?.[0]?.content?.parts;
@@ -71,7 +71,7 @@ export async function geminiProxyRoutes(fastify) {
     await prisma.mediaAsset.create({
       data: {
         userId: request.user.id,
-        campaignId: campaignId || undefined,
+        campaignId: toObjectId(campaignId),
         key: cacheKey,
         type: 'image',
         contentType,
