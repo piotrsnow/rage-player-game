@@ -100,6 +100,7 @@ export default function CombatPanel({
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const logEndRef = useRef(null);
+  const lastProcessedTsRef = useRef(null);
 
   const currentTurn = getCurrentTurnCombatant(combat);
   const isMyTurn = isMultiplayer
@@ -155,6 +156,42 @@ export default function CombatPanel({
       prevRoundRef.current = combat.round;
     }
   }, [combat.round, t]);
+
+  // Auto-resolve enemy turns when the current combatant is not a player.
+  // Fixes deadlock when enemies win initiative or are first in a new round.
+  useEffect(() => {
+    if (combatOver) return;
+    if (isMultiplayer && !isHost) return;
+    const current = getCurrentTurnCombatant(combat);
+    if (!current || current.type === 'player') return;
+
+    const timer = setTimeout(() => {
+      const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(combat);
+      for (const er of enemyResults) {
+        if (!isMultiplayer) dispatchCombatChatMessage(er);
+        addResultToLog(er);
+      }
+      if (isMultiplayer) {
+        afterEnemies.lastResults = enemyResults;
+        afterEnemies.lastResultsTs = Date.now();
+        onHostResolve?.(afterEnemies);
+      } else {
+        dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [combat.turnIndex, combat.round, combatOver, isMultiplayer, isHost]);
+
+  // Non-host players: consume synced combat results from COMBAT_SYNC
+  useEffect(() => {
+    if (!combat.lastResults?.length || !combat.lastResultsTs) return;
+    if (combat.lastResultsTs === lastProcessedTsRef.current) return;
+    if (!isMultiplayer || isHost) return;
+    lastProcessedTsRef.current = combat.lastResultsTs;
+    for (const r of combat.lastResults) {
+      addResultToLog(r);
+    }
+  }, [combat.lastResultsTs, isMultiplayer, isHost]);
 
   const handleManoeuvreSelect = (key) => {
     setSelectedManoeuvre(key);
@@ -230,7 +267,7 @@ export default function CombatPanel({
   };
 
   const dispatchCombatChatMessage = (result) => {
-    if (!result) return;
+    if (!result || isMultiplayer) return;
     const ts = Date.now();
     const uid = () => Math.random().toString(36).slice(2, 6);
 
@@ -326,6 +363,7 @@ export default function CombatPanel({
     setSelectedTarget(null);
     dispatchCombatChatMessage(result);
     addResultToLog(result);
+    const allResults = result ? [result] : [];
 
     let finalCombat = advanceTurn(updatedCombat);
 
@@ -337,11 +375,14 @@ export default function CombatPanel({
         for (const er of enemyResults) {
           dispatchCombatChatMessage(er);
           addResultToLog(er);
+          allResults.push(er);
         }
       }
     }
 
     if (isMultiplayer) {
+      finalCombat.lastResults = allResults;
+      finalCombat.lastResultsTs = Date.now();
       onHostResolve?.(finalCombat);
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: finalCombat });
@@ -354,8 +395,8 @@ export default function CombatPanel({
     const { combat: updatedCombat, result } = resolveManoeuvre(
       combat, fromPlayerId, manoeuvre, targetId
     );
-    dispatchCombatChatMessage(result);
     addResultToLog(result);
+    const allResults = result ? [result] : [];
 
     let finalCombat = advanceTurn(updatedCombat);
 
@@ -365,12 +406,14 @@ export default function CombatPanel({
         const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(finalCombat);
         finalCombat = afterEnemies;
         for (const er of enemyResults) {
-          dispatchCombatChatMessage(er);
           addResultToLog(er);
+          allResults.push(er);
         }
       }
     }
 
+    finalCombat.lastResults = allResults;
+    finalCombat.lastResultsTs = Date.now();
     onHostResolve?.(finalCombat);
   };
 

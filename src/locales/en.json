@@ -970,7 +970,9 @@
     "disconnected": "offline",
     "playerDisconnected": "Player disconnected",
     "playerReconnected": "Player reconnected",
-    "room": "Room"
+    "room": "Room",
+    "playerTyping": "{{name}} is typing...",
+    "playersTyping": "{{names}} are typing..."
   },
   "statusTier": {
     "Brass": "Brass",

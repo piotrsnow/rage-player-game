@@ -275,6 +275,7 @@ export function submitAction(roomCode, odId, actionText, isCustom = false) {
 
   player.pendingAction = actionText;
   player.pendingActionIsCustom = isCustom;
+  player.pendingActionAt = Date.now();
   return room;
 }
 
@@ -285,6 +286,7 @@ export function withdrawAction(roomCode, odId) {
   if (!player) throw new Error('Player not found');
 
   player.pendingAction = null;
+  player.pendingActionAt = null;
   return room;
 }
 
@@ -302,13 +304,16 @@ export function approveActions(roomCode, odId) {
         gender: p.gender,
         action: p.pendingAction,
         isCustom: p.pendingActionIsCustom || false,
+        submittedAt: p.pendingActionAt || 0,
       });
     }
   }
+  actions.sort((a, b) => a.submittedAt - b.submittedAt);
 
   for (const [, p] of room.players) {
     p.pendingAction = null;
     p.pendingActionIsCustom = false;
+    p.pendingActionAt = null;
   }
 
   return { room, actions };
@@ -546,6 +551,7 @@ export function restorePendingActions(roomCode, actions) {
     if (player) {
       player.pendingAction = a.action;
       player.pendingActionIsCustom = a.isCustom || false;
+      player.pendingActionAt = a.submittedAt || Date.now();
     }
   }
 }

@@ -251,7 +251,6 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
         </div>
       </div>
 
-      {showAdvancement && <AdvancementPanel onClose={() => setShowAdvancement(false)} />}
     </>
   );
 }
@@ -604,6 +603,10 @@ export default function CharacterSheet({ onClose }) {
           )}
         </div>
       </div>
+
+      {showAdvancement && (
+        <AdvancementPanel onClose={() => { setShowAdvancement(false); autoSave(); }} />
+      )}
     </div>
   );
 }

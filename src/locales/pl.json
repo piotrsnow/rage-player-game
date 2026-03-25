@@ -1264,7 +1264,9 @@
     "disconnected": "offline",
     "playerDisconnected": "Gracz rozłączony",
     "playerReconnected": "Gracz połączony ponownie",
-    "room": "Pokój"
+    "room": "Pokój",
+    "playerTyping": "{{name}} pisze...",
+    "playersTyping": "{{names}} piszą..."
   },
   "statusTier": {
     "Brass": "Mosiądz",

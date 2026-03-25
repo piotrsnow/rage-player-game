@@ -313,7 +313,28 @@ function SystemMessage({ message }) {
   );
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null }) {
+function TypingIndicator({ typingPlayers }) {
+  const { t } = useTranslation();
+  const names = Object.values(typingPlayers || {});
+  if (names.length === 0) return null;
+
+  const label = names.length === 1
+    ? t('multiplayer.playerTyping', { name: names[0] })
+    : t('multiplayer.playersTyping', { names: names.join(', ') });
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 animate-fade-in">
+      <div className="flex gap-0.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '0ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '150ms' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+      <span className="text-[10px] text-on-surface-variant/70 italic">{label}</span>
+    </div>
+  );
+}
+
+export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null, typingPlayers = {} }) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -415,6 +436,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
           if (msg.subtype === 'dice_roll') return <div key={msg.id} data-message-id={msg.id}><DiceRollMessage message={msg} /></div>;
           return <div key={msg.id} data-message-id={msg.id}><SystemMessage message={msg} /></div>;
         })}
+        <TypingIndicator typingPlayers={typingPlayers} />
         <div ref={bottomRef} />
       </div>
     </div>

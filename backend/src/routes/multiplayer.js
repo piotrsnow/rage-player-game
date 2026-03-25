@@ -1246,6 +1246,21 @@ export async function multiplayerRoutes(fastify) {
             break;
           }
 
+          case 'TYPING': {
+            if (!roomCode || !odId) break;
+            const typingRoom = getRoom(roomCode);
+            if (!typingRoom) break;
+            const typingPlayer = typingRoom.players.get(odId);
+            if (!typingPlayer) break;
+            broadcast(typingRoom, {
+              type: 'TYPING',
+              odId,
+              playerName: typingPlayer.name,
+              isTyping: !!msg.isTyping,
+            }, odId);
+            break;
+          }
+
           case 'PING': {
             ws.send(JSON.stringify({ type: 'PONG' }));
             break;

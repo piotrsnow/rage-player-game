@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
@@ -37,10 +37,48 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
     onResult: onVoiceResult,
   });
 
+  const typingTimerRef = useRef(null);
+  const isTypingRef = useRef(false);
+
+  const emitTypingStop = useCallback(() => {
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      mp.sendTyping(false);
+    }
+  }, [mp]);
+
+  const handleTypingChange = useCallback((value) => {
+    setCustomAction(value);
+    if (!isMultiplayer) return;
+
+    if (value.trim()) {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        mp.sendTyping(true);
+      }
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = setTimeout(emitTypingStop, 2000);
+    } else {
+      clearTimeout(typingTimerRef.current);
+      emitTypingStop();
+    }
+  }, [isMultiplayer, mp, emitTypingStop]);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(typingTimerRef.current);
+      if (isTypingRef.current) {
+        mp.sendTyping(false);
+      }
+    };
+  }, [mp]);
+
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     if (customAction.trim() && !disabled) {
       if (listening) toggle();
+      clearTimeout(typingTimerRef.current);
+      emitTypingStop();
       if (isMultiplayer) {
         mp.submitAction(customAction.trim(), true);
       } else {
@@ -303,7 +341,7 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
             </div>
             <textarea
               value={displayValue}
-              onChange={(e) => setCustomAction(e.target.value)}
+              onChange={(e) => handleTypingChange(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();

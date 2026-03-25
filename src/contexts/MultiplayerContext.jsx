@@ -19,6 +19,7 @@ const initialState = {
   error: null,
   pendingCombatManoeuvre: null,
   isDead: false,
+  typingPlayers: {},
 };
 
 function mpReducer(state, action) {
@@ -423,6 +424,20 @@ function mpReducer(state, action) {
         players: action.payload.room?.players || state.players,
       };
 
+    case 'TYPING_UPDATE': {
+      const { odId: typingOdId, playerName, isTyping } = action.payload;
+      const typingPlayers = { ...state.typingPlayers };
+      if (isTyping) {
+        typingPlayers[typingOdId] = playerName;
+      } else {
+        delete typingPlayers[typingOdId];
+      }
+      return { ...state, typingPlayers };
+    }
+
+    case 'CLEAR_TYPING':
+      return { ...state, typingPlayers: {} };
+
     case 'LEFT_ROOM':
     case 'RESET':
       return initialState;
@@ -466,7 +481,11 @@ export function MultiplayerProvider({ children }) {
       wsService.on('ACTIONS_UPDATED', (msg) => dispatch({ type: 'ACTIONS_UPDATED', payload: msg })),
       wsService.on('SCENE_GENERATING', () => dispatch({ type: 'SCENE_GENERATING' })),
       wsService.on('GENERATION_FAILED', (msg) => dispatch({ type: 'GENERATION_FAILED', payload: msg })),
+      wsService.on('TYPING', (msg) => {
+        dispatch({ type: 'TYPING_UPDATE', payload: msg });
+      }),
       wsService.on('SCENE_UPDATE', (msg) => {
+        dispatch({ type: 'CLEAR_TYPING' });
         dispatch({ type: 'SCENE_UPDATE', payload: msg });
         sceneCallbackRef.current?.(msg);
       }),
@@ -627,6 +646,10 @@ export function MultiplayerProvider({ children }) {
     dispatch({ type: 'COMBAT_MANOEUVRE', payload: null });
   }, []);
 
+  const sendTyping = useCallback((isTyping) => {
+    wsService.send('TYPING', { isTyping });
+  }, []);
+
   const value = {
     state,
     dispatch,
@@ -654,6 +677,7 @@ export function MultiplayerProvider({ children }) {
     sendCombatManoeuvre,
     endMultiplayerCombat,
     clearPendingCombatManoeuvre,
+    sendTyping,
   };
 
   return (

@@ -873,6 +873,7 @@ export default function GameplayPage() {
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
             : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
+          typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
         />
       </aside>
 
