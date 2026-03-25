@@ -42,6 +42,15 @@ export default function Sidebar() {
     <aside className="hidden lg:flex flex-col h-screen w-64 fixed left-0 top-0 z-40 bg-surface-container-low shadow-[20px_0_40px_rgba(0,0,0,0.5)] pt-20">
       {character && (
         <div className="px-6 mb-8">
+          {character.portraitUrl && (
+            <div className="mb-4 overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+              <img
+                src={character.portraitUrl}
+                alt={character.name}
+                className="h-40 w-full object-cover"
+              />
+            </div>
+          )}
           <div className="flex items-center gap-3 mb-4 p-3 -mx-3 rounded-sm bg-gradient-to-r from-surface-container-high/40 to-transparent hover:from-surface-container-high/60 transition-all duration-300 group">
             <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-tertiary/20 group-hover:border-tertiary/40 group-hover:shadow-[0_0_12px_rgba(255,239,213,0.1)] transition-all duration-300">
               <span className="material-symbols-outlined text-tertiary text-xl">shield</span>

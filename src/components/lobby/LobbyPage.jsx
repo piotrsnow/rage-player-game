@@ -39,14 +39,26 @@ export default function LobbyPage() {
   const [rejoining, setRejoining] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     setCampaigns(storage.getCampaigns());
 
     if (apiClient.isConnected()) {
       setSyncing(true);
       storage.syncCampaigns()
-        .then((synced) => setCampaigns(synced))
+        .then((synced) => {
+          if (!cancelled) {
+            setCampaigns(synced);
+          }
+        })
         .catch(() => {})
-        .finally(() => setSyncing(false));
+        .finally(() => {
+          if (!cancelled) {
+            setSyncing(false);
+          }
+        });
+    } else {
+      setSyncing(false);
     }
 
     const persisted = getPersistedRejoinInfo();
@@ -65,7 +77,11 @@ export default function LobbyPage() {
           setRejoinInfo(persisted);
         });
     }
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUser]);
 
   const handleLoad = (campaign) => {
     dispatch({ type: 'LOAD_CAMPAIGN', payload: campaign });
