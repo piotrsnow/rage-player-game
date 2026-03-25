@@ -2,7 +2,6 @@ import { useRef, useEffect, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { OrbitControls } from '@react-three/drei';
-import { getAnchor } from '../../../data/sceneAnchors';
 import { scene3dDebug } from '../../../services/scene3dDebug';
 
 const CAMERA_PRESETS = {
@@ -13,6 +12,8 @@ const CAMERA_PRESETS = {
     lerpSpeed: 1.5,
     lookAtHeight: 0.5,
     orbitEnabled: true,
+    autoRotate: true,
+    autoRotateSpeed: 0.45,
   },
   dialogue: {
     distance: 5,
@@ -21,6 +22,8 @@ const CAMERA_PRESETS = {
     lerpSpeed: 2.0,
     lookAtHeight: 1.2,
     orbitEnabled: false,
+    autoRotate: false,
+    autoRotateSpeed: 0,
   },
   action_focus: {
     distance: 7,
@@ -29,6 +32,8 @@ const CAMERA_PRESETS = {
     lerpSpeed: 3.0,
     lookAtHeight: 0.8,
     orbitEnabled: false,
+    autoRotate: false,
+    autoRotateSpeed: 0,
   },
 };
 
@@ -47,11 +52,18 @@ export default function CameraController({ camera, environmentType, characterPos
   const targetLookRef = useRef(new THREE.Vector3(0, preset.lookAtHeight, 0));
   const prevModeRef = useRef(mode);
 
+  const effectiveFocusTargets = useMemo(() => {
+    if (focusTargets.length > 0) return focusTargets;
+    if (characterPositions.player) return ['player'];
+    const [firstTarget] = Object.keys(characterPositions);
+    return firstTarget ? [firstTarget] : [];
+  }, [focusTargets, characterPositions]);
+
   const focusCenter = useMemo(() => {
-    if (focusTargets.length === 0) return [0, 0, 0];
+    if (effectiveFocusTargets.length === 0) return [0, 0, 0];
 
     let sumX = 0, sumZ = 0, count = 0;
-    for (const targetId of focusTargets) {
+    for (const targetId of effectiveFocusTargets) {
       const pos = characterPositions[targetId];
       if (pos) {
         sumX += pos[0];
@@ -62,14 +74,14 @@ export default function CameraController({ camera, environmentType, characterPos
 
     if (count === 0) return [0, 0, 0];
     return [sumX / count, 0, sumZ / count];
-  }, [focusTargets, characterPositions]);
+  }, [effectiveFocusTargets, characterPositions]);
 
   useEffect(() => {
     if (mode !== prevModeRef.current) {
-      scene3dDebug.cameraChange(mode, focusTargets);
+      scene3dDebug.cameraChange(mode, effectiveFocusTargets);
       prevModeRef.current = mode;
     }
-  }, [mode, focusTargets]);
+  }, [mode, effectiveFocusTargets]);
 
   useEffect(() => {
     const [cx, , cz] = focusCenter;
@@ -99,8 +111,23 @@ export default function CameraController({ camera, environmentType, characterPos
     }
   }, [mode, focusCenter, preset]);
 
+  useEffect(() => {
+    if (!preset.orbitEnabled || !orbitRef.current) return;
+
+    orbitRef.current.target.copy(targetLookRef.current);
+    threeCamera.position.copy(targetPosRef.current);
+    orbitRef.current.update();
+  }, [preset.orbitEnabled, focusCenter, preset, threeCamera]);
+
   useFrame((_, delta) => {
-    if (preset.orbitEnabled && orbitRef.current) return;
+    if (preset.orbitEnabled && orbitRef.current) {
+      const speed = preset.lerpSpeed * delta;
+      orbitRef.current.target.lerp(targetLookRef.current, speed);
+      threeCamera.fov = THREE.MathUtils.lerp(threeCamera.fov, preset.fov, speed);
+      threeCamera.updateProjectionMatrix();
+      orbitRef.current.update();
+      return;
+    }
 
     const speed = preset.lerpSpeed * delta;
     threeCamera.position.lerp(targetPosRef.current, speed);
@@ -119,12 +146,15 @@ export default function CameraController({ camera, environmentType, characterPos
     return (
       <OrbitControls
         ref={orbitRef}
-        target={targetLookRef.current}
         maxPolarAngle={Math.PI / 2.1}
+        minPolarAngle={Math.PI / 4}
         minDistance={3}
         maxDistance={20}
+        enablePan={false}
         enableDamping
         dampingFactor={0.05}
+        autoRotate={preset.autoRotate}
+        autoRotateSpeed={preset.autoRotateSpeed}
       />
     );
   }
