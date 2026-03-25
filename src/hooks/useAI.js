@@ -202,8 +202,25 @@ export function useAI() {
               result.diceRoll.sl = calculateSL(roll, effectiveTarget);
 
               const sl = result.diceRoll.sl;
-              const rawMomentum = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
-              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-45, Math.min(45, rawMomentum)) });
+              const currentMomentum = state.momentumBonus || 0;
+              const newValue = sl * 5;
+              let nextMomentum;
+              if (sl === 0) {
+                nextMomentum = currentMomentum > 0 ? Math.max(0, currentMomentum - 5) : currentMomentum < 0 ? Math.min(0, currentMomentum + 5) : 0;
+              } else if (sl > 0) {
+                if (currentMomentum < 0) {
+                  nextMomentum = newValue;
+                } else {
+                  nextMomentum = newValue > currentMomentum ? newValue : Math.max(0, currentMomentum - 5);
+                }
+              } else {
+                if (currentMomentum > 0) {
+                  nextMomentum = newValue;
+                } else {
+                  nextMomentum = newValue < currentMomentum ? newValue : Math.min(0, currentMomentum + 5);
+                }
+              }
+              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-30, Math.min(30, nextMomentum)) });
             }
           }
         }

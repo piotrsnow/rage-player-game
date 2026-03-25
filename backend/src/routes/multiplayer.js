@@ -10,6 +10,19 @@ import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameC
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
 
+function calcNextMomentum(sl, current) {
+  const newVal = sl * 5;
+  let next;
+  if (sl === 0) {
+    next = current > 0 ? Math.max(0, current - 5) : current < 0 ? Math.min(0, current + 5) : 0;
+  } else if (sl > 0) {
+    next = current < 0 ? newVal : (newVal > current ? newVal : Math.max(0, current - 5));
+  } else {
+    next = current > 0 ? newVal : (newVal < current ? newVal : Math.min(0, current + 5));
+  }
+  return Math.max(-30, Math.min(30, next));
+}
+
 function applyTimeAdvance(world, timeAdvance) {
   const ts = world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
   const hoursElapsed = timeAdvance.hoursElapsed || 0.5;
@@ -861,12 +874,12 @@ export async function multiplayerRoutes(fastify) {
               );
               sceneResult.stateChanges = validatedChanges;
 
-              const newMomentum = {};
+              const prevMomentum = room.gameState.characterMomentum || {};
+              const newMomentum = { ...prevMomentum };
               if (sceneResult.scene.diceRolls?.length) {
                 for (const dr of sceneResult.scene.diceRolls) {
                   if (dr.character && dr.sl != null) {
-                    const sl = dr.sl;
-                    newMomentum[dr.character] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
+                    newMomentum[dr.character] = calcNextMomentum(dr.sl, prevMomentum[dr.character] || 0);
                   }
                 }
               }
@@ -968,13 +981,11 @@ export async function multiplayerRoutes(fastify) {
               if (sceneResult.scene.diceRolls?.length) {
                 for (const dr of sceneResult.scene.diceRolls) {
                   if (dr.character && dr.sl != null) {
-                    const sl = dr.sl;
-                    newSoloMomentum[dr.character] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
+                    newSoloMomentum[dr.character] = calcNextMomentum(dr.sl, soloMomentum[dr.character] || 0);
                   }
                 }
               } else if (sceneResult.scene.diceRoll?.sl != null) {
-                const sl = sceneResult.scene.diceRoll.sl;
-                newSoloMomentum[action.name] = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
+                newSoloMomentum[action.name] = calcNextMomentum(sceneResult.scene.diceRoll.sl, soloMomentum[action.name] || 0);
               }
 
               const applied = applySceneStateChanges(room.gameState, sceneResult, room.settings);

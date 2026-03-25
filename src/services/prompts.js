@@ -911,10 +911,9 @@ Output the diceRoll fields as follows:
 - "success": whether roll <= target (the effective value)
 Example: characteristic="ag", characteristicValue=33, skill="Athletics", suggestedSkills=["Athletics","Dodge","Climb"], skillAdvances=10, baseTarget=43, difficultyModifier=-10, creativityBonus=15, target=48, roll=45 → 45 ≤ 48 → success=true. The narrative MUST describe a successful outcome.
 ` : ''}${momentumBonus !== 0 ? `
-MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from a previous roll.
+MOMENTUM ${momentumBonus > 0 ? 'BONUS' : 'PENALTY'}: The player has ${momentumBonus > 0 ? '+' : ''}${momentumBonus} momentum from previous rolls.
 ${momentumBonus > 0 ? 'Add this to the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus.' : 'Subtract this from the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus (momentumBonus is negative, so it reduces the target).'}
 Output "momentumBonus": ${momentumBonus} in the diceRoll.
-This ${momentumBonus > 0 ? 'bonus' : 'penalty'} is consumed after this roll regardless of outcome.
 ` : ''}
 IMPORTANT: Resolve the dice check FIRST, then write the narrative consistent with the outcome.
 

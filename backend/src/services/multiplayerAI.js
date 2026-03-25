@@ -516,11 +516,10 @@ Output the diceRoll fields as follows for custom actions:
 - "success": whether roll <= target (the effective value)
 Example: baseTarget=31, difficultyModifier=-10, creativityBonus=20, target=41, roll=45 → 45 > 41 → success=false. The narrative MUST describe a failed outcome.
 ` : ''}${hasMomentum ? `
-MOMENTUM: Some characters have momentum from a previous roll (shown as [MOMENTUM +N] or [MOMENTUM -N] above).
+MOMENTUM: Some characters have momentum from previous rolls (shown as [MOMENTUM +N] or [MOMENTUM -N] above).
 Positive momentum is a bonus — add it to the target: target = baseTarget + difficultyModifier + creativityBonus + momentumBonus.
 Negative momentum is a penalty — it reduces the target (momentumBonus is negative, so adding it lowers the target).
 Output "momentumBonus": N in the diceRoll entry for that character (N can be positive or negative).
-Momentum is consumed after this roll regardless of outcome.
 ` : ''}
 IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrative consistent with ALL outcomes.
 
