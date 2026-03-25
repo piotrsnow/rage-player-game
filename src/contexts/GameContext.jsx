@@ -19,6 +19,20 @@ function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
 }
 
+function normalizeCustomAttackPresets(presets) {
+  if (!Array.isArray(presets)) return [];
+
+  const seen = new Set();
+  return presets
+    .map((preset) => (typeof preset === 'string' ? preset.trim() : ''))
+    .filter((preset) => {
+      if (!preset || seen.has(preset)) return false;
+      seen.add(preset);
+      return true;
+    })
+    .slice(0, 12);
+}
+
 const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 
 function createDefaultCharacter() {
@@ -56,6 +70,7 @@ function createDefaultCharacter() {
     inventory: [],
     statuses: [],
     backstory: '',
+    customAttackPresets: [],
     needs: createDefaultNeeds(),
     criticalWounds: [],
   };
@@ -133,7 +148,11 @@ function gameReducer(state, action) {
       return {
         ...initialState,
         campaign: campaignData,
-        character: { ...char, needs: char.needs || createDefaultNeeds() },
+        character: {
+          ...char,
+          needs: char.needs || createDefaultNeeds(),
+          customAttackPresets: normalizeCustomAttackPresets(char.customAttackPresets),
+        },
         characterVoiceMap: voiceMap,
         world: action.payload.world || initialState.world,
         scenes: action.payload.scenes || [],
@@ -152,6 +171,12 @@ function gameReducer(state, action) {
       loaded.aiCosts = { ...defaultCosts, ...loaded.aiCosts };
       if (loaded.character && !loaded.character.needs) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
+      }
+      if (loaded.character) {
+        loaded.character = {
+          ...loaded.character,
+          customAttackPresets: normalizeCustomAttackPresets(loaded.character.customAttackPresets),
+        };
       }
       if (!loaded.achievements) loaded.achievements = createDefaultAchievementState();
       if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };
@@ -213,8 +238,45 @@ function gameReducer(state, action) {
     case 'UPDATE_CHARACTER':
       return {
         ...state,
-        character: { ...state.character, ...action.payload },
+        character: {
+          ...state.character,
+          ...action.payload,
+          customAttackPresets: normalizeCustomAttackPresets(
+            action.payload.customAttackPresets ?? state.character?.customAttackPresets
+          ),
+        },
       };
+
+    case 'SAVE_CUSTOM_ATTACK': {
+      const description = typeof action.payload === 'string' ? action.payload.trim() : '';
+      if (!description || !state.character) return state;
+
+      const current = normalizeCustomAttackPresets(state.character.customAttackPresets);
+      const nextPresets = [description, ...current.filter((preset) => preset !== description)].slice(0, 12);
+
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          customAttackPresets: nextPresets,
+        },
+      };
+    }
+
+    case 'DELETE_CUSTOM_ATTACK': {
+      const description = typeof action.payload === 'string' ? action.payload.trim() : '';
+      if (!description || !state.character) return state;
+
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          customAttackPresets: normalizeCustomAttackPresets(
+            (state.character.customAttackPresets || []).filter((preset) => preset !== description)
+          ),
+        },
+      };
+    }
 
     case 'UPSERT_3D_MODEL_ASSIGNMENTS': {
       const { playerModel, partyModels = [], npcModels = [] } = action.payload || {};

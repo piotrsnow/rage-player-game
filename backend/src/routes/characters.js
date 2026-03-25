@@ -8,10 +8,21 @@ function safeJsonParse(raw, fallback = {}) {
   }
 }
 
+function splitCareerData(raw) {
+  const parsed = safeJsonParse(raw, {});
+  const customAttackPresets = Array.isArray(parsed?.customAttackPresets)
+    ? parsed.customAttackPresets
+    : [];
+  const { customAttackPresets: _ignored, ...careerData } = parsed || {};
+  return { careerData, customAttackPresets };
+}
+
 function deserializeCharacter(c) {
+  const { careerData, customAttackPresets } = splitCareerData(c.careerData);
   return {
     ...c,
-    careerData: safeJsonParse(c.careerData, {}),
+    careerData,
+    customAttackPresets,
     characteristics: safeJsonParse(c.characteristics, {}),
     advances: safeJsonParse(c.advances, {}),
     skills: safeJsonParse(c.skills, {}),
@@ -44,13 +55,17 @@ export async function characterRoutes(fastify) {
 
   fastify.post('/', async (request) => {
     const body = request.body;
+    const careerData = {
+      ...(body.careerData || {}),
+      customAttackPresets: Array.isArray(body.customAttackPresets) ? body.customAttackPresets : [],
+    };
 
     const character = await prisma.character.create({
       data: {
         userId: request.user.id,
         name: body.name || 'Adventurer',
         species: body.species || 'Human',
-        careerData: JSON.stringify(body.careerData || {}),
+        careerData: JSON.stringify(careerData),
         characteristics: JSON.stringify(body.characteristics || {}),
         advances: JSON.stringify(body.advances || {}),
         skills: JSON.stringify(body.skills || {}),
@@ -83,10 +98,18 @@ export async function characterRoutes(fastify) {
 
     const body = request.body;
     const updateData = {};
+    const existingCareer = splitCareerData(existing.careerData);
 
     if (body.name !== undefined) updateData.name = body.name;
     if (body.species !== undefined) updateData.species = body.species;
-    if (body.careerData !== undefined) updateData.careerData = JSON.stringify(body.careerData);
+    if (body.careerData !== undefined || body.customAttackPresets !== undefined) {
+      updateData.careerData = JSON.stringify({
+        ...(body.careerData !== undefined ? body.careerData : existingCareer.careerData),
+        customAttackPresets: Array.isArray(body.customAttackPresets)
+          ? body.customAttackPresets
+          : existingCareer.customAttackPresets,
+      });
+    }
     if (body.characteristics !== undefined) updateData.characteristics = JSON.stringify(body.characteristics);
     if (body.advances !== undefined) updateData.advances = JSON.stringify(body.advances);
     if (body.skills !== undefined) updateData.skills = JSON.stringify(body.skills);

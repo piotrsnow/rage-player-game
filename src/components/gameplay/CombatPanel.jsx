@@ -16,6 +16,7 @@ import {
   surrenderMultiplayerCombat,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
+import Tooltip from '../ui/Tooltip';
 
 const MANOEUVRE_ICONS = {
   attack: 'swords',
@@ -266,14 +267,39 @@ function AnimatedCombatLogText({ entry }) {
       )}
       {entry.critName && textRevealComplete && (
         <div className="mt-0.5 text-[11px] text-tertiary font-bold animate-fade-in">
-          ⚡ {entry.critName}{entry.critEffect ? ` - ${entry.critEffect}` : ''}
+          ⚡ {entry.critName}
         </div>
       )}
     </>
   );
 }
 
-function CombatLogEntry({ entry }) {
+function buildCombatLogTooltipContent(entry, t) {
+  if (!entry) return null;
+
+  const detailLines = [...(entry.details || [])];
+
+  if (entry.critEffect) {
+    detailLines.push(`${t('combat.logCriticalEffect', 'Efekt krytyczny')}: ${entry.critEffect}`);
+  }
+
+  if (!detailLines.length) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {detailLines.map((detail, index) => (
+        <div
+          key={`${entry.id}_tooltip_${index}`}
+          className="text-[11px] leading-snug break-words"
+        >
+          {detail}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CombatLogEntry({ entry, t }) {
   if (!entry) return null;
   const style = LOG_COLORS[entry.type] || LOG_COLORS.miss;
 
@@ -289,9 +315,13 @@ function CombatLogEntry({ entry }) {
     );
   }
 
-  return (
+  const tooltipContent = buildCombatLogTooltipContent(entry, t);
+
+  const content = (
     <div
-      className="flex items-start gap-2 px-3 py-2 rounded-sm animate-fade-in"
+      className={`flex items-start gap-2 px-3 py-2 rounded-sm animate-fade-in transition-colors ${
+        tooltipContent ? 'hover:bg-surface-container/30' : ''
+      }`}
       style={{ borderLeft: `3px solid ${style.border}`, background: style.bg }}
     >
       <span className="material-symbols-outlined text-sm mt-0.5 shrink-0" style={{ color: style.border }}>
@@ -299,17 +329,23 @@ function CombatLogEntry({ entry }) {
       </span>
       <div className="flex-1 min-w-0 text-[12px] leading-snug">
         <AnimatedCombatLogText entry={entry} />
-        {entry.details?.length > 0 && (
-          <div className="mt-1.5 space-y-1">
-            {entry.details.map((detail, index) => (
-              <div key={`${entry.id}_detail_${index}`} className="text-[10px] text-outline-variant leading-snug font-mono break-words">
-                {detail}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+      {tooltipContent && (
+        <span className="material-symbols-outlined text-[14px] text-outline-variant/70 mt-0.5 shrink-0">
+          info
+        </span>
+      )}
     </div>
+  );
+
+  if (!tooltipContent) {
+    return content;
+  }
+
+  return (
+    <Tooltip content={tooltipContent} className="block w-full">
+      {content}
+    </Tooltip>
   );
 }
 
@@ -317,6 +353,7 @@ export default function CombatPanel({
   combat, dispatch, onEndCombat, onSurrender, character,
   isMultiplayer = false, myPlayerId, onSendManoeuvre, onHostResolve, isHost = false, mpCharacters,
   gameState,
+  onPersistState,
 }) {
   const { t } = useTranslation();
   const { settings } = useSettings();
@@ -324,6 +361,7 @@ export default function CombatPanel({
   const [selectedManoeuvre, setSelectedManoeuvre] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [customDescription, setCustomDescription] = useState('');
+  const [showSavedAttacks, setShowSavedAttacks] = useState(false);
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
@@ -366,6 +404,10 @@ export default function CombatPanel({
       return true;
     });
   }, [myCombatant, character]);
+  const savedCustomAttacks = useMemo(
+    () => (Array.isArray(character?.customAttackPresets) ? character.customAttackPresets : []),
+    [character?.customAttackPresets]
+  );
 
   const isActorFriendly = (actorName) => {
     return friendlies.some((c) => c.name === actorName);
@@ -378,6 +420,12 @@ export default function CombatPanel({
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [combatLog]);
+
+  useEffect(() => {
+    if (!isCustomAttackManoeuvre(selectedManoeuvre)) {
+      setShowSavedAttacks(false);
+    }
+  }, [selectedManoeuvre]);
 
   const prevRoundRef = useRef(combat.round);
   useEffect(() => {
@@ -514,6 +562,25 @@ export default function CombatPanel({
     } else if (enemies.filter((e) => !e.isDefeated).length === 1) {
       setSelectedTarget(enemies.find((e) => !e.isDefeated)?.id);
     }
+  };
+
+  const persistCustomAttack = (description) => {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+
+    dispatch({ type: 'SAVE_CUSTOM_ATTACK', payload: trimmed });
+    onPersistState?.();
+  };
+
+  const removeCustomAttack = (description) => {
+    const trimmed = description.trim();
+    if (!trimmed) return;
+
+    dispatch({ type: 'DELETE_CUSTOM_ATTACK', payload: trimmed });
+    if (customDescription.trim() === trimmed) {
+      setCustomDescription('');
+    }
+    onPersistState?.();
   };
 
   const addResultToLog = (result) => {
@@ -693,9 +760,14 @@ export default function CombatPanel({
     const man = MANOEUVRES[selectedManoeuvre];
     const needsTarget = man.type === 'offensive' || man.type === 'magic';
     if (needsTarget && !selectedTarget) return;
+    const trimmedDescription = customDescription.trim();
+
+    if (isCustomAttackManoeuvre(selectedManoeuvre) && trimmedDescription) {
+      persistCustomAttack(trimmedDescription);
+    }
 
     if (isMultiplayer && !isHost) {
-      onSendManoeuvre?.(selectedManoeuvre, selectedTarget, customDescription.trim());
+      onSendManoeuvre?.(selectedManoeuvre, selectedTarget, trimmedDescription);
       setSelectedManoeuvre(null);
       setSelectedTarget(null);
       setCustomDescription('');
@@ -704,7 +776,7 @@ export default function CombatPanel({
 
     const actorId = isMultiplayer ? myPlayerId : 'player';
     const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, actorId, selectedManoeuvre, selectedTarget, { customDescription }
+      combat, actorId, selectedManoeuvre, selectedTarget, { customDescription: trimmedDescription }
     );
     setSelectedManoeuvre(null);
     setSelectedTarget(null);
@@ -893,6 +965,57 @@ export default function CombatPanel({
                   <label className="block text-[11px] text-on-surface-variant">
                     {t('combat.customAttackLabel', 'Describe your attack')}
                   </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSavedAttacks((current) => !current)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-surface-container/40 text-on-surface-variant border border-outline-variant/15 rounded-sm hover:border-primary/25 hover:text-primary transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-sm">history</span>
+                      {t('combat.savedAttacksButton', 'Twoje ataki')}
+                      <span className="material-symbols-outlined text-sm">
+                        {showSavedAttacks ? 'expand_less' : 'expand_more'}
+                      </span>
+                    </button>
+                  </div>
+                  {showSavedAttacks && (
+                    <div className="rounded-sm border border-outline-variant/15 bg-surface-container/30 overflow-hidden">
+                      {savedCustomAttacks.length > 0 ? (
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar divide-y divide-outline-variant/10">
+                          {savedCustomAttacks.map((attack, index) => (
+                            <div
+                              key={`${index}_${attack}`}
+                              className="flex items-start gap-2 px-2 py-2"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomDescription(attack);
+                                  setShowSavedAttacks(false);
+                                }}
+                                className="flex-1 min-w-0 px-2 py-1.5 text-left text-[12px] text-on-surface hover:bg-primary/10 rounded-sm transition-colors"
+                              >
+                                {attack}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeCustomAttack(attack)}
+                                className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-sm text-outline-variant hover:text-error hover:bg-error/10 transition-colors"
+                                aria-label={t('combat.deleteSavedAttack', 'Usuń zapisany atak')}
+                                title={t('combat.deleteSavedAttack', 'Usuń zapisany atak')}
+                              >
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-2.5 text-[11px] text-outline-variant">
+                          {t('combat.noSavedAttacks', 'Brak zapisanych niestandardowych ataków.')}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <textarea
                     value={customDescription}
                     onChange={(event) => setCustomDescription(event.target.value)}
@@ -959,7 +1082,7 @@ export default function CombatPanel({
           {combatLog.length > 0 && (
             <div className="space-y-1 max-h-[420px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
               {combatLog.slice(-10).map((entry) => (
-                <CombatLogEntry key={entry.id} entry={entry} />
+                <CombatLogEntry key={entry.id} entry={entry} t={t} />
               ))}
               <div ref={logEndRef} />
             </div>

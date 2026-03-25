@@ -33,7 +33,7 @@ import AutoPlayerPanel from './AutoPlayerPanel';
 export default function GameplayPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { state, dispatch } = useGame();
+  const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
@@ -749,6 +749,7 @@ export default function GameplayPage() {
               onHostResolve={mp.syncCombatState}
               isHost={mp.state.isHost}
               mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
+              onPersistState={() => setTimeout(() => autoSave(), 300)}
             />
           </div>
         )}

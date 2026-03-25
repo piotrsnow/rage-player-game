@@ -91,6 +91,9 @@
     "customAttackLabel": "Describe your attack",
     "customAttackPlaceholder": "Describe how you strike to earn a creativity bonus to the roll.",
     "customAttackHint": "A richer, more tactical description can improve your chance to hit.",
+    "savedAttacksButton": "Your attacks",
+    "noSavedAttacks": "No saved custom attacks yet.",
+    "deleteSavedAttack": "Delete saved attack",
     "logDescription": "Description",
     "logEffect": "Effect",
     "logAttack": "Attack",
@@ -112,6 +115,7 @@
     "logWeapon": "Weapon",
     "logWpBonus": "WPB",
     "logTotalSL": "total SL",
+    "logCriticalEffect": "Critical effect",
     "failedFlee": "failed to flee"
   },
   "nav": {

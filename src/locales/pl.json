@@ -91,6 +91,9 @@
     "customAttackLabel": "Opisz własny atak",
     "customAttackPlaceholder": "Opisz, jak atakujesz, żeby dostać bonus kreatywności do rzutu.",
     "customAttackHint": "Bogatszy i bardziej taktyczny opis może zwiększyć premię do trafienia.",
+    "savedAttacksButton": "Twoje ataki",
+    "noSavedAttacks": "Brak zapisanych niestandardowych ataków.",
+    "deleteSavedAttack": "Usuń zapisany atak",
     "logDescription": "Opis",
     "logEffect": "Efekt",
     "logAttack": "Atak",
@@ -112,6 +115,7 @@
     "logWeapon": "Broń",
     "logWpBonus": "WPB",
     "logTotalSL": "suma SL",
+    "logCriticalEffect": "Efekt krytyczny",
     "failedFlee": "nie zdołał uciec"
   },
   "nav": {
