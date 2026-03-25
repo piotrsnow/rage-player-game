@@ -246,6 +246,7 @@ export default function GameplayPage() {
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
 
     const isDead = stateChanges.forceStatus === 'dead';
+    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
 
     dispatch({
       type: 'ADD_CHAT_MESSAGE',
@@ -255,10 +256,11 @@ export default function GameplayPage() {
         subtype: isDead ? 'combat_death' : 'combat_end',
         content: isDead
           ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
-          : `Combat ended after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. ${summary.playerSurvived ? 'You survived!' : 'You were defeated!'}${summary.xp ? ` +${summary.xp} XP` : ''}`,
+          : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${summary.playerSurvived ? t('combat.youSurvived', 'You survived!') : t('combat.youWereDefeated', 'You were defeated!')}${xpRewardText}`,
         timestamp: Date.now(),
       },
     });
+    setTimeout(() => autoSave(), 300);
 
     if (isDead) {
       narrator.stop?.();
@@ -286,16 +288,19 @@ export default function GameplayPage() {
     if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
 
+    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
+
     dispatch({
       type: 'ADD_CHAT_MESSAGE',
       payload: {
         id: `msg_${Date.now()}_combat_surrender`,
         role: 'system',
         subtype: 'combat_end',
-        content: `You surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated.${summary.xp ? ` +${summary.xp} XP` : ''}`,
+        content: `${t('combat.youSurrenderedAfterRounds', 'You surrendered after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
         timestamp: Date.now(),
       },
     });
+    setTimeout(() => autoSave(), 300);
 
     const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
 
