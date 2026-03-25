@@ -942,10 +942,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
             onImageError={isMultiplayer ? (sceneId) => mp.updateSceneImage(sceneId, null) : undefined}
           />
-          {typewriterAction && (
+          {(typewriterAction || autoPlayer.overlayAction) && (
             <TypewriterActionOverlay
-              text={typewriterAction}
-              onComplete={handleTypewriterComplete}
+              text={typewriterAction || autoPlayer.overlayAction}
+              onComplete={typewriterAction ? handleTypewriterComplete : autoPlayer.completeOverlay}
             />
           )}
         </div>
@@ -1156,7 +1156,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
         {/* Action Panel */}
         {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
-          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.typingText && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.typingText ? 'pointer-events-none' : ''}`}>
+          <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
                 {autoPlayer.isAutoPlaying && !isMultiplayer ? t('autoPlayer.aiControlling') : t('gameplay.chooseAction')}

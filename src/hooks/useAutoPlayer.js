@@ -56,6 +56,7 @@ export function useAutoPlayer(handleAction, options = {}) {
   const [turnsPlayed, setTurnsPlayed] = useState(0);
   const [lastError, setLastError] = useState(null);
   const [typingText, setTypingText] = useState('');
+  const [overlayAction, setOverlayAction] = useState(null);
 
   const timerRef = useRef(null);
   const typingRef = useRef(null);
@@ -67,6 +68,7 @@ export function useAutoPlayer(handleAction, options = {}) {
   const completedSceneCountRef = useRef(0);
   const narrationSeenForPendingSceneRef = useRef(false);
   const pendingSceneStartedAtRef = useRef(0);
+  const overlayResolveRef = useRef(null);
 
   enabledRef.current = autoPlayerSettings.enabled;
 
@@ -91,6 +93,11 @@ export function useAutoPlayer(handleAction, options = {}) {
       abortRef.current = true;
       setIsThinking(false);
       setTypingText('');
+      setOverlayAction(null);
+      if (overlayResolveRef.current) {
+        overlayResolveRef.current(false);
+        overlayResolveRef.current = null;
+      }
       setTurnsPlayed(0);
       setLastError(null);
       pendingSceneCountRef.current = 0;
@@ -103,29 +110,19 @@ export function useAutoPlayer(handleAction, options = {}) {
     }
   }, [autoPlayerSettings, updateAutoPlayerSettings]);
 
-  const animateTyping = useCallback((text) => {
+  const showOverlay = useCallback((text) => {
     return new Promise((resolve) => {
-      if (typingRef.current) clearInterval(typingRef.current);
-      let i = 0;
-      setTypingText('');
-      const charDelay = Math.max(35, Math.min(90, 2200 / (text.length || 1)));
-      typingRef.current = setInterval(() => {
-        if (abortRef.current || !enabledRef.current) {
-          clearInterval(typingRef.current);
-          typingRef.current = null;
-          setTypingText('');
-          resolve(false);
-          return;
-        }
-        i++;
-        setTypingText(text.slice(0, i));
-        if (i >= text.length) {
-          clearInterval(typingRef.current);
-          typingRef.current = null;
-          resolve(true);
-        }
-      }, charDelay);
+      overlayResolveRef.current = resolve;
+      setOverlayAction(text);
     });
+  }, []);
+
+  const completeOverlay = useCallback(() => {
+    setOverlayAction(null);
+    if (overlayResolveRef.current) {
+      overlayResolveRef.current(true);
+      overlayResolveRef.current = null;
+    }
   }, []);
 
   const playTurn = useCallback(async () => {
@@ -146,11 +143,8 @@ export function useAutoPlayer(handleAction, options = {}) {
 
       setIsThinking(false);
 
-      const typed = await animateTyping(result.action);
-      if (!typed) return;
-
-      await new Promise((r) => setTimeout(r, AUTO_TYPING_PAUSE));
-      setTypingText('');
+      const shown = await showOverlay(result.action);
+      if (!shown) return;
 
       if (abortRef.current || !enabledRef.current) return;
 
@@ -178,9 +172,11 @@ export function useAutoPlayer(handleAction, options = {}) {
     } finally {
       setIsThinking(false);
       setTypingText('');
+      setOverlayAction(null);
+      overlayResolveRef.current = null;
       isRunningRef.current = false;
     }
-  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, dispatch, animateTyping]);
+  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, dispatch, showOverlay]);
 
   useEffect(() => {
     const currentLen = state.scenes?.length || 0;
@@ -279,6 +275,10 @@ export function useAutoPlayer(handleAction, options = {}) {
         clearInterval(typingRef.current);
         typingRef.current = null;
       }
+      if (overlayResolveRef.current) {
+        overlayResolveRef.current(false);
+        overlayResolveRef.current = null;
+      }
     };
   }, []);
 
@@ -286,6 +286,8 @@ export function useAutoPlayer(handleAction, options = {}) {
     isAutoPlaying: autoPlayerSettings.enabled,
     isThinking,
     typingText,
+    overlayAction,
+    completeOverlay,
     turnsPlayed,
     lastError,
     toggleAutoPlayer,

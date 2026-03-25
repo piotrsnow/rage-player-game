@@ -7,6 +7,9 @@ import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import PendingActions from '../multiplayer/PendingActions';
 import { parseActionSegments } from '../../services/actionParser';
 
+const normalizeQuotes = (text) =>
+  text.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u2039\u203A\uFF02`\u0060\u00B4]/g, '"');
+
 const ATTITUDE_STYLES = {
   hostile: 'bg-error/20 text-error border-error/30',
   neutral: 'bg-warning/20 text-warning border-warning/30',
@@ -77,14 +80,15 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
-    if (customAction.trim() && !disabled) {
+    const action = normalizeQuotes(customAction.trim());
+    if (action && !disabled) {
       if (listening) toggle();
       clearTimeout(typingTimerRef.current);
       emitTypingStop();
       if (isMultiplayer) {
-        mp.submitAction(customAction.trim(), true);
+        mp.submitAction(action, true);
       } else {
-        onAction(customAction.trim(), true);
+        onAction(action, true);
       }
       setCustomAction('');
     }
@@ -111,9 +115,10 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
   };
 
   const handleSoloCustomSubmit = () => {
-    if (customAction.trim()) {
+    const action = normalizeQuotes(customAction.trim());
+    if (action) {
       if (listening) toggle();
-      mp.soloAction(customAction.trim(), true, settings.language || 'en', settings.dmSettings);
+      mp.soloAction(action, true, settings.language || 'en', settings.dmSettings);
       setCustomAction('');
     }
   };
