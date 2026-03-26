@@ -341,7 +341,14 @@
     "characterDead": "Twoja postać poległa",
     "characterDeadDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna.",
     "share": "Udostępnij link do kampanii",
-    "shareCopied": "Link skopiowany do schowka!"
+    "shareCopied": "Link skopiowany do schowka!",
+    "contextDepth": "Kontekst fabulary",
+    "contextDepthTooltip": "Ile kontekstu fabularnego wysyłać do AI. 100% = pełna historia, NPC, questy, wiedza. Niżej = szybsze i tańsze odpowiedzi, ale AI mniej pamięta.",
+    "contextLevel_full": "Pełny",
+    "contextLevel_rich": "Bogaty",
+    "contextLevel_standard": "Standardowy",
+    "contextLevel_light": "Lekki",
+    "contextLevel_minimal": "Minimalny"
   },
   "chat": {
     "dmAi": "MG AI",

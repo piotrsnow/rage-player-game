@@ -65,27 +65,37 @@ function expandKeywordsWithRelations(keywords, npcs, quests, factions) {
 }
 
 export const contextManager = {
-  buildEnhancedContext(gameState) {
+  buildEnhancedContext(gameState, contextDepth = 100) {
     const { scenes, world } = gameState;
     const total = scenes.length;
 
-    const fullScenes = scenes.slice(-FULL_SCENE_COUNT).map((s, i) => ({
-      index: total - FULL_SCENE_COUNT + i + 1,
+    if (contextDepth <= 0) {
+      return { compressedHistory: '', compressedEntityState: null, mediumScenes: [], fullScenes: [] };
+    }
+
+    const fullCount = contextDepth >= 50 ? FULL_SCENE_COUNT : contextDepth >= 25 ? 1 : 0;
+    const fullScenes = scenes.slice(-fullCount).map((s, i) => ({
+      index: total - fullCount + i + 1,
       narrative: s.narrative,
       action: s.chosenAction || null,
     }));
 
-    const mediumStart = Math.max(0, total - FULL_SCENE_COUNT - MEDIUM_SCENE_COUNT);
-    const mediumEnd = Math.max(0, total - FULL_SCENE_COUNT);
-    const mediumScenes = scenes.slice(mediumStart, mediumEnd).map((s, i) => ({
-      index: mediumStart + i + 1,
-      summary: (s.narrative || '').substring(0, MEDIUM_SUMMARY_LENGTH),
-      action: s.chosenAction || null,
-    }));
+    let mediumScenes = [];
+    if (contextDepth >= 50) {
+      const mediumCount = contextDepth >= 75 ? MEDIUM_SCENE_COUNT : 2;
+      const mediumStart = Math.max(0, total - fullCount - mediumCount);
+      const mediumEnd = Math.max(0, total - fullCount);
+      const summaryLen = contextDepth >= 75 ? MEDIUM_SUMMARY_LENGTH : 250;
+      mediumScenes = scenes.slice(mediumStart, mediumEnd).map((s, i) => ({
+        index: mediumStart + i + 1,
+        summary: (s.narrative || '').substring(0, summaryLen),
+        action: s.chosenAction || null,
+      }));
+    }
 
     return {
-      compressedHistory: world?.compressedHistory || '',
-      compressedEntityState: world?.compressedEntityState || null,
+      compressedHistory: contextDepth >= 75 ? (world?.compressedHistory || '') : '',
+      compressedEntityState: contextDepth >= 75 ? (world?.compressedEntityState || null) : null,
       mediumScenes,
       fullScenes,
     };

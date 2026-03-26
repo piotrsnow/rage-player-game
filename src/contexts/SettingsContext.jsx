@@ -142,6 +142,7 @@ const defaultSettings = {
     narratorDrama: 50,
     imageStyle: 'painting',
     darkPalette: false,
+    contextDepth: 100,
   },
 };
 

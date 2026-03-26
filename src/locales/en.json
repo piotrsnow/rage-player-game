@@ -340,7 +340,14 @@
     "characterDead": "Your character has fallen",
     "characterDeadDesc": "With no Fate points remaining, death is final.",
     "share": "Share campaign link",
-    "shareCopied": "Link copied to clipboard!"
+    "shareCopied": "Link copied to clipboard!",
+    "contextDepth": "Story context",
+    "contextDepthTooltip": "How much story context to send to AI. 100% = full history, NPCs, quests, knowledge. Lower = faster and cheaper responses, but AI remembers less.",
+    "contextLevel_full": "Full",
+    "contextLevel_rich": "Rich",
+    "contextLevel_standard": "Standard",
+    "contextLevel_light": "Light",
+    "contextLevel_minimal": "Minimal"
   },
   "chat": {
     "dmAi": "DM AI",

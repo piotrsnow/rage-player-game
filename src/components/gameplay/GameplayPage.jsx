@@ -40,7 +40,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const location = useLocation();
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
   const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
@@ -944,6 +944,39 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Context Depth Slider */}
+        {!readOnly && (
+          <div className="px-2 flex items-center gap-3 group">
+            <span
+              className="text-[10px] text-on-surface-variant/60 uppercase tracking-widest font-label whitespace-nowrap cursor-help"
+              title={t('gameplay.contextDepthTooltip')}
+            >
+              {t('gameplay.contextDepth')}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={25}
+              value={settings.dmSettings?.contextDepth ?? 100}
+              onChange={(e) => updateDMSettings({ contextDepth: Number(e.target.value) })}
+              className="flex-1 h-1 appearance-none bg-outline/20 rounded-full accent-primary cursor-pointer [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(197,154,255,0.5)]"
+            />
+            <span className="text-[10px] text-primary/80 font-label uppercase tracking-wider min-w-[72px] text-right">
+              {(settings.dmSettings?.contextDepth ?? 100) === 100
+                ? t('gameplay.contextLevel_full')
+                : (settings.dmSettings?.contextDepth ?? 100) >= 75
+                ? t('gameplay.contextLevel_rich')
+                : (settings.dmSettings?.contextDepth ?? 100) >= 50
+                ? t('gameplay.contextLevel_standard')
+                : (settings.dmSettings?.contextDepth ?? 100) >= 25
+                ? t('gameplay.contextLevel_light')
+                : t('gameplay.contextLevel_minimal')}
+              {' '}{settings.dmSettings?.contextDepth ?? 100}%
+            </span>
           </div>
         )}
 

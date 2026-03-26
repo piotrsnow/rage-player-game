@@ -197,7 +197,11 @@ function buildConsistencyWarningsBlock(warnings) {
 export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false, consistencyWarnings = [] } = {}) {
   const { campaign, character, world, quests } = gameState;
 
+  const ctxDepthForQuests = dmSettings.contextDepth ?? 100;
   const activeQuests = quests.active.map((q) => {
+    if (ctxDepthForQuests < 50) {
+      return `- ${q.name} [${q.type || 'side'}]`;
+    }
     let line = `- ${q.name} [${q.type || 'side'}]: ${q.description}`;
     if (q.reward) {
       const parts = [];
@@ -234,13 +238,17 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     }
     return line;
   }).join('\n') || 'None';
-  const worldFacts = (world?.facts || []).slice(-20).join('\n') || 'No known facts yet.';
+  const worldFactsCount = ctxDepthForQuests >= 75 ? 20 : ctxDepthForQuests >= 50 ? 10 : 0;
+  const worldFacts = worldFactsCount > 0
+    ? ((world?.facts || []).slice(-worldFactsCount).join('\n') || 'No known facts yet.')
+    : 'No known facts yet.';
   const journal = (world?.eventHistory || []).length > 0
     ? world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')
     : 'No entries yet.';
   const inventory = character?.inventory?.map((i) => `${i.name} (${i.type})`).join(', ') || 'Empty';
   const moneyDisplay = character?.money ? formatMoney(character.money) : '0 CP';
   const statuses = character?.statuses?.join(', ') || 'None';
+  const contextDepth = dmSettings.contextDepth ?? 100;
 
   const difficultyLabel = dmSettings.difficulty < 25 ? 'Easy' : dmSettings.difficulty < 50 ? 'Normal' : dmSettings.difficulty < 75 ? 'Hard' : 'Expert';
   const narrativeLabel = dmSettings.narrativeStyle < 25 ? 'Predictable' : dmSettings.narrativeStyle < 50 ? 'Balanced' : dmSettings.narrativeStyle < 75 ? 'Chaotic' : 'Wild';
@@ -485,35 +493,35 @@ When the player attempts a social, trade, persuasion, or other interpersonal ski
   disposition <= -30 (enemy): -15 to target
 When this modifier applies, include "dispositionBonus" in the diceRoll output with the modifier value (e.g. 10, -5, etc.) and mention the NPC name in the skill test narration. Keep this separate from "difficultyModifier".
 
-NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
+${contextDepth >= 75 ? `NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
 ${npcSection}
 
-NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
+` : ''}NPCs PRESENT AT CURRENT LOCATION (only these NPCs can be directly interacted with unless summoned or newly arriving):
 ${npcsHereSection}
 
 CURRENT LOCATION & MAP:
 Current: ${currentLoc}
-Known locations:
+${contextDepth >= 50 ? `Known locations:
 ${mapSection}
 
-TIME:
+` : ''}TIME:
 ${timeSection}
-
+${contextDepth >= 50 ? `
 ACTIVE EFFECTS (traps, spells, environmental changes — check before resolving actions in a location):
 ${effectsSection}
 
 WORLD KNOWLEDGE:
 ${worldFacts}
-
+` : ''}${contextDepth >= 75 ? `
 STORY JOURNAL (chronological log of key events — use this to maintain narrative consistency):
 ${journal}
-
+` : ''}
 ACTIVE QUESTS:
 ${activeQuests}
-
+${contextDepth >= 25 ? `
 SCENE HISTORY:
-${sceneHistory}
-${(() => {
+${sceneHistory}` : ''}
+${contextDepth >= 75 ? (() => {
   const kb = world?.knowledgeBase;
   if (!kb) return '';
   const activeThreads = (kb.plotThreads || []).filter((t) => t.status === 'active');
@@ -531,8 +539,8 @@ ${(() => {
     lines.push('Recent decisions: ' + recentDecisions.map((d) => `${d.choice} → ${d.consequence}`).join('; '));
   }
   return `\nKNOWLEDGE BASE (long-term memory — reference for consistency):\n${lines.join('\n')}\n`;
-})()}
-${buildRelationshipGraphBlock(npcs, quests, world?.factions)}${consistencyWarnings?.length > 0 ? buildConsistencyWarningsBlock(consistencyWarnings) : ''}LANGUAGE INSTRUCTION:
+})() : ''}
+${contextDepth >= 100 ? buildRelationshipGraphBlock(npcs, quests, world?.factions) : ''}${contextDepth >= 75 && consistencyWarnings?.length > 0 ? buildConsistencyWarningsBlock(consistencyWarnings) : ''}LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
 INSTRUCTIONS:

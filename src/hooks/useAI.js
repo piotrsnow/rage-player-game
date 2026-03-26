@@ -58,8 +58,9 @@ export function useAI() {
       dispatch({ type: 'SET_ERROR', payload: null });
 
       try {
-        let enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state) : null;
-        if (enhancedContext && state.world?.knowledgeBase) {
+        const contextDepth = settings.dmSettings?.contextDepth ?? 100;
+        let enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state, contextDepth) : null;
+        if (enhancedContext && contextDepth >= 75 && state.world?.knowledgeBase) {
           const lastScene = state.scenes?.[state.scenes.length - 1];
           const relevantMemories = contextManager.retrieveRelevantKnowledge(
             state.world.knowledgeBase, lastScene?.narrative, playerAction, state
@@ -68,7 +69,7 @@ export function useAI() {
             enhancedContext = { ...enhancedContext, relevantMemories };
           }
         }
-        if (enhancedContext && state.world?.codex) {
+        if (enhancedContext && contextDepth >= 75 && state.world?.codex) {
           const lastScene = state.scenes?.[state.scenes.length - 1];
           const relevantCodex = contextManager.retrieveRelevantCodex(
             state.world.codex, lastScene?.narrative, playerAction
