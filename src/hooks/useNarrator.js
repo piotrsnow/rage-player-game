@@ -28,6 +28,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const objectUrlsRef = useRef([]);
   const highlightRafRef = useRef(null);
   const generationRef = useRef(0);
+  const skipSegmentRef = useRef(false);
 
   const stopHighlightLoop = useCallback(() => {
     if (highlightRafRef.current) {
@@ -90,7 +91,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     let wordOffset = 0;
 
     for (let s = 0; s < chunks.length; s++) {
-      if (abortRef.current || generationRef.current !== generation) break;
+      if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
       const chunk = chunks[s].trim();
       if (!chunk) continue;
 
@@ -102,19 +103,19 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         setPlaybackState(STATES.LOADING);
         result = await fetchTts(voiceId, chunk, campaignId);
       }
-      if (generationRef.current !== generation) break;
+      if (generationRef.current !== generation || skipSegmentRef.current) break;
 
       if (!result) {
         result = await fetchTts(voiceId, chunk, campaignId);
       }
-      if (generationRef.current !== generation) break;
+      if (generationRef.current !== generation || skipSegmentRef.current) break;
       if (!result) continue;
 
       if (!viewerMode) {
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
       }
       objectUrlsRef.current.push(result.audioUrl);
-      if (abortRef.current || generationRef.current !== generation) break;
+      if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
         prefetchPromise = fetchTts(voiceId, chunks[s + 1].trim(), campaignId)
@@ -138,7 +139,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         audio.onerror = resolve;
         audio.play().catch(resolve);
       });
-      if (generationRef.current !== generation) break;
+      if (generationRef.current !== generation || skipSegmentRef.current) break;
 
       const wallSeconds = (performance.now() - playStart) / 1000;
       if (wallSeconds > 0.1) {
@@ -241,6 +242,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
       for (let i = 0; i < segments.length; i++) {
         if (abortRef.current || generationRef.current !== myGeneration) break;
+        skipSegmentRef.current = false;
 
         const seg = segments[i];
         const text = seg.text?.trim();
@@ -337,6 +339,16 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setCurrentChunk(null);
   }, [cleanup]);
 
+  const skipSegment = useCallback(() => {
+    if (playbackState !== STATES.PLAYING && playbackState !== STATES.LOADING) return;
+    skipSegmentRef.current = true;
+    stopHighlightLoop();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.dispatchEvent(new Event('ended'));
+    }
+  }, [playbackState, stopHighlightLoop]);
+
   const speakSingle = useCallback((message, messageId) => {
     stop();
     setTimeout(() => {
@@ -376,6 +388,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     pause,
     resume,
     stop,
+    skipSegment,
     STATES,
   };
 }

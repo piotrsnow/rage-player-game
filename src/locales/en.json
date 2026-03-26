@@ -323,6 +323,7 @@
     "firstScene": "First scene",
     "autoPlayScenes": "Auto-play all scenes",
     "stopAutoPlay": "Stop auto-play",
+    "skipSegment": "Skip to next segment",
     "initiateCombat": "Initiate Combat",
     "attackNpc": "Attack",
     "generalCombat": "General combat — AI decides enemies",

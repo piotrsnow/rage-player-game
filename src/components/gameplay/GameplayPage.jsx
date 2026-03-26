@@ -734,6 +734,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                     play_circle
                   </button>
                 )}
+                {narrator.isNarratorReady && narrator.playbackState === narrator.STATES.PLAYING && (
+                  <button
+                    onClick={() => narrator.skipSegment()}
+                    title={t('gameplay.skipSegment', 'Skip to next segment')}
+                    aria-label={t('gameplay.skipSegment', 'Skip to next segment')}
+                    className="material-symbols-outlined text-xs text-outline hover:text-primary transition-colors"
+                  >
+                    skip_next
+                  </button>
+                )}
                 {((settings.narratorEnabled || readOnly) && narrator.isNarratorReady && scenes.length > 1) && (
                   <button
                     onClick={() => {

@@ -324,6 +324,7 @@
     "firstScene": "Pierwsza scena",
     "autoPlayScenes": "Odtwarzaj wszystkie sceny",
     "stopAutoPlay": "Zatrzymaj odtwarzanie",
+    "skipSegment": "Przeskocz do następnego akapitu",
     "initiateCombat": "Rozpocznij walkę",
     "attackNpc": "Atakuj",
     "generalCombat": "Walka ogólna — AI ustali wrogów",
