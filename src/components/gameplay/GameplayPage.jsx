@@ -373,6 +373,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   );
 
+  useEffect(() => {
+    if (typewriterAction || autoPlayer.overlayAction) {
+      narrator.stop();
+      try { window.speechSynthesis?.cancel(); } catch {}
+    }
+  }, [!!typewriterAction, !!autoPlayer.overlayAction]);
+
   const handleIdleEvent = useCallback(({ roll, threshold }) => {
     generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
   }, [generateScene]);
