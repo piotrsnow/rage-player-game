@@ -12,6 +12,18 @@ const STATES = {
   PAUSED: 'paused',
 };
 
+const PACING_SPEED_MULTIPLIERS = {
+  combat: 1.12,
+  chase: 1.15,
+  stealth: 0.92,
+  travel_montage: 1.18,
+  celebration: 1.05,
+  rest: 0.95,
+  dramatic: 0.97,
+  exploration: 1.0,
+  dialogue: 1.0,
+};
+
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
   const { settings, hasApiKey } = useSettings();
   const { state, dispatch } = useGame();
@@ -79,14 +91,14 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     };
   }, [cleanup]);
 
-  const fetchTts = useCallback(async (voiceId, chunk, campaignId) => {
+  const fetchTts = useCallback(async (voiceId, chunk, campaignId, pacing) => {
     if (viewerMode && backendUrl && shareToken) {
       return elevenlabsService.textToSpeechFromCache(backendUrl, shareToken, voiceId, chunk, undefined, campaignId);
     }
-    return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId);
+    return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId, pacing);
   }, [viewerMode, backendUrl, shareToken]);
 
-  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing) => {
     let prefetchPromise = null;
     let wordOffset = 0;
 
@@ -101,12 +113,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         prefetchPromise = null;
       } else {
         setPlaybackState(STATES.LOADING);
-        result = await fetchTts(voiceId, chunk, campaignId);
+        result = await fetchTts(voiceId, chunk, campaignId, scenePacing);
       }
       if (generationRef.current !== generation || skipSegmentRef.current) break;
 
       if (!result) {
-        result = await fetchTts(voiceId, chunk, campaignId);
+        result = await fetchTts(voiceId, chunk, campaignId, scenePacing);
       }
       if (generationRef.current !== generation || skipSegmentRef.current) break;
       if (!result) continue;
@@ -118,7 +130,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
-        prefetchPromise = fetchTts(voiceId, chunks[s + 1].trim(), campaignId)
+        prefetchPromise = fetchTts(voiceId, chunks[s + 1].trim(), campaignId, scenePacing)
           .catch((err) => {
             console.warn('Prefetch TTS failed:', err.message);
             return null;
@@ -126,7 +138,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       }
 
       const audio = new Audio(result.audioUrl);
-      audio.playbackRate = Math.max(0.5, Math.min(2, (dialogueSpeed || 100) / 100));
+      const baseRate = (dialogueSpeed || 100) / 100;
+      const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
+      audio.playbackRate = Math.max(0.5, Math.min(2, baseRate * pacingMul));
       audioRef.current = audio;
       setPlaybackState(STATES.PLAYING);
       setCurrentChunk(chunk);
@@ -166,7 +180,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
 
     const item = queueRef.current[0];
-    const { dialogueSegments, narrative, messageId } = item;
+    const { dialogueSegments, narrative, messageId, scenePacing } = item;
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
@@ -274,7 +288,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         }
 
         const chunks = elevenlabsService.splitIntoParagraphs(text);
-        await playChunkPipeline(chunks, voiceId, undefined, i, messageId, dialogueSpeed, text, campaignId, myGeneration);
+        await playChunkPipeline(chunks, voiceId, undefined, i, messageId, dialogueSpeed, text, campaignId, myGeneration, scenePacing);
         if (generationRef.current !== myGeneration) return;
       }
 
@@ -301,6 +315,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       dialogueSegments: message.dialogueSegments || [],
       soundEffect: message.soundEffect || null,
       narrative: message.content || message.narrative || '',
+      scenePacing: message.scenePacing || null,
       messageId,
     });
     if (playbackState === STATES.IDLE) {
@@ -357,6 +372,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           dialogueSegments: [],
           soundEffect: null,
           narrative: message,
+          scenePacing: null,
           messageId,
         });
       } else {
@@ -364,6 +380,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           dialogueSegments: message.dialogueSegments || [],
           soundEffect: message.soundEffect || null,
           narrative: message.content || message.narrative || '',
+          scenePacing: message.scenePacing || null,
           messageId,
         });
       }

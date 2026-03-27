@@ -291,6 +291,7 @@ export function useAI() {
         const scene = {
           id: sceneId,
           narrative: result.narrative,
+          scenePacing: result.scenePacing || 'exploration',
           dialogueSegments: finalSegments,
           soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null,
@@ -362,6 +363,7 @@ export function useAI() {
             role: 'dm',
             sceneId,
             content: result.narrative,
+            scenePacing: result.scenePacing || 'exploration',
             dialogueSegments: finalSegments,
             soundEffect: result.soundEffect || null,
             timestamp: Date.now(),

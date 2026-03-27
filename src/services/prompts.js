@@ -151,6 +151,36 @@ YOU MUST:
 4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
+const LOW_ACTION_PACING = new Set(['exploration', 'travel_montage', 'rest']);
+const LOW_ACTION_ACTIONS = /\b(id[eę]|iść|wędruj|podróżuj|kontynuuj|rozglądaj|spaceruj|walk|go|travel|continue|explore|move on|head to|proceed|wander|look around)\b/i;
+
+export function buildPacingPressure(scenes) {
+  if (!scenes || scenes.length < 2) return '';
+  const recent = scenes.slice(-5);
+  let consecutive = 0;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const s = recent[i];
+    const pacing = s.scenePacing || 'exploration';
+    const hadCombat = s.diceRoll?.type === 'combat' || s.stateChanges?.combatUpdate?.active;
+    const hadNewNpcs = (s.stateChanges?.npcs || []).some(n => n.action === 'introduce');
+    const hadQuestOffer = (s.questOffers || []).length > 0;
+    const actionIsLow = !s.chosenAction || LOW_ACTION_ACTIONS.test(s.chosenAction || '');
+
+    if (LOW_ACTION_PACING.has(pacing) && !hadCombat && !hadNewNpcs && !hadQuestOffer && actionIsLow) {
+      consecutive++;
+    } else {
+      break;
+    }
+  }
+  if (consecutive >= 3) {
+    return `\nCRITICAL PACING ALERT — the story has stalled for ${consecutive} consecutive low-action scenes. You MUST introduce a significant plot event, ambush, NPC encounter, or environmental hazard NOW. Use "travel_montage" to skip boring travel and arrive at something interesting. Set scenePacing to something other than exploration/rest/travel_montage.\n`;
+  }
+  if (consecutive >= 2) {
+    return `\nPACING ALERT — the last ${consecutive} scenes have been low-action (no combat, no new NPCs, no quest offers). You MUST inject a meaningful event, complication, encounter, or discovery in this scene. Use "travel_montage" to skip boring travel and arrive at something interesting.\n`;
+  }
+  return '';
+}
+
 function buildRelationshipGraphBlock(npcs, quests, factions) {
   const lines = [];
   const aliveNpcs = (npcs || []).filter((n) => n.alive !== false);
@@ -388,6 +418,20 @@ NARRATIVE TONE RULES (anti-purple-prose guardrails):
 - NPC DIALOGUE VARIATION: Each NPC speaks differently. A peasant does not sound like a scholar. A soldier does not sound like a merchant. Dialogue should reveal character, not showcase vocabulary.
 - The Old World is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
 - HUMOR COUNTERWEIGHT: Even at high humor settings, maintain real stakes. Funny failures should still hurt mechanically (wounds, lost items, reputation). Comedic NPCs can still be dangerous. Never let humor deflate genuine tension in life-or-death situations.
+
+SCENE PACING & PROSE STYLE (MANDATORY — return "scenePacing" in EVERY response):
+You MUST return a "scenePacing" field (string) in every JSON response. Choose one of: combat, chase, stealth, exploration, dialogue, travel_montage, celebration, rest, dramatic. Your prose style MUST match the chosen pacing type:
+- "combat": Staccato rhythm. Short sentences, fragments, nominal phrases. No adjective stacking. Pure action verbs. Max 1-2 tight paragraphs.
+- "chase": Breathless urgency. Sentence fragments and nominal phrases (równoważniki zdań). No atmospheric pauses. Every line conveys speed and time pressure. Max 1 paragraph.
+- "stealth": Whispered tension. Short, sparse sentences. Ellipses for pauses. Every sound is significant. Minimal description, maximum suspense.
+- "exploration": Balanced atmospheric prose. Full sentences, sensory details (sight, sound, smell). 2-3 paragraphs. Not rushed, not overwritten.
+- "dialogue": Narration is minimal stage directions only. NPCs drive the scene. Narrator interjections are 1 sentence max between dialogue lines.
+- "travel_montage": Maximum 2-3 sentences. Brief montage summary. Skip to arrival or to an interrupting event. Advance time 2-8 hours via timeAdvance.
+- "celebration": Lively, flowing sentences. Sensory overload — sounds, smells, movement, laughter. Energetic rhythm.
+- "rest": Slow, contemplative. Longer sentences, internal thoughts, quiet observations. Short overall — 1-2 paragraphs.
+- "dramatic": Theatrical pacing. Alternating short and long sentences for contrast. Dramatic pauses. Build tension rhythmically.
+ANTI-MONOTONY RULE: Never produce more than 2 consecutive exploration/travel/rest scenes without introducing a complication, encounter, discovery, or NPC interaction. If the story has no conflict, create one.
+TRAVEL ACCELERATION: When the player's action is simply traveling/walking with no specific interaction, default to "travel_montage" — skip the boring parts, arrive somewhere interesting.
 
 WORLD DESCRIPTION:
 ${campaign?.worldDescription || 'The Old World awaits — a grim and perilous realm of dark fantasy.'}
@@ -759,7 +803,7 @@ Include dialogueUpdate when the player explicitly asks to enter dialogue mode, n
 When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be dialogue options: things the player can say, ask, argue, propose, or respond with.`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0 } = {}, dmSettings = null) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0, scenes = null } = {}, dmSettings = null) {
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
@@ -768,6 +812,7 @@ export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, l
 Respond with ONLY valid JSON in this exact format:
 {
   "narrative": "A vivid 2-3 paragraph scene description setting the stage for the adventure...",
+  "scenePacing": "exploration",
   "dialogueSegments": [
     {"type": "narration", "text": "Descriptive prose..."},
     {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
@@ -1008,6 +1053,7 @@ Respond with ONLY valid JSON in this exact format:
 {
   "diceRoll": null,
   "narrative": "2-3 paragraphs describing what happens as a result of the player's action and setting up the next beat...",
+  "scenePacing": "exploration | combat | chase | stealth | dialogue | travel_montage | celebration | rest | dramatic",
   "dialogueSegments": [
     {"type": "narration", "text": "Descriptive prose..."},
     {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
@@ -1100,7 +1146,7 @@ For stateChanges.currentLocation: update whenever the player moves to a new loca
 ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${langReminder}`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${buildPacingPressure(scenes)}${langReminder}`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {

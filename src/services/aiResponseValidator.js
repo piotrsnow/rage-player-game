@@ -193,8 +193,15 @@ const StateChangesSchema = z.object({
   campaignEnd: z.any().nullable().optional(),
 }).passthrough().optional().default({});
 
+export const SCENE_PACING_TYPES = [
+  'combat', 'chase', 'stealth', 'exploration',
+  'dialogue', 'travel_montage', 'celebration',
+  'rest', 'dramatic',
+];
+
 export const SceneResponseSchema = z.object({
   narrative: z.string().min(1),
+  scenePacing: z.enum(SCENE_PACING_TYPES).optional().default('exploration'),
   dialogueSegments: z.array(DialogueSegmentSchema).optional().default([]),
   soundEffect: z.string().nullable().optional(),
   musicPrompt: z.string().nullable().optional(),

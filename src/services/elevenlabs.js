@@ -75,10 +75,11 @@ export const elevenlabsService = {
     throw new Error('ElevenLabs requires backend connection');
   },
 
-  async textToSpeechWithTimestamps(_apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null) {
+  async textToSpeechWithTimestamps(_apiKey, voiceId, text, modelId = 'eleven_multilingual_v2', campaignId = null, pacing = null) {
     if (apiClient.isConnected()) {
       const body = { voiceId, text, modelId };
       if (campaignId) body.campaignId = campaignId;
+      if (pacing) body.pacing = pacing;
       const data = await apiClient.post('/proxy/elevenlabs/tts', body);
       const audioUrl = resolveMediaUrl(data.url);
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];

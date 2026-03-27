@@ -7,6 +7,16 @@ import { config } from '../../config.js';
 const store = createMediaStore(config);
 const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1';
 
+const PACING_STABILITY = {
+  combat: 0.35,
+  chase: 0.35,
+  stealth: 0.6,
+  rest: 0.6,
+  dramatic: 0.4,
+  celebration: 0.4,
+};
+const DEFAULT_STABILITY = 0.5;
+
 export async function elevenlabsProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -40,9 +50,10 @@ export async function elevenlabsProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'elevenlabs');
     if (!apiKey) return reply.code(400).send({ error: 'ElevenLabs API key not configured' });
 
-    const { voiceId, text, modelId, campaignId } = request.body;
+    const { voiceId, text, modelId, campaignId, pacing } = request.body;
 
-    const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2' };
+    const stability = PACING_STABILITY[pacing] ?? DEFAULT_STABILITY;
+    const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2', ...(pacing ? { pacing } : {}) };
     const cacheKey = generateKey('tts', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -62,7 +73,7 @@ export async function elevenlabsProxyRoutes(fastify) {
         text,
         model_id: modelId || 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.5,
+          stability,
           similarity_boost: 0.75,
           style: 0.0,
           use_speaker_boost: true,
@@ -114,9 +125,10 @@ export async function elevenlabsProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'elevenlabs');
     if (!apiKey) return reply.code(400).send({ error: 'ElevenLabs API key not configured' });
 
-    const { voiceId, text, modelId, campaignId: streamCampaignId } = request.body;
+    const { voiceId, text, modelId, campaignId: streamCampaignId, pacing: streamPacing } = request.body;
 
-    const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2', stream: true };
+    const streamStability = PACING_STABILITY[streamPacing] ?? DEFAULT_STABILITY;
+    const cacheParams = { voiceId, text, modelId: modelId || 'eleven_multilingual_v2', stream: true, ...(streamPacing ? { pacing: streamPacing } : {}) };
     const cacheKey = generateKey('tts', cacheParams, streamCampaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -135,7 +147,7 @@ export async function elevenlabsProxyRoutes(fastify) {
         text,
         model_id: modelId || 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.5,
+          stability: streamStability,
           similarity_boost: 0.75,
           style: 0.0,
           use_speaker_boost: true,
