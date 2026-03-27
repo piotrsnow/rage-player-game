@@ -106,6 +106,13 @@ export const apiClient = {
     const base = this.getBaseUrl();
     const token = this.getToken();
 
+    // Convert legacy GCS signed URLs to stable /media/file/ paths.
+    // Signed URLs expire after 24h; the /media/file/* route proxies from GCS indefinitely.
+    const gcsMatch = url.match(/^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+?)(?:\?|$)/);
+    if (gcsMatch) {
+      url = `/media/file/${gcsMatch[1]}`;
+    }
+
     if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
       const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
       if (!origin) return url;

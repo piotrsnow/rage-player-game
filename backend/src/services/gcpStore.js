@@ -22,11 +22,7 @@ export class GcpStore {
       metadata: { cacheControl: 'public, max-age=86400' },
     });
 
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 24 * 60 * 60 * 1000,
-    });
-    return { url, path: storagePath, size: buffer.length };
+    return { url: `/media/file/${storagePath}`, path: storagePath, size: buffer.length };
   }
 
   async get(storagePath) {
@@ -40,12 +36,7 @@ export class GcpStore {
   }
 
   async getUrl(storagePath) {
-    const file = this.bucket.file(storagePath);
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 24 * 60 * 60 * 1000, // 24h
-    });
-    return url;
+    return `/media/file/${storagePath}`;
   }
 
   async has(storagePath) {

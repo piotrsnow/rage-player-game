@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -42,6 +42,12 @@ export function useAI() {
   const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
+  const sceneGenStartRef = useRef(null);
+  const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
+    const saved = localStorage.getItem('rpgon_last_scene_gen_ms');
+    return saved ? Number(saved) : null;
+  });
+  const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
   const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
@@ -56,6 +62,8 @@ export function useAI() {
     async (playerAction, isFirstScene = false, isCustomAction = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
+      sceneGenStartRef.current = Date.now();
+      setSceneGenStartTime(Date.now());
 
       try {
         const contextDepth = settings.dmSettings?.contextDepth ?? 100;
@@ -444,6 +452,14 @@ export function useAI() {
           }
         }
 
+        if (sceneGenStartRef.current) {
+          const elapsed = Date.now() - sceneGenStartRef.current;
+          setLastSceneGenMs(elapsed);
+          localStorage.setItem('rpgon_last_scene_gen_ms', String(elapsed));
+          sceneGenStartRef.current = null;
+          setSceneGenStartTime(null);
+        }
+
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
 
         // Auto-save after scene resolution (delay for state to settle)
@@ -497,6 +513,13 @@ export function useAI() {
 
         return result;
       } catch (err) {
+        if (sceneGenStartRef.current) {
+          const elapsed = Date.now() - sceneGenStartRef.current;
+          setLastSceneGenMs(elapsed);
+          localStorage.setItem('rpgon_last_scene_gen_ms', String(elapsed));
+          sceneGenStartRef.current = null;
+          setSceneGenStartTime(null);
+        }
         dispatch({ type: 'SET_ERROR', payload: err.message });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         throw err;
@@ -774,5 +797,5 @@ export function useAI() {
     [dispatch]
   );
 
-  return { generateScene, generateCampaign, generateStoryPrompt, generateCombatCommentary, generateImageForScene, verifyQuestObjective, acceptQuestOffer, declineQuestOffer };
+  return { generateScene, generateCampaign, generateStoryPrompt, generateCombatCommentary, generateImageForScene, verifyQuestObjective, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs };
 }

@@ -14,6 +14,7 @@ import ActionPanel from './ActionPanel';
 import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
+import SceneGenerationProgress from './SceneGenerationProgress';
 import WorldStateModal from './WorldStateModal';
 import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
@@ -43,7 +44,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer } = useAI();
+  const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -1051,9 +1052,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
         {/* Loading State */}
         {isGeneratingScene && !readOnly && (
-          <div className="flex items-center justify-center py-8 animate-fade-in">
-            <LoadingSpinner text={t('gameplay.dmWeavesFate')} />
-          </div>
+          <SceneGenerationProgress
+            startTime={sceneGenStartTime}
+            estimatedMs={lastSceneGenMs}
+          />
         )}
 
         {/* Error Display */}
