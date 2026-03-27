@@ -247,6 +247,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   }, [campaign, isMultiplayer, readOnly, navigate]);
 
+  useEffect(() => {
+    if (readOnly) return;
+    if (settings.autoPlayer?.enabled) {
+      updateSettings({ autoPlayer: { ...settings.autoPlayer, enabled: false } });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Viewer mode: force-enable narrator toggle so speaker controls work.
   const viewerNarratorEnabledRef = useRef(false);
   useEffect(() => {

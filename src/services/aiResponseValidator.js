@@ -343,6 +343,20 @@ function isLikelyReference(textBetween, prevWasReference) {
   return false;
 }
 
+function fuzzyMatchPolishName(candidate, reference) {
+  const cLower = candidate.toLowerCase();
+  const rLower = reference.toLowerCase();
+  if (cLower === rLower) return true;
+  if (cLower.length < 3 || rLower.length < 3) return false;
+  const shorter = cLower.length <= rLower.length ? cLower : rLower;
+  const longer = cLower.length > rLower.length ? cLower : rLower;
+  const minStem = Math.max(3, Math.ceil(shorter.length * 0.6));
+  if (longer.startsWith(shorter.slice(0, minStem)) && Math.abs(cLower.length - rLower.length) <= 4) {
+    return true;
+  }
+  return false;
+}
+
 function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
   const words = textBefore.trim().split(/\s+/);
 
@@ -352,7 +366,7 @@ function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
 
     for (let j = 0; j < knownNames.length; j++) {
       const parts = knownNames[j].split(/\s+/);
-      if (parts.some(p => p.toLowerCase() === raw.toLowerCase())) {
+      if (parts.some(p => p.toLowerCase() === raw.toLowerCase() || fuzzyMatchPolishName(raw, p))) {
         return knownNames[j];
       }
     }
@@ -361,7 +375,9 @@ function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
       const isFirstWord = i === 0 || /[.!?…]$/.test(words[i - 1] || '');
       if (!isFirstWord) {
         const isPlayerName = excludeNames.some(name =>
-          name.toLowerCase().split(/\s+/).some(p => p.toLowerCase() === raw.toLowerCase())
+          name.toLowerCase().split(/\s+/).some(p =>
+            p.toLowerCase() === raw.toLowerCase() || fuzzyMatchPolishName(raw, p)
+          )
         );
         if (!isPlayerName) return raw;
       }
@@ -372,20 +388,19 @@ function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
 
 function lookupGender(name, knownNpcs, existingDialogueSegments) {
   if (!name) return undefined;
-  const lower = name.toLowerCase();
 
   for (const npc of knownNpcs) {
     if (!npc.name) continue;
-    const npcParts = npc.name.toLowerCase().split(/\s+/);
-    if (npc.name.toLowerCase() === lower || npcParts.includes(lower)) {
+    const npcParts = npc.name.split(/\s+/);
+    if (fuzzyMatchPolishName(name, npc.name) || npcParts.some(p => fuzzyMatchPolishName(name, p))) {
       return npc.gender || undefined;
     }
   }
 
   for (const seg of existingDialogueSegments) {
     if (!seg.character) continue;
-    const segParts = seg.character.toLowerCase().split(/\s+/);
-    if (seg.character.toLowerCase() === lower || segParts.includes(lower)) {
+    const segParts = seg.character.split(/\s+/);
+    if (fuzzyMatchPolishName(name, seg.character) || segParts.some(p => fuzzyMatchPolishName(name, p))) {
       return seg.gender || undefined;
     }
   }
@@ -516,7 +531,14 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
     gender: characterGender || undefined,
   }));
 
-  return [...playerSegments, ...(segments || [])];
+  const arr = segments || [];
+  const firstNarrationIdx = arr.findIndex(s => s.type === 'narration');
+  if (firstNarrationIdx >= 0) {
+    const result = [...arr];
+    result.splice(firstNarrationIdx + 1, 0, ...playerSegments);
+    return result;
+  }
+  return [...playerSegments, ...arr];
 }
 
 const RETRY_DELAYS = [1000, 3000];

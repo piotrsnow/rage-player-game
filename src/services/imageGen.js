@@ -108,7 +108,7 @@ async function generateWithGemini(prompt, apiKey) {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+        imageConfig: { aspectRatio: '16:9', imageSize: '1K' },
       },
     }),
   });
@@ -138,7 +138,7 @@ async function generatePortraitWithGemini(prompt, apiKey) {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+        imageConfig: { aspectRatio: '3:4', imageSize: '1K' },
       },
     }),
   });
@@ -176,7 +176,7 @@ async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
       }],
       generationConfig: {
         responseModalities: ['TEXT', 'IMAGE'],
-        imageConfig: { aspectRatio: '3:4', imageSize: '2K' },
+        imageConfig: { aspectRatio: '3:4', imageSize: '1K' },
       },
     }),
   });

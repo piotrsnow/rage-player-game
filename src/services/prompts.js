@@ -650,6 +650,12 @@ CRITICAL: Narration segments must NEVER contain dialogue or quoted speech. Any s
 IMPORTANT: Every dialogue segment MUST include a "gender" field ("male" or "female") matching the speaking character's gender. Be consistent — the same character must always have the same gender across all scenes.
 Use consistent character names across scenes. When the player character speaks, include their dialogue as a dialogue segment with the player character's name and gender.
 
+NPC DIRECT SPEECH (MANDATORY):
+When NPCs are present in the scene and interacting with the player, they MUST speak in direct quoted dialogue — NEVER describe their speech indirectly. Do NOT write "Roch agrees to help" or "The merchant explains that the price is high" — instead, make them SPEAK their lines as dialogue segments.
+BAD: "The old man nods and tells Barnaba about the ruins."
+GOOD: The old man nods. → narration segment, then "Let me tell you about those ruins, lad..." → dialogue segment with the old man's name.
+Every scene with NPCs present MUST include at least one NPC dialogue segment. NPCs react to the player by SPEAKING, not just through narrated descriptions of their reactions.
+
 SOUND EFFECTS:
 For impactful moments (combat, magic, environmental events, dramatic reveals), include a "soundEffect" field with a short English description for audio generation (e.g. "sword clashing against shield, metallic ringing"). Use null when no sound effect fits. Don't overuse — only for moments that truly benefit from audio atmosphere.
 
@@ -852,7 +858,8 @@ For musicPrompt: describe the ideal instrumental background music — mention in
 
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.${langReminder}`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.
+NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), not just be described in narration. Never summarize what an NPC says — let them speak.${langReminder}`;
   }
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
@@ -1011,6 +1018,8 @@ RULE 2 — SPEECH PARTS (MANDATORY): The DIALOGUE line (if present) contains the
 If there is no DIALOGUE line, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's action text verbatim).
 `}
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
+
+NPC DIRECT SPEECH REMINDER: If any NPC is present in the scene and reacts to the player, that NPC MUST speak in direct dialogue (a "dialogue" segment with their name). Do NOT just describe their reaction in narration — let them talk. Every scene where the player interacts with an NPC must produce at least one NPC dialogue segment.
 
 FEASIBILITY CHECK: Before rolling dice, verify the action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (diceRoll=null). Trivial/certain actions auto-succeed (diceRoll=null). Only roll for uncertain outcomes.
 Simple repositioning or low-risk movement such as "I take a step back", "I move aside", or "I cautiously back away" is usually trivial. Prefer diceRoll=null unless the scene is actively dangerous; if you do require a roll, expose that ease with difficultyModifier +20 or +30.

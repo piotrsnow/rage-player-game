@@ -239,7 +239,7 @@ describe('repairDialogueSegments', () => {
 });
 
 describe('ensurePlayerDialogue', () => {
-  it('prepends player dialogue when action has quotes and no segment exists', () => {
+  it('inserts player dialogue after first narration when action has quotes and no segment exists', () => {
     const segments = [
       { type: 'narration', text: 'Barnaba zaproponował wspólne picie.' },
       { type: 'dialogue', character: 'Kazik', text: 'Oczywiście!', gender: 'male' },
@@ -252,11 +252,11 @@ describe('ensurePlayerDialogue', () => {
     );
 
     expect(result.length).toBe(3);
-    expect(result[0].type).toBe('dialogue');
-    expect(result[0].character).toBe('Barnaba');
-    expect(result[0].text).toBe('Kaziu może byśmy się napili?');
-    expect(result[0].gender).toBe('male');
-    expect(result[1]).toEqual(segments[0]);
+    expect(result[0]).toEqual(segments[0]);
+    expect(result[1].type).toBe('dialogue');
+    expect(result[1].character).toBe('Barnaba');
+    expect(result[1].text).toBe('Kaziu może byśmy się napili?');
+    expect(result[1].gender).toBe('male');
     expect(result[2]).toEqual(segments[1]);
   });
 
@@ -296,11 +296,11 @@ describe('ensurePlayerDialogue', () => {
     );
 
     expect(result.length).toBe(3);
-    expect(result[0].type).toBe('dialogue');
-    expect(result[0].text).toBe('Hej!');
+    expect(result[0]).toEqual(segments[0]);
     expect(result[1].type).toBe('dialogue');
-    expect(result[1].text).toBe('Chodźcie tu!');
-    expect(result[2]).toEqual(segments[0]);
+    expect(result[1].text).toBe('Hej!');
+    expect(result[2].type).toBe('dialogue');
+    expect(result[2].text).toBe('Chodźcie tu!');
   });
 
   it('returns segments unchanged when playerAction or characterName is missing', () => {
