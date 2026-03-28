@@ -387,6 +387,29 @@ export default function CampaignCreatorPage() {
             </div>
           )}
 
+          {/* Multiplayer Lobby */}
+          {isMultiplayer && (
+            <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
+              {inMpRoom ? (
+                <PlayerLobby />
+              ) : (
+                <div className="text-center space-y-4">
+                  <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
+                  <div className="flex gap-3 justify-center">
+                    <Button onClick={handleCreateRoom}>
+                      <span className="material-symbols-outlined text-sm">add</span>
+                      {t('multiplayer.createRoom')}
+                    </Button>
+                    <Button variant="ghost" onClick={() => navigate('/join')}>
+                      <span className="material-symbols-outlined text-sm">login</span>
+                      {t('multiplayer.joinRoom')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Genre */}
           <section>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
@@ -755,29 +778,6 @@ export default function CampaignCreatorPage() {
               </div>
             )}
           </section>
-
-          {/* Multiplayer Lobby */}
-          {isMultiplayer && (
-            <section className="border border-outline-variant/15 rounded-sm p-6 bg-surface-container-high/20">
-              {inMpRoom ? (
-                <PlayerLobby />
-              ) : (
-                <div className="text-center space-y-4">
-                  <p className="text-on-surface-variant text-sm">{t('multiplayer.createOrJoin')}</p>
-                  <div className="flex gap-3 justify-center">
-                    <Button onClick={handleCreateRoom}>
-                      <span className="material-symbols-outlined text-sm">add</span>
-                      {t('multiplayer.createRoom')}
-                    </Button>
-                    <Button variant="ghost" onClick={() => navigate('/join')}>
-                      <span className="material-symbols-outlined text-sm">login</span>
-                      {t('multiplayer.joinRoom')}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
 
           {/* Error */}
           {(state.error || mp.state.error) && (

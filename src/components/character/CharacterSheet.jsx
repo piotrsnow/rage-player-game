@@ -386,7 +386,7 @@ export default function CharacterSheet({ onClose }) {
   const availableXp = (displayCharacter?.xp || 0) - (displayCharacter?.xpSpent || 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('nav.armory')} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('nav.characterSheet')} onClick={onClose}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
@@ -396,7 +396,7 @@ export default function CharacterSheet({ onClose }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
           <h2 className="font-headline text-xl text-tertiary flex items-center gap-2">
             <span className="material-symbols-outlined text-primary-dim">shield</span>
-            {t('nav.armory')}
+            {t('nav.characterSheet')}
           </h2>
           <div className="flex items-center gap-3">
             {displayCharacter && campaign && (

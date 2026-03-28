@@ -3,8 +3,8 @@ import { storage } from '../services/storage';
 import { calculateWounds, normalizeMoney } from '../services/gameState';
 import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
-import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils';
-import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
+import { hourToPeriod, decayNeeds } from '../services/timeUtils';
+import { reduceMultiplayerSlice } from './slices/multiplayerSlice';
 import {
   getAdvancementCost,
   ADVANCEMENT_COSTS,
@@ -144,6 +144,10 @@ const initialState = {
 };
 
 function gameReducer(state, action) {
+  if (action.type === 'LOAD_MULTIPLAYER_STATE' || action.type.startsWith('MP_')) {
+    return reduceMultiplayerSlice(state, action);
+  }
+
   switch (action.type) {
     case 'START_CAMPAIGN': {
       const char = action.payload.character || createDefaultCharacter();
@@ -1496,99 +1500,6 @@ function gameReducer(state, action) {
         ...state,
         world: { ...state.world, exploredLocations: [...explored] },
       };
-    }
-
-    case 'LOAD_MULTIPLAYER_STATE': {
-      const gs = action.payload;
-      const myOdId = action.payload.myOdId || state.myOdId;
-      const chars = gs.characters || state.characters;
-      return {
-        ...state,
-        myOdId,
-        campaign: gs.campaign || state.campaign,
-        characters: chars,
-        character: (myOdId && chars?.find((c) => c.odId === myOdId)) || chars?.[0] || state.character,
-        world: gs.world || state.world,
-        quests: gs.quests || state.quests,
-        scenes: gs.scenes || state.scenes,
-        chatHistory: gs.chatHistory || state.chatHistory,
-      };
-    }
-
-    case 'MP_ADD_SCENE': {
-      return {
-        ...state,
-        scenes: [...state.scenes, action.payload.scene],
-        chatHistory: [...state.chatHistory, ...(action.payload.chatMessages || [])],
-      };
-    }
-
-    case 'MP_APPLY_STATE_CHANGES': {
-      const { stateChanges, myOdId: payloadOdId } = action.payload;
-      const localOdId = payloadOdId || state.myOdId;
-      let next = { ...state };
-      const normalizedChanges = normalizeMultiplayerStateChanges(stateChanges);
-
-      if (normalizedChanges?.perCharacter && next.characters?.length > 0) {
-        next.characters = next.characters.map((c) => {
-          const changes = normalizedChanges.perCharacter[c.name] || normalizedChanges.perCharacter[c.playerName];
-          if (!changes) return c;
-          const updated = { ...c };
-          if (changes.wounds !== undefined) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + changes.wounds));
-          if (changes.xp !== undefined) updated.xp = updated.xp + changes.xp;
-          if (changes.fortuneChange !== undefined) updated.fortune = Math.max(0, Math.min(updated.fate, updated.fortune + changes.fortuneChange));
-          if (changes.resolveChange !== undefined) updated.resolve = Math.max(0, Math.min(updated.resilience, updated.resolve + changes.resolveChange));
-          if (changes.newItems) updated.inventory = [...(updated.inventory || []), ...changes.newItems];
-          if (changes.removeItems) updated.inventory = (updated.inventory || []).filter((i) => !changes.removeItems.includes(i.id));
-          if (changes.moneyChange) {
-            const cur = updated.money || { gold: 0, silver: 0, copper: 0 };
-            updated.money = normalizeMoney({
-              gold: (cur.gold || 0) + (changes.moneyChange.gold || 0),
-              silver: (cur.silver || 0) + (changes.moneyChange.silver || 0),
-              copper: (cur.copper || 0) + (changes.moneyChange.copper || 0),
-            });
-          }
-          return updated;
-        });
-        next.character = (localOdId && next.characters.find((c) => c.odId === localOdId)) || next.characters[0];
-      }
-
-      if (normalizedChanges?.worldFacts) {
-        next.world = { ...next.world, facts: [...(next.world.facts || []), ...normalizedChanges.worldFacts] };
-      }
-      if (normalizedChanges?.journalEntries) {
-        next.world = { ...next.world, eventHistory: [...(next.world.eventHistory || []), ...normalizedChanges.journalEntries] };
-      }
-      if (normalizedChanges?.currentLocation) {
-        next.world = { ...next.world, currentLocation: normalizedChanges.currentLocation };
-      }
-      if (normalizedChanges?.codexUpdates?.length > 0) {
-        const codex = { ...(next.world.codex || {}) };
-        for (const update of normalizedChanges.codexUpdates) {
-          if (!update.id || !update.fragment?.content) continue;
-          const existing = codex[update.id];
-          if (existing) {
-            const isDuplicate = existing.fragments.some((f) => f.content === update.fragment.content);
-            if (!isDuplicate && existing.fragments.length < 10) {
-              codex[update.id] = {
-                ...existing,
-                fragments: [...existing.fragments, { id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: next.scenes?.length || 0, timestamp: Date.now() }],
-                tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
-                relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
-              };
-            }
-          } else if (Object.keys(codex).length < 100) {
-            codex[update.id] = {
-              id: update.id, name: update.name, category: update.category || 'concept',
-              fragments: [{ id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ...update.fragment, sceneIndex: next.scenes?.length || 0, timestamp: Date.now() }],
-              tags: update.tags || [], relatedEntries: update.relatedEntries || [], firstDiscovered: Date.now(),
-            };
-          }
-        }
-        next.world = { ...next.world, codex };
-      }
-
-      return next;
     }
 
     default:

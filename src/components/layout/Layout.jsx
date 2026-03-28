@@ -4,17 +4,46 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
+import { useGame } from '../../contexts/GameContext';
+import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
 import VersionBadge from '../ui/VersionBadge';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
+import WorldStateModal from '../gameplay/WorldStateModal';
 
 function ModalLayer() {
-  const { characterSheetOpen, closeCharacterSheet, settingsOpen, closeSettings, keysOpen, closeKeys } = useModals();
+  const {
+    characterSheetOpen,
+    closeCharacterSheet,
+    worldStateOpen,
+    closeWorldState,
+    settingsOpen,
+    closeSettings,
+    keysOpen,
+    closeKeys,
+  } = useModals();
+  const { state, dispatch, autoSave } = useGame();
+  const mp = useMultiplayer();
+  const { settings } = useSettings();
+  const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+
   return (
     <>
       {characterSheetOpen && <CharacterSheet onClose={closeCharacterSheet} />}
+      {worldStateOpen && (
+        <WorldStateModal
+          world={isMultiplayer ? mp.state.gameState?.world : state.world}
+          quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
+          characterVoiceMap={state.characterVoiceMap}
+          characterVoices={settings.characterVoices}
+          dispatch={dispatch}
+          autoSave={autoSave}
+          onClose={closeWorldState}
+        />
+      )}
       {settingsOpen && <DMSettingsPage onClose={closeSettings} />}
       {keysOpen && <KeysModal onClose={closeKeys} />}
     </>

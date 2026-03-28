@@ -1,8 +1,8 @@
 import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
-import { resolveDiceRollCharacteristic } from '../../../src/services/diceRollInference.js';
-import { getApplicableTalentBonus } from '../../../src/data/wfrpTalents.js';
+import { resolveDiceRollCharacteristic } from '../../../shared/domain/diceRollInference.js';
+import { getApplicableTalentBonus } from '../../../shared/domain/wfrpTalents.js';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;

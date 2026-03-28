@@ -13,7 +13,7 @@ export default function Sidebar() {
   const { t } = useTranslation();
   const { state } = useGame();
   const mp = useMultiplayer();
-  const { openCharacterSheet, openSettings, openKeys } = useModals();
+  const { openCharacterSheet, openWorldState, openSettings, openKeys } = useModals();
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const hasActiveGame = !!state.campaign || isMultiplayer;
@@ -26,13 +26,15 @@ export default function Sidebar() {
 
   const modalActions = {
     '/character': openCharacterSheet,
+    '/tasks-info': openWorldState,
     '/settings': openSettings,
     '/keys': openKeys,
   };
 
   const navItems = [
     hasActiveGame && { path: '/play', icon: 'book_5', label: t('nav.grimoire') },
-    { path: '/character', icon: 'shield', label: t('nav.armory') },
+    { path: '/character', icon: 'shield', label: t('nav.characterSheet') },
+    hasActiveGame && { path: '/tasks-info', icon: 'assignment', label: t('nav.tasksInfo') },
     { path: '/keys', icon: 'vpn_key', label: t('nav.keys') },
     { path: '/gallery', icon: 'photo_library', label: t('nav.gallery') },
     { path: '/settings', icon: 'settings', label: t('nav.settings') },
