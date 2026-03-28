@@ -352,18 +352,95 @@ export function safeParseAIResponse(raw, schema) {
     return { ok: false, error: jsonResult.error, data: null };
   }
 
-  const parsed = schema.safeParse(jsonResult.data);
+  const normalizedData = schema === SceneResponseSchema
+    ? normalizeSceneResponseCandidate(jsonResult.data)
+    : jsonResult.data;
+
+  const parsed = schema.safeParse(normalizedData);
   if (parsed.success) {
     return { ok: true, data: parsed.data, error: null };
   }
 
   console.warn('[aiResponseValidator] Schema validation failed, using raw data with defaults:', parsed.error.issues?.slice(0, 3));
-  const partial = schema.safeParse({ ...getSchemaDefaults(schema), ...jsonResult.data });
+  const partial = schema.safeParse({ ...getSchemaDefaults(schema), ...normalizedData });
   if (partial.success) {
     return { ok: true, data: partial.data, error: null };
   }
 
-  return { ok: false, data: jsonResult.data, error: 'Schema validation failed — raw JSON returned unvalidated' };
+  return {
+    ok: false,
+    data: normalizedData,
+    error: `Schema validation failed — ${formatZodIssues(parsed.error?.issues) || 'raw JSON returned unvalidated'}`
+  };
+}
+
+function formatZodIssues(issues = []) {
+  if (!Array.isArray(issues) || issues.length === 0) return '';
+  return issues
+    .slice(0, 3)
+    .map((issue) => {
+      const path = Array.isArray(issue.path) && issue.path.length > 0
+        ? issue.path.join('.')
+        : 'root';
+      return `${path}: ${issue.message}`;
+    })
+    .join('; ');
+}
+
+function normalizeSceneResponseCandidate(rawData) {
+  if (!rawData || typeof rawData !== 'object') return rawData;
+
+  const data = { ...rawData };
+
+  if (data.dialogueSegments == null || !Array.isArray(data.dialogueSegments)) {
+    data.dialogueSegments = [];
+  } else {
+    data.dialogueSegments = data.dialogueSegments
+      .filter(Boolean)
+      .map((segment) => {
+        if (!segment || typeof segment !== 'object') {
+          return { type: 'narration', text: String(segment ?? '') };
+        }
+        return {
+          ...segment,
+          type: segment.type === 'dialogue' ? 'dialogue' : 'narration',
+          text: typeof segment.text === 'string' ? segment.text : String(segment.text ?? ''),
+          ...(typeof segment.character === 'string' ? { character: segment.character } : {}),
+          ...(typeof segment.gender === 'string' ? { gender: segment.gender } : {}),
+        };
+      });
+  }
+
+  if (data.suggestedActions == null) {
+    data.suggestedActions = undefined;
+  } else if (Array.isArray(data.suggestedActions)) {
+    data.suggestedActions = data.suggestedActions
+      .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
+      .filter(Boolean)
+      .slice(0, 8);
+    if (data.suggestedActions.length === 0) {
+      data.suggestedActions = undefined;
+    }
+  } else if (typeof data.suggestedActions === 'string') {
+    const single = data.suggestedActions.trim();
+    data.suggestedActions = single ? [single] : undefined;
+  } else {
+    data.suggestedActions = undefined;
+  }
+
+  if (data.atmosphere == null || typeof data.atmosphere !== 'object' || Array.isArray(data.atmosphere)) {
+    data.atmosphere = {};
+  }
+
+  if (data.stateChanges == null || typeof data.stateChanges !== 'object' || Array.isArray(data.stateChanges)) {
+    data.stateChanges = {};
+  }
+
+  if (data.narrative != null && typeof data.narrative !== 'string') {
+    data.narrative = String(data.narrative);
+  }
+
+  return data;
 }
 
 function getSchemaDefaults(schema) {

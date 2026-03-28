@@ -5,6 +5,7 @@ import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import PendingActions from '../multiplayer/PendingActions';
+import Tooltip from '../ui/Tooltip';
 import { parseActionSegments } from '../../services/actionParser';
 
 const normalizeQuotes = (text) =>
@@ -14,6 +15,14 @@ const ATTITUDE_STYLES = {
   hostile: 'bg-error/20 text-error border-error/30',
   neutral: 'bg-warning/20 text-warning border-warning/30',
   friendly: 'bg-success/20 text-success border-success/30',
+};
+
+const QUICK_BUTTON_STYLES = {
+  primary: 'text-primary/90 hover:text-primary bg-primary/8 hover:bg-primary/14 border-primary/20 hover:border-primary/40',
+  neutral: 'text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/45 hover:bg-surface-container-high border-outline-variant/20 hover:border-outline-variant/35',
+  tertiary: 'text-tertiary/85 hover:text-tertiary bg-tertiary/8 hover:bg-tertiary/14 border-tertiary/20 hover:border-tertiary/35',
+  danger: 'text-error/85 hover:text-error bg-error/8 hover:bg-error/14 border-error/20 hover:border-error/35',
+  indigo: 'text-indigo-300/90 hover:text-indigo-200 bg-indigo-500/8 hover:bg-indigo-500/14 border-indigo-400/20 hover:border-indigo-300/35',
 };
 
 export default function ActionPanel({
@@ -192,6 +201,42 @@ export default function ActionPanel({
     : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
   const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
   const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
+
+  const renderQuickActionButton = ({
+    id,
+    icon,
+    label,
+    description,
+    onClick,
+    disabled: isDisabled = false,
+    tone = 'neutral',
+  }) => (
+    <Tooltip
+      key={id}
+      className="inline-flex"
+      tooltipClassName="border-primary/30 bg-[linear-gradient(150deg,rgba(24,22,36,0.97),rgba(40,30,58,0.93))] shadow-[0_20px_50px_rgba(8,8,14,0.5)]"
+      content={
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-label uppercase tracking-[0.14em] text-primary/80">{label}</div>
+          {description ? (
+            <div className="text-xs leading-relaxed text-on-surface/90 max-w-[240px]">
+              {description}
+            </div>
+          ) : null}
+        </div>
+      }
+    >
+      <button
+        type="button"
+        aria-label={label}
+        onClick={onClick}
+        disabled={isDisabled}
+        className={`shrink-0 inline-flex items-center justify-center w-9 h-9 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${QUICK_BUTTON_STYLES[tone] || QUICK_BUTTON_STYLES.neutral}`}
+      >
+        <span className="material-symbols-outlined text-[18px] leading-none">{icon}</span>
+      </button>
+    </Tooltip>
+  );
 
   useEffect(() => {
     autoResize();
@@ -450,67 +495,70 @@ export default function ActionPanel({
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-2">
           {/* Quick action buttons */}
-          <button
-            type="button"
-            onClick={() => handleSuggestedAction('[CONTINUE]')}
-            disabled={disabled || hasPendingAction || lastChosenAction === '[CONTINUE]'}
-            title={lastChosenAction === '[CONTINUE]' ? t('gameplay.continueDisabledTooltip') : undefined}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-primary/90 hover:text-primary bg-primary/5 hover:bg-primary/10 border border-primary/15 hover:border-primary/30 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined text-sm">skip_next</span>
-            {t('gameplay.continueButton')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSuggestedAction('[WAIT]')}
-            disabled={disabled || hasPendingAction}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-outline-variant/30 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined text-sm">hourglass_empty</span>
-            {t('gameplay.waitButton')}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSuggestedAction(t('gameplay.searchForQuestsAction'))}
-            disabled={disabled || hasPendingAction}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-tertiary/80 hover:text-tertiary bg-tertiary/5 hover:bg-tertiary/10 border border-tertiary/10 hover:border-tertiary/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined text-sm">assignment</span>
-            {t('gameplay.searchForQuests')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setCombatPickerOpen((v) => !v)}
-            disabled={disabled || hasPendingAction}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-error/80 hover:text-error bg-error/5 hover:bg-error/10 border border-error/10 hover:border-error/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined text-sm">swords</span>
-            {t('gameplay.initiateCombat')}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setDialoguePickerOpen((v) => !v); setCombatPickerOpen(false); }}
-            disabled={disabled || hasPendingAction || !canDialogue}
-            title={dialogueCooldown > 0 ? t('dialogue.cooldownHint', { scenes: dialogueCooldown }) : npcs.length < 1 ? t('dialogue.notEnoughNpcs') : t('dialogue.startDialogue')}
-            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-tertiary/80 hover:text-tertiary bg-tertiary/5 hover:bg-tertiary/10 border border-tertiary/10 hover:border-tertiary/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <span className="material-symbols-outlined text-sm">forum</span>
-            {dialogueCooldown > 0
-              ? t('dialogue.cooldownShort', { scenes: dialogueCooldown })
-              : t('dialogue.startDialogue')}
-          </button>
-          {settings.needsSystemEnabled && (
-            <button
-              type="button"
-              onClick={() => handleSuggestedAction(t('gameplay.restAction'))}
-              disabled={disabled || hasPendingAction}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-indigo-400/80 hover:text-indigo-400 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-400/10 hover:border-indigo-400/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
-            >
-              <span className="material-symbols-outlined text-sm">bedtime</span>
-              {t('gameplay.restButton')}
-            </button>
-          )}
-
+          <div className="flex items-center gap-1.5 shrink-0">
+            {renderQuickActionButton({
+              id: 'continue',
+              icon: 'skip_next',
+              label: t('gameplay.continueButton'),
+              description: lastChosenAction === '[CONTINUE]'
+                ? t('gameplay.continueDisabledTooltip')
+                : t('gameplay.continueChatMessage'),
+              onClick: () => handleSuggestedAction('[CONTINUE]'),
+              disabled: disabled || hasPendingAction || lastChosenAction === '[CONTINUE]',
+              tone: 'primary',
+            })}
+            {renderQuickActionButton({
+              id: 'wait',
+              icon: 'hourglass_empty',
+              label: t('gameplay.waitButton'),
+              description: t('gameplay.waitSystemMessage'),
+              onClick: () => handleSuggestedAction('[WAIT]'),
+              disabled: disabled || hasPendingAction,
+              tone: 'neutral',
+            })}
+            {renderQuickActionButton({
+              id: 'quests',
+              icon: 'assignment',
+              label: t('gameplay.searchForQuests'),
+              description: t('gameplay.searchForQuestsAction'),
+              onClick: () => handleSuggestedAction(t('gameplay.searchForQuestsAction')),
+              disabled: disabled || hasPendingAction,
+              tone: 'tertiary',
+            })}
+            {renderQuickActionButton({
+              id: 'combat',
+              icon: 'swords',
+              label: t('gameplay.initiateCombat'),
+              description: t('gameplay.generalCombat'),
+              onClick: () => setCombatPickerOpen((v) => !v),
+              disabled: disabled || hasPendingAction,
+              tone: 'danger',
+            })}
+            {renderQuickActionButton({
+              id: 'dialogue',
+              icon: 'forum',
+              label: dialogueCooldown > 0
+                ? t('dialogue.cooldownShort', { scenes: dialogueCooldown })
+                : t('dialogue.startDialogue'),
+              description: dialogueCooldown > 0
+                ? t('dialogue.cooldownHint', { scenes: dialogueCooldown })
+                : npcs.length < 1
+                  ? t('dialogue.notEnoughNpcs')
+                  : t('dialogue.selectNpcs'),
+              onClick: () => { setDialoguePickerOpen((v) => !v); setCombatPickerOpen(false); },
+              disabled: disabled || hasPendingAction || !canDialogue,
+              tone: 'tertiary',
+            })}
+            {settings.needsSystemEnabled && renderQuickActionButton({
+              id: 'rest',
+              icon: 'bedtime',
+              label: t('gameplay.restButton'),
+              description: t('gameplay.restAction'),
+              onClick: () => handleSuggestedAction(t('gameplay.restAction')),
+              disabled: disabled || hasPendingAction,
+              tone: 'indigo',
+            })}
+          </div>
           {/* Custom action input */}
           <form onSubmit={handleCustomSubmit} className="flex-1 min-w-0">
             {/* Dialogue tag */}
