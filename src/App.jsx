@@ -13,7 +13,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<LobbyPage />} />
         <Route path="/create" element={<CampaignCreatorPage />} />
-        <Route path="/play" element={<GameplayPage />} />
+        <Route path="/play/:campaignId?" element={<GameplayPage />} />
         <Route path="/join/:code?" element={<JoinRoomPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/view/:shareToken" element={<CampaignViewerPage />} />

@@ -261,21 +261,54 @@ export const aiService = {
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 4000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
     const validated = safeParseAIResponse(result, CampaignResponseSchema);
     if (validated.ok) return { result: validated.data, usage };
+
+    const raw = validated.data || {};
+    const rawScene = raw.firstScene && typeof raw.firstScene === 'object' ? raw.firstScene : {};
+    const fallbackNarrative = buildFallbackNarrative(language);
+    const narrative = typeof rawScene.narrative === 'string' && rawScene.narrative.trim()
+      ? rawScene.narrative.trim()
+      : typeof raw.hook === 'string' && raw.hook.trim()
+        ? raw.hook.trim()
+        : fallbackNarrative;
+
+    const suggestedActions = Array.isArray(rawScene.suggestedActions) && rawScene.suggestedActions.length > 0
+      ? rawScene.suggestedActions.filter((a) => typeof a === 'string' && a.trim()).slice(0, 8)
+      : buildFallbackActions(language);
+
+    const dialogueSegments = Array.isArray(rawScene.dialogueSegments) && rawScene.dialogueSegments.length > 0
+      ? rawScene.dialogueSegments
+      : [{ type: 'narration', text: narrative }];
+
+    console.warn('[ai] Campaign schema validation failed, using raw AI data with fallbacks:', validated.error);
     return {
       result: {
-        name: settings?.storyPrompt ? `Campaign: ${String(settings.storyPrompt).slice(0, 40)}` : 'Unnamed Campaign',
-        worldDescription: language === 'pl'
-          ? 'Świat jest pełen napięć, konfliktów frakcji i ukrytych zagrożeń.'
-          : 'The world is full of tension, faction conflict, and hidden threats.',
-        hook: language === 'pl'
-          ? 'Twoja historia zaczyna się od niepozornego tropu, który prowadzi do większej intrygi.'
-          : 'Your story begins with a small clue that opens into a larger conspiracy.',
+        name: typeof raw.name === 'string' && raw.name.trim()
+          ? raw.name.trim()
+          : settings?.storyPrompt ? `Campaign: ${String(settings.storyPrompt).slice(0, 40)}` : 'Unnamed Campaign',
+        worldDescription: typeof raw.worldDescription === 'string' && raw.worldDescription.trim()
+          ? raw.worldDescription.trim()
+          : language === 'pl'
+            ? 'Świat jest pełen napięć, konfliktów frakcji i ukrytych zagrożeń.'
+            : 'The world is full of tension, faction conflict, and hidden threats.',
+        hook: typeof raw.hook === 'string' && raw.hook.trim()
+          ? raw.hook.trim()
+          : language === 'pl'
+            ? 'Twoja historia zaczyna się od niepozornego tropu, który prowadzi do większej intrygi.'
+            : 'Your story begins with a small clue that opens into a larger conspiracy.',
+        characterSuggestion: raw.characterSuggestion || undefined,
         firstScene: {
-          narrative: buildFallbackNarrative(language),
-          dialogueSegments: [{ type: 'narration', text: buildFallbackNarrative(language) }],
-          suggestedActions: buildFallbackActions(language),
+          narrative,
+          dialogueSegments,
+          suggestedActions,
+          soundEffect: rawScene.soundEffect ?? null,
+          musicPrompt: rawScene.musicPrompt ?? null,
+          imagePrompt: rawScene.imagePrompt ?? null,
+          atmosphere: rawScene.atmosphere && typeof rawScene.atmosphere === 'object' ? rawScene.atmosphere : {},
+          journalEntries: Array.isArray(rawScene.journalEntries) ? rawScene.journalEntries : [],
         },
-        initialWorldFacts: [],
+        initialQuest: raw.initialQuest || undefined,
+        initialNPCs: Array.isArray(raw.initialNPCs) ? raw.initialNPCs : [],
+        initialWorldFacts: Array.isArray(raw.initialWorldFacts) ? raw.initialWorldFacts : [],
         meta: { degraded: true, reason: validated.error || 'campaign_schema_validation_failed' },
       },
       usage,

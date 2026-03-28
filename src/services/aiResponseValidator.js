@@ -264,7 +264,7 @@ export const SceneResponseSchema = z.object({
   musicPrompt: z.string().nullable().optional(),
   imagePrompt: z.string().nullable().optional(),
   atmosphere: AtmosphereSchema,
-  suggestedActions: z.array(z.string()).min(1).max(8).default(['Look around', 'Talk to someone nearby', 'Move on', 'Investigate']),
+  suggestedActions: z.array(z.string()).min(1).max(8),
   questOffers: z.array(QuestOfferSchema).optional().default([]),
   stateChanges: StateChangesSchema,
   diceRoll: DiceRollSchema,
@@ -354,7 +354,9 @@ export function safeParseAIResponse(raw, schema) {
 
   const normalizedData = schema === SceneResponseSchema
     ? normalizeSceneResponseCandidate(jsonResult.data)
-    : jsonResult.data;
+    : schema === CampaignResponseSchema
+      ? normalizeCampaignResponseCandidate(jsonResult.data)
+      : jsonResult.data;
 
   const parsed = schema.safeParse(normalizedData);
   if (parsed.success) {
@@ -412,20 +414,20 @@ function normalizeSceneResponseCandidate(rawData) {
   }
 
   if (data.suggestedActions == null) {
-    data.suggestedActions = undefined;
+    data.suggestedActions = extractFallbackActions(data) || undefined;
   } else if (Array.isArray(data.suggestedActions)) {
     data.suggestedActions = data.suggestedActions
       .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
       .filter(Boolean)
       .slice(0, 8);
     if (data.suggestedActions.length === 0) {
-      data.suggestedActions = undefined;
+      data.suggestedActions = extractFallbackActions(data) || undefined;
     }
   } else if (typeof data.suggestedActions === 'string') {
     const single = data.suggestedActions.trim();
-    data.suggestedActions = single ? [single] : undefined;
+    data.suggestedActions = single ? [single] : extractFallbackActions(data) || undefined;
   } else {
-    data.suggestedActions = undefined;
+    data.suggestedActions = extractFallbackActions(data) || undefined;
   }
 
   if (data.atmosphere == null || typeof data.atmosphere !== 'object' || Array.isArray(data.atmosphere)) {
@@ -443,12 +445,97 @@ function normalizeSceneResponseCandidate(rawData) {
   return data;
 }
 
+function normalizeCampaignResponseCandidate(rawData) {
+  if (!rawData || typeof rawData !== 'object') return rawData;
+
+  const data = { ...rawData };
+
+  if (data.firstScene && typeof data.firstScene === 'object') {
+    const fs = { ...data.firstScene };
+
+    if (fs.atmosphere == null || typeof fs.atmosphere !== 'object' || Array.isArray(fs.atmosphere)) {
+      fs.atmosphere = {};
+    }
+
+    if (fs.dialogueSegments == null || !Array.isArray(fs.dialogueSegments)) {
+      fs.dialogueSegments = [];
+    } else {
+      fs.dialogueSegments = fs.dialogueSegments
+        .filter(Boolean)
+        .map((segment) => {
+          if (!segment || typeof segment !== 'object') {
+            return { type: 'narration', text: String(segment ?? '') };
+          }
+          return {
+            ...segment,
+            type: segment.type === 'dialogue' ? 'dialogue' : 'narration',
+            text: typeof segment.text === 'string' ? segment.text : String(segment.text ?? ''),
+          };
+        });
+    }
+
+    if (Array.isArray(fs.suggestedActions)) {
+      fs.suggestedActions = fs.suggestedActions
+        .map((a) => (typeof a === 'string' ? a.trim() : String(a ?? '').trim()))
+        .filter(Boolean);
+    }
+
+    data.firstScene = fs;
+  }
+
+  if (data.initialQuest && typeof data.initialQuest === 'object') {
+    if (!data.initialQuest.id) {
+      data.initialQuest = {
+        ...data.initialQuest,
+        id: `quest_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      };
+    }
+    if (Array.isArray(data.initialQuest.objectives)) {
+      data.initialQuest.objectives = data.initialQuest.objectives.map((obj, i) => {
+        if (obj && typeof obj === 'object' && !obj.id) {
+          return { ...obj, id: obj.id || `obj_${i + 1}` };
+        }
+        return obj;
+      });
+    }
+    if (Array.isArray(data.initialQuest.questItems)) {
+      data.initialQuest.questItems = data.initialQuest.questItems.map((item, i) => {
+        if (item && typeof item === 'object' && !item.id) {
+          return { ...item, id: item.id || `qitem_${i + 1}` };
+        }
+        return item;
+      });
+    }
+  }
+
+  if (Array.isArray(data.initialNPCs)) {
+    data.initialNPCs = data.initialNPCs.filter(
+      (npc) => npc && typeof npc === 'object' && typeof npc.name === 'string',
+    );
+  }
+
+  return data;
+}
+
+function extractFallbackActions(data) {
+  if (!data?.narrative || typeof data.narrative !== 'string') return null;
+  const text = data.narrative;
+  const npcs = (data.stateChanges?.npcs || []).map(n => n.name).filter(Boolean);
+  const loc = data.stateChanges?.currentLocation;
+  const actions = [];
+  if (npcs.length > 0) actions.push(`Talk to ${npcs[0]}`);
+  if (loc) actions.push(`Explore ${loc}`);
+  if (text.length > 50) actions.push('Investigate the situation');
+  actions.push('Wait and observe');
+  return actions.length >= 2 ? actions.slice(0, 4) : null;
+}
+
 function getSchemaDefaults(schema) {
   if (schema === SceneResponseSchema) {
     return {
       narrative: '',
       dialogueSegments: [],
-      suggestedActions: ['Look around', 'Talk to someone nearby', 'Move on', 'Investigate'],
+      suggestedActions: ['Investigate the situation', 'Wait and observe', 'Look for another way', 'Press forward'],
       questOffers: [],
       stateChanges: {},
       atmosphere: {},
@@ -493,6 +580,14 @@ function fuzzyMatchPolishName(candidate, reference) {
   return false;
 }
 
+function isExcludedName(raw, excludeNames) {
+  return excludeNames.some(name =>
+    name.toLowerCase().split(/\s+/).some(p =>
+      p.toLowerCase() === raw.toLowerCase() || fuzzyMatchPolishName(raw, p)
+    )
+  );
+}
+
 function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
   const words = textBefore.trim().split(/\s+/);
 
@@ -503,19 +598,15 @@ function findSpeakerInText(textBefore, knownNames, excludeNames = []) {
     for (let j = 0; j < knownNames.length; j++) {
       const parts = knownNames[j].split(/\s+/);
       if (parts.some(p => p.toLowerCase() === raw.toLowerCase() || fuzzyMatchPolishName(raw, p))) {
-        return knownNames[j];
+        if (!isExcludedName(raw, excludeNames)) return knownNames[j];
+        break;
       }
     }
 
     if (raw[0] === raw[0].toUpperCase() && raw[0] !== raw[0].toLowerCase()) {
       const isFirstWord = i === 0 || /[.!?…]$/.test(words[i - 1] || '');
       if (!isFirstWord) {
-        const isPlayerName = excludeNames.some(name =>
-          name.toLowerCase().split(/\s+/).some(p =>
-            p.toLowerCase() === raw.toLowerCase() || fuzzyMatchPolishName(raw, p)
-          )
-        );
-        if (!isPlayerName) return raw;
+        if (!isExcludedName(raw, excludeNames)) return raw;
       }
     }
   }
@@ -543,6 +634,52 @@ function lookupGender(name, knownNpcs, existingDialogueSegments) {
   return undefined;
 }
 
+function normalizeTextForDedup(text) {
+  return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const DIRECT_SPEECH_PL = /(?:^|\W)(?:ty|ci|cię|ciebie|twój|twoja|twoje|twoim|twoją|tobie|chcesz|masz|musisz|możesz|widzisz|wiesz|znasz|słyszysz|jesteś|potrzebujesz|pomóż|powiedz|daj|weź|chodź|idź|patrz|słuchaj|posłuchaj|czekaj|spójrz|poczekaj|uważaj)(?:\W|$)/i;
+const DIRECT_SPEECH_EN = /\b(?:you|your|yours|yourself|you're|you've)\b/i;
+const FIRST_PERSON_SPEECH = /(?:^|\W)(?:mi|mnie|mną|mój|moja|moje|moim|moją|mojego|mojej|moich|ze mną|me|my|myself)(?:\W|$)/i;
+
+function looksLikeDirectSpeech(text) {
+  if (!text || text.trim().length < 15) return false;
+  const t = text.trim();
+  if (DIRECT_SPEECH_PL.test(t) || DIRECT_SPEECH_EN.test(t)) return true;
+  if (t.includes('?') && FIRST_PERSON_SPEECH.test(t)) return true;
+  return false;
+}
+
+function startsWithCharacterAction(text, allNames) {
+  const firstWord = text.trim().split(/\s+/)[0].replace(/[,:;.!?…\-—]+$/, '');
+  if (firstWord.length < 2) return false;
+  return allNames.some(name =>
+    name.split(/\s+/).some(part => fuzzyMatchPolishName(firstWord, part))
+  );
+}
+
+function findSpeakerFromContext(segments, currentIndex, knownNames, knownNpcs, excludeNames) {
+  for (let i = currentIndex - 1; i >= Math.max(0, currentIndex - 4); i--) {
+    if (segments[i].type === 'dialogue' && segments[i].character) {
+      if (!isExcludedName(segments[i].character, excludeNames)) return segments[i].character;
+    }
+  }
+  for (let i = currentIndex - 1; i >= Math.max(0, currentIndex - 2); i--) {
+    if (segments[i].type !== 'narration' || !segments[i].text) continue;
+    const words = segments[i].text.trim().split(/\s+/);
+    for (let w = words.length - 1; w >= 0; w--) {
+      const raw = words[w].replace(/[,:;.!?…\-—]+$/, '');
+      if (raw.length < 2) continue;
+      for (const name of knownNames) {
+        if (name.split(/\s+/).some(p => fuzzyMatchPolishName(raw, p))) {
+          if (!isExcludedName(raw, excludeNames)) return name;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export function repairDialogueSegments(narrative, segments, knownNpcs = [], excludeNames = []) {
   if (!segments || segments.length === 0) {
     if (narrative && narrative.trim()) {
@@ -558,7 +695,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
       ...knownNpcs.map(n => n.name).filter(Boolean),
       ...existingDialogueSegments.map(s => s.character).filter(Boolean),
     ])
-  ];
+  ].filter(name => !isExcludedName(name, excludeNames));
 
   const existingDialogueTexts = new Set(
     existingDialogueSegments.map(s => (s.text || '').trim().toLowerCase()).filter(Boolean)
@@ -637,9 +774,69 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
+  // Deduplicate: remove narration segments whose text duplicates a dialogue segment
+  const dialogueTextSet = new Set();
+  for (const seg of repaired) {
+    if (seg.type === 'dialogue' && seg.text) {
+      dialogueTextSet.add(normalizeTextForDedup(seg.text));
+    }
+  }
+  const deduped = repaired.filter(seg => {
+    if (seg.type !== 'narration' || !seg.text) return true;
+    return !dialogueTextSet.has(normalizeTextForDedup(seg.text));
+  });
+
+  // Detect unquoted dialogue in narration segments
+  const allNames = [...knownNames, ...excludeNames];
+  const enhanced = [];
+  for (let i = 0; i < deduped.length; i++) {
+    const seg = deduped[i];
+    if (seg.type !== 'narration' || !seg.text || seg.text.trim().length < 15) {
+      enhanced.push(seg);
+      continue;
+    }
+    if (startsWithCharacterAction(seg.text, allNames)) {
+      enhanced.push(seg);
+      continue;
+    }
+    if (!looksLikeDirectSpeech(seg.text)) {
+      enhanced.push(seg);
+      continue;
+    }
+    const speaker = findSpeakerFromContext(deduped, i, knownNames, knownNpcs, excludeNames);
+    if (!speaker) {
+      enhanced.push(seg);
+      continue;
+    }
+    const gender = lookupGender(speaker, knownNpcs, existingDialogueSegments);
+    enhanced.push({
+      type: 'dialogue',
+      character: speaker,
+      text: seg.text.trim(),
+      ...(gender ? { gender } : {}),
+    });
+  }
+
+  // Second pass: re-attribute narration immediately before dialogue if it has first-person markers
+  for (let i = enhanced.length - 2; i >= 0; i--) {
+    const seg = enhanced[i];
+    if (seg.type !== 'narration' || !seg.text || seg.text.trim().length < 15) continue;
+    const next = enhanced[i + 1];
+    if (next.type !== 'dialogue' || !next.character) continue;
+    if (startsWithCharacterAction(seg.text, allNames)) continue;
+    if (!FIRST_PERSON_SPEECH.test(seg.text)) continue;
+    const gender = lookupGender(next.character, knownNpcs, existingDialogueSegments);
+    enhanced[i] = {
+      type: 'dialogue',
+      character: next.character,
+      text: seg.text.trim(),
+      ...(gender ? { gender } : {}),
+    };
+  }
+
   if (narrative && narrative.trim()) {
-    const repairedText = repaired.map(s => (s.text || '').trim()).join('');
-    if (repairedText.length < narrative.trim().length * 0.7) {
+    const enhancedText = enhanced.map(s => (s.text || '').trim()).join('');
+    if (enhancedText.length < narrative.trim().length * 0.7) {
       const alreadySynthetic = segments.length === 1
         && segments[0].type === 'narration'
         && segments[0].text === narrative;
@@ -649,7 +846,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
-  return repaired;
+  return enhanced;
 }
 
 export function ensurePlayerDialogue(segments, playerAction, characterName, characterGender) {

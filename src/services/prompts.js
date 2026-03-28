@@ -378,6 +378,10 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     ? `${character.career.name} (${character.career.class}), Tier ${character.career.tier}: ${character.career.tierName}, Status: ${character.career.status}`
     : 'Unknown';
 
+  const allScenes = gameState.scenes || [];
+  const lastScene = allScenes[allScenes.length - 1];
+  const previousSuggestedActions = lastScene?.actions || [];
+
   let sceneHistory;
   if (enhancedContext) {
     const parts = [];
@@ -392,7 +396,11 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     }
     if (enhancedContext.fullScenes?.length > 0) {
       const full = enhancedContext.fullScenes
-        .map((s) => `Scene ${s.index}${s.action ? ` [Player: ${s.action}]` : ''}:\n${s.narrative}`)
+        .map((s) => {
+          const actionTag = s.action ? ` [Player: ${s.action}]` : '';
+          const actionsTag = s.suggestedActions?.length ? `\n  Suggested actions: ${s.suggestedActions.join(' | ')}` : '';
+          return `Scene ${s.index}${actionTag}:\n${s.narrative}${actionsTag}`;
+        })
         .join('\n\n');
       parts.push(`RECENT SCENES (full):\n${full}`);
     }
@@ -404,8 +412,7 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     }
     sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
   } else {
-    const scenes = gameState.scenes || [];
-    sceneHistory = scenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n') || 'No scenes yet - this is the beginning of the story.';
+    sceneHistory = allScenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n') || 'No scenes yet - this is the beginning of the story.';
   }
 
   return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under the Warhammer Fantasy Roleplay 4th Edition (WFRP 4e) rules system.
@@ -612,6 +619,7 @@ Write ALL narrative text, dialogue, descriptions, quest names, quest completion 
 
 SUGGESTED ACTIONS (PLAYER CHARACTER VOICE):
 Every string in "suggestedActions" must read as something the player character intends to do or say — first person ("I examine the door", "I tell him I'm not interested") or a consistent imperative from the PC's agency ("Search the chest" meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
+VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like "Look around", "Move on", or "Talk to someone".${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from the previous scene: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
 
 INSTRUCTIONS:
 1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
@@ -928,7 +936,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["I look around and get my bearings", "I approach the nearest local and ask what's going on", "I keep my hand near my weapon and watch the exits", "I search for anything useful or out of place"],
+  "suggestedActions": ["(3-4 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name)"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
@@ -1227,7 +1235,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["I take a closer look at what's in front of me", "I call out or signal to get someone's attention", "I move to a safer or more advantageous position", "I try something clever using what's around me"],
+  "suggestedActions": ["(3-4 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions)"],
   "questOffers": [],
   "stateChanges": {
     "woundsChange": 0,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
@@ -26,8 +26,95 @@ function FloatingRune({ delay, className }) {
   );
 }
 
+function CharacterSummary({ char, label, icon, accent, disabled }) {
+  if (!char) return null;
+  const career = char.career?.name || char.careerData?.name || char.career || char.careerData || '—';
+  const tier = char.career?.tier || char.careerData?.tier || '?';
+  const xp = char.xp ?? 0;
+  const xpSpent = char.xpSpent ?? 0;
+  return (
+    <div className={`flex-1 min-w-0 p-4 rounded-sm border transition-colors ${disabled ? 'opacity-40 border-outline-variant/20 bg-surface-container-low/30' : `border-${accent}/20 bg-surface-container-low`}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`material-symbols-outlined text-sm ${disabled ? 'text-outline' : `text-${accent}`}`}>{icon}</span>
+        <span className={`font-label text-xs uppercase tracking-wider ${disabled ? 'text-outline' : `text-${accent}`}`}>{label}</span>
+      </div>
+      <p className="text-on-surface font-headline text-sm truncate">{char.name || '—'}</p>
+      <p className="text-on-surface-variant text-xs mt-1">{career} (T{tier})</p>
+      <p className="text-on-surface-variant text-[10px] mt-1">XP: {xp} / {xpSpent} spent</p>
+    </div>
+  );
+}
+
+function CharacterChoiceModal({ campaign, libraryCharacter, libraryLoading, onChooseCampaign, onChooseLibrary, onCancel, t }) {
+  const campaignChar = campaign.character;
+  const hasLibrary = libraryCharacter != null && libraryCharacter !== undefined;
+  const libraryDisabled = !hasLibrary || libraryLoading;
+
+  return (
+    <div className="bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-lg mx-4 animate-slide-up">
+      <div className="p-6 border-b border-outline-variant/10">
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-primary">person</span>
+          <div>
+            <h3 className="font-headline text-on-surface text-lg">{t('lobby.characterChoice', 'Character Version')}</h3>
+            <p className="text-on-surface-variant text-xs mt-0.5">{t('lobby.characterChoiceDesc', 'Choose which character version to use')}</p>
+          </div>
+        </div>
+        {campaign.campaign?.name && (
+          <p className="text-on-surface-variant text-xs mt-3 flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-xs text-outline">auto_stories</span>
+            {campaign.campaign.name}
+          </p>
+        )}
+      </div>
+
+      <div className="p-6 flex gap-4">
+        <CharacterSummary
+          char={campaignChar}
+          label={t('lobby.campaignCharacter', 'Campaign Character')}
+          icon="save"
+          accent="tertiary"
+        />
+        {libraryLoading ? (
+          <div className="flex-1 min-w-0 p-4 rounded-sm border border-outline-variant/20 bg-surface-container-low/30 flex items-center justify-center">
+            <span className="material-symbols-outlined text-sm text-outline animate-spin">sync</span>
+          </div>
+        ) : hasLibrary ? (
+          <CharacterSummary
+            char={libraryCharacter}
+            label={t('lobby.libraryCharacter', 'Current Character (Library)')}
+            icon="person"
+            accent="primary"
+          />
+        ) : (
+          <div className="flex-1 min-w-0 p-4 rounded-sm border border-outline-variant/20 bg-surface-container-low/30 flex flex-col items-center justify-center gap-2">
+            <span className="material-symbols-outlined text-lg text-outline/40">person_off</span>
+            <p className="text-outline text-[10px] text-center">{t('lobby.libraryCharacterNotFound', 'Character not found in library')}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="px-6 pb-6 flex gap-3">
+        <Button className="flex-1" variant="secondary" onClick={onChooseCampaign}>
+          {t('lobby.useCampaignChar', 'Use Campaign Version')}
+        </Button>
+        <Button className="flex-1" onClick={onChooseLibrary} disabled={libraryDisabled}>
+          {t('lobby.useLibraryChar', 'Use Library Version')}
+        </Button>
+      </div>
+
+      <div className="px-6 pb-4 flex justify-center">
+        <button onClick={onCancel} className="text-xs text-outline hover:text-on-surface-variant transition-colors">
+          {t('common.cancel', 'Cancel')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function LobbyPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
@@ -38,6 +125,17 @@ export default function LobbyPage() {
   const [syncing, setSyncing] = useState(false);
   const [rejoinInfo, setRejoinInfo] = useState(null);
   const [rejoining, setRejoining] = useState(false);
+  const [pendingCampaign, setPendingCampaign] = useState(null);
+  const [libraryCharacter, setLibraryCharacter] = useState(undefined);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [campaignNotFound, setCampaignNotFound] = useState(false);
+
+  useEffect(() => {
+    if (location.state?.campaignNotFound) {
+      setCampaignNotFound(true);
+      navigate('/', { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,9 +182,47 @@ export default function LobbyPage() {
     };
   }, [backendUser]);
 
+  const openCharacterChoice = async (campaignData) => {
+    setPendingCampaign(campaignData);
+    setLibraryCharacter(undefined);
+    if (!campaignData.character) {
+      setLibraryLoading(false);
+      return;
+    }
+    setLibraryLoading(true);
+    try {
+      const chars = await storage.getCharactersAsync();
+      const match = storage.findMatchingLibraryCharacter(campaignData.character, chars);
+      setLibraryCharacter(match);
+    } catch {
+      setLibraryCharacter(null);
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const confirmLoad = (useLibrary) => {
+    if (!pendingCampaign) return;
+    let payload = pendingCampaign;
+    if (useLibrary && libraryCharacter) {
+      payload = {
+        ...pendingCampaign,
+        character: {
+          ...libraryCharacter,
+          career: libraryCharacter.career || libraryCharacter.careerData,
+          localId: pendingCampaign.character?.localId || libraryCharacter.localId,
+          backendId: libraryCharacter.backendId || libraryCharacter.id || pendingCampaign.character?.backendId,
+        },
+      };
+    }
+    dispatch({ type: 'LOAD_CAMPAIGN', payload });
+    setPendingCampaign(null);
+    setLibraryCharacter(undefined);
+    navigate(`/play/${payload.campaign.id}`);
+  };
+
   const handleLoad = (campaign) => {
-    dispatch({ type: 'LOAD_CAMPAIGN', payload: campaign });
-    navigate('/play');
+    openCharacterChoice(campaign);
   };
 
   const handleDelete = async (id) => {
@@ -100,14 +236,12 @@ export default function LobbyPage() {
     if (activeId) {
       const data = storage.loadCampaign(activeId);
       if (data) {
-        dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-        navigate('/play');
+        openCharacterChoice(data);
         return;
       }
     }
     if (campaigns.length > 0) {
-      dispatch({ type: 'LOAD_CAMPAIGN', payload: campaigns[0] });
-      navigate('/play');
+      openCharacterChoice(campaigns[0]);
     }
   };
 
@@ -142,7 +276,7 @@ export default function LobbyPage() {
     storage.saveCampaign(forked);
     setCampaigns(storage.getCampaigns());
     dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
-    navigate('/play');
+    navigate(`/play/${forked.campaign.id}`);
   };
 
   useEffect(() => {
@@ -188,6 +322,16 @@ export default function LobbyPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6 py-12 relative overflow-hidden">
+      {campaignNotFound && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
+          <span className="material-symbols-outlined text-base">error</span>
+          {t('lobby.campaignNotFound')}
+          <button onClick={() => setCampaignNotFound(false)} className="ml-2 hover:text-on-surface transition-colors">
+            <span className="material-symbols-outlined text-base">close</span>
+          </button>
+        </div>
+      )}
+
       {/* Background radial glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/[0.04] rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 left-1/3 w-[400px] h-[400px] bg-tertiary/[0.03] rounded-full blur-[100px] pointer-events-none" />
@@ -338,6 +482,21 @@ export default function LobbyPage() {
           </span>
           <p className="text-sm mb-2">{t('lobby.noCampaigns')}</p>
           <p className="text-xs text-outline">{t('lobby.noCampaignsHint', 'Create your first adventure above')}</p>
+        </div>
+      )}
+
+      {/* Character Version Choice Modal */}
+      {pendingCampaign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <CharacterChoiceModal
+            campaign={pendingCampaign}
+            libraryCharacter={libraryCharacter}
+            libraryLoading={libraryLoading}
+            onChooseCampaign={() => confirmLoad(false)}
+            onChooseLibrary={() => confirmLoad(true)}
+            onCancel={() => { setPendingCampaign(null); setLibraryCharacter(undefined); }}
+            t={t}
+          />
         </div>
       )}
     </div>

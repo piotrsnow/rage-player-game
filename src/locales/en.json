@@ -210,7 +210,15 @@
     "forkFromScene": "Fork from scene",
     "forkFromSceneHint": "Pick a scene to branch into a new campaign copy",
     "forkFromHere": "Play from here",
-    "currentScene": "current"
+    "currentScene": "current",
+    "characterChoice": "Character Version",
+    "characterChoiceDesc": "Choose which character version to use",
+    "campaignCharacter": "Campaign Character",
+    "libraryCharacter": "Current Character (Library)",
+    "libraryCharacterNotFound": "Character not found in library",
+    "useCampaignChar": "Use Campaign Version",
+    "useLibraryChar": "Use Library Version",
+    "campaignNotFound": "Campaign not found. It may have been deleted."
   },
   "creator": {
     "title": "Forge a New Campaign",

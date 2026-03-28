@@ -482,7 +482,7 @@ export default function GalleryPage() {
       storage.saveCampaign(forked);
       dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
       setSelected(null);
-      navigate('/play');
+      navigate(`/play/${forked.campaign.id}`);
     },
     [dispatch, navigate],
   );

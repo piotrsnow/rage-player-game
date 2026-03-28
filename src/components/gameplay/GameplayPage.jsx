@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { storage } from '../../services/storage';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
@@ -41,6 +42,7 @@ import { calculateTensionScore } from '../../services/tensionTracker';
 export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { campaignId: urlCampaignId } = useParams();
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
   const { settings, updateSettings, updateDMSettings } = useSettings();
@@ -256,10 +258,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   }, [scenes.length]);
 
   useEffect(() => {
-    if (!campaign && !isMultiplayer && !readOnly) {
-      navigate('/');
+    if (campaign || isMultiplayer || readOnly) return;
+    if (urlCampaignId) {
+      const data = storage.loadCampaign(urlCampaignId);
+      if (data) {
+        dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+        return;
+      }
+      navigate('/', { replace: true, state: { campaignNotFound: true } });
+      return;
     }
-  }, [campaign, isMultiplayer, readOnly, navigate]);
+    navigate('/');
+  }, [campaign, isMultiplayer, readOnly, navigate, urlCampaignId, dispatch]);
 
   useEffect(() => {
     if (readOnly) return;

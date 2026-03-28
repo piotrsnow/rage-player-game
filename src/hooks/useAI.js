@@ -393,12 +393,21 @@ export function useAI() {
 
         const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
         const playerNames = (state.party || [state.character]).map(c => c?.name).filter(Boolean);
+        const factionNames = Object.keys(state.world?.factions || {});
+        const locationNames = (state.world?.mapState || []).map(l => l.name).filter(Boolean);
+        const excludeFromSpeakers = [
+          ...playerNames,
+          ...factionNames,
+          ...locationNames,
+          ...(state.world?.currentLocation ? [state.world.currentLocation] : []),
+          ...(state.campaign?.name ? [state.campaign.name] : []),
+        ];
 
         const repairedSegments = repairDialogueSegments(
           result.narrative,
           result.dialogueSegments || [],
           [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])],
-          playerNames
+          excludeFromSpeakers
         );
         const finalSegments = (!isFirstScene && !isPassiveSceneAction)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)

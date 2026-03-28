@@ -275,6 +275,139 @@ describe('repairDialogueSegments', () => {
     expect(dialogues.find(d => d.character === 'Xenobiasz')).toBeTruthy();
     expect(dialogues.find(d => d.character === 'Elara')?.text).toBe('Musimy działać.');
   });
+
+  // --- Deduplication tests ---
+
+  it('removes narration segment that duplicates a dialogue segment text', () => {
+    const segments = [
+      { type: 'narration', text: 'Straszne gówno tu grają co nie?' },
+      { type: 'dialogue', character: 'Barnaba', text: 'Straszne gówno tu grają co nie?', gender: 'male' },
+      { type: 'narration', text: 'Barnaba podchodzi do Hildy przez tłum pachnący piwem.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Barnaba', gender: 'male' }]);
+
+    const narrations = result.filter(s => s.type === 'narration');
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).toBe('Barnaba');
+    expect(narrations.every(s => s.text !== 'Straszne gówno tu grają co nie?')).toBe(true);
+  });
+
+  it('removes narration segment that duplicates dialogue text with different quote marks', () => {
+    const segments = [
+      { type: 'narration', text: '„Uciekajcie!"' },
+      { type: 'dialogue', character: 'Kapłan', text: 'Uciekajcie!', gender: 'male' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Kapłan', gender: 'male' }]);
+
+    const narrations = result.filter(s => s.type === 'narration');
+    expect(narrations).toHaveLength(0);
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).toBe('Kapłan');
+  });
+
+  it('does not remove narration that only partially overlaps with dialogue text', () => {
+    const segments = [
+      { type: 'narration', text: 'Kapłan mruknął groźnie — uciekajcie, bo inaczej będzie źle.' },
+      { type: 'dialogue', character: 'Kapłan', text: 'Uciekajcie!', gender: 'male' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Kapłan', gender: 'male' }]);
+
+    const narrations = result.filter(s => s.type === 'narration');
+    expect(narrations.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // --- Unquoted dialogue detection tests ---
+
+  it('detects unquoted dialogue with second-person markers and attributes to NPC from context', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Barnaba', text: 'Witaj, Hilda.', gender: 'male' },
+      { type: 'narration', text: 'Hilda odrywa wzrok od muzykantów i mierzy go spojrzeniem.' },
+      { type: 'narration', text: 'Jak chcesz mieć ze mną rozmowę, to pomóż mi najpierw: widzisz tam łysego skrybę przy straganie z węgorzami?' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Hilda', gender: 'female' },
+      { name: 'Barnaba', gender: 'male' },
+    ], ['Barnaba']);
+
+    const hildaDialogue = result.filter(s => s.type === 'dialogue' && s.character === 'Hilda');
+    expect(hildaDialogue.length).toBeGreaterThanOrEqual(1);
+    expect(hildaDialogue.some(s => s.text.includes('chcesz'))).toBe(true);
+  });
+
+  it('does not convert narration starting with a character name to dialogue', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Aldric', text: 'Follow me.', gender: 'male' },
+      { type: 'narration', text: 'Aldric pushed through the crowd, his hand resting on the pommel of his sword.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Aldric', gender: 'male' }]);
+
+    expect(result.find(s => s.text.includes('pushed through'))?.type).toBe('narration');
+  });
+
+  it('does not convert narration without speech markers to dialogue', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Mag', text: 'Chodźmy.', gender: 'male' },
+      { type: 'narration', text: 'Noc była ciemna i pełna gwiazd. Wiatr szumiał między drzewami.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Mag', gender: 'male' }]);
+
+    expect(result.find(s => s.text.includes('Noc była'))?.type).toBe('narration');
+  });
+
+  it('attributes narration with first-person markers before dialogue to that speaker (continuation pass)', () => {
+    const segments = [
+      { type: 'narration', text: 'Hilda odwraca się i mierzy go wzrokiem.' },
+      { type: 'narration', text: 'Na bogów, wreszcie ktoś z uszami. Daj mi chwilę, muszę coś sprawdzić.' },
+      { type: 'narration', text: 'Jak chcesz mieć ze mną rozmowę, to pomóż mi najpierw.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Hilda', gender: 'female' },
+    ], ['Barnaba']);
+
+    const hildaDialogue = result.filter(s => s.type === 'dialogue' && s.character === 'Hilda');
+    expect(hildaDialogue.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('handles English unquoted dialogue with second-person pronouns', () => {
+    const segments = [
+      { type: 'narration', text: 'The tavern keeper wipes the bar and looks at you.' },
+      { type: 'narration', text: 'You look like you could use a drink. What can I get for you, stranger?' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Tavern Keeper', gender: 'male' },
+    ]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues.length).toBeGreaterThanOrEqual(1);
+    expect(dialogues[0].text).toContain('you could use a drink');
+  });
+
+  it('does not attribute dialogue to excluded faction/location names like Imperium', () => {
+    const segments = [
+      { type: 'narration', text: 'Tragarze bronili granic Imperium. Jeden z nich mruknął: „Rada chce to dziś zakopać."' },
+    ];
+    const result = repairDialogueSegments('...', segments, [], ['Imperium', 'Altdorf']);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).not.toBe('Imperium');
+  });
+
+  it('filters out excluded names from AI-returned dialogue segments when building known names', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Imperium', text: 'Rada chce to dziś zakopać.' },
+      { type: 'narration', text: 'Tragarz splunął i mruknął: „Przenieśmy to niżej."' },
+    ];
+    const result = repairDialogueSegments('...', segments, [], ['Imperium']);
+
+    const imperiumDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Imperium');
+    expect(imperiumDialogues).toHaveLength(1);
+    const secondDialogue = result.filter(s => s.type === 'dialogue' && s.text === 'Przenieśmy to niżej.');
+    expect(secondDialogue).toHaveLength(1);
+    expect(secondDialogue[0].character).not.toBe('Imperium');
+  });
 });
 
 describe('ensurePlayerDialogue', () => {

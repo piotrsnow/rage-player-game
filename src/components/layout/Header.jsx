@@ -30,9 +30,10 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  const playPath = `/play/${state.campaign?.id || ''}`;
   const navLinks = [
     { path: '/', label: t('nav.lobby') },
-    hasActiveGame && { path: '/play', label: t('nav.grimoire') },
+    hasActiveGame && { path: playPath, label: t('nav.grimoire') },
     { path: '/character', label: t('nav.characterSheet'), action: openCharacterSheet },
     hasActiveGame && { path: '/tasks-info', label: t('nav.tasksInfo'), action: openWorldState },
   ].filter(Boolean);
@@ -129,7 +130,7 @@ export default function Header() {
         <div className="flex items-center gap-1">
           {hasActiveGame && (
             <Link
-              to="/play"
+              to={playPath}
               aria-label={t('nav.play')}
               className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
             >

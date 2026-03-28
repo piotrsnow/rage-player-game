@@ -48,7 +48,8 @@ export const storage = {
   },
 
   saveCampaign(gameState) {
-    if (apiClient.isConnected()) {
+    const backendConnected = apiClient.isConnected();
+    if (backendConnected) {
       this._saveCampaignToBackend(gameState);
     }
 
@@ -65,20 +66,47 @@ export const storage = {
       campaigns.unshift(entry);
     }
 
-    if (!this._trySave(campaigns, gameState.campaign.id)) {
-      console.warn('[storage] Quota exceeded – pruning old scene images');
-      const pruned = this._pruneForQuota(campaigns, gameState.campaign.id);
-      if (!this._trySave(pruned, gameState.campaign.id)) {
-        console.warn('[storage] Still over quota – stripping all images');
-        const stripped = this._stripAllImages(pruned);
-        if (!this._trySave(stripped, gameState.campaign.id)) {
-          console.error('[storage] Save failed even after full prune');
-          return { saved: false, pruned: true };
-        }
-      }
+    if (this._trySave(campaigns, gameState.campaign.id)) {
+      return { saved: true, pruned: false };
+    }
+
+    console.warn('[storage] Quota exceeded – pruning old scene images');
+    let pruned = this._pruneForQuota(campaigns, gameState.campaign.id);
+    if (this._trySave(pruned, gameState.campaign.id)) {
       return { saved: true, pruned: true };
     }
-    return { saved: true, pruned: false };
+
+    console.warn('[storage] Still over quota – stripping all images');
+    let stripped = this._stripAllImages(pruned);
+    if (this._trySave(stripped, gameState.campaign.id)) {
+      return { saved: true, pruned: true };
+    }
+
+    if (backendConnected) {
+      console.warn('[storage] Still over quota – dropping non-active campaigns from localStorage (backend has them)');
+      const activeOnly = stripped.filter((c) => c.campaign.id === gameState.campaign.id);
+      if (this._trySave(activeOnly, gameState.campaign.id)) {
+        return { saved: true, pruned: true };
+      }
+
+      console.warn('[storage] Still over quota – deep-pruning active campaign');
+      const deepPruned = this._deepPruneForQuota(activeOnly, gameState.campaign.id);
+      if (this._trySave(deepPruned, gameState.campaign.id)) {
+        return { saved: true, pruned: true };
+      }
+    }
+
+    console.warn('[storage] Still over quota – deep-pruning all campaigns');
+    const deepPruned = this._deepPruneForQuota(
+      this._stripAllImages(this._pruneForQuota(campaigns, gameState.campaign.id)),
+      gameState.campaign.id,
+    );
+    if (this._trySave(deepPruned, gameState.campaign.id)) {
+      return { saved: true, pruned: true };
+    }
+
+    console.error('[storage] Save failed even after full prune');
+    return { saved: false, pruned: true };
   },
 
   async _saveCampaignToBackend(gameState) {
@@ -199,6 +227,45 @@ export const storage = {
       ...c,
       scenes: (c.scenes || []).map(({ image, ...rest }) => rest),
     }));
+  },
+
+  _deepPruneForQuota(campaigns, activeCampaignId) {
+    const MAX_SCENES = 30;
+    const MAX_CHAT = 50;
+    const MAX_COMPRESSED_HISTORY = 1500;
+    const MAX_NPCS = 30;
+    const MAX_KNOWLEDGE_EVENTS = 20;
+
+    return campaigns.map((c) => {
+      const isActive = c.campaign.id === activeCampaignId;
+      const keepScenes = isActive ? MAX_SCENES : 10;
+      const keepChat = isActive ? MAX_CHAT : 20;
+
+      const scenes = (c.scenes || []).slice(-keepScenes).map(({ image, ...rest }) => rest);
+      const chatHistory = (c.chatHistory || []).slice(-keepChat);
+
+      let world = c.world ? { ...c.world } : c.world;
+      if (world) {
+        if (world.compressedHistory && world.compressedHistory.length > MAX_COMPRESSED_HISTORY) {
+          world.compressedHistory = world.compressedHistory.substring(0, MAX_COMPRESSED_HISTORY);
+        }
+        if (Array.isArray(world.npcs) && world.npcs.length > MAX_NPCS) {
+          world.npcs = world.npcs.slice(-MAX_NPCS);
+        }
+        if (world.knowledgeBase) {
+          const kb = { ...world.knowledgeBase };
+          if (Array.isArray(kb.events) && kb.events.length > MAX_KNOWLEDGE_EVENTS) {
+            kb.events = kb.events.slice(-MAX_KNOWLEDGE_EVENTS);
+          }
+          if (Array.isArray(kb.decisions) && kb.decisions.length > MAX_KNOWLEDGE_EVENTS) {
+            kb.decisions = kb.decisions.slice(-MAX_KNOWLEDGE_EVENTS);
+          }
+          world.knowledgeBase = kb;
+        }
+      }
+
+      return { ...c, scenes, chatHistory, world };
+    });
   },
 
   loadCampaign(id) {
@@ -412,6 +479,24 @@ export const storage = {
       }
     }
     return Array.from(seen.values());
+  },
+
+  findMatchingLibraryCharacter(campaignChar, libraryChars) {
+    if (!campaignChar || !Array.isArray(libraryChars) || libraryChars.length === 0) return null;
+    if (campaignChar.backendId) {
+      const byBackend = libraryChars.find((c) => c.backendId === campaignChar.backendId || c.id === campaignChar.backendId);
+      if (byBackend) return byBackend;
+    }
+    if (campaignChar.localId) {
+      const byLocal = libraryChars.find((c) => c.localId === campaignChar.localId);
+      if (byLocal) return byLocal;
+    }
+    const name = (campaignChar.name || '').trim().toLowerCase();
+    if (name) {
+      const byName = libraryChars.find((c) => (c.name || '').trim().toLowerCase() === name);
+      if (byName) return byName;
+    }
+    return null;
   },
 
   async getCharactersAsync() {

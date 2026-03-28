@@ -327,6 +327,10 @@ export function buildReducedScenePrompt(
 
   const reducedStateJson = `{
   "narrative": "prose in ${lang}, 1–3 short paragraphs",
+  "dialogueSegments": [
+    { "type": "narration", "text": "..." },
+    { "type": "dialogue", "character": "NPC name", "gender": "male|female", "text": "..." }
+  ],
   "suggestedActions": ["opt1", "opt2", "opt3", "opt4"],
   "diceRoll": null,
   "stateChanges": {
@@ -367,7 +371,12 @@ ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. 
 ${applyCreativityBonus ? (isCustomAction ? 'Custom action: add creativityBonus 5–25 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : 'Auto-player-chosen action: add creativityBonus 5–25 (same scale as custom) for how well the choice fits the PC; set diceRoll.baseTarget, creativityBonus, target (effective). Minimum +5 when creativityBonus is used.') : ''}
 ${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}
 
-JSON only — no dialogueSegments, soundEffect, musicPrompt, atmosphere, or imagePrompt.
+JSON only — no soundEffect, musicPrompt, atmosphere, or imagePrompt.
+Always include dialogueSegments:
+- Split narrative into ordered chunks.
+- Use type "dialogue" for spoken lines and type "narration" for non-spoken prose.
+- Keep segment text verbatim (no paraphrase).
+- For every dialogue segment include character and gender ("male" or "female").
 
 ${reducedStateJson}
 

@@ -83,6 +83,7 @@ export const contextManager = {
       index: total - fullCount + i + 1,
       narrative: s.narrative,
       action: s.chosenAction || null,
+      suggestedActions: s.actions || null,
     }));
 
     let mediumScenes = [];

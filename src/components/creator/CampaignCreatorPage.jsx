@@ -9,7 +9,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import Button from '../ui/Button';
-import LoadingSpinner from '../ui/LoadingSpinner';
+import CountdownProgress from '../ui/CountdownProgress';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
 import PortraitGenerator from '../character/PortraitGenerator';
@@ -303,8 +303,8 @@ export default function CampaignCreatorPage() {
         storage.saveLastCharacterName(createdCharacter.name);
       }
       const result = await generateCampaign(formWithChar);
-      startNewCampaign(result, formWithChar);
-      navigate('/play');
+      const newCampaignId = startNewCampaign(result, formWithChar);
+      navigate(`/play/${newCampaignId}`);
     } catch {
       // Error is handled via context
     }
@@ -370,7 +370,7 @@ export default function CampaignCreatorPage() {
 
       {(state.isLoading || mp.state.isGenerating) ? (
         <div className="flex flex-col items-center justify-center py-32 animate-fade-in">
-          <LoadingSpinner size="lg" text={t('creator.loadingTitle')} />
+          <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
           <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">
             {t('creator.loadingDescription')}
           </p>

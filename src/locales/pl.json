@@ -211,7 +211,15 @@
     "forkFromScene": "Rozgałęź od sceny",
     "forkFromSceneHint": "Wybierz scenę, od której chcesz zacząć nową gałąź kampanii",
     "forkFromHere": "Graj od tutaj",
-    "currentScene": "obecna"
+    "currentScene": "obecna",
+    "characterChoice": "Wersja postaci",
+    "characterChoiceDesc": "Wybierz, której wersji postaci chcesz użyć",
+    "campaignCharacter": "Postać z kampanii",
+    "libraryCharacter": "Aktualna postać (biblioteka)",
+    "libraryCharacterNotFound": "Nie znaleziono postaci w bibliotece",
+    "useCampaignChar": "Użyj z kampanii",
+    "useLibraryChar": "Użyj aktualnej",
+    "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
