@@ -6,6 +6,7 @@ import {
   SceneResponseSchema, CampaignResponseSchema, CompressionResponseSchema,
   RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema, CombatCommentaryResponseSchema,
 } from './aiResponseValidator';
+import { enforcePromptTokenBudget, getSceneAIGovernance, resolvePromptProfile } from './promptGovernance';
 
 export const AI_MODELS = [
   { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$2.50 / $15 per 1M tokens', tier: 'premium' },
@@ -57,6 +58,61 @@ function parseAIContent(content) {
   const result = safeParseJSON(content);
   if (!result.ok) throw new Error(result.error || 'Failed to parse AI response as JSON');
   return result.data;
+}
+
+function buildFallbackActions(language = 'en') {
+  if (language === 'pl') {
+    return [
+      'Rozglądam się uważnie po okolicy',
+      'Podchodzę ostrożnie i próbuję zdobyć więcej informacji',
+      'Szukam bezpieczniejszej pozycji',
+      'Pytam najbliższą osobę, co się tu dzieje',
+    ];
+  }
+  return [
+    'I take a careful look around',
+    'I approach cautiously and gather more information',
+    'I move to a safer position',
+    'I ask the nearest person what is going on',
+  ];
+}
+
+function buildFallbackNarrative(language = 'en') {
+  if (language === 'pl') {
+    return 'Sytuacja wokół ciebie pozostaje napięta, ale czytelna. Zbierasz myśli, oceniasz zagrożenia i możliwości, a świat reaguje na twoją obecność subtelnymi sygnałami. To dobry moment, by świadomie wybrać kolejny krok.';
+  }
+  return 'The situation around you stays tense but readable. You gather your thoughts, assess risks and opportunities, and notice subtle reactions in the world around you. This is a good moment to choose your next move deliberately.';
+}
+
+function buildDegradedSceneResponse({ language = 'en', reason = 'validation_failed', rawResult = null } = {}) {
+  const narrative = typeof rawResult?.narrative === 'string' && rawResult.narrative.trim()
+    ? rawResult.narrative.trim()
+    : buildFallbackNarrative(language);
+  const suggestedActions = Array.isArray(rawResult?.suggestedActions) && rawResult.suggestedActions.length > 0
+    ? rawResult.suggestedActions.slice(0, 8)
+    : buildFallbackActions(language);
+  const dialogueSegments = Array.isArray(rawResult?.dialogueSegments) && rawResult.dialogueSegments.length > 0
+    ? rawResult.dialogueSegments
+    : [{ type: 'narration', text: narrative }];
+
+  return {
+    narrative,
+    scenePacing: rawResult?.scenePacing || 'exploration',
+    dialogueSegments,
+    soundEffect: rawResult?.soundEffect ?? null,
+    musicPrompt: rawResult?.musicPrompt ?? null,
+    imagePrompt: rawResult?.imagePrompt ?? null,
+    atmosphere: rawResult?.atmosphere || {},
+    suggestedActions,
+    questOffers: Array.isArray(rawResult?.questOffers) ? rawResult.questOffers : [],
+    stateChanges: rawResult?.stateChanges && typeof rawResult.stateChanges === 'object'
+      ? rawResult.stateChanges
+      : { journalEntries: [], worldFacts: [], timeAdvance: { hoursElapsed: 0.5, newDay: false } },
+    diceRoll: rawResult?.diceRoll ?? null,
+    cutscene: rawResult?.cutscene ?? null,
+    dilemma: rawResult?.dilemma ?? null,
+    meta: { degraded: true, reason },
+  };
 }
 
 async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-5.4') {
@@ -204,11 +260,53 @@ export const aiService = {
     const userPrompt = buildCampaignCreationPrompt(settings, language);
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 4000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
     const validated = safeParseAIResponse(result, CampaignResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        name: settings?.storyPrompt ? `Campaign: ${String(settings.storyPrompt).slice(0, 40)}` : 'Unnamed Campaign',
+        worldDescription: language === 'pl'
+          ? 'Świat jest pełen napięć, konfliktów frakcji i ukrytych zagrożeń.'
+          : 'The world is full of tension, faction conflict, and hidden threats.',
+        hook: language === 'pl'
+          ? 'Twoja historia zaczyna się od niepozornego tropu, który prowadzi do większej intrygi.'
+          : 'Your story begins with a small clue that opens into a larger conspiracy.',
+        firstScene: {
+          narrative: buildFallbackNarrative(language),
+          dialogueSegments: [{ type: 'narration', text: buildFallbackNarrative(language) }],
+          suggestedActions: buildFallbackActions(language),
+        },
+        initialWorldFacts: [],
+        meta: { degraded: true, reason: validated.error || 'campaign_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null, explicitModel = null } = {}) {
+  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, {
+    needsSystemEnabled = false,
+    isCustomAction = false,
+    fromAutoPlayer = false,
+    preRolledDice = null,
+    skipDiceRoll = false,
+    momentumBonus = 0,
+    localLLMConfig = null,
+    modelTier = 'premium',
+    alternateApiKey = null,
+    explicitModel = null,
+    promptProfile = null,
+    sceneTokenBudget = null,
+    promptTokenBudget = null,
+  } = {}) {
     const model = explicitModel || selectModel(provider, modelTier, 'generateScene');
+    const resolvedPromptProfile = resolvePromptProfile(dmSettings, modelTier, Boolean(localLLMConfig?.enabled) || false);
+    const governance = getSceneAIGovernance({
+      profileId: promptProfile || resolvedPromptProfile,
+      modelTier,
+      isFirstScene,
+      localLLMEnabled: Boolean(localLLMConfig?.enabled),
+    });
+    const completionBudget = Number.isFinite(sceneTokenBudget) ? sceneTokenBudget : governance.sceneTokenBudget;
+    const promptBudget = Number.isFinite(promptTokenBudget) ? promptTokenBudget : governance.promptTokenBudget;
     const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
 
     let systemPrompt, userPrompt;
@@ -216,13 +314,51 @@ export const aiService = {
       systemPrompt = buildReducedSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
       userPrompt = buildReducedScenePrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
     } else {
-      systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
-      userPrompt = buildSceneGenerationPrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
+      systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, {
+        ...promptOpts,
+        promptProfile: governance.profile.id,
+        sceneTokenBudget: completionBudget,
+        promptTokenBudget: promptBudget,
+      });
+      userPrompt = buildSceneGenerationPrompt(
+        playerAction,
+        isFirstScene,
+        language,
+        {
+          ...promptOpts,
+          promptProfile: governance.profile.id,
+          sceneTokenBudget: completionBudget,
+          promptTokenBudget: promptBudget,
+        },
+        dmSettings
+      );
     }
 
-    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 2000, { localLLMConfig, model, modelTier, taskType: 'generateScene', alternateApiKey });
+    const budgetedPrompts = enforcePromptTokenBudget(systemPrompt, userPrompt, promptBudget);
+    const { result, usage } = await callAI(
+      provider,
+      apiKey,
+      budgetedPrompts.systemPrompt,
+      budgetedPrompts.userPrompt,
+      completionBudget,
+      { localLLMConfig, model, modelTier, taskType: 'generateScene', alternateApiKey }
+    );
     const validated = safeParseAIResponse(result, SceneResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) {
+      if (budgetedPrompts.truncated) {
+        validated.data.meta = { ...(validated.data.meta || {}), promptTruncated: true };
+      }
+      return { result: validated.data, usage };
+    }
+
+    return {
+      result: buildDegradedSceneResponse({
+        language,
+        reason: validated.error || 'scene_schema_validation_failed',
+        rawResult: validated.data || result,
+      }),
+      usage,
+    };
   },
 
   async generateRecap(gameState, dmSettings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
@@ -231,7 +367,16 @@ export const aiService = {
     const userPrompt = buildRecapPrompt(language);
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 500, { model, modelTier, taskType: 'generateRecap', alternateApiKey });
     const validated = safeParseAIResponse(result, RecapResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        recap: language === 'pl'
+          ? 'Dotąd: bohater przemierza niebezpieczny świat, a konsekwencje decyzji zaczynają się kumulować.'
+          : 'So far: the hero moves through a dangerous world, and consequences of prior choices are mounting.',
+        meta: { degraded: true, reason: validated.error || 'recap_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 
   async compressScenes(scenesText, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
@@ -241,7 +386,14 @@ export const aiService = {
     const userPrompt = `Summarize the following RPG scene history into a concise narrative summary (max 1500 characters). Preserve key facts: NPC names and fates, locations visited, items acquired/lost, major decisions and their consequences, combat outcomes, and unresolved plot threads.\n\nSCENES:\n${scenesText}\n\nRespond with JSON: {"summary": "Your compressed summary here..."}`;
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 800, { model, modelTier, taskType: 'compressScenes', alternateApiKey });
     const validated = safeParseAIResponse(result, CompressionResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        summary: String(scenesText || '').slice(0, 1400),
+        meta: { degraded: true, reason: validated.error || 'compression_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 
   async generateStoryPrompt({ genre, tone, style, seedText = '' }, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
@@ -262,7 +414,18 @@ export const aiService = {
     ].join('\n');
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 300, { model, modelTier, taskType: 'generateStoryPrompt', alternateApiKey });
     const validated = safeParseAIResponse(result, StoryPromptResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        prompt: seedText?.trim()
+          ? seedText.trim()
+          : (language === 'pl'
+            ? `Mroczna przygoda ${genre || 'fantasy'} o tonie ${tone || 'epickim'} i stylu ${style || 'hybrydowym'}.`
+            : `A dark ${genre || 'fantasy'} adventure with a ${tone || 'epic'} tone and ${style || 'hybrid'} style.`),
+        meta: { degraded: true, reason: validated.error || 'story_prompt_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 
   async generateCombatCommentary(gameState, combatSnapshot, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null, explicitModel = null } = {}) {
@@ -275,7 +438,17 @@ export const aiService = {
       alternateApiKey,
     });
     const validated = safeParseAIResponse(result, CombatCommentaryResponseSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        narration: language === 'pl'
+          ? 'Walka trwa, obie strony szukają przewagi, a napięcie rośnie z każdym ciosem.'
+          : 'The fight continues, both sides look for an edge, and tension rises with every blow.',
+        battleCries: [],
+        meta: { degraded: true, reason: validated.error || 'combat_commentary_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 
   async verifyObjective(storyContext, questName, questDescription, objectiveDescription, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null } = {}) {
@@ -283,6 +456,16 @@ export const aiService = {
     const prompts = buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language);
     const { result, usage } = await callAI(provider, apiKey, prompts.system, prompts.user, 500, { model, modelTier, taskType: 'verifyObjective', alternateApiKey });
     const validated = safeParseAIResponse(result, ObjectiveVerificationSchema);
-    return { result: validated.ok ? validated.data : result, usage };
+    if (validated.ok) return { result: validated.data, usage };
+    return {
+      result: {
+        fulfilled: false,
+        reasoning: language === 'pl'
+          ? 'Tryb degradacji: nie udało się bezpiecznie zweryfikować celu.'
+          : 'Degraded mode: objective could not be safely verified.',
+        meta: { degraded: true, reason: validated.error || 'objective_schema_validation_failed' },
+      },
+      usage,
+    };
   },
 };

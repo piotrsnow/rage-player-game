@@ -233,7 +233,13 @@ function buildConsistencyWarningsBlock(warnings) {
   return `WORLD CONSISTENCY WARNINGS (address these in your narrative if relevant):\n${relevant.map((w) => `- ${w}`).join('\n')}\n\n`;
 }
 
-export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false, consistencyWarnings = [] } = {}) {
+export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, {
+  needsSystemEnabled = false,
+  consistencyWarnings = [],
+  promptProfile = 'balanced',
+  sceneTokenBudget = null,
+  promptTokenBudget = null,
+} = {}) {
   const { campaign, character, world, quests } = gameState;
 
   const ctxDepthForQuests = dmSettings.contextDepth ?? 100;
@@ -412,6 +418,9 @@ CAMPAIGN SETTINGS:
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
 - Dice roll frequency: ${testsLabel} (~${testsFrequency}% of actions should require a roll)
+- Prompt profile: ${promptProfile}
+- Target output budget: ~${sceneTokenBudget ?? 'default'} tokens for this scene
+- Prompt input budget: ~${promptTokenBudget ?? 'default'} tokens max
 
 NARRATOR VOICE & STYLE:
 - Poeticism: ${poeticismLabel}
@@ -420,6 +429,11 @@ NARRATOR VOICE & STYLE:
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
+
+PROMPT GOVERNANCE (MANDATORY):
+- Respect the selected prompt profile ("${promptProfile}") when choosing depth and verbosity.
+- Keep JSON compact and structured. Prefer concise fields over long repetitions.
+- If uncertain, prioritize consistency and mechanical correctness over decorative prose.
 
 NARRATIVE TONE RULES (anti-purple-prose guardrails):
 - VARY PROSE DENSITY BY SCENE TYPE: Action scenes are SHORT and PUNCHY (1-2 paragraphs max, terse sentences, focus on consequences). Exploration is atmospheric but concrete — describe what the character sees, hears, smells, not abstract feelings. Dialogue scenes focus on character voice. Save poetic language for key dramatic moments ONLY.
@@ -863,12 +877,37 @@ ${(() => {
 })()}`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0, scenes = null } = {}, dmSettings = null) {
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', {
+  needsSystemEnabled = false,
+  characterNeeds = null,
+  isCustomAction = false,
+  fromAutoPlayer = false,
+  preRolledDice = null,
+  skipDiceRoll = false,
+  momentumBonus = 0,
+  dialogue = null,
+  dialogueCooldown = 0,
+  scenes = null,
+  promptProfile = 'balanced',
+  sceneTokenBudget = null,
+  promptTokenBudget = null,
+} = {}, dmSettings = null) {
   const applyCreativityBonus = isCustomAction || fromAutoPlayer;
   const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Phrase each suggestedAction from the player character's perspective (first-person intent like "I search the chest" or clear PC-agency phrasing), not neutral GM-style labels. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
+  const governanceReminder = `\nPROMPT GOVERNANCE:
+- Profile: ${promptProfile}
+- Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
+- Input budget: ~${promptTokenBudget ?? 'default'} tokens
+- Be concise, avoid repeated exposition, keep JSON fields dense and actionable.\n`;
 
   if (isFirstScene) {
     return `Generate the opening scene of this campaign. Set the stage with an atmospheric description that draws the player in.
+
+PROMPT GOVERNANCE:
+- Profile: ${promptProfile}
+- Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
+- Input budget: ~${promptTokenBudget ?? 'default'} tokens
+- Keep the response focused, structured, and free from repetitive filler.
 
 Respond with ONLY valid JSON in this exact format:
 {
@@ -1123,7 +1162,7 @@ Award +5 minimum whenever you include creativityBonus on the diceRoll. Do NOT de
 
   const creativityBonusIntro = isCustomAction ? creativityBonusIntroCustom : creativityBonusIntroAuto;
 
-  return `${needsReminder}${actionBlock}${combatReminder}${dialogueReminder}
+  return `${needsReminder}${governanceReminder}${actionBlock}${combatReminder}${dialogueReminder}
 ${isPostCombat ? '' : `
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
 RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).

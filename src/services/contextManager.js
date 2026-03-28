@@ -1,4 +1,5 @@
 import { aiService } from './ai';
+import { resolveContextDepthForProfile } from './promptGovernance';
 
 const FULL_SCENE_COUNT = 3;
 const MEDIUM_SCENE_COUNT = 5;
@@ -65,6 +66,10 @@ function expandKeywordsWithRelations(keywords, npcs, quests, factions) {
 }
 
 export const contextManager = {
+  resolveContextDepth(requestedDepth = 100, profileId = 'balanced', modelTier = 'premium') {
+    return resolveContextDepthForProfile(requestedDepth, profileId, modelTier);
+  },
+
   buildEnhancedContext(gameState, contextDepth = 100) {
     const { scenes, world } = gameState;
     const total = scenes.length;

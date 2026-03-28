@@ -18,6 +18,7 @@ import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuest
 import { advanceDialogueRound } from '../services/dialogueEngine';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
+import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -131,9 +132,17 @@ export function useAI() {
       setSceneGenStartTime(Date.now());
 
       try {
-        const contextDepth = settings.dmSettings?.contextDepth ?? 100;
+        const promptProfile = resolvePromptProfile(settings.dmSettings, aiModelTier, Boolean(localLLMConfig?.enabled));
+        const governance = getSceneAIGovernance({
+          profileId: promptProfile,
+          modelTier: aiModelTier,
+          isFirstScene,
+          localLLMEnabled: Boolean(localLLMConfig?.enabled),
+        });
+        const requestedContextDepth = settings.dmSettings?.contextDepth ?? 100;
+        const contextDepth = contextManager.resolveContextDepth(requestedContextDepth, governance.profile.id, aiModelTier);
         let enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state, contextDepth) : null;
-        if (enhancedContext && contextDepth >= 75 && state.world?.knowledgeBase) {
+        if (enhancedContext && contextDepth >= governance.knowledgeMinContextDepth && state.world?.knowledgeBase) {
           const lastScene = state.scenes?.[state.scenes.length - 1];
           const relevantMemories = contextManager.retrieveRelevantKnowledge(
             state.world.knowledgeBase, lastScene?.narrative, playerAction, state
@@ -142,7 +151,7 @@ export function useAI() {
             enhancedContext = { ...enhancedContext, relevantMemories };
           }
         }
-        if (enhancedContext && contextDepth >= 75 && state.world?.codex) {
+        if (enhancedContext && contextDepth >= governance.knowledgeMinContextDepth && state.world?.codex) {
           const lastScene = state.scenes?.[state.scenes.length - 1];
           const relevantCodex = contextManager.retrieveRelevantCodex(
             state.world.codex, lastScene?.narrative, playerAction
@@ -188,9 +197,35 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+          {
+            needsSystemEnabled,
+            isCustomAction,
+            fromAutoPlayer,
+            preRolledDice,
+            skipDiceRoll,
+            momentumBonus,
+            localLLMConfig,
+            modelTier: aiModelTier,
+            alternateApiKey,
+            explicitModel: aiModel || null,
+            promptProfile: governance.profile.id,
+            sceneTokenBudget: governance.sceneTokenBudget,
+            promptTokenBudget: governance.promptTokenBudget,
+          }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+        if (result?.meta?.degraded) {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_ai_degraded`,
+              role: 'system',
+              subtype: 'ai_degraded_mode',
+              content: t('system.aiDegradedMode', 'AI response validation failed, so a safe fallback scene was generated.'),
+              timestamp: Date.now(),
+            },
+          });
+        }
 
         if (!isFirstScene && !isPassiveSceneAction && detectCombatIntent(playerAction)) {
           const hasCombatUpdate = result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true;
