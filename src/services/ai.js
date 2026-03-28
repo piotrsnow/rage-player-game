@@ -207,9 +207,9 @@ export const aiService = {
     return { result: validated.ok ? validated.data : result, usage };
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null, explicitModel = null } = {}) {
+  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, { needsSystemEnabled = false, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, localLLMConfig = null, modelTier = 'premium', alternateApiKey = null, explicitModel = null } = {}) {
     const model = explicitModel || selectModel(provider, modelTier, 'generateScene');
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
+    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
 
     let systemPrompt, userPrompt;
     if (localLLMConfig?.enabled && localLLMConfig?.reducedPrompt) {

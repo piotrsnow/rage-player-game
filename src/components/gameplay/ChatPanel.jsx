@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/wfrpTranslate';
 import { parseActionSegments } from '../../services/actionParser';
+import { NARRATION_FAST_FORWARD_STEPS } from '../../hooks/useNarrator';
 import Tooltip from '../ui/Tooltip';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
@@ -62,7 +63,7 @@ function DialogueSegments({ segments, narrator, messageId }) {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-on-surface leading-relaxed">
+              <p className="text-xs text-on-surface leading-snug">
                 &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />&rdquo;
               </p>
             </div>
@@ -70,7 +71,7 @@ function DialogueSegments({ segments, narrator, messageId }) {
         }
         return (
           <div key={i} className={`transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
-            <p className="text-sm text-on-surface-variant leading-relaxed italic">
+            <p className="text-xs text-on-surface-variant leading-snug italic">
               <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />
               {active && (
                 <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
@@ -85,12 +86,27 @@ function DialogueSegments({ segments, narrator, messageId }) {
   );
 }
 
-function DmMessage({ message, narrator }) {
+function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHoverClass }) {
   const { t } = useTranslation();
-  const { playbackState, currentMessageId, isNarratorReady, speakSingle, pause, resume, STATES } = narrator || {};
+  const {
+    playbackState,
+    currentMessageId,
+    isNarratorReady,
+    speakSingle,
+    pause,
+    resume,
+    cycleNarrationFastForward,
+    narrationFastForwardLevel,
+    STATES,
+  } = narrator || {};
+
   const isThisPlaying = currentMessageId === message.id && playbackState === STATES?.PLAYING;
   const isThisPaused = currentMessageId === message.id && playbackState === STATES?.PAUSED;
   const isThisLoading = currentMessageId === message.id && playbackState === STATES?.LOADING;
+  const isActiveNarration = currentMessageId === message.id;
+  const showFastForward = isActiveNarration && (
+    playbackState === STATES?.PLAYING || playbackState === STATES?.PAUSED || playbackState === STATES?.LOADING
+  );
 
   const handleNarratorToggle = () => {
     if (isThisPlaying) {
@@ -102,6 +118,57 @@ function DmMessage({ message, narrator }) {
     }
   };
 
+  if (!isNarratorReady) return null;
+
+  const ffLevel = narrationFastForwardLevel ?? 0;
+  const ffRate = NARRATION_FAST_FORWARD_STEPS[ffLevel] ?? 1;
+  const ffActive = ffLevel > 0;
+
+  return (
+    <div className="flex items-center gap-0.5 shrink-0">
+      <button
+        type="button"
+        onClick={handleNarratorToggle}
+        className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
+          isThisPlaying ? activeAccentClass : `text-on-surface-variant ${idleHoverClass}`
+        }`}
+        title={
+          isThisLoading
+            ? t('chat.narratorLoading')
+            : isThisPlaying
+              ? t('chat.narratorPause')
+              : isThisPaused
+                ? t('chat.narratorResume')
+                : t('chat.narratorPlay')
+        }
+      >
+        <span className={`material-symbols-outlined text-sm ${isThisPlaying ? 'animate-pulse' : ''}`}>
+          {isThisLoading ? 'hourglass_top' : isThisPlaying ? 'pause' : isThisPaused ? 'play_arrow' : 'volume_up'}
+        </span>
+      </button>
+      {showFastForward && (
+        <Tooltip content={t('chat.narratorFastForwardTip', { rate: ffRate })}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              cycleNarrationFastForward?.();
+            }}
+            className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
+              ffActive ? activeAccentClass : `text-on-surface-variant ${idleHoverClass}`
+            }`}
+          >
+            <span className="material-symbols-outlined text-sm leading-none">fast_forward</span>
+          </button>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
+function DmMessage({ message, narrator }) {
+  const { t } = useTranslation();
+
   const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
   const segmentsComplete = hasSegments && (() => {
     const segText = message.dialogueSegments.map(s => s.text || '').join('');
@@ -110,26 +177,20 @@ function DmMessage({ message, narrator }) {
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
-      <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center justify-between">
-        <span>{t('chat.dmAi')} · {formatTimestamp(message.timestamp)}</span>
-        {isNarratorReady && (
-          <button
-            onClick={handleNarratorToggle}
-            className={`flex items-center gap-1 transition-colors ${
-              isThisPlaying ? 'text-primary' : 'text-on-surface-variant hover:text-primary'
-            }`}
-          >
-            <span className={`material-symbols-outlined text-sm ${isThisPlaying ? 'animate-pulse' : ''}`}>
-              {isThisLoading ? 'hourglass_top' : isThisPlaying ? 'pause' : isThisPaused ? 'play_arrow' : 'volume_up'}
-            </span>
-          </button>
-        )}
+      <div className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center justify-between gap-2 min-w-0">
+        <span className="truncate">{t('chat.dmAi')} · {formatTimestamp(message.timestamp)}</span>
+        <NarratorHeaderButtons
+          message={message}
+          narrator={narrator}
+          activeAccentClass="text-primary"
+          idleHoverClass="hover:text-primary"
+        />
       </div>
-      <div className="glass-panel p-4 border-l-2 border-primary-dim/60 rounded-r-lg space-y-3 hover:border-primary-dim transition-colors duration-300">
+      <div className="glass-panel p-3 border-l-2 border-primary-dim/60 rounded-r-lg space-y-3 hover:border-primary-dim transition-colors duration-300">
         {segmentsComplete ? (
           <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
         ) : (
-          <p className="text-sm text-on-surface-variant leading-relaxed italic">
+          <p className="text-xs text-on-surface-variant leading-snug italic">
             <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
           </p>
         )}
@@ -140,43 +201,23 @@ function DmMessage({ message, narrator }) {
 
 function CombatCommentaryMessage({ message, narrator }) {
   const { t } = useTranslation();
-  const { playbackState, currentMessageId, isNarratorReady, speakSingle, pause, resume, STATES } = narrator || {};
-  const isThisPlaying = currentMessageId === message.id && playbackState === STATES?.PLAYING;
-  const isThisPaused = currentMessageId === message.id && playbackState === STATES?.PAUSED;
-  const isThisLoading = currentMessageId === message.id && playbackState === STATES?.LOADING;
-
-  const handleNarratorToggle = () => {
-    if (isThisPlaying) {
-      pause();
-    } else if (isThisPaused) {
-      resume();
-    } else {
-      speakSingle(message, message.id);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
-      <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest flex items-center justify-between">
-        <span>{t('chat.combatCommentary')} · {formatTimestamp(message.timestamp)}</span>
-        {isNarratorReady && (
-          <button
-            onClick={handleNarratorToggle}
-            className={`flex items-center gap-1 transition-colors ${
-              isThisPlaying ? 'text-amber-300' : 'text-on-surface-variant hover:text-amber-300'
-            }`}
-          >
-            <span className={`material-symbols-outlined text-sm ${isThisPlaying ? 'animate-pulse' : ''}`}>
-              {isThisLoading ? 'hourglass_top' : isThisPlaying ? 'pause' : isThisPaused ? 'play_arrow' : 'volume_up'}
-            </span>
-          </button>
-        )}
+      <div className="text-[10px] font-bold text-amber-300 uppercase tracking-widest flex items-center justify-between gap-2 min-w-0">
+        <span className="truncate">{t('chat.combatCommentary')} · {formatTimestamp(message.timestamp)}</span>
+        <NarratorHeaderButtons
+          message={message}
+          narrator={narrator}
+          activeAccentClass="text-amber-300"
+          idleHoverClass="hover:text-amber-300"
+        />
       </div>
-      <div className="rounded-r-lg border-l-2 border-amber-400/40 bg-amber-400/5 px-4 py-4 space-y-3">
+      <div className="rounded-r-lg border-l-2 border-amber-400/40 bg-amber-400/5 px-3 py-3 space-y-3">
         {message.dialogueSegments?.length > 0 ? (
           <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
         ) : (
-          <p className="text-sm text-on-surface leading-relaxed whitespace-pre-line">
+          <p className="text-xs text-on-surface leading-snug whitespace-pre-line">
             <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
           </p>
         )}
@@ -196,12 +237,12 @@ function PlayerMessage({ message, isMe }) {
       <div className={`text-[10px] font-bold uppercase tracking-widest ${isCurrentUser ? 'text-tertiary' : 'text-secondary'}`}>
         {displayName} · {formatTimestamp(message.timestamp)}
       </div>
-      <div className={`glass-panel p-4 max-w-[90%] space-y-3 transition-colors duration-300 ${
+      <div className={`glass-panel p-3 max-w-[90%] space-y-3 transition-colors duration-300 ${
         isCurrentUser
           ? 'rounded-l-lg rounded-tr-lg border-r-2 border-tertiary/60 bg-tertiary/8 hover:border-tertiary'
           : 'rounded-r-lg rounded-tl-lg border-l-2 border-secondary/55 bg-secondary/8 hover:border-secondary'
       }`}>
-        <p className="text-sm text-on-surface leading-relaxed">
+        <p className="text-xs text-on-surface leading-snug">
           {segments.map((seg, i) =>
             seg.type === 'dialogue' ? (
               <span
@@ -358,15 +399,15 @@ function BonusTags({ d, t, className = '' }) {
 function RollEdgeBadge({ value, t, className = '' }) {
   const numericValue = value ?? 0;
   const toneClass = numericValue > 0
-    ? 'text-primary bg-primary/12 border-primary/20'
+    ? 'text-emerald-300 bg-emerald-500/12 border-emerald-500/25'
     : numericValue < 0
-      ? 'text-error bg-error/12 border-error/20'
+      ? 'text-rose-300 bg-rose-500/12 border-rose-500/25'
       : 'text-on-surface-variant bg-surface-container-high/40 border-outline-variant/20';
 
   return (
-    <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 ${toneClass} ${className}`.trim()}>
-      <span className="material-symbols-outlined text-[16px] leading-none">fitness_center</span>
-      <span className="text-sm font-bold">
+    <div className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 ${toneClass} ${className}`.trim()}>
+      <span className="material-symbols-outlined text-[14px] leading-none">fitness_center</span>
+      <span className="text-xs font-bold">
         {t('gameplay.rollEdge', { value: `${numericValue > 0 ? '+' : ''}${numericValue}` })}
       </span>
     </div>
@@ -388,22 +429,22 @@ function DiceRollMessage({ message }) {
     : d.criticalFailure
       ? 'text-red-700'
       : success
-        ? 'text-primary'
-        : 'text-error';
+        ? 'text-emerald-400'
+        : 'text-rose-400';
   const bgGlow = d.criticalSuccess
     ? 'from-amber-400/10 via-transparent to-amber-400/10'
     : d.criticalFailure
       ? 'from-red-700/10 via-transparent to-red-700/10'
       : success
-        ? 'from-primary/10 via-transparent to-primary/10'
-        : 'from-error/10 via-transparent to-error/10';
+        ? 'from-emerald-500/10 via-transparent to-emerald-500/10'
+        : 'from-rose-500/10 via-transparent to-rose-500/10';
   const borderColor = d.criticalSuccess
     ? 'border-amber-400/40'
     : d.criticalFailure
       ? 'border-red-700/40'
       : success
-        ? 'border-primary/40'
-        : 'border-error/40';
+        ? 'border-emerald-500/35'
+        : 'border-rose-500/35';
   const outcomeLabel = d.criticalSuccess
     ? t('common.criticalSuccess')
     : d.criticalFailure
@@ -414,33 +455,33 @@ function DiceRollMessage({ message }) {
 
   return (
     <div className="animate-fade-in my-2">
-      <div className={`relative rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} px-5 py-4 min-h-[188px] flex flex-col items-center text-center`}>
-        <p className="text-xs font-bold text-on-surface-variant uppercase tracking-[0.22em]">
+      <div className={`relative rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} px-4 py-3 min-h-[152px] flex flex-col items-center text-center`}>
+        <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em]">
           {t('gameplay.diceCheck', { skill: translateSkill(d.skill, t) })}
         </p>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 py-3">
-          <div className={`flex items-center justify-center w-12 h-12 rounded-lg bg-surface-container-high/60 ${accentColor}`}>
-            <span className="material-symbols-outlined text-2xl">casino</span>
+        <div className="flex-1 flex flex-col items-center justify-center gap-1.5 py-2">
+          <div className={`flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-high/60 ${accentColor}`}>
+            <span className="material-symbols-outlined text-xl">casino</span>
           </div>
-          <div className="flex items-baseline justify-center gap-3 flex-wrap">
-            <span className="font-mono text-3xl font-bold text-on-surface leading-none">
+          <div className="flex items-baseline justify-center gap-2 flex-wrap">
+            <span className="font-mono text-2xl font-bold text-on-surface leading-none">
               {d.roll}
             </span>
-            <span className="text-on-surface-variant text-sm uppercase tracking-wide">{t('common.vs')}</span>
-            <span className="font-mono text-3xl font-bold text-on-surface leading-none">
+            <span className="text-on-surface-variant text-xs uppercase tracking-wide">{t('common.vs')}</span>
+            <span className="font-mono text-2xl font-bold text-on-surface leading-none">
               {d.target || d.dc}
             </span>
           </div>
           <RollEdgeBadge value={d.sl ?? 0} t={t} />
-          <div className={`text-sm font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border ${
+          <div className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
             d.criticalSuccess
               ? 'bg-amber-400/15 text-amber-400 border-amber-400/20'
               : d.criticalFailure
                 ? 'bg-red-700/10 text-red-700 border-red-700/20'
                 : success
-                  ? 'bg-primary/15 text-primary border-primary/20'
-                  : 'bg-error/15 text-error border-error/20'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                  : 'bg-rose-500/15 text-rose-300 border-rose-500/25'
           }`}>
             {outcomeLabel}
           </div>
@@ -630,7 +671,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
       </div>
 
       {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         {messages.length === 0 && (
           <div className="text-center py-12">
             <span className="material-symbols-outlined text-4xl text-outline/20 block mb-2">

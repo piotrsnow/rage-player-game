@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
-}
-
 function formatSeconds(ms) {
   const s = Math.floor(ms / 1000);
   return `${s}s`;
@@ -37,9 +33,8 @@ export default function SceneGenerationProgress({ startTime, estimatedMs }) {
 
   let percent = null;
   if (hasEstimate) {
-    const raw = elapsed / estimatedMs;
-    const eased = easeOutCubic(Math.min(raw, 1));
-    percent = Math.min(95, Math.round(eased * 100));
+    const linear = Math.min(1, elapsed / estimatedMs);
+    percent = Math.min(95, Math.round(linear * 100));
   }
 
   const timeDisplay = hasEstimate

@@ -2,6 +2,11 @@ import { createContext, useContext, useReducer, useCallback, useEffect, useRef }
 import { wsService, clearPersistedRejoinInfo, getPersistedRejoinInfo } from '../services/websocket';
 import { apiClient } from '../services/apiClient';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
+import {
+  normalizeMultiplayerStateChanges,
+  WS_CLIENT_TYPES,
+  WS_SERVER_TYPES,
+} from '../../shared/contracts/multiplayer.js';
 
 const MultiplayerContext = createContext(null);
 
@@ -147,7 +152,7 @@ function mpReducer(state, action) {
 
     case 'SCENE_UPDATE': {
       let newGameState = action.payload.room?.gameState || state.gameState;
-      const stateChanges = action.payload.stateChanges || {};
+      const stateChanges = normalizeMultiplayerStateChanges(action.payload.stateChanges || {});
 
       if (!action.payload.room?.gameState && newGameState) {
         const perChar = stateChanges.perCharacter;
@@ -343,7 +348,7 @@ function mpReducer(state, action) {
     case 'COMBAT_ENDED': {
       if (!state.gameState) return state;
       let updatedChars = state.gameState.characters || [];
-      const perChar = action.payload.perCharacter || {};
+      const perChar = normalizeMultiplayerStateChanges({ perCharacter: action.payload.perCharacter || {} }).perCharacter || {};
       const deadList = action.payload.deadPlayers || [];
       updatedChars = updatedChars.map((c) => {
         const delta = perChar[c.name];
@@ -465,73 +470,73 @@ export function MultiplayerProvider({ children }) {
     const unsubs = [
       wsService.on('_connected', () => dispatch({ type: 'SET_CONNECTED', payload: true })),
       wsService.on('_disconnected', () => dispatch({ type: 'SET_CONNECTED', payload: false })),
-      wsService.on('ROOM_CREATED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.ROOM_CREATED, (msg) => {
         wsService.setRejoinInfo(msg.roomCode, msg.odId);
         dispatch({ type: 'ROOM_CREATED', payload: msg });
       }),
-      wsService.on('ROOM_CONVERTED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.ROOM_CONVERTED, (msg) => {
         wsService.setRejoinInfo(msg.roomCode, msg.odId);
         dispatch({ type: 'ROOM_CONVERTED', payload: msg });
       }),
-      wsService.on('ROOM_JOINED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.ROOM_JOINED, (msg) => {
         wsService.setRejoinInfo(msg.roomCode, msg.odId);
         dispatch({ type: 'ROOM_JOINED', payload: msg });
       }),
-      wsService.on('ROOM_STATE', (msg) => dispatch({ type: 'ROOM_STATE', payload: msg })),
-      wsService.on('PLAYER_JOINED', (msg) => dispatch({ type: 'PLAYER_JOINED', payload: msg })),
-      wsService.on('PLAYER_JOINED_MIDGAME', (msg) => dispatch({ type: 'PLAYER_JOINED_MIDGAME', payload: msg })),
-      wsService.on('PLAYER_LEFT', (msg) => dispatch({ type: 'PLAYER_LEFT', payload: msg })),
-      wsService.on('PLAYER_DISCONNECTED', (msg) => dispatch({ type: 'PLAYER_DISCONNECTED', payload: msg })),
-      wsService.on('PLAYER_RECONNECTED', (msg) => dispatch({ type: 'PLAYER_RECONNECTED', payload: msg })),
-      wsService.on('GAME_STARTING', () => dispatch({ type: 'GAME_STARTING' })),
-      wsService.on('GAME_STARTED', (msg) => dispatch({ type: 'GAME_STARTED', payload: msg })),
-      wsService.on('ACTIONS_UPDATED', (msg) => dispatch({ type: 'ACTIONS_UPDATED', payload: msg })),
-      wsService.on('SCENE_GENERATING', () => dispatch({ type: 'SCENE_GENERATING' })),
-      wsService.on('GENERATION_FAILED', (msg) => dispatch({ type: 'GENERATION_FAILED', payload: msg })),
-      wsService.on('TYPING', (msg) => {
+      wsService.on(WS_SERVER_TYPES.ROOM_STATE, (msg) => dispatch({ type: 'ROOM_STATE', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.PLAYER_JOINED, (msg) => dispatch({ type: 'PLAYER_JOINED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.PLAYER_JOINED_MIDGAME, (msg) => dispatch({ type: 'PLAYER_JOINED_MIDGAME', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.PLAYER_LEFT, (msg) => dispatch({ type: 'PLAYER_LEFT', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.PLAYER_DISCONNECTED, (msg) => dispatch({ type: 'PLAYER_DISCONNECTED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.PLAYER_RECONNECTED, (msg) => dispatch({ type: 'PLAYER_RECONNECTED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.GAME_STARTING, () => dispatch({ type: 'GAME_STARTING' })),
+      wsService.on(WS_SERVER_TYPES.GAME_STARTED, (msg) => dispatch({ type: 'GAME_STARTED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.ACTIONS_UPDATED, (msg) => dispatch({ type: 'ACTIONS_UPDATED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.SCENE_GENERATING, () => dispatch({ type: 'SCENE_GENERATING' })),
+      wsService.on(WS_SERVER_TYPES.GENERATION_FAILED, (msg) => dispatch({ type: 'GENERATION_FAILED', payload: msg })),
+      wsService.on(WS_SERVER_TYPES.TYPING, (msg) => {
         dispatch({ type: 'TYPING_UPDATE', payload: msg });
       }),
-      wsService.on('SCENE_UPDATE', (msg) => {
+      wsService.on(WS_SERVER_TYPES.SCENE_UPDATE, (msg) => {
         dispatch({ type: 'CLEAR_TYPING' });
         dispatch({ type: 'SCENE_UPDATE', payload: msg });
         sceneCallbackRef.current?.(msg);
       }),
-      wsService.on('SCENE_IMAGE_UPDATE', (msg) => {
+      wsService.on(WS_SERVER_TYPES.SCENE_IMAGE_UPDATE, (msg) => {
         dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image } });
       }),
-      wsService.on('QUEST_OFFER_UPDATE', (msg) => {
+      wsService.on(WS_SERVER_TYPES.QUEST_OFFER_UPDATE, (msg) => {
         dispatch({ type: 'QUEST_OFFER_UPDATE', payload: msg });
       }),
-      wsService.on('CHARACTER_SYNCED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.CHARACTER_SYNCED, (msg) => {
         dispatch({ type: 'CHARACTER_SYNCED', payload: msg });
       }),
-      wsService.on('COMBAT_SYNC', (msg) => {
+      wsService.on(WS_SERVER_TYPES.COMBAT_SYNC, (msg) => {
         dispatch({ type: 'COMBAT_SYNC', payload: msg });
       }),
-      wsService.on('COMBAT_MANOEUVRE', (msg) => {
+      wsService.on(WS_SERVER_TYPES.COMBAT_MANOEUVRE, (msg) => {
         dispatch({ type: 'COMBAT_MANOEUVRE', payload: msg });
       }),
-      wsService.on('COMBAT_ENDED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.COMBAT_ENDED, (msg) => {
         dispatch({ type: 'COMBAT_ENDED', payload: msg });
       }),
-      wsService.on('PLAYER_DIED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.PLAYER_DIED, (msg) => {
         dispatch({ type: 'PLAYER_DIED', payload: msg });
       }),
-      wsService.on('LEFT_ROOM', () => {
+      wsService.on(WS_SERVER_TYPES.LEFT_ROOM, () => {
         clearPersistedRejoinInfo();
         dispatch({ type: 'LEFT_ROOM' });
       }),
-      wsService.on('KICKED', (msg) => {
+      wsService.on(WS_SERVER_TYPES.KICKED, (msg) => {
         wsService.setRejoinInfo(null, null);
         clearPersistedRejoinInfo();
         dispatch({ type: 'SET_ERROR', payload: msg.message || 'You have been removed from the room' });
         dispatch({ type: 'RESET' });
       }),
-      wsService.on('ROOM_EXPIRED', () => {
+      wsService.on(WS_SERVER_TYPES.ROOM_EXPIRED, () => {
         clearPersistedRejoinInfo();
         wsService.setRejoinInfo(null, null);
       }),
-      wsService.on('ERROR', (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
+      wsService.on(WS_SERVER_TYPES.ERROR, (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, []);
@@ -557,21 +562,21 @@ export function MultiplayerProvider({ children }) {
 
   const createRoom = useCallback(async () => {
     await ensureConnected();
-    wsService.send('CREATE_ROOM');
+    wsService.send(WS_CLIENT_TYPES.CREATE_ROOM);
   }, [ensureConnected]);
 
   const joinRoom = useCallback(async (code) => {
     await ensureConnected();
-    wsService.send('JOIN_ROOM', { roomCode: code.toUpperCase() });
+    wsService.send(WS_CLIENT_TYPES.JOIN_ROOM, { roomCode: code.toUpperCase() });
   }, [ensureConnected]);
 
   const convertToMultiplayer = useCallback(async (gameState, settings) => {
     await ensureConnected();
-    wsService.send('CONVERT_TO_MULTIPLAYER', { gameState, settings });
+    wsService.send(WS_CLIENT_TYPES.CONVERT_TO_MULTIPLAYER, { gameState, settings });
   }, [ensureConnected]);
 
   const leaveRoom = useCallback(() => {
-    wsService.send('LEAVE_ROOM');
+    wsService.send(WS_CLIENT_TYPES.LEAVE_ROOM);
     clearPersistedRejoinInfo();
     dispatch({ type: 'RESET' });
   }, []);
@@ -580,45 +585,45 @@ export function MultiplayerProvider({ children }) {
     const info = getPersistedRejoinInfo();
     if (!info?.roomCode || !info?.odId) return false;
     await ensureConnected();
-    wsService.send('REJOIN_ROOM', { roomCode: info.roomCode, odId: info.odId });
+    wsService.send(WS_CLIENT_TYPES.REJOIN_ROOM, { roomCode: info.roomCode, odId: info.odId });
     return true;
   }, [ensureConnected]);
 
   const updateMyCharacter = useCallback((data) => {
-    wsService.send('UPDATE_CHARACTER', data);
+    wsService.send(WS_CLIENT_TYPES.UPDATE_CHARACTER, data);
   }, []);
 
   const updateSettings = useCallback((settings) => {
-    wsService.send('UPDATE_SETTINGS', { settings });
+    wsService.send(WS_CLIENT_TYPES.UPDATE_SETTINGS, { settings });
   }, []);
 
   const startGame = useCallback((language) => {
-    wsService.send('START_GAME', { language });
+    wsService.send(WS_CLIENT_TYPES.START_GAME, { language });
   }, []);
 
   const submitAction = useCallback((text, isCustom = false) => {
-    wsService.send('SUBMIT_ACTION', { text, isCustom });
+    wsService.send(WS_CLIENT_TYPES.SUBMIT_ACTION, { text, isCustom });
   }, []);
 
   const withdrawAction = useCallback(() => {
-    wsService.send('WITHDRAW_ACTION');
+    wsService.send(WS_CLIENT_TYPES.WITHDRAW_ACTION);
   }, []);
 
   const approveActions = useCallback((language, dmSettings) => {
-    wsService.send('APPROVE_ACTIONS', { language, dmSettings });
+    wsService.send(WS_CLIENT_TYPES.APPROVE_ACTIONS, { language, dmSettings });
   }, []);
 
   const soloAction = useCallback((text, isCustom = false, language, dmSettings) => {
-    wsService.send('SOLO_ACTION', { text, isCustom, language, dmSettings });
+    wsService.send(WS_CLIENT_TYPES.SOLO_ACTION, { text, isCustom, language, dmSettings });
   }, []);
 
   const kickPlayer = useCallback((targetOdId) => {
-    wsService.send('KICK_PLAYER', { targetOdId });
+    wsService.send(WS_CLIENT_TYPES.KICK_PLAYER, { targetOdId });
   }, []);
 
   const updateSceneImage = useCallback((sceneId, image) => {
     dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image } });
-    wsService.send('UPDATE_SCENE_IMAGE', { sceneId, image });
+    wsService.send(WS_CLIENT_TYPES.UPDATE_SCENE_IMAGE, { sceneId, image });
   }, []);
 
   const onSceneUpdate = useCallback((cb) => {
@@ -626,27 +631,27 @@ export function MultiplayerProvider({ children }) {
   }, []);
 
   const acceptMpQuestOffer = useCallback((sceneId, questOffer) => {
-    wsService.send('ACCEPT_QUEST_OFFER', { sceneId, questOffer });
+    wsService.send(WS_CLIENT_TYPES.ACCEPT_QUEST_OFFER, { sceneId, questOffer });
   }, []);
 
   const declineMpQuestOffer = useCallback((sceneId, offerId) => {
-    wsService.send('DECLINE_QUEST_OFFER', { sceneId, offerId });
+    wsService.send(WS_CLIENT_TYPES.DECLINE_QUEST_OFFER, { sceneId, offerId });
   }, []);
 
   const syncCharacter = useCallback((character) => {
-    wsService.send('SYNC_CHARACTER', { character });
+    wsService.send(WS_CLIENT_TYPES.SYNC_CHARACTER, { character });
   }, []);
 
   const syncCombatState = useCallback((combat, options = {}) => {
-    wsService.send('COMBAT_SYNC', { combat, ...options });
+    wsService.send(WS_CLIENT_TYPES.COMBAT_SYNC, { combat, ...options });
   }, []);
 
   const sendCombatManoeuvre = useCallback((manoeuvre, targetId, customDescription = '') => {
-    wsService.send('COMBAT_MANOEUVRE', { manoeuvre, targetId, customDescription });
+    wsService.send(WS_CLIENT_TYPES.COMBAT_MANOEUVRE, { manoeuvre, targetId, customDescription });
   }, []);
 
   const endMultiplayerCombat = useCallback((results) => {
-    wsService.send('COMBAT_ENDED', results);
+    wsService.send(WS_CLIENT_TYPES.COMBAT_ENDED, results);
   }, []);
 
   const clearPendingCombatManoeuvre = useCallback(() => {
@@ -654,7 +659,7 @@ export function MultiplayerProvider({ children }) {
   }, []);
 
   const sendTyping = useCallback((isTyping) => {
-    wsService.send('TYPING', { isTyping });
+    wsService.send(WS_CLIENT_TYPES.TYPING, { isTyping });
   }, []);
 
   const value = {

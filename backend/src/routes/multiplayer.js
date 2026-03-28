@@ -9,6 +9,12 @@ import {
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
+import {
+  createWsMessage,
+  normalizeClientWsType,
+  normalizeMultiplayerStateChanges,
+  WS_SERVER_TYPES,
+} from '../../../shared/contracts/multiplayer.js';
 
 function calcNextMomentum(sl, current) {
   const newVal = sl * 5;
@@ -444,6 +450,10 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
 }
 
 export async function multiplayerRoutes(fastify) {
+  const sendWs = (ws, type, payload = {}) => {
+    ws.send(JSON.stringify(createWsMessage(type, payload)));
+  };
+
   fastify.get('/rooms', { onRequest: [fastify.authenticate] }, async () => {
     return { rooms: listJoinableRooms() };
   });
@@ -491,7 +501,7 @@ export async function multiplayerRoutes(fastify) {
     try {
       const token = request.query?.token;
       if (!token) {
-        socket.send(JSON.stringify({ type: 'ERROR', message: 'Missing auth token' }));
+        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Missing auth token' });
         socket.close();
         return;
       }
@@ -499,7 +509,7 @@ export async function multiplayerRoutes(fastify) {
       try {
         user = fastify.jwt.verify(token);
       } catch {
-        socket.send(JSON.stringify({ type: 'ERROR', message: 'Invalid auth token' }));
+        sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Invalid auth token' });
         socket.close();
         return;
       }
@@ -513,8 +523,12 @@ export async function multiplayerRoutes(fastify) {
           let msg;
           try {
             msg = JSON.parse(raw.toString());
+            msg = {
+              ...msg,
+              type: normalizeClientWsType(msg?.type) || msg?.type,
+            };
           } catch {
-            socket.send(JSON.stringify({ type: 'ERROR', message: 'Invalid JSON' }));
+            sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Invalid JSON' });
             return;
           }
 
@@ -530,7 +544,7 @@ export async function multiplayerRoutes(fastify) {
               'Cannot rejoin: player not found or unauthorized',
               'Solo action on cooldown'];
             const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
-            socket.send(JSON.stringify({ type: 'ERROR', message }));
+            sendWs(socket, WS_SERVER_TYPES.ERROR, { message });
           }
         }).catch(() => {});
       });
@@ -872,7 +886,7 @@ export async function multiplayerRoutes(fastify) {
               const { validated: validatedChanges } = validateMultiplayerStateChanges(
                 sceneResult.stateChanges, room.gameState
               );
-              sceneResult.stateChanges = validatedChanges;
+              sceneResult.stateChanges = normalizeMultiplayerStateChanges(validatedChanges);
 
               const prevMomentum = room.gameState.characterMomentum || {};
               const newMomentum = { ...prevMomentum };
@@ -975,7 +989,7 @@ export async function multiplayerRoutes(fastify) {
               const { validated: validatedSoloChanges } = validateMultiplayerStateChanges(
                 sceneResult.stateChanges, room.gameState
               );
-              sceneResult.stateChanges = validatedSoloChanges;
+              sceneResult.stateChanges = normalizeMultiplayerStateChanges(validatedSoloChanges);
 
               const newSoloMomentum = { ...soloMomentum };
               if (sceneResult.scene.diceRolls?.length) {
@@ -1197,7 +1211,7 @@ export async function multiplayerRoutes(fastify) {
             if (endRoom.hostId !== odId) throw new Error('Only the host can end combat');
             if (!endRoom.gameState) throw new Error('Game not in progress');
 
-            const combatPerChar = msg.perCharacter || {};
+            const combatPerChar = normalizeMultiplayerStateChanges({ perCharacter: msg.perCharacter || {} }).perCharacter || {};
             const chars = endRoom.gameState.characters || [];
             const deadPlayers = [];
             endRoom.gameState.characters = chars.map((c) => {
@@ -1284,7 +1298,7 @@ export async function multiplayerRoutes(fastify) {
           }
 
           case 'PING': {
-            ws.send(JSON.stringify({ type: 'PONG' }));
+            sendWs(ws, WS_SERVER_TYPES.PONG);
             break;
           }
 
@@ -1313,12 +1327,12 @@ export async function multiplayerRoutes(fastify) {
             }
 
             if (!targetRoom) {
-              ws.send(JSON.stringify({ type: 'ROOM_EXPIRED', message: 'Room no longer exists' }));
+              sendWs(ws, WS_SERVER_TYPES.ROOM_EXPIRED, { message: 'Room no longer exists' });
               break;
             }
             const existingPlayer = targetRoom.players.get(msg.odId);
             if (!existingPlayer || existingPlayer.userId !== uid) {
-              ws.send(JSON.stringify({ type: 'ROOM_EXPIRED', message: 'Cannot rejoin: player not found or unauthorized' }));
+              sendWs(ws, WS_SERVER_TYPES.ROOM_EXPIRED, { message: 'Cannot rejoin: player not found or unauthorized' });
               break;
             }
             existingPlayer.ws = ws;
@@ -1397,7 +1411,7 @@ export async function multiplayerRoutes(fastify) {
 
             const kickedName = target.name;
             if (target.ws?.readyState === 1) {
-              target.ws.send(JSON.stringify({ type: 'KICKED', message: 'You have been removed from the room' }));
+              sendWs(target.ws, WS_SERVER_TYPES.KICKED, { message: 'You have been removed from the room' });
               target.ws.close();
             }
 
@@ -1420,12 +1434,12 @@ export async function multiplayerRoutes(fastify) {
           }
 
           default:
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Unknown message type' }));
+            sendWs(ws, WS_SERVER_TYPES.ERROR, { message: 'Unknown message type' });
         }
       }
     } catch (err) {
       fastify.log.error(err, 'WebSocket connection error');
-      socket.send(JSON.stringify({ type: 'ERROR', message: 'Internal server error' }));
+      sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Internal server error' });
       socket.close();
     }
   });

@@ -9,11 +9,14 @@ import {
   advanceTurn,
   getCurrentTurnCombatant,
   isCombatOver,
+  isPlayerWinning,
   resolveEnemyTurns,
   endCombat,
   surrenderCombat,
+  forceTruceCombat,
   endMultiplayerCombat,
   surrenderMultiplayerCombat,
+  forceTruceMultiplayerCombat,
   moveCombatant,
   getDistance,
 } from '../../services/combatEngine';
@@ -370,7 +373,7 @@ function CombatLogEntry({ entry, t }) {
 }
 
 export default function CombatPanel({
-  combat, dispatch, onEndCombat, onSurrender, character,
+  combat, dispatch, onEndCombat, onSurrender, onForceTruce, character,
   isMultiplayer = false, myPlayerId, onSendManoeuvre, onHostResolve, isHost = false, mpCharacters,
   gameState,
   onPersistState,
@@ -383,6 +386,7 @@ export default function CombatPanel({
   const [customDescription, setCustomDescription] = useState('');
   const [showSavedAttacks, setShowSavedAttacks] = useState(false);
   const [showSurrenderConfirm, setShowSurrenderConfirm] = useState(false);
+  const [showTruceConfirm, setShowTruceConfirm] = useState(false);
   const [combatLog, setCombatLog] = useState([]);
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
   const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
@@ -399,6 +403,7 @@ export default function CombatPanel({
     : currentTurn?.type === 'player';
   const combatOver = isCombatOver(combat);
   const canControl = isMultiplayer ? isHost : true;
+  const playerWinning = isPlayerWinning(combat);
   const combatCommentaryFrequency = settings.dmSettings?.combatCommentaryFrequency ?? 3;
   const combatInstanceKey = `${combat.reason || ''}::${combat.combatants.map((combatant) => combatant.id).join('|')}`;
 
@@ -867,6 +872,20 @@ export default function CombatPanel({
     }
   };
 
+  const handleForceTruce = () => {
+    if (isMultiplayer) {
+      if (!isHost || !mpCharacters) return;
+      const summary = forceTruceMultiplayerCombat(combat, mpCharacters);
+      setShowTruceConfirm(false);
+      onForceTruce(summary);
+    } else {
+      if (!character) return;
+      const summary = forceTruceCombat(combat, character);
+      setShowTruceConfirm(false);
+      onForceTruce(summary);
+    }
+  };
+
   const handleMoveToPosition = useCallback((targetYard) => {
     if (!isMyTurn || combatOver) return;
     const actorId = isMultiplayer ? myPlayerId : 'player';
@@ -919,6 +938,14 @@ export default function CombatPanel({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!combatOver && canControl && playerWinning && (
+            <button
+              onClick={() => setShowTruceConfirm(true)}
+              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-outline/10 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-tertiary/15 hover:text-tertiary hover:border-tertiary/20 transition-colors"
+            >
+              {t('combat.forceTruce', 'Force Truce')}
+            </button>
+          )}
           {!combatOver && canControl && (
             <button
               onClick={() => setShowSurrenderConfirm(true)}
@@ -937,6 +964,29 @@ export default function CombatPanel({
           )}
         </div>
       </div>
+
+      {/* Truce Confirmation */}
+      {showTruceConfirm && (
+        <div className="p-3 bg-tertiary/5 border border-tertiary/30 rounded-sm space-y-2">
+          <p className="text-[12px] text-on-surface">
+            {t('combat.forceTruceConfirm', 'You have the upper hand. Force a truce? Remaining enemies will back down.')}
+          </p>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setShowTruceConfirm(false)}
+              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-surface-container/50 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
+            >
+              {t('combat.cancel', 'Cancel')}
+            </button>
+            <button
+              onClick={handleForceTruce}
+              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-tertiary/15 text-tertiary border border-tertiary/30 rounded-sm hover:bg-tertiary/25 transition-colors"
+            >
+              {t('combat.forceTruce', 'Force Truce')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Surrender Confirmation */}
       {showSurrenderConfirm && (

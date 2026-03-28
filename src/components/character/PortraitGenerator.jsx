@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
+import { apiClient } from '../../services/apiClient';
 import { imageService } from '../../services/imageGen';
 import WebcamCapture from '../ui/WebcamCapture';
 
@@ -26,7 +27,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
   const [generating, setGenerating] = useState(false);
-  const [generatedUrl, setGeneratedUrl] = useState(initialPortrait || null);
+  const [generatedUrl, setGeneratedUrl] = useState(() => apiClient.resolveMediaUrl(initialPortrait) || null);
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
   const [captureSession, setCaptureSession] = useState(0);
@@ -108,7 +109,12 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     return (
       <div className="flex flex-col items-center gap-3">
         <div className="relative w-full max-w-[220px] aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)]">
-          <img src={generatedUrl} alt="Fantasy portrait" className="w-full h-full object-cover" />
+          <img
+            src={generatedUrl}
+            alt="Fantasy portrait"
+            className="w-full h-full object-cover"
+            onError={() => { setGeneratedUrl(null); setShowCapture(canUseReferenceImage); }}
+          />
           <div className="absolute top-1.5 right-1.5">
             <span className="material-symbols-outlined text-sm text-primary drop-shadow-lg">auto_awesome</span>
           </div>

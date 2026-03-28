@@ -486,7 +486,7 @@ export default function CampaignCreatorPage() {
                     <div className="flex items-start gap-4">
                       <div className="w-14 h-[72px] bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
                         {createdCharacter.portraitUrl ? (
-                          <img src={createdCharacter.portraitUrl} alt={createdCharacter.name} className="w-full h-full object-cover" />
+                          <img src={apiClient.resolveMediaUrl(createdCharacter.portraitUrl)} alt={createdCharacter.name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                         ) : (
                           <span className="material-symbols-outlined text-2xl text-primary/60">person</span>
                         )}
@@ -572,7 +572,7 @@ export default function CampaignCreatorPage() {
                           <div className="flex items-start gap-3">
                             <div className="w-12 h-16 bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
                               {ch.portraitUrl ? (
-                                <img src={ch.portraitUrl} alt={ch.name} className="w-full h-full object-cover" />
+                                <img src={apiClient.resolveMediaUrl(ch.portraitUrl)} alt={ch.name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                               ) : (
                                 <span className="material-symbols-outlined text-xl text-outline/40">person</span>
                               )}
@@ -622,7 +622,7 @@ export default function CampaignCreatorPage() {
                     <div className="flex items-start gap-4">
                       <div className="w-16 h-[85px] bg-surface-container-lowest rounded-sm flex items-center justify-center overflow-hidden shrink-0 border border-outline-variant/10">
                         {selectedCharacter.portraitUrl ? (
-                          <img src={selectedCharacter.portraitUrl} alt={selectedCharacter.name} className="w-full h-full object-cover" />
+                          <img src={apiClient.resolveMediaUrl(selectedCharacter.portraitUrl)} alt={selectedCharacter.name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                         ) : (
                           <span className="material-symbols-outlined text-3xl text-primary/60">person</span>
                         )}

@@ -35,6 +35,8 @@ import { useIdleTimer } from '../../hooks/useIdleTimer';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import TypewriterActionOverlay from './TypewriterActionOverlay';
 import IdleTimer from './IdleTimer';
+import CutscenePanel from './CutscenePanel';
+import { calculateTensionScore } from '../../services/tensionTracker';
 
 export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const navigate = useNavigate();
@@ -102,6 +104,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
   const handleSceneNavRef = useRef(null);
+  const consecutiveIdleEventsRef = useRef(0);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -129,6 +132,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const error = isMultiplayer ? mp.state.error : state.error;
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
+  const lastChosenAction = (() => {
+    if (!currentScene) return null;
+    if (currentScene.chosenAction != null && currentScene.chosenAction !== '') return currentScene.chosenAction;
+    const pa = currentScene.playerActions;
+    if (isMultiplayer && Array.isArray(pa) && character?.name) {
+      const mine = pa.find((p) => p.name === character.name);
+      return mine?.action ?? null;
+    }
+    return null;
+  })();
 
   useEffect(() => {
     if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
@@ -140,6 +153,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
+  const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, state.combat, state.dialogue) : 0;
 
   const [typewriterAction, setTypewriterAction] = useState(null);
   const typewriterNextIndexRef = useRef(null);
@@ -316,6 +330,40 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign, settings.sceneVisualization]);
 
   useEffect(() => {
+    if (!readOnly) return;
+    if ((settings.sceneVisualization || 'image') !== 'image') return;
+    if (
+      viewedScene &&
+      !viewedScene.image &&
+      !isGeneratingImage &&
+      !isGeneratingScene &&
+      !imageAttemptedRef.current.has(viewedScene.id) &&
+      viewedScene.narrative
+    ) {
+      generateImageForScene(
+        viewedScene.id,
+        viewedScene.narrative,
+        viewedScene.imagePrompt,
+        { genre: campaign?.genre, tone: campaign?.tone },
+        { skipAutoSave: true }
+      ).then((imageUrl) => {
+        if (imageUrl) {
+          imageAttemptedRef.current.add(viewedScene.id);
+        }
+      });
+    }
+  }, [
+    readOnly,
+    viewedScene,
+    isGeneratingImage,
+    isGeneratingScene,
+    generateImageForScene,
+    campaign?.genre,
+    campaign?.tone,
+    settings.sceneVisualization,
+  ]);
+
+  useEffect(() => {
     if (!isMultiplayer) return;
     const players = mp.state.players || [];
     for (const p of players) {
@@ -357,10 +405,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   };
   handleSceneNavRef.current = handleSceneNavigation;
 
-  const handleAction = async (action, isCustomAction = false) => {
+  const handleAction = async (action, isCustomAction = false, fromAutoPlayer = false) => {
+    consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
     try {
-      await generateScene(action, false, isCustomAction);
+      await generateScene(action, false, isCustomAction, fromAutoPlayer);
     } catch {
       // Error displayed in UI via context
     }
@@ -388,7 +437,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   }, [!!typewriterAction, !!autoPlayer.overlayAction]);
 
+  const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
+
   const handleIdleEvent = useCallback(({ roll, threshold }) => {
+    if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
+    consecutiveIdleEventsRef.current += 1;
     generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
   }, [generateScene]);
 
@@ -496,6 +549,39 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     generateScene(combatActionText, false, false).catch(() => {});
   };
 
+  const handleForceTruce = (summary) => {
+    dispatch({ type: 'END_COMBAT' });
+
+    const remainingList = summary.remainingEnemies.map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
+    const combatJournal = `Combat: Truce — forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
+
+    const stateChanges = {
+      journalEntries: [combatJournal],
+    };
+    if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
+    if (summary.xp) stateChanges.xp = summary.xp;
+    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
+    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+
+    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
+
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
+        id: `msg_${Date.now()}_combat_truce`,
+        role: 'system',
+        subtype: 'combat_end',
+        content: `${t('combat.youForcedTruceAfterRounds', 'You forced a truce after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
+        timestamp: Date.now(),
+      },
+    });
+    setTimeout(() => autoSave(), 300);
+
+    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
+
+    generateScene(combatActionText, false, false).catch(() => {});
+  };
+
   const handleEndDialogue = (summary) => {
     dispatch({ type: 'END_DIALOGUE' });
 
@@ -590,6 +676,34 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
   };
 
+  const handleMpForceTruce = (summary) => {
+    const perChar = summary.perCharacter || {};
+    const perCharForServer = {};
+    for (const [name, data] of Object.entries(perChar)) {
+      perCharForServer[name] = {
+        wounds: data.wounds || 0,
+        xp: data.xp || 0,
+        criticalWounds: data.criticalWounds || [],
+      };
+    }
+
+    const remainingList = (summary.remainingEnemies || []).map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
+    const combatJournal = `Combat: Truce — party forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining: ${remainingList}.`;
+
+    mp.endMultiplayerCombat({
+      perCharacter: perCharForServer,
+      enemiesDefeated: summary.enemiesDefeated,
+      totalEnemies: summary.totalEnemies,
+      rounds: summary.rounds,
+      outcome: 'truce',
+      journalEntry: combatJournal,
+    });
+
+    const combatActionText = `[Combat resolved: party forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The party had the upper hand and demanded the enemies stand down. Reason: ${summary.reason || 'unknown'}.]`;
+
+    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
+  };
+
   // Host: detect combatUpdate from scene results and create MP combat state
   const lastCombatSceneRef = useRef(null);
   useEffect(() => {
@@ -648,8 +762,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     setShareLoading(true);
     try {
       const { shareToken } = await apiClient.post(`/campaigns/${backendId}/share`);
-      const sceneIdx = displayedSceneIndex;
-      const url = `${window.location.origin}/view/${shareToken}?scene=${sceneIdx}`;
+      const url = `${window.location.origin}/view/${shareToken}`;
       await navigator.clipboard.writeText(url);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);
@@ -704,6 +817,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                 <span className={`text-xs ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
                   {t('common.scene')} {displayedSceneIndex + 1} / {scenes.length}
                 </span>
+                {scenes.length > 2 && (
+                  <span
+                    className={`text-[9px] px-1.5 py-0.5 rounded-sm border ${
+                      tensionScore > 70 ? 'text-error border-error/30 bg-error/10' :
+                      tensionScore > 40 ? 'text-amber-400 border-amber-400/30 bg-amber-400/10' :
+                      'text-tertiary border-tertiary/30 bg-tertiary/10'
+                    }`}
+                    title={t('gameplay.tensionScore', 'Tension') + `: ${tensionScore}/100`}
+                  >
+                    {tensionScore > 70 ? t('gameplay.tensionHigh', 'High') :
+                     tensionScore > 40 ? t('gameplay.tensionMedium', 'Med') :
+                     t('gameplay.tensionLow', 'Low')}
+                  </span>
+                )}
                 <button
                   onClick={() => {
                     const next = displayedSceneIndex + 1;
@@ -1008,6 +1135,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
           )}
         </div>
 
+        {/* Cutscene Panel */}
+        {viewedScene?.cutscene && (
+          <CutscenePanel cutscene={viewedScene.cutscene} />
+        )}
+
         {/* Read-only: always show readable narrative text */}
         {readOnly && viewedScene?.narrative && (
           <div className="px-2 animate-fade-in">
@@ -1110,6 +1242,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               dispatch={dispatch}
               onEndCombat={isMultiplayer ? handleMpEndCombat : handleEndCombat}
               onSurrender={isMultiplayer ? handleMpSurrender : handleSurrender}
+              onForceTruce={isMultiplayer ? handleMpForceTruce : handleForceTruce}
               character={character}
               isMultiplayer={isMultiplayer}
               myPlayerId={isMultiplayer ? `player_${mp.state.myOdId}` : 'player'}
@@ -1239,6 +1372,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
               dialogueCooldown={state.dialogueCooldown || 0}
               character={character}
+              dilemma={currentScene.dilemma}
+              lastChosenAction={lastChosenAction}
             />
           </div>
         )}

@@ -1,3 +1,11 @@
+import {
+  createWsMessage,
+  normalizeClientWsType,
+  normalizeServerWsType,
+  WS_CLIENT_TYPES,
+  WS_SERVER_TYPES,
+} from '../../shared/contracts/multiplayer.js';
+
 const REJOIN_STORAGE_KEY = 'nikczemny_krzemuch_mp_rejoin';
 
 class WebSocketService {
@@ -90,8 +98,9 @@ class WebSocketService {
       this._ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'PONG') return;
-          this._emit(msg.type, msg);
+          const normalizedType = normalizeServerWsType(msg?.type) || msg?.type;
+          if (normalizedType === WS_SERVER_TYPES.PONG) return;
+          this._emit(normalizedType, { ...msg, type: normalizedType });
         } catch {
           // ignore malformed messages
         }
@@ -122,7 +131,7 @@ class WebSocketService {
     this._reconnectTimer = setTimeout(() => {
       this._open().then(() => {
         if (this.connected && this._roomCode && this._odId) {
-          this.send('REJOIN_ROOM', { roomCode: this._roomCode, odId: this._odId });
+          this.send(WS_CLIENT_TYPES.REJOIN_ROOM, { roomCode: this._roomCode, odId: this._odId });
         }
       });
     }, delay);
@@ -132,7 +141,7 @@ class WebSocketService {
     this._stopHeartbeat();
     this._heartbeatTimer = setInterval(() => {
       if (this.connected) {
-        this._ws.send(JSON.stringify({ type: 'PING' }));
+        this._ws.send(JSON.stringify(createWsMessage(WS_CLIENT_TYPES.PING)));
       }
     }, 30000);
   }
@@ -173,7 +182,8 @@ class WebSocketService {
 
   send(type, payload = {}) {
     if (!this.connected) return;
-    this._ws.send(JSON.stringify({ type, ...payload }));
+    const normalizedType = normalizeClientWsType(type) || type;
+    this._ws.send(JSON.stringify(createWsMessage(normalizedType, payload)));
   }
 
   on(type, handler) {

@@ -4,6 +4,7 @@ import { calculateWounds, normalizeMoney } from '../services/gameState';
 import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
 import { DECAY_PER_HOUR, hourToPeriod, decayNeeds } from '../services/timeUtils';
+import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
 import {
   getAdvancementCost,
   ADVANCEMENT_COSTS,
@@ -117,6 +118,9 @@ const initialState = {
       plotThreads: [],
     },
     codex: {},
+    narrativeSeeds: [],
+    npcAgendas: [],
+    tensionHistory: [],
   },
   quests: { active: [], completed: [] },
   scenes: [],
@@ -1290,6 +1294,47 @@ function gameReducer(state, action) {
         next.world = { ...next.world, currentLocation: newLoc, mapConnections: mapConns, mapState: mapSt };
       }
 
+      if (changes.narrativeSeeds?.length > 0) {
+        const existing = next.world.narrativeSeeds || [];
+        const newSeeds = changes.narrativeSeeds
+          .filter((s) => !existing.some((e) => e.id === s.id))
+          .map((s) => ({ ...s, planted: s.planted ?? (next.scenes?.length || 0) }));
+        next.world = { ...next.world, narrativeSeeds: [...existing, ...newSeeds].slice(-30) };
+      }
+
+      if (changes.resolvedSeeds?.length > 0) {
+        const seeds = (next.world.narrativeSeeds || []).map((s) =>
+          changes.resolvedSeeds.includes(s.id) ? { ...s, resolved: true } : s
+        );
+        next.world = { ...next.world, narrativeSeeds: seeds };
+      }
+
+      if (changes.npcAgendas?.length > 0) {
+        const existing = next.world.npcAgendas || [];
+        const merged = [...existing];
+        for (const agenda of changes.npcAgendas) {
+          const idx = merged.findIndex((a) => a.npcName?.toLowerCase() === agenda.npcName?.toLowerCase());
+          if (idx >= 0) {
+            merged[idx] = { ...merged[idx], ...agenda };
+          } else {
+            merged.push({ ...agenda, plantedScene: agenda.plantedScene ?? (next.scenes?.length || 0) });
+          }
+        }
+        next.world = { ...next.world, npcAgendas: merged.slice(-20) };
+      }
+
+      if (changes.pendingCallbacks?.length > 0 && next.world?.knowledgeBase) {
+        const kb = { ...next.world.knowledgeBase };
+        const decisions = [...(kb.decisions || [])];
+        if (decisions.length > 0) {
+          const last = { ...decisions[decisions.length - 1] };
+          last.pendingCallbacks = [...(last.pendingCallbacks || []), ...changes.pendingCallbacks];
+          decisions[decisions.length - 1] = last;
+        }
+        kb.decisions = decisions;
+        next.world = { ...next.world, knowledgeBase: kb };
+      }
+
       return next;
     }
 
@@ -1482,13 +1527,14 @@ function gameReducer(state, action) {
       const { stateChanges, myOdId: payloadOdId } = action.payload;
       const localOdId = payloadOdId || state.myOdId;
       let next = { ...state };
+      const normalizedChanges = normalizeMultiplayerStateChanges(stateChanges);
 
-      if (stateChanges?.perCharacter && next.characters?.length > 0) {
+      if (normalizedChanges?.perCharacter && next.characters?.length > 0) {
         next.characters = next.characters.map((c) => {
-          const changes = stateChanges.perCharacter[c.name];
+          const changes = normalizedChanges.perCharacter[c.name] || normalizedChanges.perCharacter[c.playerName];
           if (!changes) return c;
           const updated = { ...c };
-          if (changes.woundsChange !== undefined) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + changes.woundsChange));
+          if (changes.wounds !== undefined) updated.wounds = Math.max(0, Math.min(updated.maxWounds, updated.wounds + changes.wounds));
           if (changes.xp !== undefined) updated.xp = updated.xp + changes.xp;
           if (changes.fortuneChange !== undefined) updated.fortune = Math.max(0, Math.min(updated.fate, updated.fortune + changes.fortuneChange));
           if (changes.resolveChange !== undefined) updated.resolve = Math.max(0, Math.min(updated.resilience, updated.resolve + changes.resolveChange));
@@ -1507,18 +1553,18 @@ function gameReducer(state, action) {
         next.character = (localOdId && next.characters.find((c) => c.odId === localOdId)) || next.characters[0];
       }
 
-      if (stateChanges?.worldFacts) {
-        next.world = { ...next.world, facts: [...(next.world.facts || []), ...stateChanges.worldFacts] };
+      if (normalizedChanges?.worldFacts) {
+        next.world = { ...next.world, facts: [...(next.world.facts || []), ...normalizedChanges.worldFacts] };
       }
-      if (stateChanges?.journalEntries) {
-        next.world = { ...next.world, eventHistory: [...(next.world.eventHistory || []), ...stateChanges.journalEntries] };
+      if (normalizedChanges?.journalEntries) {
+        next.world = { ...next.world, eventHistory: [...(next.world.eventHistory || []), ...normalizedChanges.journalEntries] };
       }
-      if (stateChanges?.currentLocation) {
-        next.world = { ...next.world, currentLocation: stateChanges.currentLocation };
+      if (normalizedChanges?.currentLocation) {
+        next.world = { ...next.world, currentLocation: normalizedChanges.currentLocation };
       }
-      if (stateChanges?.codexUpdates?.length > 0) {
+      if (normalizedChanges?.codexUpdates?.length > 0) {
         const codex = { ...(next.world.codex || {}) };
-        for (const update of stateChanges.codexUpdates) {
+        for (const update of normalizedChanges.codexUpdates) {
           if (!update.id || !update.fragment?.content) continue;
           const existing = codex[update.id];
           if (existing) {

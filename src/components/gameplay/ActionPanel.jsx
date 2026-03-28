@@ -16,7 +16,17 @@ const ATTITUDE_STYLES = {
   friendly: 'bg-success/20 text-success border-success/30',
 };
 
-export default function ActionPanel({ actions = [], onAction, disabled, npcs = [], autoPlayerTypingText = '', dialogueCooldown = 0, character = null }) {
+export default function ActionPanel({
+  actions = [],
+  onAction,
+  disabled,
+  npcs = [],
+  autoPlayerTypingText = '',
+  dialogueCooldown = 0,
+  character = null,
+  dilemma = null,
+  lastChosenAction = null,
+}) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [dialoguePickerOpen, setDialoguePickerOpen] = useState(false);
@@ -209,6 +219,38 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
 
       {/* Multiplayer: Pending Actions */}
       {isMultiplayer && <PendingActions />}
+
+      {/* Moral Dilemma */}
+      {dilemma && !hasPendingAction && (
+        <div className="p-3 bg-gradient-to-b from-amber-950/30 to-surface-container-low/40 border border-amber-500/25 rounded-sm space-y-2 animate-fade-in">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="material-symbols-outlined text-amber-400 text-sm">balance</span>
+            <span className="text-xs font-title text-amber-300">{dilemma.title}</span>
+          </div>
+          {dilemma.stakes && (
+            <p className="text-[11px] text-on-surface-variant/70 italic mb-2">{dilemma.stakes}</p>
+          )}
+          <div className="grid grid-cols-1 gap-1.5">
+            {(dilemma.options || []).map((opt, i) => (
+              <button
+                key={i}
+                onClick={() => handleSuggestedAction(opt.action)}
+                disabled={disabled}
+                className="w-full text-left px-3 py-2.5 bg-amber-500/5 hover:bg-amber-500/15 border border-amber-500/20 hover:border-amber-500/40 rounded-sm transition-all group disabled:opacity-50"
+              >
+                <div className="text-xs font-medium text-amber-200 group-hover:text-amber-100">
+                  {opt.label}
+                </div>
+                {opt.consequence && (
+                  <div className="text-[10px] text-on-surface-variant/50 mt-0.5 italic">
+                    {opt.consequence}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Suggested Actions */}
       {(!hasPendingAction || !isMultiplayer) && (
@@ -410,6 +452,25 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
           {/* Quick action buttons */}
           <button
             type="button"
+            onClick={() => handleSuggestedAction('[CONTINUE]')}
+            disabled={disabled || hasPendingAction || lastChosenAction === '[CONTINUE]'}
+            title={lastChosenAction === '[CONTINUE]' ? t('gameplay.continueDisabledTooltip') : undefined}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-primary/90 hover:text-primary bg-primary/5 hover:bg-primary/10 border border-primary/15 hover:border-primary/30 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined text-sm">skip_next</span>
+            {t('gameplay.continueButton')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSuggestedAction('[WAIT]')}
+            disabled={disabled || hasPendingAction}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-outline-variant/30 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <span className="material-symbols-outlined text-sm">hourglass_empty</span>
+            {t('gameplay.waitButton')}
+          </button>
+          <button
+            type="button"
             onClick={() => handleSuggestedAction(t('gameplay.searchForQuestsAction'))}
             disabled={disabled || hasPendingAction}
             className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-tertiary/80 hover:text-tertiary bg-tertiary/5 hover:bg-tertiary/10 border border-tertiary/10 hover:border-tertiary/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
@@ -438,6 +499,17 @@ export default function ActionPanel({ actions = [], onAction, disabled, npcs = [
               ? t('dialogue.cooldownShort', { scenes: dialogueCooldown })
               : t('dialogue.startDialogue')}
           </button>
+          {settings.needsSystemEnabled && (
+            <button
+              type="button"
+              onClick={() => handleSuggestedAction(t('gameplay.restAction'))}
+              disabled={disabled || hasPendingAction}
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-label text-indigo-400/80 hover:text-indigo-400 bg-indigo-500/5 hover:bg-indigo-500/10 border border-indigo-400/10 hover:border-indigo-400/25 rounded-sm transition-all disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <span className="material-symbols-outlined text-sm">bedtime</span>
+              {t('gameplay.restButton')}
+            </button>
+          )}
 
           {/* Custom action input */}
           <form onSubmit={handleCustomSubmit} className="flex-1 min-w-0">

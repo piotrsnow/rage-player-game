@@ -318,11 +318,12 @@ export function buildReducedScenePrompt(
   playerAction,
   isFirstScene = false,
   language = 'en',
-  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {},
+  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {},
   dmSettings = null,
 ) {
   const lang = language === 'pl' ? 'Polish' : 'English';
   const testsPct = dmSettings?.testsFrequency ?? 50;
+  const applyCreativityBonus = isCustomAction || fromAutoPlayer;
 
   const reducedStateJson = `{
   "narrative": "prose in ${lang}, 1–3 short paragraphs",
@@ -363,14 +364,14 @@ ${playerHasDialogue ? 'DIALOGUE line = exact PC speech — include verbatim in n
 
 Feasibility first: impossible=auto-fail (diceRoll=null), trivial=auto-succeed (diceRoll=null). Then resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
 ${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}
-${isCustomAction ? 'Custom action: add creativityBonus 5–25 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : ''}
+${applyCreativityBonus ? (isCustomAction ? 'Custom action: add creativityBonus 5–25 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : 'Auto-player-chosen action: add creativityBonus 5–25 (same scale as custom) for how well the choice fits the PC; set diceRoll.baseTarget, creativityBonus, target (effective). Minimum +5 when creativityBonus is used.') : ''}
 ${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}
 
 JSON only — no dialogueSegments, soundEffect, musicPrompt, atmosphere, or imagePrompt.
 
 ${reducedStateJson}
 
-diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,"applicableTalent":"<talent name or null>","talentBonus":<number or 0>,${isCustomAction ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. Check character Talents for matching [+X] bonuses. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
+diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,"applicableTalent":"<talent name or null>","talentBonus":<number or 0>,${applyCreativityBonus ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. Check character Talents for matching [+X] bonuses. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}

@@ -32,7 +32,10 @@ const fastify = Fastify({
   bodyLimit: 50 * 1024 * 1024, // 50MB for media uploads
 });
 
-await fastify.register(helmet, { contentSecurityPolicy: false });
+await fastify.register(helmet, {
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+});
 await fastify.register(corsPlugin);
 await fastify.register(authPlugin);
 await fastify.register(websocket);

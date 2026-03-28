@@ -163,6 +163,22 @@ function OverlayModifierList({ dr, t }) {
   );
 }
 
+/** Subtle border + tint for dice overlay card only (not full scene). */
+function getDiceOutcomeCardClasses(dr) {
+  if (!dr) return '';
+  if (dr.criticalSuccess) {
+    return 'border-amber-400/40 bg-gradient-to-br from-amber-500/[0.16] via-transparent to-amber-600/[0.09] shadow-[0_0_20px_rgba(251,191,36,0.1)]';
+  }
+  if (dr.criticalFailure) {
+    return 'border-red-600/40 bg-gradient-to-br from-red-600/[0.16] via-transparent to-red-700/[0.09] shadow-[0_0_20px_rgba(220,38,38,0.1)]';
+  }
+  const ok = Boolean(dr.success || dr.criticalSuccess);
+  if (ok) {
+    return 'border-emerald-500/35 bg-gradient-to-br from-emerald-500/[0.14] via-transparent to-emerald-600/[0.08] shadow-[0_0_18px_rgba(16,185,129,0.09)]';
+  }
+  return 'border-rose-500/35 bg-gradient-to-br from-rose-500/[0.14] via-transparent to-rose-600/[0.08] shadow-[0_0_18px_rgba(244,63,94,0.09)]';
+}
+
 function OverlayOutcomeTarget({ dr, t }) {
   const target = dr.target || dr.dc;
   const isSuccess = Boolean(dr.success || dr.criticalSuccess);
@@ -171,13 +187,13 @@ function OverlayOutcomeTarget({ dr, t }) {
     : dr.criticalFailure
       ? 'text-red-300 border-red-500/35 bg-red-500/10'
       : isSuccess
-        ? 'text-primary border-primary/35 bg-primary/10'
-        : 'text-error border-error/35 bg-error/10';
+        ? 'text-emerald-300 border-emerald-500/35 bg-emerald-500/10'
+        : 'text-rose-300 border-rose-500/35 bg-rose-500/10';
 
   return (
     <div className="relative w-28 h-20 flex items-end justify-center">
       <div className={`absolute left-1/2 -translate-x-1/2 w-16 h-16 rounded-full border bg-surface-container-high/55 flex flex-col items-center justify-center ${
-        isSuccess ? 'border-primary/35 shadow-[0_0_18px_rgba(197,154,255,0.12)]' : 'border-outline-variant/25'
+        isSuccess ? 'border-emerald-500/30 shadow-[0_0_14px_rgba(16,185,129,0.12)]' : 'border-outline-variant/25'
       }`}>
         <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-on-surface-variant">
           {dr.skill ? translateSkill(dr.skill, t) : dr.characteristic ? t(`stats.${dr.characteristic}Long`) : t('common.target', 'Cel')}
@@ -202,12 +218,13 @@ function OverlayOutcomeTarget({ dr, t }) {
 
 function OverlayDiceCard({ dr, t, showCharacter = false, isVisible = true }) {
   const target = dr?.target || dr?.dc;
+  const outcomeClasses = dr ? getDiceOutcomeCardClasses(dr) : '';
   return (
-    <div className={`glass-panel-elevated relative w-max max-w-[min(92vw,22rem)] overflow-visible rounded-xl px-4 py-3 flex flex-col gap-2 transition-all duration-300 ${
-      isVisible ? 'opacity-100 translate-y-0 scale-100' : 'pointer-events-none opacity-0 translate-y-1 scale-95'
-    }`}>
+    <div className={`glass-panel-dice-roll-overlay relative w-max max-w-[min(92vw,22rem)] overflow-visible rounded-xl border px-4 py-3 flex flex-col gap-2 transition-all duration-300 ${
+      outcomeClasses || 'border-outline-variant/20'
+    } ${isVisible ? 'opacity-100 translate-y-0 scale-100' : 'pointer-events-none opacity-0 translate-y-1 scale-95'}`}>
       {dr ? (
-        <div className="w-full text-center">
+        <div className="relative z-10 w-full text-center">
           {showCharacter && dr.character ? (
             <p className="text-[10px] font-bold text-on-surface uppercase tracking-[0.2em] truncate">
               {dr.character}
@@ -220,12 +237,15 @@ function OverlayDiceCard({ dr, t, showCharacter = false, isVisible = true }) {
       ) : null}
 
       {target != null && (
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden rounded-xl select-none font-mono text-[9rem] font-black leading-none text-on-surface/[0.07] blur-[2px] animate-target-shimmer">
+        <span
+          className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden rounded-xl select-none font-mono text-[9rem] font-black leading-none text-white/[0.38] mix-blend-soft-light blur-[1px] animate-target-shimmer [text-shadow:0_0_40px_rgba(197,154,255,0.14)]"
+          aria-hidden
+        >
           {target}
         </span>
       )}
 
-      <div className="flex items-end gap-3">
+      <div className="relative z-10 flex items-end gap-3">
         <div className="relative h-[68px] w-[84px] shrink-0 overflow-visible">
           <div className="absolute left-[calc(50%+24px)] top-[calc(50%-24px)] h-[168px] w-[186px] -translate-x-1/2 -translate-y-1/2 overflow-visible">
             <DiceRoller
@@ -519,6 +539,19 @@ export default function ScenePanel({
 
   return (
     <div className="relative w-full h-[clamp(280px,66vh,740px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
+      {/* Dream overlay */}
+      {scene.scenePacing === 'dream' && (
+        <>
+          <div className="absolute inset-0 z-30 pointer-events-none bg-purple-900/20 mix-blend-overlay" />
+          <div className="absolute inset-0 z-30 pointer-events-none backdrop-blur-[1px]" />
+          <div className="absolute top-3 left-3 z-40 flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-purple-500/20 border border-purple-400/30 backdrop-blur-sm">
+            <span className="material-symbols-outlined text-purple-300 text-sm">bedtime</span>
+            <span className="text-[10px] font-label uppercase tracking-widest text-purple-300">
+              {t('gameplay.dreamSequence', 'Dream Sequence')}
+            </span>
+          </div>
+        </>
+      )}
       {/* Scene background: 3D, AI image, canvas 2D, or placeholder */}
       {(settings.sceneVisualization || 'image') === '3d' ? (
         <Suspense fallback={

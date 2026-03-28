@@ -24,6 +24,9 @@ const PACING_SPEED_MULTIPLIERS = {
   dialogue: 1.0,
 };
 
+/** Extra multiplier on top of dialogue speed + scene pacing; final rate clamped to 2× */
+export const NARRATION_FAST_FORWARD_STEPS = [1, 1.5, 2];
+
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
   const { settings, hasApiKey } = useSettings();
   const { state, dispatch } = useGame();
@@ -41,6 +44,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const highlightRafRef = useRef(null);
   const generationRef = useRef(0);
   const skipSegmentRef = useRef(false);
+  const naturalPlaybackRateRef = useRef(1);
+  const narrationFastForwardRef = useRef(0);
+  const [narrationFastForwardLevel, setNarrationFastForwardLevel] = useState(0);
 
   const stopHighlightLoop = useCallback(() => {
     if (highlightRafRef.current) {
@@ -140,7 +146,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       const audio = new Audio(result.audioUrl);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
-      audio.playbackRate = Math.max(0.5, Math.min(2, baseRate * pacingMul));
+      const natural = Math.max(0.5, Math.min(2, baseRate * pacingMul));
+      naturalPlaybackRateRef.current = natural;
+      const ffMul = NARRATION_FAST_FORWARD_STEPS[narrationFastForwardRef.current] ?? 1;
+      audio.playbackRate = Math.min(2, natural * ffMul);
       audioRef.current = audio;
       setPlaybackState(STATES.PLAYING);
       setCurrentChunk(chunk);
@@ -364,6 +373,18 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, [playbackState, stopHighlightLoop]);
 
+  const cycleNarrationFastForward = useCallback(() => {
+    const next = (narrationFastForwardRef.current + 1) % NARRATION_FAST_FORWARD_STEPS.length;
+    narrationFastForwardRef.current = next;
+    setNarrationFastForwardLevel(next);
+    const audio = audioRef.current;
+    if (audio) {
+      const natural = naturalPlaybackRateRef.current;
+      const mul = NARRATION_FAST_FORWARD_STEPS[next];
+      audio.playbackRate = Math.min(2, natural * mul);
+    }
+  }, []);
+
   const speakSingle = useCallback((message, messageId) => {
     stop();
     setTimeout(() => {
@@ -406,6 +427,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     resume,
     stop,
     skipSegment,
+    cycleNarrationFastForward,
+    narrationFastForwardLevel,
     STATES,
   };
 }

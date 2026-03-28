@@ -7,6 +7,15 @@ import { formatWeatherForPrompt } from './weatherEngine';
 import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 import { formatTalentsForPrompt } from '../data/wfrpTalents';
+import { calculateTensionScore, getTensionGuidance } from './tensionTracker';
+import {
+  checkSeedResolution, formatSeedsForPrompt,
+  formatCallbacksForPrompt,
+  formatAgendasForPrompt,
+  formatDeadlinesForPrompt,
+  pickIdleEventType,
+  shouldGenerateDilemma,
+} from './narrativeEngine';
 
 export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęiąa]|rozpoczynam|rzucam\s+si[eę]|wyzywam|bij[eę]|uderz(?:am|e)|zabij|zaatakuj|dobywam|wyci[aą]gam\s+(?:miecz|bro[nń]|topor|n[oó][zż]|sztylet)|attack|fight|strike|hit|punch|stab|slash|shoot|kill|combat|draw\s*(?:my\s+)?(?:sword|weapon|blade|axe|knife|dagger))\b/i;
 
@@ -147,7 +156,7 @@ Unmet needs: ${urgent.join('; ')}.
 YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
-3. At least ONE of the four suggestedActions MUST address the most urgent unmet need (e.g. "Find food", "Look for a well", "Find a place to rest").
+3. At least ONE of the four suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
 4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
@@ -485,7 +494,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: At least ONE of the four suggestedActions MUST directly address the most urgent unmet need (e.g. "Search for food", "Find a stream to drink from", "Look for a place to sleep").
+- MANDATORY: At least ONE of the four suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
@@ -587,6 +596,9 @@ ${contextDepth >= 75 ? (() => {
 ${contextDepth >= 100 ? buildRelationshipGraphBlock(npcs, quests, world?.factions) : ''}${contextDepth >= 75 && consistencyWarnings?.length > 0 ? buildConsistencyWarningsBlock(consistencyWarnings) : ''}LANGUAGE INSTRUCTION:
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
+SUGGESTED ACTIONS (PLAYER CHARACTER VOICE):
+Every string in "suggestedActions" must read as something the player character intends to do or say — first person ("I examine the door", "I tell him I'm not interested") or a consistent imperative from the PC's agency ("Search the chest" meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
+
 INSTRUCTIONS:
 1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
 2. Maintain narrative consistency with established world facts and events.
@@ -603,7 +615,7 @@ INSTRUCTIONS:
 13. Update the player's current location via stateChanges.currentLocation when they move.
 14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
-16. QUEST COMPLETION RULE (CRITICAL): A quest can ONLY be completed (added to completedQuests) when BOTH conditions are met: (a) ALL objectives are marked as completed in questUpdates, AND (b) the player has talked to the turn-in NPC (turnInNpcId, or questGiverId if no turnInNpcId set) about the completed quest in the current scene. Do NOT auto-complete quests — the player must return to the quest giver to report success. When completing a quest, the turn-in NPC should acknowledge the completion, mention the reward, and congratulate the player. If all objectives are done but the player hasn't talked to the NPC yet, suggest returning to the NPC as one of the suggestedActions.
+16. QUEST COMPLETION RULE (CRITICAL): A quest can ONLY be completed (added to completedQuests) when BOTH conditions are met: (a) ALL objectives are marked as completed in questUpdates, AND (b) the player has talked to the turn-in NPC (turnInNpcId, or questGiverId if no turnInNpcId set) about the completed quest in the current scene. Do NOT auto-complete quests — the player must return to the quest giver to report success. When completing a quest, the turn-in NPC should acknowledge the completion, mention the reward, and congratulate the player. If all objectives are done but the player hasn't talked to the NPC yet, include a suggestedAction in the PC's voice such as "I go back to [NPC] to report what I've done".
 17. ITEM & MONEY ACQUISITION (CRITICAL): When the narrative describes the character picking up, finding, looting, receiving, buying, crafting, or otherwise ACQUIRING any physical object or money, you MUST include the corresponding stateChanges entry. Items go in stateChanges.newItems (with {id, name, type, description, rarity}). Money/coins go in stateChanges.moneyChange (with {gold, silver, copper} deltas). NEVER narrate the character obtaining something without the matching stateChanges — if the narrative says they picked it up, it MUST appear in their inventory or wallet. This applies even for trivial items like a coin, a key, a letter, or food. If a dice roll was required and FAILED, do NOT add the item. If it SUCCEEDED or was auto-success, the item MUST be added.
 
 ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
@@ -612,7 +624,7 @@ ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
 - ROUTINE ACTIONS (auto-success, NEVER roll — regardless of dice frequency): Everyday mundane activities that any healthy person can do without skill or effort. These NEVER require a dice roll, even at 80%+ frequency. Always set diceRoll to null. Examples: eating, drinking, sleeping, resting, sitting down, using a toilet/latrine, bathing, casual conversation, greeting someone, looking around, walking short distances, getting dressed, packing/unpacking belongings, setting up camp (basic), lighting a fire with proper tools. If the needs system is active, apply needsChanges as appropriate.
 - UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
 - EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules. If the player attempts to call someone who could plausibly hear them or arrive shortly, narrate the attempt and its result.
-- suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere.
+- suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere. Each suggestion MUST stay in the player character's voice (see SUGGESTED ACTIONS above).
 
 CURRENCY SYSTEM (WFRP):
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
@@ -806,11 +818,54 @@ When the player requests a structured dialogue (negotiation, parley, group conve
   }
 }
 Include dialogueUpdate when the player explicitly asks to enter dialogue mode, negotiate with a group, or talk to multiple NPCs. The client-side dialogue engine handles round-by-round conversation flow.
-When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be dialogue options: things the player can say, ask, argue, propose, or respond with.`;
+When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be in-character lines the player can choose to speak — concrete things the PC would say aloud, not stage directions.
+
+NARRATIVE SEEDS (Foreshadowing / Chekhov's Guns):
+You may plant narrative seeds — small foreshadowing details that will pay off later. Include them in stateChanges.narrativeSeeds:
+[{"id": "seed_unique_id", "description": "A strange rune on the tavern door", "payoffCondition": "location", "payoffHint": "the rune will react to magic", "location": "Old Ruins"}]
+Each seed has an id, description (what the player notices), payoffCondition ("location" = triggers at a specific place, "scenes" = triggers after N scenes), payoffHint (GM-only note for how to resolve it), and optional location. Plant 0-1 seeds per scene. When a seed's conditions are met, weave its payoff into the scene narrative and include its id in stateChanges.resolvedSeeds: ["seed_id"].
+${formatSeedsForPrompt(world?.narrativeSeeds)}
+CUTSCENE SYSTEM:
+You may include a "cutscene" field in the response to show a brief "Meanwhile..." scene happening elsewhere. Use this sparingly (every 5-10 scenes max) to:
+- Show the antagonist's plans advancing
+- Reveal NPC actions happening off-screen
+- Build dramatic irony (player sees what their character doesn't know)
+Format: {"cutscene": {"title": "Meanwhile, at the Imperial Court...", "narrative": "1-2 paragraphs of what's happening elsewhere", "location": "Location Name", "characters": ["NPC Name 1", "NPC Name 2"]}}
+Set cutscene to null when not using it. NEVER include the player character in a cutscene.
+
+MORAL DILEMMA SYSTEM:
+You may include a "dilemma" field when the scene presents a genuine moral choice with no clear right answer. Use this every 5-8 scenes to create meaningful narrative tension:
+Format: {"dilemma": {"title": "The Merchant's Plea", "stakes": "A man's life vs the greater good", "options": [{"label": "Save him", "consequence": "The cult may escape", "action": "I help the merchant escape"}, {"label": "Leave him", "consequence": "He dies but you track the cult", "action": "I follow the cultists instead"}]}}
+Each option has a label (short), consequence (what might happen — shown as a hint), and action (the player action text). 2-4 options. Set dilemma to null when not presenting one. Dilemmas should emerge from the story naturally, not feel forced.
+
+DREAMS AND VISIONS:
+Occasionally (every 8-15 scenes), when the character rests or sleeps, you may generate a dream sequence. Set scenePacing to "dream" and write surreal, symbolic narrative. Dreams can:
+- Foreshadow upcoming events through symbolism
+- Reflect the character's fears, guilt, or desires
+- Deliver cryptic messages from magical or divine forces
+- Revisit and recontextualize past events
+Dream scenes should feel distinct: distorted reality, non-linear time, symbolic imagery. diceRoll should be null. suggestedActions should be dream-like and in the PC's voice, e.g. "I follow the voice", "I reach for the mirror", "I try to wake up".
+
+NPC AGENDA SYSTEM:
+NPCs have lives and goals that advance between scenes. You may include npcAgendas in stateChanges to track off-screen NPC activity:
+[{"npcName": "Baron von Stahl", "goal": "Consolidate power over the merchant quarter", "nextAction": "Sends thugs to intimidate shopkeepers", "urgency": "high", "triggerAfterScenes": 3}]
+When an agenda triggers (enough scenes have passed), weave evidence of the NPC's actions into the scene: rumors, environmental changes, NPC arrivals, letters, consequences.
+${formatAgendasForPrompt(world?.npcAgendas, gameState)}
+CALLBACK SYSTEM:
+Past player decisions may have delayed consequences. When a callback triggers, incorporate its event into the current scene naturally — an NPC returns seeking revenge, a promise comes due, a lie is discovered, or a saved person offers aid.
+${formatCallbacksForPrompt(world?.knowledgeBase?.decisions, gameState)}
+TICKING CLOCKS (Quest Deadlines):
+Some quests may have deadlines. When a deadline is approaching or has passed, escalate urgency: NPCs mention time pressure, environmental clues change, consequences begin manifesting.
+${formatDeadlinesForPrompt(quests?.active, world?.timeState)}
+${(() => {
+  const tension = calculateTensionScore(gameState.scenes, gameState.combat, gameState.dialogue);
+  return getTensionGuidance(tension, gameState.scenes);
+})()}`;
 }
 
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0, scenes = null } = {}, dmSettings = null) {
-  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
+export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0, dialogue = null, dialogueCooldown = 0, scenes = null } = {}, dmSettings = null) {
+  const applyCreativityBonus = isCustomAction || fromAutoPlayer;
+  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Phrase each suggestedAction from the player character's perspective (first-person intent like "I search the chest" or clear PC-agency phrasing), not neutral GM-style labels. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
 
   if (isFirstScene) {
     return `Generate the opening scene of this campaign. Set the stage with an atmospheric description that draws the player in.
@@ -834,7 +889,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
+  "suggestedActions": ["I look around and get my bearings", "I approach the nearest local and ask what's going on", "I keep my hand near my weapon and watch the exits", "I search for anything useful or out of place"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
@@ -865,8 +920,11 @@ NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
+  const isContinue = playerAction === '[CONTINUE]';
+  const isWait = playerAction === '[WAIT]';
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
-  const isSurrender = isPostCombat && playerAction.includes('player surrendered');
+  const isSurrender = isPostCombat && playerAction.includes('surrendered');
+  const isTruce = isPostCombat && playerAction.includes('forced a truce');
   const isPostCombatDefeat = isPostCombat && (
     playerAction.includes('LOST the fight')
     || playerAction.includes('did NOT win')
@@ -877,21 +935,45 @@ NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), 
   const dialoguePart = extractDialogueParts(playerAction);
   const playerHasDialogue = hasDialogue(playerAction);
 
+  const idleEventType = isIdleWorldEvent ? pickIdleEventType() : null;
   const actionBlock = isIdleWorldEvent
     ? `IDLE WORLD EVENT — NO PLAYER ACTION OCCURRED.
-
-The player has been idle. The world moves on without them. Generate a small, atmospheric ambient event — something mundane, slice-of-life that happens TO or AROUND the character without their initiative.
+EVENT TYPE: ${idleEventType}
+${idleEventType === 'atmospheric' ? 'Generate a small, atmospheric ambient event — something mundane, slice-of-life that happens TO or AROUND the character without their initiative.' : ''}${idleEventType === 'npc_activity' ? 'An NPC does something noticeable nearby — starts an argument, makes a trade, reacts to something, arrives or departs. This can introduce a new minor NPC or show an existing one acting autonomously.' : ''}${idleEventType === 'rumor' ? 'The character overhears a rumor, snippet of conversation, or piece of gossip. This can hint at quest opportunities, world events, or NPC activities.' : ''}${idleEventType === 'foreshadowing' ? 'Something subtly ominous or portentous happens — a symbol appears, an animal behaves strangely, a chill wind blows, distant thunder rumbles. Plant a narrative seed if appropriate.' : ''}${idleEventType === 'consequence_echo' ? 'A past player decision ripples back — someone recognizes the character, a consequence of an earlier choice manifests, or news of the character\'s past actions spreads.' : ''}
 
 RULES FOR THIS SCENE (MANDATORY):
 - The character did NOT take any action. Do not narrate the character doing something deliberate.
 - Something happens in the world spontaneously: a passerby, an animal, weather, a sound, a small incident nearby.
-- Examples of appropriate events: a stray cat approaches and rubs against the character's leg, a street vendor loudly hawks their wares nearby, a fat drunkard stumbles into the character, a bird relieves itself on the character's shoulder, a horse spits in their direction, a child tugs at their sleeve asking for coin, a gust of wind scatters papers, a cart wheel breaks nearby, an NPC starts an argument within earshot, rain begins to fall.
 - Keep the narrative SHORT (1-2 paragraphs). This is a minor world beat, not a major plot event.
 - The event CAN optionally plant a subtle quest hook or introduce a character, but it does NOT have to. Most of the time, keep it purely atmospheric.
 - Set diceRoll to null — no skill test is needed.
 - Do NOT start combat. Do NOT include combatUpdate.
-- suggestedActions should include reactions to what just happened (e.g. "pet the cat", "talk to the vendor", "brush off the mess", "ignore and move on") plus normal exploration options.
+- suggestedActions should include reactions to what just happened in the PC's voice (e.g. "I kneel to pet the cat", "I go over to the vendor", "I brush off the mess and act casual", "I ignore it and walk on") plus normal exploration options.
 - stateChanges should be minimal or empty. A small timeAdvance (5-15 minutes) is appropriate.`
+    : isWait
+    ? `PLAYER CHOSE "WAIT" — PASSIVE OBSERVATION.
+
+The player deliberately waits and does NOT take initiative. They are watching, listening, or letting events unfold without acting.
+
+RULES FOR THIS SCENE (MANDATORY):
+- Do NOT narrate the player doing something goal-directed (no walking off, no starting conversations, no attacking). They remain passive unless reacting to something that happens TO them.
+- Something meaningful should develop: NPCs act, time passes, tension shifts, news arrives, an opportunity or threat emerges — this should feel more substantial than a tiny idle ambient beat, because the player chose to wait.
+- Advance the situation or plot thread; do not stall the story.
+- Set diceRoll to null — no skill test.
+- Do NOT start combat in this scene unless an external force attacks without the player provoking it; if combat starts, it is because the world came to them.
+- suggestedActions should offer ways to re-engage in first person or clear PC intent: "I speak up", "I step in", "I slip away", "I take a closer look", etc.
+- Include a modest timeAdvance (15 minutes to a few hours) if appropriate.`
+    : isContinue
+    ? `PLAYER CHOSE "CONTINUE" — KEEP THE STORY MOVING.
+
+The player wants the narrative to advance without specifying a concrete action. They are still engaged and present, but defer to the GM to push the scene forward.
+
+RULES FOR THIS SCENE (MANDATORY):
+- Advance the plot, deepen the current situation, or introduce the next beat — do not merely repeat the previous scene.
+- The character may participate naturally in what unfolds (walking with the flow, reacting to events), but do not invent a specific detailed player plan they did not state.
+- You may include a dice roll if the situation calls for a test; otherwise optional.
+- suggestedActions should be concrete, varied, and in the PC's voice (not generic "continue" only).
+- This is NOT the same as passive waiting — the player is active in the fiction, just not specifying how.`
     : isPostCombat
     ? `COMBAT JUST ENDED — ${playerAction}
 
@@ -900,7 +982,7 @@ POST-COMBAT RULES (MANDATORY):
 - Narrate the aftermath: describe the battlefield, fallen enemies, the character's condition and wounds, loot found, NPC reactions if any witnesses are present.
 - The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
 - Set diceRoll to null — no skill test is needed for this post-combat transition scene.
-- Suggest post-combat actions: searching bodies for loot, tending wounds, resting, continuing the journey, investigating why the enemies attacked, etc.
+- Suggest post-combat actions in the PC's voice: "I search the bodies for anything useful", "I bandage my wounds", "I catch my breath and rest a moment", "I push on down the road", "I try to work out why they attacked", etc.
 - If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isPostCombatDefeat ? `
 
 DEFEAT RULES (MANDATORY — the player LOST this fight):
@@ -920,7 +1002,20 @@ SURRENDER RULES (MANDATORY — the player SURRENDERED, they did not win):
   * Faction enemies → use "factionChanges" to reflect reputation consequences (humiliation, submission).
 - The consequences MUST be meaningful: the player chose to surrender to avoid death, so they pay a price. Include at least one of: imprisonment, item confiscation, money loss, forced relocation, reputation damage, or a new quest/obligation imposed by the captors.
 - Suggest actions that reflect the surrendered state: negotiating with captors, attempting escape, accepting imprisonment, pleading for mercy, offering information/services in exchange for freedom.
-- Do NOT let the surrender have zero consequences — the enemies won and should act like victors.` : ''}`
+- Do NOT let the surrender have zero consequences — the enemies won and should act like victors.` : ''}${isTruce ? `
+
+TRUCE RULES (MANDATORY — the player FORCED A TRUCE from a position of strength):
+- The player had the upper hand — enemies were wounded, outnumbered, or losing badly — and demanded the remaining enemies stand down.
+- The enemies CONCEDE, not the player. Narrate the enemies backing off, dropping weapons, raising hands, fleeing, or grudgingly agreeing to cease hostilities.
+- The player KEEPS all their belongings. Do NOT use "itemsRemoved" or "moneyChange" (negative) — the player is the victor here.
+- Possible aftermath depending on WHO the enemies are:
+  * Town guards / authorities → they retreat and regroup, possibly calling for reinforcements later. Use "factionChanges" if the player's dominance affects local reputation.
+  * Bandits / criminals → they scatter, beg for mercy, or offer information to save themselves. The player may loot the fallen.
+  * Intelligent enemies (NPCs, rival adventurers) → grudging respect, temporary ceasefire, information exchange, or negotiated terms. They may become reluctant allies or sworn enemies later.
+  * Monsters / beasts → unintelligent creatures slink away wounded; intelligent ones may bargain or submit.
+  * Faction enemies → use "factionChanges" to reflect the power shift (fear, grudging respect, or escalation).
+- The player is in a DOMINANT position. Suggest actions that reflect this: demand information, interrogate survivors, loot fallen enemies, let them go with a warning, take prisoners, tend to wounds, press the advantage.
+- The truce may have future consequences — enemies may return with reinforcements, spread word of the player's prowess, or honor/betray the ceasefire.` : ''}`
     : playerHasDialogue
       ? `The player's ACTION: ${actionPart}
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
@@ -980,7 +1075,7 @@ MANDATORY DIALOGUE MODE RULES:
 - ONLY NPCs speak. The "narrative" must contain ONLY the NPCs' spoken dialogue lines.
 - ALL dialogueSegments must be type "dialogue" with an NPC character name and gender. Do NOT include any "narration" segments.
 - Each NPC should respond in character based on their personality, attitude, and conversational goal.
-- suggestedActions must be dialogue options: things the player can SAY, ASK, ARGUE, PROPOSE, or RESPOND with — NOT physical actions.
+- suggestedActions must be concrete in-character lines the PC can say (direct speech the player selects) — NOT physical stage directions or narrator summaries.
 - Do NOT include combatUpdate.
 - diceRoll should be null unless a Charm/Fellowship test is contextually critical.
 - ${dialogue.round >= dialogue.maxRounds ? 'This is the LAST round. NPCs should wrap up the conversation naturally. Include "dialogueUpdate": {"active": false} in stateChanges to end dialogue mode.' : `${dialogue.maxRounds - dialogue.round} round(s) remaining.`}\n`;
@@ -991,7 +1086,7 @@ POST-DIALOGUE RULES (MANDATORY):
 - Do NOT include "dialogueUpdate" in stateChanges — dialogue has JUST ended.
 - Return to normal narration: narrator describes the aftermath and consequences of the conversation.
 - Reflect the outcome of the dialogue: agreements reached, information gained, NPC disposition changes, rejected proposals, etc.
-- suggestedActions should be normal exploration/action options based on the dialogue outcome.
+- suggestedActions should be normal exploration/action options based on the dialogue outcome, phrased from the player character's perspective.
 - diceRoll should be null for this transition scene.\n`;
   } else if (isDialogueInitiation) {
     const npcListMatch = playerAction.match(/\[INITIATE DIALOGUE:\s*(.+?)\]/);
@@ -1010,11 +1105,30 @@ Example: "dialogueUpdate": {"active": true, "npcs": [{"name": "Merchant Hans", "
     dialogueReminder = `\n\nDIALOGUE MODE ON COOLDOWN (${dialogueCooldown} scenes remaining). The character needs time to recover their social energy. Narrate the conversation normally without entering dialogue mode — do NOT include dialogueUpdate.\n`;
   }
 
+  const creativityBonusIntroCustom = `The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus.
+- +5: Mundane custom action — a basic alternative to the suggestions, nothing special
+- +10: Slightly creative — shows some thought or personality but still straightforward
+- +15: Moderately creative — good use of environment or character abilities
+- +20: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
+- +25: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE.
+Award +5 minimum for any custom action. Do NOT default to high bonuses — most custom actions are +5 or +10.`;
+
+  const creativityBonusIntroAuto = `The player's action was chosen by the auto-player AI controlling their character (this may be a suggested action chosen verbatim or a slight variation). Judge how well the choice fits the character's personality, skills, backstory, and the immediate situation — use the SAME bonus scale as for custom player actions:
+- +5: Obvious or bland choice for this character and context
+- +10: Slightly fitting — reasonable and in character
+- +15: Moderately strong — good use of the situation or the character sheet
+- +20: Very strong — distinctive, clever, or well-roleplayed choice for this PC
+- +25: Exceptionally strong — brilliant fit; use rarely
+Award +5 minimum whenever you include creativityBonus on the diceRoll. Do NOT default to high bonuses — most auto-player resolutions are +5 or +10.`;
+
+  const creativityBonusIntro = isCustomAction ? creativityBonusIntroCustom : creativityBonusIntroAuto;
+
   return `${needsReminder}${actionBlock}${combatReminder}${dialogueReminder}
 ${isPostCombat ? '' : `
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
 RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
 RULE 2 — SPEECH PARTS (MANDATORY): The DIALOGUE line (if present) contains the character's exact in-character speech. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
+SEGMENT ORDER: When the player spoke in this beat, list their "dialogue" segment(s) first in dialogueSegments, then narration and other speakers — chronological order for the reader.
 If there is no DIALOGUE line, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's action text verbatim).
 `}
 Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
@@ -1027,15 +1141,9 @@ Simple repositioning or low-risk movement such as "I take a step back", "I move 
 DICE ROLL FREQUENCY: The dice roll frequency is set to ~${dmSettings?.testsFrequency ?? 50}%. Roll dice for approximately that proportion of actions. At high frequency (80%+), most actions require a roll (stepping over a threshold, opening a door, etc.) with high target numbers (70-90+) so success is very likely but never guaranteed — but ROUTINE ACTIONS (eating, resting, sleeping, bodily needs, casual conversation) are ALWAYS exempt and must use diceRoll=null. Consider the character's species for modifiers: Dwarfs have lower Agility (movement/balance checks harder), Elves have lower Toughness, etc. Use the WFRP d100 system with the pre-rolled d100 value below. Build each roll like this: "baseTarget" = characteristic + skill advances, "difficultyModifier" = a separate explicit difficulty step from +40 to -40, and "target" = final effective target used for success comparison after all modifiers. Calculate Success Levels (SL) = (target - roll) ÷ 10 rounded toward 0. Rolls of 01-04 are CRITICAL SUCCESS (automatic success + extra benefits). Rolls of 96-00 are CRITICAL FAILURE (automatic failure + extra penalties/consequences). IMPORTANT: When the roll indicates failure (roll > target and not 01-04), the narrative MUST reflect the action failing — the character does NOT succeed. When the roll indicates success (roll <= target or roll is 01-04), the narrative MUST reflect the action succeeding.
 DIFFICULTY MODIFIER: Always expose task difficulty explicitly via "difficultyModifier" instead of hiding it inside "target". Use only one of these values: +40, +30, +20, +10, 0, -10, -20, -30, -40. Guide: +40 routine, +30 easy, +20 favorable, +10 slightly favorable, 0 standard, -10 challenging, -20 hard, -30 very hard, -40 extreme.
 NPC DISPOSITION MODIFIERS: When this roll involves direct interaction with a known NPC (social, trade, persuasion, etc.), apply the NPC's disposition as a separate target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll output with the applied modifier value.
-${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null in your response. Do not invent or include any dice check.' : (preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus for custom actions), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).')}
-${isCustomAction ? `
-CREATIVITY BONUS: The player wrote a CUSTOM action (not one of the suggested options). Evaluate the creativity, originality, and cleverness of their action and add a bonus.
-- +5: Mundane custom action — a basic alternative to the suggestions, nothing special
-- +10: Slightly creative — shows some thought or personality but still straightforward
-- +15: Moderately creative — good use of environment or character abilities
-- +20: Very creative — an unexpected approach that makes strong narrative sense, demonstrates clever thinking
-- +25: Exceptionally creative — a truly brilliant, surprising action that uses multiple narrative elements in an inventive way. This should be RARE.
-Award +5 minimum for any custom action. Do NOT default to high bonuses — most custom actions are +5 or +10.
+${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null in your response. Do not invent or include any dice check.' : (preRolledDice ? `PRE-ROLLED DICE: The d100 roll result is: ${preRolledDice}. You MUST use this exact value as the "roll" in the diceRoll. Do NOT generate your own roll number. First determine the appropriate skill and target number (including creativity bonus when custom or auto-player action applies), then check whether ${preRolledDice} succeeds or fails against the target, and THEN write the narrative matching that outcome.` : 'If a dice check is needed, generate a random d100 roll (1-100).')}
+${applyCreativityBonus ? `
+CREATIVITY BONUS: ${creativityBonusIntro}
 COMBINED BONUS CAP: The total of creativityBonus + momentumBonus + dispositionBonus is hard-capped at +30 by the game engine. Any excess is discarded. "difficultyModifier" is NOT part of this cap and stays separate. Keep this in mind when setting target numbers.
 Output the diceRoll fields as follows:
 - "characteristic": the characteristic key used (e.g. "ag", "ws", "fel")
@@ -1062,7 +1170,9 @@ Respond with ONLY valid JSON in this exact format:
 {
   "diceRoll": null,
   "narrative": "2-3 paragraphs describing what happens as a result of the player's action and setting up the next beat...",
-  "scenePacing": "exploration | combat | chase | stealth | dialogue | travel_montage | celebration | rest | dramatic",
+  "scenePacing": "exploration | combat | chase | stealth | dialogue | travel_montage | celebration | rest | dramatic | dream | cutscene",
+  "cutscene": null,
+  "dilemma": null,
   "dialogueSegments": [
     {"type": "narration", "text": "Descriptive prose..."},
     {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
@@ -1078,7 +1188,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["Action option 1", "Action option 2", "Action option 3", "Action option 4"],
+  "suggestedActions": ["I take a closer look at what's in front of me", "I call out or signal to get someone's attention", "I move to a safer or more advantageous position", "I try something clever using what's around me"],
   "questOffers": [],
   "stateChanges": {
     "woundsChange": 0,
@@ -1113,7 +1223,7 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll — except routine mundane actions (eating, resting, sleeping, bodily needs, casual conversation) which NEVER get a roll. For social speech and persuasion, use Fel unless a more specific WFRP skill clearly implies another characteristic. If you cannot determine a valid WFRP characteristic, return diceRoll: null. Format: {"type": "d100", "roll": <number 1-100>, "characteristic": "<characteristic key: ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in tested skill, 0 if untrained>, "applicableTalent": "<talent name or null>", "talentBonus": <number — bonus from talent, 0 if none>, "baseTarget": <number — characteristicValue + skillAdvances>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, ${isCustomAction ? '"creativityBonus": <number 5-25>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "suggestedSkills": ["skill1", "skill2"], "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. MANDATORY: "characteristic", "characteristicValue", "skillAdvances", "baseTarget", and "difficultyModifier" must ALWAYS be present when diceRoll is not null. Check the character's Talents for applicable bonuses and include "applicableTalent"/"talentBonus" when a talent matches. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${isCustomAction ? `"target" must be the EFFECTIVE target (baseTarget + talentBonus + difficultyModifier + creativityBonus${momentumBonus !== 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable, with only creativity+momentum+disposition subject to the +30 cap).` : `"target" must be the EFFECTIVE target (baseTarget + talentBonus + difficultyModifier${momentumBonus !== 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable).`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
+For diceRoll: use based on the configured dice frequency (~${dmSettings?.testsFrequency ?? 50}%). At 80%+, nearly every action needs a roll — except routine mundane actions (eating, resting, sleeping, bodily needs, casual conversation) which NEVER get a roll. For social speech and persuasion, use Fel unless a more specific WFRP skill clearly implies another characteristic. If you cannot determine a valid WFRP characteristic, return diceRoll: null. Format: {"type": "d100", "roll": <number 1-100>, "characteristic": "<characteristic key: ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in tested skill, 0 if untrained>, "applicableTalent": "<talent name or null>", "talentBonus": <number — bonus from talent, 0 if none>, "baseTarget": <number — characteristicValue + skillAdvances>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, ${applyCreativityBonus ? '"creativityBonus": <number 5-25>, ' : ''}${momentumBonus !== 0 ? `"momentumBonus": ${momentumBonus}, ` : ''}"dispositionBonus": <number or omit if N/A>, "sl": <number>, "skill": "<skill name>", "suggestedSkills": ["skill1", "skill2"], "success": <boolean>, "criticalSuccess": <boolean>, "criticalFailure": <boolean>}. MANDATORY: "characteristic", "characteristicValue", "skillAdvances", "baseTarget", and "difficultyModifier" must ALWAYS be present when diceRoll is not null. Check the character's Talents for applicable bonuses and include "applicableTalent"/"talentBonus" when a talent matches. ${preRolledDice ? `Use the pre-rolled value ${preRolledDice} as "roll".` : ''} ${applyCreativityBonus ? `"target" must be the EFFECTIVE target (baseTarget + talentBonus + difficultyModifier + creativityBonus${momentumBonus !== 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable, with only creativity+momentum+disposition subject to the +30 cap).` : `"target" must be the EFFECTIVE target (baseTarget + talentBonus + difficultyModifier${momentumBonus !== 0 ? ' + momentumBonus' : ''} + dispositionBonus if applicable).`} Set criticalSuccess=true when roll is 01-04 (automatic success with bonus effects). Set criticalFailure=true when roll is 96-00 (automatic failure with extra penalties). Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). The narrative MUST match: failed roll = failed action, successful roll = successful action.${skipDiceRoll ? ' DICE ROLL OVERRIDE IS ACTIVE: set diceRoll to null.' : ' Use null ONLY when dice frequency is low and the action truly doesn\'t warrant a test.'}
 
 For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
@@ -1155,7 +1265,7 @@ For stateChanges.currentLocation: update whenever the player moves to a new loca
 ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${buildPacingPressure(scenes)}${langReminder}`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${buildPacingPressure(scenes)}${shouldGenerateDilemma(scenes) ? '\nDILEMMA OPPORTUNITY: It has been several scenes since the last moral dilemma. Consider presenting one if the narrative naturally supports it — include a "dilemma" field with 2-4 meaningful choices.\n' : ''}${langReminder}`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {
@@ -1240,7 +1350,7 @@ Respond with ONLY valid JSON:
       "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
       "transition": "fade"
     },
-    "suggestedActions": ["Action 1", "Action 2", "Action 3", "Action 4"],
+    "suggestedActions": ["I look around and take in the situation", "I greet the nearest person and introduce myself", "I keep quiet and observe", "I head toward the most interesting lead I can see"],
     "journalEntries": ["Concise 1-2 sentence summary of a key event from the opening scene"]
   },
   "initialQuest": {

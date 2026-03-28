@@ -13,6 +13,8 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
 import { detectCombatIntent, detectDialogueIntent } from '../services/prompts';
+import { calculateTensionScore } from '../services/tensionTracker';
+import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
@@ -20,6 +22,55 @@ import { getApplicableTalentBonus } from '../data/wfrpTalents';
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
 const MAX_DIFFICULTY_MODIFIER = 40;
+
+const SCENE_GEN_DURATION_HISTORY_KEY = 'rpgon_scene_gen_durations_ms';
+const SCENE_GEN_DURATION_HISTORY_LEGACY_KEY = 'rpgon_last_scene_gen_ms';
+const SCENE_GEN_HISTORY_MAX = 5;
+const SCENE_GEN_ESTIMATE_PADDING_MS = 3000;
+
+function isValidDurationEntry(n) {
+  return typeof n === 'number' && Number.isFinite(n) && n > 0;
+}
+
+function loadSceneGenDurationHistory() {
+  try {
+    const raw = localStorage.getItem(SCENE_GEN_DURATION_HISTORY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const nums = parsed.filter(isValidDurationEntry);
+        if (nums.length) return nums.slice(-SCENE_GEN_HISTORY_MAX);
+      }
+    }
+    const legacy = localStorage.getItem(SCENE_GEN_DURATION_HISTORY_LEGACY_KEY);
+    if (legacy) {
+      const v = Number(legacy);
+      if (isValidDurationEntry(v)) return [v];
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function appendSceneGenDuration(history, elapsedMs) {
+  if (!isValidDurationEntry(elapsedMs)) return history;
+  return [...history, elapsedMs].slice(-SCENE_GEN_HISTORY_MAX);
+}
+
+function historyToSceneGenEstimateMs(history) {
+  if (!history.length) return null;
+  const avg = history.reduce((a, b) => a + b, 0) / history.length;
+  return Math.round(avg + SCENE_GEN_ESTIMATE_PADDING_MS);
+}
+
+function persistSceneGenDurationHistory(history) {
+  try {
+    localStorage.setItem(SCENE_GEN_DURATION_HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    /* ignore */
+  }
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -43,9 +94,11 @@ export function useAI() {
 
   const compressionGenRef = useRef(0);
   const sceneGenStartRef = useRef(null);
+  const sceneGenDurationHistoryRef = useRef(null);
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
-    const saved = localStorage.getItem('rpgon_last_scene_gen_ms');
-    return saved ? Number(saved) : null;
+    const history = loadSceneGenDurationHistory();
+    sceneGenDurationHistoryRef.current = history;
+    return historyToSceneGenEstimateMs(history);
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
   const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
@@ -58,8 +111,20 @@ export function useAI() {
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
   const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
 
+  const recordCompletedSceneGenTiming = useCallback(() => {
+    if (!sceneGenStartRef.current) return;
+    const elapsed = Date.now() - sceneGenStartRef.current;
+    const prev = sceneGenDurationHistoryRef.current || [];
+    const next = appendSceneGenDuration(prev, elapsed);
+    sceneGenDurationHistoryRef.current = next;
+    persistSceneGenDurationHistory(next);
+    setLastSceneGenMs(historyToSceneGenEstimateMs(next));
+    sceneGenStartRef.current = null;
+    setSceneGenStartTime(null);
+  }, []);
+
   const generateScene = useCallback(
-    async (playerAction, isFirstScene = false, isCustomAction = false) => {
+    async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       sceneGenStartRef.current = Date.now();
@@ -87,11 +152,33 @@ export function useAI() {
           }
         }
         const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
+        const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
         const testsFrequency = settings.dmSettings?.testsFrequency ?? 50;
-        const shouldRollDice = !isIdleWorldEvent && Math.random() * 100 < testsFrequency;
+        const shouldRollDice = !isPassiveSceneAction && Math.random() * 100 < testsFrequency;
         const preRolledDice = (!isFirstScene && shouldRollDice) ? rollD100() : null;
-        const skipDiceRoll = isIdleWorldEvent || (!isFirstScene && !shouldRollDice);
+        const skipDiceRoll = isPassiveSceneAction || (!isFirstScene && !shouldRollDice);
         const momentumBonus = state.momentumBonus || 0;
+
+        const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
+        const triggeredAgendas = !isFirstScene ? checkNpcAgendas(state.world?.npcAgendas, state) : [];
+        const readySeeds = !isFirstScene ? checkSeedResolution(state.world?.narrativeSeeds, state) : [];
+        const { expired: expiredQuests, warning: warningQuests } = !isFirstScene ? checkQuestDeadlines(state.quests?.active, state.world?.timeState) : { expired: [], warning: [] };
+        const tensionScore = !isFirstScene ? calculateTensionScore(state.scenes, state.combat, state.dialogue) : 50;
+        const dilemmaScheduled = !isFirstScene ? shouldGenerateDilemma(state.scenes) : false;
+
+        if (enhancedContext && !isFirstScene) {
+          enhancedContext = {
+            ...enhancedContext,
+            triggeredCallbacks,
+            triggeredAgendas,
+            readySeeds,
+            expiredQuests,
+            warningQuests,
+            tensionScore,
+            dilemmaScheduled,
+          };
+        }
+
         const { result, usage } = await aiService.generateScene(
           state,
           settings.dmSettings,
@@ -101,11 +188,11 @@ export function useAI() {
           apiKey,
           language,
           enhancedContext,
-          { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+          { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
 
-        if (!isFirstScene && !isIdleWorldEvent && detectCombatIntent(playerAction)) {
+        if (!isFirstScene && !isPassiveSceneAction && detectCombatIntent(playerAction)) {
           const hasCombatUpdate = result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true;
           if (!hasCombatUpdate) {
             console.warn('[useAI] Combat intent detected but AI omitted combatUpdate — retrying with reinforced prompt');
@@ -113,7 +200,7 @@ export function useAI() {
               const retryAction = `[SYSTEM: COMBAT MUST START THIS SCENE] ${playerAction}`;
               const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
                 state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+                { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
               );
               if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
               if (retryResult.stateChanges?.combatUpdate?.active === true) {
@@ -128,7 +215,7 @@ export function useAI() {
           }
         }
 
-        if (!isFirstScene && !isIdleWorldEvent && detectDialogueIntent(playerAction) && (state.dialogueCooldown || 0) <= 0) {
+        if (!isFirstScene && !isPassiveSceneAction && detectDialogueIntent(playerAction) && (state.dialogueCooldown || 0) <= 0) {
           const hasDialogueUpdate = result.stateChanges?.dialogueUpdate && result.stateChanges.dialogueUpdate.active === true;
           if (!hasDialogueUpdate && (playerAction?.startsWith('[INITIATE DIALOGUE') || playerAction?.startsWith('[TALK:'))) {
             console.warn('[useAI] Dialogue intent detected but AI omitted dialogueUpdate — retrying with reinforced prompt');
@@ -136,7 +223,7 @@ export function useAI() {
               const retryAction = `[SYSTEM: DIALOGUE MODE MUST START THIS SCENE] ${playerAction}`;
               const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
                 state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+                { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
               );
               if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
               if (retryResult.stateChanges?.dialogueUpdate?.active === true) {
@@ -278,7 +365,7 @@ export function useAI() {
           [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])],
           playerNames
         );
-        const finalSegments = (!isFirstScene && !isIdleWorldEvent)
+        const finalSegments = (!isFirstScene && !isPassiveSceneAction)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
 
@@ -307,13 +394,16 @@ export function useAI() {
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
 
-        if (!isFirstScene && playerAction && !isIdleWorldEvent) {
+        if (!isFirstScene && playerAction && !isPassiveSceneAction) {
+          const playerChatContent = playerAction === '[CONTINUE]'
+            ? t('gameplay.continueChatMessage')
+            : playerAction;
           dispatch({
             type: 'ADD_CHAT_MESSAGE',
             payload: {
               id: `msg_${Date.now()}_player`,
               role: 'player',
-              content: playerAction,
+              content: playerChatContent,
               timestamp: Date.now(),
             },
           });
@@ -327,6 +417,19 @@ export function useAI() {
               role: 'system',
               subtype: 'world_event',
               content: t('idle.worldEvent', 'Something stirs in the world...'),
+              timestamp: Date.now(),
+            },
+          });
+        }
+
+        if (playerAction === '[WAIT]') {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_wait`,
+              role: 'system',
+              subtype: 'wait',
+              content: t('gameplay.waitSystemMessage'),
               timestamp: Date.now(),
             },
           });
@@ -445,6 +548,30 @@ export function useAI() {
           }
         }
 
+        if (!isFirstScene && expiredQuests.length > 0) {
+          for (const q of expiredQuests) {
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_deadline_${q.id}`,
+                role: 'system',
+                subtype: 'quest_deadline',
+                content: `⏰ ${t('gameplay.questDeadlineExpired', 'Quest deadline expired')}: ${q.name} — ${q.deadline?.consequence || ''}`,
+                timestamp: Date.now(),
+              },
+            });
+          }
+        }
+
+        if (!isFirstScene) {
+          dispatch({
+            type: 'UPDATE_WORLD',
+            payload: {
+              tensionHistory: [...(state.world?.tensionHistory || []).slice(-20), tensionScore],
+            },
+          });
+        }
+
         if (state.dialogue?.active && result.stateChanges?.dialogueUpdate?.active !== false) {
           const advanced = advanceDialogueRound(state.dialogue);
           if (!advanced.active) {
@@ -454,13 +581,7 @@ export function useAI() {
           }
         }
 
-        if (sceneGenStartRef.current) {
-          const elapsed = Date.now() - sceneGenStartRef.current;
-          setLastSceneGenMs(elapsed);
-          localStorage.setItem('rpgon_last_scene_gen_ms', String(elapsed));
-          sceneGenStartRef.current = null;
-          setSceneGenStartTime(null);
-        }
+        recordCompletedSceneGenTiming();
 
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
 
@@ -515,19 +636,13 @@ export function useAI() {
 
         return result;
       } catch (err) {
-        if (sceneGenStartRef.current) {
-          const elapsed = Date.now() - sceneGenStartRef.current;
-          setLastSceneGenMs(elapsed);
-          localStorage.setItem('rpgon_last_scene_gen_ms', String(elapsed));
-          sceneGenStartRef.current = null;
-          setSceneGenStartTime(null);
-        }
+        recordCompletedSceneGenTiming();
         dispatch({ type: 'SET_ERROR', payload: err.message });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming]
   );
 
   const generateCampaign = useCallback(
@@ -572,7 +687,7 @@ export function useAI() {
   );
 
   const generateImageForScene = useCallback(
-    async (sceneId, narrative, imagePrompt, campaignOverride) => {
+    async (sceneId, narrative, imagePrompt, campaignOverride, options = {}) => {
       const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
       if (!imageGenEnabled || !hasImgKey || !narrative) return null;
       dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
@@ -596,7 +711,9 @@ export function useAI() {
           type: 'UPDATE_SCENE_IMAGE',
           payload: { sceneId, image: imageUrl },
         });
-        setTimeout(() => autoSave(), 300);
+        if (!options.skipAutoSave) {
+          setTimeout(() => autoSave(), 300);
+        }
         return imageUrl;
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);

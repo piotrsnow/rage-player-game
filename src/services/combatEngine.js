@@ -580,6 +580,22 @@ export function isCombatOver(combat) {
   return activeEnemies.length === 0 || activeFriendly.length === 0;
 }
 
+export function isPlayerWinning(combat) {
+  if (!combat?.combatants) return false;
+  const activeFriendly = combat.combatants.filter((c) => (c.type === 'player' || c.type === 'ally') && !c.isDefeated);
+  if (activeFriendly.length === 0) return false;
+
+  const enemies = combat.combatants.filter((c) => c.type === 'enemy');
+  if (enemies.length === 0) return false;
+
+  const anyEnemyDefeated = enemies.some((c) => c.isDefeated);
+  const totalEnemyHp = enemies.reduce((sum, c) => sum + c.maxWounds, 0);
+  const currentEnemyHp = enemies.reduce((sum, c) => sum + Math.max(0, c.wounds), 0);
+  const enemyHpBelow50 = totalEnemyHp > 0 && currentEnemyHp / totalEnemyHp < 0.5;
+
+  return anyEnemyDefeated || enemyHpBelow50;
+}
+
 export function getEnemyAction(combat, enemyId) {
   const enemy = combat.combatants.find((c) => c.id === enemyId);
   if (!enemy || enemy.isDefeated) return null;
@@ -703,6 +719,35 @@ export function surrenderCombat(combat, playerCharacter) {
     outcome: 'surrender',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
     xp: Math.max(5, Math.floor((enemiesDefeated * 15 + combat.round * 3) * 0.5)),
+    criticalWounds: playerCriticals,
+    enemiesDefeated,
+    totalEnemies,
+    remainingEnemies,
+    rounds: combat.round,
+    playerSurvived: true,
+    reason: combat.reason || '',
+  };
+}
+
+export function forceTruceCombat(combat, playerCharacter) {
+  const playerCombatant = combat.combatants.find((c) => c.type === 'player');
+  const woundsLost = playerCombatant
+    ? playerCharacter.wounds - playerCombatant.wounds
+    : 0;
+
+  const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
+  const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
+
+  const remainingEnemies = combat.combatants
+    .filter((c) => c.type === 'enemy' && !c.isDefeated)
+    .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
+
+  const playerCriticals = playerCombatant?.criticalWounds || [];
+
+  return {
+    outcome: 'truce',
+    woundsChange: woundsLost > 0 ? -woundsLost : 0,
+    xp: Math.max(8, Math.floor((enemiesDefeated * 15 + combat.round * 5) * 0.75)),
     criticalWounds: playerCriticals,
     enemiesDefeated,
     totalEnemies,
@@ -855,6 +900,39 @@ export function surrenderMultiplayerCombat(combat, playerCharacters) {
 
   return {
     outcome: 'surrender',
+    perCharacter,
+    enemiesDefeated,
+    totalEnemies,
+    remainingEnemies,
+    rounds: combat.round,
+    reason: combat.reason || '',
+  };
+}
+
+export function forceTruceMultiplayerCombat(combat, playerCharacters) {
+  const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
+  const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
+  const baseXp = Math.max(8, Math.floor((enemiesDefeated * 15 + combat.round * 5) * 0.75));
+
+  const remainingEnemies = combat.combatants
+    .filter((c) => c.type === 'enemy' && !c.isDefeated)
+    .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
+
+  const perCharacter = {};
+  for (const pc of playerCharacters) {
+    const combatant = combat.combatants.find((c) => c.odId === pc.odId);
+    if (!combatant) continue;
+    const woundsLost = pc.wounds - combatant.wounds;
+    perCharacter[pc.name] = {
+      wounds: woundsLost > 0 ? -woundsLost : 0,
+      xp: baseXp,
+      criticalWounds: combatant.criticalWounds || [],
+      survived: true,
+    };
+  }
+
+  return {
+    outcome: 'truce',
     perCharacter,
     enemiesDefeated,
     totalEnemies,

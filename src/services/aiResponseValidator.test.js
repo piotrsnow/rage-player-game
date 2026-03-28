@@ -236,10 +236,49 @@ describe('repairDialogueSegments', () => {
     expect(dialogues).toHaveLength(1);
     expect(dialogues[0].text).toBe('Idźmy w stronę gór.');
   });
+
+  it('does not duplicate a quote already present as an explicit dialogue segment', () => {
+    const segments = [
+      { type: 'narration', text: 'Xenobiasz kręci głową. „No Barnaba, chyba nie jesteś stworzony do żabiarskich pościgów, ha!"' },
+      { type: 'dialogue', character: 'Xenobiasz', text: 'No Barnaba, chyba nie jesteś stworzony do żabiarskich pościgów, ha!', gender: 'male' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Xenobiasz', gender: 'male' }]);
+
+    const xenobiaszDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Xenobiasz');
+    expect(xenobiaszDialogues).toHaveLength(1);
+    expect(xenobiaszDialogues[0].text).toBe('No Barnaba, chyba nie jesteś stworzony do żabiarskich pościgów, ha!');
+  });
+
+  it('skips narration-embedded quote when a case-different version exists as dialogue', () => {
+    const segments = [
+      { type: 'narration', text: 'Kapłan rzekł: „Idźcie z bogami."' },
+      { type: 'dialogue', character: 'Kapłan', text: 'Idźcie z bogami.', gender: 'male' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Kapłan', gender: 'male' }]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+  });
+
+  it('still extracts quotes not present in explicit dialogue segments', () => {
+    const segments = [
+      { type: 'narration', text: 'Xenobiasz mruknął: „To nie wróży dobrze." Potem Elara dodała: „Musimy działać."' },
+      { type: 'dialogue', character: 'Xenobiasz', text: 'To nie wróży dobrze.', gender: 'male' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Xenobiasz', gender: 'male' },
+      { name: 'Elara', gender: 'female' },
+    ]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(2);
+    expect(dialogues.find(d => d.character === 'Xenobiasz')).toBeTruthy();
+    expect(dialogues.find(d => d.character === 'Elara')?.text).toBe('Musimy działać.');
+  });
 });
 
 describe('ensurePlayerDialogue', () => {
-  it('inserts player dialogue after first narration when action has quotes and no segment exists', () => {
+  it('inserts player dialogue before first narration when action has quotes and no segment exists', () => {
     const segments = [
       { type: 'narration', text: 'Barnaba zaproponował wspólne picie.' },
       { type: 'dialogue', character: 'Kazik', text: 'Oczywiście!', gender: 'male' },
@@ -252,11 +291,11 @@ describe('ensurePlayerDialogue', () => {
     );
 
     expect(result.length).toBe(3);
-    expect(result[0]).toEqual(segments[0]);
-    expect(result[1].type).toBe('dialogue');
-    expect(result[1].character).toBe('Barnaba');
-    expect(result[1].text).toBe('Kaziu może byśmy się napili?');
-    expect(result[1].gender).toBe('male');
+    expect(result[0].type).toBe('dialogue');
+    expect(result[0].character).toBe('Barnaba');
+    expect(result[0].text).toBe('Kaziu może byśmy się napili?');
+    expect(result[0].gender).toBe('male');
+    expect(result[1]).toEqual(segments[0]);
     expect(result[2]).toEqual(segments[1]);
   });
 
@@ -296,11 +335,11 @@ describe('ensurePlayerDialogue', () => {
     );
 
     expect(result.length).toBe(3);
-    expect(result[0]).toEqual(segments[0]);
+    expect(result[0].type).toBe('dialogue');
+    expect(result[0].text).toBe('Hej!');
     expect(result[1].type).toBe('dialogue');
-    expect(result[1].text).toBe('Hej!');
-    expect(result[2].type).toBe('dialogue');
-    expect(result[2].text).toBe('Chodźcie tu!');
+    expect(result[1].text).toBe('Chodźcie tu!');
+    expect(result[2]).toEqual(segments[0]);
   });
 
   it('returns segments unchanged when playerAction or characterName is missing', () => {
@@ -322,5 +361,44 @@ describe('ensurePlayerDialogue', () => {
     );
 
     expect(result).toEqual(segments);
+  });
+
+  it('re-attributes NPC segment to player character instead of adding duplicate', () => {
+    const segments = [
+      { type: 'narration', text: 'Z westchnieniem opadasz na pniak.' },
+      { type: 'dialogue', character: 'NPC', text: 'No kurwa trudno!' },
+      { type: 'narration', text: 'Xenobiasz kręci głową.' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Siadam na pniaku. „No kurwa trudno!"',
+      'Mścichuj Barnaba',
+      'male'
+    );
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).toBe('Mścichuj Barnaba');
+    expect(dialogues[0].text).toBe('No kurwa trudno!');
+    expect(dialogues[0].gender).toBe('male');
+    expect(result).toHaveLength(3);
+  });
+
+  it('re-attributes only matching NPC quotes and adds remaining player quotes', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba podszedł do drzwi.' },
+      { type: 'dialogue', character: 'NPC', text: 'Otwórzcie!' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Krzyczę: „Otwórzcie!" a potem: „Natychmiast!"',
+      'Barnaba',
+      'male'
+    );
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(2);
+    expect(dialogues.find(d => d.text === 'Otwórzcie!')?.character).toBe('Barnaba');
+    expect(dialogues.find(d => d.text === 'Natychmiast!')?.character).toBe('Barnaba');
   });
 });

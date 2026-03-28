@@ -71,6 +71,57 @@ const CodexUpdateSchema = z.object({
   relatedEntries: z.array(z.string()).default([]),
 }).passthrough();
 
+const NarrativeSeedSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  planted: z.number().optional(),
+  payoffCondition: z.string().optional(),
+  payoffHint: z.string().optional(),
+  location: z.string().nullable().optional(),
+  resolved: z.boolean().optional().default(false),
+}).passthrough();
+
+const CutsceneSchema = z.object({
+  title: z.string().optional(),
+  narrative: z.string(),
+  location: z.string().optional(),
+  characters: z.array(z.string()).optional().default([]),
+}).passthrough().nullable().optional();
+
+const DilemmaOptionSchema = z.object({
+  label: z.string(),
+  consequence: z.string().optional(),
+  action: z.string(),
+}).passthrough();
+
+const DilemmaSchema = z.object({
+  title: z.string(),
+  stakes: z.string().optional(),
+  options: z.array(DilemmaOptionSchema).min(2).max(4),
+}).passthrough().nullable().optional();
+
+const NpcAgendaSchema = z.object({
+  npcName: z.string(),
+  goal: z.string(),
+  nextAction: z.string().optional(),
+  urgency: z.enum(['low', 'medium', 'high']).optional().default('medium'),
+  plantedScene: z.number().optional(),
+  triggerAfterScenes: z.number().optional().default(3),
+}).passthrough();
+
+const CallbackSchema = z.object({
+  trigger: z.string(),
+  event: z.string(),
+  fired: z.boolean().optional().default(false),
+}).passthrough();
+
+const QuestDeadlineSchema = z.object({
+  day: z.number(),
+  hour: z.number().optional().default(18),
+  consequence: z.string(),
+  warningThreshold: z.number().optional().default(0.75),
+}).passthrough().nullable().optional();
+
 const QuestObjectiveSchema = z.object({
   id: z.string(),
   description: z.string(),
@@ -99,6 +150,7 @@ const QuestSchema = z.object({
   prerequisiteQuestIds: z.array(z.string()).optional().default([]),
   reward: QuestRewardSchema,
   type: z.enum(['main', 'side', 'personal']).optional().default('side'),
+  deadline: QuestDeadlineSchema,
 }).passthrough();
 
 const QuestItemSchema = z.object({
@@ -191,12 +243,17 @@ const StateChangesSchema = z.object({
   knowledgeUpdates: z.any().nullable().optional(),
   codexUpdates: z.array(CodexUpdateSchema).optional().default([]),
   campaignEnd: z.any().nullable().optional(),
+  narrativeSeeds: z.array(NarrativeSeedSchema).optional().default([]),
+  resolvedSeeds: z.array(z.string()).optional().default([]),
+  npcAgendas: z.array(NpcAgendaSchema).optional().default([]),
+  pendingCallbacks: z.array(CallbackSchema).optional().default([]),
 }).passthrough().optional().default({});
 
 export const SCENE_PACING_TYPES = [
   'combat', 'chase', 'stealth', 'exploration',
   'dialogue', 'travel_montage', 'celebration',
   'rest', 'dramatic',
+  'dream', 'cutscene',
 ];
 
 export const SceneResponseSchema = z.object({
@@ -211,6 +268,8 @@ export const SceneResponseSchema = z.object({
   questOffers: z.array(QuestOfferSchema).optional().default([]),
   stateChanges: StateChangesSchema,
   diceRoll: DiceRollSchema,
+  cutscene: CutsceneSchema,
+  dilemma: DilemmaSchema,
 }).passthrough();
 
 const CharacterSuggestionSchema = z.object({
@@ -424,6 +483,10 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     ])
   ];
 
+  const existingDialogueTexts = new Set(
+    existingDialogueSegments.map(s => (s.text || '').trim().toLowerCase()).filter(Boolean)
+  );
+
   const repaired = [];
   for (const seg of segments) {
     if (seg.type !== 'narration' || !seg.text) {
@@ -462,6 +525,12 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
       }
 
       const spokenText = match[1].trim();
+
+      if (existingDialogueTexts.has(spokenText.toLowerCase())) {
+        lastIndex = match.index + match[0].length;
+        continue;
+      }
+
       const speakerName = findSpeakerInText(
         seg.text.slice(0, match.index),
         knownNames,
@@ -524,21 +593,34 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
   );
   if (hasPlayerDialogue) return segments;
 
-  const playerSegments = playerQuotes.map(text => ({
+  const result = [...(segments || [])];
+  const quoteLookup = new Set(playerQuotes.map(q => q.toLowerCase()));
+  const reattributed = new Set();
+
+  for (let i = 0; i < result.length; i++) {
+    const seg = result[i];
+    if (seg.type === 'dialogue' && seg.character === 'NPC' && quoteLookup.has((seg.text || '').trim().toLowerCase())) {
+      result[i] = { ...seg, character: characterName, ...(characterGender ? { gender: characterGender } : {}) };
+      reattributed.add(seg.text.trim().toLowerCase());
+    }
+  }
+
+  const remainingQuotes = playerQuotes.filter(q => !reattributed.has(q.toLowerCase()));
+  if (remainingQuotes.length === 0) return result;
+
+  const playerSegments = remainingQuotes.map(text => ({
     type: 'dialogue',
     character: characterName,
     text,
     gender: characterGender || undefined,
   }));
 
-  const arr = segments || [];
-  const firstNarrationIdx = arr.findIndex(s => s.type === 'narration');
+  const firstNarrationIdx = result.findIndex(s => s.type === 'narration');
   if (firstNarrationIdx >= 0) {
-    const result = [...arr];
-    result.splice(firstNarrationIdx + 1, 0, ...playerSegments);
+    result.splice(firstNarrationIdx, 0, ...playerSegments);
     return result;
   }
-  return [...playerSegments, ...arr];
+  return [...playerSegments, ...result];
 }
 
 const RETRY_DELAYS = [1000, 3000];

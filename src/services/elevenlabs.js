@@ -100,8 +100,12 @@ export const elevenlabsService = {
       });
       if (!res.ok) return null;
       const data = await res.json();
+      let audioUrl = data.url;
+      if (audioUrl && audioUrl.startsWith('/')) {
+        audioUrl = new URL(audioUrl, `${base}/`).href;
+      }
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
-      return { audioUrl: data.url, words };
+      return { audioUrl, words };
     } catch {
       return null;
     }

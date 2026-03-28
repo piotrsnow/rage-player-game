@@ -153,7 +153,7 @@ export function useAutoPlayer(handleAction, options = {}) {
       if (abortRef.current || !enabledRef.current) return;
 
       if (handleAction) {
-        await handleAction(actionText, result.isCustom);
+        await handleAction(actionText, result.isCustom, true);
       }
 
       setTurnsPlayed((prev) => prev + 1);

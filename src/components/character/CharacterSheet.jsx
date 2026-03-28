@@ -6,6 +6,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { storage } from '../../services/storage';
+import { apiClient } from '../../services/apiClient';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import QuestLog from './QuestLog';
@@ -40,7 +41,12 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
             <div className="absolute -inset-1 bg-gradient-to-tr from-primary-dim to-primary opacity-20 blur-xl group-hover:opacity-30 transition duration-500" />
             <div className="relative bg-surface-container-high border border-outline-variant/15 p-1 rounded-sm overflow-hidden">
               {character.portraitUrl ? (
-                <img src={character.portraitUrl} alt={character.name} className="w-full aspect-[3/4] object-cover" />
+                <img
+                  src={apiClient.resolveMediaUrl(character.portraitUrl)}
+                  alt={character.name}
+                  className="w-full aspect-[3/4] object-cover"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
               ) : (
                 <div className="w-full aspect-[3/4] bg-gradient-to-br from-surface-container to-surface-container-lowest flex items-center justify-center">
                   <span className="material-symbols-outlined text-8xl text-outline/20">person</span>

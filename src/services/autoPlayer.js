@@ -128,6 +128,7 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
 
   const userPrompt = [
     'Choose your next action. You can pick one of the suggested actions OR write your own custom action that fits the situation and your character.',
+    'If you pick a suggested action, use its wording EXACTLY so it matches the on-screen buttons (they are already phrased in your character\'s voice).',
     '',
     '## Suggested Actions',
     actionsList,

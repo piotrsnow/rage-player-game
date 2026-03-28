@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
+import { apiClient } from '../../services/apiClient';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
@@ -45,9 +46,10 @@ export default function Sidebar() {
           {character.portraitUrl && (
             <div className="mt-[60px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
               <img
-                src={character.portraitUrl}
+                src={apiClient.resolveMediaUrl(character.portraitUrl)}
                 alt={character.name}
                 className="h-full w-full object-cover"
+                onError={(e) => { e.target.style.display = 'none'; }}
               />
             </div>
           )}

@@ -1,4 +1,18 @@
 const TOKEN_KEY = 'nikczemny_krzemuch_auth_token';
+const SETTINGS_STORAGE_KEY = 'nikczemny_krzemuch_settings';
+
+function getSettingsBackendUrl() {
+  if (typeof window === 'undefined') return '';
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return '';
+    const s = JSON.parse(raw);
+    const u = s?.backendUrl;
+    return typeof u === 'string' ? u.replace(/\/+$/, '') : '';
+  } catch {
+    return '';
+  }
+}
 
 let _baseUrl = '';
 let _token = '';
@@ -103,7 +117,9 @@ export const apiClient = {
   resolveMediaUrl(url) {
     if (!url || url.startsWith('data:')) return url;
 
-    const base = this.getBaseUrl();
+    // Same source as CampaignViewer fetch: settings.backendUrl when "use backend" is off
+    // still leaves apiClient base empty — media must resolve against the API host anyway.
+    const base = this.getBaseUrl() || getSettingsBackendUrl();
     const token = this.getToken();
 
     // Convert legacy GCS signed URLs to stable /media/file/ paths.

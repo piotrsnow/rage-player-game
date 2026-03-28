@@ -487,6 +487,17 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const testsFrequency = dmSettings?.testsFrequency ?? 50;
   const needsReminder = needsSystemEnabled ? buildMultiplayerUnmetNeedsBlock(characters) : '';
 
+  const hasWait = actions.some((a) => a.action === '[WAIT]');
+  const hasContinue = actions.some((a) => a.action === '[CONTINUE]');
+  const specialActionHints = [
+    hasWait
+      ? `[WAIT] — Player(s) chose passive waiting: they take no initiative; NPCs and the world should advance meaningfully around them. Set diceRolls to null / omit dice for those characters. Do not start combat unless the world attacks them unprovoked.`
+      : null,
+    hasContinue
+      ? `[CONTINUE] — Player(s) want the story to move forward without specifying how: advance the plot or situation; they remain engaged but you drive the next beat.`
+      : null,
+  ].filter(Boolean).join('\n\n');
+
   const hasCustomActions = actions.some((a) => a.isCustom);
   const hasMomentum = characterMomentum && Object.values(characterMomentum).some((v) => v !== 0);
   const actionLines = actions
@@ -499,7 +510,7 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
     })
     .join('\n');
 
-  return `${needsReminder}The players' actions this round:
+  return `${needsReminder}${specialActionHints ? `${specialActionHints}\n\n` : ''}The players' actions this round:
 ${actionLines}
 
 ACTION VS SPEECH (CRITICAL — read both rules carefully):
@@ -966,7 +977,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   const preRolledDice = {};
   const skipDiceRolls = {};
   for (const a of actions) {
-    if (Math.random() * 100 < testsFrequency) {
+    if (a.action === '[WAIT]') {
+      skipDiceRolls[a.name] = true;
+    } else if (Math.random() * 100 < testsFrequency) {
       preRolledDice[a.name] = rollD100();
     } else {
       skipDiceRolls[a.name] = true;
@@ -1072,6 +1085,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
 
   let finalSegments = repairedSegments;
   for (const a of actions) {
+    if (a.action === '[WAIT]') continue;
     const player = players.find(p => p.name === a.name);
     finalSegments = ensurePlayerDialogue(finalSegments, a.action, a.name, player?.gender);
   }
@@ -1100,14 +1114,29 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     ...(stateChanges.combatUpdate && { stateChanges: { combatUpdate: stateChanges.combatUpdate } }),
   };
 
+  const waitSystemText = language === 'pl' ? 'Czekam i patrzę, co wydarzy się dalej.' : 'I wait and see what happens next.';
+  const continuePlayerText = language === 'pl' ? 'Dalej — kontynuujemy opowieść.' : 'Continue — moving the story forward.';
+
   const chatMessages = [];
   for (const a of actions) {
+    if (a.action === '[WAIT]') {
+      chatMessages.push({
+        id: `msg_${Date.now()}_wait_${a.odId}`,
+        role: 'system',
+        subtype: 'wait',
+        playerName: a.name,
+        odId: a.odId,
+        content: `${a.name}: ${waitSystemText}`,
+        timestamp: Date.now(),
+      });
+      continue;
+    }
     chatMessages.push({
       id: `msg_${Date.now()}_${a.odId}`,
       role: 'player',
       playerName: a.name,
       odId: a.odId,
-      content: a.action,
+      content: a.action === '[CONTINUE]' ? continuePlayerText : a.action,
       timestamp: Date.now(),
     });
   }

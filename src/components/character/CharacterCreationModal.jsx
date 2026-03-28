@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiClient } from '../../services/apiClient';
 import {
   SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS,
   CAREERS, CAREER_CLASSES, getCareerByName, CREATION_LIMITS,
@@ -283,7 +284,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             {portraitUrl && !portraitOpen ? (
               <div className="flex items-center gap-4">
                 <div className="w-16 h-[85px] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_10px_rgba(197,154,255,0.15)]">
-                  <img src={portraitUrl} alt="Portrait" className="w-full h-full object-cover" />
+                  <img src={apiClient.resolveMediaUrl(portraitUrl)} alt="Portrait" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                 </div>
                 <div className="flex gap-2">
                   <button

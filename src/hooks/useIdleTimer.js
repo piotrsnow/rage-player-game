@@ -27,6 +27,9 @@ export function useIdleTimer({
   const [lastRoll, setLastRoll] = useState(null);
   const [isRolling, setIsRolling] = useState(false);
   const [fastMode, setFastMode] = useState(false);
+  const [documentVisible, setDocumentVisible] = useState(
+    () => typeof document !== 'undefined' && document.visibilityState === 'visible',
+  );
 
   const checkIndexRef = useRef(0);
   const graceTimerRef = useRef(null);
@@ -64,9 +67,17 @@ export function useIdleTimer({
     }
   }, [sceneId, resetTimer]);
 
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      setDocumentVisible(typeof document !== 'undefined' && document.visibilityState === 'visible');
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
   // Start logic: wait for narrator to finish, or use grace period
   useEffect(() => {
-    if (paused || timerActive || !sceneId) return;
+    if (!documentVisible || paused || timerActive || !sceneId) return;
 
     if (narratorEnabled && narratorReady) {
       if (narratorPlaybackState === 'idle') {
@@ -91,11 +102,11 @@ export function useIdleTimer({
         }
       };
     }
-  }, [paused, timerActive, sceneId, narratorEnabled, narratorReady, narratorPlaybackState]);
+  }, [paused, timerActive, sceneId, narratorEnabled, narratorReady, narratorPlaybackState, documentVisible]);
 
-  // Tick when active and not paused — 5x faster in fast mode
+  // Tick when active and not paused — 5x faster in fast mode (frozen while tab hidden)
   useEffect(() => {
-    if (!timerActive || paused) return;
+    if (!timerActive || paused || !documentVisible) return;
 
     const tickMs = fastMode ? 1000 / SPEED_MULTIPLIER : 1000;
 
@@ -128,7 +139,7 @@ export function useIdleTimer({
     }, tickMs);
 
     return () => clearInterval(interval);
-  }, [timerActive, paused, isRolling, fastMode]);
+  }, [timerActive, paused, isRolling, fastMode, documentVisible]);
 
   useEffect(() => {
     return () => {

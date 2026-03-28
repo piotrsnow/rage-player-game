@@ -70,8 +70,8 @@ export default {
       },
       keyframes: {
         'target-shimmer': {
-          '0%, 100%': { opacity: '0.06', filter: 'blur(2px)', transform: 'scale(1)' },
-          '50%': { opacity: '0.09', filter: 'blur(1.5px)', transform: 'scale(1.03)' },
+          '0%, 100%': { opacity: '0.55', filter: 'blur(1px)', transform: 'scale(1)' },
+          '50%': { opacity: '0.85', filter: 'blur(0.5px)', transform: 'scale(1.02)' },
         },
       },
       animation: {

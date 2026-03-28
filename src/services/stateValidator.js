@@ -1,4 +1,5 @@
 import { SKILLS, TALENTS } from '../data/wfrp';
+import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
 
 const DEFAULTS = {
   maxXpPerScene: 50,
@@ -183,7 +184,7 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   const limits = { ...DEFAULTS, ...config };
   const allWarnings = [];
   const allCorrections = [];
-  const validated = { ...stateChanges };
+  const validated = normalizeMultiplayerStateChanges({ ...stateChanges });
 
   if (validated.perCharacter && typeof validated.perCharacter === 'object') {
     const characters = gameState?.characters || [];
