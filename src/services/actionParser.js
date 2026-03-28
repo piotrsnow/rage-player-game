@@ -10,21 +10,43 @@
 export function parseActionSegments(text) {
   if (!text) return [];
 
-  const segments = [];
-  const regex = /"([^"]*)"/g;
-  let lastIndex = 0;
-  let match;
+  const QUOTE_PAIRS = {
+    '"': '"',
+    '„': '”',
+    '“': '”',
+    '«': '»',
+  };
+  const OPEN_QUOTES = new Set(Object.keys(QUOTE_PAIRS));
 
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({ type: 'action', text: text.slice(lastIndex, match.index) });
+  const segments = [];
+  let cursor = 0;
+  let actionStart = 0;
+
+  while (cursor < text.length) {
+    const ch = text[cursor];
+    if (!OPEN_QUOTES.has(ch)) {
+      cursor += 1;
+      continue;
     }
-    segments.push({ type: 'dialogue', text: match[0] });
-    lastIndex = regex.lastIndex;
+
+    const closeQuote = QUOTE_PAIRS[ch];
+    const closeIndex = text.indexOf(closeQuote, cursor + 1);
+    if (closeIndex < 0) {
+      // Unbalanced quote -> treat the rest as action text.
+      break;
+    }
+
+    if (cursor > actionStart) {
+      segments.push({ type: 'action', text: text.slice(actionStart, cursor) });
+    }
+    segments.push({ type: 'dialogue', text: text.slice(cursor, closeIndex + 1) });
+
+    cursor = closeIndex + 1;
+    actionStart = cursor;
   }
 
-  if (lastIndex < text.length) {
-    segments.push({ type: 'action', text: text.slice(lastIndex) });
+  if (actionStart < text.length) {
+    segments.push({ type: 'action', text: text.slice(actionStart) });
   }
 
   return segments;

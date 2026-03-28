@@ -440,6 +440,7 @@ Adapt your narration prose style to match ALL of the above parameters simultaneo
 PROMPT GOVERNANCE (MANDATORY):
 - Respect the selected prompt profile ("${promptProfile}") when choosing depth and verbosity.
 - Keep JSON compact and structured. Prefer concise fields over long repetitions.
+- NARRATION LENGTH CONTROL: Keep narrator prose about 25% shorter than your default for the same scene. Cut filler, repeated atmosphere, and redundant transitions.
 - If uncertain, prioritize consistency and mechanical correctness over decorative prose.
 
 NARRATIVE TONE RULES (anti-purple-prose guardrails):
@@ -906,6 +907,7 @@ export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, l
 - Profile: ${promptProfile}
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
 - Input budget: ~${promptTokenBudget ?? 'default'} tokens
+- NARRATION LENGTH CONTROL: Keep narrator prose about 25% shorter than your normal style for this kind of scene.
 - Be concise, avoid repeated exposition, keep JSON fields dense and actionable.\n`;
 
   if (isFirstScene) {
@@ -915,11 +917,13 @@ PROMPT GOVERNANCE:
 - Profile: ${promptProfile}
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
 - Input budget: ~${promptTokenBudget ?? 'default'} tokens
+- OPENING SCENE LENGTH: Make the first scene extra concise (about half to three-quarters of your normal opening length).
+- NARRATION LENGTH CONTROL: Keep narrator prose about 25% shorter than your normal style.
 - Keep the response focused, structured, and free from repetitive filler.
 
 Respond with ONLY valid JSON in this exact format:
 {
-  "narrative": "A vivid 2-3 paragraph scene description setting the stage for the adventure...",
+  "narrative": "A vivid but concise 1-2 short paragraph opening scene...",
   "scenePacing": "exploration",
   "dialogueSegments": [
     {"type": "narration", "text": "Descriptive prose..."},
@@ -1216,7 +1220,7 @@ IMPORTANT: Resolve the dice check FIRST, then write the narrative consistent wit
 Respond with ONLY valid JSON in this exact format:
 {
   "diceRoll": null,
-  "narrative": "2-3 paragraphs describing what happens as a result of the player's action and setting up the next beat...",
+  "narrative": "1-2 concise paragraphs describing what happens as a result of the player's action and setting up the next beat...",
   "scenePacing": "exploration | combat | chase | stealth | dialogue | travel_montage | celebration | rest | dramatic | dream | cutscene",
   "cutscene": null,
   "dilemma": null,
@@ -1382,7 +1386,7 @@ Respond with ONLY valid JSON:
     "money": {"gold": 0, "silver": 5, "copper": 0}
   },
   "firstScene": {
-    "narrative": "2-3 vivid paragraphs of the opening scene",
+    "narrative": "1-2 short vivid paragraphs of the opening scene",
     "dialogueSegments": [
       {"type": "narration", "text": "Descriptive prose..."},
       {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."}

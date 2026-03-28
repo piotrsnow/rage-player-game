@@ -232,7 +232,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
           if (fullNarrative && allSegmentsText.length < fullNarrative.length * 0.7) {
             const narrativeNoQuotes = fullNarrative
-              .replace(/["""\u201C„«»][^"""\u201C„«»]*["""\u201C„«»]/g, '')
+              // Remove direct speech when we need to rebuild narration fallback.
+              .replace(/(?:"[^"]*"|„[^”]*”|“[^”]*”|«[^»]*»)/g, '')
               .replace(/\s{2,}/g, ' ')
               .trim();
 
