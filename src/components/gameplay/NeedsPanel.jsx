@@ -10,7 +10,13 @@ const NEEDS_CONFIG = [
 
 const PERIOD_ICONS = { morning: 'wb_sunny', afternoon: 'light_mode', evening: 'wb_twilight', night: 'dark_mode' };
 
-export default function NeedsPanel({ needs, timeState }) {
+export default function NeedsPanel({
+  needs,
+  timeState,
+  onNeedAction = null,
+  actionLocked = false,
+  activeNeedKey = null,
+}) {
   const { t } = useTranslation();
 
   if (!needs) return null;
@@ -42,15 +48,33 @@ export default function NeedsPanel({ needs, timeState }) {
           const value = needs[key] ?? 100;
           const isCritical = value <= critical;
           const pct = Math.round(value);
+          const canTriggerAction = typeof onNeedAction === 'function' && !actionLocked;
+          const isActionBusy = activeNeedKey === key;
+          const title = canTriggerAction
+            ? `${t(`needs.${key}`)}: ${pct}% — ${t('needs.instantActionHint')}`
+            : `${t(`needs.${key}`)}: ${pct}%`;
           return (
-            <div key={key} className="flex flex-col items-center gap-1 group" title={`${t(`needs.${key}`)}: ${pct}%`}>
-              <span
-                className={`material-symbols-outlined text-base ${
-                  isCritical ? 'text-error animate-pulse drop-shadow-[0_0_4px_rgba(255,110,132,0.5)]' : textColor
-                } transition-all group-hover:scale-110`}
+            <div key={key} className="flex flex-col items-center gap-1 group" title={title}>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!canTriggerAction) return;
+                  onNeedAction(key);
+                }}
+                disabled={!canTriggerAction}
+                aria-label={`${t(`needs.${key}`)} — ${t('needs.instantActionHint')}`}
+                className={`rounded-full transition-all ${
+                  canTriggerAction ? 'cursor-pointer hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60' : 'cursor-default'
+                }`}
               >
-                {icon}
-              </span>
+                <span
+                  className={`material-symbols-outlined text-base ${
+                    isCritical ? 'text-error animate-pulse drop-shadow-[0_0_4px_rgba(255,110,132,0.5)]' : textColor
+                  } ${isActionBusy ? 'animate-spin' : ''} transition-all`}
+                >
+                  {isActionBusy ? 'progress_activity' : icon}
+                </span>
+              </button>
               <div className="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r ${

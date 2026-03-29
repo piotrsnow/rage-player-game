@@ -18,6 +18,73 @@ function moneyToCopper(m) {
   return (m.gold || 0) * 100 + (m.silver || 0) * 10 + (m.copper || 0);
 }
 
+function toSafeCodexId(value) {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  return '';
+}
+
+function buildCodexIdFromName(name) {
+  const safeName = typeof name === 'string' ? name.trim().toLowerCase() : '';
+  if (!safeName) return '';
+  const slug = safeName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug ? `codex_${slug}` : '';
+}
+
+function normalizeCodexUpdates(codexUpdates, corrections, prefix = '') {
+  if (!Array.isArray(codexUpdates)) return [];
+
+  const normalized = [];
+  for (const raw of codexUpdates) {
+    if (!raw || typeof raw !== 'object') {
+      corrections.push(`${prefix}Invalid codex update removed (not an object)`);
+      continue;
+    }
+
+    const fragmentContent = typeof raw.fragment?.content === 'string'
+      ? raw.fragment.content.trim()
+      : '';
+    if (!fragmentContent) {
+      corrections.push(`${prefix}Invalid codex update removed (missing fragment.content)`);
+      continue;
+    }
+
+    const normalizedName = typeof raw.name === 'string' && raw.name.trim()
+      ? raw.name.trim()
+      : (typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().replace(/^codex[_-]?/i, '') : 'Unknown entry');
+    const normalizedId = toSafeCodexId(raw.id) || buildCodexIdFromName(normalizedName) || `codex_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const normalizedSource = typeof raw.fragment?.source === 'string' && raw.fragment.source.trim()
+      ? raw.fragment.source.trim()
+      : 'Narrator';
+    if (!raw.fragment?.source || !String(raw.fragment.source).trim()) {
+      corrections.push(`${prefix}Codex update "${normalizedName}" missing fragment.source - defaulted to "Narrator"`);
+    }
+
+    normalized.push({
+      ...raw,
+      id: normalizedId,
+      name: normalizedName,
+      category: raw.category || 'concept',
+      fragment: {
+        ...raw.fragment,
+        content: fragmentContent,
+        source: normalizedSource,
+        aspect: raw.fragment?.aspect || 'description',
+      },
+      tags: Array.isArray(raw.tags) ? raw.tags : [],
+      relatedEntries: Array.isArray(raw.relatedEntries) ? raw.relatedEntries : [],
+    });
+  }
+
+  return normalized;
+}
+
 export function validateStateChanges(stateChanges, currentState, config = {}) {
   if (!stateChanges || typeof stateChanges !== 'object') {
     return { validated: stateChanges, warnings: [], corrections: [] };
@@ -154,17 +221,11 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
     const MAX_CODEX_PER_SCENE = 3;
     const MAX_FRAGMENT_LENGTH = 1000;
+    validated.codexUpdates = normalizeCodexUpdates(validated.codexUpdates, corrections);
     if (validated.codexUpdates.length > MAX_CODEX_PER_SCENE) {
       corrections.push(`Codex updates capped from ${validated.codexUpdates.length} to ${MAX_CODEX_PER_SCENE}`);
       validated.codexUpdates = validated.codexUpdates.slice(0, MAX_CODEX_PER_SCENE);
     }
-    validated.codexUpdates = validated.codexUpdates.filter((u) => {
-      if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
-        corrections.push(`Invalid codex update removed (missing required fields)`);
-        return false;
-      }
-      return true;
-    });
     for (const update of validated.codexUpdates) {
       if (update.fragment.content.length > MAX_FRAGMENT_LENGTH) {
         update.fragment.content = update.fragment.content.substring(0, MAX_FRAGMENT_LENGTH);
@@ -272,17 +333,11 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
     const MAX_CODEX_PER_SCENE = 3;
     const MAX_FRAGMENT_LENGTH = 1000;
+    validated.codexUpdates = normalizeCodexUpdates(validated.codexUpdates, allCorrections);
     if (validated.codexUpdates.length > MAX_CODEX_PER_SCENE) {
       allCorrections.push(`Codex updates capped from ${validated.codexUpdates.length} to ${MAX_CODEX_PER_SCENE}`);
       validated.codexUpdates = validated.codexUpdates.slice(0, MAX_CODEX_PER_SCENE);
     }
-    validated.codexUpdates = validated.codexUpdates.filter((u) => {
-      if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
-        allCorrections.push('Invalid codex update removed (missing required fields)');
-        return false;
-      }
-      return true;
-    });
     for (const update of validated.codexUpdates) {
       if (update.fragment.content.length > MAX_FRAGMENT_LENGTH) {
         update.fragment.content = update.fragment.content.substring(0, MAX_FRAGMENT_LENGTH);

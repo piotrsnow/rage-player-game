@@ -122,6 +122,30 @@ function applyOfflineMetaCurrencyRegen(character, lastSavedAt) {
   };
 }
 
+function normalizeLocationName(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function ensureMapContainsLocation(world, locationName) {
+  const normalizedLocation = normalizeLocationName(locationName);
+  if (!normalizedLocation) return world;
+
+  const mapState = [...(world?.mapState || [])];
+  const exists = mapState.some(
+    (loc) => loc?.name?.toLowerCase() === normalizedLocation.toLowerCase()
+  );
+  if (exists) return world;
+
+  mapState.push({
+    id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name: normalizedLocation,
+    description: '',
+    modifications: [],
+  });
+  return { ...world, mapState };
+}
+
 function createDefaultAchievementState() {
   return {
     unlocked: [],
@@ -596,14 +620,20 @@ function gameReducer(state, action) {
         },
       };
 
-    case 'ADD_QUEST':
+    case 'ADD_QUEST': {
+      const quest = action.payload;
+      const nextWorld = quest?.locationId
+        ? ensureMapContainsLocation(state.world, quest.locationId)
+        : state.world;
       return {
         ...state,
         quests: {
           ...state.quests,
-          active: [...state.quests.active, action.payload],
+          active: [...state.quests.active, quest],
         },
+        world: nextWorld,
       };
+    }
 
     case 'COMPLETE_QUEST': {
       const quest = state.quests.active.find((q) => q.id === action.payload);
@@ -830,6 +860,12 @@ function gameReducer(state, action) {
           ...next.quests,
           active: [...next.quests.active, ...normalized],
         };
+        let worldWithQuestLocations = next.world;
+        for (const quest of normalized) {
+          if (!quest?.locationId) continue;
+          worldWithQuestLocations = ensureMapContainsLocation(worldWithQuestLocations, quest.locationId);
+        }
+        next.world = worldWithQuestLocations;
       }
 
       if (changes.completedQuests) {

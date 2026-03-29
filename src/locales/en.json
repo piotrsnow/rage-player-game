@@ -800,7 +800,8 @@
     "thirst": "Thirst",
     "bladder": "Bladder",
     "hygiene": "Hygiene",
-    "rest": "Rest"
+    "rest": "Rest",
+    "instantActionHint": "Click for instant fulfillment (counter -> 0)"
   },
   "errors": {
     "somethingWentWrong": "Something Went Wrong",

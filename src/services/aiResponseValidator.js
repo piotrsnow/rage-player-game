@@ -128,7 +128,7 @@ const SceneGridSchema = z.object({
   width: z.number().int().min(6).max(24).optional().default(12),
   height: z.number().int().min(6).max(24).optional().default(12),
   tiles: z.array(z.array(z.string())).optional().default([]),
-  legend: z.record(z.any()).optional().default({}),
+  legend: z.record(z.string(), z.any()).optional().default({}),
   entities: z.array(SceneGridEntitySchema).optional().default([]),
 }).passthrough().nullable().optional();
 
@@ -469,6 +469,20 @@ function normalizeSceneResponseCandidate(rawData) {
 
   if (data.stateChanges == null || typeof data.stateChanges !== 'object' || Array.isArray(data.stateChanges)) {
     data.stateChanges = {};
+  }
+
+  const rawTimeAdvance = data.stateChanges?.timeAdvance;
+  if (typeof rawTimeAdvance === 'number' && Number.isFinite(rawTimeAdvance)) {
+    data.stateChanges.timeAdvance = { hoursElapsed: rawTimeAdvance, newDay: false };
+  } else if (typeof rawTimeAdvance === 'string') {
+    const parsedHours = Number(rawTimeAdvance);
+    if (Number.isFinite(parsedHours)) {
+      data.stateChanges.timeAdvance = { hoursElapsed: parsedHours, newDay: false };
+    } else {
+      data.stateChanges.timeAdvance = undefined;
+    }
+  } else if (rawTimeAdvance != null && (typeof rawTimeAdvance !== 'object' || Array.isArray(rawTimeAdvance))) {
+    data.stateChanges.timeAdvance = undefined;
   }
 
   if (data.narrative != null && typeof data.narrative !== 'string') {

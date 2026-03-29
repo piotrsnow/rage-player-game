@@ -26,13 +26,15 @@ const PACING_SPEED_MULTIPLIERS = {
 };
 
 const FAST_FORWARD_HOLD_START_MULTIPLIER = 1.5;
-const FAST_FORWARD_HOLD_MAX_MULTIPLIER = 2;
+const FAST_FORWARD_HOLD_MAX_MULTIPLIER = 5;
 const FAST_FORWARD_HOLD_RAMP_MS = 2200;
 const DEFAULT_SEGMENT_PREFETCH_WINDOW = 3;
 const MAX_UTTERANCE_CHARS = 320;
 const HIGHLIGHT_LEAD_SECONDS = 0.06;
 const HIGHLIGHT_SCALE_MIN = 0.85;
 const HIGHLIGHT_SCALE_MAX = 1.2;
+const MAX_NATURAL_PLAYBACK_RATE = 2;
+const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -123,7 +125,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     if (!audio) return;
     const natural = naturalPlaybackRateRef.current || 1;
     const boost = narrationFastForwardRateRef.current || 1;
-    audio.playbackRate = clampRate(natural * boost);
+    audio.playbackRate = clampRate(natural * boost, 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
   }, []);
 
   const stopHoldLoop = useCallback(() => {
@@ -281,9 +283,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       const audio = new Audio(result.audioUrl);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
-      const natural = clampRate(baseRate * pacingMul);
+      const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
       naturalPlaybackRateRef.current = natural;
-      audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1));
+      audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
       audioRef.current = audio;
       setPlaybackState(STATES.PLAYING);
       setCurrentChunk(chunk);
@@ -512,9 +514,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             const audio = new Audio(prefetched.audioUrl);
             const baseRate = (dialogueSpeed || 100) / 100;
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
-            const natural = clampRate(baseRate * pacingMul);
+            const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
             naturalPlaybackRateRef.current = natural;
-            audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1));
+            audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
             audioRef.current = audio;
             setPlaybackState(STATES.PLAYING);
             setCurrentChunk(text);

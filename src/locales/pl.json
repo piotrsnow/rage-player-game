@@ -801,7 +801,8 @@
     "thirst": "Pragnienie",
     "bladder": "Pęcherz",
     "hygiene": "Higiena",
-    "rest": "Odpoczynek"
+    "rest": "Odpoczynek",
+    "instantActionHint": "Kliknij, aby spełnić natychmiast (licznik -> 0)"
   },
   "errors": {
     "somethingWentWrong": "Coś Poszło Nie Tak",

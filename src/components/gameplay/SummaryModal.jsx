@@ -342,14 +342,18 @@ export default function SummaryModal({
           key={`summary_paragraph_${blockKey}`}
           className={summaryMode === 'poem'
             ? 'text-base text-on-surface leading-8 whitespace-pre-line text-center'
-            : 'text-sm text-on-surface leading-relaxed whitespace-pre-line'}
+            : 'text-sm text-on-surface leading-7 whitespace-pre-line'}
           style={summaryMode === 'poem'
             ? {
               fontFamily: '"Bradley Hand","Segoe Print","Lucida Handwriting","Caveat",cursive',
               letterSpacing: '0.01em',
               textShadow: '0.25px 0.25px 0 rgba(226,229,235,0.28), 0 0 0.6px rgba(8,10,14,0.45)',
             }
-            : undefined}
+            : {
+              fontFamily: '"Bradley Hand","Segoe Print","Lucida Handwriting","Caveat",cursive',
+              letterSpacing: '0.005em',
+              textShadow: '0.2px 0.2px 0 rgba(226,229,235,0.2), 0 0 0.45px rgba(8,10,14,0.35)',
+            }}
         >
           {renderParagraphTokens(displayText, wordCounterRef)}
         </p>

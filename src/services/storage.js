@@ -325,12 +325,51 @@ export const storage = {
       const seenBackendCampaignIds = new Map();
       const duplicateBackendIds = [];
       const emptyBackendIds = [];
+      const backendPayloadById = new Map();
+
+      await Promise.all(
+        backendList.map(async (bc) => {
+          const directLocalMatch = localByBackendId.get(bc.id);
+          const backendTime = new Date(bc.lastSaved).getTime();
+          const localTime = directLocalMatch?.lastSaved || 0;
+
+          // Skip downloading large payloads when local copy is current/newer.
+          if (directLocalMatch && localTime >= backendTime) {
+            backendPayloadById.set(bc.id, {
+              data: directLocalMatch,
+              backendTime,
+              usedLocalSnapshot: true,
+            });
+            return;
+          }
+
+          try {
+            const full = await apiClient.get(`/campaigns/${bc.id}`);
+            backendPayloadById.set(bc.id, {
+              data: full.data || full,
+              backendTime,
+              usedLocalSnapshot: false,
+            });
+          } catch (err) {
+            console.warn(`[storage] Failed to fetch campaign ${bc.id}:`, err.message);
+            if (directLocalMatch) {
+              backendPayloadById.set(bc.id, {
+                data: directLocalMatch,
+                backendTime,
+                usedLocalSnapshot: true,
+              });
+            }
+          }
+        }),
+      );
 
       for (const bc of backendList) {
-        const full = await apiClient.get(`/campaigns/${bc.id}`);
-        const data = full.data || full;
+        const payload = backendPayloadById.get(bc.id);
+        if (!payload?.data) continue;
+
+        const data = payload.data;
         const frontendId = data.campaign?.id;
-        const backendTime = new Date(bc.lastSaved).getTime();
+        const backendTime = payload.backendTime;
 
         if (this._isEmptyCampaign(data)) {
           emptyBackendIds.push(bc.id);
@@ -356,7 +395,7 @@ export const storage = {
         if (localMatch) {
           matchedLocalCampaignIds.add(localMatch.campaign?.id);
           const localTime = localMatch.lastSaved || 0;
-          if (backendTime > localTime) {
+          if (!payload.usedLocalSnapshot && backendTime > localTime) {
             merged.push({
               ...data,
               campaign: { ...data.campaign, backendId: bc.id },

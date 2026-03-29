@@ -141,6 +141,46 @@ function buildAutomaticRestRecovery(state) {
   };
 }
 
+function mergeNpcHintsFromDialogue(stateChanges, dialogueSegments, worldNpcs, { currentLocation = '', playerName = '' } = {}) {
+  const next = { ...(stateChanges || {}) };
+  const existingNpcChanges = Array.isArray(next.npcs) ? [...next.npcs] : [];
+  const existingNames = new Set(
+    existingNpcChanges
+      .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim().toLowerCase() : ''))
+      .filter(Boolean)
+  );
+  const knownWorldNpcs = new Map(
+    (Array.isArray(worldNpcs) ? worldNpcs : [])
+      .filter((npc) => typeof npc?.name === 'string' && npc.name.trim())
+      .map((npc) => [npc.name.trim().toLowerCase(), npc])
+  );
+
+  const normalizedPlayer = typeof playerName === 'string' ? playerName.trim().toLowerCase() : '';
+
+  for (const segment of Array.isArray(dialogueSegments) ? dialogueSegments : []) {
+    if (segment?.type !== 'dialogue' || typeof segment?.character !== 'string') continue;
+    const speakerName = segment.character.trim();
+    const speakerKey = speakerName.toLowerCase();
+    if (!speakerKey || speakerKey === normalizedPlayer || existingNames.has(speakerKey)) continue;
+
+    const worldNpc = knownWorldNpcs.get(speakerKey);
+    if (!worldNpc) continue;
+
+    existingNpcChanges.push({
+      action: 'update',
+      name: worldNpc.name || speakerName,
+      ...(currentLocation ? { location: currentLocation } : {}),
+    });
+    existingNames.add(speakerKey);
+  }
+
+  if (existingNpcChanges.length > 0) {
+    next.npcs = existingNpcChanges;
+  }
+
+  return next;
+}
+
 export function useAI() {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
@@ -574,6 +614,18 @@ export function useAI() {
 
         if (needsSystemEnabled) {
           if (!result.stateChanges) result.stateChanges = {};
+          const rawTimeAdvance = result.stateChanges.timeAdvance;
+          if (typeof rawTimeAdvance === 'number' && Number.isFinite(rawTimeAdvance)) {
+            result.stateChanges.timeAdvance = { hoursElapsed: rawTimeAdvance };
+          } else if (typeof rawTimeAdvance === 'string') {
+            const parsedHours = Number(rawTimeAdvance);
+            result.stateChanges.timeAdvance = Number.isFinite(parsedHours)
+              ? { hoursElapsed: parsedHours }
+              : {};
+          } else if (!rawTimeAdvance || typeof rawTimeAdvance !== 'object' || Array.isArray(rawTimeAdvance)) {
+            result.stateChanges.timeAdvance = {};
+          }
+
           if (!result.stateChanges.timeAdvance) {
             result.stateChanges.timeAdvance = { hoursElapsed: 0.5 };
           } else if (result.stateChanges.timeAdvance.hoursElapsed == null) {
@@ -597,6 +649,16 @@ export function useAI() {
             };
           }
         }
+
+        result.stateChanges = mergeNpcHintsFromDialogue(
+          result.stateChanges,
+          finalSegments,
+          state.world?.npcs || [],
+          {
+            currentLocation: result.stateChanges?.currentLocation || state.world?.currentLocation || '',
+            playerName: activeChar?.name || state.character?.name || '',
+          }
+        );
 
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
@@ -1004,6 +1066,7 @@ export function useAI() {
 
   const acceptQuestOffer = useCallback(
     (sceneId, questOffer) => {
+      const fallbackLocation = state.world?.currentLocation || null;
       const quest = {
         id: questOffer.id,
         name: questOffer.name,
@@ -1013,6 +1076,7 @@ export function useAI() {
           ...obj,
           completed: false,
         })),
+        locationId: questOffer.locationId || fallbackLocation,
       };
       dispatch({ type: 'ADD_QUEST', payload: quest });
       dispatch({

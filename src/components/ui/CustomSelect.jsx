@@ -34,7 +34,7 @@ export default function CustomSelect({
   return (
     <div
       ref={rootRef}
-      className={`relative ${className}`}
+      className={`relative ${open ? 'z-[80]' : 'z-0'} ${className}`}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >

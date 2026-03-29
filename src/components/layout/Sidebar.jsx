@@ -1,8 +1,10 @@
+import { useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
+import { useAI } from '../../hooks/useAI';
 import { apiClient } from '../../services/apiClient';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
@@ -11,9 +13,11 @@ import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
 export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const mp = useMultiplayer();
+  const { generateScene } = useAI();
   const { openCharacterSheet, openWorldState, openSettings, openKeys } = useModals();
+  const [activeNeedKey, setActiveNeedKey] = useState(null);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const hasActiveGame = !!state.campaign || isMultiplayer;
@@ -27,6 +31,51 @@ export default function Sidebar() {
   const timeState = isMultiplayer
     ? mp.state.gameState?.world?.timeState
     : state.world?.timeState;
+  const canTriggerNeedAction = useMemo(() => (
+    Boolean(state.campaign)
+    && location.pathname.startsWith('/play')
+    && !isMultiplayer
+    && !state.isGeneratingScene
+    && (state.campaign?.status || 'active') === 'active'
+    && character?.status !== 'dead'
+  ), [
+    state.campaign,
+    state.isGeneratingScene,
+    location.pathname,
+    isMultiplayer,
+    character?.status,
+  ]);
+
+  const handleInstantNeedAction = async (needKey) => {
+    if (!canTriggerNeedAction || !character || activeNeedKey) return;
+
+    const currentNeed = Number(character.needs?.[needKey] ?? 0);
+    const safeCurrentNeed = Number.isFinite(currentNeed) ? Math.max(0, Math.min(100, currentNeed)) : 0;
+
+    const needLabel = t(`needs.${needKey}`);
+    const actionText = `[INSTANT_NEED_OVERRIDE]
+Potrzeba "${needLabel}" musi zostać spełniona natychmiast, nawet kosztem absurdalnych, ryzykownych i skrajnych działań.
+Licznik tej potrzeby jest już wyzerowany do 0 i to jest fakt kanoniczny.
+Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, reputacji, położenia postaci i kolejnych scen.
+`;
+
+    setActiveNeedKey(needKey);
+    dispatch({
+      type: 'APPLY_STATE_CHANGES',
+      payload: {
+        needsChanges: { [needKey]: -safeCurrentNeed },
+        journalEntries: [
+          `Instant need override used: ${needLabel} set to 0 through extreme immediate actions.`,
+        ],
+      },
+    });
+
+    try {
+      await generateScene(actionText, false, true, false);
+    } finally {
+      setActiveNeedKey(null);
+    }
+  };
 
   const modalActions = {
     '/character': openCharacterSheet,
@@ -78,7 +127,13 @@ export default function Sidebar() {
             </div>
           </div>
           <div className="mt-4">
-            <NeedsPanel needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }} timeState={timeState} />
+            <NeedsPanel
+              needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }}
+              timeState={timeState}
+              onNeedAction={canTriggerNeedAction ? handleInstantNeedAction : null}
+              actionLocked={Boolean(activeNeedKey)}
+              activeNeedKey={activeNeedKey}
+            />
           </div>
         </div>
       )}

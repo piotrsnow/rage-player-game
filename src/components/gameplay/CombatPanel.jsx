@@ -395,6 +395,14 @@ export default function CombatPanel({
   const commentaryCombatKeyRef = useRef('');
   const lastCommentaryRoundRef = useRef(null);
   const commentaryInFlightRef = useRef(false);
+  const commentaryRequestSeqRef = useRef(0);
+  const activeCommentaryRequestIdRef = useRef(0);
+  const latestCombatMetaRef = useRef({
+    active: combat.active,
+    combatOver,
+    round: combat.round,
+    combatInstanceKey,
+  });
   const combatAudio = useCombatAudio(combat);
 
   const currentTurn = getCurrentTurnCombatant(combat);
@@ -443,6 +451,11 @@ export default function CombatPanel({
     setCombatLog((prev) => [...prev.slice(-49), entry]);
   };
 
+  const invalidateCommentaryRequests = useCallback(() => {
+    activeCommentaryRequestIdRef.current = ++commentaryRequestSeqRef.current;
+    commentaryInFlightRef.current = false;
+  }, []);
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [combatLog]);
@@ -469,9 +482,27 @@ export default function CombatPanel({
     if (commentaryCombatKeyRef.current !== combatInstanceKey) {
       commentaryCombatKeyRef.current = combatInstanceKey;
       lastCommentaryRoundRef.current = null;
-      commentaryInFlightRef.current = false;
+      invalidateCommentaryRequests();
     }
-  }, [combatInstanceKey]);
+  }, [combatInstanceKey, invalidateCommentaryRequests]);
+
+  useEffect(() => {
+    latestCombatMetaRef.current = {
+      active: combat.active,
+      combatOver,
+      round: combat.round,
+      combatInstanceKey,
+    };
+    if (!combat.active || combatOver) {
+      invalidateCommentaryRequests();
+    }
+  }, [combat.active, combat.round, combatOver, combatInstanceKey, invalidateCommentaryRequests]);
+
+  useEffect(() => {
+    return () => {
+      invalidateCommentaryRequests();
+    };
+  }, [invalidateCommentaryRequests]);
 
   useEffect(() => {
     if (!combat.active || combatOver) return;
@@ -482,6 +513,10 @@ export default function CombatPanel({
 
     lastCommentaryRoundRef.current = combat.round;
     commentaryInFlightRef.current = true;
+    const requestId = ++commentaryRequestSeqRef.current;
+    activeCommentaryRequestIdRef.current = requestId;
+    const requestedRound = combat.round;
+    const requestedCombatInstanceKey = combatInstanceKey;
 
     const recentLogEntries = combatLog
       .map(summarizeLogEntry)
@@ -493,16 +528,22 @@ export default function CombatPanel({
       recentResults: combat.lastResults || [],
       recentLogEntries,
     }).then((commentary) => {
+      const latestCombatMeta = latestCombatMetaRef.current;
+      const isLatestRequest = activeCommentaryRequestIdRef.current === requestId;
+      const combatStillActive = latestCombatMeta.active && !latestCombatMeta.combatOver;
+      const sameCombatInstance = latestCombatMeta.combatInstanceKey === requestedCombatInstanceKey;
+      const sameRound = latestCombatMeta.round === requestedRound;
+      if (!isLatestRequest || !combatStillActive || !sameCombatInstance || !sameRound) return;
       if (!commentary?.content) return;
 
       const ts = Date.now();
       const message = {
-        id: `msg_${ts}_combat_commentary_${combat.round}`,
+        id: `msg_${ts}_combat_commentary_${requestedRound}`,
         role: 'system',
         subtype: 'combat_commentary',
         content: commentary.content,
         dialogueSegments: commentary.dialogueSegments || [],
-        round: combat.round,
+        round: requestedRound,
         timestamp: ts,
       };
 
@@ -517,7 +558,9 @@ export default function CombatPanel({
     }).catch((err) => {
       console.warn('[CombatPanel] Combat commentary failed:', err.message);
     }).finally(() => {
-      commentaryInFlightRef.current = false;
+      if (activeCommentaryRequestIdRef.current === requestId) {
+        commentaryInFlightRef.current = false;
+      }
     });
   }, [
     combat,
