@@ -246,39 +246,6 @@ export default function SummaryModal({
     return injectImagesIntoTextBlocks([normalized], 2);
   };
 
-  const splitPoemLineStrong = (line) => {
-    const normalized = (line || '').trim();
-    if (!normalized) return [''];
-
-    // Split on punctuation boundaries while keeping punctuation attached.
-    const punctuationParts = normalized
-      .match(/[^,;:.!?]+[,;:.!?]?/g)
-      ?.map((part) => part.trim())
-      .filter(Boolean) || [];
-
-    const chunks = punctuationParts.length > 0 ? punctuationParts : [normalized];
-    const out = [];
-
-    for (const chunk of chunks) {
-      const words = chunk.split(/\s+/).filter(Boolean);
-      if (words.length <= 5) {
-        out.push(chunk);
-        continue;
-      }
-
-      // Strong line breaks: short 4-6 word micro-lines.
-      let i = 0;
-      while (i < words.length) {
-        const remaining = words.length - i;
-        const take = remaining <= 6 ? remaining : 5;
-        out.push(words.slice(i, i + take).join(' '));
-        i += take;
-      }
-    }
-
-    return out;
-  };
-
   const buildPoemBlocks = (text) => {
     const formatted = formatPoemForDisplay((text || '').trim());
     if (!formatted) return [];
@@ -321,25 +288,28 @@ export default function SummaryModal({
 
   const formatPoemForDisplay = (text) => {
     return (text || '')
+      .replace(/\r\n/g, '\n')
       .split('\n')
-      .flatMap((line) => splitPoemLineStrong(line))
+      .map((line) => line.trimEnd())
       .join('\n');
   };
 
+  const buildSummaryBlocks = () => {
+    if (summaryMode === 'poem') return buildPoemBlocks(summaryText);
+    if (summaryMode === 'dialogue' || summaryMode === 'report') return buildStructuredBlocks(summaryText);
+    return buildNarrativeBlocks(summaryText);
+  };
+
   const renderSummaryWithHighlight = () => {
-    const blocks = summaryMode === 'poem'
-      ? buildPoemBlocks(summaryText)
-      : summaryMode === 'dialogue'
-        ? buildStructuredBlocks(summaryText)
-        : buildNarrativeBlocks(summaryText);
+    const blocks = buildSummaryBlocks();
     const wordCounterRef = { current: 0 };
 
-    return blocks.map((block, index) => {
+    const renderBlock = (block, blockKey) => {
       if (block.type === 'image') {
         const isPoemImage = block.variant === 'poem-pencil' || summaryMode === 'poem';
         return (
           <figure
-            key={`summary_image_${block.image.id}_${index}`}
+            key={`summary_image_${block.image.id}_${blockKey}`}
             className={isPoemImage
               ? 'my-4 mx-auto w-full max-w-xl overflow-hidden rounded-sm border border-outline-variant/25 bg-surface-container-low/45 shadow-[0_8px_28px_rgba(0,0,0,0.35)]'
               : 'my-2 overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-low/40'}
@@ -369,7 +339,7 @@ export default function SummaryModal({
 
       return (
         <p
-          key={`summary_paragraph_${index}`}
+          key={`summary_paragraph_${blockKey}`}
           className={summaryMode === 'poem'
             ? 'text-base text-on-surface leading-8 whitespace-pre-line text-center'
             : 'text-sm text-on-surface leading-relaxed whitespace-pre-line'}
@@ -384,7 +354,13 @@ export default function SummaryModal({
           {renderParagraphTokens(displayText, wordCounterRef)}
         </p>
       );
-    });
+    };
+
+    return (
+      <div className="space-y-4">
+        {blocks.map((block, blockIndex) => renderBlock(block, `single_${blockIndex}`))}
+      </div>
+    );
   };
 
   return (
@@ -402,7 +378,7 @@ export default function SummaryModal({
       />
       <div
         ref={modalRef}
-        className="relative w-full max-w-2xl bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className="relative w-full max-w-6xl bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b border-outline-variant/10">
@@ -546,7 +522,7 @@ export default function SummaryModal({
         </div>
 
         <div className="px-5 pb-4">
-          <div ref={summaryScrollRef} className="min-h-[180px] max-h-[45vh] overflow-y-auto custom-scrollbar bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4">
+          <div ref={summaryScrollRef} className="min-h-[220px] max-h-[58vh] overflow-y-auto custom-scrollbar bg-surface-container-low/60 border border-outline-variant/15 rounded-sm p-4">
             {isLoading && (
               <p className="text-sm text-on-surface-variant animate-pulse">
                 {t('gameplay.summaryGenerating', 'Generating summary...')}
@@ -558,7 +534,7 @@ export default function SummaryModal({
               </p>
             )}
             {!isLoading && !error && hasSummary && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {renderSummaryWithHighlight()}
               </div>
             )}

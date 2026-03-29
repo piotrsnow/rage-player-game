@@ -297,7 +297,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         narratorCustomInstructions: settings.dmSettings?.narratorCustomInstructions || '',
       });
       const cacheInput = JSON.stringify({
-        v: 2,
+        v: 3,
         language: settings.language || 'pl',
         sceneScope: recapScenes.length,
         displayedSceneIndex,

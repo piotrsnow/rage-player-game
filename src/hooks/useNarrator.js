@@ -30,6 +30,9 @@ const FAST_FORWARD_HOLD_MAX_MULTIPLIER = 2;
 const FAST_FORWARD_HOLD_RAMP_MS = 2200;
 const DEFAULT_SEGMENT_PREFETCH_WINDOW = 3;
 const MAX_UTTERANCE_CHARS = 320;
+const HIGHLIGHT_LEAD_SECONDS = 0.06;
+const HIGHLIGHT_SCALE_MIN = 0.85;
+const HIGHLIGHT_SCALE_MAX = 1.2;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -174,17 +177,31 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
   const startHighlightLoop = useCallback((audio, words, segmentIndex, messageId, wordOffset, fullText, sentence) => {
     stopHighlightLoop();
+    let lastActiveIdx = -1;
     const tick = () => {
       if (!audio || audio.paused || audio.ended) {
         setHighlightInfo(null);
         return;
       }
-      const t = audio.currentTime;
+      const lastWordEnd = words.length > 0 ? Number(words[words.length - 1]?.end || 0) : 0;
+      const audioDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const rawScale = (lastWordEnd > 0 && audioDuration > 0)
+        ? (lastWordEnd / audioDuration)
+        : 1;
+      const timingScale = Math.max(HIGHLIGHT_SCALE_MIN, Math.min(HIGHLIGHT_SCALE_MAX, rawScale || 1));
+      const t = (audio.currentTime * timingScale) + HIGHLIGHT_LEAD_SECONDS;
       let activeIdx = -1;
-      for (let i = 0; i < words.length; i++) {
+      // Try to continue near the previous index to reduce jitter.
+      const startIdx = lastActiveIdx > 0 ? Math.max(0, lastActiveIdx - 2) : 0;
+      for (let i = startIdx; i < words.length; i++) {
         if (t >= words[i].start && t <= words[i].end + 0.05) {
           activeIdx = i;
+          break;
         }
+        if (words[i].start > t + 0.12) break;
+      }
+      if (activeIdx >= 0) {
+        lastActiveIdx = activeIdx;
       }
       const globalIdx = activeIdx >= 0 ? activeIdx + wordOffset : -1;
       setHighlightInfo({ messageId, segmentIndex, wordIndex: globalIdx, fullText, sentenceWordIndex: activeIdx });

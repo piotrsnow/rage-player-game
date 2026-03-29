@@ -1701,28 +1701,45 @@ export function buildRecapPrompt(language = 'en', options = {}) {
   const factuality = Math.max(0, Math.min(100, Number(summaryStyle.factuality ?? 50)));
   const dialogueParticipants = Math.max(2, Math.min(6, Math.round(Number(summaryStyle.dialogueParticipants ?? 3))));
   const targetSentenceCount = Math.max(1, Math.round(sceneCount * sentencesPerScene));
+  const poemTargetLineCount = Math.max(2, targetSentenceCount * 2);
   const isPolish = language === 'pl';
   const modeRule = mode === 'dialogue'
     ? `MODE: Dialogue recap. Write the recap as a conversation between exactly ${dialogueParticipants} distinct speakers discussing what happened. Keep speaker names short (e.g., "A:", "B:") and preserve chronological order. Output only dialogue lines prefixed with speaker labels, no plain prose paragraphs.`
     : mode === 'poem'
-      ? `MODE: Strongly rhymed poem. Write the recap as a playful, energetic poem in a classic Polish cabaret/ballad spirit (Tuwim-like vibe), preserving concrete facts and chronology. Prioritize clear end-rhymes in almost every line, avoid blank verse, and prefer full/perfect rhymes over weak near-rhymes.${isPolish ? ' For each rhyming line ending, the final two vowels must match the paired rhyme ending.' : ' Keep rhyme endings phonetically very close.'} Output only poetic lines and stanza breaks, no prose paragraphs.`
+      ? `MODE: Strongly rhymed poem. Write the recap as a playful, energetic poem in a classic Polish cabaret/ballad spirit (Tuwim-like vibe), preserving concrete facts and chronology. Prioritize clear end-rhymes in almost every line, avoid blank verse, and prefer full/perfect rhymes over weak near-rhymes.${isPolish ? ' In each rhyme pair, match the final 2-3 syllables as closely as possible.' : ' Keep rhyme endings phonetically very close.'} Output only poetic lines and stanza breaks, no prose paragraphs.`
       : mode === 'report'
         ? 'MODE: Report. Write a concise factual report: fact after fact, minimal embellishment, clear causal links.'
         : 'MODE: Story. Write as a flowing narrative recap.';
   const structureRule = mode === 'poem'
     ? `- Use 2-4 stanzas separated by a blank line.
 - Keep rhythm lively, singable, and punchy.
-- In each stanza, enforce a clear rhyme scheme (prefer AABB or ABAB).
-- Every verse must be internally broken into two hemistichs: place a line break around the midpoint of the verse, so each logical verse appears as two short stacked lines.
+- In each stanza, enforce one explicit rhyme scheme: AABB or ABAB.
+- Every non-empty line must end with a clearly rhyming word.
 - Make adjacent rhyme pairs explicit and audible at line endings.
-- Use "rhyme runs": pick one rhyme ending and sustain it for a random block length between 2 and 8 consecutive lines, then switch to a new ending.
-- Do not keep the same rhyme ending longer than 8 lines.
-${isPolish ? '- For every line in a rhyme run, ensure the final two vowels in the ending match exactly across the run.' : '- Keep rhyme endings tightly consistent within each rhyme run.'}
-- Make line endings rhyme as strongly as possible; near-rhyme only if perfect rhyme is impossible.
-- Keep line breaks in the output (do not merge into a paragraph).`
+- Use shorter lines (roughly 4-8 words) and break lines often.
+- Aim for one line per short clause; split long thoughts into two separate lines.
+- Prefer lexical rhymes (content words), avoid weak grammatical rhymes based only on inflection endings.
+${isPolish ? '- In each rhyme pair, keep the final vowel group and consonant tail closely matched.' : '- Keep rhyme endings tightly consistent within each rhyme pair.'}
+- Add extra rhyme density: include internal rhyme (or a strong echo rhyme) in at least every second non-empty line.
+- Keep line breaks in the output (do not merge into a paragraph).
+- Do not split one logical verse into two display lines.`
     : mode === 'dialogue'
       ? '- Use speaker-prefixed lines (Speaker: text).\n- Every non-empty line must start with "<speaker>:".\n- Keep line breaks in the output (one spoken turn per line).\n- No bullet points, numbering, checklist formatting, or section headers.'
       : '- Format as multiple paragraphs.\n- Each paragraph must contain 3 to 6 sentences.\n- Separate paragraphs with a blank line.\n- Strictly no bullet points, numbering, checklist formatting, or section headers.';
+  const lengthRule = mode === 'poem'
+    ? `- Scene count: ${sceneCount}
+- Target density: ${sentencesPerScene} line(s) per scene
+- Write exactly ${poemTargetLineCount} non-empty poetic lines in total (blank stanza separators do not count).
+- Preserve chronological order.
+- If density is below 1.0, merge nearby scenes while still covering the full timeline.
+- If density is above 1.0, add richer detail per scene while staying factual.`
+    : `- Scene count: ${sceneCount}
+- Target density: ${sentencesPerScene} sentence(s) per scene
+- Write exactly ${targetSentenceCount} sentences in total.
+- Keep strict sentence boundaries (avoid semicolon chains pretending to be one sentence).
+- Preserve chronological order.
+- If density is below 1.0, merge nearby scenes while still covering the full timeline.
+- If density is above 1.0, add richer detail per scene while staying factual.`;
 
   return `Based on the scene history in the system context, generate a "Previously on..." recap that summarizes key events, decisions, and consequences.
 STYLE RULES:
@@ -1732,13 +1749,7 @@ ${modeRule}
 - Factuality: ${factuality}/100 (higher = concrete facts, lower = more impressionistic phrasing).
 - Always preserve key facts, outcomes, and timeline continuity.
 IMPORTANT LENGTH RULE:
-- Scene count: ${sceneCount}
-- Target density: ${sentencesPerScene} sentence(s) per scene
-- Write exactly ${targetSentenceCount} sentences in total.
-- Keep strict sentence boundaries (avoid semicolon chains pretending to be one sentence).
-- Preserve chronological order.
-- If density is below 1.0, merge nearby scenes while still covering the full timeline.
-- If density is above 1.0, add richer detail per scene while staying factual.
+${lengthRule}
 STRUCTURE RULES:
 ${structureRule}
 ${langNote}
