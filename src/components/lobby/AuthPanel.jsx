@@ -78,26 +78,30 @@ function SessionCheckBanner() {
 
 function LoginForm() {
   const { t } = useTranslation();
-  const { backendLogin, backendRegister } = useSettings();
+  const { backendLogin, backendRegister, settings } = useSettings();
 
   const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const defaultUrl = isLocalhost ? 'http://localhost:3001' : window.location.origin;
 
-  const serverUrl = defaultUrl;
+  const [serverUrl, setServerUrl] = useState(() => settings?.backendUrl || defaultUrl);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  const canSubmit = serverUrl && email && password && !loading;
+  const canSubmit = serverUrl.trim() && email && password && !loading;
+
+  useEffect(() => {
+    setServerUrl(settings?.backendUrl || defaultUrl);
+  }, [settings?.backendUrl, defaultUrl]);
 
   const handleLogin = async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      await backendLogin(serverUrl, email, password);
+      await backendLogin(serverUrl.trim(), email, password);
       setSuccess(t('settings.backendLoginSuccess'));
       setPassword('');
     } catch (err) {
@@ -116,7 +120,7 @@ function LoginForm() {
     }
     setLoading(true);
     try {
-      await backendRegister(serverUrl, email, password);
+      await backendRegister(serverUrl.trim(), email, password);
       setSuccess(t('settings.backendRegisterSuccess'));
       setPassword('');
     } catch (err) {
@@ -147,6 +151,22 @@ function LoginForm() {
       <OrnamentalDivider />
 
       <div className="space-y-4">
+        <div>
+          <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
+            {t('settings.backendUrl')}
+          </label>
+          <input
+            type="text"
+            name="serverUrl"
+            autoComplete="url"
+            value={serverUrl}
+            onChange={(e) => setServerUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t('settings.backendUrlPlaceholder')}
+            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 font-mono text-on-surface-variant"
+          />
+        </div>
+
         <div>
           <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
             {t('settings.backendEmail')}

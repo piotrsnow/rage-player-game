@@ -399,9 +399,9 @@ export default function CombatPanel({
   const activeCommentaryRequestIdRef = useRef(0);
   const latestCombatMetaRef = useRef({
     active: combat.active,
-    combatOver,
+    combatOver: isCombatOver(combat),
     round: combat.round,
-    combatInstanceKey,
+    combatInstanceKey: `${combat.reason || ''}::${combat.combatants.map((combatant) => combatant.id).join('|')}`,
   });
   const combatAudio = useCombatAudio(combat);
 
