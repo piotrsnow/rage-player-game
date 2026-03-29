@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import MapCanvas from './MapCanvas';
+import CustomSelect from '../ui/CustomSelect';
 import { FACTION_DEFINITIONS, getReputationTierData } from '../../data/wfrpFactions';
 
 const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
@@ -367,18 +368,19 @@ function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, au
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-outline-variant/10">
                 <span className="material-symbols-outlined text-xs text-outline">record_voice_over</span>
                 <span className="text-[10px] text-outline shrink-0">{t('worldState.voice')}:</span>
-                <select
+                <CustomSelect
                   value={currentVoiceId || ''}
-                  onChange={(e) => handleVoiceChange(npc.name, npc.gender, e.target.value)}
-                  className="flex-1 min-w-0 text-[11px] bg-surface-container/60 border border-outline-variant/15 rounded-sm px-2 py-1 text-on-surface appearance-none cursor-pointer hover:border-primary/30 transition-colors focus:outline-none focus:border-primary/50"
-                >
-                  <option value="">{t('worldState.noVoice')}</option>
-                  {characterVoices.map((v) => (
-                    <option key={v.voiceId} value={v.voiceId}>
-                      {v.voiceName}{v.gender ? ` (${v.gender === 'male' ? '\u2642' : '\u2640'})` : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(nextVoiceId) => handleVoiceChange(npc.name, npc.gender, nextVoiceId)}
+                  options={[
+                    { value: '', label: t('worldState.noVoice') },
+                    ...characterVoices.map((v) => ({
+                      value: v.voiceId,
+                      label: `${v.voiceName}${v.gender ? ` (${v.gender === 'male' ? '\u2642' : '\u2640'})` : ''}`,
+                    })),
+                  ]}
+                  className="flex-1 min-w-0"
+                  buttonClassName="text-[11px] py-1 px-2 border-outline-variant/15"
+                />
               </div>
             )}
           </div>

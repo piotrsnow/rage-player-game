@@ -14,6 +14,7 @@ import CodexPanel from './CodexPanel';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
 import PortraitGenerator from './PortraitGenerator';
+import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
 import Tooltip from '../ui/Tooltip';
 
@@ -205,19 +206,18 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                 <span className="material-symbols-outlined text-sm">record_voice_over</span>
                 {t('character.voice')}
               </h3>
-              <select
+              <CustomSelect
                 value={characterVoiceMap?.[character.name]?.voiceId || ''}
-                onChange={(e) => {
-                  const voice = characterVoices.find((v) => v.voiceId === e.target.value);
-                  onVoiceChange(character.name, e.target.value || null, voice?.gender || null);
+                onChange={(nextVoiceId) => {
+                  const voice = characterVoices.find((v) => v.voiceId === nextVoiceId);
+                  onVoiceChange(character.name, nextVoiceId || null, voice?.gender || null);
                 }}
-                className="w-full bg-surface-container-high/60 border border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-3 rounded-sm font-body"
-              >
-                <option value="">{t('character.noVoice')}</option>
-                {characterVoices.map((v) => (
-                  <option key={v.voiceId} value={v.voiceId}>{v.voiceName}</option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: t('character.noVoice') },
+                  ...characterVoices.map((v) => ({ value: v.voiceId, label: v.voiceName })),
+                ]}
+                className="w-full"
+              />
             </div>
           )}
         </div>

@@ -22,6 +22,7 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   const trackIndexRef = useRef(-1);
   const shuffledRef = useRef([]);
   const wantPlayingRef = useRef(false);
+  const previousFolderRef = useRef(folder);
 
   const getBaseVolume = useCallback(() => {
     return Math.max(0, Math.min(1, (settings.musicVolume ?? 40) / 100));
@@ -82,6 +83,34 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
       fetchTracks();
     }
   }, [settings.localMusicEnabled, settings.useBackend, settings.backendUrl, fetchTracks]);
+
+  useEffect(() => {
+    if (previousFolderRef.current === folder) return;
+    previousFolderRef.current = folder;
+
+    // Campaign switch: clear current queue so the next fetch starts the right playlist.
+    wantPlayingRef.current = false;
+    if (fadeIntervalRef.current) {
+      clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
+    }
+    if (fadingAudioRef.current) {
+      fadingAudioRef.current.pause();
+      fadingAudioRef.current.removeAttribute('src');
+      fadingAudioRef.current = null;
+    }
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.removeAttribute('src');
+      activeAudioRef.current = null;
+    }
+    trackIndexRef.current = -1;
+    shuffledRef.current = [];
+    setTracks([]);
+    setCurrentTrack(null);
+    setIsPlaying(false);
+    setLoaded(false);
+  }, [folder]);
 
   const stopFade = useCallback(() => {
     if (fadeIntervalRef.current) {

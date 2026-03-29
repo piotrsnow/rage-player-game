@@ -16,6 +16,8 @@ import {
 } from '../data/wfrp';
 
 const GameContext = createContext(null);
+const FORTUNE_REGEN_MS = 24 * 60 * 60 * 1000;
+const RESOLVE_REGEN_MS = 48 * 60 * 60 * 1000;
 
 function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -75,6 +77,48 @@ function createDefaultCharacter() {
     customAttackPresets: [],
     needs: createDefaultNeeds(),
     criticalWounds: [],
+  };
+}
+
+function normalizeCharacterMetaCurrencies(character) {
+  if (!character) return character;
+
+  const fate = Math.max(0, Number(character.fate ?? 0));
+  const resilience = Math.max(0, Number(character.resilience ?? 0));
+  const fortuneFallback = character.fortune == null ? fate : Number(character.fortune);
+  const resolveFallback = character.resolve == null ? resilience : Number(character.resolve);
+
+  const fortune = Number.isFinite(fortuneFallback)
+    ? Math.max(0, Math.min(fate, fortuneFallback))
+    : fate;
+  const resolve = Number.isFinite(resolveFallback)
+    ? Math.max(0, Math.min(resilience, resolveFallback))
+    : resilience;
+
+  return {
+    ...character,
+    fate,
+    resilience,
+    fortune,
+    resolve,
+  };
+}
+
+function applyOfflineMetaCurrencyRegen(character, lastSavedAt) {
+  const normalized = normalizeCharacterMetaCurrencies(character);
+  if (!normalized || !lastSavedAt) return normalized;
+
+  const elapsedMs = Math.max(0, Date.now() - Number(lastSavedAt || 0));
+  if (!elapsedMs) return normalized;
+
+  const fortuneTicks = Math.floor(elapsedMs / FORTUNE_REGEN_MS);
+  const resolveTicks = Math.floor(elapsedMs / RESOLVE_REGEN_MS);
+  if (!fortuneTicks && !resolveTicks) return normalized;
+
+  return {
+    ...normalized,
+    fortune: Math.min(normalized.fate, normalized.fortune + fortuneTicks),
+    resolve: Math.min(normalized.resilience, normalized.resolve + resolveTicks),
   };
 }
 
@@ -150,7 +194,8 @@ function gameReducer(state, action) {
 
   switch (action.type) {
     case 'START_CAMPAIGN': {
-      const char = action.payload.character || createDefaultCharacter();
+      const rawChar = action.payload.character || createDefaultCharacter();
+      const char = normalizeCharacterMetaCurrencies(rawChar);
       const campaignData = {
         ...action.payload.campaign,
         status: 'active',
@@ -187,10 +232,11 @@ function gameReducer(state, action) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
       }
       if (loaded.character) {
-        loaded.character = {
+        const normalizedCharacter = {
           ...loaded.character,
           customAttackPresets: normalizeCustomAttackPresets(loaded.character.customAttackPresets),
         };
+        loaded.character = applyOfflineMetaCurrencyRegen(normalizedCharacter, action.payload?.lastSaved);
       }
       if (!loaded.achievements) loaded.achievements = createDefaultAchievementState();
       if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };

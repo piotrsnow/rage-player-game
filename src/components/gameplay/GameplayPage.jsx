@@ -24,6 +24,7 @@ import CombatPanel from './CombatPanel';
 import DialoguePanel from './DialoguePanel';
 import MagicPanel from './MagicPanel';
 import PartyPanel from './PartyPanel';
+import SummaryModal from './SummaryModal';
 import AchievementsPanel from '../character/AchievementsPanel';
 import QuestOffersPanel from './QuestOffersPanel';
 import GMModal from './gm/GMModal';
@@ -39,7 +40,34 @@ import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
 
+function hashSummaryCacheKey(input) {
+  const text = String(input || '');
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function shuffleArray(items) {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 export default function GameplayPage({ readOnly = false, shareToken = null }) {
+  // Temporary kill switch for timer-driven idle world events.
+  const IDLE_WORLD_EVENTS_ENABLED = false;
+  const MAX_SCENE_IMAGE_REPAIR_ATTEMPTS = 2;
+  const MAX_SCENE_IMAGE_REPAIRS_PER_SESSION = 20;
+  const MAX_SCENE_IMAGE_MIGRATION_REPAIRS_PER_PASS = 3;
+  const MAX_SCENE_IMAGE_MIGRATION_SCAN = 12;
+  const SCENE_IMAGE_MIGRATION_COOLDOWN_MS = 12000;
+
   const navigate = useNavigate();
   const location = useLocation();
   const { campaignId: urlCampaignId } = useParams();
@@ -48,7 +76,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs } = useAI();
+  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -57,6 +85,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   );
   const { setNarratorState } = useGlobalMusic();
   const imageAttemptedRef = useRef(new Set());
+  const imageRepairAttemptsRef = useRef(new Map());
+  const imageRepairInFlightRef = useRef(new Set());
+  const imageRepairsCountRef = useRef(0);
+  const imageMigrationRunningRef = useRef(false);
+  const imageMigrationLastRunRef = useRef(0);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
@@ -97,11 +130,29 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
   const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
+  const [summarySentencesPerScene, setSummarySentencesPerScene] = useState(1);
+  const [summaryOptions, setSummaryOptions] = useState({
+    mode: 'story',
+    literaryStyle: 50,
+    dramaticity: 50,
+    factuality: 50,
+    dialogueParticipants: 3,
+  });
+  const [summaryNarrationMessageId, setSummaryNarrationMessageId] = useState(null);
+  const [summarySpeakLoading, setSummarySpeakLoading] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
+  const summarySpeakTimeoutRef = useRef(null);
+  const summaryCopyTimeoutRef = useRef(null);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
+  const [mpSceneGenStartTime, setMpSceneGenStartTime] = useState(null);
   const prevScenesLenRef = useRef(0);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
@@ -129,11 +180,29 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
   const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
+  const wasGeneratingSceneRef = useRef(false);
+  const prevChatHistoryLenRef = useRef(chatHistory.length);
   const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
   const isGeneratingImage = state.isGeneratingImage;
   const error = isMultiplayer ? mp.state.error : state.error;
+  const mpErrorCode = isMultiplayer ? mp.state.errorCode : null;
+  const reconnectState = mp.state.reconnectState || { status: 'disconnected', attempt: 0, maxAttempts: 10 };
+  const isMpReconnecting = isMultiplayer && reconnectState.status === 'reconnecting';
+  const showMpConnectionBanner = isMultiplayer && (!mp.state.connected || isMpReconnecting);
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
+
+  useEffect(() => {
+    if (!isMultiplayer) {
+      setMpSceneGenStartTime(null);
+      return;
+    }
+    if (mp.state.isGenerating) {
+      setMpSceneGenStartTime((prev) => prev || Date.now());
+      return;
+    }
+    setMpSceneGenStartTime(null);
+  }, [isMultiplayer, mp.state.isGenerating]);
   const lastChosenAction = (() => {
     if (!currentScene) return null;
     if (currentScene.chosenAction != null && currentScene.chosenAction !== '') return currentScene.chosenAction;
@@ -152,10 +221,251 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     prevScenesLenRef.current = scenes.length;
   }, [scenes.length]);
 
+  useEffect(() => {
+    if (isGeneratingScene) {
+      wasGeneratingSceneRef.current = true;
+      prevChatHistoryLenRef.current = chatHistory.length;
+      return;
+    }
+    if (!wasGeneratingSceneRef.current) {
+      prevChatHistoryLenRef.current = chatHistory.length;
+      return;
+    }
+
+    const hasNewMessages = chatHistory.length > prevChatHistoryLenRef.current;
+    if (hasNewMessages) {
+      const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
+      if (latestDiceRollMessage?.id) {
+        setScrollTargetMessageId(latestDiceRollMessage.id);
+      }
+    }
+
+    wasGeneratingSceneRef.current = false;
+    prevChatHistoryLenRef.current = chatHistory.length;
+  }, [isGeneratingScene, chatHistory]);
+
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
   const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, state.combat, state.dialogue) : 0;
+
+  const buildRecapStateForDisplayedScene = useCallback(() => {
+    const lastIncludedIndex = Math.max(0, Math.min(displayedSceneIndex, scenes.length - 1));
+    const includedScenes = scenes.slice(0, lastIncludedIndex + 1);
+    const includedSceneIds = new Set(includedScenes.map((scene) => scene?.id).filter(Boolean));
+    const filteredChatHistory = chatHistory.filter((msg) => {
+      if (!msg?.sceneId) return true;
+      return includedSceneIds.has(msg.sceneId);
+    });
+
+    if (isMultiplayer) {
+      return {
+        ...state,
+        ...(mpGameState || {}),
+        campaign: mpGameState?.campaign || state.campaign,
+        character,
+        scenes: includedScenes,
+        chatHistory: filteredChatHistory,
+      };
+    }
+
+    return {
+      ...state,
+      scenes: includedScenes,
+      chatHistory: filteredChatHistory,
+    };
+  }, [displayedSceneIndex, scenes, chatHistory, isMultiplayer, state, mpGameState, character]);
+
+  const handleGenerateSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    setSummaryError(null);
+    setSummaryCopied(false);
+    try {
+      const recapState = buildRecapStateForDisplayedScene();
+      const recapScenes = Array.isArray(recapState?.scenes) ? recapState.scenes : [];
+      const recapSceneIds = recapScenes
+        .map((scene, idx) => scene?.id || `idx_${idx + 1}`)
+        .join('|');
+      const dmSignature = JSON.stringify({
+        narrativeStyle: settings.dmSettings?.narrativeStyle ?? 50,
+        responseLength: settings.dmSettings?.responseLength ?? 50,
+        narratorPoeticism: settings.dmSettings?.narratorPoeticism ?? 50,
+        narratorGrittiness: settings.dmSettings?.narratorGrittiness ?? 30,
+        narratorDetail: settings.dmSettings?.narratorDetail ?? 50,
+        narratorHumor: settings.dmSettings?.narratorHumor ?? 20,
+        narratorDrama: settings.dmSettings?.narratorDrama ?? 50,
+        narratorCustomInstructions: settings.dmSettings?.narratorCustomInstructions || '',
+      });
+      const cacheInput = JSON.stringify({
+        v: 2,
+        language: settings.language || 'pl',
+        sceneScope: recapScenes.length,
+        displayedSceneIndex,
+        chatHistoryLength: Array.isArray(recapState?.chatHistory) ? recapState.chatHistory.length : 0,
+        sceneIds: recapSceneIds,
+        sentencesPerScene: summarySentencesPerScene,
+        summaryOptions,
+        dm: dmSignature,
+      });
+      const cacheKey = `recap_${hashSummaryCacheKey(cacheInput)}`;
+      const backendId = recapState?.campaign?.backendId;
+
+      if (backendId && apiClient.isConnected()) {
+        try {
+          const cached = await apiClient.get(`/campaigns/${backendId}/recaps?key=${encodeURIComponent(cacheKey)}`);
+          const cachedRecap = typeof cached?.recap === 'string' ? cached.recap.trim() : '';
+          if (cached?.found && cachedRecap) {
+            setSummaryText(cachedRecap);
+            return;
+          }
+        } catch {
+          // Ignore cache lookup errors and fall back to AI generation.
+        }
+      }
+
+      const recap = await generateRecap(recapState, {
+        sentencesPerScene: summarySentencesPerScene,
+        summaryStyle: summaryOptions,
+      });
+      const safeRecap = typeof recap === 'string' ? recap.trim() : '';
+      setSummaryText(safeRecap);
+      if (!safeRecap) {
+        setSummaryError(t('gameplay.summaryEmptyGenerated', 'AI returned an empty summary. Try again.'));
+      } else if (backendId && apiClient.isConnected()) {
+        apiClient.post(`/campaigns/${backendId}/recaps`, {
+          key: cacheKey,
+          recap: safeRecap,
+          meta: {
+            displayedSceneIndex,
+            totalScenes: recapScenes.length,
+            sentencesPerScene: summarySentencesPerScene,
+            language: settings.language || 'pl',
+            summaryStyle: summaryOptions,
+          },
+        }).catch(() => {});
+      }
+    } catch (err) {
+      setSummaryError(err?.message || t('common.somethingWentWrong'));
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [buildRecapStateForDisplayedScene, displayedSceneIndex, generateRecap, settings.dmSettings, settings.language, summaryOptions, summarySentencesPerScene, t]);
+
+  const handleOpenSummaryModal = useCallback(() => {
+    setSummaryModalOpen(true);
+    setSummaryText('');
+    setSummaryError(null);
+    setSummaryNarrationMessageId(null);
+    setSummarySpeakLoading(false);
+    setSummaryCopied(false);
+  }, []);
+
+  const handleCopySummary = useCallback(async () => {
+    const text = typeof summaryText === 'string' ? summaryText.trim() : '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setSummaryCopied(true);
+      if (summaryCopyTimeoutRef.current) {
+        window.clearTimeout(summaryCopyTimeoutRef.current);
+      }
+      summaryCopyTimeoutRef.current = window.setTimeout(() => {
+        setSummaryCopied(false);
+      }, 2000);
+    } catch (err) {
+      setSummaryError(err?.message || t('common.somethingWentWrong'));
+    }
+  }, [summaryText, t]);
+
+  const probeSceneImage = useCallback((rawUrl) => {
+    const resolved = apiClient.resolveMediaUrl(rawUrl);
+    if (!resolved || resolved.startsWith('data:')) return Promise.resolve(Boolean(resolved));
+    return new Promise((resolve) => {
+      const image = new Image();
+      let done = false;
+      const settle = (ok) => {
+        if (done) return;
+        done = true;
+        resolve(ok);
+      };
+      const timeoutId = window.setTimeout(() => settle(false), 5000);
+      image.onload = () => {
+        window.clearTimeout(timeoutId);
+        settle(true);
+      };
+      image.onerror = () => {
+        window.clearTimeout(timeoutId);
+        settle(false);
+      };
+      image.src = resolved;
+    });
+  }, []);
+
+  const repairSceneImage = useCallback(
+    async (sceneId, options = {}) => {
+      const {
+        reason = 'manual',
+        skipAutoSave = false,
+        markAttempted = true,
+      } = options;
+
+      if (!sceneId || (settings.sceneVisualization || 'image') !== 'image') return false;
+
+      const targetScene = scenes.find((scene) => scene?.id === sceneId);
+      if (!targetScene?.narrative) {
+        console.warn(`[image-repair] Skipping ${sceneId}: missing narrative (${reason})`);
+        return false;
+      }
+
+      if (imageRepairInFlightRef.current.has(sceneId)) return false;
+
+      const attempts = imageRepairAttemptsRef.current.get(sceneId) || 0;
+      if (attempts >= MAX_SCENE_IMAGE_REPAIR_ATTEMPTS) {
+        console.warn(`[image-repair] Skipping ${sceneId}: attempt limit reached (${reason})`);
+        return false;
+      }
+
+      if (imageRepairsCountRef.current >= MAX_SCENE_IMAGE_REPAIRS_PER_SESSION) {
+        console.warn(`[image-repair] Session cap reached, skip ${sceneId}`);
+        return false;
+      }
+
+      imageRepairAttemptsRef.current.set(sceneId, attempts + 1);
+      imageRepairInFlightRef.current.add(sceneId);
+
+      try {
+        const imageUrl = await generateImageForScene(
+          sceneId,
+          targetScene.narrative,
+          targetScene.imagePrompt,
+          isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined,
+          { skipAutoSave: readOnly || skipAutoSave }
+        );
+        if (!imageUrl) return false;
+
+        imageRepairsCountRef.current += 1;
+        if (markAttempted) {
+          imageAttemptedRef.current.add(sceneId);
+        }
+        if (isMultiplayer) {
+          mp.updateSceneImage(sceneId, imageUrl);
+        }
+        return true;
+      } finally {
+        imageRepairInFlightRef.current.delete(sceneId);
+      }
+    },
+    [
+      settings.sceneVisualization,
+      scenes,
+      generateImageForScene,
+      isMultiplayer,
+      campaign?.genre,
+      campaign?.tone,
+      readOnly,
+      mp,
+    ]
+  );
 
   const [typewriterAction, setTypewriterAction] = useState(null);
   const typewriterNextIndexRef = useRef(null);
@@ -188,6 +498,139 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       return false;
     }
   }, [settings.language, settings.dialogueSpeed]);
+
+  const SUMMARY_NARRATION_START_TIMEOUT_MS = 45000;
+  const SUMMARY_UTTERANCE_PREFETCH_WINDOW = 3;
+
+  const buildSummaryDialogueSegments = useCallback((text) => {
+    const normalized = typeof text === 'string' ? text.trim() : '';
+    if (!normalized) return [];
+
+    const lines = normalized
+      .split(/\r?\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) return [];
+
+    const speakerLineRegex = /^([A-Za-z0-9\u00C0-\u017F]{1,24})\s*:\s*(.+)$/u;
+    const parsedLines = lines.map((line) => {
+      const match = line.match(speakerLineRegex);
+      if (!match) return null;
+      return {
+        speaker: match[1].trim(),
+        text: match[2].trim(),
+      };
+    });
+
+    const speakerCount = parsedLines.filter(Boolean).length;
+    const isDialogueSummary = speakerCount >= Math.max(2, Math.floor(lines.length * 0.6));
+    if (!isDialogueSummary) {
+      return [{ type: 'narration', text: normalized }];
+    }
+
+    const fallbackVoiceId = settings.elevenlabsVoiceId || state.narratorVoiceId || null;
+    const voicePool = (settings.characterVoices || [])
+      .map((voice) => voice?.voiceId)
+      .filter(Boolean);
+    const shuffledVoices = shuffleArray(voicePool);
+    const speakerVoiceMap = new Map();
+    let nextVoiceIndex = 0;
+
+    const assignVoice = (speaker) => {
+      if (!speaker) return fallbackVoiceId;
+      if (speakerVoiceMap.has(speaker)) return speakerVoiceMap.get(speaker);
+      if (shuffledVoices.length === 0) {
+        speakerVoiceMap.set(speaker, fallbackVoiceId);
+        return fallbackVoiceId;
+      }
+      const picked = shuffledVoices[nextVoiceIndex % shuffledVoices.length];
+      nextVoiceIndex += 1;
+      speakerVoiceMap.set(speaker, picked);
+      return picked;
+    };
+
+    return lines.map((line, index) => {
+      const parsed = parsedLines[index];
+      if (!parsed || !parsed.text) {
+        return {
+          type: 'narration',
+          text: line,
+          voiceId: fallbackVoiceId,
+        };
+      }
+      return {
+        type: 'dialogue',
+        character: parsed.speaker,
+        text: parsed.text,
+        voiceId: assignVoice(parsed.speaker),
+      };
+    });
+  }, [settings.characterVoices, settings.elevenlabsVoiceId, state.narratorVoiceId]);
+
+  const handleSpeakSummary = useCallback(() => {
+    if (!summaryText) return;
+    setSummarySpeakLoading(true);
+    setSummaryError(null);
+    if (summarySpeakTimeoutRef.current) {
+      window.clearTimeout(summarySpeakTimeoutRef.current);
+      summarySpeakTimeoutRef.current = null;
+    }
+
+    if (narrator.isNarratorReady) {
+      const narrationId = `summary_${Date.now()}`;
+      const dialogueSegments = buildSummaryDialogueSegments(summaryText);
+      setSummaryNarrationMessageId(narrationId);
+      narrator.speakSingle(
+        {
+          content: summaryText,
+          dialogueSegments,
+          segmentPrefetchWindow: SUMMARY_UTTERANCE_PREFETCH_WINDOW,
+        },
+        narrationId
+      );
+      summarySpeakTimeoutRef.current = window.setTimeout(() => {
+        setSummarySpeakLoading(false);
+        setSummaryError(t('gameplay.summaryReadAloudUnavailable', 'Could not start voice playback. Check narrator settings.'));
+      }, SUMMARY_NARRATION_START_TIMEOUT_MS);
+      return;
+    }
+
+    setSummarySpeakLoading(false);
+    setSummaryError(t('gameplay.summaryElevenlabsOnly', 'ElevenLabs narrator is required. Configure narrator voice/settings.'));
+    openSettings();
+  }, [summaryText, narrator, openSettings, t, buildSummaryDialogueSegments]);
+
+  useEffect(() => {
+    if (!summarySpeakLoading || !summaryNarrationMessageId) return;
+    const isThisSummaryPlaying =
+      narrator.currentMessageId === summaryNarrationMessageId
+      && narrator.playbackState === narrator.STATES.PLAYING;
+    if (!isThisSummaryPlaying) return;
+
+    setSummarySpeakLoading(false);
+    if (summarySpeakTimeoutRef.current) {
+      window.clearTimeout(summarySpeakTimeoutRef.current);
+      summarySpeakTimeoutRef.current = null;
+    }
+  }, [
+    summarySpeakLoading,
+    summaryNarrationMessageId,
+    narrator.currentMessageId,
+    narrator.playbackState,
+    narrator.STATES.PLAYING,
+  ]);
+
+  useEffect(() => () => {
+    if (summarySpeakTimeoutRef.current) {
+      window.clearTimeout(summarySpeakTimeoutRef.current);
+      summarySpeakTimeoutRef.current = null;
+    }
+    if (summaryCopyTimeoutRef.current) {
+      window.clearTimeout(summaryCopyTimeoutRef.current);
+      summaryCopyTimeoutRef.current = null;
+    }
+  }, []);
 
   const playSceneNarration = useCallback((scene, fallbackIndex = null) => {
     if (!scene?.narrative) return;
@@ -323,21 +766,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       !imageAttemptedRef.current.has(currentScene.id)
     ) {
       if (isMultiplayer && !mp.state.isHost) return;
-      generateImageForScene(
-        currentScene.id,
-        currentScene.narrative,
-        currentScene.imagePrompt,
-        isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined
-      ).then((imageUrl) => {
-        if (imageUrl) {
-          imageAttemptedRef.current.add(currentScene.id);
-          if (isMultiplayer) {
-            mp.updateSceneImage(currentScene.id, imageUrl);
-          }
-        }
-      });
+      repairSceneImage(currentScene.id, { reason: 'current-missing' });
     }
-  }, [currentScene, isGeneratingImage, isGeneratingScene, generateImageForScene, isMultiplayer, mp, campaign, settings.sceneVisualization]);
+  }, [
+    readOnly,
+    settings.sceneVisualization,
+    currentScene,
+    isGeneratingImage,
+    isGeneratingScene,
+    isMultiplayer,
+    mp.state.isHost,
+    repairSceneImage,
+  ]);
 
   useEffect(() => {
     if (!readOnly) return;
@@ -350,27 +790,71 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       !imageAttemptedRef.current.has(viewedScene.id) &&
       viewedScene.narrative
     ) {
-      generateImageForScene(
-        viewedScene.id,
-        viewedScene.narrative,
-        viewedScene.imagePrompt,
-        { genre: campaign?.genre, tone: campaign?.tone },
-        { skipAutoSave: true }
-      ).then((imageUrl) => {
-        if (imageUrl) {
-          imageAttemptedRef.current.add(viewedScene.id);
-        }
-      });
+      repairSceneImage(viewedScene.id, { reason: 'viewer-missing', skipAutoSave: true });
     }
+  }, [readOnly, settings.sceneVisualization, viewedScene, isGeneratingImage, isGeneratingScene, repairSceneImage]);
+
+  useEffect(() => {
+    if ((settings.sceneVisualization || 'image') !== 'image') return;
+    if (!scenes?.length) return;
+    if (isGeneratingImage || isGeneratingScene) return;
+    if (isMultiplayer && !mp.state.isHost) return;
+
+    const now = Date.now();
+    if (now - imageMigrationLastRunRef.current < SCENE_IMAGE_MIGRATION_COOLDOWN_MS) return;
+    if (imageMigrationRunningRef.current) return;
+
+    let cancelled = false;
+    imageMigrationRunningRef.current = true;
+    imageMigrationLastRunRef.current = now;
+
+    (async () => {
+      let repairsDone = 0;
+      for (const scene of scenes.slice(0, MAX_SCENE_IMAGE_MIGRATION_SCAN)) {
+        if (cancelled) break;
+        if (!scene?.id || !scene.narrative) continue;
+        if (repairsDone >= MAX_SCENE_IMAGE_MIGRATION_REPAIRS_PER_PASS) break;
+        if (imageRepairInFlightRef.current.has(scene.id)) continue;
+        if ((imageRepairAttemptsRef.current.get(scene.id) || 0) >= MAX_SCENE_IMAGE_REPAIR_ATTEMPTS) continue;
+
+        if (!scene.image) {
+          const repaired = await repairSceneImage(scene.id, {
+            reason: 'migration-missing',
+            skipAutoSave: readOnly,
+            markAttempted: false,
+          });
+          if (repaired) repairsDone += 1;
+          continue;
+        }
+
+        const canLoad = await probeSceneImage(scene.image);
+        if (!canLoad) {
+          const repaired = await repairSceneImage(scene.id, {
+            reason: 'migration-broken-url',
+            skipAutoSave: readOnly,
+            markAttempted: false,
+          });
+          if (repaired) repairsDone += 1;
+        }
+      }
+    })()
+      .finally(() => {
+        imageMigrationRunningRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [
-    readOnly,
-    viewedScene,
+    settings.sceneVisualization,
+    scenes,
     isGeneratingImage,
     isGeneratingScene,
-    generateImageForScene,
-    campaign?.genre,
-    campaign?.tone,
-    settings.sceneVisualization,
+    isMultiplayer,
+    mp.state.isHost,
+    readOnly,
+    probeSceneImage,
+    repairSceneImage,
   ]);
 
   useEffect(() => {
@@ -450,12 +934,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
   const handleIdleEvent = useCallback(({ roll, threshold }) => {
+    if (!IDLE_WORLD_EVENTS_ENABLED) return;
     if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
     consecutiveIdleEventsRef.current += 1;
     generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
-  }, [generateScene]);
+  }, [IDLE_WORLD_EVENTS_ENABLED, generateScene]);
 
   const idlePaused = isMultiplayer
+    || !IDLE_WORLD_EVENTS_ENABLED
     || isGeneratingScene
     || !!(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)
     || !!state.dialogue?.active
@@ -1042,6 +1528,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                     </button>
                   )}
                   <button
+                    onClick={handleOpenSummaryModal}
+                    title={t('gameplay.summaryTitle', 'Story summary')}
+                    aria-label={t('gameplay.summaryTitle', 'Story summary')}
+                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+                  >
+                    short_text
+                  </button>
+                  <button
                     onClick={() => setAchievementsOpen(true)}
                     title={t('achievements.title', 'Achievements')}
                     aria-label={t('achievements.title', 'Achievements')}
@@ -1135,7 +1629,22 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             currentChunk={narrator.currentChunk}
             diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
             diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
-            onImageError={isMultiplayer ? (sceneId) => mp.updateSceneImage(sceneId, null) : undefined}
+            onImageError={(sceneId) => {
+              if (!sceneId) return;
+              if (isMultiplayer && !mp.state.isHost) return;
+              repairSceneImage(sceneId, { reason: 'img-onerror', skipAutoSave: readOnly }).then((repaired) => {
+                if (!repaired && isMultiplayer) {
+                  mp.updateSceneImage(sceneId, null);
+                }
+              });
+            }}
+            onRegenerateImage={readOnly ? null : (sceneId) => {
+              if (!sceneId) return Promise.resolve(false);
+              if (isMultiplayer && !mp.state.isHost) return Promise.resolve(false);
+              imageAttemptedRef.current.delete(sceneId);
+              imageRepairAttemptsRef.current.delete(sceneId);
+              return repairSceneImage(sceneId, { reason: 'manual-retry' });
+            }}
           />
           {(typewriterAction || autoPlayer.overlayAction) && (
             <TypewriterActionOverlay
@@ -1189,22 +1698,43 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {displayCharacter && (
           <div className="lg:hidden space-y-3 px-2">
-            <div className="grid grid-cols-2 gap-4">
-              <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
-              <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant uppercase tracking-widest">
-                <span>{t('common.fortune')} {displayCharacter.fortune}/{displayCharacter.fate}</span>
-                <span>{t('common.resolve')} {displayCharacter.resolve}/{displayCharacter.resilience}</span>
-              </div>
-            </div>
+            {(() => {
+              const fate = displayCharacter.fate ?? 0;
+              const resilience = displayCharacter.resilience ?? 0;
+              const fortune = displayCharacter.fortune ?? fate;
+              const resolve = displayCharacter.resolve ?? resilience;
+
+              return (
+                <div className="grid grid-cols-2 gap-4">
+                  <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
+                  <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant uppercase tracking-widest">
+                    <span>{t('common.fortune')} {fortune}/{fate}</span>
+                    <span>{t('common.resolve')} {resolve}/{resilience}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
         {/* Loading State */}
         {isGeneratingScene && !readOnly && (
           <SceneGenerationProgress
-            startTime={sceneGenStartTime}
+            startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
             estimatedMs={lastSceneGenMs}
           />
+        )}
+
+        {/* Multiplayer Connection Status */}
+        {showMpConnectionBanner && !readOnly && (
+          <div className="bg-warning-container/20 border border-warning/20 p-3 rounded-sm mx-2 animate-fade-in">
+            <p className="text-warning text-sm flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">{isMpReconnecting ? 'sync' : 'wifi_off'}</span>
+              {isMpReconnecting
+                ? `Reconnecting to multiplayer server (${reconnectState.attempt}/${reconnectState.maxAttempts})...`
+                : 'Multiplayer connection is offline. Actions cannot be sent until reconnect succeeds.'}
+            </p>
+          </div>
         )}
 
         {/* Error Display */}
@@ -1219,7 +1749,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>
-            {error.includes('API key') && (
+            {mpErrorCode === 'NO_SERVER_API_KEY' && (
+              <p className="mt-2 text-xs text-on-surface-variant">
+                {t('gameplay.serverApiKeyMissingHint', 'Server API keys are missing. Ask the host/admin to configure backend environment variables.')}
+              </p>
+            )}
+            {!isMultiplayer && error.includes('backend') && (
               <button
                 onClick={openSettings}
                 className="mt-2 text-xs text-primary hover:text-tertiary transition-colors underline"
@@ -1375,7 +1910,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               )}
             </div>
             <ActionPanel
-              actions={currentScene.actions}
+              key={currentScene.id || `scene-${scenes.length}`}
+              actions={currentScene.actions || currentScene.suggestedActions || []}
               onAction={handleAction}
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
@@ -1476,6 +2012,30 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               characterName={character?.name}
               isGeneratingScene={isGeneratingScene}
               onClose={() => setAutoPlayerSettingsOpen(false)}
+            />
+          )}
+
+          {summaryModalOpen && (
+            <SummaryModal
+              onClose={() => setSummaryModalOpen(false)}
+              onGenerate={handleGenerateSummary}
+              onCopy={handleCopySummary}
+              onSpeak={handleSpeakSummary}
+              summaryText={summaryText}
+              isLoading={summaryLoading}
+              error={summaryError}
+              copied={summaryCopied}
+              summaryOptions={summaryOptions}
+              onSummaryOptionsChange={setSummaryOptions}
+              sceneIndex={displayedSceneIndex}
+              totalScenes={scenes.length}
+              narrationMessageId={summaryNarrationMessageId}
+              narratorCurrentMessageId={narrator.currentMessageId}
+              narratorHighlightInfo={narrator.highlightInfo}
+              speakLoading={summarySpeakLoading}
+              sentencesPerScene={summarySentencesPerScene}
+              onSentencesPerSceneChange={setSummarySentencesPerScene}
+              recapScenes={scenes.slice(0, Math.max(0, displayedSceneIndex) + 1)}
             />
           )}
 

@@ -7,13 +7,6 @@ const SettingsContext = createContext(null);
 
 const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', gemini: '' };
 
-const LOCAL_KEY_MAP = {
-  openai: 'openaiApiKey',
-  anthropic: 'anthropicApiKey',
-  stability: 'stabilityApiKey',
-  gemini: 'geminiApiKey',
-};
-
 const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'geminiApiKey', 'meshyApiKey',
@@ -140,6 +133,7 @@ const defaultSettings = {
     narratorDetail: 50,
     narratorHumor: 20,
     narratorDrama: 50,
+    narratorCustomInstructions: '',
     imageStyle: 'painting',
     darkPalette: false,
     contextDepth: 100,
@@ -341,16 +335,14 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const getApiKey = useCallback(() => {
-    return settings.aiProvider === 'openai'
-      ? settings.openaiApiKey
-      : settings.anthropicApiKey;
-  }, [settings]);
+    if (!apiClient.isConnected()) return '';
+    const provider = settings.aiProvider === 'openai' ? 'openai' : 'anthropic';
+    return backendKeys[provider] ? '__server_managed__' : '';
+  }, [settings.aiProvider, backendKeys]);
 
   const hasApiKey = useCallback((provider) => {
-    const localField = LOCAL_KEY_MAP[provider];
-    if (localField && settings[localField]) return true;
     return apiClient.isConnected() && !!backendKeys[provider];
-  }, [settings, backendKeys]);
+  }, [backendKeys]);
 
   const backendLogin = useCallback(async (url, email, password) => {
     apiClient.configure({ baseUrl: url });

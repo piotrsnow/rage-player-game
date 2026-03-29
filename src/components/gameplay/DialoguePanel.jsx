@@ -23,6 +23,12 @@ export default function DialoguePanel({
   const actions = lastScene?.actions || [];
   const dialogueSegments = lastScene?.dialogueSegments || [];
   const npcLines = dialogueSegments.filter((seg) => seg.type === 'dialogue');
+  const getDialogueSpeakerLabel = (character) => {
+    if (typeof character === 'string' && character.trim() && character.trim().toLowerCase() !== 'npc') {
+      return character.trim();
+    }
+    return t('common.npc');
+  };
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,7 +137,7 @@ export default function DialoguePanel({
             >
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {seg.character}
+                  {getDialogueSpeakerLabel(seg.character)}
                 </span>
               </div>
               <p className="text-sm text-on-surface leading-relaxed">
@@ -150,7 +156,7 @@ export default function DialoguePanel({
             {t('dialogue.yourTurn')}
           </label>
           <div className="grid grid-cols-2 gap-1.5">
-            {actions.slice(0, 4).map((action, i) => (
+            {actions.slice(0, 6).map((action, i) => (
               <button
                 key={`${action.substring(0, 30)}_${i}`}
                 onClick={() => handleSuggestedReply(action)}

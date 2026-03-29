@@ -28,6 +28,9 @@ const SCENE_GEN_DURATION_HISTORY_KEY = 'rpgon_scene_gen_durations_ms';
 const SCENE_GEN_DURATION_HISTORY_LEGACY_KEY = 'rpgon_last_scene_gen_ms';
 const SCENE_GEN_HISTORY_MAX = 5;
 const SCENE_GEN_ESTIMATE_PADDING_MS = 3000;
+const NARRATION_ADDRESS_EN = /\byou\s+(?:see|notice|feel|hear|smell|remember|watch|stand|walk|step|enter|approach|move|turn|look|find|spot|sense|are|have|can)\b/i;
+const NARRATION_ADDRESS_PL = /(?:^|\W)(?:widzisz|czujesz|słyszysz|zauważasz|przypominasz sobie|stoisz|idziesz|wchodzisz|zbliżasz się|rozglądasz się)(?:\W|$)/i;
+const SPEECH_VERB_HINT = /(?:^|\W)(?:mówi|powiedzia(?:ł|ła|łem|łam|łeś|łaś)|rzek(?:ł|ła)|mrukn(?:ął|ęła)|szepn(?:ął|ęła)|krzykn(?:ął|ęła)|spyta(?:ł|ła)|odpar(?:ł|ła)|odpow(?:iada|iedzia(?:ł|ła))|said|says|asked|asks|replied|replies|whispered|whispers|shouted|shouts|told|tells)(?:\W|$)/i;
 
 function isValidDurationEntry(n) {
   return typeof n === 'number' && Number.isFinite(n) && n > 0;
@@ -86,6 +89,56 @@ function normalizeDifficultyModifier(value) {
 function snapDifficultyModifier(value) {
   if (!Number.isFinite(value)) return 0;
   return clamp(Math.round(value / 10) * 10, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER);
+}
+
+function normalizeActionText(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function isRestAction(playerAction, t) {
+  const normalized = normalizeActionText(playerAction);
+  if (!normalized) return false;
+
+  const localizedRestAction = normalizeActionText(t('gameplay.restAction'));
+  if (localizedRestAction && normalized === localizedRestAction) return true;
+
+  // Fallback for custom/manual rest commands across languages.
+  return normalized.includes('rest') || normalized.includes('odpoc');
+}
+
+function downgradeLowConfidenceDialogueSegments(segments) {
+  return (segments || []).map((seg) => {
+    if (seg?.type !== 'dialogue' || !seg?.character || !seg?.text) return seg;
+    const text = seg.text.trim();
+    if (text.length < 20) return seg;
+    const looksLikeNarration = NARRATION_ADDRESS_EN.test(text) || NARRATION_ADDRESS_PL.test(text);
+    if (!looksLikeNarration) return seg;
+    const hasStrongSpeechSignal = /[!?]/.test(text) || SPEECH_VERB_HINT.test(text);
+    if (hasStrongSpeechSignal) return seg;
+    return { type: 'narration', text };
+  });
+}
+
+function buildAutomaticRestRecovery(state) {
+  const character = state?.character;
+  if (!character) return null;
+
+  const maxWounds = character.maxWounds ?? character.wounds ?? 0;
+  const currentWounds = character.wounds ?? maxWounds;
+  const woundsToHeal = Math.max(0, maxWounds - currentWounds);
+
+  const needs = character.needs || {};
+  const needsChanges = {};
+  for (const key of ['hunger', 'thirst', 'bladder', 'hygiene', 'rest']) {
+    if (typeof needs[key] !== 'number') continue;
+    const delta = Math.max(0, 100 - needs[key]);
+    if (delta > 0) needsChanges[key] = delta;
+  }
+
+  return {
+    woundsChange: woundsToHeal > 0 ? woundsToHeal : undefined,
+    needsChanges,
+  };
 }
 
 export function useAI() {
@@ -409,9 +462,10 @@ export function useAI() {
           [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])],
           excludeFromSpeakers
         );
-        const finalSegments = (!isFirstScene && !isPassiveSceneAction)
+        const withPlayerDialogue = (!isFirstScene && !isPassiveSceneAction)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
+        const finalSegments = downgradeLowConfidenceDialogueSegments(withPlayerDialogue);
 
         const sceneId = createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
@@ -427,6 +481,7 @@ export function useAI() {
           soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null,
           imagePrompt: result.imagePrompt || null,
+          sceneGrid: result.sceneGrid || null,
           musicUrl: null,
           image: null,
           actions: result.suggestedActions || [],
@@ -526,6 +581,23 @@ export function useAI() {
           }
         }
 
+        const attemptedRest = isRestAction(playerAction, t);
+        const restSucceeded = attemptedRest && (!result.diceRoll || result.diceRoll.success === true);
+        if (restSucceeded) {
+          const automaticRecovery = buildAutomaticRestRecovery(state);
+          if (automaticRecovery) {
+            const mergedNeedsChanges = {
+              ...(result.stateChanges?.needsChanges || {}),
+              ...(automaticRecovery.needsChanges || {}),
+            };
+            result.stateChanges = {
+              ...(result.stateChanges || {}),
+              ...(automaticRecovery.woundsChange !== undefined ? { woundsChange: automaticRecovery.woundsChange } : {}),
+              ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
+            };
+          }
+        }
+
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
           result.stateChanges = validated;
@@ -576,16 +648,6 @@ export function useAI() {
             dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
           }
           for (const ach of newlyUnlocked) {
-            dispatch({
-              type: 'ADD_CHAT_MESSAGE',
-              payload: {
-                id: `msg_${Date.now()}_ach_${ach.id}`,
-                role: 'system',
-                subtype: 'achievement_unlocked',
-                content: `${ach.icon || '🏆'} ${t('achievements.unlocked', 'Achievement unlocked')}: ${ach.name}`,
-                timestamp: Date.now(),
-              },
-            });
             if (ach.xpReward && state.character) {
               dispatch({ type: 'APPLY_STATE_CHANGES', payload: { xp: ach.xpReward } });
             }
@@ -728,6 +790,28 @@ export function useAI() {
       return result.prompt;
     },
     [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
+  );
+
+  const generateRecap = useCallback(
+    async (gameStateOverride = state, options = {}) => {
+      const effectiveState = gameStateOverride || state;
+      const { result, usage } = await aiService.generateRecap(
+        effectiveState,
+        settings.dmSettings,
+        aiProvider,
+        apiKey,
+        language,
+        aiModelTier,
+        {
+          alternateApiKey,
+          sentencesPerScene: options.sentencesPerScene,
+          summaryStyle: options.summaryStyle,
+        }
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+      return result?.recap || '';
+    },
+    [state, settings.dmSettings, aiProvider, apiKey, language, aiModelTier, alternateApiKey, dispatch]
   );
 
   const generateImageForScene = useCallback(
@@ -960,5 +1044,17 @@ export function useAI() {
     [dispatch]
   );
 
-  return { generateScene, generateCampaign, generateStoryPrompt, generateCombatCommentary, generateImageForScene, verifyQuestObjective, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs };
+  return {
+    generateScene,
+    generateCampaign,
+    generateStoryPrompt,
+    generateRecap,
+    generateCombatCommentary,
+    generateImageForScene,
+    verifyQuestObjective,
+    acceptQuestOffer,
+    declineQuestOffer,
+    sceneGenStartTime,
+    lastSceneGenMs,
+  };
 }

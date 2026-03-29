@@ -22,15 +22,20 @@ const initialState = {
   roomSettings: null,
   isGenerating: false,
   error: null,
+  errorCode: null,
   pendingCombatManoeuvre: null,
   isDead: false,
   typingPlayers: {},
+  reconnectState: { status: 'disconnected', attempt: 0, delayMs: 0, maxAttempts: 10 },
 };
 
 function mpReducer(state, action) {
   switch (action.type) {
     case 'SET_CONNECTED':
       return { ...state, connected: action.payload };
+
+    case 'SET_RECONNECT_STATE':
+      return { ...state, reconnectState: action.payload };
 
     case 'ROOM_CREATED':
       return {
@@ -42,6 +47,7 @@ function mpReducer(state, action) {
         phase: action.payload.room.phase,
         players: action.payload.room.players,
         roomSettings: action.payload.room.settings,
+        error: null,
       };
 
     case 'ROOM_JOINED': {
@@ -57,6 +63,7 @@ function mpReducer(state, action) {
         players: action.payload.room.players,
         gameState: action.payload.room.gameState,
         roomSettings: action.payload.room.settings,
+        error: null,
       };
     }
 
@@ -80,6 +87,7 @@ function mpReducer(state, action) {
         players: action.payload.room.players,
         gameState: action.payload.room.gameState,
         roomSettings: action.payload.room.settings,
+        error: null,
       };
 
     case 'PLAYER_JOINED':
@@ -148,6 +156,7 @@ function mpReducer(state, action) {
         isGenerating: false,
         players: action.payload.room?.players || state.players,
         error: action.payload.message || 'Generation failed',
+        errorCode: action.payload.code || null,
       };
 
     case 'SCENE_UPDATE': {
@@ -455,7 +464,12 @@ function mpReducer(state, action) {
       return initialState;
 
     case 'SET_ERROR':
-      return { ...state, error: action.payload, isGenerating: false };
+      return {
+        ...state,
+        error: typeof action.payload === 'string' ? action.payload : (action.payload?.message || 'Multiplayer error'),
+        errorCode: typeof action.payload === 'object' ? (action.payload.code || null) : null,
+        isGenerating: false,
+      };
 
     default:
       return state;
@@ -470,6 +484,19 @@ export function MultiplayerProvider({ children }) {
     const unsubs = [
       wsService.on('_connected', () => dispatch({ type: 'SET_CONNECTED', payload: true })),
       wsService.on('_disconnected', () => dispatch({ type: 'SET_CONNECTED', payload: false })),
+      wsService.on('_reconnect_state', (msg) => dispatch({ type: 'SET_RECONNECT_STATE', payload: msg })),
+      wsService.on('_reconnect_exhausted', () => {
+        dispatch({
+          type: 'SET_ERROR',
+          payload: 'Connection to multiplayer server was lost. Reconnect attempts were exhausted. Please rejoin from lobby.',
+        });
+      }),
+      wsService.on('_send_failed', () => {
+        dispatch({
+          type: 'SET_ERROR',
+          payload: 'Action could not be sent because multiplayer connection is offline.',
+        });
+      }),
       wsService.on(WS_SERVER_TYPES.ROOM_CREATED, (msg) => {
         wsService.setRejoinInfo(msg.roomCode, msg.odId);
         dispatch({ type: 'ROOM_CREATED', payload: msg });
@@ -532,11 +559,13 @@ export function MultiplayerProvider({ children }) {
         dispatch({ type: 'SET_ERROR', payload: msg.message || 'You have been removed from the room' });
         dispatch({ type: 'RESET' });
       }),
-      wsService.on(WS_SERVER_TYPES.ROOM_EXPIRED, () => {
+      wsService.on(WS_SERVER_TYPES.ROOM_EXPIRED, (msg) => {
         clearPersistedRejoinInfo();
         wsService.setRejoinInfo(null, null);
+        dispatch({ type: 'RESET' });
+        dispatch({ type: 'SET_ERROR', payload: msg?.message || 'The multiplayer room has expired or is unavailable.' });
       }),
-      wsService.on(WS_SERVER_TYPES.ERROR, (msg) => dispatch({ type: 'SET_ERROR', payload: msg.message })),
+      wsService.on(WS_SERVER_TYPES.ERROR, (msg) => dispatch({ type: 'SET_ERROR', payload: msg })),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, []);
@@ -558,6 +587,9 @@ export function MultiplayerProvider({ children }) {
   const ensureConnected = useCallback(async () => {
     if (!wsService.connected) await connect();
     await wsService.whenReady();
+    if (!wsService.connected) {
+      throw new Error('Failed to establish multiplayer connection');
+    }
   }, [connect]);
 
   const createRoom = useCallback(async () => {

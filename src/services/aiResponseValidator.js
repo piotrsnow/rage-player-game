@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CHARACTERISTIC_KEYS } from '../data/wfrp.js';
+import { hasNamedSpeaker, isGenericSpeakerName } from './dialogueSegments.js';
 
 const CharacteristicKeySchema = z.enum(CHARACTERISTIC_KEYS);
 
@@ -114,6 +115,22 @@ const CallbackSchema = z.object({
   event: z.string(),
   fired: z.boolean().optional().default(false),
 }).passthrough();
+
+const SceneGridEntitySchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['player', 'npc', 'enemy', 'ally', 'object']).optional().default('npc'),
+  x: z.number().int().min(0).optional(),
+  y: z.number().int().min(0).optional(),
+  marker: z.string().optional(),
+}).passthrough();
+
+const SceneGridSchema = z.object({
+  width: z.number().int().min(6).max(24).optional().default(12),
+  height: z.number().int().min(6).max(24).optional().default(12),
+  tiles: z.array(z.array(z.string())).optional().default([]),
+  legend: z.record(z.any()).optional().default({}),
+  entities: z.array(SceneGridEntitySchema).optional().default([]),
+}).passthrough().nullable().optional();
 
 const QuestDeadlineSchema = z.object({
   day: z.number(),
@@ -263,6 +280,7 @@ export const SceneResponseSchema = z.object({
   soundEffect: z.string().nullable().optional(),
   musicPrompt: z.string().nullable().optional(),
   imagePrompt: z.string().nullable().optional(),
+  sceneGrid: SceneGridSchema,
   atmosphere: AtmosphereSchema,
   suggestedActions: z.array(z.string()).min(1).max(8),
   questOffers: z.array(QuestOfferSchema).optional().default([]),
@@ -298,6 +316,7 @@ export const CampaignResponseSchema = z.object({
     soundEffect: z.string().nullable().optional(),
     musicPrompt: z.string().nullable().optional(),
     imagePrompt: z.string().nullable().optional(),
+    sceneGrid: SceneGridSchema,
     atmosphere: AtmosphereSchema,
     journalEntries: z.array(z.string()).optional().default([]),
   }).passthrough(),
@@ -393,6 +412,11 @@ function normalizeSceneResponseCandidate(rawData) {
   if (!rawData || typeof rawData !== 'object') return rawData;
 
   const data = { ...rawData };
+  const normalizeAction = (action) => String(action || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[.,!?;:()[\]{}"']/g, '')
+    .replace(/\s+/g, ' ');
 
   if (data.dialogueSegments == null || !Array.isArray(data.dialogueSegments)) {
     data.dialogueSegments = [];
@@ -407,7 +431,9 @@ function normalizeSceneResponseCandidate(rawData) {
           ...segment,
           type: segment.type === 'dialogue' ? 'dialogue' : 'narration',
           text: typeof segment.text === 'string' ? segment.text : String(segment.text ?? ''),
-          ...(typeof segment.character === 'string' ? { character: segment.character } : {}),
+          ...(typeof segment.character === 'string' && hasNamedSpeaker(segment.character)
+            ? { character: segment.character.trim() }
+            : {}),
           ...(typeof segment.gender === 'string' ? { gender: segment.gender } : {}),
         };
       });
@@ -416,9 +442,16 @@ function normalizeSceneResponseCandidate(rawData) {
   if (data.suggestedActions == null) {
     data.suggestedActions = extractFallbackActions(data) || undefined;
   } else if (Array.isArray(data.suggestedActions)) {
+    const seen = new Set();
     data.suggestedActions = data.suggestedActions
       .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
       .filter(Boolean)
+      .filter((action) => {
+        const key = normalizeAction(action);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .slice(0, 8);
     if (data.suggestedActions.length === 0) {
       data.suggestedActions = extractFallbackActions(data) || undefined;
@@ -452,6 +485,11 @@ function normalizeCampaignResponseCandidate(rawData) {
 
   if (data.firstScene && typeof data.firstScene === 'object') {
     const fs = { ...data.firstScene };
+    const normalizeAction = (action) => String(action || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[.,!?;:()[\]{}"']/g, '')
+      .replace(/\s+/g, ' ');
 
     if (fs.atmosphere == null || typeof fs.atmosphere !== 'object' || Array.isArray(fs.atmosphere)) {
       fs.atmosphere = {};
@@ -470,14 +508,25 @@ function normalizeCampaignResponseCandidate(rawData) {
             ...segment,
             type: segment.type === 'dialogue' ? 'dialogue' : 'narration',
             text: typeof segment.text === 'string' ? segment.text : String(segment.text ?? ''),
+            ...(typeof segment.character === 'string' && hasNamedSpeaker(segment.character)
+              ? { character: segment.character.trim() }
+              : {}),
+            ...(typeof segment.gender === 'string' ? { gender: segment.gender } : {}),
           };
         });
     }
 
     if (Array.isArray(fs.suggestedActions)) {
+      const seen = new Set();
       fs.suggestedActions = fs.suggestedActions
         .map((a) => (typeof a === 'string' ? a.trim() : String(a ?? '').trim()))
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((action) => {
+          const key = normalizeAction(action);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
     }
 
     data.firstScene = fs;
@@ -517,17 +566,112 @@ function normalizeCampaignResponseCandidate(rawData) {
   return data;
 }
 
+const FALLBACK_ACTION_VARIANTS = {
+  pl: {
+    investigate: [
+      'Przyglądam się uważnie temu miejscu',
+      'Sprawdzam dokładnie, co tu się naprawdę dzieje',
+      'Analizuję sytuację i szukam istotnych szczegółów',
+      'Rozpoznaję teren, zanim podejmę kolejny krok',
+    ],
+    approach: [
+      'Podchodzę ostrożnie bliżej źródła zamieszania',
+      'Zbliżam się i próbuję zebrać więcej informacji',
+      'Wchodzę bliżej, ale pozostaję czujny',
+      'Przesuwam się naprzód, obserwując reakcje otoczenia',
+    ],
+    prepare: [
+      'Szukam korzystniejszej pozycji, zanim ruszę dalej',
+      'Przygotowuję się na możliwe kłopoty',
+      'Sprawdzam drogę odwrotu i możliwe osłony',
+      'Ustawiam się tak, by mieć przewagę, jeśli zrobi się gorąco',
+    ],
+    observe: [
+      'Czekam chwilę i obserwuję rozwój wydarzeń',
+      'Wstrzymuję się i nasłuchuję, co wydarzy się dalej',
+      'Daję sytuacji moment i obserwuję reakcje ludzi',
+      'Pozostaję w ukryciu i patrzę, kto wykona pierwszy ruch',
+    ],
+  },
+  en: {
+    investigate: [
+      'I study the area carefully',
+      'I examine what is really happening here',
+      'I analyze the situation for useful details',
+      'I scout the scene before making my next move',
+    ],
+    approach: [
+      'I move closer with caution to gather more information',
+      'I approach carefully and watch for reactions',
+      'I step forward and try to understand the source of trouble',
+      'I close the distance while staying alert',
+    ],
+    prepare: [
+      'I look for a safer position before committing',
+      'I get ready in case this turns dangerous',
+      'I check my escape route and possible cover',
+      'I position myself for an advantage if things escalate',
+    ],
+    observe: [
+      'I wait a moment and observe how this unfolds',
+      'I hold position and listen for what happens next',
+      'I stay quiet and watch the people around me',
+      'I keep to the side and see who acts first',
+    ],
+  },
+};
+
+function inferNarrativeLanguage(text = '') {
+  if (!text || typeof text !== 'string') return 'en';
+  const hasPolishDiacritics = /[ąćęłńóśźż]/i.test(text);
+  if (hasPolishDiacritics) return 'pl';
+  const polishSignals = /\b(i|oraz|się|jest|nie|czy|który|gdzie|teraz|wokół|ostrożnie|chwila)\b/i;
+  return polishSignals.test(text) ? 'pl' : 'en';
+}
+
+function pickVariant(variants, seed, offset = 0) {
+  if (!Array.isArray(variants) || variants.length === 0) return '';
+  return variants[(seed + offset) % variants.length];
+}
+
 function extractFallbackActions(data) {
   if (!data?.narrative || typeof data.narrative !== 'string') return null;
   const text = data.narrative;
+  const language = inferNarrativeLanguage(text);
   const npcs = (data.stateChanges?.npcs || []).map(n => n.name).filter(Boolean);
   const loc = data.stateChanges?.currentLocation;
   const actions = [];
-  if (npcs.length > 0) actions.push(`Talk to ${npcs[0]}`);
-  if (loc) actions.push(`Explore ${loc}`);
-  if (text.length > 50) actions.push('Investigate the situation');
-  actions.push('Wait and observe');
-  return actions.length >= 2 ? actions.slice(0, 4) : null;
+  const templates = FALLBACK_ACTION_VARIANTS[language] || FALLBACK_ACTION_VARIANTS.en;
+  const seedBase = [...text].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + (npcs[0]?.length || 0) + (loc?.length || 0);
+
+  if (npcs.length > 0) {
+    actions.push(language === 'pl'
+      ? `Podchodzę do ${npcs[0]} i zaczynam rozmowę`
+      : `I approach ${npcs[0]} and start a conversation`);
+  }
+  if (loc) {
+    actions.push(language === 'pl'
+      ? `Idę zbadać ${loc}`
+      : `I head over to investigate ${loc}`);
+  }
+
+  actions.push(pickVariant(templates.investigate, seedBase, 0));
+  actions.push(pickVariant(templates.approach, seedBase, 1));
+  actions.push(pickVariant(templates.prepare, seedBase, 2));
+  actions.push(pickVariant(templates.observe, seedBase, 3));
+  actions.push(language === 'pl'
+    ? (npcs[0] ? `Mówię do ${npcs[0]}: "Spokojnie, opowiedz mi po kolei, co tu zaszło."` : 'Mówię: "Spokojnie, opowiedzcie mi po kolei, co tu zaszło."')
+    : (npcs[0] ? `I tell ${npcs[0]}: "Easy now. Start from the beginning and tell me exactly what happened."` : 'I say: "Easy now. Start from the beginning and tell me exactly what happened."'));
+  actions.push(language === 'pl'
+    ? (npcs[0] ? `Krzyczę do ${npcs[0]}: "Na Sigmara, bez gierek - chcę prawdy, teraz!"` : 'Krzyczę: "Na Sigmara, bez gierek - chcę prawdy, teraz!"')
+    : (npcs[0] ? `I shout to ${npcs[0]}: "By Sigmar, no games - I want the truth, now!"` : 'I shout: "By Sigmar, no games - I want the truth, now!"'));
+
+  const uniqueActions = actions
+    .map((action) => (typeof action === 'string' ? action.trim() : ''))
+    .filter(Boolean)
+    .filter((action, index, arr) => arr.indexOf(action) === index);
+
+  return uniqueActions.length >= 2 ? uniqueActions.slice(0, 6) : null;
 }
 
 function getSchemaDefaults(schema) {
@@ -535,7 +679,7 @@ function getSchemaDefaults(schema) {
     return {
       narrative: '',
       dialogueSegments: [],
-      suggestedActions: ['Investigate the situation', 'Wait and observe', 'Look for another way', 'Press forward'],
+      suggestedActions: [],
       questOffers: [],
       stateChanges: {},
       atmosphere: {},
@@ -625,7 +769,7 @@ function lookupGender(name, knownNpcs, existingDialogueSegments) {
   }
 
   for (const seg of existingDialogueSegments) {
-    if (!seg.character) continue;
+    if (!hasNamedSpeaker(seg.character)) continue;
     const segParts = seg.character.split(/\s+/);
     if (fuzzyMatchPolishName(name, seg.character) || segParts.some(p => fuzzyMatchPolishName(name, p))) {
       return seg.gender || undefined;
@@ -638,15 +782,84 @@ function normalizeTextForDedup(text) {
   return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function hardDedupeSegments(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+
+  const deduped = [];
+  const dialogueByText = new Map();
+
+  for (const seg of segments) {
+    if (!seg || typeof seg !== 'object') continue;
+    const type = seg.type === 'dialogue' ? 'dialogue' : 'narration';
+    const text = typeof seg.text === 'string' ? seg.text.trim() : '';
+    if (!text) continue;
+
+    const normalizedText = normalizeTextForDedup(text);
+    if (!normalizedText) continue;
+
+    if (type === 'dialogue') {
+      const existingIdx = dialogueByText.get(normalizedText);
+      const normalizedCharacter = typeof seg.character === 'string' ? seg.character.trim() : '';
+      const incomingNamed = hasNamedSpeaker(normalizedCharacter);
+
+      if (existingIdx == null) {
+        deduped.push({
+          ...seg,
+          text,
+          ...(incomingNamed ? { character: normalizedCharacter } : {}),
+        });
+        dialogueByText.set(normalizedText, deduped.length - 1);
+        continue;
+      }
+
+      const existing = deduped[existingIdx];
+      const existingNamed = hasNamedSpeaker(existing?.character);
+
+      // Prefer the named speaker version over a generic/anonymous duplicate.
+      if (!existingNamed && incomingNamed) {
+        deduped[existingIdx] = {
+          ...existing,
+          ...seg,
+          text,
+          character: normalizedCharacter,
+          ...(seg.gender ? { gender: seg.gender } : {}),
+        };
+      }
+      continue;
+    }
+
+    const previous = deduped[deduped.length - 1];
+    if (previous?.type === 'narration' && normalizeTextForDedup(previous.text) === normalizedText) {
+      continue;
+    }
+
+    deduped.push({ ...seg, text });
+  }
+
+  return deduped;
+}
+
 const DIRECT_SPEECH_PL = /(?:^|\W)(?:ty|ci|cię|ciebie|twój|twoja|twoje|twoim|twoją|tobie|chcesz|masz|musisz|możesz|widzisz|wiesz|znasz|słyszysz|jesteś|potrzebujesz|pomóż|powiedz|daj|weź|chodź|idź|patrz|słuchaj|posłuchaj|czekaj|spójrz|poczekaj|uważaj)(?:\W|$)/i;
 const DIRECT_SPEECH_EN = /\b(?:you|your|yours|yourself|you're|you've)\b/i;
 const FIRST_PERSON_SPEECH = /(?:^|\W)(?:mi|mnie|mną|mój|moja|moje|moim|moją|mojego|mojej|moich|ze mną|me|my|myself)(?:\W|$)/i;
+const NARRATION_ADDRESS_EN = /\byou\s+(?:see|notice|feel|hear|smell|remember|watch|stand|walk|step|enter|approach|move|turn|look|find|spot|sense|are|have|can)\b/i;
+const NARRATION_ADDRESS_PL = /(?:^|\W)(?:widzisz|czujesz|słyszysz|zauważasz|przypominasz sobie|stoisz|idziesz|wchodzisz|zbliżasz się|rozglądasz się)(?:\W|$)/i;
+const SPEECH_VERB_HINT = /(?:^|\W)(?:mówi|powiedzia(?:ł|ła|łem|łam|łeś|łaś)|rzek(?:ł|ła)|mrukn(?:ął|ęła)|szepn(?:ął|ęła)|krzykn(?:ął|ęła)|spyta(?:ł|ła)|odpar(?:ł|ła)|odpow(?:iada|iedzia(?:ł|ła))|said|says|asked|asks|replied|replies|whispered|whispers|shouted|shouts|told|tells)(?:\W|$)/i;
+
+function isLikelyNarrationAddress(text) {
+  const t = (text || '').trim();
+  if (!t) return false;
+  const hasStrongSpeechPunctuation = /[!?]/.test(t);
+  return (NARRATION_ADDRESS_EN.test(t) || NARRATION_ADDRESS_PL.test(t)) && !hasStrongSpeechPunctuation;
+}
 
 function looksLikeDirectSpeech(text) {
   if (!text || text.trim().length < 15) return false;
   const t = text.trim();
-  if (DIRECT_SPEECH_PL.test(t) || DIRECT_SPEECH_EN.test(t)) return true;
-  if (t.includes('?') && FIRST_PERSON_SPEECH.test(t)) return true;
+  if (isLikelyNarrationAddress(t)) return false;
+  if (DIRECT_SPEECH_PL.test(t)) return true;
+  if (DIRECT_SPEECH_EN.test(t)) return /[!?]/.test(t) || SPEECH_VERB_HINT.test(t);
+  if (t.includes('?') && FIRST_PERSON_SPEECH.test(t) && SPEECH_VERB_HINT.test(t)) return true;
   return false;
 }
 
@@ -660,7 +873,7 @@ function startsWithCharacterAction(text, allNames) {
 
 function findSpeakerFromContext(segments, currentIndex, knownNames, knownNpcs, excludeNames) {
   for (let i = currentIndex - 1; i >= Math.max(0, currentIndex - 4); i--) {
-    if (segments[i].type === 'dialogue' && segments[i].character) {
+    if (segments[i].type === 'dialogue' && hasNamedSpeaker(segments[i].character)) {
       if (!isExcludedName(segments[i].character, excludeNames)) return segments[i].character;
     }
   }
@@ -689,7 +902,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
-  const existingDialogueSegments = segments.filter(s => s.type === 'dialogue' && s.character);
+  const existingDialogueSegments = segments.filter(s => s.type === 'dialogue' && hasNamedSpeaker(s.character));
   const knownNames = [
     ...new Set([
       ...knownNpcs.map(n => n.name).filter(Boolean),
@@ -754,7 +967,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
 
       parts.push({
         type: 'dialogue',
-        character: speakerName || 'NPC',
+        ...(speakerName ? { character: speakerName } : {}),
         text: spokenText,
         ...(gender ? { gender } : {}),
       });
@@ -795,6 +1008,10 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
       enhanced.push(seg);
       continue;
     }
+    if (isLikelyNarrationAddress(seg.text)) {
+      enhanced.push(seg);
+      continue;
+    }
     if (startsWithCharacterAction(seg.text, allNames)) {
       enhanced.push(seg);
       continue;
@@ -824,7 +1041,9 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     const next = enhanced[i + 1];
     if (next.type !== 'dialogue' || !next.character) continue;
     if (startsWithCharacterAction(seg.text, allNames)) continue;
+    if (isLikelyNarrationAddress(seg.text)) continue;
     if (!FIRST_PERSON_SPEECH.test(seg.text)) continue;
+    if (!looksLikeDirectSpeech(seg.text)) continue;
     const gender = lookupGender(next.character, knownNpcs, existingDialogueSegments);
     enhanced[i] = {
       type: 'dialogue',
@@ -834,8 +1053,10 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     };
   }
 
+  const hardened = hardDedupeSegments(enhanced);
+
   if (narrative && narrative.trim()) {
-    const enhancedText = enhanced.map(s => (s.text || '').trim()).join('');
+    const enhancedText = hardened.map(s => (s.text || '').trim()).join('');
     if (enhancedText.length < narrative.trim().length * 0.7) {
       const alreadySynthetic = segments.length === 1
         && segments[0].type === 'narration'
@@ -846,7 +1067,7 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
     }
   }
 
-  return enhanced;
+  return hardened;
 }
 
 export function ensurePlayerDialogue(segments, playerAction, characterName, characterGender) {
@@ -863,7 +1084,7 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
 
   const charLower = characterName.toLowerCase();
   const hasPlayerDialogue = (segments || []).some(
-    s => s.type === 'dialogue' && s.character && s.character.toLowerCase() === charLower
+    s => s.type === 'dialogue' && hasNamedSpeaker(s.character) && s.character.toLowerCase() === charLower
   );
   if (hasPlayerDialogue) return segments;
 
@@ -873,7 +1094,7 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
 
   for (let i = 0; i < result.length; i++) {
     const seg = result[i];
-    if (seg.type === 'dialogue' && seg.character === 'NPC' && quoteLookup.has((seg.text || '').trim().toLowerCase())) {
+    if (seg.type === 'dialogue' && isGenericSpeakerName(seg.character) && quoteLookup.has((seg.text || '').trim().toLowerCase())) {
       result[i] = { ...seg, character: characterName, ...(characterGender ? { gender: characterGender } : {}) };
       reattributed.add(seg.text.trim().toLowerCase());
     }

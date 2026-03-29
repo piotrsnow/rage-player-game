@@ -344,6 +344,22 @@ export default function DMSettingsPage({ onClose }) {
                     onChange={(v) => updateDMSettings({ narratorDrama: v })}
                     displayValue={`${settings.dmSettings.narratorDrama ?? 50}% — ${dramaLabel}`}
                   />
+
+                  <div className="mt-6">
+                    <label className="block font-headline text-sm text-tertiary mb-2">
+                      {t('settings.narratorCustomInstructions')}
+                    </label>
+                    <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                      {t('settings.narratorCustomInstructionsDesc')}
+                    </p>
+                    <textarea
+                      value={settings.dmSettings.narratorCustomInstructions || ''}
+                      onChange={(e) => updateDMSettings({ narratorCustomInstructions: e.target.value })}
+                      placeholder={t('settings.narratorCustomInstructionsPlaceholder')}
+                      rows={4}
+                      className="w-full bg-surface-container-highest/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/40 resize-y"
+                    />
+                  </div>
                 </div>
 
                 {/* Toggles */}

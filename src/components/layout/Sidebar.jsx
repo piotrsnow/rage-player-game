@@ -20,6 +20,10 @@ export default function Sidebar() {
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
     : state.character;
+  const fate = character?.fate ?? 0;
+  const resilience = character?.resilience ?? 0;
+  const fortune = character?.fortune ?? fate;
+  const resolve = character?.resolve ?? resilience;
   const timeState = isMultiplayer
     ? mp.state.gameState?.world?.timeState
     : state.world?.timeState;
@@ -69,8 +73,8 @@ export default function Sidebar() {
           <div className="space-y-3">
             <StatusBar label={t('common.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
             <div className="flex justify-between text-[10px] uppercase tracking-widest text-on-surface-variant mt-2">
-              <span>{t('common.fortune')} {character.fortune}/{character.fate}</span>
-              <span>{t('common.resolve')} {character.resolve}/{character.resilience}</span>
+              <span>{t('common.fortune')} {fortune}/{fate}</span>
+              <span>{t('common.resolve')} {resolve}/{resilience}</span>
             </div>
           </div>
           <div className="mt-4">

@@ -1,16 +1,20 @@
-import { prisma } from '../../lib/prisma.js';
-import { resolveApiKey } from '../../services/apiKeyService.js';
+import { requireServerApiKey } from '../../services/apiKeyService.js';
+import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
 
 export async function anthropicProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.post('/chat', async (request, reply) => {
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.id },
-      select: { apiKeys: true },
-    });
-    const apiKey = resolveApiKey(user?.apiKeys || '{}', 'anthropic');
-    if (!apiKey) return reply.code(400).send({ error: 'Anthropic API key not configured' });
+    let apiKey;
+    try {
+      apiKey = requireServerApiKey('anthropic', 'Anthropic');
+    } catch (err) {
+      const clientErr = toClientAiError(err, 'Anthropic API key not configured');
+      return reply.code(err instanceof AIServiceError ? err.statusCode : 503).send({
+        error: clientErr.message,
+        code: clientErr.code,
+      });
+    }
 
     const { messages, model, max_tokens, system, temperature } = request.body;
 
@@ -31,10 +35,15 @@ export async function anthropicProxyRoutes(fastify) {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return reply.code(response.status).send({
-        error: err.error?.message || `Anthropic API error: ${response.status}`,
-      });
+      try {
+        await parseProviderError(response, 'anthropic');
+      } catch (err) {
+        const clientErr = toClientAiError(err, 'Anthropic request failed.');
+        return reply.code(err instanceof AIServiceError ? err.statusCode : response.status).send({
+          error: clientErr.message,
+          code: clientErr.code,
+        });
+      }
     }
 
     const data = await response.json();

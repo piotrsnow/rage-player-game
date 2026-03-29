@@ -154,7 +154,7 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
   return { systemPrompt, userPrompt };
 }
 
-async function callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, model) {
+async function callAutoPlayerAI(provider, _apiKey, systemPrompt, userPrompt, model) {
   if (apiClient.isConnected()) {
     if (provider === 'anthropic') {
       const data = await apiClient.post('/proxy/anthropic/chat', {
@@ -179,58 +179,7 @@ async function callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, mode
     const content = data.choices[0]?.message?.content;
     return safeParseJSON(content);
   }
-
-  if (!apiKey) {
-    throw new Error('No API key configured for auto-player. Please add your key in Settings.');
-  }
-
-  if (provider === 'anthropic') {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 300,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt + '\n\nRespond with ONLY valid JSON, no other text.' }],
-      }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error?.message || `Anthropic API error: ${response.status}`);
-    }
-    const data = await response.json();
-    return safeParseJSON(data.content[0]?.text);
-  }
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 300,
-      temperature: 0.9,
-      response_format: { type: 'json_object' },
-    }),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
-  }
-  const data = await response.json();
-  return safeParseJSON(data.choices[0]?.message?.content);
+  throw new Error('Auto-player requires backend connection with server AI keys configured in environment variables.');
 }
 
 export async function decideAction(gameState, settings, autoPlayerSettings, apiKey, provider) {

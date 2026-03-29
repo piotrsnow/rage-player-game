@@ -8,6 +8,7 @@ import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import DiceRoller from '../../effects/DiceRoller';
 import SceneCanvas from './SceneCanvas';
+import SceneGridMap from './SceneGridMap';
 import { translateSkill } from '../../utils/wfrpTranslate';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
@@ -329,6 +330,7 @@ export default function ScenePanel({
   diceRoll,
   diceRolls,
   onImageError,
+  onRegenerateImage,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
@@ -387,12 +389,53 @@ export default function ScenePanel({
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
   const [incomingSrc, setIncomingSrc] = useState(null);
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const [regenerateState, setRegenerateState] = useState('idle');
   const [overlaySlotCount, setOverlaySlotCount] = useState(() => Math.max(1, currentOverlayRolls.length));
   const revealTimeoutRef = useRef(null);
+  const regenerateResetTimeoutRef = useRef(null);
   const overlaySlots = useMemo(
     () => Array.from({ length: overlaySlotCount }, (_, idx) => currentOverlayRolls[idx] ?? null),
     [overlaySlotCount, currentOverlayRolls]
   );
+
+  useEffect(() => {
+    if (regenerateResetTimeoutRef.current) {
+      window.clearTimeout(regenerateResetTimeoutRef.current);
+      regenerateResetTimeoutRef.current = null;
+    }
+    setRegenerateState('idle');
+  }, [scene?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (regenerateResetTimeoutRef.current) {
+        window.clearTimeout(regenerateResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleRegenerateImage = useCallback(async () => {
+    if (!onRegenerateImage || !scene?.id || isGeneratingImage) return;
+    if (regenerateResetTimeoutRef.current) {
+      window.clearTimeout(regenerateResetTimeoutRef.current);
+      regenerateResetTimeoutRef.current = null;
+    }
+    setRegenerateState('pending');
+    try {
+      const repaired = await onRegenerateImage(scene.id);
+      setRegenerateState(repaired ? 'success' : 'error');
+      regenerateResetTimeoutRef.current = window.setTimeout(() => {
+        setRegenerateState('idle');
+        regenerateResetTimeoutRef.current = null;
+      }, repaired ? 1500 : 3000);
+    } catch {
+      setRegenerateState('error');
+      regenerateResetTimeoutRef.current = window.setTimeout(() => {
+        setRegenerateState('idle');
+        regenerateResetTimeoutRef.current = null;
+      }, 3000);
+    }
+  }, [onRegenerateImage, scene?.id, isGeneratingImage]);
 
   useEffect(() => {
     if (revealTimeoutRef.current) {
@@ -567,6 +610,14 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
+      ) : (settings.sceneVisualization || 'image') === 'image' && scene?.sceneGrid ? (
+        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center p-4">
+          <SceneGridMap
+            sceneGrid={scene.sceneGrid}
+            world={state.world}
+            characterName={state.character?.name}
+          />
+        </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc) ? (
         <>
           {displayedSrc && (
@@ -595,7 +646,33 @@ export default function ScenePanel({
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
             <LoadingSpinner size="md" text={t('gameplay.conjuringVision')} />
           ) : (
-            <span className="material-symbols-outlined text-6xl text-outline/20">landscape</span>
+            <div className="flex flex-col items-center gap-3">
+              <span className="material-symbols-outlined text-6xl text-outline/20">landscape</span>
+              {onRegenerateImage && scene?.id && (settings.sceneVisualization || 'image') === 'image' && (
+                <button
+                  onClick={handleRegenerateImage}
+                  disabled={isGeneratingImage || regenerateState === 'pending'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 border border-primary/25 rounded-sm text-[10px] font-label uppercase tracking-widest text-primary/80 hover:bg-primary/20 hover:text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className={`material-symbols-outlined text-sm ${regenerateState === 'pending' ? 'animate-spin' : ''}`}>
+                    {regenerateState === 'pending' ? 'progress_activity' : 'refresh'}
+                  </span>
+                  {regenerateState === 'pending'
+                    ? t('gameplay.generatingImage')
+                    : t('gameplay.regenerateImage', 'Regenerate image')}
+                </button>
+              )}
+              {regenerateState === 'success' && (
+                <p className="text-[10px] text-success/80 font-label uppercase tracking-wider">
+                  {t('common.success')}
+                </p>
+              )}
+              {regenerateState === 'error' && (
+                <p className="text-[10px] text-error/80 font-label uppercase tracking-wider">
+                  {t('common.unexpectedError')}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -610,7 +687,7 @@ export default function ScenePanel({
       )}
 
       {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-t from-surface-dim via-surface-dim/30 via-[40%] to-transparent" style={{ zIndex: 2 }} />
+      <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-surface-dim via-surface-dim/30 via-[40%] to-transparent" style={{ zIndex: 2 }} />
 
       {/* Live indicator */}
       {isGeneratingImage && (

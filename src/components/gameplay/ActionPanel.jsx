@@ -300,9 +300,9 @@ export default function ActionPanel({
       {/* Suggested Actions */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="space-y-2">
-          {/* Row 1: 3 action buttons */}
+          {/* Row 1: suggested action buttons */}
           <div className="grid grid-cols-3 gap-2">
-            {actions.slice(0, 3).map((action, i) => (
+            {actions.slice(0, 6).map((action, i) => (
               <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
                 <button
                   onClick={() => handleSuggestedAction(action)}

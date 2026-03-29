@@ -69,6 +69,8 @@ class WebSocketService {
   connect(baseUrl, token) {
     this._intentionalClose = false;
     this._reconnectAttempts = 0;
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = null;
     this._baseUrl = baseUrl;
     this._token = token;
     const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
@@ -91,6 +93,7 @@ class WebSocketService {
       this._ws.onopen = () => {
         this._reconnectAttempts = 0;
         this._startHeartbeat();
+        this._emit('_reconnect_state', { status: 'connected', attempt: 0, delayMs: 0, maxAttempts: this._maxReconnectAttempts });
         this._emit('_connected', {});
         this._readyResolve?.();
       };
@@ -115,6 +118,7 @@ class WebSocketService {
       };
 
       this._ws.onerror = () => {
+        this._emit('_connect_error', {});
         this._readyResolve?.();
       };
     } catch {
@@ -125,9 +129,18 @@ class WebSocketService {
   }
 
   _scheduleReconnect() {
-    if (this._reconnectAttempts >= this._maxReconnectAttempts) return;
+    if (this._reconnectAttempts >= this._maxReconnectAttempts) {
+      this._emit('_reconnect_exhausted', { maxAttempts: this._maxReconnectAttempts });
+      return;
+    }
     const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts), 30000);
     this._reconnectAttempts++;
+    this._emit('_reconnect_state', {
+      status: 'reconnecting',
+      attempt: this._reconnectAttempts,
+      delayMs: delay,
+      maxAttempts: this._maxReconnectAttempts,
+    });
     this._reconnectTimer = setTimeout(() => {
       this._open().then(() => {
         if (this.connected && this._roomCode && this._odId) {
@@ -166,6 +179,7 @@ class WebSocketService {
     this._intentionalClose = true;
     this._stopHeartbeat();
     clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = null;
     this._roomCode = null;
     this._odId = null;
     if (this._ws) {
@@ -178,12 +192,17 @@ class WebSocketService {
     this._readyResolve?.();
     this._readyPromise = null;
     this._readyResolve = null;
+    this._emit('_reconnect_state', { status: 'disconnected', attempt: 0, delayMs: 0, maxAttempts: this._maxReconnectAttempts });
   }
 
   send(type, payload = {}) {
-    if (!this.connected) return;
+    if (!this.connected) {
+      this._emit('_send_failed', { type, payload, reason: 'not_connected' });
+      return false;
+    }
     const normalizedType = normalizeClientWsType(type) || type;
     this._ws.send(JSON.stringify(createWsMessage(normalizedType, payload)));
+    return true;
   }
 
   on(type, handler) {

@@ -36,6 +36,26 @@ export function detectDialogueIntent(playerAction) {
   return DIALOGUE_INTENT_REGEX.test(playerAction);
 }
 
+function normalizeActionForComparison(action) {
+  return String(action || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[.,!?;:()[\]{}"']/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function collectRecentSuggestedActions(scenes = [], sceneWindow = 3) {
+  return (scenes || [])
+    .slice(-Math.max(1, sceneWindow))
+    .flatMap((scene) => (Array.isArray(scene?.actions) ? scene.actions : []))
+    .map((action) => (typeof action === 'string' ? action.trim() : ''))
+    .filter(Boolean)
+    .filter((action, index, list) => {
+      const normalized = normalizeActionForComparison(action);
+      return normalized && list.findIndex((item) => normalizeActionForComparison(item) === normalized) === index;
+    });
+}
+
 function formatCombatantForCommentary(combatant) {
   const status = combatant.isDefeated
     ? 'defeated'
@@ -156,7 +176,7 @@ Unmet needs: ${urgent.join('; ')}.
 YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
-3. At least ONE of the four suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
+3. At least ONE of the six suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
 4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
 }
 
@@ -313,8 +333,9 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const poeticismLabel = (dmSettings.narratorPoeticism ?? 50) < 25 ? 'dry and prosaic' : (dmSettings.narratorPoeticism ?? 50) < 50 ? 'moderately literary' : (dmSettings.narratorPoeticism ?? 50) < 75 ? 'poetic and evocative' : 'lushly lyrical, rich in metaphor and imagery';
   const grittinessLabel = (dmSettings.narratorGrittiness ?? 30) < 25 ? 'lighthearted and clean' : (dmSettings.narratorGrittiness ?? 30) < 50 ? 'moderately grounded' : (dmSettings.narratorGrittiness ?? 30) < 75 ? 'gritty and raw' : 'brutally dark, visceral and unflinching';
   const detailLabel = (dmSettings.narratorDetail ?? 50) < 25 ? 'minimal, only essential details' : (dmSettings.narratorDetail ?? 50) < 50 ? 'balanced descriptions' : (dmSettings.narratorDetail ?? 50) < 75 ? 'rich environmental detail' : 'lavishly detailed, painting every sensory element';
-  const humorLabel = (dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent humor woven into narration, comedy grounded in controversial or morally ambiguous situations' : 'heavily comedic and irreverent — humor drawn from controversial topics, provocative characters, social satire, and dark irony rather than pure absurdity (think Pratchett/Monty Python: sharp wit about real uncomfortable issues)';
+  const humorLabel = (dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent situational humor woven into narration without breaking immersion' : 'heavily comedic and irreverent, but still rooted in character-driven situations and world logic';
   const dramaLabel = (dmSettings.narratorDrama ?? 50) < 25 ? 'understated and subtle' : (dmSettings.narratorDrama ?? 50) < 50 ? 'measured dramatic pacing' : (dmSettings.narratorDrama ?? 50) < 75 ? 'heightened drama and tension' : 'maximally theatrical, grandiose and operatic';
+  const narratorCustomInstructions = (dmSettings?.narratorCustomInstructions || '').trim();
 
   const npcs = world?.npcs || [];
   const npcSection = npcs.length > 0
@@ -379,8 +400,7 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     : 'Unknown';
 
   const allScenes = gameState.scenes || [];
-  const lastScene = allScenes[allScenes.length - 1];
-  const previousSuggestedActions = lastScene?.actions || [];
+  const previousSuggestedActions = collectRecentSuggestedActions(allScenes, 3);
 
   let sceneHistory;
   if (enhancedContext) {
@@ -436,6 +456,7 @@ NARRATOR VOICE & STYLE:
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
+${narratorCustomInstructions ? `- Extra narrator instructions from player: ${narratorCustomInstructions}` : ''}
 
 PROMPT GOVERNANCE (MANDATORY):
 - Respect the selected prompt profile ("${promptProfile}") when choosing depth and verbosity.
@@ -446,6 +467,7 @@ PROMPT GOVERNANCE (MANDATORY):
 NARRATIVE TONE RULES (anti-purple-prose guardrails):
 - VARY PROSE DENSITY BY SCENE TYPE: Action scenes are SHORT and PUNCHY (1-2 paragraphs max, terse sentences, focus on consequences). Exploration is atmospheric but concrete — describe what the character sees, hears, smells, not abstract feelings. Dialogue scenes focus on character voice. Save poetic language for key dramatic moments ONLY.
 - AVOID: Excessive metaphors in every paragraph. Overly flowery descriptions of mundane events. A uniform "literary" tone across all NPCs. Multiple adjectives stacked before every noun. Starting every paragraph with a weather or atmosphere description.
+- Avoid repetitive joke templates and recurring clichés. Specifically, do NOT repeatedly use tax collectors/taxes/fiscal bureaucracy as a metaphor unless it is directly relevant to the current in-world situation.
 - NPC DIALOGUE VARIATION: Each NPC speaks differently. A peasant does not sound like a scholar. A soldier does not sound like a merchant. Dialogue should reveal character, not showcase vocabulary.
 - The Old World is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
 - HUMOR COUNTERWEIGHT: Even at high humor settings, maintain real stakes. Funny failures should still hurt mechanically (wounds, lost items, reputation). Comedic NPCs can still be dangerous. Never let humor deflate genuine tension in life-or-death situations.
@@ -516,7 +538,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: At least ONE of the four suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
+- MANDATORY: At least ONE of the six suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
@@ -620,7 +642,9 @@ Write ALL narrative text, dialogue, descriptions, quest names, quest completion 
 
 SUGGESTED ACTIONS (PLAYER CHARACTER VOICE):
 Every string in "suggestedActions" must read as something the player character intends to do or say — first person ("I examine the door", "I tell him I'm not interested") or a consistent imperative from the PC's agency ("Search the chest" meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
-VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like "Look around", "Move on", or "Talk to someone".${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from the previous scene: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
+VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like "Look around", "Move on", or "Talk to someone".${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from recent scenes: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
+ACTION COUNT RULE: Return exactly 6 suggestedActions. Keep at least 4 grounded and practical. Up to 2 may be absurd, chaotic, or darkly humorous, but still actionable by the player character in this scene.
+DIALOGUE RULE: Exactly 2 of the 6 suggestedActions MUST be direct spoken lines the PC can say aloud (dialogue-style actions). Prefer explicit speech format, e.g. "I say: \"...\"" (or Polish equivalent).
 
 INSTRUCTIONS:
 1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
@@ -933,6 +957,15 @@ Respond with ONLY valid JSON in this exact format:
   "soundEffect": "Short English description of ambient/atmospheric sound for this scene, or null",
   "musicPrompt": "Short English description of ideal instrumental background music for this scene, or null",
   "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
+  "sceneGrid": {
+    "width": 12,
+    "height": 12,
+    "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
+    "entities": [
+      {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
+      {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
+    ]
+  },
   "atmosphere": {
     "weather": "rain | snow | storm | clear | fog | fire",
     "particles": "magic_dust | sparks | embers | arcane | none",
@@ -940,7 +973,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["(3-4 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name)"],
+  "suggestedActions": ["(EXACTLY 6 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 2 should be direct PC dialogue lines like I say: \"...\")"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
@@ -963,6 +996,8 @@ For atmosphere: choose weather, particles, mood, lighting, and transition that m
 For musicPrompt: describe the ideal instrumental background music — mention instruments, tempo, and emotional tone. Keep under 200 characters. Example: "slow strings with harp arpeggios, mysterious and enchanting". Use null only if the scene should be silent.
 
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
+
+For sceneGrid: ALWAYS include a playable 2D tactical grid centered on the current scene. Use width/height 8-16. tiles must be a 2D array with exactly height rows and width columns. Tile symbols: W=wall (blocked), F=floor (walkable), P=player start, E=exit/path, D=door, I=interactive point. Include entities with exact x/y coordinates for the player and visible NPCs. Ensure every entity stands on a walkable tile.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.
 NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), not just be described in narration. Never summarize what an NPC says — let them speak.${langReminder}`;
@@ -1232,6 +1267,15 @@ Respond with ONLY valid JSON in this exact format:
   "soundEffect": "Short English description of a sound effect for impactful moments, or null",
   "musicPrompt": "Short English description of ideal instrumental background music for this scene, or null",
   "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
+  "sceneGrid": {
+    "width": 12,
+    "height": 12,
+    "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
+    "entities": [
+      {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
+      {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
+    ]
+  },
   "atmosphere": {
     "weather": "rain | snow | storm | clear | fog | fire",
     "particles": "magic_dust | sparks | embers | arcane | none",
@@ -1239,7 +1283,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["(3-4 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions)"],
+  "suggestedActions": ["(EXACTLY 6 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions. EXACTLY 2 should be direct PC dialogue lines)"],
   "questOffers": [],
   "stateChanges": {
     "woundsChange": 0,
@@ -1315,6 +1359,7 @@ For stateChanges.activeEffects: use "add" to place new effects (traps, spells, e
 For stateChanges.currentLocation: update whenever the player moves to a new location.
 ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
+For sceneGrid: MANDATORY in every scene. Build a coherent 2D grid around the current action. width/height must be 8-16, tiles must exactly match those dimensions, and every row must be equal length. Use tile symbols: W=wall, F=floor, P=player start, E=exit/path, D=door, I=interactive point. Include entities with x/y coordinates for player and all visible NPCs/enemies. Keep entities on walkable tiles only.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${buildPacingPressure(scenes)}${shouldGenerateDilemma(scenes) ? '\nDILEMMA OPPORTUNITY: It has been several scenes since the last moral dilemma. Consider presenting one if the narrative naturally supports it — include a "dilemma" field with 2-4 meaningful choices.\n' : ''}${langReminder}`;
 }
@@ -1341,7 +1386,7 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     : '';
 
   const humorousToneGuidance = settings.tone === 'Humorous'
-    ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Instead, ground the campaign in a believable world and derive comedy from 1-2 genuinely controversial, provocative, or morally ambiguous elements — corrupt institutions, taboo customs, ethically questionable practices, morally grey factions, or politically charged conflicts. Comedy should emerge from how characters earnestly navigate these uncomfortable realities: dark irony, social satire, awkward moral dilemmas, characters taking absurd stances on serious issues. Sharp wit about real controversies, not random nonsense.`
+    ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Ground the campaign in a believable world and derive comedy from character flaws, social misunderstandings, irony, awkward situations, and moral dilemmas. Keep wit sharp but varied. Avoid repeating one joke template or one recurring comparison (for example constant tax/tax-collector jokes).`
     : '';
 
   return `Create a new WFRP 4th Edition campaign with these parameters:
@@ -1394,6 +1439,15 @@ Respond with ONLY valid JSON:
     "soundEffect": "Short English ambient sound description or null",
     "musicPrompt": "Short English description of ideal instrumental background music for the opening scene",
     "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
+    "sceneGrid": {
+      "width": 12,
+      "height": 12,
+      "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
+      "entities": [
+        {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
+        {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
+      ]
+    },
     "atmosphere": {
       "weather": "clear | rain | snow | storm | fog | fire",
       "particles": "magic_dust | sparks | embers | arcane | none",
@@ -1481,7 +1535,8 @@ IMPORTANT for characterSuggestion:
 - Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).
 - Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
+The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.`;
 }
 
 const SANITIZE_PATTERNS = [
@@ -1632,9 +1687,62 @@ export function buildPortraitPrompt(species, gender, careerName, genre = 'Fantas
   return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} No text, no watermarks, no borders.`;
 }
 
-export function buildRecapPrompt(language = 'en') {
+export function buildRecapPrompt(language = 'en', options = {}) {
   const langNote = language === 'pl' ? ' Write the recap in Polish.' : '';
-  return `Based on the scene history in the system context, generate a brief "Previously on..." recap summarizing the key events, decisions, and their consequences. Write it in a dramatic, narrative style (2-3 sentences).${langNote} Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
+  const sceneCount = Math.max(1, Number(options.sceneCount) || 1);
+  const sentencesPerSceneRaw = Number(options.sentencesPerScene);
+  const sentencesPerScene = Number.isFinite(sentencesPerSceneRaw)
+    ? Math.max(0.25, Math.min(4, sentencesPerSceneRaw))
+    : 1;
+  const summaryStyle = options.summaryStyle && typeof options.summaryStyle === 'object' ? options.summaryStyle : {};
+  const mode = ['story', 'dialogue', 'poem', 'report'].includes(summaryStyle.mode) ? summaryStyle.mode : 'story';
+  const literaryStyle = Math.max(0, Math.min(100, Number(summaryStyle.literaryStyle ?? 50)));
+  const dramaticity = Math.max(0, Math.min(100, Number(summaryStyle.dramaticity ?? 50)));
+  const factuality = Math.max(0, Math.min(100, Number(summaryStyle.factuality ?? 50)));
+  const dialogueParticipants = Math.max(2, Math.min(6, Math.round(Number(summaryStyle.dialogueParticipants ?? 3))));
+  const targetSentenceCount = Math.max(1, Math.round(sceneCount * sentencesPerScene));
+  const isPolish = language === 'pl';
+  const modeRule = mode === 'dialogue'
+    ? `MODE: Dialogue recap. Write the recap as a conversation between exactly ${dialogueParticipants} distinct speakers discussing what happened. Keep speaker names short (e.g., "A:", "B:") and preserve chronological order. Output only dialogue lines prefixed with speaker labels, no plain prose paragraphs.`
+    : mode === 'poem'
+      ? `MODE: Strongly rhymed poem. Write the recap as a playful, energetic poem in a classic Polish cabaret/ballad spirit (Tuwim-like vibe), preserving concrete facts and chronology. Prioritize clear end-rhymes in almost every line, avoid blank verse, and prefer full/perfect rhymes over weak near-rhymes.${isPolish ? ' For each rhyming line ending, the final two vowels must match the paired rhyme ending.' : ' Keep rhyme endings phonetically very close.'} Output only poetic lines and stanza breaks, no prose paragraphs.`
+      : mode === 'report'
+        ? 'MODE: Report. Write a concise factual report: fact after fact, minimal embellishment, clear causal links.'
+        : 'MODE: Story. Write as a flowing narrative recap.';
+  const structureRule = mode === 'poem'
+    ? `- Use 2-4 stanzas separated by a blank line.
+- Keep rhythm lively, singable, and punchy.
+- In each stanza, enforce a clear rhyme scheme (prefer AABB or ABAB).
+- Every verse must be internally broken into two hemistichs: place a line break around the midpoint of the verse, so each logical verse appears as two short stacked lines.
+- Make adjacent rhyme pairs explicit and audible at line endings.
+- Use "rhyme runs": pick one rhyme ending and sustain it for a random block length between 2 and 8 consecutive lines, then switch to a new ending.
+- Do not keep the same rhyme ending longer than 8 lines.
+${isPolish ? '- For every line in a rhyme run, ensure the final two vowels in the ending match exactly across the run.' : '- Keep rhyme endings tightly consistent within each rhyme run.'}
+- Make line endings rhyme as strongly as possible; near-rhyme only if perfect rhyme is impossible.
+- Keep line breaks in the output (do not merge into a paragraph).`
+    : mode === 'dialogue'
+      ? '- Use speaker-prefixed lines (Speaker: text).\n- Every non-empty line must start with "<speaker>:".\n- Keep line breaks in the output (one spoken turn per line).\n- No bullet points, numbering, checklist formatting, or section headers.'
+      : '- Format as multiple paragraphs.\n- Each paragraph must contain 3 to 6 sentences.\n- Separate paragraphs with a blank line.\n- Strictly no bullet points, numbering, checklist formatting, or section headers.';
+
+  return `Based on the scene history in the system context, generate a "Previously on..." recap that summarizes key events, decisions, and consequences.
+STYLE RULES:
+${modeRule}
+- Literary style intensity: ${literaryStyle}/100 (higher = richer language and imagery).
+- Dramaticity: ${dramaticity}/100 (higher = stronger emotional and cinematic emphasis).
+- Factuality: ${factuality}/100 (higher = concrete facts, lower = more impressionistic phrasing).
+- Always preserve key facts, outcomes, and timeline continuity.
+IMPORTANT LENGTH RULE:
+- Scene count: ${sceneCount}
+- Target density: ${sentencesPerScene} sentence(s) per scene
+- Write exactly ${targetSentenceCount} sentences in total.
+- Keep strict sentence boundaries (avoid semicolon chains pretending to be one sentence).
+- Preserve chronological order.
+- If density is below 1.0, merge nearby scenes while still covering the full timeline.
+- If density is above 1.0, add richer detail per scene while staying factual.
+STRUCTURE RULES:
+${structureRule}
+${langNote}
+Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
 }
 
 export function buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language = 'en') {

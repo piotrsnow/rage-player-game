@@ -1,9 +1,10 @@
 import { prisma } from '../../lib/prisma.js';
-import { resolveApiKey } from '../../services/apiKeyService.js';
+import { requireServerApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toObjectId } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
+import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
 
 const store = createMediaStore(config);
 
@@ -11,12 +12,16 @@ export async function openaiProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.post('/chat', async (request, reply) => {
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.id },
-      select: { apiKeys: true },
-    });
-    const apiKey = resolveApiKey(user?.apiKeys || '{}', 'openai');
-    if (!apiKey) return reply.code(400).send({ error: 'OpenAI API key not configured' });
+    let apiKey;
+    try {
+      apiKey = requireServerApiKey('openai', 'OpenAI');
+    } catch (err) {
+      const clientErr = toClientAiError(err, 'OpenAI API key not configured');
+      return reply.code(err instanceof AIServiceError ? err.statusCode : 503).send({
+        error: clientErr.message,
+        code: clientErr.code,
+      });
+    }
 
     const { messages, model, temperature, response_format } = request.body;
 
@@ -35,10 +40,15 @@ export async function openaiProxyRoutes(fastify) {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return reply.code(response.status).send({
-        error: err.error?.message || `OpenAI API error: ${response.status}`,
-      });
+      try {
+        await parseProviderError(response, 'openai');
+      } catch (err) {
+        const clientErr = toClientAiError(err, 'OpenAI request failed.');
+        return reply.code(err instanceof AIServiceError ? err.statusCode : response.status).send({
+          error: clientErr.message,
+          code: clientErr.code,
+        });
+      }
     }
 
     const data = await response.json();
@@ -46,12 +56,16 @@ export async function openaiProxyRoutes(fastify) {
   });
 
   fastify.post('/images', async (request, reply) => {
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.id },
-      select: { apiKeys: true },
-    });
-    const apiKey = resolveApiKey(user?.apiKeys || '{}', 'openai');
-    if (!apiKey) return reply.code(400).send({ error: 'OpenAI API key not configured' });
+    let apiKey;
+    try {
+      apiKey = requireServerApiKey('openai', 'OpenAI');
+    } catch (err) {
+      const clientErr = toClientAiError(err, 'OpenAI API key not configured');
+      return reply.code(err instanceof AIServiceError ? err.statusCode : 503).send({
+        error: clientErr.message,
+        code: clientErr.code,
+      });
+    }
 
     const { prompt, size, quality, campaignId } = request.body;
 
@@ -81,10 +95,15 @@ export async function openaiProxyRoutes(fastify) {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      return reply.code(response.status).send({
-        error: err.error?.message || `DALL-E API error: ${response.status}`,
-      });
+      try {
+        await parseProviderError(response, 'openai');
+      } catch (err) {
+        const clientErr = toClientAiError(err, 'DALL-E request failed.');
+        return reply.code(err instanceof AIServiceError ? err.statusCode : response.status).send({
+          error: clientErr.message,
+          code: clientErr.code,
+        });
+      }
     }
 
     const data = await response.json();

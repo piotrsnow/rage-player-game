@@ -62,6 +62,14 @@ export const WS_SERVER_TYPES = Object.freeze({
   KICKED: 'KICKED',
 });
 
+export const AI_ERROR_CODES = Object.freeze({
+  NO_SERVER_API_KEY: 'NO_SERVER_API_KEY',
+  AI_PROVIDER_ERROR: 'AI_PROVIDER_ERROR',
+  AI_RATE_LIMIT: 'AI_RATE_LIMIT',
+  AI_INVALID_RESPONSE: 'AI_INVALID_RESPONSE',
+  AI_REQUEST_FAILED: 'AI_REQUEST_FAILED',
+});
+
 const CLIENT_TYPE_SET = new Set(Object.values(WS_CLIENT_TYPES));
 const SERVER_TYPE_SET = new Set(Object.values(WS_SERVER_TYPES));
 

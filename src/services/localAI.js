@@ -146,7 +146,8 @@ function compactDmSummary(dmSettings) {
   const narr = d.narrativeStyle < 25 ? 'Predictable' : d.narrativeStyle < 50 ? 'Balanced' : d.narrativeStyle < 75 ? 'Chaotic' : 'Wild';
   const len = d.responseLength < 33 ? 'short' : d.responseLength < 66 ? 'medium' : 'long';
   const tests = d.testsFrequency ?? 50;
-  return `Difficulty ${diff}, narrative ${narr}, response ${len}, ~${tests}% actions need d100 tests. Voice: poeticism ${d.narratorPoeticism ?? 50}, grit ${d.narratorGrittiness ?? 30}, detail ${d.narratorDetail ?? 50}, humor ${d.narratorHumor ?? 20}, drama ${d.narratorDrama ?? 50}.`;
+  const custom = (d.narratorCustomInstructions || '').trim();
+  return `Difficulty ${diff}, narrative ${narr}, response ${len}, ~${tests}% actions need d100 tests. Voice: poeticism ${d.narratorPoeticism ?? 50}, grit ${d.narratorGrittiness ?? 30}, detail ${d.narratorDetail ?? 50}, humor ${d.narratorHumor ?? 20}, drama ${d.narratorDrama ?? 50}.${custom ? ` Player narrator instructions: ${custom}.` : ''} Avoid repetitive tax/tax-collector metaphors unless directly relevant to the scene.`;
 }
 
 export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
@@ -331,7 +332,7 @@ export function buildReducedScenePrompt(
     { "type": "narration", "text": "..." },
     { "type": "dialogue", "character": "NPC name", "gender": "male|female", "text": "..." }
   ],
-  "suggestedActions": ["opt1", "opt2", "opt3", "opt4"],
+  "suggestedActions": ["opt1", "opt2", "opt3", "opt4", "opt5", "opt6"],
   "diceRoll": null,
   "stateChanges": {
     "woundsChange": 0,
@@ -353,7 +354,7 @@ ${reducedStateJson}
 
 Optional stateChanges: journalEntries (1–2 strings), npcs (brief introduce), mapChanges, moneyChange, activeEffects, combatUpdate if fight starts.
 timeAdvance.hoursElapsed: ~0.25–1 for opening.
-Write narrative and suggestedActions in ${lang}.`;
+Write narrative and suggestedActions in ${lang}. Return exactly 6 suggestedActions; exactly 2 must be direct PC dialogue lines (what the player character says aloud). Up to 2 may be absurd/chaotic but still actionable in-scene.`;
   }
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
@@ -384,5 +385,5 @@ diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/de
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}
-All narrative and suggestedActions in ${lang}.`;
+All narrative and suggestedActions in ${lang}. Return exactly 6 suggestedActions; exactly 2 must be direct PC dialogue lines (what the player character says aloud). Up to 2 may be absurd/chaotic but still actionable in-scene.`;
 }

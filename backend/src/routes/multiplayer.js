@@ -9,6 +9,7 @@ import {
 import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
+import { AIServiceError, toClientAiError } from '../services/aiErrors.js';
 import { applyMultiplayerSceneStateChanges } from '../../../shared/domain/multiplayerState.js';
 import {
   createWsMessage,
@@ -78,7 +79,8 @@ export async function multiplayerRoutes(fastify) {
         });
       }
       return { sessions: userSessions };
-    } catch {
+    } catch (err) {
+      fastify.log.warn(err, 'Failed to load multiplayer sessions from database');
       return { sessions: [] };
     }
   });
@@ -132,10 +134,17 @@ export async function multiplayerRoutes(fastify) {
               'Game state is required', 'Room no longer exists',
               'Cannot rejoin: player not found or unauthorized',
               'Solo action on cooldown'];
+            if (err instanceof AIServiceError) {
+              const aiError = toClientAiError(err, 'AI request failed.');
+              sendWs(socket, WS_SERVER_TYPES.ERROR, { message: aiError.message, code: aiError.code, retryable: aiError.retryable });
+              return;
+            }
             const message = safeMessages.includes(err.message) ? err.message : 'An error occurred';
             sendWs(socket, WS_SERVER_TYPES.ERROR, { message });
           }
-        }).catch(() => {});
+        }).catch((err) => {
+          fastify.log.warn(err, 'WebSocket message queue failure');
+        });
       });
 
       socket.on('close', () => {
@@ -212,19 +221,13 @@ export async function multiplayerRoutes(fastify) {
             roomCode = result.room.roomCode;
 
             if (result.room.phase === 'playing' && result.room.gameState) {
-              const hostPlayer = result.room.players.get(result.room.hostId);
-              const dbUser = await prisma.user.findUnique({
-                where: { id: hostPlayer.userId },
-                select: { apiKeys: true },
-              });
-
               const player = result.room.players.get(odId);
               const charResult = await generateMidGameCharacter(
                 result.room.gameState,
                 result.room.settings,
                 player.name,
                 player.gender,
-                dbUser?.apiKeys || '{}',
+                null,
                 msg.language || 'en',
                 player.characterData || null,
               );
@@ -318,7 +321,7 @@ export async function multiplayerRoutes(fastify) {
             }
             roomCode = null;
             odId = null;
-            ws.send(JSON.stringify({ type: 'LEFT_ROOM' }));
+            sendWs(ws, WS_SERVER_TYPES.LEFT_ROOM);
             break;
           }
 
@@ -358,12 +361,6 @@ export async function multiplayerRoutes(fastify) {
             broadcast(currentRoom, { type: 'GAME_STARTING' });
 
             try {
-              const hostPlayer = currentRoom.players.get(currentRoom.hostId);
-              const dbUser = await prisma.user.findUnique({
-                where: { id: hostPlayer.userId },
-                select: { apiKeys: true },
-              });
-
               const players = [];
               for (const [, p] of currentRoom.players) {
                 players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost, characterData: p.characterData || null });
@@ -372,7 +369,7 @@ export async function multiplayerRoutes(fastify) {
               const campaignResult = await generateMultiplayerCampaign(
                 currentRoom.settings,
                 players,
-                dbUser?.apiKeys || '{}',
+                null,
                 msg.language || 'en',
               );
 
@@ -389,9 +386,12 @@ export async function multiplayerRoutes(fastify) {
               saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
             } catch (genErr) {
               fastify.log.error(genErr, 'START_GAME generation failed');
+              const aiError = toClientAiError(genErr, 'Campaign generation failed. Please try again.');
               broadcast(currentRoom, {
                 type: 'GENERATION_FAILED',
-                message: 'Campaign generation failed. Please try again.',
+                message: aiError.message,
+                code: aiError.code,
+                retryable: aiError.retryable,
               });
             }
             break;
@@ -448,12 +448,6 @@ export async function multiplayerRoutes(fastify) {
             broadcast(room, { type: 'SCENE_GENERATING' });
 
             try {
-              const hostPlayer = room.players.get(room.hostId);
-              const dbUser = await prisma.user.findUnique({
-                where: { id: hostPlayer.userId },
-                select: { apiKeys: true },
-              });
-
               const players = [];
               for (const [, p] of room.players) {
                 players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
@@ -466,7 +460,7 @@ export async function multiplayerRoutes(fastify) {
                 room.settings,
                 players,
                 actions,
-                dbUser?.apiKeys || '{}',
+                null,
                 msg.language || 'en',
                 msg.dmSettings || null,
                 characterMomentum,
@@ -512,7 +506,7 @@ export async function multiplayerRoutes(fastify) {
               saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
 
               if (needsCompression(updatedGameState)) {
-                compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                compressOldScenes(updatedGameState, null, msg.language || 'en')
                   .then((summary) => {
                     if (summary) {
                       const currentRoom = getRoom(roomCode);
@@ -531,9 +525,12 @@ export async function multiplayerRoutes(fastify) {
             } catch (genErr) {
               fastify.log.error(genErr, 'APPROVE_ACTIONS generation failed');
               restorePendingActions(roomCode, actions);
+              const aiError = toClientAiError(genErr, 'Scene generation failed. Your actions have been restored — please try again.');
               broadcast(room, {
                 type: 'GENERATION_FAILED',
-                message: 'Scene generation failed. Your actions have been restored — please try again.',
+                message: aiError.message,
+                code: aiError.code,
+                retryable: aiError.retryable,
                 room: sanitizeRoom(room),
               });
             }
@@ -551,12 +548,6 @@ export async function multiplayerRoutes(fastify) {
             });
 
             try {
-              const hostPlayer = room.players.get(room.hostId);
-              const dbUser = await prisma.user.findUnique({
-                where: { id: hostPlayer.userId },
-                select: { apiKeys: true },
-              });
-
               const players = [];
               for (const [, p] of room.players) {
                 players.push({ odId: p.odId, name: p.name, gender: p.gender, isHost: p.isHost });
@@ -569,7 +560,7 @@ export async function multiplayerRoutes(fastify) {
                 room.settings,
                 players,
                 [action],
-                dbUser?.apiKeys || '{}',
+                null,
                 msg.language || 'en',
                 msg.dmSettings || null,
                 soloMomentum,
@@ -616,7 +607,7 @@ export async function multiplayerRoutes(fastify) {
               saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save failed'));
 
               if (needsCompression(updatedGameState)) {
-                compressOldScenes(updatedGameState, dbUser?.apiKeys || '{}', msg.language || 'en')
+                compressOldScenes(updatedGameState, null, msg.language || 'en')
                   .then((summary) => {
                     if (summary) {
                       const currentRoom = getRoom(roomCode);
@@ -635,9 +626,12 @@ export async function multiplayerRoutes(fastify) {
             } catch (genErr) {
               fastify.log.error(genErr, 'SOLO_ACTION generation failed');
               restorePendingActions(roomCode, [action]);
+              const aiError = toClientAiError(genErr, 'Scene generation failed. Your action has been restored — please try again.');
               broadcast(room, {
                 type: 'GENERATION_FAILED',
-                message: 'Scene generation failed. Your action has been restored — please try again.',
+                message: aiError.message,
+                code: aiError.code,
+                retryable: aiError.retryable,
                 room: sanitizeRoom(room),
               });
             }

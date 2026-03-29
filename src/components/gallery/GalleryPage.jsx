@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
+import { imageService } from '../../services/imageGen';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGame } from '../../contexts/GameContext';
 import { storage } from '../../services/storage';
@@ -237,12 +238,14 @@ function GalleryCampaignCard({ entry, onOpen, onView }) {
   );
 }
 
-function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage }) {
+function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage, onRepairSceneImage }) {
   const { t, i18n } = useTranslation();
   const gs = entry.gameState;
   const summary = gs ? getCampaignSummary(gs) : null;
   const scenes = gs?.scenes || [];
   const character = gs?.character ?? gs?.characters?.[0];
+  const [failedSceneImages, setFailedSceneImages] = useState(() => new Set());
+  const [repairingSceneImages, setRepairingSceneImages] = useState(() => new Set());
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -251,6 +254,41 @@ function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage }) 
   }, [onClose]);
 
   const created = new Date(entry.createdAt).toLocaleString(i18n.language === 'pl' ? 'pl-PL' : undefined);
+
+  const handleReplayImageError = useCallback(async (scene, sceneIndex) => {
+    const key = scene?.id || `scene_${sceneIndex}`;
+    setFailedSceneImages((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+
+    if (!onRepairSceneImage) return;
+    if (repairingSceneImages.has(key)) return;
+
+    setRepairingSceneImages((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+
+    try {
+      const repaired = await onRepairSceneImage(scene, sceneIndex);
+      if (repaired) {
+        setFailedSceneImages((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    } finally {
+      setRepairingSceneImages((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, [onRepairSceneImage, repairingSceneImages]);
 
   return (
     <div
@@ -343,18 +381,41 @@ function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage }) 
             ) : (
               <div className="space-y-6 max-h-[320px] overflow-y-auto pr-1 border border-outline-variant/15 rounded-sm bg-surface-dim/50 p-4">
                 {scenes.map((scene, idx) => {
+                  const sceneKey = scene.id || `scene_${idx}`;
+                  const imageFailed = failedSceneImages.has(sceneKey);
+                  const imageRepairing = repairingSceneImages.has(sceneKey);
                   const img = scene.image ? resolveImage(scene.image) : null;
                   return (
                     <article key={scene.id || idx} className="border-b border-outline-variant/10 pb-6 last:border-0 last:pb-0">
                       <p className="text-[10px] text-outline uppercase tracking-wider mb-2">
                         {t('common.scene')} {idx + 1}
                       </p>
-                      {img ? (
+                      {img && !imageFailed ? (
                         <img
                           src={img}
                           alt=""
                           className="w-full max-h-48 object-cover rounded-sm border border-outline-variant/20 mb-3"
+                          onError={() => handleReplayImageError(scene, idx)}
                         />
+                      ) : null}
+                      {imageFailed ? (
+                        <div className="w-full rounded-sm border border-outline-variant/20 mb-3 p-3 bg-surface-container-low text-xs text-on-surface-variant flex items-center justify-between gap-3">
+                          <span>
+                            {imageRepairing
+                              ? t('gallery.repairingImage', 'Repairing scene image...')
+                              : t('gallery.imageUnavailable', 'Scene image unavailable.')}
+                          </span>
+                          {!imageRepairing && onRepairSceneImage ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="!px-2 !py-1 !text-[10px]"
+                              onClick={() => handleReplayImageError(scene, idx)}
+                            >
+                              {t('gallery.retryImage', 'Retry')}
+                            </Button>
+                          ) : null}
+                        </div>
                       ) : null}
                       <div className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">
                         {scene.narrative ||
@@ -390,7 +451,7 @@ function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage }) 
 export default function GalleryPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
   const { dispatch } = useGame();
 
   const [rawList, setRawList] = useState([]);
@@ -404,6 +465,57 @@ export default function GalleryPage() {
   const [selected, setSelected] = useState(null);
 
   const backendReady = settings.useBackend && !!settings.backendUrl;
+
+  const repairReplaySceneImage = useCallback(async (scene, sceneIndex) => {
+    if (!selected?.gameState?.campaign || !scene?.narrative) return false;
+
+    const provider = settings.imageProvider || 'dalle';
+    const keyProvider = provider === 'stability' ? 'stability' : provider === 'gemini' ? 'gemini' : 'openai';
+    const imageApiKey = null;
+    const hasAccess = apiClient.isConnected() && hasApiKey(keyProvider);
+    if (!hasAccess) return false;
+
+    try {
+      const url = await imageService.generateSceneImage(
+        scene.narrative,
+        selected.genre,
+        selected.tone,
+        imageApiKey,
+        provider,
+        scene.imagePrompt || null,
+        selected.gameState.campaign.backendId || null,
+        settings.dmSettings?.imageStyle || 'painting',
+        settings.dmSettings?.darkPalette || false
+      );
+      if (!url) return false;
+
+      setSelected((prev) => {
+        if (!prev?.gameState?.scenes) return prev;
+        const scenes = [...prev.gameState.scenes];
+        const idx = scenes.findIndex((s, i) => (scene.id ? s.id === scene.id : i === sceneIndex));
+        if (idx < 0) return prev;
+        scenes[idx] = { ...scenes[idx], image: url };
+        return {
+          ...prev,
+          gameState: { ...prev.gameState, scenes },
+        };
+      });
+      setRawList((prev) => prev.map((entry) => {
+        if (entry.id !== selected.id || !entry.gameState?.scenes) return entry;
+        const scenes = [...entry.gameState.scenes];
+        const idx = scenes.findIndex((s, i) => (scene.id ? s.id === scene.id : i === sceneIndex));
+        if (idx < 0) return entry;
+        scenes[idx] = { ...scenes[idx], image: url };
+        return {
+          ...entry,
+          gameState: { ...entry.gameState, scenes },
+        };
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [selected, settings, hasApiKey]);
 
   const load = useCallback(async () => {
     if (!backendReady) {
@@ -680,6 +792,7 @@ export default function GalleryPage() {
           onClose={() => setSelected(null)}
           onPlayFromStart={handlePlayFromStart}
           resolveImage={resolveImage}
+          onRepairSceneImage={repairReplaySceneImage}
         />
       )}
     </div>

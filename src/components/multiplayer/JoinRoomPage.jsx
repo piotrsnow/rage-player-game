@@ -17,6 +17,7 @@ export default function JoinRoomPage() {
   const [error, setError] = useState(null);
   const [rooms, setRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
+  const [joining, setJoining] = useState(false);
   const isConnected = apiClient.isConnected();
 
   useEffect(() => {
@@ -50,18 +51,30 @@ export default function JoinRoomPage() {
     return () => clearInterval(interval);
   }, [fetchRooms]);
 
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!roomCode.trim()) return;
     setError(null);
-    mp.connect();
-    setTimeout(() => mp.joinRoom(roomCode.trim()), 300);
+    setJoining(true);
+    try {
+      await mp.joinRoom(roomCode.trim());
+    } catch (err) {
+      setError(err.message || t('multiplayer.connectionError', 'Failed to connect to multiplayer server.'));
+    } finally {
+      setJoining(false);
+    }
   };
 
-  const handleJoinFromList = (code) => {
+  const handleJoinFromList = async (code) => {
     setError(null);
     setRoomCode(code);
-    mp.connect();
-    setTimeout(() => mp.joinRoom(code), 300);
+    setJoining(true);
+    try {
+      await mp.joinRoom(code);
+    } catch (err) {
+      setError(err.message || t('multiplayer.connectionError', 'Failed to connect to multiplayer server.'));
+    } finally {
+      setJoining(false);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -116,9 +129,9 @@ export default function JoinRoomPage() {
         )}
 
         <div className="flex gap-3 justify-center pt-4">
-          <Button onClick={handleJoin} disabled={roomCode.length < 4} size="lg">
+          <Button onClick={handleJoin} disabled={roomCode.length < 4 || joining} size="lg">
             <span className="material-symbols-outlined text-sm">login</span>
-            {t('multiplayer.join')}
+            {joining ? t('multiplayer.joining', 'Joining...') : t('multiplayer.join')}
           </Button>
           <Button variant="ghost" onClick={() => navigate('/create')}>
             {t('common.cancel')}
@@ -196,6 +209,7 @@ export default function JoinRoomPage() {
                 <Button
                   size="sm"
                   onClick={() => handleJoinFromList(room.roomCode)}
+                  disabled={joining}
                   className="flex-shrink-0 opacity-80 group-hover:opacity-100 transition-opacity"
                 >
                   <span className="material-symbols-outlined text-sm">login</span>

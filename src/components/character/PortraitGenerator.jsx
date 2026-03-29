@@ -20,9 +20,9 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
   const isGemini = provider === 'gemini';
   const canUseReferenceImage = isGemini || provider === 'stability';
   const requiresReferenceImage = provider === 'stability';
-  const apiKey = isDalle ? settings.openaiApiKey : isGemini ? settings.geminiApiKey : settings.stabilityApiKey;
+  const apiKey = null;
   const keyProvider = isDalle ? 'openai' : isGemini ? 'gemini' : 'stability';
-  const hasKey = !!(apiKey || (settings.useBackend && hasApiKey(keyProvider)));
+  const hasKey = settings.useBackend && hasApiKey(keyProvider);
 
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
@@ -99,7 +99,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
       <div className="flex items-center gap-2 p-3 bg-surface-container-high/20 border border-outline-variant/10 rounded-sm">
         <span className="material-symbols-outlined text-sm text-outline">info</span>
         <p className="text-xs text-on-surface-variant">
-          {isDalle ? t('charCreator.portraitNeedsKeyDalle') : isGemini ? t('charCreator.portraitNeedsKeyGemini') : t('charCreator.portraitNeedsKey')}
+          {t('charCreator.portraitNeedsKey', 'Backend image generation is unavailable. Connect backend and configure server API keys.')}
         </p>
       </div>
     );

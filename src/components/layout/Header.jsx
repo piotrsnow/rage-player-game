@@ -16,6 +16,14 @@ export default function Header() {
   const { state } = useGame();
   const mp = useMultiplayer();
   const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
+  const showMpStatus = mp.state.isMultiplayer;
+  const mpReconnectState = mp.state.reconnectState || { status: 'disconnected' };
+  const mpStatusLabel = !mp.state.connected
+    ? (mpReconnectState.status === 'reconnecting' ? 'Reconnecting' : 'Disconnected')
+    : 'Connected';
+  const mpStatusClass = !mp.state.connected
+    ? 'text-error border-error/30'
+    : 'text-primary border-primary/30';
 
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
@@ -128,6 +136,12 @@ export default function Header() {
         )}
 
         <div className="flex items-center gap-1">
+          {showMpStatus && (
+            <span className={`hidden lg:inline-flex items-center gap-1 text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm border ${mpStatusClass}`}>
+              <span className="material-symbols-outlined text-sm">{mp.state.connected ? 'wifi' : 'wifi_off'}</span>
+              {mpStatusLabel}
+            </span>
+          )}
           {hasActiveGame && (
             <Link
               to={playPath}

@@ -1,9 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/wfrpTranslate';
 import { parseActionSegments } from '../../services/actionParser';
-import { NARRATION_FAST_FORWARD_STEPS } from '../../hooks/useNarrator';
 import Tooltip from '../ui/Tooltip';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
@@ -40,22 +39,30 @@ function HighlightedText({ text, highlightInfo, segmentIndex, messageId, classNa
 }
 
 function DialogueSegments({ segments, narrator, messageId }) {
+  const { t } = useTranslation();
   if (!segments || segments.length === 0) return null;
 
   const isSegmentActive = (index) => {
     return narrator?.currentMessageId === messageId && narrator?.currentSegmentIndex === index;
   };
 
+  const getDialogueSpeakerLabel = (character) => {
+    if (typeof character === 'string' && character.trim() && character.trim().toLowerCase() !== 'npc') {
+      return character.trim();
+    }
+    return t('common.npc');
+  };
+
   return (
     <div className="space-y-2">
       {segments.map((seg, i) => {
         const active = isSegmentActive(i);
-        if (seg.type === 'dialogue' && seg.character) {
+        if (seg.type === 'dialogue') {
           return (
             <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {seg.character}
+                  {getDialogueSpeakerLabel(seg.character)}
                 </span>
                 {active && (
                   <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
@@ -95,8 +102,9 @@ function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHover
     speakSingle,
     pause,
     resume,
-    cycleNarrationFastForward,
-    narrationFastForwardLevel,
+    startNarrationFastForwardHold,
+    stopNarrationFastForwardHold,
+    narrationFastForwardRate,
     STATES,
   } = narrator || {};
 
@@ -120,9 +128,9 @@ function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHover
 
   if (!isNarratorReady) return null;
 
-  const ffLevel = narrationFastForwardLevel ?? 0;
-  const ffRate = NARRATION_FAST_FORWARD_STEPS[ffLevel] ?? 1;
-  const ffActive = ffLevel > 0;
+  const ffRate = Number(narrationFastForwardRate) > 1 ? Number(narrationFastForwardRate) : 1;
+  const ffActive = ffRate > 1.001;
+  const ffRateLabel = ffRate.toFixed(2).replace(/\.?0+$/, '');
 
   return (
     <div className="flex items-center gap-0.5 shrink-0">
@@ -147,12 +155,43 @@ function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHover
         </span>
       </button>
       {showFastForward && (
-        <Tooltip content={t('chat.narratorFastForwardTip', { rate: ffRate })}>
+        <Tooltip content={t('chat.narratorFastForwardTip', { rate: ffRateLabel })}>
           <button
             type="button"
-            onClick={(e) => {
+            onMouseDown={(e) => {
               e.stopPropagation();
-              cycleNarrationFastForward?.();
+              startNarrationFastForwardHold?.();
+            }}
+            onMouseUp={(e) => {
+              e.stopPropagation();
+              stopNarrationFastForwardHold?.();
+            }}
+            onMouseLeave={() => {
+              stopNarrationFastForwardHold?.();
+            }}
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              startNarrationFastForwardHold?.();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              stopNarrationFastForwardHold?.();
+            }}
+            onTouchCancel={() => {
+              stopNarrationFastForwardHold?.();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                startNarrationFastForwardHold?.();
+              }
+            }}
+            onKeyUp={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                stopNarrationFastForwardHold?.();
+              }
+            }}
+            onBlur={() => {
+              stopNarrationFastForwardHold?.();
             }}
             className={`flex items-center justify-center w-7 h-7 rounded-md transition-colors ${
               ffActive ? activeAccentClass : `text-on-surface-variant ${idleHoverClass}`
@@ -414,6 +453,7 @@ function RollEdgeBadge({ value, t, className = '' }) {
 function DiceRollMessage({ message }) {
   const { t } = useTranslation();
   const d = message.diceData;
+  const [expanded, setExpanded] = useState(false);
 
   if (!d) {
     return <SystemMessage message={message} />;
@@ -449,10 +489,41 @@ function DiceRollMessage({ message }) {
       : success
         ? t('common.success')
         : t('common.failure');
+  const rollTarget = d.target ?? d.dc ?? '?';
+
+  if (!expanded) {
+    return (
+      <div className="animate-fade-in my-1.5 flex justify-center">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-expanded={false}
+          aria-label={t('chat.expandDiceRoll', 'Expand dice roll details')}
+          className={`w-[92px] h-[92px] rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} flex flex-col items-center justify-center gap-1 transition-transform duration-200 hover:scale-[1.03]`}
+          title={t('chat.expandDiceRoll', 'Expand dice roll details')}
+        >
+          <span className={`material-symbols-outlined text-lg ${accentColor}`}>casino</span>
+          <span className="font-mono text-xs font-bold text-on-surface">
+            {d.roll} {t('common.vs')} {rollTarget}
+          </span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in my-2">
       <div className={`relative rounded-xl border ${borderColor} bg-gradient-to-r ${bgGlow} px-4 py-3 min-h-[152px] flex flex-col items-center text-center`}>
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          aria-expanded
+          aria-label={t('chat.collapseDiceRoll', 'Collapse dice roll details')}
+          className="absolute top-2 right-2 w-6 h-6 rounded-md border border-outline-variant/20 text-on-surface-variant hover:text-on-surface hover:border-outline-variant/40 transition-colors"
+          title={t('chat.collapseDiceRoll', 'Collapse dice roll details')}
+        >
+          <span className="material-symbols-outlined text-sm leading-none">unfold_less</span>
+        </button>
         <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-[0.2em]">
           {t('gameplay.diceCheck', { skill: translateSkill(d.skill, t) })}
         </p>
@@ -467,7 +538,7 @@ function DiceRollMessage({ message }) {
             </span>
             <span className="text-on-surface-variant text-xs uppercase tracking-wide">{t('common.vs')}</span>
             <span className="font-mono text-2xl font-bold text-on-surface leading-none">
-              {d.target || d.dc}
+              {rollTarget}
             </span>
           </div>
           <RollEdgeBadge value={d.sl ?? 0} t={t} />
@@ -590,7 +661,7 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
       prevMessageCount.current = messages.length;
       return;
     }
-    const { isNarratorReady, speakScene } = narrator;
+    const { isNarratorReady, speakSingle } = narrator;
     if (!isNarratorReady) {
       prevMessageCount.current = messages.length;
       return;
@@ -599,9 +670,11 @@ export default function ChatPanel({ messages = [], narrator, autoPlay = false, m
     if (messages.length > prevMessageCount.current) {
       const newMessages = messages.slice(prevMessageCount.current);
       const spokenMessages = newMessages.filter((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
-      spokenMessages.forEach((msg) => {
-        speakScene(msg, msg.id);
-      });
+      const latestSpokenMessage = spokenMessages.at(-1);
+      if (latestSpokenMessage) {
+        // Auto-play should always follow the newest action/scene and cut old narration.
+        speakSingle(latestSpokenMessage, latestSpokenMessage.id);
+      }
     }
     prevMessageCount.current = messages.length;
   }, [messages, narrator, autoPlay]);

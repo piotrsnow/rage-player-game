@@ -66,7 +66,7 @@ export default function CampaignCreatorPage() {
   const { t } = useTranslation();
   const { generateCampaign, generateStoryPrompt } = useAI();
   const { startNewCampaign } = useGameState();
-  const { settings } = useSettings();
+  const { settings, hasApiKey } = useSettings();
   const { state } = useGame();
   const mp = useMultiplayer();
   const { openSettings } = useModals();
@@ -109,7 +109,7 @@ export default function CampaignCreatorPage() {
       setCharsLoaded(true);
     })();
   }, [charsLoaded]);
-  const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
+  const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isBackendConnected = apiClient.isConnected();
 
   useEffect(() => {
@@ -188,7 +188,7 @@ export default function CampaignCreatorPage() {
   }, [inMpRoom, charMode, createdCharacter, selectedCharacter]);
 
   const handleRandomize = async () => {
-    if (!hasApiKey || isRandomizing) return;
+    if (!hasServerAi || isRandomizing) return;
     setIsRandomizing(true);
     try {
       const prompt = await generateStoryPrompt({
@@ -206,7 +206,7 @@ export default function CampaignCreatorPage() {
 
   const handleGenerateFromInput = async () => {
     const seedText = form.storyPrompt.trim();
-    if (!hasApiKey || isGeneratingFromInput || !seedText) return;
+    if (!hasServerAi || isGeneratingFromInput || !seedText) return;
 
     setIsGeneratingFromInput(true);
     try {
@@ -224,9 +224,12 @@ export default function CampaignCreatorPage() {
     }
   };
 
-  const handleCreateRoom = () => {
-    mp.connect();
-    setTimeout(() => mp.createRoom(), 300);
+  const handleCreateRoom = async () => {
+    try {
+      await mp.createRoom();
+    } catch {
+      // Error handled in context
+    }
   };
 
   const handleStartMultiplayerGame = () => {
@@ -242,7 +245,7 @@ export default function CampaignCreatorPage() {
       storyPrompt: form.storyPrompt,
       needsSystemEnabled: settings.needsSystemEnabled ?? false,
     });
-    setTimeout(() => mp.startGame(settings.language || 'en'), 200);
+    mp.startGame(settings.language || 'en');
   };
 
   const persistSelectedCharacter = useCallback(async (updates) => {
@@ -282,7 +285,7 @@ export default function CampaignCreatorPage() {
   const handleSubmit = async () => {
     if (!form.storyPrompt.trim()) return;
     if (!selectedCharacter && !createdCharacter) return;
-    if (!hasApiKey) {
+    if (!hasServerAi) {
       openSettings();
       return;
     }
@@ -756,7 +759,7 @@ export default function CampaignCreatorPage() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleRandomize}
-                  disabled={!hasApiKey || isRandomizing || isGeneratingFromInput}
+                  disabled={!hasServerAi || isRandomizing || isGeneratingFromInput}
                   className="flex items-center gap-2 px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
                 >
                   <span className={`material-symbols-outlined text-base ${isRandomizing ? 'animate-spin' : ''}`}>
@@ -766,7 +769,7 @@ export default function CampaignCreatorPage() {
                 </button>
                 <button
                   onClick={handleGenerateFromInput}
-                  disabled={!hasApiKey || !form.storyPrompt.trim() || isGeneratingFromInput || isRandomizing}
+                  disabled={!hasServerAi || !form.storyPrompt.trim() || isGeneratingFromInput || isRandomizing}
                   title={t('creator.generatePromptFromInput')}
                   aria-label={t('creator.generatePromptFromInput')}
                   className="flex items-center justify-center px-3 py-2 text-xs font-label text-tertiary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200"
@@ -808,7 +811,7 @@ export default function CampaignCreatorPage() {
             ) : !isMultiplayer ? (
               <Button
                 onClick={handleSubmit}
-                disabled={!form.storyPrompt.trim() || !hasApiKey || !hasCharacter}
+                disabled={!form.storyPrompt.trim() || !hasServerAi || !hasCharacter}
                 size="lg"
               >
                 <span className="material-symbols-outlined text-sm">auto_awesome</span>
@@ -820,13 +823,13 @@ export default function CampaignCreatorPage() {
             </Button>
           </div>
 
-          {!hasApiKey && !isMultiplayer && (
+          {!hasServerAi && !isMultiplayer && (
             <p className="text-tertiary-dim text-xs flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">info</span>
-              {t('creator.noApiKeyHint')}
+              {t('creator.noApiKeyHint', 'Connect backend and set server AI keys in env to generate content.')}
             </p>
           )}
-          {!hasCharacter && hasApiKey && (
+          {!hasCharacter && hasServerAi && (
             <p className="text-tertiary-dim text-xs flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">info</span>
               {t('creator.noCharacterHint')}

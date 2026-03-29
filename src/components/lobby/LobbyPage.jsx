@@ -118,7 +118,7 @@ export default function LobbyPage() {
   const { t } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
-  const { settings, backendUser } = useSettings();
+  const { backendUser, hasApiKey } = useSettings();
   const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
@@ -316,7 +316,7 @@ export default function LobbyPage() {
     setRejoinInfo(null);
   };
 
-  const hasApiKey = settings.openaiApiKey || settings.anthropicApiKey;
+  const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isLoggedIn = !!backendUser;
   const hasCampaigns = campaigns.length > 0;
 
@@ -419,7 +419,7 @@ export default function LobbyPage() {
       )}
 
       {/* API Key Warning */}
-      {!hasApiKey && (
+      {!hasServerAi && (
         <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.25s' }}>
           <div
             onClick={openSettings}
@@ -428,9 +428,9 @@ export default function LobbyPage() {
             <div className="flex items-start gap-3">
               <span className="material-symbols-outlined text-tertiary mt-0.5">key</span>
               <div>
-                <p className="font-headline text-tertiary text-sm mb-1">{t('lobby.apiKeyRequired')}</p>
+                <p className="font-headline text-tertiary text-sm mb-1">{t('lobby.apiKeyRequired', 'Server AI configuration required')}</p>
                 <p className="text-on-surface-variant text-xs">
-                  {t('lobby.apiKeyDescription')}
+                  {t('lobby.apiKeyDescription', 'Connect backend and configure provider API keys in backend environment variables.')}
                 </p>
               </div>
             </div>
@@ -475,7 +475,7 @@ export default function LobbyPage() {
       )}
 
       {/* Empty State */}
-      {isLoggedIn && !hasCampaigns && hasApiKey && (
+      {isLoggedIn && !hasCampaigns && hasServerAi && (
         <div className="text-center text-on-surface-variant animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
           <span className="material-symbols-outlined text-6xl text-outline/20 mb-4 block animate-float-slow">
             auto_stories

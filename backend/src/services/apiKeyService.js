@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 import { config } from '../config.js';
+import { AIServiceError, AI_ERROR_CODES } from './aiErrors.js';
 
 const ALGORITHM = 'aes-256-gcm';
 
@@ -34,15 +35,18 @@ export function decrypt(encryptedText) {
   }
 }
 
-export function resolveApiKey(encryptedUserKeys, keyName) {
-  const serverKey = config.apiKeys[keyName];
-  if (serverKey) return serverKey;
-  if (keyName === 'elevenlabs') return '';
+export function resolveApiKey(_encryptedUserKeys, keyName) {
+  return config.apiKeys[keyName] || '';
+}
 
-  try {
-    const userKeys = JSON.parse(decrypt(encryptedUserKeys));
-    return userKeys[keyName] || '';
-  } catch {
-    return '';
+export function requireServerApiKey(keyName, providerLabel = keyName) {
+  const apiKey = resolveApiKey(null, keyName);
+  if (!apiKey) {
+    throw new AIServiceError(
+      AI_ERROR_CODES.NO_SERVER_API_KEY,
+      `Server ${providerLabel} API key is not configured. Please set the ${keyName.toUpperCase()}_API_KEY environment variable.`,
+      { statusCode: 503, retryable: false, provider: providerLabel },
+    );
   }
+  return apiKey;
 }

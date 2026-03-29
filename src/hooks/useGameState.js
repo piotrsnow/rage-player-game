@@ -121,6 +121,8 @@ export function useGameState() {
         narrative: aiResult.firstScene?.narrative || aiResult.hook,
         dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
         soundEffect: aiResult.firstScene?.soundEffect || null,
+        imagePrompt: aiResult.firstScene?.imagePrompt || null,
+        sceneGrid: aiResult.firstScene?.sceneGrid || null,
         image: null,
         actions: aiResult.firstScene?.suggestedActions || [],
         chosenAction: null,

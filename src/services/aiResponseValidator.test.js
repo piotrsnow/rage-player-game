@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { repairDialogueSegments, ensurePlayerDialogue } from './aiResponseValidator.js';
+import {
+  repairDialogueSegments,
+  ensurePlayerDialogue,
+  safeParseAIResponse,
+  SceneResponseSchema,
+  CampaignResponseSchema,
+} from './aiResponseValidator.js';
 
 describe('repairDialogueSegments', () => {
   it('passes through segments with no quoted text in narration', () => {
@@ -80,14 +86,14 @@ describe('repairDialogueSegments', () => {
     expect(repairedDialogues[0].gender).toBe('female');
   });
 
-  it('falls back to NPC when no speaker can be identified', () => {
+  it('treats unresolved quoted speech as narrator dialogue without named speaker', () => {
     const segments = [
       { type: 'narration', text: 'ktoś szepnął: „Uciekaj."' },
     ];
     const result = repairDialogueSegments('...', segments, []);
 
     const dialogue = result.find(s => s.type === 'dialogue');
-    expect(dialogue.character).toBe('NPC');
+    expect(dialogue.character).toBeUndefined();
     expect(dialogue.gender).toBeUndefined();
   });
 
@@ -384,6 +390,35 @@ describe('repairDialogueSegments', () => {
     expect(dialogues[0].text).toContain('you could use a drink');
   });
 
+  it('keeps descriptive second-person English narration as narration', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Tavern Keeper', text: 'Welcome to my inn.', gender: 'male' },
+      { type: 'narration', text: 'You see wet footprints near the cellar door and feel a cold draft from below.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Tavern Keeper', gender: 'male' },
+    ]);
+
+    const descriptive = result.find(s => s.text.includes('wet footprints near the cellar door'));
+    expect(descriptive?.type).toBe('narration');
+  });
+
+  it('does not re-attribute first-person introspection to next NPC dialogue', () => {
+    const segments = [
+      { type: 'narration', text: 'Hilda poprawia płaszcz i rozgląda się po dziedzińcu.' },
+      { type: 'narration', text: 'Zastanawiasz się, czy mnie oszukał i czy mój plan ma jeszcze sens.' },
+      { type: 'narration', text: 'Jak chcesz, mogę pójść z tobą dalej?' },
+    ];
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Hilda', gender: 'female' },
+    ], ['Barnaba']);
+
+    const introspection = result.find(s => s.text.includes('czy mnie oszukał'));
+    expect(introspection?.type).toBe('narration');
+    const hildaDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Hilda');
+    expect(hildaDialogues.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('does not attribute dialogue to excluded faction/location names like Imperium', () => {
     const segments = [
       { type: 'narration', text: 'Tragarze bronili granic Imperium. Jeden z nich mruknął: „Rada chce to dziś zakopać."' },
@@ -533,5 +568,87 @@ describe('ensurePlayerDialogue', () => {
     expect(dialogues).toHaveLength(2);
     expect(dialogues.find(d => d.text === 'Otwórzcie!')?.character).toBe('Barnaba');
     expect(dialogues.find(d => d.text === 'Natychmiast!')?.character).toBe('Barnaba');
+  });
+
+  it('re-attributes unnamed generic dialogue to player character', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba zatrzymuje się przy drzwiach.' },
+      { type: 'dialogue', text: 'Otwierajcie!' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      'Krzyczę: „Otwierajcie!"',
+      'Barnaba',
+      'male'
+    );
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).toBe('Barnaba');
+    expect(dialogues[0].text).toBe('Otwierajcie!');
+  });
+});
+
+describe('safeParseAIResponse suggestedActions normalization', () => {
+  it('deduplicates suggestedActions in scene responses case-insensitively', () => {
+    const raw = {
+      narrative: 'A bell tolls in the rain while market stalls close for the night.',
+      suggestedActions: [
+        'I inspect the bell tower',
+        ' i inspect the bell tower ',
+        'I inspect the bell tower!',
+        'I ask the guard what happened',
+      ],
+      stateChanges: {
+        currentLocation: 'Temple Square',
+        npcs: [{ action: 'introduce', name: 'Guard Ulric' }],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions).toEqual([
+      'I inspect the bell tower',
+      'I ask the guard what happened',
+    ]);
+  });
+
+  it('builds contextual fallback actions when suggestedActions are missing', () => {
+    const raw = {
+      narrative: 'W młynie na skraju wsi ktoś zostawił mokre, zakrwawione ślady.',
+      stateChanges: {
+        currentLocation: 'Stary Młyn',
+        npcs: [{ action: 'introduce', name: 'Młynarz Odo' }],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.data.suggestedActions.some((action) => /Młynarz Odo|Stary Młyn/i.test(action))).toBe(true);
+  });
+
+  it('deduplicates firstScene suggestedActions in campaign responses', () => {
+    const raw = {
+      name: 'Echoes of Brass',
+      worldDescription: 'A war-scarred frontier where faith and steel both fail.',
+      hook: 'A courier vanished with a charter that can start a civil war.',
+      firstScene: {
+        narrative: 'You arrive at dusk as militia lights burn across the wall.',
+        suggestedActions: [
+          'I question the gate sergeant',
+          'I question the gate sergeant',
+          ' I question the gate sergeant ',
+          'I head for the customs office',
+        ],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, CampaignResponseSchema);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.firstScene.suggestedActions).toEqual([
+      'I question the gate sergeant',
+      'I head for the customs office',
+    ]);
   });
 });

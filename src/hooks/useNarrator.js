@@ -4,6 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import { elevenlabsService } from '../services/elevenlabs';
 import { calculateCost } from '../services/costTracker';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
+import { hasNamedSpeaker } from '../services/dialogueSegments';
 
 const STATES = {
   IDLE: 'idle',
@@ -24,8 +25,68 @@ const PACING_SPEED_MULTIPLIERS = {
   dialogue: 1.0,
 };
 
-/** Extra multiplier on top of dialogue speed + scene pacing; final rate clamped to 2× */
-export const NARRATION_FAST_FORWARD_STEPS = [1, 1.5, 2];
+const FAST_FORWARD_HOLD_START_MULTIPLIER = 1.5;
+const FAST_FORWARD_HOLD_MAX_MULTIPLIER = 2;
+const FAST_FORWARD_HOLD_RAMP_MS = 2200;
+const DEFAULT_SEGMENT_PREFETCH_WINDOW = 3;
+const MAX_UTTERANCE_CHARS = 320;
+
+function clampRate(value, min = 0.5, max = 2) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function splitTextIntoUtterances(text, maxChars = MAX_UTTERANCE_CHARS) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return [];
+
+  const paragraphs = normalized
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const source = paragraphs.length > 0 ? paragraphs : [normalized];
+  const utterances = [];
+
+  for (const paragraph of source) {
+    if (paragraph.length <= maxChars) {
+      utterances.push(paragraph);
+      continue;
+    }
+
+    const sentences = paragraph
+      .split(/(?<=[.!?…])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+
+    if (sentences.length === 0) {
+      utterances.push(paragraph);
+      continue;
+    }
+
+    let chunk = '';
+    for (const sentence of sentences) {
+      if (sentence.length > maxChars) {
+        if (chunk) {
+          utterances.push(chunk);
+          chunk = '';
+        }
+        utterances.push(sentence);
+        continue;
+      }
+
+      const candidate = chunk ? `${chunk} ${sentence}` : sentence;
+      if (candidate.length <= maxChars) {
+        chunk = candidate;
+      } else {
+        if (chunk) utterances.push(chunk);
+        chunk = sentence;
+      }
+    }
+    if (chunk) utterances.push(chunk);
+  }
+
+  return utterances;
+}
 
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
   const { settings, hasApiKey } = useSettings();
@@ -45,8 +106,63 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const generationRef = useRef(0);
   const skipSegmentRef = useRef(false);
   const naturalPlaybackRateRef = useRef(1);
-  const narrationFastForwardRef = useRef(0);
-  const [narrationFastForwardLevel, setNarrationFastForwardLevel] = useState(0);
+  const narrationFastForwardRateRef = useRef(1);
+  const holdActiveRef = useRef(false);
+  const holdStartAtRef = useRef(0);
+  const holdRafRef = useRef(null);
+  const [narrationFastForwardRate, setNarrationFastForwardRate] = useState(1);
+  const reportNarratorError = useCallback((message) => {
+    if (!message || viewerMode) return;
+    dispatch({ type: 'SET_ERROR', payload: message });
+  }, [dispatch, viewerMode]);
+
+  const applyPlaybackRate = useCallback((audio = audioRef.current) => {
+    if (!audio) return;
+    const natural = naturalPlaybackRateRef.current || 1;
+    const boost = narrationFastForwardRateRef.current || 1;
+    audio.playbackRate = clampRate(natural * boost);
+  }, []);
+
+  const stopHoldLoop = useCallback(() => {
+    if (holdRafRef.current) {
+      cancelAnimationFrame(holdRafRef.current);
+      holdRafRef.current = null;
+    }
+  }, []);
+
+  const computeHoldMultiplier = useCallback(() => {
+    const elapsed = Math.max(0, performance.now() - holdStartAtRef.current);
+    const progress = Math.min(1, elapsed / FAST_FORWARD_HOLD_RAMP_MS);
+    return FAST_FORWARD_HOLD_START_MULTIPLIER
+      + (FAST_FORWARD_HOLD_MAX_MULTIPLIER - FAST_FORWARD_HOLD_START_MULTIPLIER) * progress;
+  }, []);
+
+  const startNarrationFastForwardHold = useCallback(() => {
+    if (holdActiveRef.current) return;
+    holdActiveRef.current = true;
+    holdStartAtRef.current = performance.now();
+    narrationFastForwardRateRef.current = FAST_FORWARD_HOLD_START_MULTIPLIER;
+    setNarrationFastForwardRate(FAST_FORWARD_HOLD_START_MULTIPLIER);
+    applyPlaybackRate();
+
+    const tick = () => {
+      if (!holdActiveRef.current) return;
+      const nextMultiplier = computeHoldMultiplier();
+      narrationFastForwardRateRef.current = nextMultiplier;
+      setNarrationFastForwardRate(nextMultiplier);
+      applyPlaybackRate();
+      holdRafRef.current = requestAnimationFrame(tick);
+    };
+    holdRafRef.current = requestAnimationFrame(tick);
+  }, [applyPlaybackRate, computeHoldMultiplier]);
+
+  const stopNarrationFastForwardHold = useCallback(() => {
+    holdActiveRef.current = false;
+    stopHoldLoop();
+    narrationFastForwardRateRef.current = 1;
+    setNarrationFastForwardRate(1);
+    applyPlaybackRate();
+  }, [applyPlaybackRate, stopHoldLoop]);
 
   const stopHighlightLoop = useCallback(() => {
     if (highlightRafRef.current) {
@@ -79,6 +195,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
   const cleanup = useCallback(() => {
     stopHighlightLoop();
+    stopHoldLoop();
+    holdActiveRef.current = false;
     if (audioRef.current) {
       const a = audioRef.current;
       audioRef.current = null;
@@ -88,7 +206,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current = [];
-  }, [stopHighlightLoop]);
+  }, [stopHighlightLoop, stopHoldLoop]);
 
   useEffect(() => {
     return () => {
@@ -104,9 +222,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId, pacing);
   }, [viewerMode, backendUrl, shareToken]);
 
-  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing, initialWordOffset = 0) => {
     let prefetchPromise = null;
-    let wordOffset = 0;
+    let wordOffset = initialWordOffset;
 
     for (let s = 0; s < chunks.length; s++) {
       if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
@@ -146,10 +264,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       const audio = new Audio(result.audioUrl);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
-      const natural = Math.max(0.5, Math.min(2, baseRate * pacingMul));
+      const natural = clampRate(baseRate * pacingMul);
       naturalPlaybackRateRef.current = natural;
-      const ffMul = NARRATION_FAST_FORWARD_STEPS[narrationFastForwardRef.current] ?? 1;
-      audio.playbackRate = Math.min(2, natural * ffMul);
+      audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1));
       audioRef.current = audio;
       setPlaybackState(STATES.PLAYING);
       setCurrentChunk(chunk);
@@ -173,6 +290,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       stopHighlightLoop();
       audioRef.current = null;
     }
+    return Math.max(0, wordOffset - initialWordOffset);
   }, [startHighlightLoop, stopHighlightLoop, dispatch, fetchTts, viewerMode]);
 
   const processQueue = useCallback(async () => {
@@ -189,14 +307,17 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
 
     const item = queueRef.current[0];
-    const { dialogueSegments, narrative, messageId, scenePacing } = item;
+    const { dialogueSegments, narrative, messageId, scenePacing, segmentPrefetchWindow } = item;
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
       const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
-      const defaultVoiceId = state.narratorVoiceId || elevenlabsVoiceId;
+      const defaultVoiceId = viewerMode
+        ? (state.narratorVoiceId || elevenlabsVoiceId)
+        : (elevenlabsVoiceId || state.narratorVoiceId);
 
       if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
+        reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
         queueRef.current.shift();
         setPlaybackState(STATES.IDLE);
         setCurrentMessageId(null);
@@ -208,7 +329,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
       const campaignId = state.campaign?.backendId || null;
 
-      if (!state.narratorVoiceId && defaultVoiceId) {
+      if (defaultVoiceId && state.narratorVoiceId !== defaultVoiceId) {
         dispatch({ type: 'SET_NARRATOR_VOICE', payload: defaultVoiceId });
       }
 
@@ -258,29 +379,55 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         segments = [{ type: 'narration', text: narrative || '' }];
       }
 
+      const normalizedSegments = segments.flatMap((seg) => {
+        const text = seg?.text?.trim();
+        if (!text) return [];
+        const chunks = splitTextIntoUtterances(text);
+        if (chunks.length <= 1) return [{ ...seg, text }];
+        return chunks.map((chunk) => ({ ...seg, text: chunk }));
+      });
+
       const localVoiceMap = new Map();
 
       const playerCharNames = viewerMode ? [] : (state.party || [state.character])
         .map(c => c?.name?.toLowerCase())
         .filter(Boolean);
 
-      for (let i = 0; i < segments.length; i++) {
-        if (abortRef.current || generationRef.current !== myGeneration) break;
-        skipSegmentRef.current = false;
+      const utterancePrefetchWindow = Math.max(
+        1,
+        Math.min(6, Number(segmentPrefetchWindow) || DEFAULT_SEGMENT_PREFETCH_WINDOW)
+      );
+      const prefetchMap = new Map();
 
-        const seg = segments[i];
-        const text = seg.text?.trim();
-        if (!text) continue;
+      const buildPrefetchKey = (voiceId, text) => `${voiceId || ''}::${text || ''}`;
+      const scheduleUtterancePrefetch = (voiceId, text, campaignIdForFetch) => {
+        const key = buildPrefetchKey(voiceId, text);
+        if (prefetchMap.has(key)) return key;
+        prefetchMap.set(
+          key,
+          fetchTts(voiceId, text, campaignIdForFetch, scenePacing)
+            .catch((err) => {
+              console.warn('Utterance prefetch failed:', err.message);
+              return null;
+            })
+        );
+        return key;
+      };
 
-        if (!viewerMode && seg.type === 'dialogue' && seg.character && playerCharNames.includes(seg.character.toLowerCase())) {
-          continue;
+      const shouldSkipSegment = (seg) => (
+        !viewerMode
+        && seg?.type === 'dialogue'
+        && hasNamedSpeaker(seg.character)
+        && playerCharNames.includes(seg.character.toLowerCase())
+      );
+
+      const resolveSegmentVoice = (seg) => {
+        let voiceId = defaultVoiceId;
+        if (seg?.voiceId) {
+          return seg.voiceId;
         }
 
-        setCurrentSegmentIndex(i);
-        setCurrentCharacter(seg.type === 'dialogue' ? seg.character : null);
-
-        let voiceId = defaultVoiceId;
-        if (seg.type === 'dialogue' && seg.character) {
+        if (seg?.type === 'dialogue' && hasNamedSpeaker(seg.character)) {
           const existingMapping = state.characterVoiceMap?.[seg.character];
           if (existingMapping?.voiceId) {
             voiceId = existingMapping.voiceId;
@@ -297,8 +444,101 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           }
         }
 
+        return voiceId;
+      };
+
+      let globalWordOffset = 0;
+
+      for (let i = 0; i < normalizedSegments.length; i++) {
+        if (abortRef.current || generationRef.current !== myGeneration) break;
+        skipSegmentRef.current = false;
+
+        const seg = normalizedSegments[i];
+        const text = seg.text?.trim();
+        if (!text) continue;
+
+        if (shouldSkipSegment(seg)) {
+          continue;
+        }
+
+        setCurrentSegmentIndex(i);
+        setCurrentCharacter(seg.type === 'dialogue' && hasNamedSpeaker(seg.character) ? seg.character : null);
+
+        const voiceId = resolveSegmentVoice(seg);
+
+        if (utterancePrefetchWindow > 1) {
+          const currentKey = scheduleUtterancePrefetch(voiceId, text, campaignId);
+          for (let lookAhead = 1; lookAhead < utterancePrefetchWindow; lookAhead += 1) {
+            const nextSeg = normalizedSegments[i + lookAhead];
+            const nextText = nextSeg?.text?.trim();
+            if (!nextSeg || !nextText || shouldSkipSegment(nextSeg)) continue;
+            const nextVoiceId = resolveSegmentVoice(nextSeg);
+            scheduleUtterancePrefetch(nextVoiceId, nextText, campaignId);
+          }
+
+          let prefetched = prefetchMap.get(currentKey)
+            ? await prefetchMap.get(currentKey)
+            : null;
+          prefetchMap.delete(currentKey);
+
+          if (generationRef.current !== myGeneration || skipSegmentRef.current) break;
+          if (!prefetched) {
+            prefetched = await fetchTts(voiceId, text, campaignId, scenePacing);
+          }
+          if (generationRef.current !== myGeneration || skipSegmentRef.current) break;
+
+          if (prefetched) {
+            if (!viewerMode) {
+              dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: text.length }) });
+            }
+            objectUrlsRef.current.push(prefetched.audioUrl);
+            const audio = new Audio(prefetched.audioUrl);
+            const baseRate = (dialogueSpeed || 100) / 100;
+            const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
+            const natural = clampRate(baseRate * pacingMul);
+            naturalPlaybackRateRef.current = natural;
+            audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1));
+            audioRef.current = audio;
+            setPlaybackState(STATES.PLAYING);
+            setCurrentChunk(text);
+
+            startHighlightLoop(audio, prefetched.words || [], i, messageId, globalWordOffset, text, text);
+
+            const playStart = performance.now();
+            await new Promise((resolve) => {
+              audio.onended = resolve;
+              audio.onerror = resolve;
+              audio.play().catch(resolve);
+            });
+            if (generationRef.current !== myGeneration || skipSegmentRef.current) break;
+
+            const wallSeconds = (performance.now() - playStart) / 1000;
+            if (wallSeconds > 0.1) {
+              dispatch({ type: 'ADD_NARRATION_TIME', payload: wallSeconds });
+            }
+
+            stopHighlightLoop();
+            audioRef.current = null;
+            globalWordOffset += (prefetched.words || []).length;
+            continue;
+          }
+        }
+
         const chunks = elevenlabsService.splitIntoParagraphs(text);
-        await playChunkPipeline(chunks, voiceId, undefined, i, messageId, dialogueSpeed, text, campaignId, myGeneration, scenePacing);
+        const wordsPlayed = await playChunkPipeline(
+          chunks,
+          voiceId,
+          undefined,
+          i,
+          messageId,
+          dialogueSpeed,
+          text,
+          campaignId,
+          myGeneration,
+          scenePacing,
+          globalWordOffset
+        );
+        globalWordOffset += wordsPlayed;
         if (generationRef.current !== myGeneration) return;
       }
 
@@ -313,12 +553,13 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (generationRef.current !== myGeneration) return;
       if (err.name !== 'AbortError') {
         console.warn('Narrator TTS error:', err.message);
+        reportNarratorError(`Narrator playback failed: ${err.message}`);
       }
       cleanup();
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, playChunkPipeline]);
+  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, playChunkPipeline, hasApiKey, reportNarratorError]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({
@@ -326,6 +567,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       soundEffect: message.soundEffect || null,
       narrative: message.content || message.narrative || '',
       scenePacing: message.scenePacing || null,
+      segmentPrefetchWindow: message.segmentPrefetchWindow || DEFAULT_SEGMENT_PREFETCH_WINDOW,
       messageId,
     });
     if (playbackState === STATES.IDLE) {
@@ -374,18 +616,6 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, [playbackState, stopHighlightLoop]);
 
-  const cycleNarrationFastForward = useCallback(() => {
-    const next = (narrationFastForwardRef.current + 1) % NARRATION_FAST_FORWARD_STEPS.length;
-    narrationFastForwardRef.current = next;
-    setNarrationFastForwardLevel(next);
-    const audio = audioRef.current;
-    if (audio) {
-      const natural = naturalPlaybackRateRef.current;
-      const mul = NARRATION_FAST_FORWARD_STEPS[next];
-      audio.playbackRate = Math.min(2, natural * mul);
-    }
-  }, []);
-
   const speakSingle = useCallback((message, messageId) => {
     stop();
     setTimeout(() => {
@@ -395,6 +625,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           soundEffect: null,
           narrative: message,
           scenePacing: null,
+          segmentPrefetchWindow: DEFAULT_SEGMENT_PREFETCH_WINDOW,
           messageId,
         });
       } else {
@@ -403,6 +634,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           soundEffect: message.soundEffect || null,
           narrative: message.content || message.narrative || '',
           scenePacing: message.scenePacing || null,
+          segmentPrefetchWindow: message.segmentPrefetchWindow || DEFAULT_SEGMENT_PREFETCH_WINDOW,
           messageId,
         });
       }
@@ -428,8 +660,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     resume,
     stop,
     skipSegment,
-    cycleNarrationFastForward,
-    narrationFastForwardLevel,
+    startNarrationFastForwardHold,
+    stopNarrationFastForwardHold,
+    narrationFastForwardRate,
+    isNarrationFastForwardHolding: holdActiveRef.current,
     STATES,
   };
 }

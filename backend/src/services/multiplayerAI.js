@@ -1,12 +1,172 @@
-import { resolveApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
 import { resolveDiceRollCharacteristic } from '../../../shared/domain/diceRollInference.js';
 import { getApplicableTalentBonus } from '../../../shared/domain/wfrpTalents.js';
+import { AIServiceError, AI_ERROR_CODES, parseProviderError } from './aiErrors.js';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
 const MAX_DIFFICULTY_MODIFIER = 40;
+
+function inferLanguageFromText(text = '') {
+  if (!text || typeof text !== 'string') return 'en';
+  if (/[ąćęłńóśźż]/i.test(text)) return 'pl';
+  return /\b(i|oraz|się|jest|nie|czy|który|gdzie|teraz|wokół|ostrożnie|chwila)\b/i.test(text)
+    ? 'pl'
+    : 'en';
+}
+
+function normalizeSuggestedActions(actions, max = 8) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
+    .filter(Boolean)
+    .filter((action, index, arr) => arr.indexOf(action) === index)
+    .slice(0, max);
+}
+
+function hashTextSeed(text = '') {
+  if (!text) return 0;
+  return [...String(text)].reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) % 1000003, 17);
+}
+
+const FALLBACK_ACTION_VARIANTS = {
+  pl: {
+    investigate: [
+      'Sprawdzam dokładnie, co tu się naprawdę wydarzyło',
+      'Analizuję sytuację i szukam ukrytych szczegółów',
+      'Badam miejsce zdarzenia, zanim wykonam kolejny ruch',
+      'Próbuję odtworzyć przebieg wydarzeń z dostępnych śladów',
+    ],
+    social: [
+      'Wypytuję świadków o to, co widzieli',
+      'Nawiązuję rozmowę i próbuję wyciągnąć konkrety',
+      'Zadaję kilka celnych pytań, by odsłonić prawdę',
+      'Słucham uważnie plotek i wychwytuję sprzeczności',
+    ],
+    tactical: [
+      'Szukam osłony i przygotowuję się na zagrożenie',
+      'Wybieram bezpieczniejszą pozycję i obserwuję otoczenie',
+      'Sprawdzam drogę odwrotu na wypadek kłopotów',
+      'Ustawiam się tak, by mieć przewagę, jeśli zrobi się gorąco',
+    ],
+    progression: [
+      'Idę dalej tropem, który wydaje się najbardziej obiecujący',
+      'Przechodzę do kolejnego punktu planu i utrzymuję tempo',
+      'Podejmuję zdecydowany krok, żeby popchnąć sprawę naprzód',
+      'Kieruję się tam, gdzie szanse na postęp są największe',
+    ],
+  },
+  en: {
+    investigate: [
+      'I examine what happened here in detail',
+      'I analyze the situation for hidden clues',
+      'I inspect the scene before making my next move',
+      'I reconstruct the sequence of events from what I can find',
+    ],
+    social: [
+      'I question witnesses about what they saw',
+      'I start a focused conversation to get concrete answers',
+      'I ask pointed questions to uncover the truth',
+      'I listen carefully to local rumors and contradictions',
+    ],
+    tactical: [
+      'I find cover and prepare for danger',
+      'I move to a safer position and observe the area',
+      'I check for an escape route in case things go bad',
+      'I position myself for an advantage if this escalates',
+    ],
+    progression: [
+      'I follow the most promising lead forward',
+      'I move to the next step of the plan and keep momentum',
+      'I make a decisive move to push the situation forward',
+      'I head toward where progress seems most likely',
+    ],
+  },
+};
+
+function pickVariant(variants, seed, offset = 0) {
+  if (!Array.isArray(variants) || variants.length === 0) return '';
+  return variants[(seed + offset) % variants.length];
+}
+
+function prioritizeNovelActions(actions, previousActions = [], minNovel = 2) {
+  const normalizedCurrent = normalizeSuggestedActions(actions, 8);
+  if (normalizedCurrent.length === 0) return [];
+
+  const prevSet = new Set(
+    normalizeSuggestedActions(previousActions, 8).map((a) => a.toLowerCase())
+  );
+  if (prevSet.size === 0) return normalizedCurrent;
+
+  const novel = normalizedCurrent.filter((a) => !prevSet.has(a.toLowerCase()));
+  if (novel.length >= minNovel) return novel;
+
+  return [...novel, ...normalizedCurrent.filter((a) => prevSet.has(a.toLowerCase()))];
+}
+
+function buildFallbackSuggestedActions({
+  narrative = '',
+  currentLocation = '',
+  npcsHere = [],
+  language = 'en',
+  previousActions = [],
+  sceneIndex = 0,
+} = {}) {
+  const inferredLanguage = language === 'pl' || language === 'en'
+    ? language
+    : inferLanguageFromText(narrative);
+
+  const seed = hashTextSeed(
+    `${narrative}|${currentLocation}|${npcsHere.map((n) => n?.name || '').join('|')}|${sceneIndex}`
+  );
+  const templates = FALLBACK_ACTION_VARIANTS[inferredLanguage] || FALLBACK_ACTION_VARIANTS.en;
+
+  const actions = [];
+  const firstNpc = npcsHere[0]?.name;
+  if (firstNpc) {
+    actions.push(
+      inferredLanguage === 'pl'
+        ? `Podchodzę do ${firstNpc} i pytam, co się dzieje`
+        : `I approach ${firstNpc} and ask what is going on`
+    );
+  }
+  if (currentLocation) {
+    actions.push(
+      inferredLanguage === 'pl'
+        ? `Rozglądam się po ${currentLocation} i szukam tropów`
+        : `I look around ${currentLocation} for useful clues`
+    );
+  }
+
+  actions.push(pickVariant(templates.investigate, seed, 0));
+  actions.push(pickVariant(templates.social, seed, 1));
+  actions.push(pickVariant(templates.tactical, seed, 2));
+  actions.push(pickVariant(templates.progression, seed, 3));
+
+  const prioritized = prioritizeNovelActions(actions, previousActions, 2);
+  return normalizeSuggestedActions(prioritized, 4);
+}
+
+function ensureSuggestedActions(payload, {
+  language = 'en',
+  currentLocation = '',
+  npcsHere = [],
+  previousActions = [],
+  sceneIndex = 0,
+} = {}) {
+  const normalized = normalizeSuggestedActions(payload?.suggestedActions, 8);
+  if (normalized.length > 0) return normalized;
+
+  return buildFallbackSuggestedActions({
+    narrative: payload?.narrative || '',
+    currentLocation,
+    npcsHere,
+    language,
+    previousActions,
+    sceneIndex,
+  });
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -136,12 +296,24 @@ function normalizeTextForDedup(text) {
 const DIRECT_SPEECH_PL = /(?:^|\W)(?:ty|ci|cię|ciebie|twój|twoja|twoje|twoim|twoją|tobie|chcesz|masz|musisz|możesz|widzisz|wiesz|znasz|słyszysz|jesteś|potrzebujesz|pomóż|powiedz|daj|weź|chodź|idź|patrz|słuchaj|posłuchaj|czekaj|spójrz|poczekaj|uważaj)(?:\W|$)/i;
 const DIRECT_SPEECH_EN = /\b(?:you|your|yours|yourself|you're|you've)\b/i;
 const FIRST_PERSON_SPEECH = /(?:^|\W)(?:mi|mnie|mną|mój|moja|moje|moim|moją|mojego|mojej|moich|ze mną|me|my|myself)(?:\W|$)/i;
+const NARRATION_ADDRESS_EN = /\byou\s+(?:see|notice|feel|hear|smell|remember|watch|stand|walk|step|enter|approach|move|turn|look|find|spot|sense|are|have|can)\b/i;
+const NARRATION_ADDRESS_PL = /(?:^|\W)(?:widzisz|czujesz|słyszysz|zauważasz|przypominasz sobie|stoisz|idziesz|wchodzisz|zbliżasz się|rozglądasz się)(?:\W|$)/i;
+const SPEECH_VERB_HINT = /(?:^|\W)(?:mówi|powiedzia(?:ł|ła|łem|łam|łeś|łaś)|rzek(?:ł|ła)|mrukn(?:ął|ęła)|szepn(?:ął|ęła)|krzykn(?:ął|ęła)|spyta(?:ł|ła)|odpar(?:ł|ła)|odpow(?:iada|iedzia(?:ł|ła))|said|says|asked|asks|replied|replies|whispered|whispers|shouted|shouts|told|tells)(?:\W|$)/i;
+
+function isLikelyNarrationAddress(text) {
+  const t = (text || '').trim();
+  if (!t) return false;
+  const hasStrongSpeechPunctuation = /[!?]/.test(t);
+  return (NARRATION_ADDRESS_EN.test(t) || NARRATION_ADDRESS_PL.test(t)) && !hasStrongSpeechPunctuation;
+}
 
 function looksLikeDirectSpeech(text) {
   if (!text || text.trim().length < 15) return false;
   const t = text.trim();
-  if (DIRECT_SPEECH_PL.test(t) || DIRECT_SPEECH_EN.test(t)) return true;
-  if (t.includes('?') && FIRST_PERSON_SPEECH.test(t)) return true;
+  if (isLikelyNarrationAddress(t)) return false;
+  if (DIRECT_SPEECH_PL.test(t)) return true;
+  if (DIRECT_SPEECH_EN.test(t)) return /[!?]/.test(t) || SPEECH_VERB_HINT.test(t);
+  if (t.includes('?') && FIRST_PERSON_SPEECH.test(t) && SPEECH_VERB_HINT.test(t)) return true;
   return false;
 }
 
@@ -241,6 +413,10 @@ function repairDialogueSegments(narrative, segments, knownNpcs = [], excludeName
       enhanced.push(seg);
       continue;
     }
+    if (isLikelyNarrationAddress(seg.text)) {
+      enhanced.push(seg);
+      continue;
+    }
     if (startsWithCharacterAction(seg.text, allNames)) {
       enhanced.push(seg);
       continue;
@@ -270,7 +446,9 @@ function repairDialogueSegments(narrative, segments, knownNpcs = [], excludeName
     const next = enhanced[i + 1];
     if (next.type !== 'dialogue' || !next.character) continue;
     if (startsWithCharacterAction(seg.text, allNames)) continue;
+    if (isLikelyNarrationAddress(seg.text)) continue;
     if (!FIRST_PERSON_SPEECH.test(seg.text)) continue;
+    if (!looksLikeDirectSpeech(seg.text)) continue;
     const gender = lookupGender(next.character, knownNpcs, existingDialogue);
     enhanced[i] = {
       type: 'dialogue',
@@ -765,12 +943,16 @@ function safeParseJSONContent(raw) {
 
 const RETRY_DELAYS = [1000, 3000];
 
-async function callAI(messages, encryptedApiKeys) {
-  const openaiKey = resolveApiKey(encryptedApiKeys, 'openai');
-  const anthropicKey = resolveApiKey(encryptedApiKeys, 'anthropic');
+async function callAI(messages) {
+  const openaiKey = config.apiKeys.openai || '';
+  const anthropicKey = config.apiKeys.anthropic || '';
 
   if (!openaiKey && !anthropicKey) {
-    throw new Error('No API key configured. The host must have an OpenAI or Anthropic API key.');
+    throw new AIServiceError(
+      AI_ERROR_CODES.NO_SERVER_API_KEY,
+      'Server AI keys are not configured. Set OPENAI_API_KEY or ANTHROPIC_API_KEY in backend environment variables.',
+      { statusCode: 503, retryable: false },
+    );
   }
 
   let lastError;
@@ -791,8 +973,7 @@ async function callAI(messages, encryptedApiKeys) {
           }),
         });
         if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err.error?.message || `OpenAI API error: ${response.status}`);
+          await parseProviderError(response, 'openai');
         }
         const data = await response.json();
         return safeParseJSONContent(data.choices[0].message.content);
@@ -817,8 +998,7 @@ async function callAI(messages, encryptedApiKeys) {
           }),
         });
         if (!response.ok) {
-          const err = await response.json().catch(() => ({}));
-          throw new Error(err.error?.message || `Anthropic API error: ${response.status}`);
+          await parseProviderError(response, 'anthropic');
         }
         const data = await response.json();
         return safeParseJSONContent(data.content[0].text);
@@ -832,10 +1012,15 @@ async function callAI(messages, encryptedApiKeys) {
       }
     }
   }
-  throw lastError;
+  if (lastError instanceof AIServiceError) throw lastError;
+  throw new AIServiceError(
+    AI_ERROR_CODES.AI_REQUEST_FAILED,
+    lastError?.message || 'AI request failed.',
+    { statusCode: 502, retryable: true, cause: lastError },
+  );
 }
 
-export async function generateMultiplayerCampaign(settings, players, encryptedApiKeys, language = 'en') {
+export async function generateMultiplayerCampaign(settings, players, _encryptedApiKeys, language = 'en') {
   const playerCharList = players.map((p) => {
     if (p.characterData) {
       const cd = p.characterData;
@@ -886,7 +1071,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
     { role: 'user', content: prompt },
   ];
 
-  const result = await callAI(messages, encryptedApiKeys);
+  const result = await callAI(messages);
 
   const characters = players.map((p) => {
     const cd = p.characterData || {};
@@ -929,7 +1114,13 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
     id: sceneId,
     narrative: firstSceneNarrative,
     dialogueSegments: firstSceneSegments,
-    actions: result.firstScene?.suggestedActions || [],
+    actions: ensureSuggestedActions(result.firstScene, {
+      language,
+      currentLocation: '',
+      npcsHere: [],
+      previousActions: [],
+      sceneIndex: 1,
+    }),
     soundEffect: result.firstScene?.soundEffect || null,
     musicPrompt: result.firstScene?.musicPrompt || null,
     imagePrompt: result.firstScene?.imagePrompt || null,
@@ -992,7 +1183,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   };
 }
 
-export async function generateMidGameCharacter(gameState, settings, playerName, playerGender, encryptedApiKeys, language = 'en', playerCharacterData = null) {
+export async function generateMidGameCharacter(gameState, settings, playerName, playerGender, _encryptedApiKeys, language = 'en', playerCharacterData = null) {
   // If the player already created a character via the modal, use it directly
   if (playerCharacterData) {
     const cd = playerCharacterData;
@@ -1069,7 +1260,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
     { role: 'user', content: prompt },
   ];
 
-  const result = await callAI(messages, encryptedApiKeys);
+  const result = await callAI(messages);
 
   return {
     character: {
@@ -1101,7 +1292,7 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
   };
 }
 
-export async function generateMultiplayerScene(gameState, settings, players, actions, encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
+export async function generateMultiplayerScene(gameState, settings, players, actions, _encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {
   const systemPrompt = buildMultiplayerSystemPrompt(gameState, settings, players, language, dmSettings);
   const actionByName = new Map(actions.map((action) => [action.name, action]));
   const characterByName = new Map((gameState.characters || []).map((character) => [character.name, character]));
@@ -1126,7 +1317,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     { role: 'user', content: scenePrompt },
   ];
 
-  const result = await callAI(messages, encryptedApiKeys);
+  const result = await callAI(messages);
 
   function normalizeDiceRoll(dr, fallbackCharacterName = null) {
     if (!dr || dr.roll == null || dr.target == null) return dr;
@@ -1210,6 +1401,14 @@ export async function generateMultiplayerScene(gameState, settings, players, act
 
   const worldNpcs = gameState?.world?.npcs || [];
   const stateNpcs = result.stateChanges?.npcs || [];
+  const currentLocation = gameState?.world?.currentLocation || '';
+  const npcsHere = worldNpcs.filter((npc) =>
+    npc?.alive !== false
+    && npc?.name
+    && npc?.lastLocation
+    && currentLocation
+    && npc.lastLocation.toLowerCase() === currentLocation.toLowerCase()
+  );
   const playerNames = players.map(p => p.name).filter(Boolean);
   const factionNames = Object.keys(gameState?.world?.factions || {});
   const locationNames = (gameState?.world?.mapState || []).map(l => l.name).filter(Boolean);
@@ -1245,7 +1444,13 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     id: sceneId,
     narrative: result.narrative || '',
     dialogueSegments: finalSegments,
-    actions: result.suggestedActions || [],
+    actions: ensureSuggestedActions(result, {
+      language,
+      currentLocation,
+      npcsHere,
+      previousActions: gameState?.scenes?.[gameState.scenes.length - 1]?.actions || [],
+      sceneIndex: (gameState?.scenes?.length || 0) + 1,
+    }),
     questOffers,
     soundEffect: result.soundEffect || null,
     musicPrompt: result.musicPrompt || null,
@@ -1340,7 +1545,7 @@ export function needsCompression(gameState) {
   return (gameState.scenes || []).length > COMPRESSION_THRESHOLD && !gameState.world?.compressedHistory;
 }
 
-export async function compressOldScenes(gameState, encryptedApiKeys, language = 'en') {
+export async function compressOldScenes(gameState, _encryptedApiKeys, language = 'en') {
   const scenes = gameState.scenes || [];
   const scenesToCompress = scenes.slice(0, -FULL_SCENE_KEEP - MEDIUM_SCENE_KEEP);
   if (scenesToCompress.length === 0) return null;
@@ -1359,7 +1564,6 @@ export async function compressOldScenes(gameState, encryptedApiKeys, language = 
   try {
     const result = await callAI(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
-      encryptedApiKeys,
     );
     return result?.summary || null;
   } catch (err) {
