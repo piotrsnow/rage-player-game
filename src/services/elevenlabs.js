@@ -1,5 +1,45 @@
 import { apiClient } from './apiClient';
 
+function isWhitespaceChar(ch) {
+  return ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r';
+}
+
+export function splitTextForHighlight(text) {
+  const source = String(text || '');
+  const parts = [];
+  let buffer = '';
+  let whitespaceMode = null;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    const isWhitespace = isWhitespaceChar(ch);
+    if (whitespaceMode === null) {
+      whitespaceMode = isWhitespace;
+      buffer = ch;
+      continue;
+    }
+    if (isWhitespace === whitespaceMode) {
+      buffer += ch;
+      continue;
+    }
+    parts.push(buffer);
+    buffer = ch;
+    whitespaceMode = isWhitespace;
+  }
+
+  if (buffer) parts.push(buffer);
+  return parts;
+}
+
+export function countHighlightWords(text) {
+  const parts = splitTextForHighlight(text);
+  let count = 0;
+  for (const part of parts) {
+    if (!/^\s+$/.test(part)) count += 1;
+  }
+  return count;
+}
+
 function resolveMediaUrl(url) {
   if (!url) return null;
   if (url.startsWith('http') || url.startsWith('blob:')) return url;
@@ -20,7 +60,7 @@ function parseAlignmentWords(alignment) {
 
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
-    if (ch === ' ' || ch === '\n' || ch === '\t') {
+    if (isWhitespaceChar(ch)) {
       if (currentWord) {
         words.push({ word: currentWord, start: wordStart, end: wordEnd });
         currentWord = '';

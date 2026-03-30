@@ -259,6 +259,7 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   promptProfile = 'balanced',
   sceneTokenBudget = null,
   promptTokenBudget = null,
+  fullSceneHistory = false,
 } = {}) {
   const { campaign, character, world, quests } = gameState;
 
@@ -432,7 +433,10 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     }
     sceneHistory = parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
   } else {
-    sceneHistory = allScenes.slice(-10).map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`).join('\n') || 'No scenes yet - this is the beginning of the story.';
+    const historySource = fullSceneHistory ? allScenes : allScenes.slice(-10);
+    sceneHistory = historySource
+      .map((s, i) => `Scene ${i + 1}: ${s.narrative?.substring(0, 200)}...`)
+      .join('\n') || 'No scenes yet - this is the beginning of the story.';
   }
 
   return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under the Warhammer Fantasy Roleplay 4th Edition (WFRP 4e) rules system.
@@ -1337,6 +1341,7 @@ For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Migh
 For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+CRITICAL NPC NAME RULE: Do NOT create NPC entries for anonymous/descriptive speakers such as "głos zza kamienia", "voice from behind the door", "someone", or "unknown". These belong in narrative/dialogue only, not in stateChanges.npcs.
 NPC RELATIONSHIP TRACKING: When introducing or updating NPCs, include these optional fields to build the world relationship graph:
 - "factionId": the faction this NPC belongs to (merchants_guild, thieves_guild, temple_sigmar, etc.) — faction reputation will automatically influence their disposition toward the player
 - "relatedQuestIds": array of quest IDs this NPC is involved in (as quest giver, target, or participant)
@@ -1757,6 +1762,30 @@ STRUCTURE RULES:
 ${structureRule}
 ${langNote}
 Respond with ONLY valid JSON: {"recap": "The recap text..."}`;
+}
+
+export function buildRecapMergePrompt(language = 'en', recapParts = [], options = {}) {
+  const sanitizedParts = Array.isArray(recapParts)
+    ? recapParts
+      .map((part) => (typeof part === 'string' ? part.trim() : ''))
+      .filter(Boolean)
+    : [];
+  const basePrompt = buildRecapPrompt(language, options);
+  const partsBlock = sanitizedParts
+    .map((part, idx) => `PART ${idx + 1}:\n${part}`)
+    .join('\n\n');
+
+  return `${basePrompt}
+
+You are combining partial recaps generated from sequential scene chunks.
+- Merge all parts into one cohesive recap.
+- Keep strict chronological flow from PART 1 to the last PART.
+- Remove duplicated events/details when they overlap between neighboring parts.
+- Preserve key decisions, consequences, unresolved threads, and named entities.
+- If two parts conflict on outcome details, prefer the later part.
+
+PARTIAL RECAPS (already in chronological order):
+${partsBlock}`;
 }
 
 export function buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language = 'en') {

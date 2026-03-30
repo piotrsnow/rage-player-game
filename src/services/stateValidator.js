@@ -10,6 +10,79 @@ const DEFAULTS = {
   maxMoneyGainCopper: 500, // 5 GC equivalent
 };
 
+const GENERIC_NPC_NAME_TOKENS = new Set([
+  'npc',
+  'npcs',
+  'unknown',
+  'unknown npc',
+  'someone',
+  'somebody',
+  'person',
+  'character',
+  'speaker',
+  'narrator',
+  'voice',
+  'głos',
+  'glos',
+  'gm',
+  'dm',
+  'ai',
+  'bot',
+  'none',
+  'null',
+  'undefined',
+  '?',
+  '-',
+  '_',
+  '...',
+  '???',
+  'tbd',
+  'name',
+  'npc name',
+]);
+
+const PLACEHOLDER_NPC_PATTERN = /^(?:npc|character|speaker|unknown)\s*\d*$/i;
+const ANONYMOUS_SPEAKER_WORD_PATTERN = /\b(?:głos|glos|voice|whisper|szept|shout|krzyk)\b/i;
+const SPEAKER_SOURCE_PATTERN = /\b(?:zza|spod|znad|spoza|from|behind|inside|outside|beyond)\b/i;
+
+function normalizeNpcNameToken(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/[.:;!?()[\]{}"']/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isSuspiciousNpcName(name) {
+  const normalized = normalizeNpcNameToken(name);
+  if (!normalized) return true;
+  if (GENERIC_NPC_NAME_TOKENS.has(normalized)) return true;
+  if (PLACEHOLDER_NPC_PATTERN.test(normalized)) return true;
+  if (normalized.length < 2) return true;
+  if (ANONYMOUS_SPEAKER_WORD_PATTERN.test(normalized) && SPEAKER_SOURCE_PATTERN.test(normalized)) {
+    return true;
+  }
+  if (/^(?:głos|glos|voice)\s+/.test(normalized)) return true;
+  return false;
+}
+
+function sanitizeNpcChanges(npcs, corrections, prefix = '') {
+  if (!Array.isArray(npcs)) return npcs;
+  const filtered = [];
+  for (const npc of npcs) {
+    const rawName = typeof npc?.name === 'string' ? npc.name.trim() : '';
+    if (isSuspiciousNpcName(rawName)) {
+      const display = rawName || '(empty)';
+      corrections.push(`${prefix}Suspicious NPC name removed: "${display}"`);
+      continue;
+    }
+    filtered.push(npc);
+  }
+  return filtered;
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -194,6 +267,7 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   }
 
   if (validated.npcs && Array.isArray(validated.npcs)) {
+    validated.npcs = sanitizeNpcChanges(validated.npcs, corrections);
     const MAX_DISPOSITION_DELTA = 10;
     for (const npc of validated.npcs) {
       if (typeof npc.dispositionChange === 'number') {
@@ -318,6 +392,7 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   }
 
   if (validated.npcs && Array.isArray(validated.npcs)) {
+    validated.npcs = sanitizeNpcChanges(validated.npcs, allCorrections, 'multiplayer: ');
     const MAX_DISPOSITION_DELTA = 10;
     for (const npc of validated.npcs) {
       if (typeof npc.dispositionChange === 'number') {

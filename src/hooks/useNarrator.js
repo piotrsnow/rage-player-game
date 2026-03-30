@@ -177,7 +177,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setHighlightInfo(null);
   }, []);
 
-  const startHighlightLoop = useCallback((audio, words, segmentIndex, messageId, wordOffset, fullText, sentence) => {
+  const startHighlightLoop = useCallback((audio, words, logicalSegmentIndex, messageId, wordOffset, segmentWordOffset, fullText, sentence) => {
     stopHighlightLoop();
     let lastActiveIdx = -1;
     const tick = () => {
@@ -206,7 +206,16 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         lastActiveIdx = activeIdx;
       }
       const globalIdx = activeIdx >= 0 ? activeIdx + wordOffset : -1;
-      setHighlightInfo({ messageId, segmentIndex, wordIndex: globalIdx, fullText, sentenceWordIndex: activeIdx });
+      const segmentIdx = activeIdx >= 0 ? activeIdx + segmentWordOffset : -1;
+      setHighlightInfo({
+        messageId,
+        segmentIndex: logicalSegmentIndex,
+        logicalSegmentIndex,
+        wordIndex: globalIdx,
+        segmentWordIndex: segmentIdx,
+        fullText,
+        sentenceWordIndex: activeIdx,
+      });
       highlightRafRef.current = requestAnimationFrame(tick);
     };
     highlightRafRef.current = requestAnimationFrame(tick);
@@ -241,9 +250,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId, pacing);
   }, [viewerMode, backendUrl, shareToken]);
 
-  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, segmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing, initialWordOffset = 0) => {
+  const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, logicalSegmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing, initialWordOffset = 0, initialSegmentWordOffset = 0) => {
     let prefetchPromise = null;
     let wordOffset = initialWordOffset;
+    let segmentWordOffset = initialSegmentWordOffset;
 
     for (let s = 0; s < chunks.length; s++) {
       if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
@@ -290,7 +300,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       setPlaybackState(STATES.PLAYING);
       setCurrentChunk(chunk);
 
-      startHighlightLoop(audio, result.words, segmentIndex, messageId, wordOffset, fullText, chunk);
+      startHighlightLoop(audio, result.words, logicalSegmentIndex, messageId, wordOffset, segmentWordOffset, fullText, chunk);
 
       const playStart = performance.now();
       await new Promise((resolve) => {
@@ -305,7 +315,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         dispatch({ type: 'ADD_NARRATION_TIME', payload: wallSeconds });
       }
 
-      wordOffset += result.words.length;
+      const wordsCount = result.words.length;
+      wordOffset += wordsCount;
+      segmentWordOffset += wordsCount;
       stopHighlightLoop();
       audioRef.current = null;
     }
@@ -398,12 +410,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         segments = [{ type: 'narration', text: narrative || '' }];
       }
 
-      const normalizedSegments = segments.flatMap((seg) => {
+      const normalizedSegments = segments.flatMap((seg, logicalSegmentIndex) => {
         const text = seg?.text?.trim();
         if (!text) return [];
         const chunks = splitTextIntoUtterances(text);
-        if (chunks.length <= 1) return [{ ...seg, text }];
-        return chunks.map((chunk) => ({ ...seg, text: chunk }));
+        if (chunks.length <= 1) return [{ ...seg, text, logicalSegmentIndex }];
+        return chunks.map((chunk) => ({ ...seg, text: chunk, logicalSegmentIndex }));
       });
 
       const localVoiceMap = new Map();
@@ -467,6 +479,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       };
 
       let globalWordOffset = 0;
+      const segmentWordOffsets = new Map();
 
       for (let i = 0; i < normalizedSegments.length; i++) {
         if (abortRef.current || generationRef.current !== myGeneration) break;
@@ -475,12 +488,14 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         const seg = normalizedSegments[i];
         const text = seg.text?.trim();
         if (!text) continue;
+        const logicalSegmentIndex = Number.isInteger(seg.logicalSegmentIndex) ? seg.logicalSegmentIndex : i;
+        const segmentWordOffset = segmentWordOffsets.get(logicalSegmentIndex) || 0;
 
         if (shouldSkipSegment(seg)) {
           continue;
         }
 
-        setCurrentSegmentIndex(i);
+        setCurrentSegmentIndex(logicalSegmentIndex);
         setCurrentCharacter(seg.type === 'dialogue' && hasNamedSpeaker(seg.character) ? seg.character : null);
 
         const voiceId = resolveSegmentVoice(seg);
@@ -521,7 +536,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             setPlaybackState(STATES.PLAYING);
             setCurrentChunk(text);
 
-            startHighlightLoop(audio, prefetched.words || [], i, messageId, globalWordOffset, text, text);
+            startHighlightLoop(audio, prefetched.words || [], logicalSegmentIndex, messageId, globalWordOffset, segmentWordOffset, text, text);
 
             const playStart = performance.now();
             await new Promise((resolve) => {
@@ -538,7 +553,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
             stopHighlightLoop();
             audioRef.current = null;
-            globalWordOffset += (prefetched.words || []).length;
+            const wordsCount = (prefetched.words || []).length;
+            globalWordOffset += wordsCount;
+            segmentWordOffsets.set(logicalSegmentIndex, segmentWordOffset + wordsCount);
             continue;
           }
         }
@@ -548,16 +565,18 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           chunks,
           voiceId,
           undefined,
-          i,
+          logicalSegmentIndex,
           messageId,
           dialogueSpeed,
           text,
           campaignId,
           myGeneration,
           scenePacing,
-          globalWordOffset
+          globalWordOffset,
+          segmentWordOffset
         );
         globalWordOffset += wordsPlayed;
+        segmentWordOffsets.set(logicalSegmentIndex, segmentWordOffset + wordsPlayed);
         if (generationRef.current !== myGeneration) return;
       }
 

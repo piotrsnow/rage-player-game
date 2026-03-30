@@ -28,7 +28,7 @@ describe('repairDialogueSegments', () => {
     const segments = [
       { type: 'narration', text: 'Mag zaczął mówić: „Czarny Wódz to postać, której imię okrywa mrokiem nawet najjaśniejszy dzień."' },
     ];
-    const result = repairDialogueSegments('...', segments);
+    const result = repairDialogueSegments('...', segments, [{ name: 'Mag', gender: 'male' }]);
 
     expect(result).toHaveLength(2);
     expect(result[0].type).toBe('narration');
@@ -41,7 +41,10 @@ describe('repairDialogueSegments', () => {
     const segments = [
       { type: 'narration', text: 'Jan powiedział: „Chodźmy!" i Maria odpowiedziała: „Jeszcze chwilę."' },
     ];
-    const result = repairDialogueSegments('...', segments);
+    const result = repairDialogueSegments('...', segments, [
+      { name: 'Jan', gender: 'male' },
+      { name: 'Maria', gender: 'female' },
+    ]);
 
     expect(result.length).toBeGreaterThanOrEqual(4);
     const dialogues = result.filter(s => s.type === 'dialogue');
@@ -86,28 +89,28 @@ describe('repairDialogueSegments', () => {
     expect(repairedDialogues[0].gender).toBe('female');
   });
 
-  it('treats unresolved quoted speech as narrator dialogue without named speaker', () => {
+  it('treats unresolved quoted speech as narration in safe mode', () => {
     const segments = [
       { type: 'narration', text: 'ktoś szepnął: „Uciekaj."' },
     ];
     const result = repairDialogueSegments('...', segments, []);
 
-    const dialogue = result.find(s => s.type === 'dialogue');
-    expect(dialogue.character).toBeUndefined();
-    expect(dialogue.gender).toBeUndefined();
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(0);
+    expect(result.some(s => s.type === 'narration' && s.text.includes('Uciekaj.'))).toBe(true);
   });
 
   it('handles different quote styles: " " and « »', () => {
     const doubleQuote = [
-      { type: 'narration', text: 'He said: "Run away!"' },
+      { type: 'narration', text: 'Old Guard said: "Run away!"' },
     ];
-    const result1 = repairDialogueSegments('...', doubleQuote);
+    const result1 = repairDialogueSegments('...', doubleQuote, [{ name: 'Old Guard', gender: 'male' }]);
     expect(result1.find(s => s.type === 'dialogue')?.text).toBe('Run away!');
 
     const guillemets = [
-      { type: 'narration', text: 'Il a dit: «Fuyez!»' },
+      { type: 'narration', text: 'Vieux Garde a dit: «Fuyez!»' },
     ];
-    const result2 = repairDialogueSegments('...', guillemets);
+    const result2 = repairDialogueSegments('...', guillemets, [{ name: 'Vieux Garde', gender: 'male' }]);
     expect(result2.find(s => s.type === 'dialogue')?.text).toBe('Fuyez!');
   });
 
@@ -123,7 +126,7 @@ describe('repairDialogueSegments', () => {
     const segments = [
       { type: 'narration', text: 'Mag rzekł: „Idź naprzód." Po czym zniknął w cieniu.' },
     ];
-    const result = repairDialogueSegments('...', segments);
+    const result = repairDialogueSegments('...', segments, [{ name: 'Mag', gender: 'male' }]);
 
     expect(result).toHaveLength(3);
     expect(result[0].type).toBe('narration');
@@ -141,7 +144,7 @@ describe('repairDialogueSegments', () => {
 
     expect(result.every(s => s.text.trim().length > 0)).toBe(true);
     expect(result).toHaveLength(1);
-    expect(result[0].type).toBe('dialogue');
+    expect(result[0].type).toBe('narration');
   });
 
   it('leaves unbalanced quotes as narration', () => {
@@ -324,6 +327,32 @@ describe('repairDialogueSegments', () => {
     expect(narrations.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('strips dialogue prefix from narration when it repeats the same line', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Mścichuj Barnaba', text: 'Morda śmieciu! Bijemy się!', gender: 'male' },
+      { type: 'narration', text: 'Morda śmieciu! Bijemy się! Barnaba rusza pierwszy, z rykiem godnym pijanego tura.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Mścichuj Barnaba', gender: 'male' }]);
+
+    const narrations = result.filter(s => s.type === 'narration');
+    expect(narrations).toHaveLength(1);
+    expect(narrations[0].text).toBe('Barnaba rusza pierwszy, z rykiem godnym pijanego tura.');
+  });
+
+  it('strips repeated spoken dialogue from the middle of narration', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Mścichuj Barnaba', text: 'No co jest frajery?', gender: 'male' },
+      { type: 'narration', text: 'Słowa Barnaby lecą przez wilgotny półmrok jak cegła przez szybę. No co jest frajery? Pod kuławym Kurem rozmowy przy trzech stołach urywają się naraz.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Mścichuj Barnaba', gender: 'male' }]);
+
+    const narrations = result.filter(s => s.type === 'narration');
+    expect(narrations).toHaveLength(1);
+    expect(narrations[0].text).not.toMatch(/No co jest frajery\?/i);
+    expect(narrations[0].text).toContain('Słowa Barnaby lecą');
+    expect(narrations[0].text).toContain('Pod kuławym Kurem');
+  });
+
   // --- Unquoted dialogue detection tests ---
 
   it('detects unquoted dialogue with second-person markers and attributes to NPC from context', () => {
@@ -426,8 +455,8 @@ describe('repairDialogueSegments', () => {
     const result = repairDialogueSegments('...', segments, [], ['Imperium', 'Altdorf']);
 
     const dialogues = result.filter(s => s.type === 'dialogue');
-    expect(dialogues).toHaveLength(1);
-    expect(dialogues[0].character).not.toBe('Imperium');
+    expect(dialogues).toHaveLength(0);
+    expect(result.some(s => s.type === 'narration' && s.text.includes('Rada chce to dziś zakopać.'))).toBe(true);
   });
 
   it('filters out excluded names from AI-returned dialogue segments when building known names', () => {
@@ -439,9 +468,45 @@ describe('repairDialogueSegments', () => {
 
     const imperiumDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Imperium');
     expect(imperiumDialogues).toHaveLength(1);
-    const secondDialogue = result.filter(s => s.type === 'dialogue' && s.text === 'Przenieśmy to niżej.');
-    expect(secondDialogue).toHaveLength(1);
-    expect(secondDialogue[0].character).not.toBe('Imperium');
+    const uncertainSpeech = result.filter(s => s.type === 'narration' && s.text === 'Przenieśmy to niżej.');
+    expect(uncertainSpeech).toHaveLength(1);
+  });
+
+  it('keeps generic AI speaker labels as neutral dialogue NPC', () => {
+    const segments = [
+      { type: 'dialogue', character: 'NPC1', text: 'To pułapka.' },
+      { type: 'dialogue', character: 'unknown', text: 'Wycofajcie się.' },
+    ];
+    const result = repairDialogueSegments('...', segments, []);
+
+    expect(result.every(s => s.type === 'dialogue')).toBe(true);
+    expect(result.map(s => s.character)).toEqual(['NPC', 'NPC']);
+    expect(result.map(s => s.text)).toEqual(['To pułapka.', 'Wycofajcie się.']);
+  });
+
+  it('does not re-attribute descriptive speaker labels to known NPCs', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Chrapliwy Głos zza Kamienia', text: 'To pułapka.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Szeptacz', gender: 'male' }]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('dialogue');
+    expect(result[0].character).toBe('NPC');
+    expect(result[0].text).toBe('To pułapka.');
+  });
+
+  it('re-attributes quoted speech to only known NPC when AI omits speaker', () => {
+    const segments = [
+      { type: 'narration', text: 'Cień wychodzi z bramy i cedzi: „Nie masz tu czego szukać.”' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Szeptacz', gender: 'male' }]);
+
+    const dialogues = result.filter(s => s.type === 'dialogue');
+    expect(dialogues).toHaveLength(1);
+    expect(dialogues[0].character).toBe('Szeptacz');
+    expect(dialogues[0].text).toBe('Nie masz tu czego szukać.');
+    expect(dialogues[0].gender).toBe('male');
   });
 });
 

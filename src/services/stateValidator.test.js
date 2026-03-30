@@ -12,7 +12,7 @@ vi.mock('../data/wfrp', () => ({
   canAdvanceTier: () => false,
 }));
 
-import { validateStateChanges } from './stateValidator.js';
+import { validateStateChanges, validateMultiplayerStateChanges } from './stateValidator.js';
 import { calculateSL } from './gameState.js';
 
 const baseCharacter = {
@@ -281,6 +281,43 @@ describe('NPC relationship fields passthrough', () => {
       { character: baseCharacter },
     );
     expect(validated.npcs[0].relatedQuestIds).toEqual(['q1', 'q2']);
+  });
+});
+
+describe('NPC name sanitization', () => {
+  it('removes descriptive Polish voice labels from NPC changes', () => {
+    const { validated, corrections } = validateStateChanges(
+      { npcs: [{ name: 'Chrapliwy Głos zza Kamienia', action: 'introduce' }] },
+      { character: baseCharacter },
+    );
+    expect(validated.npcs).toEqual([]);
+    expect(corrections.some((entry) => entry.includes('Suspicious NPC name removed'))).toBe(true);
+  });
+
+  it('removes descriptive English voice labels from NPC changes', () => {
+    const { validated } = validateStateChanges(
+      { npcs: [{ name: 'Voice from behind the stone', action: 'introduce' }] },
+      { character: baseCharacter },
+    );
+    expect(validated.npcs).toEqual([]);
+  });
+
+  it('keeps normal named NPC entries intact', () => {
+    const { validated } = validateStateChanges(
+      { npcs: [{ name: 'Bury Stach', action: 'introduce' }] },
+      { character: baseCharacter },
+    );
+    expect(validated.npcs).toHaveLength(1);
+    expect(validated.npcs[0].name).toBe('Bury Stach');
+  });
+
+  it('applies the same sanitization in multiplayer validation', () => {
+    const { validated, corrections } = validateMultiplayerStateChanges(
+      { npcs: [{ name: 'Voice from the dark archway', action: 'introduce' }] },
+      {},
+    );
+    expect(validated.npcs).toEqual([]);
+    expect(corrections.some((entry) => entry.includes('multiplayer: Suspicious NPC name removed'))).toBe(true);
   });
 });
 

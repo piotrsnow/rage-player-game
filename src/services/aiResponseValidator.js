@@ -796,16 +796,58 @@ function normalizeTextForDedup(text) {
   return (text || '').trim().toLowerCase().replace(/[""„"«»'']/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanupNarrationAfterDialogueStrip(text) {
+  return String(text || '')
+    .replace(/\s+([,.;:!?…])/g, '$1')
+    .replace(/([,.;:!?…])\s*([,.;:!?…])+/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,.;:!?…\s-]+/, '')
+    .replace(/\s+[-–—]\s+/g, ' ')
+    .trim();
+}
+
+function stripDialogueRepeatsFromNarration(narrationText, dialogueTexts) {
+  let remaining = String(narrationText || '').trim();
+  if (!remaining || !Array.isArray(dialogueTexts) || dialogueTexts.length === 0) return remaining;
+
+  const sortedDialogues = [...dialogueTexts]
+    .map((text) => String(text || '').trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  for (const dialogueText of sortedDialogues) {
+    const escaped = escapeRegex(dialogueText);
+    const quotedPattern = new RegExp(`[„“"«]\\s*${escaped}\\s*[”"»](?:\\s*[.!?,:;…-]+)?`, 'gi');
+    const barePattern = new RegExp(`(?:^|[\\s([{\\-–—])${escaped}(?=$|[\\s\\])}.,!?;:…\\-–—])`, 'gi');
+
+    remaining = remaining.replace(quotedPattern, ' ');
+    remaining = remaining.replace(barePattern, ' ');
+    remaining = cleanupNarrationAfterDialogueStrip(remaining);
+  }
+
+  return cleanupNarrationAfterDialogueStrip(remaining);
+}
+
 function hardDedupeSegments(segments) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
 
   const deduped = [];
   const dialogueByText = new Map();
+  const allDialogueTexts = segments
+    .filter((seg) => seg?.type === 'dialogue' && typeof seg.text === 'string' && seg.text.trim())
+    .map((seg) => seg.text.trim());
 
   for (const seg of segments) {
     if (!seg || typeof seg !== 'object') continue;
     const type = seg.type === 'dialogue' ? 'dialogue' : 'narration';
-    const text = typeof seg.text === 'string' ? seg.text.trim() : '';
+    const rawText = typeof seg.text === 'string' ? seg.text.trim() : '';
+    const text = type === 'narration'
+      ? stripDialogueRepeatsFromNarration(rawText, allDialogueTexts)
+      : rawText;
     if (!text) continue;
 
     const normalizedText = normalizeTextForDedup(text);
@@ -907,6 +949,33 @@ function findSpeakerFromContext(segments, currentIndex, knownNames, knownNpcs, e
   return null;
 }
 
+function resolveFallbackSpeaker({
+  preferredSpeaker = null,
+  segments = [],
+  currentIndex = -1,
+  textBeforeQuote = '',
+  knownNames = [],
+  knownNpcs = [],
+  excludeNames = [],
+} = {}) {
+  let speaker = preferredSpeaker;
+
+  if (!speaker && textBeforeQuote) {
+    speaker = findSpeakerInText(textBeforeQuote, knownNames, excludeNames);
+  }
+
+  if (!speaker && currentIndex >= 0) {
+    speaker = findSpeakerFromContext(segments, currentIndex, knownNames, knownNpcs, excludeNames);
+  }
+
+  if (!speaker && knownNames.length === 1) {
+    speaker = knownNames[0];
+  }
+
+  if (!speaker || isExcludedName(speaker, excludeNames)) return null;
+  return speaker;
+}
+
 export function repairDialogueSegments(narrative, segments, knownNpcs = [], excludeNames = []) {
   if (!segments || segments.length === 0) {
     if (narrative && narrative.trim()) {
@@ -929,9 +998,44 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
   );
 
   const repaired = [];
-  for (const seg of segments) {
+  for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+    const seg = segments[segIndex];
     if (seg.type !== 'narration' || !seg.text) {
-      repaired.push(seg);
+      if (seg.type === 'dialogue' && !hasNamedSpeaker(seg.character)) {
+        const spokenText = String(seg.text || '').trim();
+        const genericLabelProvided = typeof seg.character === 'string' && isGenericSpeakerName(seg.character);
+        if (spokenText && genericLabelProvided) {
+          // Keep unknown/descriptor speakers as dialogue, but neutralize actor identity.
+          repaired.push({
+            type: 'dialogue',
+            character: 'NPC',
+            text: spokenText,
+            ...(typeof seg.gender === 'string' ? { gender: seg.gender } : {}),
+          });
+          continue;
+        }
+        const fallbackSpeaker = resolveFallbackSpeaker({
+          segments,
+          currentIndex: segIndex,
+          knownNames,
+          knownNpcs,
+          excludeNames,
+        });
+        if (fallbackSpeaker && spokenText) {
+          const gender = lookupGender(fallbackSpeaker, knownNpcs, existingDialogueSegments);
+          repaired.push({
+            type: 'dialogue',
+            character: fallbackSpeaker,
+            text: spokenText,
+            ...(gender ? { gender } : {}),
+          });
+        } else {
+          // Safe mode: unknown speaker should not appear as anonymous dialogue.
+          repaired.push({ type: 'narration', text: spokenText });
+        }
+      } else {
+        repaired.push(seg);
+      }
       continue;
     }
 
@@ -977,14 +1081,28 @@ export function repairDialogueSegments(narrative, segments, knownNpcs = [], excl
         knownNames,
         excludeNames
       );
-      const gender = lookupGender(speakerName, knownNpcs, existingDialogueSegments);
-
-      parts.push({
-        type: 'dialogue',
-        ...(speakerName ? { character: speakerName } : {}),
-        text: spokenText,
-        ...(gender ? { gender } : {}),
+      const resolvedSpeaker = resolveFallbackSpeaker({
+        preferredSpeaker: speakerName,
+        segments,
+        currentIndex: segIndex,
+        textBeforeQuote: seg.text.slice(0, match.index),
+        knownNames,
+        knownNpcs,
+        excludeNames,
       });
+      const gender = lookupGender(resolvedSpeaker, knownNpcs, existingDialogueSegments);
+
+      if (resolvedSpeaker) {
+        parts.push({
+          type: 'dialogue',
+          character: resolvedSpeaker,
+          text: spokenText,
+          ...(gender ? { gender } : {}),
+        });
+      } else {
+        // Safe mode: keep speech as narration when we cannot identify actor confidently.
+        parts.push({ type: 'narration', text: spokenText });
+      }
 
       lastIndex = match.index + match[0].length;
     }

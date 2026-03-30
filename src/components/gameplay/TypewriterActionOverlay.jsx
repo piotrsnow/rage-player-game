@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const CHAR_INTERVAL_MS = 35;
 const TYPING_SFX_COUNT = 3;
@@ -8,14 +8,42 @@ function pickRandomTypingSfx() {
   return `/battle_sfx/typing_on_keyboard_${idx}.mp3`;
 }
 
-export default function TypewriterActionOverlay({ text, onComplete }) {
+export default function TypewriterActionOverlay({
+  text,
+  onComplete,
+  typingSpeedMultiplier = 1,
+  holdOpen = false,
+  holdingDurationMs = 1500,
+}) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   const audioRef = useRef(null);
+  const charIntervalMs = Math.max(1, CHAR_INTERVAL_MS * typingSpeedMultiplier);
+  const charHighlightKinds = useMemo(() => {
+    const marks = new Uint8Array(text.length); // 0 normal, 1 dialogue, 2 speaker label
+    const lines = text.split('\n');
+    let offset = 0;
 
-  const typingDurationMs = text.length * CHAR_INTERVAL_MS;
+    for (const line of lines) {
+      const speakerMatch = line.match(/^([A-Za-z0-9\u00C0-\u017F][A-Za-z0-9\u00C0-\u017F '\-]{0,23}\s*:)/u);
+      if (speakerMatch) {
+        const speakerLen = speakerMatch[1].length;
+        for (let i = 0; i < speakerLen; i += 1) {
+          marks[offset + i] = 2;
+        }
+        for (let i = speakerLen; i < line.length; i += 1) {
+          marks[offset + i] = 1;
+        }
+      }
+      offset += line.length + 1;
+    }
+
+    return marks;
+  }, [text]);
+
+  const typingDurationMs = text.length * charIntervalMs;
 
   // Start typing SFX on mount, stop when typing ends
   useEffect(() => {
@@ -53,20 +81,22 @@ export default function TypewriterActionOverlay({ text, onComplete }) {
       setPhase('holding');
       return;
     }
-    const timer = setTimeout(() => setDisplayedChars((n) => n + 1), CHAR_INTERVAL_MS);
+    const timer = setTimeout(() => setDisplayedChars((n) => n + 1), charIntervalMs);
     return () => clearTimeout(timer);
-  }, [displayedChars, phase, text.length]);
+  }, [displayedChars, phase, text.length, charIntervalMs]);
 
   useEffect(() => {
     if (phase === 'holding') {
-      const timer = setTimeout(() => setPhase('fading'), 1500);
+      if (holdOpen) return undefined;
+      const timer = setTimeout(() => setPhase('fading'), Math.max(0, holdingDurationMs));
       return () => clearTimeout(timer);
     }
     if (phase === 'fading') {
       const timer = setTimeout(() => onCompleteRef.current?.(), 600);
       return () => clearTimeout(timer);
     }
-  }, [phase]);
+    return undefined;
+  }, [phase, holdOpen, holdingDurationMs]);
 
   const progress = text.length > 0 ? displayedChars / text.length : 0;
 
@@ -125,7 +155,16 @@ export default function TypewriterActionOverlay({ text, onComplete }) {
               <span
                 key={i}
                 className={i === displayedChars - 1 ? 'animate-typewriter-char-in' : ''}
-                style={{ color: 'rgba(232, 210, 255, 0.9)' }}
+                style={{
+                  color: charHighlightKinds[i] === 2
+                    ? 'rgba(255, 210, 150, 0.98)'
+                    : charHighlightKinds[i] === 1
+                      ? 'rgba(190, 236, 255, 0.96)'
+                      : 'rgba(232, 210, 255, 0.9)',
+                  textShadow: charHighlightKinds[i] !== 0
+                    ? '0 0 8px rgba(170, 120, 255, 0.25)'
+                    : 'none',
+                }}
               >
                 {char}
               </span>

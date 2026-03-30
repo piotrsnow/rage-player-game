@@ -19,6 +19,7 @@ import { advanceDialogueRound } from '../services/dialogueEngine';
 import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
 import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
+import { hasNamedSpeaker } from '../services/dialogueSegments';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -119,6 +120,120 @@ function downgradeLowConfidenceDialogueSegments(segments) {
   });
 }
 
+const HARD_DEDUP_WORD_REGEX = /[A-Za-z0-9ĄąĆćĘęŁłŃńÓóŚśŹźŻż]+/g;
+
+function tokenizeSpeechText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .match(HARD_DEDUP_WORD_REGEX) || [];
+}
+
+function normalizeSpeechText(text) {
+  return tokenizeSpeechText(text).join(' ').trim();
+}
+
+function stripLeadingDelimiters(text) {
+  return String(text || '')
+    .replace(/^[\s"'`„“«».,:;!?…\-–—(){}\[\]]+/, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function sliceAfterWordTokens(text, tokenCount) {
+  if (!text || tokenCount <= 0) return String(text || '');
+  const re = new RegExp(HARD_DEDUP_WORD_REGEX.source, 'g');
+  let match;
+  let seen = 0;
+  let cutIndex = 0;
+  while ((match = re.exec(text)) !== null) {
+    seen += 1;
+    cutIndex = match.index + match[0].length;
+    if (seen >= tokenCount) break;
+  }
+  if (seen < tokenCount) return String(text || '');
+  return String(text || '').slice(cutIndex);
+}
+
+function stripLeadingDialogueEcho(narrationText, dialogueTexts) {
+  let output = String(narrationText || '').trim();
+  if (!output || !Array.isArray(dialogueTexts) || dialogueTexts.length === 0) return output;
+
+  const sortedDialogueTokens = dialogueTexts
+    .map((text) => tokenizeSpeechText(text))
+    .filter((tokens) => tokens.length >= 2)
+    .sort((a, b) => b.length - a.length);
+
+  for (const dialogueTokens of sortedDialogueTokens) {
+    const narrationTokens = tokenizeSpeechText(output);
+    if (narrationTokens.length < dialogueTokens.length) continue;
+
+    let matchesPrefix = true;
+    for (let i = 0; i < dialogueTokens.length; i += 1) {
+      if (narrationTokens[i] !== dialogueTokens[i]) {
+        matchesPrefix = false;
+        break;
+      }
+    }
+    if (!matchesPrefix) continue;
+
+    output = stripLeadingDelimiters(sliceAfterWordTokens(output, dialogueTokens.length));
+    if (!output) return '';
+  }
+
+  return output;
+}
+
+function hardRemoveNarrationDialogueRepeats(segments) {
+  const source = Array.isArray(segments) ? segments : [];
+  if (source.length === 0) return [];
+
+  const dialogueTexts = source
+    .filter((seg) => seg?.type === 'dialogue' && typeof seg?.text === 'string' && seg.text.trim())
+    .map((seg) => seg.text.trim());
+  const dialogueTextSet = new Set(dialogueTexts.map((text) => normalizeSpeechText(text)).filter(Boolean));
+
+  const sanitized = [];
+  for (const seg of source) {
+    if (!seg || typeof seg !== 'object') continue;
+    if (seg.type !== 'narration') {
+      sanitized.push(seg);
+      continue;
+    }
+
+    let text = String(seg.text || '').trim();
+    if (!text) continue;
+
+    text = stripLeadingDialogueEcho(text, dialogueTexts);
+    const normalized = normalizeSpeechText(text);
+    if (!normalized) continue;
+    if (dialogueTextSet.has(normalized)) continue;
+
+    const prev = sanitized[sanitized.length - 1];
+    if (prev?.type === 'narration' && normalizeSpeechText(prev.text) === normalized) {
+      continue;
+    }
+
+    sanitized.push({ ...seg, text });
+  }
+
+  return sanitized;
+}
+
+function demoteAnonymousDialogueSegments(segments) {
+  return (segments || []).map((seg) => {
+    if (seg?.type !== 'dialogue') return seg;
+    if (hasNamedSpeaker(seg?.character)) return seg;
+    const text = String(seg?.text || '').trim();
+    if (!text) return null;
+    return {
+      ...seg,
+      type: 'dialogue',
+      character: 'NPC',
+      text,
+    };
+  }).filter((seg) => typeof seg?.text === 'string' && seg.text.trim());
+}
+
 function buildAutomaticRestRecovery(state) {
   const character = state?.character;
   if (!character) return null;
@@ -130,9 +245,10 @@ function buildAutomaticRestRecovery(state) {
   const needs = character.needs || {};
   const needsChanges = {};
   for (const key of ['hunger', 'thirst', 'bladder', 'hygiene', 'rest']) {
+    // Rest should always fully satisfy needs after all other scene deltas are applied.
+    // Using +100 guarantees clamp-to-100 even if needs were decayed earlier in this update.
     if (typeof needs[key] !== 'number') continue;
-    const delta = Math.max(0, 100 - needs[key]);
-    if (delta > 0) needsChanges[key] = delta;
+    needsChanges[key] = 100;
   }
 
   return {
@@ -366,6 +482,18 @@ export function useAI() {
           }
         }
 
+        const rawAiSpeech = {
+          narrative: typeof result.narrative === 'string' ? result.narrative : '',
+          dialogueSegments: Array.isArray(result.dialogueSegments)
+            ? result.dialogueSegments.map((segment) => (
+              segment && typeof segment === 'object'
+                ? { ...segment }
+                : segment
+            ))
+            : [],
+          scenePacing: result.scenePacing || 'exploration',
+        };
+
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
           let resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
           if (!resolvedCharacteristic) {
@@ -505,7 +633,11 @@ export function useAI() {
         const withPlayerDialogue = (!isFirstScene && !isPassiveSceneAction)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
-        const finalSegments = downgradeLowConfidenceDialogueSegments(withPlayerDialogue);
+        const finalSegments = hardRemoveNarrationDialogueRepeats(
+          demoteAnonymousDialogueSegments(
+            downgradeLowConfidenceDialogueSegments(withPlayerDialogue)
+          )
+        );
 
         const sceneId = createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
@@ -607,6 +739,7 @@ export function useAI() {
             content: result.narrative,
             scenePacing: result.scenePacing || 'exploration',
             dialogueSegments: finalSegments,
+            rawAiSpeech,
             soundEffect: result.soundEffect || null,
             timestamp: Date.now(),
           },
@@ -635,7 +768,7 @@ export function useAI() {
 
         const attemptedRest = isRestAction(playerAction, t);
         const restSucceeded = attemptedRest && (!result.diceRoll || result.diceRoll.success === true);
-        if (restSucceeded) {
+        if (attemptedRest) {
           const automaticRecovery = buildAutomaticRestRecovery(state);
           if (automaticRecovery) {
             const mergedNeedsChanges = {
@@ -644,7 +777,9 @@ export function useAI() {
             };
             result.stateChanges = {
               ...(result.stateChanges || {}),
-              ...(automaticRecovery.woundsChange !== undefined ? { woundsChange: automaticRecovery.woundsChange } : {}),
+              ...(restSucceeded && automaticRecovery.woundsChange !== undefined
+                ? { woundsChange: automaticRecovery.woundsChange }
+                : {}),
               ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
             };
           }
@@ -868,6 +1003,8 @@ export function useAI() {
           alternateApiKey,
           sentencesPerScene: options.sentencesPerScene,
           summaryStyle: options.summaryStyle,
+          onPartial: options.onPartial,
+          onProgress: options.onProgress,
         }
       );
       if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });

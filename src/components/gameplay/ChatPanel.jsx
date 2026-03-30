@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/wfrpTranslate';
 import { parseActionSegments } from '../../services/actionParser';
+import { splitTextForHighlight } from '../../services/elevenlabs';
 import Tooltip from '../ui/Tooltip';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
   const hi = highlightInfo;
-  const isActive = hi && hi.messageId === messageId && hi.segmentIndex === segmentIndex && hi.wordIndex >= 0;
+  const highlightedSegmentIndex = hi?.logicalSegmentIndex ?? hi?.segmentIndex;
+  const activeWordIndex = Number.isInteger(hi?.segmentWordIndex) ? hi.segmentWordIndex : hi?.wordIndex;
+  const isActive = hi && hi.messageId === messageId && highlightedSegmentIndex === segmentIndex && activeWordIndex >= 0;
 
   if (!isActive) {
     return <span className={className}>{text}</span>;
   }
 
-  const words = text.split(/(\s+)/);
+  const words = splitTextForHighlight(text);
   let wordIdx = -1;
 
   return (
@@ -23,7 +26,7 @@ function HighlightedText({ text, highlightInfo, segmentIndex, messageId, classNa
           return <span key={i}>{part}</span>;
         }
         wordIdx++;
-        const isCurrent = wordIdx === hi.wordIndex;
+        const isCurrent = wordIdx === activeWordIndex;
         return (
           <span
             key={i}
@@ -207,9 +210,18 @@ function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHover
 
 function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
+  const [showRawAiSpeech, setShowRawAiSpeech] = useState(false);
 
   const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
   const shouldRenderSegments = hasSegments;
+  const rawAiSpeech = message.rawAiSpeech && typeof message.rawAiSpeech === 'object'
+    ? message.rawAiSpeech
+    : {
+      narrative: typeof message.content === 'string' ? message.content : '',
+      dialogueSegments: Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [],
+      scenePacing: message.scenePacing || 'exploration',
+    };
+  const rawAiSpeechText = JSON.stringify(rawAiSpeech, null, 2);
 
   return (
     <div className="flex flex-col gap-2 animate-fade-in">
@@ -223,12 +235,37 @@ function DmMessage({ message, narrator }) {
         />
       </div>
       <div className="glass-panel p-3 border-l-2 border-primary-dim/60 rounded-r-lg space-y-3 hover:border-primary-dim transition-colors duration-300">
-        {shouldRenderSegments ? (
-          <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
-        ) : (
-          <p className="text-xs text-on-surface-variant leading-snug italic">
-            <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
-          </p>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {shouldRenderSegments ? (
+              <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
+            ) : (
+              <p className="text-xs text-on-surface-variant leading-snug italic">
+                <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRawAiSpeech((prev) => !prev)}
+            className="shrink-0 w-7 h-7 rounded-md border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/35 transition-colors"
+            title={showRawAiSpeech ? t('chat.hideRawAiSpeech') : t('chat.showRawAiSpeech')}
+            aria-label={showRawAiSpeech ? t('chat.hideRawAiSpeech') : t('chat.showRawAiSpeech')}
+          >
+            <span className="material-symbols-outlined text-sm leading-none">
+              {showRawAiSpeech ? 'visibility_off' : 'code'}
+            </span>
+          </button>
+        </div>
+        {showRawAiSpeech && (
+          <div className="rounded-md border border-outline-variant/20 bg-black/20 overflow-hidden">
+            <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant border-b border-outline-variant/15">
+              {t('chat.rawAiSpeechTitle')}
+            </div>
+            <pre className="p-2 text-[10px] leading-relaxed text-on-surface-variant whitespace-pre-wrap break-words max-h-64 overflow-auto custom-scrollbar">
+              {rawAiSpeechText}
+            </pre>
+          </div>
         )}
       </div>
     </div>
@@ -637,46 +674,106 @@ function formatDuration(totalSeconds) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
-export default function ChatPanel({ messages = [], narrator, autoPlay = false, myOdId = null, momentumBonus = 0, scrollToMessageId = null, typingPlayers = {}, sessionSeconds = 0, totalPlayTime = 0, narrationTime = 0 }) {
+export default function ChatPanel({
+  messages = [],
+  narrator,
+  autoPlay = false,
+  myOdId = null,
+  momentumBonus = 0,
+  scrollToMessageId = null,
+  onScrollTargetHandled = null,
+  typingPlayers = {},
+  sessionSeconds = 0,
+  totalPlayTime = 0,
+  narrationTime = 0,
+}) {
   const { t } = useTranslation();
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
-  const prevMessageCount = useRef(messages.length);
+  const prevMessageCountForScroll = useRef(messages.length);
+  const prevMessageCountForNarration = useRef(messages.length);
+  const lastNarratedMessageIdRef = useRef(null);
+  const shouldStickToBottomRef = useRef(true);
+  const explicitScrollInProgressRef = useRef(false);
+
+  const isNearBottom = useCallback((el, threshold = 48) => {
+    if (!el) return true;
+    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
+  }, []);
 
   useEffect(() => {
-    if (messages.length <= 1) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    const el = containerRef.current;
+    if (!el) return;
+    shouldStickToBottomRef.current = isNearBottom(el);
+    const onScroll = () => {
+      shouldStickToBottomRef.current = isNearBottom(el);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [isNearBottom]);
+
+  useEffect(() => {
+    const hasNewMessages = messages.length > prevMessageCountForScroll.current;
+    prevMessageCountForScroll.current = messages.length;
+    if (!hasNewMessages || explicitScrollInProgressRef.current || scrollToMessageId) return;
+    if (!shouldStickToBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages.length, scrollToMessageId]);
 
   useEffect(() => {
     if (!scrollToMessageId || !containerRef.current) return;
-    const el = containerRef.current.querySelector(`[data-message-id="${scrollToMessageId}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [scrollToMessageId]);
+    explicitScrollInProgressRef.current = true;
+    let frame = null;
+    let tries = 0;
+    const maxTries = 4;
+
+    const tryScroll = () => {
+      const targetEl = containerRef.current?.querySelector(`[data-message-id="${scrollToMessageId}"]`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        shouldStickToBottomRef.current = false;
+        explicitScrollInProgressRef.current = false;
+        onScrollTargetHandled?.(scrollToMessageId);
+        return;
+      }
+      tries += 1;
+      if (tries >= maxTries) {
+        explicitScrollInProgressRef.current = false;
+        onScrollTargetHandled?.(scrollToMessageId);
+        return;
+      }
+      frame = requestAnimationFrame(tryScroll);
+    };
+
+    frame = requestAnimationFrame(tryScroll);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      explicitScrollInProgressRef.current = false;
+    };
+  }, [scrollToMessageId, onScrollTargetHandled]);
 
   useEffect(() => {
     if (!narrator || !autoPlay) {
-      prevMessageCount.current = messages.length;
+      prevMessageCountForNarration.current = messages.length;
       return;
     }
     const { isNarratorReady, speakSingle } = narrator;
     if (!isNarratorReady) {
-      prevMessageCount.current = messages.length;
+      prevMessageCountForNarration.current = messages.length;
       return;
     }
 
-    if (messages.length > prevMessageCount.current) {
-      const newMessages = messages.slice(prevMessageCount.current);
+    if (messages.length > prevMessageCountForNarration.current) {
+      const newMessages = messages.slice(prevMessageCountForNarration.current);
       const spokenMessages = newMessages.filter((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
       const latestSpokenMessage = spokenMessages.at(-1);
-      if (latestSpokenMessage) {
+      if (latestSpokenMessage && latestSpokenMessage.id !== lastNarratedMessageIdRef.current) {
         // Auto-play should always follow the newest action/scene and cut old narration.
         speakSingle(latestSpokenMessage, latestSpokenMessage.id);
+        lastNarratedMessageIdRef.current = latestSpokenMessage.id;
       }
     }
-    prevMessageCount.current = messages.length;
+    prevMessageCountForNarration.current = messages.length;
   }, [messages, narrator, autoPlay]);
 
   return (

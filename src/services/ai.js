@@ -1,4 +1,4 @@
-import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildObjectiveVerificationPrompt, buildCombatCommentaryPrompts } from './prompts';
+import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildRecapMergePrompt, buildObjectiveVerificationPrompt, buildCombatCommentaryPrompts } from './prompts';
 import { apiClient } from './apiClient';
 import { callLocalLLM, buildReducedSystemPrompt, buildReducedScenePrompt } from './localAI';
 import {
@@ -79,6 +79,39 @@ function normalizeRecapNarrative(text) {
     .map((line) => line.replace(headingPattern, '').replace(listPattern, '').trim())
     .filter(Boolean)
     .join(' ');
+}
+
+const RECAP_SCENE_CHUNK_SIZE = 50;
+const RECAP_COMPLETION_TOKENS = 500;
+
+function chunkArray(items, size) {
+  const chunkSize = Math.max(1, Number(size) || 1);
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const chunks = [];
+  for (let idx = 0; idx < items.length; idx += chunkSize) {
+    chunks.push(items.slice(idx, idx + chunkSize));
+  }
+  return chunks;
+}
+
+function filterChatHistoryByScenes(chatHistory, sceneChunk, { includeMessagesWithoutSceneId = false } = {}) {
+  const messages = Array.isArray(chatHistory) ? chatHistory : [];
+  const chunkSceneIds = new Set((Array.isArray(sceneChunk) ? sceneChunk : []).map((scene) => scene?.id).filter(Boolean));
+  return messages.filter((msg) => {
+    if (!msg?.sceneId) return includeMessagesWithoutSceneId;
+    return chunkSceneIds.has(msg.sceneId);
+  });
+}
+
+function mergeUsageTotals(totalUsage, nextUsage) {
+  if (!nextUsage) return totalUsage;
+  const current = totalUsage
+    ? { ...totalUsage }
+    : { prompt_tokens: 0, completion_tokens: 0, model: nextUsage.model || null };
+  current.prompt_tokens += Number(nextUsage.prompt_tokens) || 0;
+  current.completion_tokens += Number(nextUsage.completion_tokens) || 0;
+  if (!current.model && nextUsage.model) current.model = nextUsage.model;
+  return current;
 }
 
 function normalizeActionForComparison(action) {
@@ -665,34 +698,198 @@ export const aiService = {
     apiKey,
     language = 'en',
     modelTier = 'premium',
-    { alternateApiKey = null, sentencesPerScene = 1, summaryStyle = null } = {}
+    {
+      alternateApiKey = null,
+      sentencesPerScene = 1,
+      summaryStyle = null,
+      onPartial = null,
+      onProgress = null,
+    } = {}
   ) {
     const model = selectModel(provider, modelTier, 'generateRecap');
-    const systemPrompt = buildSystemPrompt(gameState, dmSettings, language);
-    const userPrompt = buildRecapPrompt(language, {
-      sceneCount: gameState?.scenes?.length || 0,
+    const allScenes = Array.isArray(gameState?.scenes) ? gameState.scenes : [];
+    const totalSceneCount = allScenes.length;
+    const requestedMode = summaryStyle && typeof summaryStyle === 'object' ? summaryStyle.mode : null;
+    const recapMode = ['story', 'dialogue', 'poem', 'report'].includes(requestedMode) ? requestedMode : 'story';
+    const useChunking = totalSceneCount > RECAP_SCENE_CHUNK_SIZE;
+    const emitProgress = (payload) => {
+      if (typeof onProgress === 'function') onProgress(payload);
+    };
+    const emitPartial = (payload) => {
+      if (typeof onPartial === 'function') onPartial(payload);
+    };
+
+    const runRecapCall = async (stateForPrompt, userPrompt, validationErrorCode = 'recap_schema_validation_failed') => {
+      const systemPrompt = buildSystemPrompt(stateForPrompt, dmSettings, language, null, { fullSceneHistory: true });
+      const { result, usage } = await callAI(
+        provider,
+        apiKey,
+        systemPrompt,
+        userPrompt,
+        RECAP_COMPLETION_TOKENS,
+        { model, modelTier, taskType: 'generateRecap', alternateApiKey }
+      );
+      const validated = safeParseAIResponse(result, RecapResponseSchema);
+      if (!validated.ok) {
+        return {
+          ok: false,
+          usage,
+          error: validated.error || validationErrorCode,
+        };
+      }
+      return {
+        ok: true,
+        usage,
+        recap: normalizeRecapNarrative(validated.data.recap),
+      };
+    };
+
+    if (!useChunking) {
+      emitProgress({
+        phase: 'chunking',
+        currentBatch: 1,
+        totalBatches: 1,
+        recapMode,
+      });
+      const userPrompt = buildRecapPrompt(language, {
+        sceneCount: totalSceneCount,
+        sentencesPerScene,
+        summaryStyle,
+      });
+      const single = await runRecapCall(gameState, userPrompt);
+      if (single.ok) {
+        emitPartial({
+          text: single.recap,
+          currentBatch: 1,
+          totalBatches: 1,
+          recapMode,
+        });
+        emitProgress({
+          phase: 'done',
+          currentBatch: 1,
+          totalBatches: 1,
+          recapMode,
+        });
+        return {
+          result: {
+            recap: single.recap,
+          },
+          usage: single.usage,
+        };
+      }
+      return {
+        result: {
+          recap: language === 'pl'
+            ? 'Dotąd: bohater przemierza niebezpieczny świat, a konsekwencje decyzji zaczynają się kumulować.'
+            : 'So far: the hero moves through a dangerous world, and consequences of prior choices are mounting.',
+          meta: { degraded: true, reason: single.error || 'recap_schema_validation_failed' },
+        },
+        usage: single.usage,
+      };
+    }
+
+    const sceneChunks = chunkArray(allScenes, RECAP_SCENE_CHUNK_SIZE);
+    const partialRecaps = [];
+    let combinedUsage = null;
+    for (let chunkIndex = 0; chunkIndex < sceneChunks.length; chunkIndex += 1) {
+      const sceneChunk = sceneChunks[chunkIndex];
+      const chunkState = {
+        ...gameState,
+        scenes: sceneChunk,
+        chatHistory: filterChatHistoryByScenes(gameState?.chatHistory, sceneChunk, {
+          includeMessagesWithoutSceneId: chunkIndex === 0,
+        }),
+      };
+      const chunkPrompt = buildRecapPrompt(language, {
+        sceneCount: sceneChunk.length,
+        sentencesPerScene,
+        summaryStyle,
+      });
+      const chunkResult = await runRecapCall(
+        chunkState,
+        chunkPrompt,
+        `recap_chunk_${chunkIndex + 1}_schema_validation_failed`
+      );
+      combinedUsage = mergeUsageTotals(combinedUsage, chunkResult.usage);
+      if (!chunkResult.ok) {
+        const chunkNumber = chunkIndex + 1;
+        throw new Error(
+          language === 'pl'
+            ? `Nie udało się wygenerować streszczenia dla paczki scen ${chunkNumber}/${sceneChunks.length}.`
+            : `Failed to generate recap for scene chunk ${chunkNumber}/${sceneChunks.length}.`
+        );
+      }
+      partialRecaps.push(chunkResult.recap);
+      emitPartial({
+        text: partialRecaps.join('\n\n'),
+        currentBatch: chunkIndex + 1,
+        totalBatches: sceneChunks.length,
+        recapMode,
+      });
+      emitProgress({
+        phase: 'chunking',
+        currentBatch: chunkIndex + 1,
+        totalBatches: sceneChunks.length,
+        recapMode,
+      });
+    }
+
+    if (partialRecaps.length === 1) {
+      emitProgress({
+        phase: 'done',
+        currentBatch: 1,
+        totalBatches: 1,
+        recapMode,
+      });
+      return {
+        result: {
+          recap: partialRecaps[0],
+        },
+        usage: combinedUsage,
+      };
+    }
+
+    emitProgress({
+      phase: 'merging',
+      currentBatch: sceneChunks.length,
+      totalBatches: sceneChunks.length,
+      recapMode,
+    });
+    const mergePrompt = buildRecapMergePrompt(language, partialRecaps, {
+      sceneCount: totalSceneCount,
       sentencesPerScene,
       summaryStyle,
     });
-    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 500, { model, modelTier, taskType: 'generateRecap', alternateApiKey });
-    const validated = safeParseAIResponse(result, RecapResponseSchema);
-    if (validated.ok) {
+    const mergeState = {
+      ...gameState,
+      scenes: allScenes.slice(-Math.min(RECAP_SCENE_CHUNK_SIZE, allScenes.length)),
+      chatHistory: filterChatHistoryByScenes(gameState?.chatHistory, allScenes.slice(-Math.min(RECAP_SCENE_CHUNK_SIZE, allScenes.length))),
+    };
+    const merged = await runRecapCall(mergeState, mergePrompt, 'recap_merge_schema_validation_failed');
+    combinedUsage = mergeUsageTotals(combinedUsage, merged.usage);
+    if (!merged.ok) {
       return {
         result: {
-          ...validated.data,
-          recap: normalizeRecapNarrative(validated.data.recap),
+          recap: language === 'pl'
+            ? 'Dotąd: bohater przemierza niebezpieczny świat, a konsekwencje decyzji zaczynają się kumulować.'
+            : 'So far: the hero moves through a dangerous world, and consequences of prior choices are mounting.',
+          meta: { degraded: true, reason: merged.error || 'recap_merge_schema_validation_failed' },
         },
-        usage,
+        usage: combinedUsage,
       };
     }
+
+    emitProgress({
+      phase: 'done',
+      currentBatch: sceneChunks.length,
+      totalBatches: sceneChunks.length,
+      recapMode,
+    });
     return {
       result: {
-        recap: language === 'pl'
-          ? 'Dotąd: bohater przemierza niebezpieczny świat, a konsekwencje decyzji zaczynają się kumulować.'
-          : 'So far: the hero moves through a dangerous world, and consequences of prior choices are mounting.',
-        meta: { degraded: true, reason: validated.error || 'recap_schema_validation_failed' },
+        recap: merged.recap,
       },
-      usage,
+      usage: combinedUsage,
     };
   },
 

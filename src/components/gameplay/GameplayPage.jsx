@@ -134,6 +134,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const [summaryText, setSummaryText] = useState('');
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
+  const [summaryProgress, setSummaryProgress] = useState({
+    phase: 'idle',
+    currentBatch: 0,
+    totalBatches: 0,
+    recapMode: 'story',
+  });
   const [summarySentencesPerScene, setSummarySentencesPerScene] = useState(1);
   const [summaryOptions, setSummaryOptions] = useState({
     mode: 'story',
@@ -143,10 +149,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     dialogueParticipants: 3,
   });
   const [summaryNarrationMessageId, setSummaryNarrationMessageId] = useState(null);
+  const [summaryNarrationWordOffset, setSummaryNarrationWordOffset] = useState(0);
   const [summarySpeakLoading, setSummarySpeakLoading] = useState(false);
   const [summaryCopied, setSummaryCopied] = useState(false);
   const summarySpeakTimeoutRef = useRef(null);
   const summaryCopyTimeoutRef = useRef(null);
+  const summaryRequestIdRef = useRef(0);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
@@ -158,6 +166,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const displayedSceneIndexRef = useRef(0);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
+
+  const requestChatScrollToMessage = useCallback((messageId) => {
+    if (!messageId) return;
+    setScrollTargetMessageId((prev) => (prev === messageId ? null : prev));
+    requestAnimationFrame(() => {
+      setScrollTargetMessageId(messageId);
+    });
+  }, []);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   const character = isMultiplayer
@@ -236,13 +252,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     if (hasNewMessages) {
       const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
       if (latestDiceRollMessage?.id) {
-        setScrollTargetMessageId(latestDiceRollMessage.id);
+        requestChatScrollToMessage(latestDiceRollMessage.id);
       }
     }
 
     wasGeneratingSceneRef.current = false;
     prevChatHistoryLenRef.current = chatHistory.length;
-  }, [isGeneratingScene, chatHistory]);
+  }, [isGeneratingScene, chatHistory, requestChatScrollToMessage]);
 
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
@@ -277,9 +293,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   }, [displayedSceneIndex, scenes, chatHistory, isMultiplayer, state, mpGameState, character]);
 
   const handleGenerateSummary = useCallback(async () => {
+    const requestId = summaryRequestIdRef.current + 1;
+    summaryRequestIdRef.current = requestId;
     setSummaryLoading(true);
     setSummaryError(null);
     setSummaryCopied(false);
+    setSummaryText('');
+    setSummaryProgress({
+      phase: 'initializing',
+      currentBatch: 0,
+      totalBatches: 0,
+      recapMode: summaryOptions?.mode || 'story',
+    });
     try {
       const recapState = buildRecapStateForDisplayedScene();
       const recapScenes = Array.isArray(recapState?.scenes) ? recapState.scenes : [];
@@ -297,7 +322,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         narratorCustomInstructions: settings.dmSettings?.narratorCustomInstructions || '',
       });
       const cacheInput = JSON.stringify({
-        v: 3,
+        v: 4,
         language: settings.language || 'pl',
         sceneScope: recapScenes.length,
         displayedSceneIndex,
@@ -315,7 +340,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
           const cached = await apiClient.get(`/campaigns/${backendId}/recaps?key=${encodeURIComponent(cacheKey)}`);
           const cachedRecap = typeof cached?.recap === 'string' ? cached.recap.trim() : '';
           if (cached?.found && cachedRecap) {
+            if (summaryRequestIdRef.current !== requestId) return;
             setSummaryText(cachedRecap);
+            setSummaryProgress({
+              phase: 'done',
+              currentBatch: 1,
+              totalBatches: 1,
+              recapMode: summaryOptions?.mode || 'story',
+            });
             return;
           }
         } catch {
@@ -326,9 +358,30 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       const recap = await generateRecap(recapState, {
         sentencesPerScene: summarySentencesPerScene,
         summaryStyle: summaryOptions,
+        onPartial: (partialPayload) => {
+          if (summaryRequestIdRef.current !== requestId) return;
+          const partialText = typeof partialPayload?.text === 'string' ? partialPayload.text.trim() : '';
+          if (partialText) setSummaryText(partialText);
+        },
+        onProgress: (progressPayload) => {
+          if (summaryRequestIdRef.current !== requestId) return;
+          const nextCurrentBatch = Number(progressPayload?.currentBatch) || 0;
+          const nextTotalBatches = Number(progressPayload?.totalBatches) || 0;
+          setSummaryProgress({
+            phase: progressPayload?.phase || 'chunking',
+            currentBatch: nextCurrentBatch,
+            totalBatches: nextTotalBatches,
+            recapMode: progressPayload?.recapMode || summaryOptions?.mode || 'story',
+          });
+        },
       });
+      if (summaryRequestIdRef.current !== requestId) return;
       const safeRecap = typeof recap === 'string' ? recap.trim() : '';
       setSummaryText(safeRecap);
+      setSummaryProgress((prev) => ({
+        ...prev,
+        phase: 'done',
+      }));
       if (!safeRecap) {
         setSummaryError(t('gameplay.summaryEmptyGenerated', 'AI returned an empty summary. Try again.'));
       } else if (backendId && apiClient.isConnected()) {
@@ -345,8 +398,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         }).catch(() => {});
       }
     } catch (err) {
+      if (summaryRequestIdRef.current !== requestId) return;
       setSummaryError(err?.message || t('common.somethingWentWrong'));
     } finally {
+      if (summaryRequestIdRef.current !== requestId) return;
       setSummaryLoading(false);
     }
   }, [buildRecapStateForDisplayedScene, displayedSceneIndex, generateRecap, settings.dmSettings, settings.language, summaryOptions, summarySentencesPerScene, t]);
@@ -355,10 +410,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     setSummaryModalOpen(true);
     setSummaryText('');
     setSummaryError(null);
+    setSummaryProgress({
+      phase: 'idle',
+      currentBatch: 0,
+      totalBatches: 0,
+      recapMode: summaryOptions?.mode || 'story',
+    });
     setSummaryNarrationMessageId(null);
     setSummarySpeakLoading(false);
     setSummaryCopied(false);
-  }, []);
+  }, [summaryOptions?.mode]);
 
   const handleCopySummary = useCallback(async () => {
     const text = typeof summaryText === 'string' ? summaryText.trim() : '';
@@ -468,6 +529,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   );
 
   const [typewriterAction, setTypewriterAction] = useState(null);
+  const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
   const typewriterNextIndexRef = useRef(null);
 
   autoPlayRef.current = autoPlayScenes;
@@ -568,10 +630,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     });
   }, [settings.characterVoices, settings.elevenlabsVoiceId, state.narratorVoiceId]);
 
-  const handleSpeakSummary = useCallback(() => {
-    if (!summaryText) return;
+  const handleSpeakSummary = useCallback((textToRead = summaryText, wordOffset = 0) => {
+    const normalizedText = typeof textToRead === 'string' ? textToRead.trim() : '';
+    if (!normalizedText) return;
     setSummarySpeakLoading(true);
     setSummaryError(null);
+    setSummaryNarrationWordOffset(Math.max(0, Number(wordOffset) || 0));
     if (summarySpeakTimeoutRef.current) {
       window.clearTimeout(summarySpeakTimeoutRef.current);
       summarySpeakTimeoutRef.current = null;
@@ -579,11 +643,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
     if (narrator.isNarratorReady) {
       const narrationId = `summary_${Date.now()}`;
-      const dialogueSegments = buildSummaryDialogueSegments(summaryText);
+      const dialogueSegments = buildSummaryDialogueSegments(normalizedText);
       setSummaryNarrationMessageId(narrationId);
       narrator.speakSingle(
         {
-          content: summaryText,
+          content: normalizedText,
           dialogueSegments,
           segmentPrefetchWindow: SUMMARY_UTTERANCE_PREFETCH_WINDOW,
         },
@@ -699,6 +763,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       handleSceneNavRef.current?.(nextIdx);
     }
   }, [scenes.length]);
+
+  const handlePlayerActionOverlayComplete = useCallback(() => {
+    setPlayerActionOverlayText(null);
+  }, []);
 
   useEffect(() => {
     if (campaign || isMultiplayer || readOnly) return;
@@ -884,9 +952,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     const narratorMsgId = targetMsg?.id || fallbackMsg?.id || `nav_${scene.id}`;
 
     if (targetMsg) {
-      setScrollTargetMessageId(targetMsg.id);
+      requestChatScrollToMessage(targetMsg.id);
     } else if (fallbackMsg) {
-      setScrollTargetMessageId(fallbackMsg.id);
+      requestChatScrollToMessage(fallbackMsg.id);
     }
 
     if ((settings.narratorEnabled || readOnly) && narrator.isNarratorReady) {
@@ -902,6 +970,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const handleAction = async (action, isCustomAction = false, fromAutoPlayer = false) => {
     consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
+    if (!fromAutoPlayer && action) {
+      setPlayerActionOverlayText(action);
+    }
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer);
     } catch {
@@ -925,11 +996,24 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   );
 
   useEffect(() => {
-    if (typewriterAction || autoPlayer.overlayAction) {
+    if (typewriterAction || autoPlayer.overlayAction || playerActionOverlayText) {
       narrator.stop();
       try { window.speechSynthesis?.cancel(); } catch {}
     }
-  }, [!!typewriterAction, !!autoPlayer.overlayAction]);
+  }, [!!typewriterAction, !!autoPlayer.overlayAction, !!playerActionOverlayText]);
+
+  const overlayText = typewriterAction || autoPlayer.overlayAction || playerActionOverlayText;
+  const overlayOnComplete = typewriterAction
+    ? handleTypewriterComplete
+    : autoPlayer.overlayAction
+      ? autoPlayer.completeOverlay
+      : handlePlayerActionOverlayComplete;
+  const isPlayerActionOverlayActive = !typewriterAction && !autoPlayer.overlayAction && !!playerActionOverlayText;
+  const overlayTypingSpeedMultiplier = isPlayerActionOverlayActive
+    ? (isGeneratingScene ? 3 : 1)
+    : 1;
+  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
+  const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 0 : 1500;
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
@@ -1646,10 +1730,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               return repairSceneImage(sceneId, { reason: 'manual-retry' });
             }}
           />
-          {(typewriterAction || autoPlayer.overlayAction) && (
+          {overlayText && (
             <TypewriterActionOverlay
-              text={typewriterAction || autoPlayer.overlayAction}
-              onComplete={typewriterAction ? handleTypewriterComplete : autoPlayer.completeOverlay}
+              text={overlayText}
+              onComplete={overlayOnComplete}
+              typingSpeedMultiplier={overlayTypingSpeedMultiplier}
+              holdOpen={overlayHoldOpen}
+              holdingDurationMs={overlayHoldingDurationMs}
             />
           )}
         </div>
@@ -1960,6 +2047,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
             : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
+          onScrollTargetHandled={(handledId) => {
+            setScrollTargetMessageId((current) => (current === handledId ? null : current));
+          }}
           typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
           sessionSeconds={sessionSeconds}
           totalPlayTime={totalPlayTime}
@@ -2024,12 +2114,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               summaryText={summaryText}
               isLoading={summaryLoading}
               error={summaryError}
+              progress={summaryProgress}
               copied={summaryCopied}
               summaryOptions={summaryOptions}
               onSummaryOptionsChange={setSummaryOptions}
               sceneIndex={displayedSceneIndex}
               totalScenes={scenes.length}
               narrationMessageId={summaryNarrationMessageId}
+              narrationWordOffset={summaryNarrationWordOffset}
               narratorCurrentMessageId={narrator.currentMessageId}
               narratorHighlightInfo={narrator.highlightInfo}
               speakLoading={summarySpeakLoading}

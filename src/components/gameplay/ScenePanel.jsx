@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGame } from '../../contexts/GameContext';
 import { apiClient } from '../../services/apiClient';
+import { countHighlightWords, splitTextForHighlight } from '../../services/elevenlabs';
 import EffectEngine from '../../effects/EffectEngine';
 import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
@@ -294,7 +295,7 @@ function HighlightedNarrative({ text, highlightInfo }) {
 
   const before = text.slice(0, startIdx);
   const after = text.slice(startIdx + fullText.length);
-  const segmentWords = fullText.split(/(\s+)/);
+  const segmentWords = splitTextForHighlight(fullText);
   let wordIdx = -1;
 
   return (
@@ -360,7 +361,7 @@ export default function ScenePanel({
 
     let total = 0;
     for (const s of sentences) {
-      const wc = s.split(/\s+/).filter(Boolean).length;
+      const wc = countHighlightWords(s);
       if (wordIdx < total + wc) {
         lastSentenceRef.current = s;
         lastOffsetRef.current = total;
@@ -371,7 +372,7 @@ export default function ScenePanel({
 
     const last = sentences[sentences.length - 1];
     lastSentenceRef.current = last;
-    lastOffsetRef.current = total - last.split(/\s+/).filter(Boolean).length;
+    lastOffsetRef.current = total - countHighlightWords(last);
     return last;
   }, [currentChunk, highlightInfo]);
 
