@@ -5,12 +5,11 @@ import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { useAI } from '../../hooks/useAI';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
-import QuestLog from './QuestLog';
-import CodexPanel from './CodexPanel';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
 import PortraitGenerator from './PortraitGenerator';
@@ -20,6 +19,12 @@ import Tooltip from '../ui/Tooltip';
 
 function getTooltipKey(name) {
   return name?.replace(/\s*\(.*\)/, '') || '';
+}
+
+function getGenderLabel(gender, t) {
+  if (gender === 'female') return t('multiplayer.female');
+  if (gender === 'male') return t('multiplayer.male');
+  return t('gmModal.genders.unknown');
 }
 
 const NEEDS_META = [
@@ -103,6 +108,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               </div>
               <PortraitGenerator
                 species={character.species}
+                age={character.age}
                 gender={character.gender}
                 careerName={character.career?.name}
                 genre={campaign?.genre}
@@ -318,6 +324,7 @@ export default function CharacterSheet({ onClose }) {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
   const mp = useMultiplayer();
+  const { ensureMissingInventoryImages } = useAI();
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
@@ -327,10 +334,13 @@ export default function CharacterSheet({ onClose }) {
     ? allCharacters.find((c) => c.odId === mp.state.myOdId) || allCharacters[0]
     : state.character;
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
-  const quests = isMultiplayer ? (mpGameState?.quests || { active: [], completed: [] }) : state.quests;
-  const world = isMultiplayer ? (mpGameState?.world || {}) : (state.world || {});
 
   const [selectedIdx, setSelectedIdx] = useState(0);
+
+  useEffect(() => {
+    if (isMultiplayer) return;
+    void ensureMissingInventoryImages(myCharacter?.inventory || [], { emitWarning: false });
+  }, [isMultiplayer, myCharacter?.inventory, ensureMissingInventoryImages]);
   const [showAdvancement, setShowAdvancement] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [libraryChars, setLibraryChars] = useState([]);
@@ -459,6 +469,10 @@ export default function CharacterSheet({ onClose }) {
                     <span className="w-1 h-1 bg-primary rounded-full" />
                     <span>{translateCareer((browsingCharacter.career || browsingCharacter.careerData)?.name, t)} ({translateTierName((browsingCharacter.career || browsingCharacter.careerData)?.tierName, t)})</span>
                     <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{t('character.gender')}: {getGenderLabel(browsingCharacter.gender, t)}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{t('character.age')}: {browsingCharacter.age ?? 23}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
                     <span>{browsingCharacter.xp || 0} {t('common.xp')}</span>
                   </div>
                 </div>
@@ -612,6 +626,10 @@ export default function CharacterSheet({ onClose }) {
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{translateStatus(displayCharacter.career?.status, t)}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{t('character.gender')}: {getGenderLabel(displayCharacter.gender, t)}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
+                  <span>{t('character.age')}: {displayCharacter.age ?? 23}</span>
+                  <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{displayCharacter.xp} {t('common.xp')}</span>
                 </div>
                 {availableXp > 0 && (
@@ -649,18 +667,6 @@ export default function CharacterSheet({ onClose }) {
                   setTimeout(() => autoSave(), 300);
                 }}
               />
-
-              {quests && (quests.active?.length > 0 || quests.completed?.length > 0) && (
-                <div className="mt-8 animate-fade-in">
-                  <QuestLog active={quests.active} completed={quests.completed} npcs={world?.npcs || []} />
-                </div>
-              )}
-
-              {world.codex && Object.keys(world.codex).length > 0 && (
-                <div className="mt-8 animate-fade-in">
-                  <CodexPanel codex={world.codex} />
-                </div>
-              )}
             </div>
           )}
         </div>

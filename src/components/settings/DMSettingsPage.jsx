@@ -371,9 +371,10 @@ export default function DMSettingsPage({ onClose }) {
                         {t('settings.sceneVisualizationDesc')}
                       </p>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {[
                         { id: 'image', icon: 'image', label: t('settings.sceneVisImage') },
+                        { id: 'map', icon: 'grid_on', label: t('settings.sceneVisMap') },
                         { id: '3d', icon: 'view_in_ar', label: t('settings.sceneVis3D') },
                         { id: 'canvas', icon: 'brush', label: t('settings.sceneVisCanvas') },
                         { id: 'none', icon: 'visibility_off', label: t('settings.sceneVisNone') },

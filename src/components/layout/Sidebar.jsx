@@ -16,7 +16,7 @@ export default function Sidebar() {
   const { state, dispatch } = useGame();
   const mp = useMultiplayer();
   const { generateScene } = useAI();
-  const { openCharacterSheet, openWorldState, openSettings, openKeys } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
   const [activeNeedKey, setActiveNeedKey] = useState(null);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
@@ -79,7 +79,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   const modalActions = {
     '/character': openCharacterSheet,
-    '/tasks-info': openWorldState,
+    '/tasks-info': openTasksInfo,
     '/settings': openSettings,
     '/keys': openKeys,
   };

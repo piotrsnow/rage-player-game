@@ -8,6 +8,12 @@ function safeJsonParse(raw, fallback = {}) {
   }
 }
 
+function normalizeCharacterAge(age) {
+  const parsed = Number(age);
+  if (!Number.isFinite(parsed)) return 23;
+  return Math.max(1, Math.round(parsed));
+}
+
 function splitCareerData(raw) {
   const parsed = safeJsonParse(raw, {});
   const customAttackPresets = Array.isArray(parsed?.customAttackPresets)
@@ -21,6 +27,7 @@ function deserializeCharacter(c) {
   const { careerData, customAttackPresets } = splitCareerData(c.careerData);
   return {
     ...c,
+    age: normalizeCharacterAge(c.age),
     careerData,
     customAttackPresets,
     characteristics: safeJsonParse(c.characteristics, {}),
@@ -64,6 +71,7 @@ export async function characterRoutes(fastify) {
       data: {
         userId: request.user.id,
         name: body.name || 'Adventurer',
+        age: normalizeCharacterAge(body.age),
         species: body.species || 'Human',
         careerData: JSON.stringify(careerData),
         characteristics: JSON.stringify(body.characteristics || {}),
@@ -101,6 +109,7 @@ export async function characterRoutes(fastify) {
     const existingCareer = splitCareerData(existing.careerData);
 
     if (body.name !== undefined) updateData.name = body.name;
+    if (body.age !== undefined) updateData.age = normalizeCharacterAge(body.age);
     if (body.species !== undefined) updateData.species = body.species;
     if (body.careerData !== undefined || body.customAttackPresets !== undefined) {
       updateData.careerData = JSON.stringify({

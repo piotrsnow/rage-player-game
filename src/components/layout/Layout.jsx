@@ -13,6 +13,7 @@ import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
 import WorldStateModal from '../gameplay/WorldStateModal';
+import TasksInfoModal from '../gameplay/TasksInfoModal';
 
 function ModalLayer() {
   const {
@@ -20,6 +21,8 @@ function ModalLayer() {
     closeCharacterSheet,
     worldStateOpen,
     closeWorldState,
+    tasksInfoOpen,
+    closeTasksInfo,
     settingsOpen,
     closeSettings,
     keysOpen,
@@ -42,6 +45,13 @@ function ModalLayer() {
           dispatch={dispatch}
           autoSave={autoSave}
           onClose={closeWorldState}
+        />
+      )}
+      {tasksInfoOpen && (
+        <TasksInfoModal
+          world={isMultiplayer ? mp.state.gameState?.world : state.world}
+          quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
+          onClose={closeTasksInfo}
         />
       )}
       {settingsOpen && <DMSettingsPage onClose={closeSettings} />}

@@ -20,10 +20,12 @@ import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharac
 import { getApplicableTalentBonus } from '../data/wfrpTalents';
 import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
+import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
 const MAX_DIFFICULTY_MODIFIER = 40;
+const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
 const SCENE_GEN_DURATION_HISTORY_KEY = 'rpgon_scene_gen_durations_ms';
 const SCENE_GEN_DURATION_HISTORY_LEGACY_KEY = 'rpgon_last_scene_gen_ms';
@@ -234,6 +236,130 @@ function demoteAnonymousDialogueSegments(segments) {
   }).filter((seg) => typeof seg?.text === 'string' && seg.text.trim());
 }
 
+function normalizeIncomingDialogueSegments(segments) {
+  if (!Array.isArray(segments)) return [];
+  return segments.map((segment) => {
+    if (!segment || typeof segment !== 'object') return segment;
+    if (segment.type !== 'dialogue') return segment;
+
+    const character = typeof segment.character === 'string' ? segment.character.trim() : '';
+    const speaker = typeof segment.speaker === 'string' ? segment.speaker.trim() : '';
+    if (character) return segment;
+    if (!speaker) return segment;
+
+    return {
+      ...segment,
+      character: speaker,
+    };
+  });
+}
+
+function pickRandomVoiceForSpeaker(voices, gender) {
+  if (!Array.isArray(voices) || voices.length === 0) return null;
+  const byGender = (gender === 'male' || gender === 'female')
+    ? voices.filter((voice) => voice?.gender === gender)
+    : voices;
+  const pool = byGender.length > 0 ? byGender : voices;
+  if (pool.length === 0) return null;
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[index]?.voiceId || null;
+}
+
+function enrichDialogueSpeakers({
+  segments,
+  stateChanges,
+  worldNpcs = [],
+  characterVoiceMap = {},
+  characterVoices = [],
+  playerNames = [],
+  currentLocation = '',
+  dispatch,
+}) {
+  const source = Array.isArray(segments) ? segments : [];
+  if (source.length === 0) {
+    return { segments: source, stateChanges: stateChanges || {} };
+  }
+
+  const nextStateChanges = { ...(stateChanges || {}) };
+  const npcChanges = Array.isArray(nextStateChanges.npcs) ? [...nextStateChanges.npcs] : [];
+  const existingNpcChangeNames = new Set(
+    npcChanges
+      .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim().toLowerCase() : ''))
+      .filter(Boolean)
+  );
+  const knownNpcNames = new Set(
+    (Array.isArray(worldNpcs) ? worldNpcs : [])
+      .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim().toLowerCase() : ''))
+      .filter(Boolean)
+  );
+  const playerNameSet = new Set(
+    (Array.isArray(playerNames) ? playerNames : [])
+      .map((name) => (typeof name === 'string' ? name.trim().toLowerCase() : ''))
+      .filter(Boolean)
+  );
+  const localVoiceMap = new Map();
+
+  const nextSegments = source.map((segment) => {
+    if (!segment || segment.type !== 'dialogue') return segment;
+    if (!hasNamedSpeaker(segment.character)) return segment;
+
+    const speakerName = String(segment.character || '').trim();
+    if (!speakerName) return segment;
+    const speakerKey = speakerName.toLowerCase();
+    if (playerNameSet.has(speakerKey)) return segment;
+
+    const speakerGender = segment.gender === 'male' || segment.gender === 'female'
+      ? segment.gender
+      : null;
+    const hasKnownNpc = knownNpcNames.has(speakerKey) || existingNpcChangeNames.has(speakerKey);
+
+    let voiceId = characterVoiceMap?.[speakerName]?.voiceId || null;
+    if (hasKnownNpc) {
+      voiceId = resolveVoiceForCharacter(
+        speakerName,
+        speakerGender,
+        characterVoiceMap,
+        localVoiceMap,
+        characterVoices,
+        dispatch
+      ) || voiceId;
+    } else {
+      voiceId = pickRandomVoiceForSpeaker(characterVoices, speakerGender) || voiceId;
+      if (voiceId) {
+        localVoiceMap.set(speakerName, { voiceId, gender: speakerGender });
+        dispatch?.({
+          type: 'MAP_CHARACTER_VOICE',
+          payload: { characterName: speakerName, voiceId, gender: speakerGender },
+        });
+      }
+      if (!existingNpcChangeNames.has(speakerKey)) {
+        npcChanges.push({
+          action: 'introduce',
+          name: speakerName,
+          ...(speakerGender ? { gender: speakerGender } : {}),
+          ...(currentLocation ? { location: currentLocation } : {}),
+        });
+        existingNpcChangeNames.add(speakerKey);
+      }
+    }
+
+    if (!voiceId) return segment;
+    return {
+      ...segment,
+      voiceId,
+    };
+  });
+
+  if (npcChanges.length > 0) {
+    nextStateChanges.npcs = npcChanges;
+  }
+
+  return {
+    segments: nextSegments,
+    stateChanges: nextStateChanges,
+  };
+}
+
 function buildAutomaticRestRecovery(state) {
   const character = state?.character;
   if (!character) return null;
@@ -305,6 +431,8 @@ export function useAI() {
   const compressionGenRef = useRef(0);
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
+  const itemImageGenerationLocksRef = useRef(new Set());
+  const itemImageFailureTimestampsRef = useRef(new Map());
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
     const history = loadSceneGenDurationHistory();
     sceneGenDurationHistoryRef.current = history;
@@ -332,6 +460,96 @@ export function useAI() {
     sceneGenStartRef.current = null;
     setSceneGenStartTime(null);
   }, []);
+
+  const generateItemImageForInventoryItem = useCallback(
+    async (item, options = {}) => {
+      if (!item || typeof item !== 'object') return null;
+      const itemId = typeof item.id === 'string' ? item.id : '';
+      if (!itemId || item.imageUrl) return item.imageUrl || null;
+
+      const activeLocks = itemImageGenerationLocksRef.current;
+      const failedAt = itemImageFailureTimestampsRef.current.get(itemId);
+      if (failedAt && (Date.now() - failedAt) < ITEM_IMAGE_RETRY_COOLDOWN_MS) {
+        return null;
+      }
+      if (activeLocks.has(itemId)) return null;
+      activeLocks.add(itemId);
+
+      try {
+        const imageUrl = await imageService.generateItemImage(item, {
+          genre: options.genre ?? state.campaign?.genre,
+          tone: options.tone ?? state.campaign?.tone,
+          provider: imageProvider,
+          imageStyle,
+          darkPalette,
+          campaignId: state.campaign?.backendId,
+        });
+        if (!imageUrl) return null;
+
+        dispatch({
+          type: 'UPDATE_INVENTORY_ITEM_IMAGE',
+          payload: { itemId, imageUrl },
+        });
+        itemImageFailureTimestampsRef.current.delete(itemId);
+        dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+        if (!options.skipAutoSave) {
+          setTimeout(() => autoSave(), 300);
+        }
+        return imageUrl;
+      } catch (err) {
+        const message = err?.message || 'Item image generation failed';
+        itemImageFailureTimestampsRef.current.set(itemId, Date.now());
+        console.warn('Item image generation failed:', message);
+        if (options.emitWarning !== false) {
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_item_image_warn_${Math.random().toString(36).slice(2, 6)}`,
+              role: 'system',
+              subtype: 'validation_warning',
+              content: `⚠ ${message}`,
+              timestamp: Date.now(),
+            },
+          });
+        }
+        return null;
+      } finally {
+        activeLocks.delete(itemId);
+      }
+    },
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, dispatch, autoSave]
+  );
+
+  const ensureMissingInventoryImages = useCallback(
+    async (items = [], options = {}) => {
+      const candidates = (Array.isArray(items) ? items : []).filter((item) =>
+        item
+        && typeof item === 'object'
+        && typeof item.id === 'string'
+        && !item.imageUrl
+      );
+      if (candidates.length === 0) {
+        return { generated: 0, failed: 0 };
+      }
+
+      let generated = 0;
+      let failed = 0;
+      for (const item of candidates) {
+        const imageUrl = await generateItemImageForInventoryItem(item, {
+          ...options,
+          skipAutoSave: true,
+        });
+        if (imageUrl) generated += 1;
+        else failed += 1;
+      }
+
+      if (!options.skipAutoSave && generated > 0) {
+        setTimeout(() => autoSave(), 300);
+      }
+      return { generated, failed };
+    },
+    [generateItemImageForInventoryItem, autoSave]
+  );
 
   const generateScene = useCallback(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
@@ -457,6 +675,35 @@ export function useAI() {
               console.warn('[useAI] Combat retry failed, using original response:', retryErr.message);
             }
           }
+
+          const stillMissingCombatUpdate = !(result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true);
+          if (stillMissingCombatUpdate) {
+            const currentLocation = state.world?.currentLocation || '';
+            const fallbackNpc = (state.world?.npcs || []).find((npc) => {
+              if (!npc?.name || npc.alive === false) return false;
+              if (!currentLocation) return true;
+              return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
+            });
+            const fallbackEnemyName = fallbackNpc?.name || t('gameplay.combatFallbackEnemyName', 'Hostile Foe');
+            result.stateChanges = {
+              ...(result.stateChanges || {}),
+              combatUpdate: {
+                active: true,
+                enemies: [{
+                  name: fallbackEnemyName,
+                  characteristics: { ws: 35, bs: 25, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 15 },
+                  wounds: 10,
+                  maxWounds: 10,
+                  skills: { 'Melee (Basic)': 5 },
+                  traits: [],
+                  armour: { body: 0 },
+                  weapons: ['Hand Weapon'],
+                }],
+                reason: 'Combat intent fallback (AI omitted combatUpdate)',
+              },
+            };
+            console.warn('[useAI] Injected fallback combatUpdate due explicit combat intent');
+          }
         }
 
         if (!isFirstScene && !isPassiveSceneAction && detectDialogueIntent(playerAction) && (state.dialogueCooldown || 0) <= 0) {
@@ -493,6 +740,8 @@ export function useAI() {
             : [],
           scenePacing: result.scenePacing || 'exploration',
         };
+
+        const incomingDialogueSegments = normalizeIncomingDialogueSegments(result.dialogueSegments || []);
 
         if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
           let resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
@@ -626,18 +875,31 @@ export function useAI() {
 
         const repairedSegments = repairDialogueSegments(
           result.narrative,
-          result.dialogueSegments || [],
+          incomingDialogueSegments,
           [...(state.world?.npcs || []), ...(result.stateChanges?.npcs || [])],
           excludeFromSpeakers
         );
         const withPlayerDialogue = (!isFirstScene && !isPassiveSceneAction)
           ? ensurePlayerDialogue(repairedSegments, playerAction, activeChar?.name, activeChar?.gender)
           : repairedSegments;
-        const finalSegments = hardRemoveNarrationDialogueRepeats(
+        let finalSegments = hardRemoveNarrationDialogueRepeats(
           demoteAnonymousDialogueSegments(
             downgradeLowConfidenceDialogueSegments(withPlayerDialogue)
           )
         );
+
+        const voiceEnriched = enrichDialogueSpeakers({
+          segments: finalSegments,
+          stateChanges: result.stateChanges,
+          worldNpcs: state.world?.npcs || [],
+          characterVoiceMap: state.characterVoiceMap || {},
+          characterVoices: settings.characterVoices || [],
+          playerNames,
+          currentLocation: result.stateChanges?.currentLocation || state.world?.currentLocation || '',
+          dispatch,
+        });
+        finalSegments = voiceEnriched.segments;
+        result.stateChanges = voiceEnriched.stateChanges;
 
         const sceneId = createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
@@ -803,6 +1065,9 @@ export function useAI() {
 
           dispatch({ type: 'PUSH_UNDO' });
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: validated });
+          if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
+            void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
+          }
 
           // Run world consistency checker after state changes
           const postState = {
@@ -922,7 +1187,9 @@ export function useAI() {
               result.imagePrompt,
               state.campaign?.backendId,
               imageStyle,
-              darkPalette
+              darkPalette,
+              state.character?.age,
+              state.character?.gender
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -945,7 +1212,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages]
   );
 
   const generateCampaign = useCallback(
@@ -1031,7 +1298,10 @@ export function useAI() {
           sceneImagePrompt,
           state.campaign?.backendId,
           imageStyle,
-          darkPalette
+          darkPalette,
+          state.character?.age,
+          state.character?.gender,
+          { forceNew: Boolean(options.forceNew) }
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -1252,6 +1522,8 @@ export function useAI() {
     generateRecap,
     generateCombatCommentary,
     generateImageForScene,
+    generateItemImageForInventoryItem,
+    ensureMissingInventoryImages,
     verifyQuestObjective,
     acceptQuestOffer,
     declineQuestOffer,

@@ -20,15 +20,22 @@ export async function stabilityProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'stability');
     if (!apiKey) return reply.code(400).send({ error: 'Stability API key not configured' });
 
-    const { prompt, negativePrompt, model, aspectRatio, campaignId } = request.body;
+    const { prompt, negativePrompt, model, aspectRatio, campaignId, forceNew = false } = request.body;
 
-    const cacheParams = { provider: 'stability', prompt, resolutionScale: GENERATED_IMAGE_SCALE };
+    const cacheParams = {
+      provider: 'stability',
+      prompt,
+      resolutionScale: GENERATED_IMAGE_SCALE,
+      ...(forceNew ? { requestTs: Date.now() } : {}),
+    };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
-    const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
-    if (existing) {
-      const url = await store.getUrl(existing.path);
-      return { cached: true, url, key: cacheKey };
+    if (!forceNew) {
+      const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
+      if (existing) {
+        const url = await store.getUrl(existing.path);
+        return { cached: true, url, key: cacheKey };
+      }
     }
 
     const formData = new FormData();

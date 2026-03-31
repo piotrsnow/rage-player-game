@@ -11,7 +11,7 @@ const STRENGTH_PRESETS = [
   { value: 0.65, labelKey: 'charCreator.strengthIntense' },
 ];
 
-export default function PortraitGenerator({ species, gender, careerName, genre, onPortraitReady, initialPortrait }) {
+export default function PortraitGenerator({ species, age, gender, careerName, genre, onPortraitReady, initialPortrait }) {
   const { t } = useTranslation();
   const { settings, hasApiKey } = useSettings();
 
@@ -49,7 +49,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     try {
       const url = await imageService.generatePortrait(
         canUseReferenceImage ? photoBlob : null,
-        { species, gender, careerName, genre },
+        { species, age, gender, careerName, genre },
         apiKey,
         strength,
         provider,
@@ -71,7 +71,7 @@ export default function PortraitGenerator({ species, gender, careerName, genre, 
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle]);
+  }, [photoBlob, species, age, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle, settings.dmSettings?.darkPalette]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);

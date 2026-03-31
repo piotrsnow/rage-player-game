@@ -67,15 +67,22 @@ export async function openaiProxyRoutes(fastify) {
       });
     }
 
-    const { prompt, size, quality, campaignId } = request.body;
+    const { prompt, size, quality, campaignId, forceNew = false } = request.body;
 
-    const cacheParams = { provider: 'dalle', prompt, resolutionScale: GENERATED_IMAGE_SCALE };
+    const cacheParams = {
+      provider: 'dalle',
+      prompt,
+      resolutionScale: GENERATED_IMAGE_SCALE,
+      ...(forceNew ? { requestTs: Date.now() } : {}),
+    };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
-    const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
-    if (existing) {
-      const url = await store.getUrl(existing.path);
-      return { cached: true, url, key: cacheKey };
+    if (!forceNew) {
+      const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
+      if (existing) {
+        const url = await store.getUrl(existing.path);
+        return { cached: true, url, key: cacheKey };
+      }
     }
 
     const response = await fetch('https://api.openai.com/v1/images/generations', {

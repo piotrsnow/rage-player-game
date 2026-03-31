@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
 import { calculateWounds, normalizeMoney } from '../services/gameState';
+import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../services/characterAge';
 import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
@@ -42,6 +43,7 @@ const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 function createDefaultCharacter() {
   return {
     name: 'Adventurer',
+    age: DEFAULT_CHARACTER_AGE,
     species: 'Human',
     career: {
       class: 'Warriors',
@@ -97,6 +99,7 @@ function normalizeCharacterMetaCurrencies(character) {
 
   return {
     ...character,
+    age: normalizeCharacterAge(character.age),
     fate,
     resilience,
     fortune,
@@ -318,6 +321,18 @@ function gameReducer(state, action) {
       const idx = scenes.findIndex((s) => s.id === action.payload.sceneId);
       if (idx >= 0) {
         scenes[idx] = { ...scenes[idx], sceneCommand: action.payload.sceneCommand };
+      }
+      return { ...state, scenes };
+    }
+
+    case 'UPDATE_SCENE_GRID': {
+      const scenes = [...state.scenes];
+      const idx = scenes.findIndex((s) => s.id === action.payload.sceneId);
+      if (idx >= 0) {
+        scenes[idx] = {
+          ...scenes[idx],
+          sceneGrid: action.payload.sceneGrid || scenes[idx].sceneGrid || null,
+        };
       }
       return { ...state, scenes };
     }
@@ -619,6 +634,20 @@ function gameReducer(state, action) {
           inventory: state.character.inventory.filter((i) => i.id !== action.payload),
         },
       };
+
+    case 'UPDATE_INVENTORY_ITEM_IMAGE': {
+      const { itemId, imageUrl } = action.payload || {};
+      if (!itemId || !state.character?.inventory?.length) return state;
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          inventory: state.character.inventory.map((item) =>
+            item?.id === itemId ? { ...item, imageUrl } : item
+          ),
+        },
+      };
+    }
 
     case 'ADD_QUEST': {
       const quest = action.payload;

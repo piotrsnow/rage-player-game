@@ -49,9 +49,14 @@ function DialogueSegments({ segments, narrator, messageId }) {
     return narrator?.currentMessageId === messageId && narrator?.currentSegmentIndex === index;
   };
 
-  const getDialogueSpeakerLabel = (character) => {
-    if (typeof character === 'string' && character.trim() && character.trim().toLowerCase() !== 'npc') {
-      return character.trim();
+  const getDialogueSpeakerLabel = (segment) => {
+    const character = typeof segment?.character === 'string' ? segment.character.trim() : '';
+    if (character && character.toLowerCase() !== 'npc') {
+      return character;
+    }
+    const speaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
+    if (speaker && speaker.toLowerCase() !== 'npc') {
+      return speaker;
     }
     return t('common.npc');
   };
@@ -65,7 +70,7 @@ function DialogueSegments({ segments, narrator, messageId }) {
             <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {getDialogueSpeakerLabel(seg.character)}
+                  {getDialogueSpeakerLabel(seg)}
                 </span>
                 {active && (
                   <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">

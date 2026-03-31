@@ -179,6 +179,25 @@ const QuestItemSchema = z.object({
   location: z.string().optional(),
 }).passthrough();
 
+const ItemImageUrlSchema = z.string()
+  .trim()
+  .max(2048)
+  .refine((value) => !value.startsWith('data:'), { message: 'imageUrl must not use base64 data URLs' })
+  .refine(
+    (value) => value.startsWith('/media/') || value.startsWith('http://') || value.startsWith('https://'),
+    { message: 'imageUrl must be a backend/media URL' },
+  );
+
+const InventoryItemSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  type: z.string().optional(),
+  description: z.string().optional(),
+  rarity: z.string().optional(),
+  quantity: z.number().int().positive().optional(),
+  imageUrl: ItemImageUrlSchema.optional(),
+}).passthrough();
+
 const InitialQuestSchema = QuestSchema.extend({
   questItems: z.array(QuestItemSchema).optional().default([]),
 }).passthrough();
@@ -215,7 +234,7 @@ const StateChangesSchema = z.object({
   xp: z.number().optional(),
   fortuneChange: z.number().optional(),
   resolveChange: z.number().optional(),
-  newItems: z.array(z.any()).optional().default([]),
+  newItems: z.array(InventoryItemSchema).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
   newQuests: z.array(QuestSchema).optional().default([]),
   completedQuests: z.array(z.string()).optional().default([]),
@@ -300,7 +319,7 @@ const CharacterSuggestionSchema = z.object({
   fate: z.number().optional().default(2),
   resilience: z.number().optional().default(1),
   backstory: z.string().optional().default(''),
-  inventory: z.array(z.any()).optional().default([]),
+  inventory: z.array(z.union([InventoryItemSchema, z.string()])).optional().default([]),
   money: z.any().optional(),
 }).passthrough();
 
@@ -443,7 +462,7 @@ function normalizeSceneResponseCandidate(rawData) {
     data.suggestedActions = extractFallbackActions(data) || undefined;
   } else if (Array.isArray(data.suggestedActions)) {
     const seen = new Set();
-    data.suggestedActions = data.suggestedActions
+    const dedupedActions = data.suggestedActions
       .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
       .filter(Boolean)
       .filter((action) => {
@@ -451,14 +470,16 @@ function normalizeSceneResponseCandidate(rawData) {
         if (!key || seen.has(key)) return false;
         seen.add(key);
         return true;
-      })
-      .slice(0, 8);
+      });
+    data.suggestedActions = contextualizeSuggestedActions(dedupedActions, data).slice(0, 8);
     if (data.suggestedActions.length === 0) {
       data.suggestedActions = extractFallbackActions(data) || undefined;
     }
   } else if (typeof data.suggestedActions === 'string') {
     const single = data.suggestedActions.trim();
-    data.suggestedActions = single ? [single] : extractFallbackActions(data) || undefined;
+    data.suggestedActions = single
+      ? contextualizeSuggestedActions([single], data).slice(0, 8)
+      : extractFallbackActions(data) || undefined;
   } else {
     data.suggestedActions = extractFallbackActions(data) || undefined;
   }
@@ -643,6 +664,110 @@ function inferNarrativeLanguage(text = '') {
   return polishSignals.test(text) ? 'pl' : 'en';
 }
 
+const GENERIC_ACTION_PATTERNS = [
+  // English
+  /^(look around|keep going|move on|continue|wait|observe|investigate|explore|talk to (?:someone|npc)|ask around|check surroundings|search area)$/i,
+  /^i (?:look around|keep going|move on|continue|wait|observe|investigate|explore|ask around|check surroundings|search the area)$/i,
+  /^i talk to (?:someone|an npc|npc)$/i,
+  // Polish
+  /^(rozejrzyj się|idź dalej|kontynuuj|czekaj|obserwuj|zbadaj|eksploruj|porozmawiaj z kimś|popytaj|sprawdź okolicę)$/i,
+  /^(rozglądam się|idę dalej|kontynuuję|czekam|obserwuję|badam|eksploruję|pytam (?:wokół|ludzi)|sprawdzam okolicę)$/i,
+  /^mówię do kogoś$/i,
+];
+
+function summarizeNarrativeDetail(text = '', language = 'en') {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return language === 'pl' ? 'to, co właśnie się wydarzyło' : 'what just happened';
+  }
+  const quoteMatch = compact.match(/[„"«]([^"”»„«]{8,90})[”"»]/);
+  if (quoteMatch?.[1]) return quoteMatch[1].trim();
+  const sentence = compact.split(/[.!?]\s+/).find(Boolean) || compact;
+  return sentence.slice(0, 90).trim();
+}
+
+function buildActionAnchors(data) {
+  const narrative = typeof data?.narrative === 'string' ? data.narrative : '';
+  const language = inferNarrativeLanguage(narrative);
+  const npcs = (data?.stateChanges?.npcs || [])
+    .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim() : ''))
+    .filter(Boolean);
+  const currentLocation = typeof data?.stateChanges?.currentLocation === 'string'
+    ? data.stateChanges.currentLocation.trim()
+    : '';
+  const detail = summarizeNarrativeDetail(narrative, language);
+  return {
+    language,
+    npc: npcs[0] || '',
+    location: currentLocation,
+    detail,
+  };
+}
+
+function isGenericAction(action = '') {
+  const normalized = String(action || '').trim();
+  if (!normalized) return true;
+  if (normalized.length <= 12) return true;
+  return GENERIC_ACTION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function contextualizeGenericAction(action, anchors, index = 0) {
+  const language = anchors?.language || 'en';
+  const npc = anchors?.npc || '';
+  const location = anchors?.location || '';
+  const detail = anchors?.detail || (language === 'pl' ? 'to, co się stało' : 'what happened');
+
+  const plTemplates = [
+    npc
+      ? `Podchodzę do ${npc} i wypytuję o szczegóły: "${detail}".`
+      : `Sprawdzam dokładnie szczegóły tego, co właśnie zaszło: "${detail}".`,
+    location
+      ? `Idę w stronę ${location} i badam ślady związane z: "${detail}".`
+      : `Szukam źródła zamieszania i badam ślady związane z: "${detail}".`,
+    npc
+      ? `Mówię do ${npc}: "Powiedz mi dokładnie, co oznacza: ${detail}?"`
+      : `Mówię: "Kto mi wyjaśni, co dokładnie się tu wydarzyło?"`,
+    location
+      ? `Przeszukuję ${location}, żeby znaleźć konkretne dowody dotyczące: "${detail}".`
+      : `Rozglądam się za konkretnym tropem związanym z: "${detail}".`,
+  ];
+
+  const enTemplates = [
+    npc
+      ? `I approach ${npc} and press for details about "${detail}".`
+      : `I inspect the scene closely to clarify "${detail}".`,
+    location
+      ? `I head to ${location} and investigate traces tied to "${detail}".`
+      : `I track down the source of trouble linked to "${detail}".`,
+    npc
+      ? `I tell ${npc}: "Explain exactly what happened with ${detail}."`
+      : 'I say: "Who saw what happened here? Start from the beginning."',
+    location
+      ? `I search ${location} for concrete evidence about "${detail}".`
+      : `I look for a concrete lead connected to "${detail}".`,
+  ];
+
+  const pool = language === 'pl' ? plTemplates : enTemplates;
+  return pool[index % pool.length];
+}
+
+function contextualizeSuggestedActions(actions, data) {
+  if (!Array.isArray(actions) || actions.length === 0) return [];
+  const anchors = buildActionAnchors(data);
+  const normalized = actions.map((action, index) => (
+    isGenericAction(action)
+      ? contextualizeGenericAction(action, anchors, index)
+      : String(action).trim()
+  ));
+  const seen = new Set();
+  return normalized.filter((action) => {
+    const key = String(action || '').toLowerCase().trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function pickVariant(variants, seed, offset = 0) {
   if (!Array.isArray(variants) || variants.length === 0) return '';
   return variants[(seed + offset) % variants.length];
@@ -654,6 +779,7 @@ function extractFallbackActions(data) {
   const language = inferNarrativeLanguage(text);
   const npcs = (data.stateChanges?.npcs || []).map(n => n.name).filter(Boolean);
   const loc = data.stateChanges?.currentLocation;
+  const detail = summarizeNarrativeDetail(text, language);
   const actions = [];
   const templates = FALLBACK_ACTION_VARIANTS[language] || FALLBACK_ACTION_VARIANTS.en;
   const seedBase = [...text].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + (npcs[0]?.length || 0) + (loc?.length || 0);
@@ -669,6 +795,9 @@ function extractFallbackActions(data) {
       : `I head over to investigate ${loc}`);
   }
 
+  actions.push(language === 'pl'
+    ? `Analizuję konkretny trop z tej sceny: "${detail}".`
+    : `I focus on a concrete lead from this scene: "${detail}".`);
   actions.push(pickVariant(templates.investigate, seedBase, 0));
   actions.push(pickVariant(templates.approach, seedBase, 1));
   actions.push(pickVariant(templates.prepare, seedBase, 2));
@@ -901,6 +1030,8 @@ const FIRST_PERSON_SPEECH = /(?:^|\W)(?:mi|mnie|mną|mój|moja|moje|moim|moją|m
 const NARRATION_ADDRESS_EN = /\byou\s+(?:see|notice|feel|hear|smell|remember|watch|stand|walk|step|enter|approach|move|turn|look|find|spot|sense|are|have|can)\b/i;
 const NARRATION_ADDRESS_PL = /(?:^|\W)(?:widzisz|czujesz|słyszysz|zauważasz|przypominasz sobie|stoisz|idziesz|wchodzisz|zbliżasz się|rozglądasz się)(?:\W|$)/i;
 const SPEECH_VERB_HINT = /(?:^|\W)(?:mówi|powiedzia(?:ł|ła|łem|łam|łeś|łaś)|rzek(?:ł|ła)|mrukn(?:ął|ęła)|szepn(?:ął|ęła)|krzykn(?:ął|ęła)|spyta(?:ł|ła)|odpar(?:ł|ła)|odpow(?:iada|iedzia(?:ł|ła))|said|says|asked|asks|replied|replies|whispered|whispers|shouted|shouts|told|tells)(?:\W|$)/i;
+const DIALOGUE_DASH_PREFIX = /^\s*[—-]\s*/;
+const IMPERATIVE_SPEECH_PL = /(?:^|\W)(?:pomóż|powiedz|daj|weź|chodź|idź|patrz|słuchaj|posłuchaj|czekaj|spójrz|poczekaj|uważaj)(?:\W|$)/i;
 
 function isLikelyNarrationAddress(text) {
   const t = (text || '').trim();
@@ -913,7 +1044,15 @@ function looksLikeDirectSpeech(text) {
   if (!text || text.trim().length < 15) return false;
   const t = text.trim();
   if (isLikelyNarrationAddress(t)) return false;
-  if (DIRECT_SPEECH_PL.test(t)) return true;
+  if (DIRECT_SPEECH_PL.test(t)) {
+    // Polish second-person markers ("masz", "możesz") often appear in narration.
+    // Require at least one stronger speech cue before reclassifying as dialogue.
+    const hasStrongSpeechCue = SPEECH_VERB_HINT.test(t)
+      || /[!?]/.test(t)
+      || DIALOGUE_DASH_PREFIX.test(t)
+      || IMPERATIVE_SPEECH_PL.test(t);
+    return hasStrongSpeechCue;
+  }
   if (DIRECT_SPEECH_EN.test(t)) return /[!?]/.test(t) || SPEECH_VERB_HINT.test(t);
   if (t.includes('?') && FIRST_PERSON_SPEECH.test(t) && SPEECH_VERB_HINT.test(t)) return true;
   return false;

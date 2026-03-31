@@ -332,6 +332,11 @@ export default function ScenePanel({
   diceRolls,
   onImageError,
   onRegenerateImage,
+  world,
+  characterName,
+  multiplayerPlayers = [],
+  interactiveMap = false,
+  onSceneGridChange,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
@@ -596,7 +601,7 @@ export default function ScenePanel({
           </div>
         </>
       )}
-      {/* Scene background: 3D, AI image, canvas 2D, or placeholder */}
+      {/* Scene background: 3D, AI image, tactical map, canvas 2D, or placeholder */}
       {(settings.sceneVisualization || 'image') === '3d' ? (
         <Suspense fallback={
           <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
@@ -611,12 +616,28 @@ export default function ScenePanel({
         </Suspense>
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
+      ) : (settings.sceneVisualization || 'image') === 'map' ? (
+        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center p-4">
+          <SceneGridMap
+            sceneGrid={scene?.sceneGrid}
+            world={world || state.world}
+            characterName={characterName || state.character?.name}
+            multiplayerPlayers={multiplayerPlayers}
+            interactive={interactiveMap}
+            controlledEntityName={characterName || state.character?.name}
+            onSceneGridChange={(nextGrid) => {
+              if (!scene?.id || !nextGrid || !onSceneGridChange) return;
+              onSceneGridChange(scene.id, nextGrid);
+            }}
+          />
+        </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && scene?.sceneGrid ? (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center p-4">
           <SceneGridMap
             sceneGrid={scene.sceneGrid}
-            world={state.world}
-            characterName={state.character?.name}
+            world={world || state.world}
+            characterName={characterName || state.character?.name}
+            multiplayerPlayers={multiplayerPlayers}
           />
         </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc) ? (

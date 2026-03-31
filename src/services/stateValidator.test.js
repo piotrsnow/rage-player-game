@@ -49,10 +49,76 @@ describe('validateStateChanges', () => {
 
   it('caps new items per scene', () => {
     const { validated } = validateStateChanges(
-      { newItems: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }] },
+      {
+        newItems: [
+          { id: 'a', name: 'A' },
+          { id: 'b', name: 'B' },
+          { id: 'c', name: 'C' },
+          { id: 'd', name: 'D' },
+        ],
+      },
       { character: baseCharacter },
     );
     expect(validated.newItems.length).toBe(3);
+  });
+
+  it('removes base64 imageUrl from newItems', () => {
+    const { validated, corrections } = validateStateChanges(
+      {
+        newItems: [{
+          id: 'img1',
+          name: 'Ancient Coin',
+          imageUrl: 'data:image/png;base64,AAAA',
+        }],
+      },
+      { character: baseCharacter },
+    );
+    expect(validated.newItems[0].imageUrl).toBeUndefined();
+    expect(corrections.some((entry) => entry.includes('Removed base64 imageUrl'))).toBe(true);
+  });
+
+  it('keeps backend media imageUrl on newItems', () => {
+    const { validated, corrections } = validateStateChanges(
+      {
+        newItems: [{
+          id: 'img2',
+          name: 'Relic',
+          imageUrl: '/media/file/campaigns/c1/images/relic.webp',
+        }],
+      },
+      { character: baseCharacter },
+    );
+    expect(validated.newItems[0].imageUrl).toBe('/media/file/campaigns/c1/images/relic.webp');
+    expect(corrections.length).toBe(0);
+  });
+
+  it('normalizes string items into inventory objects', () => {
+    const { validated } = validateStateChanges(
+      { newItems: ['Old key'] },
+      { character: baseCharacter },
+    );
+    expect(validated.newItems).toHaveLength(1);
+    expect(validated.newItems[0].name).toBe('Old key');
+    expect(validated.newItems[0].id).toBeTruthy();
+    expect(validated.newItems[0].type).toBe('misc');
+  });
+
+  it('maps itemsAdded alias to newItems', () => {
+    const { validated } = validateStateChanges(
+      { itemsAdded: [{ itemName: 'Silver Ring' }] },
+      { character: baseCharacter },
+    );
+    expect(validated.newItems).toHaveLength(1);
+    expect(validated.newItems[0].name).toBe('Silver Ring');
+    expect(validated.newItems[0].id).toBeTruthy();
+  });
+
+  it('maps itemsRemoved alias to removeItems', () => {
+    const { validated } = validateStateChanges(
+      { itemsRemoved: ['i1'] },
+      { character: { ...baseCharacter, inventory: [{ id: 'i1', name: 'Torch' }] } },
+    );
+    expect(validated.removeItems).toEqual(['i1']);
   });
 
   it('returns empty warnings and corrections for valid XP change', () => {

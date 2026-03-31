@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './prompts';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './prompts';
 import { apiClient } from './apiClient';
 
 const GENERATED_IMAGE_SCALE = 0.75;
@@ -197,9 +197,11 @@ async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
   return `data:${mimeType || 'image/png'};base64,${b64}`;
 }
 
-async function generateViaProxy(prompt, provider, campaignId) {
+async function generateViaProxy(prompt, provider, campaignId, options = {}) {
+  const { forceNew = false } = options;
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
+  if (forceNew) body.forceNew = true;
 
   if (provider === 'stability') {
     const data = await apiClient.post('/proxy/stability/generate', body);
@@ -318,11 +320,11 @@ async function generatePortraitViaProxyGeminiImg2Img(imageBlob, prompt) {
 }
 
 export const imageService = {
-  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false) {
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette);
+  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}) {
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender);
 
     if (apiClient.isConnected()) {
-      return generateViaProxy(prompt, provider, campaignId);
+      return generateViaProxy(prompt, provider, campaignId, options);
     }
 
     if (!apiKey) {
@@ -342,8 +344,8 @@ export const imageService = {
     return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
   },
 
-  async generatePortrait(imageBlob, { species, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false) {
-    const prompt = buildPortraitPrompt(species, gender, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false) {
+    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette);
 
     if (provider === 'dalle') {
       if (apiClient.isConnected()) {
@@ -379,5 +381,19 @@ export const imageService = {
     }
 
     return generatePortraitWithStability(imageBlob, prompt, apiKey, strength);
+  },
+
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, campaignId = null } = {}) {
+    if (!apiClient.isConnected()) {
+      throw new Error('Backend connection required for item image generation.');
+    }
+    const prompt = buildItemImagePrompt(item, {
+      genre,
+      tone,
+      provider,
+      imageStyle,
+      darkPalette,
+    });
+    return generateViaProxy(prompt, provider, campaignId);
   },
 };

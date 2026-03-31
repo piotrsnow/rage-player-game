@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const PASSABLE_TILE_TYPES = new Set(['P', 'F', 'D', 'E', 'I', 'N', '.']);
 
@@ -95,7 +95,54 @@ function entityTypeLabel(type) {
   }
 }
 
-export default function SceneGridMap({ sceneGrid, world, characterName }) {
+function entityKey(entity, index) {
+  if (entity.id) return `id:${entity.id}`;
+  if (entity.name) return `name:${String(entity.name).toLowerCase()}`;
+  return `idx:${index}`;
+}
+
+function normalizeMultiplayerPlayers(multiplayerPlayers) {
+  if (!Array.isArray(multiplayerPlayers)) return [];
+  return multiplayerPlayers
+    .map((player) => {
+      if (!player) return null;
+      if (typeof player === 'string') {
+        const name = player.trim();
+        return name ? { name } : null;
+      }
+      if (typeof player.name === 'string' && player.name.trim()) {
+        return {
+          id: player.odId || player.id || null,
+          name: player.name.trim(),
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+function isPassable(tiles, width, height, x, y) {
+  if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
+  if (x < 0 || y < 0 || x >= width || y >= height) return false;
+  return PASSABLE_TILE_TYPES.has(tiles[y]?.[x]);
+}
+
+function isOccupied(entities, x, y, exceptKey = null) {
+  return entities.some((entity, idx) => {
+    if (exceptKey && entityKey(entity, idx) === exceptKey) return false;
+    return entity.x === x && entity.y === y;
+  });
+}
+
+export default function SceneGridMap({
+  sceneGrid,
+  world,
+  characterName,
+  multiplayerPlayers = [],
+  interactive = false,
+  controlledEntityName = null,
+  onSceneGridChange = null,
+}) {
   const { width, height, tiles } = useMemo(() => normalizeTiles(sceneGrid), [sceneGrid]);
 
   const entities = useMemo(() => {
@@ -140,9 +187,29 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
       placeEntity(entity, `entity:${entity.name}`);
     }
 
+    const normalizedMp = normalizeMultiplayerPlayers(multiplayerPlayers);
+    const playerNames = new Set();
+    for (const player of normalizedMp) {
+      playerNames.add(player.name.toLowerCase());
+      if (!out.some((e) => e.name?.toLowerCase() === player.name.toLowerCase())) {
+        placeEntity(
+          { id: player.id || null, name: player.name, type: 'player' },
+          `player:${player.id || player.name}`
+        );
+      }
+    }
+
+    const hasNamedControlledPlayer = controlledEntityName
+      && out.some((e) => e.name?.toLowerCase() === controlledEntityName.toLowerCase());
+    if (!hasNamedControlledPlayer && controlledEntityName) {
+      placeEntity({ name: controlledEntityName, type: 'player' }, `player:${controlledEntityName}`);
+      playerNames.add(controlledEntityName.toLowerCase());
+    }
+
     const hasPlayer = out.some((e) => e.type === 'player');
     if (!hasPlayer && characterName) {
       placeEntity({ name: characterName, type: 'player' }, `player:${characterName}`);
+      playerNames.add(characterName.toLowerCase());
     }
 
     const npcsHere = (world?.npcs || []).filter((npc) => {
@@ -155,8 +222,35 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
       placeEntity({ name: npc.name, type: 'npc' }, `npc:${npc.name}`);
     }
 
-    return out;
-  }, [sceneGrid?.entities, tiles, width, height, characterName, world]);
+    return out.map((entity, idx) => ({
+      ...entity,
+      key: entityKey(entity, idx),
+    }));
+  }, [sceneGrid?.entities, tiles, width, height, characterName, world, multiplayerPlayers, controlledEntityName]);
+
+  const controlledName = (controlledEntityName || characterName || '').toLowerCase();
+  const defaultSelectedKey = useMemo(() => {
+    if (!entities.length) return null;
+    const exact = controlledName
+      ? entities.find((entity) => entity.name?.toLowerCase() === controlledName)
+      : null;
+    if (exact) return exact.key;
+    const firstPlayer = entities.find((entity) => entity.type === 'player');
+    return firstPlayer?.key || entities[0].key;
+  }, [entities, controlledName]);
+
+  const [selectedEntityKey, setSelectedEntityKey] = useState(defaultSelectedKey);
+  const [movedEntityKey, setMovedEntityKey] = useState(null);
+
+  useEffect(() => {
+    setSelectedEntityKey(defaultSelectedKey);
+  }, [defaultSelectedKey, sceneGrid?.width, sceneGrid?.height]);
+
+  useEffect(() => {
+    if (!movedEntityKey) return undefined;
+    const timeoutId = window.setTimeout(() => setMovedEntityKey(null), 180);
+    return () => window.clearTimeout(timeoutId);
+  }, [movedEntityKey]);
 
   const entitiesByCell = useMemo(() => {
     const map = new Map();
@@ -167,6 +261,61 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
     }
     return map;
   }, [entities]);
+
+  const selectedEntity = useMemo(
+    () => entities.find((entity) => entity.key === selectedEntityKey) || null,
+    [entities, selectedEntityKey]
+  );
+
+  const canMoveSelected = Boolean(interactive && selectedEntity && onSceneGridChange);
+
+  const persistEntities = useCallback((nextEntities) => {
+    if (!onSceneGridChange) return;
+    const serializedEntities = nextEntities.map((entity) => {
+      const {
+        key, display, ...rest
+      } = entity;
+      return rest;
+    });
+    onSceneGridChange({
+      ...(sceneGrid || {}),
+      width,
+      height,
+      tiles,
+      entities: serializedEntities,
+    });
+  }, [onSceneGridChange, sceneGrid, width, height, tiles]);
+
+  const moveSelectedTo = useCallback((targetX, targetY) => {
+    if (!canMoveSelected || !selectedEntity) return false;
+    if (!isPassable(tiles, width, height, targetX, targetY)) return false;
+    if (isOccupied(entities, targetX, targetY, selectedEntity.key)) return false;
+
+    const nextEntities = entities.map((entity) =>
+      entity.key === selectedEntity.key
+        ? { ...entity, x: targetX, y: targetY }
+        : entity
+    );
+    setMovedEntityKey(selectedEntity.key);
+    persistEntities(nextEntities);
+    return true;
+  }, [canMoveSelected, selectedEntity, tiles, width, height, entities, persistEntities]);
+
+  const moveSelectedBy = useCallback((dx, dy) => {
+    if (!selectedEntity) return false;
+    return moveSelectedTo(selectedEntity.x + dx, selectedEntity.y + dy);
+  }, [selectedEntity, moveSelectedTo]);
+
+  const handleGridKeyDown = useCallback((event) => {
+    if (!canMoveSelected) return;
+    const key = event.key.toLowerCase();
+    let consumed = false;
+    if (key === 'arrowup' || key === 'w') consumed = moveSelectedBy(0, -1);
+    if (key === 'arrowdown' || key === 's') consumed = moveSelectedBy(0, 1);
+    if (key === 'arrowleft' || key === 'a') consumed = moveSelectedBy(-1, 0);
+    if (key === 'arrowright' || key === 'd') consumed = moveSelectedBy(1, 0);
+    if (consumed) event.preventDefault();
+  }, [canMoveSelected, moveSelectedBy]);
 
   const tileClass = (tile) => {
     switch (tile) {
@@ -198,6 +347,8 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
       </div>
       <div
         className="grid gap-1 p-3 rounded-md border border-outline-variant/20 bg-surface-container-high/70"
+        tabIndex={interactive ? 0 : -1}
+        onKeyDown={handleGridKeyDown}
         style={{
           gridTemplateColumns: `repeat(${width}, minmax(${tileMinPx}px, 1fr))`,
           width: `min(88vw, ${width * tileTrackPx}px)`,
@@ -211,6 +362,8 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
           const key = `${x}:${y}`;
           const cellEntities = entitiesByCell.get(key) || [];
           const topEntity = cellEntities[0];
+          const isSelectedCell = selectedEntity?.x === x && selectedEntity?.y === y;
+          const isBlocked = !PASSABLE_TILE_TYPES.has(tile);
           const tooltip = cellEntities.length
             ? cellEntities.map((e) => `${e.name} (${entityTypeLabel(e.type || 'npc')})`).join(', ')
             : `${tileLabel(tile)} [${tile}]`;
@@ -218,11 +371,33 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
             <div
               key={key}
               title={tooltip}
-              className={`aspect-square rounded-[3px] border text-[10px] font-bold relative flex items-center justify-center ${tileClass(tile)}`}
+              onClick={() => {
+                if (topEntity) {
+                  setSelectedEntityKey(topEntity.key);
+                  return;
+                }
+                if (!canMoveSelected || !selectedEntity) return;
+                const distance = Math.abs(selectedEntity.x - x) + Math.abs(selectedEntity.y - y);
+                if (distance !== 1) return;
+                moveSelectedTo(x, y);
+              }}
+              className={`aspect-square rounded-[3px] border text-[10px] font-bold relative flex items-center justify-center ${
+                tileClass(tile)
+              } ${
+                canMoveSelected ? 'cursor-pointer' : ''
+              } ${
+                isSelectedCell ? 'ring-1 ring-primary/60' : ''
+              } ${
+                isBlocked ? 'opacity-90' : ''
+              }`}
             >
               {!topEntity && <span className="text-outline/70">{tile}</span>}
               {topEntity && (
-                <span className={`px-1 rounded border leading-none ${entityColor(topEntity)}`}>
+                <span className={`px-1 rounded border leading-none transition-transform duration-150 ${
+                  topEntity.key === movedEntityKey ? 'scale-110' : 'scale-100'
+                } ${
+                  selectedEntityKey === topEntity.key ? 'ring-1 ring-white/50' : ''
+                } ${entityColor(topEntity)}`}>
                   {topEntity.display}
                 </span>
               )}
@@ -245,7 +420,13 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
         <div className="text-[10px] uppercase tracking-widest text-outline mb-1">Who is where</div>
         <div className="flex flex-wrap gap-1.5">
           {entities.map((entity) => (
-            <span key={`${entity.name}:${entity.x}:${entity.y}`} className={`text-[10px] px-2 py-1 rounded border ${entityColor(entity)}`}>
+            <span
+              key={`${entity.key}:${entity.x}:${entity.y}`}
+              onClick={() => setSelectedEntityKey(entity.key)}
+              className={`text-[10px] px-2 py-1 rounded border cursor-pointer ${entityColor(entity)} ${
+                selectedEntityKey === entity.key ? 'ring-1 ring-white/50' : ''
+              }`}
+            >
               {entity.display} {entity.name} ({entityTypeLabel(entity.type || 'npc')}) [{entity.x},{entity.y}]
             </span>
           ))}
@@ -254,6 +435,11 @@ export default function SceneGridMap({ sceneGrid, world, characterName }) {
           )}
         </div>
       </div>
+      {interactive && (
+        <div className="w-full max-w-[720px] rounded-md border border-outline-variant/15 bg-surface-container/50 px-3 py-2 text-[10px] text-on-surface-variant">
+          Use click or WASD / arrows to move selected token. Movement is blocked by walls and occupied cells.
+        </div>
+      )}
     </div>
   );
 }

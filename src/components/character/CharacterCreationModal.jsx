@@ -11,6 +11,7 @@ import {
   randomizeSkills, randomizeTalents, randomizeFullCharacter,
   generateStartingMoney,
 } from '../../services/gameState';
+import { normalizeCharacterAge } from '../../services/characterAge';
 import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
 import PortraitGenerator from './PortraitGenerator';
 
@@ -63,6 +64,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     : null;
 
   const [name, setName] = useState(initialCharacter?.name || '');
+  const [age, setAge] = useState(normalizeCharacterAge(initialCharacter?.age));
   const [gender, setGender] = useState(initialCharacter?.gender || 'male');
   const [species, setSpecies] = useState(defaultSpecies);
   const [careerClassFilter, setCareerClassFilter] = useState(defaultCareerDef?.class || '');
@@ -131,6 +133,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const handleRandomizeAll = useCallback(() => {
     const char = randomizeFullCharacter(genre, undefined);
     setName(char.name);
+    setAge(normalizeCharacterAge(char.age));
     setGender(char.gender);
     setSpecies(char.species);
     setCharacteristics(char.characteristics);
@@ -157,6 +160,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
 
     onConfirm({
       name: name.trim() || pickRandomName(genre),
+      age: normalizeCharacterAge(age),
       gender,
       species,
       career,
@@ -179,7 +183,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
       xp: 0,
       xpSpent: 0,
     });
-  }, [name, gender, species, selectedCareer, tier1, characteristics, maxWounds, speciesData, skills, talents, backstory, portraitUrl, genre, onConfirm]);
+  }, [name, age, gender, species, selectedCareer, tier1, characteristics, maxWounds, speciesData, skills, talents, backstory, portraitUrl, genre, onConfirm]);
 
   const availableTalents = useMemo(() => {
     const careerTalents = tier1?.talents || [];
@@ -247,7 +251,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 px-5 py-5 space-y-8 custom-scrollbar">
 
-          {/* Name + Gender */}
+          {/* Name + Age + Gender */}
           <section>
             <SectionHeader icon="badge" label={t('charCreator.nameLabel')} onRandomize={handleRandomizeName} />
             <div className="flex gap-3 items-end">
@@ -258,6 +262,15 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 placeholder={t('charCreator.namePlaceholder')}
                 maxLength={40}
                 className="flex-1 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-outline/40 font-body"
+              />
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={age}
+                onChange={(e) => setAge(normalizeCharacterAge(e.target.value))}
+                aria-label={t('charCreator.ageLabel')}
+                className="w-20 bg-transparent border-0 border-b border-outline-variant/20 focus:border-primary/50 focus:ring-0 text-on-surface text-sm py-2 px-1 placeholder:text-outline/40 font-body text-right"
               />
               <div className="flex gap-1.5 shrink-0">
                 {['male', 'female'].map((g) => (
@@ -307,6 +320,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             ) : (
               <PortraitGenerator
                 species={species}
+                age={age}
                 gender={gender}
                 careerName={selectedCareer?.name}
                 genre={genre}

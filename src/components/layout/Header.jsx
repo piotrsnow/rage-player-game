@@ -12,7 +12,7 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openWorldState, openSettings, openKeys } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
   const { state } = useGame();
   const mp = useMultiplayer();
   const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -43,7 +43,7 @@ export default function Header() {
     { path: '/', label: t('nav.lobby') },
     hasActiveGame && { path: playPath, label: t('nav.grimoire') },
     { path: '/character', label: t('nav.characterSheet'), action: openCharacterSheet },
-    hasActiveGame && { path: '/tasks-info', label: t('nav.tasksInfo'), action: openWorldState },
+    hasActiveGame && { path: '/tasks-info', label: t('nav.tasksInfo'), action: openTasksInfo },
   ].filter(Boolean);
 
   const vol = settings.musicVolume ?? 40;

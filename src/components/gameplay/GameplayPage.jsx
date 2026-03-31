@@ -468,6 +468,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         reason = 'manual',
         skipAutoSave = false,
         markAttempted = true,
+        forceNew = false,
       } = options;
 
       if (!sceneId || (settings.sceneVisualization || 'image') !== 'image') return false;
@@ -500,7 +501,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
           targetScene.narrative,
           targetScene.imagePrompt,
           isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined,
-          { skipAutoSave: readOnly || skipAutoSave }
+          { skipAutoSave: readOnly || skipAutoSave, forceNew }
         );
         if (!imageUrl) return false;
 
@@ -980,6 +981,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   };
 
+  const handleSceneGridChange = useCallback((sceneId, nextSceneGrid) => {
+    if (!sceneId || !nextSceneGrid) return;
+    const payload = { sceneId, sceneGrid: nextSceneGrid };
+    if (isMultiplayer) {
+      mp.dispatch({ type: 'UPDATE_SCENE_GRID', payload });
+      return;
+    }
+    dispatch({ type: 'UPDATE_SCENE_GRID', payload });
+    setTimeout(() => autoSave(), 250);
+  }, [isMultiplayer, mp, dispatch, autoSave]);
+
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
   const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
@@ -1293,10 +1305,25 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     if (mpGameState?.combat?.active) return;
 
     const combatUpdate = lastScene.stateChanges?.combatUpdate;
-    if (combatUpdate?.active && combatUpdate.enemies?.length > 0) {
+    if (combatUpdate?.active) {
       lastCombatSceneRef.current = lastScene.id;
       const chars = mpGameState.characters || [];
-      const combatState = createMultiplayerCombatState(chars, combatUpdate.enemies, []);
+      const aiEnemies = Array.isArray(combatUpdate.enemies)
+        ? combatUpdate.enemies.filter((enemy) => enemy?.name)
+        : [];
+      const fallbackEnemies = aiEnemies.length > 0
+        ? aiEnemies
+        : [{
+            name: 'Hostile Foe',
+            characteristics: { ws: 35, bs: 25, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 15 },
+            wounds: 10,
+            maxWounds: 10,
+            skills: { 'Melee (Basic)': 5 },
+            traits: [],
+            armour: { body: 0 },
+            weapons: ['Hand Weapon'],
+          }];
+      const combatState = createMultiplayerCombatState(chars, fallbackEnemies, []);
       combatState.reason = combatUpdate.reason || '';
       mp.syncCombatState(combatState);
     }
@@ -1713,6 +1740,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             currentChunk={narrator.currentChunk}
             diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
             diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
+            world={isMultiplayer ? mpGameState?.world : state.world}
+            characterName={character?.name}
+            multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
+            interactiveMap={!isMultiplayer && !readOnly && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active')}
+            onSceneGridChange={handleSceneGridChange}
             onImageError={(sceneId) => {
               if (!sceneId) return;
               if (isMultiplayer && !mp.state.isHost) return;
@@ -1727,7 +1759,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               if (isMultiplayer && !mp.state.isHost) return Promise.resolve(false);
               imageAttemptedRef.current.delete(sceneId);
               imageRepairAttemptsRef.current.delete(sceneId);
-              return repairSceneImage(sceneId, { reason: 'manual-retry' });
+              return repairSceneImage(sceneId, { reason: 'manual-retry', forceNew: true });
             }}
           />
           {overlayText && (

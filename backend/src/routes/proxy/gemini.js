@@ -29,16 +29,23 @@ export async function geminiProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'gemini');
     if (!apiKey) return reply.code(400).send({ error: 'Google AI API key not configured' });
 
-    const { prompt, campaignId } = request.body;
+    const { prompt, campaignId, forceNew = false } = request.body;
 
     const resolutionScale = getGeneratedImageScale('gemini');
-    const cacheParams = { provider: 'gemini', prompt, resolutionScale };
+    const cacheParams = {
+      provider: 'gemini',
+      prompt,
+      resolutionScale,
+      ...(forceNew ? { requestTs: Date.now() } : {}),
+    };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
-    const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
-    if (existing) {
-      const url = await store.getUrl(existing.path);
-      return { cached: true, url, key: cacheKey };
+    if (!forceNew) {
+      const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
+      if (existing) {
+        const url = await store.getUrl(existing.path);
+        return { cached: true, url, key: cacheKey };
+      }
     }
 
     const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(apiKey)}`, {

@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { normalizeCharacterAge } from './characterAge';
 
 const CAMPAIGNS_KEY = 'nikczemny_krzemuch_campaigns';
 const SETTINGS_KEY = 'nikczemny_krzemuch_settings';
@@ -484,7 +485,13 @@ export const storage = {
   getCharacters() {
     try {
       const data = localStorage.getItem(CHARACTERS_KEY);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed)
+        ? parsed.map((character) => ({
+            ...character,
+            age: normalizeCharacterAge(character?.age),
+          }))
+        : [];
     } catch {
       return [];
     }
@@ -558,6 +565,7 @@ export const storage = {
       try {
         const payload = {
           name: character.name,
+          age: normalizeCharacterAge(character.age),
           species: character.species,
           careerData: character.career || character.careerData,
           characteristics: character.characteristics,
@@ -595,6 +603,7 @@ export const storage = {
 
         return {
           ...character,
+          age: normalizeCharacterAge(saved.age ?? character.age),
           backendId: saved.id,
           career: saved.careerData || character.career,
           updatedAt: saved.updatedAt ? new Date(saved.updatedAt).getTime() : Date.now(),
@@ -610,7 +619,7 @@ export const storage = {
     const idx = characters.findIndex(
       (c) => c.localId === localId || (c.backendId && c.backendId === character.backendId)
     );
-    const entry = { ...character, updatedAt: Date.now() };
+    const entry = { ...character, age: normalizeCharacterAge(character.age), updatedAt: Date.now() };
     if (idx >= 0) {
       characters[idx] = entry;
     } else {
@@ -646,6 +655,7 @@ export const storage = {
         const char = await apiClient.get(`/characters/${id}`);
         return {
           ...char,
+          age: normalizeCharacterAge(char.age),
           career: char.careerData,
           backendId: char.id,
         };
@@ -661,6 +671,7 @@ export const storage = {
     if (!character?.backendId || !apiClient.isConnected()) return;
     try {
       await apiClient.put(`/characters/${character.backendId}`, {
+        age: normalizeCharacterAge(character.age),
         careerData: character.career,
         characteristics: character.characteristics,
         advances: character.advances,
@@ -734,6 +745,7 @@ export const storage = {
           try {
             await apiClient.post('/characters', {
               name: char.name,
+              age: normalizeCharacterAge(char.age),
               species: char.species,
               careerData: char.career || char.careerData,
               characteristics: char.characteristics,

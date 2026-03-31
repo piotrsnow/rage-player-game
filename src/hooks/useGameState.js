@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useGame, createDefaultNeeds } from '../contexts/GameContext';
 import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds, generateStartingMoney } from '../services/gameState';
+import { normalizeCharacterAge } from '../services/characterAge';
 import { SPECIES, CHARACTERISTIC_KEYS, getCareerByName } from '../data/wfrp';
 
 function buildWfrpCharacter(aiResult, campaignSettings) {
@@ -10,6 +11,7 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
     const cc = campaignSettings.createdCharacter;
     return {
       ...cc,
+      age: normalizeCharacterAge(cc.age),
       needs: cc.needs || createDefaultNeeds(),
     };
   }
@@ -54,6 +56,7 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
 
   return {
     name: campaignSettings.characterName?.trim() || aiChar.name || 'Adventurer',
+    age: normalizeCharacterAge(aiChar.age ?? campaignSettings.characterAge),
     species: speciesName,
     career,
     xp: 0,
@@ -112,6 +115,7 @@ export function useGameState() {
             backstory: '',
             criticalWounds: [],
             ...campaignSettings.existingCharacter,
+            age: normalizeCharacterAge(campaignSettings.existingCharacter.age),
             needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
           }
         : buildWfrpCharacter(aiResult, campaignSettings);

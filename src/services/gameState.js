@@ -1,4 +1,5 @@
 import { SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS, CAREERS, CAREER_CLASSES, CREATION_LIMITS } from '../data/wfrp';
+import { DEFAULT_CHARACTER_AGE } from './characterAge';
 
 const RANDOM_NAMES = {
   Fantasy: [
@@ -86,6 +87,7 @@ export function randomizeFullCharacter(genre, careerClass) {
 
   return {
     name: pickRandomName(genre),
+    age: DEFAULT_CHARACTER_AGE,
     gender: Math.random() > 0.5 ? 'male' : 'female',
     species: speciesName,
     career: {

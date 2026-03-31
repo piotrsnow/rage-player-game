@@ -5,6 +5,7 @@ const ModalContext = createContext(null);
 export function ModalProvider({ children }) {
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false);
   const [worldStateOpen, setWorldStateOpen] = useState(false);
+  const [tasksInfoOpen, setTasksInfoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
 
@@ -12,6 +13,8 @@ export function ModalProvider({ children }) {
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
   const openWorldState = useCallback(() => setWorldStateOpen(true), []);
   const closeWorldState = useCallback(() => setWorldStateOpen(false), []);
+  const openTasksInfo = useCallback(() => setTasksInfoOpen(true), []);
+  const closeTasksInfo = useCallback(() => setTasksInfoOpen(false), []);
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openKeys = useCallback(() => setKeysOpen(true), []);
@@ -22,12 +25,15 @@ export function ModalProvider({ children }) {
       value={{
         characterSheetOpen,
         worldStateOpen,
+        tasksInfoOpen,
         settingsOpen,
         keysOpen,
         openCharacterSheet,
         closeCharacterSheet,
         openWorldState,
         closeWorldState,
+        openTasksInfo,
+        closeTasksInfo,
         openSettings,
         closeSettings,
         openKeys,

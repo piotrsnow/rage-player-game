@@ -416,6 +416,19 @@ function mpReducer(state, action) {
       };
     }
 
+    case 'UPDATE_SCENE_GRID': {
+      if (!state.gameState?.scenes) return state;
+      const scenes = state.gameState.scenes.map((s) =>
+        s.id === action.payload.sceneId
+          ? { ...s, sceneGrid: action.payload.sceneGrid || s.sceneGrid || null }
+          : s
+      );
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes },
+      };
+    }
+
     case 'QUEST_OFFER_UPDATE': {
       if (!state.gameState) return state;
       const { sceneId, offerId, status, quest, chatMessage } = action.payload;

@@ -327,6 +327,17 @@ describe('repairDialogueSegments', () => {
     expect(narrations.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('keeps third-person narration with second-person address as narration', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Brodacz', text: 'Urrgh... ty parszywy buraku... jeszcze żyję...', gender: 'male' },
+      { type: 'narration', text: 'Szmer poszedł po ciemności jak szczur po blasze. Brodacz chwieje się, jedną ręką maca za pasem, drugą próbuje złapać równowagę — masz ułamek chwili, nim narobi hałasu albo dojdzie do siebie.' },
+    ];
+    const result = repairDialogueSegments('...', segments, [{ name: 'Brodacz', gender: 'male' }]);
+
+    expect(result.some((s) => s.type === 'dialogue' && s.text.includes('masz ułamek chwili'))).toBe(false);
+    expect(result.some((s) => s.type === 'narration' && s.text.includes('masz ułamek chwili'))).toBe(true);
+  });
+
   it('strips dialogue prefix from narration when it repeats the same line', () => {
     const segments = [
       { type: 'dialogue', character: 'Mścichuj Barnaba', text: 'Morda śmieciu! Bijemy się!', gender: 'male' },
@@ -691,6 +702,44 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.data.suggestedActions.length).toBeGreaterThanOrEqual(2);
     expect(parsed.data.suggestedActions.some((action) => /Młynarz Odo|Stary Młyn/i.test(action))).toBe(true);
+  });
+
+  it('rewrites generic suggestedActions into scene-grounded actions', () => {
+    const raw = {
+      narrative: 'W ruinach kaplicy pod Ubersreik znaleziono świeże ślady krwi i wyrwany medalik Sigmara.',
+      suggestedActions: [
+        'Rozglądam się',
+        'Idę dalej',
+        'Czekam',
+      ],
+      stateChanges: {
+        currentLocation: 'Ruiny Kaplicy',
+        npcs: [{ action: 'introduce', name: 'Brat Konrad' }],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.data.suggestedActions.every((action) => action.length > 15)).toBe(true);
+    expect(parsed.data.suggestedActions.some((action) => /Brat Konrad|Ruiny Kaplicy|medalik|ślady krwi/i.test(action))).toBe(true);
+  });
+
+  it('contextualizes single-string suggestedAction when it is generic', () => {
+    const raw = {
+      narrative: 'The dockmaster points at a sealed crate marked with the Black Gull sigil.',
+      suggestedActions: 'Continue',
+      stateChanges: {
+        currentLocation: 'South Docks',
+        npcs: [{ action: 'introduce', name: 'Dockmaster Rinn' }],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions).toHaveLength(1);
+    expect(parsed.data.suggestedActions[0]).not.toMatch(/^continue$/i);
+    expect(parsed.data.suggestedActions[0]).toMatch(/Dockmaster Rinn|South Docks|Black Gull|sealed crate/i);
   });
 
   it('deduplicates firstScene suggestedActions in campaign responses', () => {

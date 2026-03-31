@@ -23,9 +23,14 @@ export default function DialoguePanel({
   const actions = lastScene?.actions || [];
   const dialogueSegments = lastScene?.dialogueSegments || [];
   const npcLines = dialogueSegments.filter((seg) => seg.type === 'dialogue');
-  const getDialogueSpeakerLabel = (character) => {
-    if (typeof character === 'string' && character.trim() && character.trim().toLowerCase() !== 'npc') {
-      return character.trim();
+  const getDialogueSpeakerLabel = (segment) => {
+    const character = typeof segment?.character === 'string' ? segment.character.trim() : '';
+    if (character && character.toLowerCase() !== 'npc') {
+      return character;
+    }
+    const speaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
+    if (speaker && speaker.toLowerCase() !== 'npc') {
+      return speaker;
     }
     return t('common.npc');
   };
@@ -137,7 +142,7 @@ export default function DialoguePanel({
             >
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {getDialogueSpeakerLabel(seg.character)}
+                  {getDialogueSpeakerLabel(seg)}
                 </span>
               </div>
               <p className="text-sm text-on-surface leading-relaxed">

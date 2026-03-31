@@ -72,6 +72,7 @@ model Character {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   userId          String   @db.ObjectId
   name            String
+  age             Int      @default(23)
   species         String
   careerData      String   @default("{}") // JSON: { class, name, tier, tierName, status }
   characteristics String   @default("{}") // JSON: { ws, bs, s, t, i, ag, dex, int, wp, fel }

@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { apiClient } from '../../services/apiClient';
+import Tooltip from '../ui/Tooltip';
 
 const rarityColors = {
   common: 'border-outline-variant/20 text-on-surface-variant',
@@ -55,6 +57,73 @@ const rarityBadgeColors = {
   legendary: 'bg-tertiary/25 text-tertiary',
 };
 
+function InventoryImage({
+  imageUrl,
+  alt,
+  sizeClass,
+  fallbackIcon,
+  wrapperClassName = '',
+  imageClassName = '',
+  showLargePreview = false,
+  previewSizeClass = 'w-[360px] h-[360px]',
+}) {
+  const [isLoading, setIsLoading] = useState(Boolean(imageUrl));
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+    setIsLoading(Boolean(imageUrl));
+  }, [imageUrl]);
+
+  const previewContent = (showLargePreview && imageUrl && !hasError)
+    ? (
+      <div className={previewSizeClass}>
+        <img src={imageUrl} alt={alt} className="w-full h-full object-cover rounded-sm border border-outline-variant/20" />
+      </div>
+    )
+    : null;
+
+  if (!imageUrl || hasError) {
+    return (
+      <div className={`relative ${sizeClass} ${wrapperClassName}`}>
+        <span
+          className="material-symbols-outlined text-xl text-on-surface-variant/80"
+          style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
+        >
+          {fallbackIcon}
+        </span>
+      </div>
+    );
+  }
+
+  const imageNode = (
+    <div className={`relative ${sizeClass} ${wrapperClassName}`}>
+      {isLoading && (
+        <div className="absolute inset-0 bg-surface-container-highest/80 rounded-sm flex items-center justify-center z-10">
+          <span className="material-symbols-outlined text-base text-primary-dim animate-spin">progress_activity</span>
+        </div>
+      )}
+      <img
+        src={imageUrl}
+        alt={alt}
+        className={`w-full h-full rounded-sm object-cover border border-outline-variant/15 ${imageClassName} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}
+        onLoad={() => setIsLoading(false)}
+        onError={() => {
+          setHasError(true);
+          setIsLoading(false);
+        }}
+      />
+    </div>
+  );
+
+  if (!previewContent) return imageNode;
+  return (
+    <Tooltip content={previewContent} tooltipClassName="!max-w-none !p-2">
+      {imageNode}
+    </Tooltip>
+  );
+}
+
 function ItemDetailBox({ item }) {
   const { t } = useTranslation();
 
@@ -62,9 +131,22 @@ function ItemDetailBox({ item }) {
   const rarityColor = rarityColors[rarity] || rarityColors.common;
   const badgeColor = rarityBadgeColors[rarity] || rarityBadgeColors.common;
   const icon = typeIcons[item.type] || typeIcons.misc;
+  const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
 
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
+      {resolvedImageUrl && (
+        <div className="mb-3">
+          <InventoryImage
+            imageUrl={resolvedImageUrl}
+            alt={item.name}
+            sizeClass="w-full h-40"
+            fallbackIcon={icon}
+            wrapperClassName="border border-outline-variant/20 flex items-center justify-center overflow-hidden"
+            showLargePreview
+          />
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <span
           className={`material-symbols-outlined text-2xl ${rarityColor.split(' ').find(c => c.startsWith('text-')) || 'text-on-surface'}`}
@@ -123,6 +205,7 @@ export default function Inventory({ items = [], money }) {
         {items.map((item) => {
           const rarity = rarityColors[item.rarity] || rarityColors.common;
           const icon = typeIcons[item.type] || typeIcons.misc;
+          const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
           return (
             <div
@@ -130,12 +213,15 @@ export default function Inventory({ items = [], money }) {
               className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''}`}
               onClick={() => setSelectedItemId(isSelected ? null : item.id)}
             >
-              <span
-                className="material-symbols-outlined group-hover:scale-110 transition-transform text-xl"
-                style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
-              >
-                {icon}
-              </span>
+              <InventoryImage
+                imageUrl={resolvedImageUrl}
+                alt={item.name}
+                sizeClass="w-10 h-10"
+                fallbackIcon={icon}
+                imageClassName="group-hover:scale-110 transition-transform"
+                wrapperClassName="flex items-center justify-center"
+                showLargePreview
+              />
               <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
                 {item.name}
               </span>

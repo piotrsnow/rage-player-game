@@ -7,14 +7,14 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 export default function MobileNav() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { openCharacterSheet, openWorldState, openSettings, openKeys } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
   const { state } = useGame();
   const mp = useMultiplayer();
   const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
 
   const modalActions = {
     '/character': openCharacterSheet,
-    '/tasks-info': openWorldState,
+    '/tasks-info': openTasksInfo,
     '/settings': openSettings,
     '/keys': openKeys,
   };

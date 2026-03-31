@@ -1,5 +1,6 @@
 import { SKILLS, TALENTS } from '../data/wfrp';
 import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
+import { createItemId } from './gameState.js';
 
 const DEFAULTS = {
   maxXpPerScene: 50,
@@ -87,6 +88,134 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function isAllowedItemImageUrl(value) {
+  if (typeof value !== 'string') return false;
+  return value.startsWith('/media/') || value.startsWith('http://') || value.startsWith('https://');
+}
+
+function normalizeItemType(value) {
+  if (typeof value !== 'string' || !value.trim()) return 'misc';
+  return value.trim().toLowerCase();
+}
+
+function normalizeItemRarity(value) {
+  if (typeof value !== 'string' || !value.trim()) return 'common';
+  return value.trim().toLowerCase();
+}
+
+function normalizeItemEntry(rawItem, index = 0) {
+  if (typeof rawItem === 'string') {
+    const name = rawItem.trim();
+    if (!name) return null;
+    return {
+      id: createItemId(),
+      name,
+      type: 'misc',
+      rarity: 'common',
+    };
+  }
+  if (!rawItem || typeof rawItem !== 'object') return null;
+
+  const name = String(
+    rawItem.name
+    || rawItem.itemName
+    || rawItem.title
+    || rawItem.label
+    || ''
+  ).trim();
+  if (!name) return null;
+
+  const itemIdCandidate = String(rawItem.id || rawItem.itemId || '').trim();
+  const quantity = Number(rawItem.quantity);
+  const hasQuantity = Number.isFinite(quantity) && quantity > 0;
+
+  return {
+    ...rawItem,
+    id: itemIdCandidate || createItemId(),
+    name,
+    type: normalizeItemType(rawItem.type),
+    rarity: normalizeItemRarity(rawItem.rarity),
+    ...(hasQuantity ? { quantity: Math.max(1, Math.floor(quantity)) } : {}),
+    _idx: index,
+  };
+}
+
+function normalizeItemList(rawItems, corrections, prefix = '') {
+  if (!Array.isArray(rawItems)) return [];
+  const normalized = [];
+  for (let idx = 0; idx < rawItems.length; idx += 1) {
+    const item = normalizeItemEntry(rawItems[idx], idx);
+    if (!item) {
+      corrections.push(`${prefix}Removed invalid item entry at index ${idx}`);
+      continue;
+    }
+    const { _idx, ...finalItem } = item;
+    normalized.push(finalItem);
+  }
+  return normalized;
+}
+
+function coerceItemAliases(validated) {
+  const addAliases = [
+    'itemsAdded',
+    'itemsGained',
+    'inventoryAdded',
+    'inventoryAdd',
+    'acquiredItems',
+    'gainedItems',
+  ];
+  const removeAliases = [
+    'itemsRemoved',
+    'removedItems',
+    'inventoryRemoved',
+    'inventoryRemove',
+    'lostItems',
+  ];
+
+  if (!Array.isArray(validated.newItems)) {
+    for (const key of addAliases) {
+      if (Array.isArray(validated[key])) {
+        validated.newItems = validated[key];
+        break;
+      }
+    }
+  }
+  if (!Array.isArray(validated.removeItems)) {
+    for (const key of removeAliases) {
+      if (Array.isArray(validated[key])) {
+        validated.removeItems = validated[key];
+        break;
+      }
+    }
+  }
+}
+
+function sanitizeInventoryItems(items, corrections, prefix = '') {
+  if (!Array.isArray(items)) return items;
+  return items.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    if (typeof item.imageUrl !== 'string') return item;
+
+    const imageUrl = item.imageUrl.trim();
+    if (!imageUrl) {
+      const { imageUrl: _removed, ...rest } = item;
+      return rest;
+    }
+    if (imageUrl.startsWith('data:')) {
+      corrections.push(`${prefix}Removed base64 imageUrl from item "${item.name || item.id || 'unknown'}"`);
+      const { imageUrl: _removed, ...rest } = item;
+      return rest;
+    }
+    if (!isAllowedItemImageUrl(imageUrl)) {
+      corrections.push(`${prefix}Removed unsupported imageUrl from item "${item.name || item.id || 'unknown'}"`);
+      const { imageUrl: _removed, ...rest } = item;
+      return rest;
+    }
+    if (imageUrl === item.imageUrl) return item;
+    return { ...item, imageUrl };
+  });
+}
+
 function moneyToCopper(m) {
   return (m.gold || 0) * 100 + (m.silver || 0) * 10 + (m.copper || 0);
 }
@@ -168,6 +297,7 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   const corrections = [];
   const validated = { ...stateChanges };
   const character = currentState?.character;
+  coerceItemAliases(validated);
 
   if (validated.xp !== undefined && validated.xp !== null) {
     if (validated.xp > limits.maxXpPerScene) {
@@ -199,11 +329,13 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   }
 
   if (validated.newItems && Array.isArray(validated.newItems)) {
+    validated.newItems = normalizeItemList(validated.newItems, corrections);
     if (validated.newItems.length > limits.maxItemsPerScene) {
       warnings.push(`AI proposed ${validated.newItems.length} new items, capped to ${limits.maxItemsPerScene}`);
       validated.newItems = validated.newItems.slice(0, limits.maxItemsPerScene);
       corrections.push(`Items capped to ${limits.maxItemsPerScene}`);
     }
+    validated.newItems = sanitizeInventoryItems(validated.newItems, corrections);
   }
 
   if (validated.moneyChange) {
@@ -284,6 +416,7 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     const sceneCount = currentState?.scenes?.length || 0;
     const RARITY_GATES = { common: 0, uncommon: 0, rare: 16, exotic: 31 };
     for (const item of validated.newItems) {
+      if (!item || typeof item !== 'object') continue;
       const rarity = (item.rarity || 'common').toLowerCase();
       const minScene = RARITY_GATES[rarity];
       if (minScene !== undefined && sceneCount < minScene) {
@@ -355,10 +488,12 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
       }
 
       if (charDelta.newItems && Array.isArray(charDelta.newItems)) {
+        charDelta.newItems = normalizeItemList(charDelta.newItems, allCorrections, `${charName}: `);
         if (charDelta.newItems.length > limits.maxItemsPerScene) {
           charDelta.newItems = charDelta.newItems.slice(0, limits.maxItemsPerScene);
           allCorrections.push(`${charName}: items capped to ${limits.maxItemsPerScene}`);
         }
+        charDelta.newItems = sanitizeInventoryItems(charDelta.newItems, allCorrections, `${charName}: `);
       }
 
       if (charDelta.moneyChange) {

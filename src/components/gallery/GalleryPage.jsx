@@ -485,7 +485,9 @@ export default function GalleryPage() {
         scene.imagePrompt || null,
         selected.gameState.campaign.backendId || null,
         settings.dmSettings?.imageStyle || 'painting',
-        settings.dmSettings?.darkPalette || false
+        settings.dmSettings?.darkPalette || false,
+        selected.gameState.character?.age ?? null,
+        selected.gameState.character?.gender ?? null
       );
       if (!url) return false;
 
