@@ -187,6 +187,7 @@ function GalleryCampaignCard({ entry, onOpen, onView }) {
   return (
     <GlassCard
       elevated
+      data-testid="gallery-campaign-card"
       onClick={() => onOpen(entry)}
       className={`overflow-hidden border-l-2 ${borderColor} flex flex-col h-full`}
     >
@@ -632,6 +633,7 @@ export default function GalleryPage() {
                 search
               </span>
               <input
+                data-testid="gallery-search"
                 id="gallery-search"
                 type="search"
                 value={search}
@@ -706,7 +708,7 @@ export default function GalleryPage() {
       </header>
 
       {loading && (
-        <div className="flex justify-center py-20 relative z-10">
+        <div data-testid="gallery-loading" className="flex justify-center py-20 relative z-10">
           <span className="w-10 h-10 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       )}
@@ -755,7 +757,7 @@ export default function GalleryPage() {
       )}
 
       {showEmpty && !loading && (
-        <div className="relative z-10 max-w-lg mx-auto text-center py-16 px-6">
+        <div data-testid="gallery-empty" className="relative z-10 max-w-lg mx-auto text-center py-16 px-6">
           <GlassCard elevated className="p-10 border border-outline-variant/20">
             <span className="material-symbols-outlined text-6xl text-outline/30 mb-4 block">travel_explore</span>
             {!backendReady ? (

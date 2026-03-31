@@ -56,7 +56,7 @@ export default function CampaignCard({ campaign, onLoad, onDelete, onExportLog, 
   };
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in" data-testid="campaign-card">
       <div
         onClick={onLoad}
         className={`p-5 bg-surface-container-low hover:bg-surface-container transition-all duration-300 cursor-pointer group flex items-start justify-between border-l-2 ${borderColor} rounded-sm hover:translate-y-[-1px] ${glowColor}`}

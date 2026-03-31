@@ -305,6 +305,7 @@ export default function ActionPanel({
             {actions.slice(0, 6).map((action, i) => (
               <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
                 <button
+                  data-testid="suggested-action"
                   onClick={() => handleSuggestedAction(action)}
                   disabled={disabled || hasPendingAction}
                   className="flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
@@ -617,6 +618,7 @@ export default function ActionPanel({
                   )}
                 </div>
                 <textarea
+                  data-testid="action-input"
                   ref={textareaRef}
                   value={displayValue}
                   onChange={(e) => !isAutoTyping && handleTypingChange(e.target.value)}
@@ -662,6 +664,7 @@ export default function ActionPanel({
                 </button>
               )}
               <button
+                data-testid="submit-action"
                 type="submit"
                 disabled={!customAction.trim() || disabled}
                 className="shrink-0 text-primary hover:text-on-surface transition-all flex items-center justify-center w-8 h-8 rounded-sm hover:bg-primary/10 disabled:opacity-30"

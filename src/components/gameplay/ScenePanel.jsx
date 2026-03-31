@@ -587,7 +587,7 @@ export default function ScenePanel({
   }
 
   return (
-    <div className="relative w-full h-[clamp(280px,66vh,740px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
+    <div data-testid="scene-panel" className="relative w-full h-[clamp(280px,66vh,740px)] rounded-lg overflow-hidden border border-outline-variant/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] animate-fade-in">
       {/* Dream overlay */}
       {scene.scenePacing === 'dream' && (
         <>

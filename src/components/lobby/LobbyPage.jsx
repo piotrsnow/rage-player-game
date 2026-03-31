@@ -51,7 +51,7 @@ function CharacterChoiceModal({ campaign, libraryCharacter, libraryLoading, onCh
   const libraryDisabled = !hasLibrary || libraryLoading;
 
   return (
-    <div className="bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-lg mx-4 animate-slide-up">
+    <div data-testid="character-choice-modal" className="bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-lg mx-4 animate-slide-up">
       <div className="p-6 border-b border-outline-variant/10">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-primary">person</span>
@@ -382,7 +382,7 @@ export default function LobbyPage() {
       {/* Multiplayer Rejoin Banner */}
       {rejoinInfo && (
         <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
-          <GlassCard elevated className="p-6 border-l-2 border-primary">
+          <GlassCard elevated className="p-6 border-l-2 border-primary" data-testid="rejoin-banner">
             <div className="flex items-start gap-3">
               <span className="material-symbols-outlined text-primary mt-0.5">wifi_off</span>
               <div className="flex-1 min-w-0">
@@ -423,6 +423,7 @@ export default function LobbyPage() {
         <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.25s' }}>
           <div
             onClick={openSettings}
+            data-testid="api-key-warning"
             className="glass-panel-elevated p-6 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
           >
             <div className="flex items-start gap-3">
@@ -441,7 +442,7 @@ export default function LobbyPage() {
       {/* Saved Campaigns */}
       {isLoggedIn && hasCampaigns && (
         <div className="w-full max-w-2xl animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
-          <GlassCard elevated className="p-8">
+          <GlassCard elevated className="p-8" data-testid="saved-campaigns">
             <h3 className="font-headline text-tertiary text-xl mb-6 flex items-center gap-3">
               <span className="material-symbols-outlined text-primary-dim">save</span>
               {t('lobby.savedCampaigns')}

@@ -29,7 +29,7 @@ function LoggedInBanner({ user, onLogout }) {
   const displayName = characterName || t('lobby.adventurer');
 
   return (
-    <div className="text-center">
+    <div className="text-center" data-testid="logged-in-banner">
       <div className="inline-flex items-center gap-2 mb-3">
         <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(197,154,255,0.9)] animate-pulse" />
         <span className="text-[10px] text-primary font-label uppercase tracking-[0.2em]">
@@ -219,13 +219,13 @@ function LoginForm() {
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 p-3 rounded-sm bg-error/10 border border-error/20 text-error text-xs font-headline animate-slide-up">
+          <div data-testid="auth-error" className="flex items-center gap-2 p-3 rounded-sm bg-error/10 border border-error/20 text-error text-xs font-headline animate-slide-up">
             <span className="material-symbols-outlined text-sm">error</span>
             {error}
           </div>
         )}
         {success && (
-          <div className="flex items-center gap-2 p-3 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs font-headline animate-slide-up">
+          <div data-testid="auth-success" className="flex items-center gap-2 p-3 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs font-headline animate-slide-up">
             <span className="material-symbols-outlined text-sm">check_circle</span>
             {success}
           </div>

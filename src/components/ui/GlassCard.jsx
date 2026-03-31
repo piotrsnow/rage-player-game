@@ -1,4 +1,4 @@
-export default function GlassCard({ children, className = '', glow = false, elevated = false, onClick }) {
+export default function GlassCard({ children, className = '', glow = false, elevated = false, onClick, ...rest }) {
   const interactive = !!onClick;
   return (
     <div
@@ -6,6 +6,7 @@ export default function GlassCard({ children, className = '', glow = false, elev
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       onKeyDown={interactive ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e); } } : undefined}
+      {...rest}
       className={`
         ${elevated ? 'glass-panel-elevated' : 'bg-surface-container-highest/60 backdrop-blur-2xl border border-outline-variant/10'}
         rounded-sm transition-all duration-300

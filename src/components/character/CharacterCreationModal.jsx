@@ -257,6 +257,8 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             <div className="flex gap-3 items-end">
               <input
                 type="text"
+                name="name"
+                data-testid="character-name-input"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('charCreator.namePlaceholder')}
