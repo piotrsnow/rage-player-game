@@ -108,6 +108,7 @@ export default function JoinRoomPage() {
             {t('multiplayer.roomCode')}
           </label>
           <input
+            data-testid="room-code-input"
             type="text"
             value={roomCode}
             onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4))}
@@ -120,7 +121,7 @@ export default function JoinRoomPage() {
         </div>
 
         {error && (
-          <div className="bg-error-container/20 border border-error/20 p-3 rounded-sm">
+          <div data-testid="join-error" className="bg-error-container/20 border border-error/20 p-3 rounded-sm">
             <p className="text-error text-sm flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">error</span>
               {error}
@@ -129,7 +130,7 @@ export default function JoinRoomPage() {
         )}
 
         <div className="flex gap-3 justify-center pt-4">
-          <Button onClick={handleJoin} disabled={roomCode.length < 4 || joining} size="lg">
+          <Button data-testid="join-room-button" onClick={handleJoin} disabled={roomCode.length < 4 || joining} size="lg">
             <span className="material-symbols-outlined text-sm">login</span>
             {joining ? t('multiplayer.joining', 'Joining...') : t('multiplayer.join')}
           </Button>
@@ -146,6 +147,7 @@ export default function JoinRoomPage() {
             {t('multiplayer.availableRooms')}
           </h2>
           <button
+            data-testid="refresh-rooms"
             onClick={fetchRooms}
             disabled={loadingRooms}
             className="text-on-surface-variant hover:text-primary transition-colors p-1"
@@ -169,6 +171,7 @@ export default function JoinRoomPage() {
             {rooms.map((room) => (
               <div
                 key={room.roomCode}
+                data-testid="room-card"
                 className="group flex items-center justify-between gap-4 p-4 rounded-lg border border-outline-variant/10 bg-surface-container/30 hover:bg-surface-container/60 hover:border-primary/20 transition-all"
               >
                 <div className="flex items-center gap-4 min-w-0">

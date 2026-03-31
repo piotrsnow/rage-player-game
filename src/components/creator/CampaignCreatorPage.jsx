@@ -25,7 +25,7 @@ const styleIds = ['Narrative', 'Hybrid', 'Mechanical'];
 const difficultyIds = ['Easy', 'Normal', 'Hard', 'Expert'];
 const lengthIds = ['Short', 'Medium', 'Long'];
 
-function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, labels = {}, descriptions = {}, disabled = false }) {
+function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, labels = {}, descriptions = {}, disabled = false, name = '' }) {
   return (
     <div className="flex flex-wrap gap-3">
       {options.map((id) => {
@@ -33,6 +33,7 @@ function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, la
         return (
           <button
             key={id}
+            data-testid={name ? `chip-${name}-${id}` : undefined}
             onClick={() => !disabled && onChange(id)}
             disabled={disabled}
             className={`px-4 py-3 rounded-sm font-label text-sm transition-all duration-300 border ${
@@ -419,6 +420,7 @@ export default function CampaignCreatorPage() {
               {t('creator.genreLabel')}
             </label>
             <ChipGroup
+              name="genre"
               options={genreIds}
               value={form.genre}
               onChange={(v) => updateForm((p) => ({ ...p, genre: v }))}
@@ -436,6 +438,7 @@ export default function CampaignCreatorPage() {
               {t('creator.toneLabel')}
             </label>
             <ChipGroup
+              name="tone"
               options={toneIds}
               value={form.tone}
               onChange={(v) => updateForm((p) => ({ ...p, tone: v }))}
@@ -701,6 +704,7 @@ export default function CampaignCreatorPage() {
               {t('creator.playStyleLabel')}
             </label>
             <ChipGroup
+              name="style"
               options={styleIds}
               value={form.style}
               onChange={(v) => updateForm((p) => ({ ...p, style: v }))}
@@ -717,6 +721,7 @@ export default function CampaignCreatorPage() {
                 {t('creator.difficultyLabel')}
               </label>
               <ChipGroup
+                name="difficulty"
                 options={difficultyIds}
                 value={form.difficulty}
                 onChange={(v) => updateForm((p) => ({ ...p, difficulty: v }))}
@@ -729,6 +734,7 @@ export default function CampaignCreatorPage() {
                 {t('creator.campaignLengthLabel')}
               </label>
               <ChipGroup
+                name="length"
                 options={lengthIds}
                 value={form.length}
                 onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
@@ -745,6 +751,7 @@ export default function CampaignCreatorPage() {
             </label>
             <div className="relative">
               <textarea
+                data-testid="story-prompt"
                 value={form.storyPrompt}
                 onChange={(e) => updateForm((p) => ({ ...p, storyPrompt: e.target.value }))}
                 placeholder={isGuest ? t('multiplayer.waitingForHost', 'Waiting for host to set the story...') : t('creator.storyPlaceholder')}
@@ -810,6 +817,7 @@ export default function CampaignCreatorPage() {
               </div>
             ) : !isMultiplayer ? (
               <Button
+                data-testid="start-campaign"
                 onClick={handleSubmit}
                 disabled={!form.storyPrompt.trim() || !hasServerAi || !hasCharacter}
                 size="lg"

@@ -855,14 +855,14 @@ export default function ChatPanel({
           </div>
         )}
         {messages.map((msg) => {
-          if (msg.role === 'dm') return <div key={msg.id} data-message-id={msg.id} className="px-2"><DmMessage message={msg} narrator={narrator} /></div>;
-          if (msg.subtype === 'combat_commentary') return <div key={msg.id} data-message-id={msg.id} className="px-2"><CombatCommentaryMessage message={msg} narrator={narrator} /></div>;
+          if (msg.role === 'dm') return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-2"><DmMessage message={msg} narrator={narrator} /></div>;
+          if (msg.subtype === 'combat_commentary') return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-2"><CombatCommentaryMessage message={msg} narrator={narrator} /></div>;
           if (msg.role === 'player') {
             const isMe = myOdId ? msg.odId === myOdId : true;
-            return <div key={msg.id} data-message-id={msg.id} className="px-2"><PlayerMessage message={msg} isMe={isMe} /></div>;
+            return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-2"><PlayerMessage message={msg} isMe={isMe} /></div>;
           }
-          if (msg.subtype === 'dice_roll') return <div key={msg.id} data-message-id={msg.id} className="px-3"><DiceRollMessage message={msg} /></div>;
-          return <div key={msg.id} data-message-id={msg.id} className="px-2"><SystemMessage message={msg} /></div>;
+          if (msg.subtype === 'dice_roll') return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-3"><DiceRollMessage message={msg} /></div>;
+          return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-2"><SystemMessage message={msg} /></div>;
         })}
         <TypingIndicator typingPlayers={typingPlayers} />
         <div ref={bottomRef} />
