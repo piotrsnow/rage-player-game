@@ -167,8 +167,8 @@ export async function searchCodex(
  * High-level search: embed a text query and search across scenes + knowledge.
  * Returns combined results sorted by score.
  */
-export async function searchCampaignMemory(campaignId, query, apiKey = null, { limit = 10 } = {}) {
-  const queryEmbedding = await embedText(query, apiKey);
+export async function searchCampaignMemory(campaignId, query, { limit = 10 } = {}) {
+  const queryEmbedding = await embedText(query);
   if (!queryEmbedding) return [];
 
   const [scenes, knowledge] = await Promise.all([

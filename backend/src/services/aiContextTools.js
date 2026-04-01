@@ -1,6 +1,8 @@
 import { prisma } from '../lib/prisma.js';
+import { config } from '../config.js';
 import { searchCampaignMemory, searchCodex, searchNPCs } from './vectorSearchService.js';
 import { embedText } from './embeddingService.js';
+import { formatWeaponCatalog, searchBestiary } from '../data/wfrpEquipment.js';
 
 /**
  * Tool definitions for OpenAI/Anthropic function calling.
@@ -89,6 +91,43 @@ export const CONTEXT_TOOLS_OPENAI = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_equipment_catalog',
+      description:
+        'Get available weapons and armor with damage formulas, qualities, and AP values. MUST use before creating combatUpdate enemies or giving items to the player. Weapon/armor names in your response MUST match catalog names exactly.',
+      parameters: {
+        type: 'object',
+        properties: {
+          category: {
+            type: 'string',
+            enum: ['weapons', 'armor', 'all'],
+            description: 'Which equipment category to retrieve (default: all)',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_bestiary',
+      description:
+        'Get WFRP stat block templates for common enemies (Skaven, Beastmen, Greenskins, Undead, Chaos, Animals, Humans). Use when creating combatUpdate enemies — copy or adapt stat blocks from here instead of inventing stats.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Enemy type or name to search for (e.g. "bandit", "skaven", "undead", "low threat")',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ];
 
 /**
@@ -103,30 +142,36 @@ export const CONTEXT_TOOLS_ANTHROPIC = CONTEXT_TOOLS_OPENAI.map((t) => ({
 /**
  * Execute a tool call and return the result as a string.
  */
-export async function executeToolCall(campaignId, toolName, toolArgs, apiKey = null) {
+export async function executeToolCall(campaignId, toolName, toolArgs) {
   switch (toolName) {
     case 'search_campaign_memory':
-      return await handleSearchMemory(campaignId, toolArgs.query, apiKey);
+      return await handleSearchMemory(campaignId, toolArgs.query);
 
     case 'get_npc_details':
-      return await handleGetNPC(campaignId, toolArgs.npc_name, apiKey);
+      return await handleGetNPC(campaignId, toolArgs.npc_name);
 
     case 'get_quest_details':
       return await handleGetQuest(campaignId, toolArgs.quest_name);
 
     case 'get_location_history':
-      return await handleGetLocation(campaignId, toolArgs.location_name, apiKey);
+      return await handleGetLocation(campaignId, toolArgs.location_name);
 
     case 'get_codex_entry':
-      return await handleGetCodex(campaignId, toolArgs.topic, apiKey);
+      return await handleGetCodex(campaignId, toolArgs.topic);
+
+    case 'get_equipment_catalog':
+      return handleGetEquipmentCatalog(toolArgs.category);
+
+    case 'get_bestiary':
+      return handleGetBestiary(toolArgs.query);
 
     default:
       return `Unknown tool: ${toolName}`;
   }
 }
 
-async function handleSearchMemory(campaignId, query, apiKey) {
-  const results = await searchCampaignMemory(campaignId, query, apiKey, { limit: 8 });
+async function handleSearchMemory(campaignId, query) {
+  const results = await searchCampaignMemory(campaignId, query, { limit: 8 });
 
   if (results.length === 0) {
     return 'No relevant memories found for this query.';
@@ -140,7 +185,7 @@ async function handleSearchMemory(campaignId, query, apiKey) {
     .join('\n\n');
 }
 
-async function handleGetNPC(campaignId, npcName, apiKey) {
+async function handleGetNPC(campaignId, npcName) {
   // Try exact match first
   const npc = await prisma.campaignNPC.findFirst({
     where: {
@@ -154,8 +199,8 @@ async function handleGetNPC(campaignId, npcName, apiKey) {
   }
 
   // Fallback to vector search
-  if (apiKey) {
-    const queryEmbedding = await embedText(npcName, apiKey);
+  if (config.apiKeys.openai) {
+    const queryEmbedding = await embedText(npcName);
     if (queryEmbedding) {
       const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
       if (results.length > 0) {
@@ -186,6 +231,14 @@ function formatNPC(npc) {
       ? `Relationships: ${relationships.map((r) => `${r.type}: ${r.npcName}`).join(', ')}`
       : null,
   ];
+
+  // Try to find bestiary match for combat-relevant NPCs
+  const bestiaryMatch = searchBestiary(npc.name) || searchBestiary(npc.role || '');
+  if (bestiaryMatch) {
+    lines.push(`\nCombat stats (bestiary match):\n${bestiaryMatch}`);
+  } else {
+    lines.push('\nNo bestiary match — if combat starts, use get_bestiary to find a similar enemy template and adapt it.');
+  }
 
   return lines.filter(Boolean).join('\n');
 }
@@ -231,7 +284,7 @@ async function handleGetQuest(campaignId, questName) {
   return lines.filter(Boolean).join('\n');
 }
 
-async function handleGetLocation(campaignId, locationName, apiKey) {
+async function handleGetLocation(campaignId, locationName) {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     select: { coreState: true },
@@ -255,8 +308,8 @@ async function handleGetLocation(campaignId, locationName, apiKey) {
   ];
 
   // Search for scenes that mention this location
-  if (apiKey) {
-    const memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, apiKey, {
+  if (config.apiKeys.openai) {
+    const memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, {
       limit: 3,
     });
     if (memories.length > 0) {
@@ -270,7 +323,7 @@ async function handleGetLocation(campaignId, locationName, apiKey) {
   return lines.filter(Boolean).join('\n');
 }
 
-async function handleGetCodex(campaignId, topic, apiKey) {
+async function handleGetCodex(campaignId, topic) {
   // Try text search first
   const codex = await prisma.campaignCodex.findFirst({
     where: {
@@ -284,8 +337,8 @@ async function handleGetCodex(campaignId, topic, apiKey) {
   }
 
   // Fallback to vector search
-  if (apiKey) {
-    const queryEmbedding = await embedText(topic, apiKey);
+  if (config.apiKeys.openai) {
+    const queryEmbedding = await embedText(topic);
     if (queryEmbedding) {
       const results = await searchCodex(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
       if (results.length > 0) {
@@ -308,4 +361,15 @@ function formatCodex(codex) {
   }
 
   return lines.join('\n');
+}
+
+function handleGetEquipmentCatalog(category = 'all') {
+  return formatWeaponCatalog(category || 'all');
+}
+
+function handleGetBestiary(query) {
+  if (!query) return 'Please provide a search query (enemy name, type, or threat level).';
+  const result = searchBestiary(query);
+  if (!result) return `No bestiary entries found matching "${query}". Try: bandit, skaven, undead, beastmen, chaos, wolf, bear, orc, goblin, or threat levels: trivial, low, medium, high, deadly.`;
+  return result;
 }

@@ -1,6 +1,6 @@
 import { getBonus, formatMoney } from './gameState';
 import { formatResolvedCheck } from './mechanics/index';
-import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
+import { gameData } from './gameDataService';
 import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
 import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { formatMagicForPrompt } from '../data/wfrpMagic';
@@ -178,7 +178,7 @@ YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
 3. At least ONE of the six suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
-4. Apply a -10 penalty to related skill tests in your diceRoll target calculation (hunger/thirst penalize physical tests, rest penalizes all tests, hygiene penalizes social tests).\n`;
+4. The game engine automatically applies a -10 penalty to related skill checks when needs are critical. Reflect this in the narrative — the character struggles with focus, coordination, or social grace.\n`;
 }
 
 const LOW_ACTION_PACING = new Set(['exploration', 'travel_montage', 'rest']);
@@ -449,7 +449,7 @@ CAMPAIGN SETTINGS:
 - Difficulty: ${difficultyLabel}
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
-- Dice roll frequency: ${testsLabel} (~${testsFrequency}% of actions should require a roll)
+- Dice rolls: Handled by the game engine (not AI). The user prompt provides resolved outcomes.
 - Prompt profile: ${promptProfile}
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens for this scene
 - Prompt input budget: ~${promptTokenBudget ?? 'default'} tokens max
@@ -574,16 +574,15 @@ Every risky action should generate at least one consequence from this list: repu
 - RUMOR PROPAGATION: Notable actions (especially failures and crimes) become worldFacts that NPCs reference in future scenes. Major events should spread — "I heard a stranger was asking about..." or "Word is someone tried to..."
 - ECONOMIC CONSEQUENCES: Faction standing should visibly affect prices mentioned in narration. Hostile faction territory = 20-50% markup. Allied = 10-20% discount. Reference this in merchant dialogue.
 
-NPC DISPOSITION MODIFIERS (apply when a dice roll involves direct interaction with a known NPC):
-When the player attempts a social, trade, persuasion, or other interpersonal skill test involving a known NPC, look up that NPC's disposition value from the NPC REGISTRY below and apply the corresponding modifier to the dice target number:
-  disposition >= 30 (strong ally): +15 to target
-  disposition >= 15 (friendly): +10 to target
-  disposition >= 5 (warm): +5 to target
-  disposition -5 to +5 (neutral): no modifier
-  disposition <= -5 (cool): -5 to target
-  disposition <= -15 (hostile): -10 to target
-  disposition <= -30 (enemy): -15 to target
-When this modifier applies, include "dispositionBonus" in the diceRoll output with the modifier value (e.g. 10, -5, etc.) and mention the NPC name in the skill test narration. Keep this separate from "difficultyModifier".
+NPC DISPOSITION MODIFIERS (handled by the game engine):
+The game engine automatically applies NPC disposition modifiers to skill checks. You do NOT need to calculate these. Instead, reflect the NPC's attitude in the narrative — friendly NPCs are more cooperative, hostile NPCs are obstructive. Disposition thresholds for narrative tone:
+  disposition >= 30 (strong ally): very cooperative, helpful
+  disposition >= 15 (friendly): warm, willing to help
+  disposition >= 5 (warm): slightly favorable
+  disposition -5 to +5 (neutral): indifferent
+  disposition <= -5 (cool): reluctant, curt
+  disposition <= -15 (hostile): confrontational
+  disposition <= -30 (enemy): actively obstructive, threatening
 
 ${contextDepth >= 75 ? `NPC REGISTRY (reference for consistent characterization — use established personalities and speech patterns):
 ${npcSection}
@@ -658,14 +657,14 @@ INSTRUCTIONS:
 14. If the character needs system is active, reflect critically low needs (below 10) in narration and use stateChanges.needsChanges when needs are satisfied (eating, drinking, bathing, resting, using a toilet).
 15. QUEST OBJECTIVE TRACKING (CRITICAL): After writing the narrative, cross-reference ALL unchecked ACTIVE QUESTS objectives against what happened. If ANY objective was fulfilled (even partially or indirectly), you MUST include the corresponding questUpdates entry. Do NOT narrate fulfillment of an objective without marking it in questUpdates.
 16. QUEST COMPLETION RULE (CRITICAL): A quest can ONLY be completed (added to completedQuests) when BOTH conditions are met: (a) ALL objectives are marked as completed in questUpdates, AND (b) the player has talked to the turn-in NPC (turnInNpcId, or questGiverId if no turnInNpcId set) about the completed quest in the current scene. Do NOT auto-complete quests — the player must return to the quest giver to report success. When completing a quest, the turn-in NPC should acknowledge the completion, mention the reward, and congratulate the player. If all objectives are done but the player hasn't talked to the NPC yet, include a suggestedAction in the PC's voice such as "I go back to [NPC] to report what I've done".
-17. ITEM & MONEY ACQUISITION (CRITICAL): When the narrative describes the character picking up, finding, looting, receiving, buying, crafting, or otherwise ACQUIRING any physical object or money, you MUST include the corresponding stateChanges entry. Items go in stateChanges.newItems (with {id, name, type, description, rarity}). Money/coins go in stateChanges.moneyChange (with {gold, silver, copper} deltas). NEVER narrate the character obtaining something without the matching stateChanges — if the narrative says they picked it up, it MUST appear in their inventory or wallet. This applies even for trivial items like a coin, a key, a letter, or food. If a dice roll was required and FAILED, do NOT add the item. If it SUCCEEDED or was auto-success, the item MUST be added.
+17. ITEM & MONEY ACQUISITION (CRITICAL): When the narrative describes the character picking up, finding, looting, receiving, buying, crafting, or otherwise ACQUIRING any physical object or money, you MUST include the corresponding stateChanges entry. Items go in stateChanges.newItems (with {id, name, type, description, rarity}). Money/coins go in stateChanges.moneyChange (with {gold, silver, copper} deltas). NEVER narrate the character obtaining something without the matching stateChanges — if the narrative says they picked it up, it MUST appear in their inventory or wallet. This applies even for trivial items like a coin, a key, a letter, or food. If the skill check result was FAILURE, do NOT add the item. If it SUCCEEDED or no check was needed, the item MUST be added.
 
-ACTION FEASIBILITY (MANDATORY — applies BEFORE dice roll decision):
-- IMPOSSIBLE ACTIONS (auto-fail, NO dice roll): If the player attempts something physically impossible or targets someone/something not present in the scene (e.g., talking to an NPC who is not at the current location, using a feature that doesn't exist here, attacking an enemy not in combat), set diceRoll to null and narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc. Do NOT waste a dice roll on an impossible action.
-- TRIVIAL ACTIONS (auto-success, NO dice roll): If the action is trivially easy with no meaningful chance of failure (e.g., walking a short distance on flat ground, picking up an object at your feet, opening an unlocked door, sitting down), set diceRoll to null and narrate the success directly. These do not need mechanical resolution.
-- ROUTINE ACTIONS (auto-success, NEVER roll — regardless of dice frequency): Everyday mundane activities that any healthy person can do without skill or effort. These NEVER require a dice roll, even at 80%+ frequency. Always set diceRoll to null. Examples: eating, drinking, sleeping, resting, sitting down, using a toilet/latrine, bathing, casual conversation, greeting someone, looking around, walking short distances, getting dressed, packing/unpacking belongings, setting up camp (basic), lighting a fire with proper tools. If the needs system is active, apply needsChanges as appropriate.
-- UNCERTAIN ACTIONS (normal dice roll): Only use dice rolls for actions with genuinely uncertain outcomes where both success and failure are plausible.
-- EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified, not a way to bypass presence rules. If the player attempts to call someone who could plausibly hear them or arrive shortly, narrate the attempt and its result.
+ACTION FEASIBILITY (MANDATORY):
+- IMPOSSIBLE ACTIONS (auto-fail): If the player attempts something physically impossible or targets someone/something not present in the scene, narrate the failure — the character looks around but the person isn't here, reaches for something that isn't there, etc.
+- TRIVIAL ACTIONS (auto-success): If the action is trivially easy (walking, picking up objects, opening unlocked doors), narrate success directly.
+- ROUTINE ACTIONS (auto-success): Everyday mundane activities (eating, drinking, sleeping, resting, bathing, casual conversation, looking around, etc.) always succeed. If the needs system is active, apply needsChanges as appropriate.
+- UNCERTAIN ACTIONS: The game engine handles skill checks. The user prompt will tell you if a check was resolved and its outcome — narrate accordingly.
+- EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified.
 - suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere. Each suggestion MUST stay in the player character's voice (see SUGGESTED ACTIONS above).
 
 CURRENCY SYSTEM (WFRP):
@@ -724,7 +723,7 @@ ${(() => {
   const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
   const combatLikely = hasCombat || /\b(attack|fight|combat|ambush|hostile|enemy|enemies|bandits?|creatures?|wolves|monsters?)\b/.test(recentNarrative);
   if (!combatLikely) return 'BESTIARY: Available on demand — when combat starts, creature stats will be referenced automatically.\n';
-  return `BESTIARY REFERENCE (use these stats for combat encounters instead of inventing stats):\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 15))}\nUse the stats above for known creature types. For creatures not listed, create comparable stats.\n`;
+  return `BESTIARY REFERENCE (use these stats for combat encounters instead of inventing stats):\n${gameData.formatBestiaryForPrompt(Object.values(gameData.bestiary).slice(0, 15))}\nUse the stats above for known creature types. For creatures not listed, create comparable stats.\n`;
 })()}
 ${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
 ${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
@@ -886,7 +885,7 @@ Occasionally (every 8-15 scenes), when the character rests or sleeps, you may ge
 - Reflect the character's fears, guilt, or desires
 - Deliver cryptic messages from magical or divine forces
 - Revisit and recontextualize past events
-Dream scenes should feel distinct: distorted reality, non-linear time, symbolic imagery. diceRoll should be null. suggestedActions should be dream-like and in the PC's voice, e.g. "I follow the voice", "I reach for the mirror", "I try to wake up".
+Dream scenes should feel distinct: distorted reality, non-linear time, symbolic imagery. Dice checks are not used in dreams. suggestedActions should be dream-like and in the PC's voice, e.g. "I follow the voice", "I reach for the mirror", "I try to wake up".
 
 NPC AGENDA SYSTEM:
 NPCs have lives and goals that advance between scenes. You may include npcAgendas in stateChanges to track off-screen NPC activity:
@@ -975,8 +974,7 @@ Respond with ONLY valid JSON in this exact format:
     "moneyChange": null,
     "currentLocation": "Location Name",
     "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
-  },
-  "diceRoll": null
+  }
 }
 ${needsSystemEnabled ? '\nFor stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Use null if no needs changed.\n' : ''}
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour: quick interaction=0.25, short action/combat=0.5, exploration=0.75-1. Only resting (2-4) and sleeping (6-8) should exceed 1 hour.
@@ -1024,7 +1022,7 @@ RULES FOR THIS SCENE (MANDATORY):
 - Something happens in the world spontaneously: a passerby, an animal, weather, a sound, a small incident nearby.
 - Keep the narrative SHORT (1-2 paragraphs). This is a minor world beat, not a major plot event.
 - The event CAN optionally plant a subtle quest hook or introduce a character, but it does NOT have to. Most of the time, keep it purely atmospheric.
-- Set diceRoll to null — no skill test is needed.
+- No skill test is needed for this scene.
 - Do NOT start combat. Do NOT include combatUpdate.
 - suggestedActions should include reactions to what just happened in the PC's voice (e.g. "I kneel to pet the cat", "I go over to the vendor", "I brush off the mess and act casual", "I ignore it and walk on") plus normal exploration options.
 - stateChanges should be minimal or empty. A small timeAdvance (5-15 minutes) is appropriate.`
@@ -1037,7 +1035,7 @@ RULES FOR THIS SCENE (MANDATORY):
 - Do NOT narrate the player doing something goal-directed (no walking off, no starting conversations, no attacking). They remain passive unless reacting to something that happens TO them.
 - Something meaningful should develop: NPCs act, time passes, tension shifts, news arrives, an opportunity or threat emerges — this should feel more substantial than a tiny idle ambient beat, because the player chose to wait.
 - Advance the situation or plot thread; do not stall the story.
-- Set diceRoll to null — no skill test.
+- No skill test for this scene.
 - Do NOT start combat in this scene unless an external force attacks without the player provoking it; if combat starts, it is because the world came to them.
 - suggestedActions should offer ways to re-engage in first person or clear PC intent: "I speak up", "I step in", "I slip away", "I take a closer look", etc.
 - Include a modest timeAdvance (15 minutes to a few hours) if appropriate.`
@@ -1049,7 +1047,7 @@ The player wants the narrative to advance without specifying a concrete action. 
 RULES FOR THIS SCENE (MANDATORY):
 - Advance the plot, deepen the current situation, or introduce the next beat — do not merely repeat the previous scene.
 - The character may participate naturally in what unfolds (walking with the flow, reacting to events), but do not invent a specific detailed player plan they did not state.
-- You may include a dice roll if the situation calls for a test; otherwise optional.
+- The game engine may or may not have resolved a skill check — narrate based on the user prompt outcome.
 - suggestedActions should be concrete, varied, and in the PC's voice (not generic "continue" only).
 - This is NOT the same as passive waiting — the player is active in the fiction, just not specifying how.`
     : isPostCombat
@@ -1059,7 +1057,7 @@ POST-COMBAT RULES (MANDATORY):
 - Do NOT include "combatUpdate" in this scene's stateChanges — combat has JUST ended, do not start another fight.
 - Narrate the aftermath: describe the battlefield, fallen enemies, the character's condition and wounds, loot found, NPC reactions if any witnesses are present.
 - The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
-- Set diceRoll to null — no skill test is needed for this post-combat transition scene.
+- No skill test is needed for this post-combat transition scene.
 - Suggest post-combat actions in the PC's voice: "I search the bodies for anything useful", "I bandage my wounds", "I catch my breath and rest a moment", "I push on down the road", "I try to work out why they attacked", etc.
 - If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isPostCombatDefeat ? `
 
@@ -1155,7 +1153,7 @@ MANDATORY DIALOGUE MODE RULES:
 - Each NPC should respond in character based on their personality, attitude, and conversational goal.
 - suggestedActions must be concrete in-character lines the PC can say (direct speech the player selects) — NOT physical stage directions or narrator summaries.
 - Do NOT include combatUpdate.
-- diceRoll should be null unless a Charm/Fellowship test is contextually critical.
+- The game engine handles any skill checks. Focus on the narrative celebration.
 - ${dialogue.round >= dialogue.maxRounds ? 'This is the LAST round. NPCs should wrap up the conversation naturally. Include "dialogueUpdate": {"active": false} in stateChanges to end dialogue mode.' : `${dialogue.maxRounds - dialogue.round} round(s) remaining.`}\n`;
   } else if (isPostDialogue) {
     dialogueReminder = `\n\nDIALOGUE JUST ENDED — ${playerAction}
@@ -1165,7 +1163,7 @@ POST-DIALOGUE RULES (MANDATORY):
 - Return to normal narration: narrator describes the aftermath and consequences of the conversation.
 - Reflect the outcome of the dialogue: agreements reached, information gained, NPC disposition changes, rejected proposals, etc.
 - suggestedActions should be normal exploration/action options based on the dialogue outcome, phrased from the player character's perspective.
-- diceRoll should be null for this transition scene.\n`;
+- No skill test for this transition scene.\n`;
   } else if (isDialogueInitiation) {
     const npcListMatch = playerAction.match(/\[INITIATE DIALOGUE:\s*(.+?)\]/);
     const requestedNpcs = npcListMatch ? npcListMatch[1] : 'nearby NPCs';
@@ -1294,7 +1292,7 @@ NPC RELATIONSHIP TRACKING: When introducing or updating NPCs, include these opti
 - "relatedQuestIds": array of quest IDs this NPC is involved in (as quest giver, target, or participant)
 - "relationships": array of NPC-to-NPC relationships: [{"npcName": "Other NPC Name", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]
 These relationships persist across scenes and are used for world consistency. Always set factionId for NPCs who belong to a known faction.
-NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
+NPC DISPOSITION TRACKING: When a skill check involves interaction with an NPC (check the SKILL CHECK section in user prompt for the outcome), include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
 - Critical success: +3 to +5
 - Strong success (SL 3+): +2 to +3
 - Marginal success (SL 0-2): +1 to +2

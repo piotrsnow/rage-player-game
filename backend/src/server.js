@@ -23,6 +23,7 @@ import { meshyProxyRoutes } from './routes/proxy/meshy.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
+import { gameDataRoutes } from './routes/gameData.js';
 import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -89,6 +90,9 @@ await fastify.register(async function aiScope(app) {
 });
 
 await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
+
+// Static game rules data — no auth, generous rate limit
+await fastify.register(gameDataRoutes, { prefix: '/game-data' });
 
 startRoomCleanup();
 

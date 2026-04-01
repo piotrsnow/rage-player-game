@@ -20,9 +20,24 @@ export async function aiRoutes(fastify) {
    */
   fastify.post('/campaigns/:id/generate-scene', async (request, reply) => {
     const campaignId = request.params.id;
-    const { playerAction, provider = 'openai', model, language = 'pl' } = request.body;
+    const {
+      playerAction,
+      provider = 'openai',
+      model,
+      language = 'pl',
+      dmSettings = {},
+      resolvedMechanics = null,
+      needsSystemEnabled = false,
+      characterNeeds = null,
+      dialogue = null,
+      dialogueCooldown = 0,
+      isFirstScene = false,
+      isCustomAction = false,
+      fromAutoPlayer = false,
+      sceneCount = 0,
+    } = request.body;
 
-    if (!playerAction) {
+    if (!playerAction && !isFirstScene) {
       return reply.code(400).send({ error: 'playerAction is required' });
     }
 
@@ -41,10 +56,20 @@ export async function aiRoutes(fastify) {
     }
 
     try {
-      const result = await generateScene(campaignId, playerAction, {
+      const result = await generateScene(campaignId, playerAction || '[FIRST_SCENE]', {
         provider,
         model,
         language,
+        dmSettings,
+        resolvedMechanics,
+        needsSystemEnabled,
+        characterNeeds,
+        dialogue,
+        dialogueCooldown,
+        isFirstScene,
+        isCustomAction,
+        fromAutoPlayer,
+        sceneCount,
       });
 
       return {

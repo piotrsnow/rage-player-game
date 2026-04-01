@@ -118,6 +118,10 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
       validated.codexUpdates = validated.codexUpdates.slice(0, limits.maxCodexPerScene);
     }
     validated.codexUpdates = validated.codexUpdates.filter((u) => {
+      if (!u || typeof u !== 'object' || Array.isArray(u)) {
+        allCorrections.push('Invalid codex update removed (not an object)');
+        return false;
+      }
       if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
         allCorrections.push('Invalid codex update removed (missing required fields)');
         return false;

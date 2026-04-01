@@ -285,6 +285,7 @@ export async function campaignRoutes(fastify) {
           tone: tone || '',
           coreState: JSON.stringify(coreState || {}),
           lastSaved: new Date(),
+          shareToken: crypto.randomUUID(),
         },
       });
 

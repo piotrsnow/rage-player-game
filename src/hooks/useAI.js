@@ -4,6 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
+import { apiClient } from '../services/apiClient';
 import { createSceneId } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
@@ -12,7 +13,7 @@ import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
-import { detectCombatIntent, detectDialogueIntent } from '../services/prompts';
+import { detectCombatIntent } from '../services/prompts';
 import { calculateTensionScore } from '../services/tensionTracker';
 import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
@@ -573,29 +574,85 @@ export function useAI() {
           };
         }
 
-        const { result, usage } = await aiService.generateScene(
-          state,
-          settings.dmSettings,
-          playerAction,
-          isFirstScene,
-          aiProvider,
-          apiKey,
-          language,
-          enhancedContext,
-          {
-            needsSystemEnabled,
-            isCustomAction,
-            fromAutoPlayer,
-            resolvedMechanics: resolved,
-            localLLMConfig,
-            modelTier: aiModelTier,
-            alternateApiKey,
-            explicitModel: aiModel || null,
-            promptProfile: governance.profile.id,
-            sceneTokenBudget: governance.sceneTokenBudget,
-            promptTokenBudget: governance.promptTokenBudget,
+        // Backend flow is primary when connected; proxy is fallback for local LLM or no backend
+        let backendCampaignId = state.campaign?.backendId;
+        const canUseBackend = apiClient.isConnected() && !localLLMConfig?.enabled;
+        let result, usage;
+
+        // Auto-sync campaign to backend if not yet synced
+        if (canUseBackend && !backendCampaignId) {
+          try {
+            const { scenes: allScenes, isLoading, isGeneratingScene, isGeneratingImage, error: _err, ...rest } = state;
+            const coreState = { ...rest };
+            if (coreState.chatHistory?.length > 10) coreState.chatHistory = coreState.chatHistory.slice(-10);
+            const created = await apiClient.post('/campaigns', {
+              name: state.campaign?.name || '',
+              genre: state.campaign?.genre || '',
+              tone: state.campaign?.tone || '',
+              coreState,
+            });
+            backendCampaignId = created.id;
+            // Mutate in place — same pattern as storage.js; persisted on next autoSave
+            state.campaign.backendId = created.id;
+            console.log('[useAI] Auto-synced campaign to backend:', created.id);
+          } catch (syncErr) {
+            console.warn('[useAI] Failed to auto-sync campaign:', syncErr.message);
           }
-        );
+        }
+
+        if (canUseBackend && backendCampaignId) {
+          try {
+            const backendResult = await aiService.generateSceneViaBackend(backendCampaignId, playerAction, {
+              provider: aiProvider,
+              model: aiModel || null,
+              language,
+              dmSettings: settings.dmSettings,
+              resolvedMechanics: resolved,
+              needsSystemEnabled,
+              characterNeeds: state.character?.needs || null,
+              dialogue: state.dialogue || null,
+              dialogueCooldown: state.dialogueCooldown || 0,
+              isFirstScene,
+              isCustomAction,
+              fromAutoPlayer,
+              sceneCount: state.scenes?.length || 0,
+              gameState: state,
+            });
+            result = backendResult.result;
+            usage = backendResult.usage;
+          } catch (backendErr) {
+            console.warn('[useAI] Backend generate-scene failed, falling back to proxy:', backendErr.message);
+          }
+        }
+
+        // Proxy fallback (local LLM or backend unavailable)
+        if (!result) {
+          const proxyResult = await aiService.generateScene(
+            state,
+            settings.dmSettings,
+            playerAction,
+            isFirstScene,
+            aiProvider,
+            apiKey,
+            language,
+            enhancedContext,
+            {
+              needsSystemEnabled,
+              isCustomAction,
+              fromAutoPlayer,
+              resolvedMechanics: resolved,
+              localLLMConfig,
+              modelTier: aiModelTier,
+              alternateApiKey,
+              explicitModel: aiModel || null,
+              promptProfile: governance.profile.id,
+              sceneTokenBudget: governance.sceneTokenBudget,
+              promptTokenBudget: governance.promptTokenBudget,
+            }
+          );
+          result = proxyResult.result;
+          usage = proxyResult.usage;
+        }
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         if (result?.meta?.degraded) {
           degradeStatsRef.current.total += 1;
@@ -651,30 +708,10 @@ export function useAI() {
           });
         }
 
+        // Fallback: if AI omitted combatUpdate despite explicit combat intent, inject a minimal one
         if (!isFirstScene && !isPassiveSceneAction && detectCombatIntent(playerAction)) {
-          const hasCombatUpdate = result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true;
+          const hasCombatUpdate = result.stateChanges?.combatUpdate?.active === true;
           if (!hasCombatUpdate) {
-            console.warn('[useAI] Combat intent detected but AI omitted combatUpdate — retrying with reinforced prompt');
-            try {
-              const retryAction = `[SYSTEM: COMBAT MUST START THIS SCENE] ${playerAction}`;
-              const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
-                state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, fromAutoPlayer, resolvedMechanics: resolved, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
-              );
-              if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
-              if (retryResult.stateChanges?.combatUpdate?.active === true) {
-                console.log('[useAI] Retry succeeded — combatUpdate present');
-                Object.assign(result, retryResult);
-              } else {
-                console.warn('[useAI] Retry also omitted combatUpdate — using original response');
-              }
-            } catch (retryErr) {
-              console.warn('[useAI] Combat retry failed, using original response:', retryErr.message);
-            }
-          }
-
-          const stillMissingCombatUpdate = !(result.stateChanges?.combatUpdate && result.stateChanges.combatUpdate.active === true);
-          if (stillMissingCombatUpdate) {
             const currentLocation = state.world?.currentLocation || '';
             const fallbackNpc = (state.world?.npcs || []).find((npc) => {
               if (!npc?.name || npc.alive === false) return false;
@@ -699,30 +736,7 @@ export function useAI() {
                 reason: 'Combat intent fallback (AI omitted combatUpdate)',
               },
             };
-            console.warn('[useAI] Injected fallback combatUpdate due explicit combat intent');
-          }
-        }
-
-        if (!isFirstScene && !isPassiveSceneAction && detectDialogueIntent(playerAction) && (state.dialogueCooldown || 0) <= 0) {
-          const hasDialogueUpdate = result.stateChanges?.dialogueUpdate && result.stateChanges.dialogueUpdate.active === true;
-          if (!hasDialogueUpdate && (playerAction?.startsWith('[INITIATE DIALOGUE') || playerAction?.startsWith('[TALK:'))) {
-            console.warn('[useAI] Dialogue intent detected but AI omitted dialogueUpdate — retrying with reinforced prompt');
-            try {
-              const retryAction = `[SYSTEM: DIALOGUE MODE MUST START THIS SCENE] ${playerAction}`;
-              const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
-                state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, fromAutoPlayer, resolvedMechanics: resolved, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
-              );
-              if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
-              if (retryResult.stateChanges?.dialogueUpdate?.active === true) {
-                console.log('[useAI] Retry succeeded — dialogueUpdate present');
-                Object.assign(result, retryResult);
-              } else {
-                console.warn('[useAI] Retry also omitted dialogueUpdate — using original response');
-              }
-            } catch (retryErr) {
-              console.warn('[useAI] Dialogue retry failed, using original response:', retryErr.message);
-            }
+            console.warn('[useAI] Injected fallback combatUpdate — AI omitted it despite combat intent');
           }
         }
 

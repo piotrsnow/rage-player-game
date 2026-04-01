@@ -1,5 +1,5 @@
 import { getBonus, formatMoney } from './gameState';
-import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
+import { gameData } from './gameDataService';
 import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
 import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { buildUnmetNeedsBlock, buildNeedsEnforcementReminder } from './prompts';
@@ -311,7 +311,7 @@ Rules (short): d100, target = characteristic + skill advances + talentBonus; SL 
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
-Bestiary sample:\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 5))}
+Bestiary sample:\n${gameData.formatBestiaryForPrompt(Object.values(gameData.bestiary).slice(0, 5))}
 
 Output valid JSON only (no markdown). All player-facing text in ${lang}. Include stateChanges.timeAdvance.hoursElapsed every scene; stateChanges.currentLocation when moving; questUpdates when objectives met.`;
 }
