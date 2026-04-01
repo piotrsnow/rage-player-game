@@ -363,7 +363,7 @@ function postProcessSuggestedActions({
   return contextualFallback.slice(0, 6);
 }
 
-function buildDegradedSceneResponse({ language = 'en', reason = 'validation_failed', rawResult = null, gameState = null } = {}) {
+function buildDegradedSceneResponse({ language = 'en', reason = 'validation_failed', rawResult = null, gameState = null, degradeType = 'schema_validation' } = {}) {
   const narrative = typeof rawResult?.narrative === 'string' && rawResult.narrative.trim()
     ? rawResult.narrative.trim()
     : buildFallbackNarrative(language);
@@ -401,7 +401,7 @@ function buildDegradedSceneResponse({ language = 'en', reason = 'validation_fail
     diceRoll: rawResult?.diceRoll ?? null,
     cutscene: rawResult?.cutscene ?? null,
     dilemma: rawResult?.dilemma ?? null,
-    meta: { degraded: true, reason },
+    meta: { degraded: true, reason, contextQuality: 'degraded', degradeType },
   };
 }
 
@@ -626,6 +626,7 @@ export const aiService = {
       modelTier,
       isFirstScene,
       localLLMEnabled: Boolean(localLLMConfig?.enabled),
+      sceneCount: gameState?.scenes?.length || 0,
     });
     const completionBudget = Number.isFinite(sceneTokenBudget) ? sceneTokenBudget : governance.sceneTokenBudget;
     const promptBudget = Number.isFinite(promptTokenBudget) ? promptTokenBudget : governance.promptTokenBudget;
@@ -674,8 +675,19 @@ export const aiService = {
         narrative: validated.data.narrative,
         stateChanges: validated.data.stateChanges,
       });
+      validated.data.meta = {
+        ...(validated.data.meta || {}),
+        contextQuality: budgetedPrompts.truncated ? 'reduced' : 'full',
+      };
       if (budgetedPrompts.truncated) {
-        validated.data.meta = { ...(validated.data.meta || {}), promptTruncated: true };
+        validated.data.meta = {
+          ...(validated.data.meta || {}),
+          promptTruncated: true,
+          degradeType: 'context_truncate',
+          diagnostics: {
+            message: 'Prompt was truncated to fit token budget; optional sections were reduced first.',
+          },
+        };
       }
       return { result: validated.data, usage };
     }
@@ -683,7 +695,10 @@ export const aiService = {
     return {
       result: buildDegradedSceneResponse({
         language,
-        reason: validated.error || 'scene_schema_validation_failed',
+        reason: budgetedPrompts.truncated
+          ? `context_truncate_schema_validation_failed: ${validated.error || 'scene_schema_validation_failed'}`
+          : (validated.error || 'scene_schema_validation_failed'),
+        degradeType: budgetedPrompts.truncated ? 'context_truncate' : 'schema_validation',
         rawResult: validated.data || result,
         gameState,
       }),

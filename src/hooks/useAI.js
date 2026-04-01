@@ -429,6 +429,7 @@ export function useAI() {
   const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
+  const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
   const itemImageGenerationLocksRef = useRef(new Set());
@@ -565,6 +566,7 @@ export function useAI() {
           modelTier: aiModelTier,
           isFirstScene,
           localLLMEnabled: Boolean(localLLMConfig?.enabled),
+          sceneCount: state.scenes?.length || 0,
         });
         const requestedContextDepth = settings.dmSettings?.contextDepth ?? 100;
         const contextDepth = contextManager.resolveContextDepth(requestedContextDepth, governance.profile.id, aiModelTier);
@@ -642,6 +644,12 @@ export function useAI() {
         );
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         if (result?.meta?.degraded) {
+          degradeStatsRef.current.total += 1;
+          if (result?.meta?.degradeType === 'context_truncate' || String(result?.meta?.reason || '').includes('context_truncate')) {
+            degradeStatsRef.current.truncated += 1;
+          } else {
+            degradeStatsRef.current.schema += 1;
+          }
           dispatch({
             type: 'ADD_CHAT_MESSAGE',
             payload: {
@@ -649,6 +657,41 @@ export function useAI() {
               role: 'system',
               subtype: 'ai_degraded_mode',
               content: t('system.aiDegradedMode', 'AI response validation failed, so a safe fallback scene was generated.'),
+              timestamp: Date.now(),
+            },
+          });
+        }
+        if (result?.meta?.promptTruncated) {
+          degradeStatsRef.current.truncated += 1;
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_prompt_truncated`,
+              role: 'system',
+              subtype: 'validation_warning',
+              content: t(
+                'system.promptTruncatedWarning',
+                'Prompt context was trimmed to fit model limits. Story continuity may be reduced this turn.'
+              ),
+              timestamp: Date.now(),
+            },
+          });
+        }
+        if (
+          degradeStatsRef.current.total >= 3
+          && Date.now() - degradeStatsRef.current.lastWarnAt > 120000
+        ) {
+          degradeStatsRef.current.lastWarnAt = Date.now();
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_degrade_summary`,
+              role: 'system',
+              subtype: 'validation_warning',
+              content: t(
+                'system.aiQualityWarning',
+                `AI quality warning: ${degradeStatsRef.current.total} degraded scenes in this session (${degradeStatsRef.current.truncated} from prompt truncation). Consider increasing prompt profile/model tier.`
+              ),
               timestamp: Date.now(),
             },
           });

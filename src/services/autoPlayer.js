@@ -15,6 +15,12 @@ const VERBOSITY_CHANCE = {
   high: 0.8,
 };
 
+const NEED_KEYWORD_HINTS = {
+  hunger: ['eat', 'food', 'meal', 'ration', 'zje', 'jedz', 'posilek', 'jedzenie'],
+  thirst: ['drink', 'water', 'ale', 'wine', 'wody', 'pije', 'napoj'],
+  rest: ['rest', 'sleep', 'camp', 'nap', 'odpoc', 'spac', 'drzem'],
+};
+
 function normalizeAutoPlayerChatMessage(message) {
   if (typeof message !== 'string') return null;
 
@@ -79,6 +85,90 @@ function formatRecentScenes(scenes, count = 3) {
   }).join('\n\n');
 }
 
+function normalizeActionForCompare(action = '') {
+  return String(action || '')
+    .toLowerCase()
+    .replace(/[.,!?;:()[\]{}"']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toWordSet(text = '') {
+  const words = normalizeActionForCompare(text).split(' ').filter(Boolean);
+  return new Set(words);
+}
+
+function actionSimilarity(a = '', b = '') {
+  const aSet = toWordSet(a);
+  const bSet = toWordSet(b);
+  if (aSet.size === 0 || bSet.size === 0) return 0;
+  let intersection = 0;
+  for (const token of aSet) {
+    if (bSet.has(token)) intersection += 1;
+  }
+  const union = new Set([...aSet, ...bSet]).size;
+  return union > 0 ? intersection / union : 0;
+}
+
+function isActionTooSimilar(action, recentActions = []) {
+  const normalized = normalizeActionForCompare(action);
+  if (!normalized) return true;
+  return recentActions.some((prev) => {
+    const prevNorm = normalizeActionForCompare(prev);
+    return prevNorm === normalized || actionSimilarity(prevNorm, normalized) >= 0.72;
+  });
+}
+
+function styleScore(action = '', style = 'balanced') {
+  const a = normalizeActionForCompare(action);
+  if (!a) return 0;
+  const cautiousWords = ['careful', 'observe', 'retreat', 'safe', 'wait', 'ostroz', 'bezpiecz', 'obserw', 'wycof'];
+  const aggressiveWords = ['attack', 'strike', 'charge', 'confront', 'atak', 'uderz', 'szturm', 'nacier'];
+  const chaoticWords = ['bluff', 'gamble', 'provoke', 'taunt', 'blef', 'ryzyko', 'prowok', 'dramat'];
+  const containsAny = (list) => list.some((w) => a.includes(w));
+  if (style === 'cautious') return containsAny(cautiousWords) ? 2 : 0;
+  if (style === 'aggressive') return containsAny(aggressiveWords) ? 2 : 0;
+  if (style === 'chaotic') return containsAny(chaoticWords) ? 2 : 0;
+  return 1;
+}
+
+function needsUrgencyScore(action = '', characterNeeds = null) {
+  if (!characterNeeds || typeof characterNeeds !== 'object') return 0;
+  const a = normalizeActionForCompare(action);
+  if (!a) return 0;
+  let score = 0;
+  for (const [need, terms] of Object.entries(NEED_KEYWORD_HINTS)) {
+    const value = Number(characterNeeds?.[need]);
+    if (!Number.isFinite(value) || value > 35) continue;
+    if (terms.some((term) => a.includes(term))) {
+      score += value <= 15 ? 3 : 1;
+    }
+  }
+  return score;
+}
+
+function pickAlternativeAction({
+  currentAction = '',
+  suggestedActions = [],
+  recentAutoActions = [],
+  style = 'balanced',
+  characterNeeds = null,
+} = {}) {
+  const candidates = (Array.isArray(suggestedActions) ? suggestedActions : [])
+    .map((action) => (typeof action === 'string' ? action.trim() : ''))
+    .filter(Boolean);
+  if (candidates.length === 0) return null;
+
+  const scored = candidates.map((action, idx) => {
+    const duplicatePenalty = isActionTooSimilar(action, recentAutoActions) ? -5 : 2;
+    const sameAsCurrentPenalty = normalizeActionForCompare(action) === normalizeActionForCompare(currentAction) ? -4 : 0;
+    const score = duplicatePenalty + sameAsCurrentPenalty + styleScore(action, style) + needsUrgencyScore(action, characterNeeds) - (idx * 0.05);
+    return { action, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.action || null;
+}
+
 function formatQuests(quests) {
   if (!quests) return '';
   const list = Array.isArray(quests) ? quests : (quests.active || []);
@@ -93,7 +183,7 @@ function formatQuests(quests) {
   }).join('\n');
 }
 
-function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
+function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language, recentAutoActions = []) {
   const character = gameState.character;
   const scenes = gameState.scenes || [];
   const currentScene = scenes[scenes.length - 1];
@@ -132,6 +222,10 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language) {
     '',
     '## Suggested Actions',
     actionsList,
+    '',
+    recentAutoActions.length > 0
+      ? `Avoid repeating these recent decisions unless there is no meaningful alternative:\n${recentAutoActions.map((a) => `- ${a}`).join('\n')}`
+      : '',
     '',
     shouldSpeak
       ? 'Also write a short in-character spoken line your character says aloud right now.'
@@ -182,10 +276,12 @@ async function callAutoPlayerAI(provider, _apiKey, systemPrompt, userPrompt, mod
   throw new Error('Auto-player requires backend connection with server AI keys configured in environment variables.');
 }
 
-export async function decideAction(gameState, settings, autoPlayerSettings, apiKey, provider) {
+export async function decideAction(gameState, settings, autoPlayerSettings, apiKey, provider, { recentAutoActions = [] } = {}) {
   const language = settings.language || 'en';
-  const { systemPrompt, userPrompt } = buildAutoPlayerPrompt(gameState, autoPlayerSettings, language);
+  const { systemPrompt, userPrompt } = buildAutoPlayerPrompt(gameState, autoPlayerSettings, language, recentAutoActions);
   const model = autoPlayerSettings.model || resolveModel(provider, null);
+  const currentScene = (gameState.scenes || [])[Math.max(0, (gameState.scenes || []).length - 1)] || null;
+  const suggestedActions = currentScene?.actions || currentScene?.suggestedActions || [];
 
   const result = await callAutoPlayerAI(provider, apiKey, systemPrompt, userPrompt, model);
 
@@ -198,8 +294,27 @@ export async function decideAction(gameState, settings, autoPlayerSettings, apiK
     return { action: fallback, isCustom: false, chatMessage: null };
   }
 
+  const chosenAction = String(result.data.action || '').trim();
+  const allowVariety = autoPlayerSettings?.decisionVariety !== false;
+  if (allowVariety && isActionTooSimilar(chosenAction, recentAutoActions)) {
+    const alternative = pickAlternativeAction({
+      currentAction: chosenAction,
+      suggestedActions,
+      recentAutoActions,
+      style: autoPlayerSettings.style || 'balanced',
+      characterNeeds: gameState?.character?.needs || null,
+    });
+    if (alternative && normalizeActionForCompare(alternative) !== normalizeActionForCompare(chosenAction)) {
+      return {
+        action: alternative,
+        isCustom: false,
+        chatMessage: normalizeAutoPlayerChatMessage(result.data.chatMessage),
+      };
+    }
+  }
+
   return {
-    action: result.data.action,
+    action: chosenAction,
     isCustom: !!result.data.isCustom,
     chatMessage: normalizeAutoPlayerChatMessage(result.data.chatMessage),
   };

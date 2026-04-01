@@ -779,6 +779,10 @@ function extractFallbackActions(data) {
   const language = inferNarrativeLanguage(text);
   const npcs = (data.stateChanges?.npcs || []).map(n => n.name).filter(Boolean);
   const loc = data.stateChanges?.currentLocation;
+  const firstQuestOffer = Array.isArray(data.questOffers) && data.questOffers.length > 0
+    ? data.questOffers[0]
+    : null;
+  const questObjective = firstQuestOffer?.objectives?.[0]?.description || firstQuestOffer?.completionCondition || firstQuestOffer?.name || '';
   const detail = summarizeNarrativeDetail(text, language);
   const actions = [];
   const templates = FALLBACK_ACTION_VARIANTS[language] || FALLBACK_ACTION_VARIANTS.en;
@@ -791,8 +795,13 @@ function extractFallbackActions(data) {
   }
   if (loc) {
     actions.push(language === 'pl'
-      ? `Idę zbadać ${loc}`
-      : `I head over to investigate ${loc}`);
+      ? `Idę zbadać ${loc} i sprawdzam, co tam nie pasuje do sytuacji`
+      : `I head over to investigate ${loc} and verify what does not add up`);
+  }
+  if (questObjective) {
+    actions.push(language === 'pl'
+      ? `Skupiam się na celu questu: ${questObjective}`
+      : `I focus on the active objective: ${questObjective}`);
   }
 
   actions.push(language === 'pl'

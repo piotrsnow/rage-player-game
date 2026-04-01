@@ -10,8 +10,8 @@ const PROFILE_CONFIG = {
   },
   balanced: {
     id: 'balanced',
-    sceneTokenBudget: 1300,
-    promptTokenBudget: 4200,
+    sceneTokenBudget: 1450,
+    promptTokenBudget: 4800,
     contextDepthCap: { standard: 60, premium: 80 },
     guidance: 'Balance pacing, flavor, and mechanics with moderate detail.',
   },
@@ -55,17 +55,22 @@ export function getSceneAIGovernance({
   modelTier = 'premium',
   isFirstScene = false,
   localLLMEnabled = false,
+  sceneCount = 0,
 } = {}) {
   const profile = PROFILE_CONFIG[sanitizeProfile(profileId) || getDefaultProfileId(modelTier, localLLMEnabled)];
   const contextDepthCap = profile.contextDepthCap[sanitizeTier(modelTier)] ?? 100;
+  const safeSceneCount = Number.isFinite(sceneCount) ? Math.max(0, sceneCount) : 0;
+  const longSessionPromptBoost = safeSceneCount >= 30 ? 1200 : safeSceneCount >= 20 ? 800 : safeSceneCount >= 12 ? 400 : 0;
+  const longSessionSceneBoost = safeSceneCount >= 30 ? 250 : safeSceneCount >= 20 ? 180 : safeSceneCount >= 12 ? 120 : 0;
   const sceneTokenBudget = isFirstScene
     ? Math.min(profile.sceneTokenBudget + 200, 2200)
-    : profile.sceneTokenBudget;
+    : profile.sceneTokenBudget + longSessionSceneBoost;
+  const promptTokenBudget = profile.promptTokenBudget + longSessionPromptBoost;
 
   return {
     profile,
     sceneTokenBudget,
-    promptTokenBudget: profile.promptTokenBudget,
+    promptTokenBudget,
     contextDepthCap,
     knowledgeMinContextDepth: Math.min(75, contextDepthCap),
     mediumContextMinDepth: Math.min(50, contextDepthCap),
@@ -83,14 +88,38 @@ export function enforcePromptTokenBudget(systemPrompt, userPrompt, promptTokenBu
   }
 
   const maxChars = Math.floor(budgetTokens * 4);
-  const totalChars = (systemPrompt?.length || 0) + (userPrompt?.length || 0);
+  let safeSystemPrompt = systemPrompt || '';
+  const safeUserPrompt = userPrompt || '';
+  const totalChars = safeSystemPrompt.length + safeUserPrompt.length;
   if (totalChars <= maxChars) {
-    return { systemPrompt, userPrompt, truncated: false };
+    return { systemPrompt: safeSystemPrompt, userPrompt: safeUserPrompt, truncated: false };
   }
 
   const marker = '\n...[PROMPT TRUNCATED FOR TOKEN BUDGET]';
-  const systemShare = Math.floor(maxChars * 0.62);
-  const userShare = Math.max(400, maxChars - systemShare);
+  const systemShare = Math.floor(maxChars * 0.66);
+  const userShare = Math.max(500, maxChars - systemShare);
+  const safeRemoveSection = (text, sectionHeader) => {
+    const escaped = sectionHeader.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rgx = new RegExp(`\\n${escaped}[\\s\\S]*?(?=\\n[A-Z][A-Z _()'\\-]{5,}:|$)`, 'g');
+    return text.replace(rgx, '\n');
+  };
+
+  if (safeSystemPrompt.length > systemShare) {
+    const optionalHeaders = [
+      'BESTIARY REFERENCE',
+      'MAGIC SYSTEM',
+      'CHARACTER SPEECH & LINGUISTIC IDENTITY',
+      'SOUND EFFECTS',
+      'BACKGROUND MUSIC',
+      'MAP STATE (explored locations)',
+      'REFERENCE PRICE LIST',
+      'LOOT RARITY GATING',
+    ];
+    for (const header of optionalHeaders) {
+      if (safeSystemPrompt.length <= systemShare) break;
+      safeSystemPrompt = safeRemoveSection(safeSystemPrompt, header);
+    }
+  }
 
   const truncate = (text, maxLen) => {
     if (!text || text.length <= maxLen) return text || '';
@@ -99,8 +128,8 @@ export function enforcePromptTokenBudget(systemPrompt, userPrompt, promptTokenBu
   };
 
   return {
-    systemPrompt: truncate(systemPrompt, systemShare),
-    userPrompt: truncate(userPrompt, userShare),
+    systemPrompt: truncate(safeSystemPrompt, systemShare),
+    userPrompt: truncate(safeUserPrompt, userShare),
     truncated: true,
   };
 }

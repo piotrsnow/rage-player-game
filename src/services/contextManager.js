@@ -9,6 +9,8 @@ const INCREMENTAL_COMPRESSION_INTERVAL = 10;
 const MAX_COMPRESSED_HISTORY_LENGTH = 5000;
 const MIN_KEYWORD_LENGTH = 2;
 const RECENTLY_RESOLVED_SCENE_WINDOW = 10;
+const MIN_SUMMARY_LENGTH = 220;
+const MIN_COMPRESSION_QUALITY_SCORE = 3;
 
 function extractKeywords(text) {
   if (!text) return [];
@@ -63,6 +65,49 @@ function expandKeywordsWithRelations(keywords, npcs, quests, factions) {
   }
 
   return [...expanded];
+}
+
+function getEntrySceneIndex(entry = null) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (Number.isFinite(entry.sceneIndex)) return entry.sceneIndex;
+  if (Array.isArray(entry.relatedScenes) && entry.relatedScenes.length > 0) {
+    const recent = [...entry.relatedScenes].reverse().find((idx) => Number.isFinite(idx));
+    return Number.isFinite(recent) ? recent : null;
+  }
+  return null;
+}
+
+function scoreRecency(entry, currentSceneIdx) {
+  const sceneIdx = getEntrySceneIndex(entry);
+  if (!Number.isFinite(sceneIdx) || !Number.isFinite(currentSceneIdx) || currentSceneIdx <= 0) return 0;
+  const age = Math.max(0, currentSceneIdx - sceneIdx);
+  if (age <= 3) return 3;
+  if (age <= 8) return 2;
+  if (age <= 15) return 1;
+  return 0;
+}
+
+function scoreCompressionQuality(summary = '', entitySnapshot = {}, existingHistory = '') {
+  const text = String(summary || '').trim();
+  if (!text) return 0;
+  let score = 0;
+  if (text.length >= MIN_SUMMARY_LENGTH) score += 1;
+
+  const lower = text.toLowerCase();
+  const npcNames = (entitySnapshot?.npcs || []).map((n) => String(n?.name || '').trim()).filter(Boolean);
+  const questNames = (entitySnapshot?.activeQuests || []).map((q) => String(q?.name || '').trim()).filter(Boolean);
+  const location = String(entitySnapshot?.currentLocation || '').trim();
+
+  const hasNpcAnchor = npcNames.some((name) => lower.includes(name.toLowerCase()));
+  if (hasNpcAnchor) score += 1;
+  const hasQuestAnchor = questNames.some((name) => lower.includes(name.toLowerCase()));
+  if (hasQuestAnchor) score += 1;
+  if (location && lower.includes(location.toLowerCase())) score += 1;
+
+  // Guard against replacing good history with a much shorter, low-signal summary.
+  if (existingHistory && text.length >= Math.round(existingHistory.length * 0.6)) score += 1;
+
+  return score;
 }
 
 export const contextManager = {
@@ -125,6 +170,7 @@ export const contextManager = {
       let s = scoreTags(event.tags, keywords);
       if (event.importance === 'critical') s += 3;
       else if (event.importance === 'major') s += 1;
+      s += scoreRecency(event, currentSceneIdx);
       if (s > 0) scored.push({ type: 'event', text: event.summary, score: s });
     }
 
@@ -132,6 +178,7 @@ export const contextManager = {
       let s = scoreTags(decision.tags, keywords);
       if (decision.importance === 'critical') s += 2;
       else if (decision.importance === 'major') s += 1;
+      s += scoreRecency(decision, currentSceneIdx);
       if (s > 0) scored.push({ type: 'decision', text: `Choice: ${decision.choice} → ${decision.consequence}`, score: s });
     }
 
@@ -155,7 +202,8 @@ export const contextManager = {
 
       if (s > 0) {
         const statusLabel = isActive ? 'active' : 'recently resolved';
-        scored.push({ type: 'plotThread', text: `[${statusLabel}] ${thread.name}`, score: s + 1 });
+        const recencyBonus = scoreRecency(thread, currentSceneIdx);
+        scored.push({ type: 'plotThread', text: `[${statusLabel}] ${thread.name}`, score: s + 1 + recencyBonus });
       }
     }
 
@@ -317,6 +365,16 @@ export const contextManager = {
       let summary = result?.summary || null;
       if (summary && summary.length > MAX_COMPRESSED_HISTORY_LENGTH) {
         summary = summary.substring(0, MAX_COMPRESSED_HISTORY_LENGTH);
+      }
+      const qualityScore = scoreCompressionQuality(summary, entitySnapshot, existingHistory);
+      if (!summary || qualityScore < MIN_COMPRESSION_QUALITY_SCORE) {
+        return {
+          summary: existingHistory || null,
+          entitySnapshot: gameState.world?.compressedEntityState || entitySnapshot,
+          usage,
+          qualityRejected: true,
+          qualityScore,
+        };
       }
       return { summary, entitySnapshot, usage };
     } catch (err) {

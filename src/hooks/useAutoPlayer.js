@@ -69,6 +69,7 @@ export function useAutoPlayer(handleAction, options = {}) {
   const narrationSeenForPendingSceneRef = useRef(false);
   const pendingSceneStartedAtRef = useRef(0);
   const overlayResolveRef = useRef(null);
+  const recentActionsRef = useRef([]);
 
   enabledRef.current = autoPlayerSettings.enabled;
 
@@ -103,6 +104,7 @@ export function useAutoPlayer(handleAction, options = {}) {
       pendingSceneCountRef.current = 0;
       narrationSeenForPendingSceneRef.current = false;
       pendingSceneStartedAtRef.current = 0;
+      recentActionsRef.current = [];
     } else {
       abortRef.current = false;
       setTurnsPlayed(0);
@@ -137,7 +139,9 @@ export function useAutoPlayer(handleAction, options = {}) {
     try {
       const apiKey = getApiKey();
       const provider = settings.aiProvider || 'openai';
-      const result = await decideAction(state, settings, autoPlayerSettings, apiKey, provider);
+      const result = await decideAction(state, settings, autoPlayerSettings, apiKey, provider, {
+        recentAutoActions: recentActionsRef.current,
+      });
 
       if (abortRef.current || !enabledRef.current) return;
 
@@ -154,6 +158,7 @@ export function useAutoPlayer(handleAction, options = {}) {
 
       if (handleAction) {
         await handleAction(actionText, result.isCustom, true);
+        recentActionsRef.current = [...recentActionsRef.current, result.action].slice(-8);
       }
 
       setTurnsPlayed((prev) => prev + 1);

@@ -20,9 +20,18 @@ function clampCombatCommentaryFrequency(value) {
 }
 
 function normalizeDmSettings(dmSettings) {
+  const contextDepthRaw = Number(dmSettings?.contextDepth ?? defaultSettings.dmSettings.contextDepth);
+  const normalizedContextDepth = Number.isFinite(contextDepthRaw)
+    ? Math.max(35, Math.min(100, Math.round(contextDepthRaw)))
+    : defaultSettings.dmSettings.contextDepth;
+  const promptProfile = ['starter', 'balanced', 'deep'].includes(dmSettings?.promptProfile)
+    ? dmSettings.promptProfile
+    : defaultSettings.dmSettings.promptProfile;
   return {
     ...defaultSettings.dmSettings,
     ...(dmSettings || {}),
+    contextDepth: normalizedContextDepth,
+    promptProfile,
     combatCommentaryFrequency: clampCombatCommentaryFrequency(
       dmSettings?.combatCommentaryFrequency ?? defaultSettings.dmSettings.combatCommentaryFrequency
     ),
@@ -120,6 +129,7 @@ const defaultSettings = {
     customInstructions: '',
     maxTurns: 0,
     model: '',
+    decisionVariety: true,
   },
   dmSettings: {
     narrativeStyle: 50,
@@ -137,6 +147,7 @@ const defaultSettings = {
     imageStyle: 'painting',
     darkPalette: false,
     contextDepth: 100,
+    promptProfile: 'balanced',
   },
 };
 

@@ -101,6 +101,34 @@ export default function AutoPlayerPanel({
 
         {/* Settings */}
         <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+          {/* Decision Variety */}
+          <div className="flex items-start justify-between gap-3 rounded-sm border border-outline-variant/15 bg-surface-container-high/30 px-3 py-2">
+            <div>
+              <div className="text-[10px] text-on-surface font-label uppercase tracking-widest">
+                {t('autoPlayer.decisionVariety', 'Decision variety')}
+              </div>
+              <div className="text-[10px] text-on-surface-variant mt-1">
+                {t(
+                  'autoPlayer.decisionVarietyHint',
+                  'Avoid repeating similar choices in recent turns when alternatives exist.'
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => updateAutoPlayerSettings({ decisionVariety: autoPlayerSettings.decisionVariety !== false ? false : true })}
+              className={`relative mt-0.5 w-9 h-5 rounded-full transition-colors duration-200 ${
+                autoPlayerSettings.decisionVariety !== false ? 'bg-primary' : 'bg-outline/30'
+              }`}
+              aria-label={t('autoPlayer.decisionVariety', 'Decision variety')}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-on-primary transition-transform duration-200 ${
+                  autoPlayerSettings.decisionVariety !== false ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
           {/* Play Style */}
           <div>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
