@@ -608,9 +608,7 @@ export const aiService = {
     needsSystemEnabled = false,
     isCustomAction = false,
     fromAutoPlayer = false,
-    preRolledDice = null,
-    skipDiceRoll = false,
-    momentumBonus = 0,
+    resolvedMechanics = null,
     localLLMConfig = null,
     modelTier = 'premium',
     alternateApiKey = null,
@@ -630,7 +628,7 @@ export const aiService = {
     });
     const completionBudget = Number.isFinite(sceneTokenBudget) ? sceneTokenBudget : governance.sceneTokenBudget;
     const promptBudget = Number.isFinite(promptTokenBudget) ? promptTokenBudget : governance.promptTokenBudget;
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
+    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, resolvedMechanics, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
 
     let systemPrompt, userPrompt;
     if (localLLMConfig?.enabled && localLLMConfig?.reducedPrompt) {

@@ -62,7 +62,7 @@ export async function campaignRoutes(fastify) {
         select: {
           id: true, name: true, genre: true, tone: true,
           rating: true, playCount: true,
-          data: true, createdAt: true,
+          coreState: true, createdAt: true,
           user: { select: { email: true } },
         },
         orderBy,
@@ -72,10 +72,19 @@ export async function campaignRoutes(fastify) {
       prisma.campaign.count({ where }),
     ]);
 
+    // Get scene counts for all campaigns in one query
+    const campaignIds = campaigns.map((c) => c.id);
+    const sceneCounts = await prisma.campaignScene.groupBy({
+      by: ['campaignId'],
+      where: { campaignId: { in: campaignIds } },
+      _count: true,
+    });
+    const sceneCountMap = Object.fromEntries(sceneCounts.map((s) => [s.campaignId, s._count]));
+
     return {
       campaigns: campaigns.map((c) => {
         let parsed = {};
-        try { parsed = JSON.parse(c.data); } catch { /* empty */ }
+        try { parsed = JSON.parse(c.coreState); } catch { /* empty */ }
         return {
           id: c.id,
           name: c.name,
@@ -85,7 +94,7 @@ export async function campaignRoutes(fastify) {
           playCount: c.playCount,
           createdAt: c.createdAt,
           author: c.user?.email ? c.user.email.slice(0, 2) + '***' : 'Anonymous',
-          sceneCount: parsed.scenes?.length || 0,
+          sceneCount: sceneCountMap[c.id] || 0,
           worldDescription: parsed.campaign?.worldDescription?.substring(0, 300) || '',
           hook: parsed.campaign?.hook?.substring(0, 200) || '',
           characterName: parsed.character?.name || '',
@@ -102,7 +111,7 @@ export async function campaignRoutes(fastify) {
       select: {
         id: true, name: true, genre: true, tone: true,
         rating: true, playCount: true,
-        data: true, isPublic: true, createdAt: true,
+        coreState: true, isPublic: true, createdAt: true,
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
@@ -114,9 +123,15 @@ export async function campaignRoutes(fastify) {
       }),
     );
 
-    let parsed = {};
-    try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-    return { ...campaign, data: parsed };
+    let coreState = {};
+    try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
+
+    const scenes = await prisma.campaignScene.findMany({
+      where: { campaignId: campaign.id },
+      orderBy: { sceneIndex: 'asc' },
+    });
+
+    return { ...campaign, coreState, scenes };
   });
 
   fastify.get('/share/:token', async (request, reply) => {
@@ -124,18 +139,23 @@ export async function campaignRoutes(fastify) {
       where: { shareToken: request.params.token },
       select: {
         id: true, name: true, genre: true, tone: true,
-        data: true, createdAt: true,
+        coreState: true, createdAt: true,
         user: { select: { email: true } },
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found or link expired' });
 
-    let parsed = {};
-    try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
+    let coreState = {};
+    try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
-    if (!parsed.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
-      parsed.narratorVoiceId = config.elevenlabsDefaultVoiceId;
+    if (!coreState.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
+      coreState.narratorVoiceId = config.elevenlabsDefaultVoiceId;
     }
+
+    const scenes = await prisma.campaignScene.findMany({
+      where: { campaignId: campaign.id },
+      orderBy: { sceneIndex: 'asc' },
+    });
 
     return {
       id: campaign.id,
@@ -144,7 +164,8 @@ export async function campaignRoutes(fastify) {
       tone: campaign.tone,
       createdAt: campaign.createdAt,
       author: campaign.user?.email ? campaign.user.email.slice(0, 2) + '***' : 'Anonymous',
-      data: parsed,
+      coreState,
+      scenes,
     };
   });
 
@@ -232,13 +253,29 @@ export async function campaignRoutes(fastify) {
       });
       if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
-      let parsed = {};
-      try { parsed = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-      return { ...campaign, data: parsed };
+      let coreState = {};
+      try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
+
+      // Load recent scenes from normalized collection
+      const scenes = await prisma.campaignScene.findMany({
+        where: { campaignId: campaign.id },
+        orderBy: { sceneIndex: 'desc' },
+        take: 10,
+      });
+
+      const parsedScenes = scenes.reverse().map((s) => ({
+        ...s,
+        suggestedActions: JSON.parse(s.suggestedActions || '[]'),
+        dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),
+        diceRoll: s.diceRoll ? JSON.parse(s.diceRoll) : null,
+        stateChanges: s.stateChanges ? JSON.parse(s.stateChanges) : null,
+      }));
+
+      return { ...campaign, coreState, scenes: parsedScenes };
     });
 
     app.post('/', async (request) => {
-      const { name, genre, tone, data } = request.body;
+      const { name, genre, tone, coreState } = request.body;
 
       const campaign = await prisma.campaign.create({
         data: {
@@ -246,14 +283,14 @@ export async function campaignRoutes(fastify) {
           name: name || '',
           genre: genre || '',
           tone: tone || '',
-          data: JSON.stringify(data || {}),
+          coreState: JSON.stringify(coreState || {}),
           lastSaved: new Date(),
         },
       });
 
-      let parsedData = {};
-      try { parsedData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-      return { ...campaign, data: parsedData };
+      let parsedCoreState = {};
+      try { parsedCoreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
+      return { ...campaign, coreState: parsedCoreState, scenes: [] };
     });
 
     app.put('/:id', async (request, reply) => {
@@ -262,13 +299,13 @@ export async function campaignRoutes(fastify) {
       });
       if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-      const { name, genre, tone, data } = request.body;
+      const { name, genre, tone, coreState } = request.body;
       const updateData = { lastSaved: new Date() };
 
       if (name !== undefined) updateData.name = name;
       if (genre !== undefined) updateData.genre = genre;
       if (tone !== undefined) updateData.tone = tone;
-      if (data !== undefined) updateData.data = JSON.stringify(data);
+      if (coreState !== undefined) updateData.coreState = JSON.stringify(coreState);
 
       const campaign = await withRetry(() =>
         prisma.campaign.update({
@@ -277,9 +314,9 @@ export async function campaignRoutes(fastify) {
         }),
       );
 
-      let parsedPutData = {};
-      try { parsedPutData = JSON.parse(campaign.data); } catch { /* corrupted data */ }
-      return { ...campaign, data: parsedPutData };
+      let parsedCoreState = {};
+      try { parsedCoreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
+      return { ...campaign, coreState: parsedCoreState };
     });
 
     app.delete('/:id', async (request, reply) => {
@@ -288,6 +325,13 @@ export async function campaignRoutes(fastify) {
       });
       if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
+      // Delete normalized collections first
+      await Promise.all([
+        prisma.campaignScene.deleteMany({ where: { campaignId: request.params.id } }),
+        prisma.campaignNPC.deleteMany({ where: { campaignId: request.params.id } }),
+        prisma.campaignKnowledge.deleteMany({ where: { campaignId: request.params.id } }),
+        prisma.campaignCodex.deleteMany({ where: { campaignId: request.params.id } }),
+      ]);
       await prisma.campaign.delete({ where: { id: request.params.id } });
       return { success: true };
     });

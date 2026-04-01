@@ -132,11 +132,19 @@ export const storage = {
 
   async _doSaveCampaignToBackend(gameState) {
     try {
+      // Build lean coreState (everything except scenes, which are saved separately)
+      const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = gameState;
+      const coreState = { ...rest };
+      // Keep only last 10 chat messages in coreState
+      if (coreState.chatHistory?.length > 10) {
+        coreState.chatHistory = coreState.chatHistory.slice(-10);
+      }
+
       const payload = {
         name: gameState.campaign?.name || '',
         genre: gameState.campaign?.genre || '',
         tone: gameState.campaign?.tone || '',
-        data: gameState,
+        coreState,
       };
 
       const backendId = gameState.campaign?.backendId
@@ -146,16 +154,62 @@ export const storage = {
         if (!gameState.campaign.backendId) {
           gameState.campaign.backendId = backendId;
         }
+
+        // Save new scenes incrementally
+        if (scenes?.length) {
+          const lastSavedIndex = this._getLastSavedSceneIndex(backendId);
+          const newScenes = scenes.filter((_, i) => i > lastSavedIndex);
+          for (const scene of newScenes) {
+            try {
+              await apiClient.post(`/ai/campaigns/${backendId}/scenes`, {
+                ...scene,
+                sceneIndex: scenes.indexOf(scene),
+              });
+            } catch (err) {
+              console.warn('[storage] Scene save failed:', err.message);
+            }
+          }
+          this._setLastSavedSceneIndex(backendId, scenes.length - 1);
+        }
       } else {
         const created = await apiClient.post('/campaigns', payload);
         if (gameState.campaign) {
           gameState.campaign.backendId = created.id;
           this._persistBackendId(gameState.campaign.id, created.id);
+
+          // Save all scenes for new campaign
+          if (scenes?.length) {
+            for (let i = 0; i < scenes.length; i++) {
+              try {
+                await apiClient.post(`/ai/campaigns/${created.id}/scenes`, {
+                  ...scenes[i],
+                  sceneIndex: i,
+                });
+              } catch (err) {
+                console.warn('[storage] Scene save failed:', err.message);
+              }
+            }
+            this._setLastSavedSceneIndex(created.id, scenes.length - 1);
+          }
         }
       }
     } catch (err) {
       console.warn('[storage] Backend save failed:', err.message);
     }
+  },
+
+  _getLastSavedSceneIndex(backendId) {
+    try {
+      return parseInt(localStorage.getItem(`_scene_idx_${backendId}`) || '-1', 10);
+    } catch {
+      return -1;
+    }
+  },
+
+  _setLastSavedSceneIndex(backendId, index) {
+    try {
+      localStorage.setItem(`_scene_idx_${backendId}`, String(index));
+    } catch { /* ignore */ }
   },
 
   _getLocalBackendId(campaignId) {
@@ -346,8 +400,32 @@ export const storage = {
 
           try {
             const full = await apiClient.get(`/campaigns/${bc.id}`);
+            // Handle new normalized format (coreState + scenes) or legacy (data)
+            let campaignData;
+            if (full.coreState) {
+              // New format: reconstruct full state from coreState + scenes
+              campaignData = typeof full.coreState === 'string'
+                ? JSON.parse(full.coreState) : full.coreState;
+              if (full.scenes?.length) {
+                campaignData.scenes = full.scenes.map((s) => ({
+                  ...s,
+                  suggestedActions: typeof s.suggestedActions === 'string'
+                    ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
+                  dialogueSegments: typeof s.dialogueSegments === 'string'
+                    ? JSON.parse(s.dialogueSegments) : s.dialogueSegments || [],
+                  diceRoll: typeof s.diceRoll === 'string'
+                    ? JSON.parse(s.diceRoll) : s.diceRoll,
+                  stateChanges: typeof s.stateChanges === 'string'
+                    ? JSON.parse(s.stateChanges) : s.stateChanges,
+                }));
+              }
+              if (!campaignData.campaign) campaignData.campaign = {};
+              campaignData.campaign.backendId = full.id;
+            } else {
+              campaignData = full.data || full;
+            }
             backendPayloadById.set(bc.id, {
-              data: full.data || full,
+              data: campaignData,
               backendTime,
               usedLocalSnapshot: false,
             });

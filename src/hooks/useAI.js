@@ -4,7 +4,7 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
-import { createSceneId, calculateSL, rollD100 } from '../services/gameState';
+import { createSceneId } from '../services/gameState';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -16,15 +16,12 @@ import { detectCombatIntent, detectDialogueIntent } from '../services/prompts';
 import { calculateTensionScore } from '../services/tensionTracker';
 import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
-import { resolveDiceRollCharacteristic, normalizeSkillName, inferSkillFromCharacter, pickBestSkill } from '../services/diceRollInference';
-import { getApplicableTalentBonus } from '../data/wfrpTalents';
 import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
+import { resolveMechanics } from '../services/mechanics/index';
+import { calculateNextMomentum } from '../services/mechanics/momentumTracker';
 
-const MAX_COMBINED_BONUS = 30;
-const MIN_DIFFICULTY_MODIFIER = -40;
-const MAX_DIFFICULTY_MODIFIER = 40;
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
 const SCENE_GEN_DURATION_HISTORY_KEY = 'rpgon_scene_gen_durations_ms';
@@ -79,35 +76,10 @@ function persistSceneGenDurationHistory(history) {
   }
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function normalizeDifficultyModifier(value) {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
-    : 0;
-}
-
-function snapDifficultyModifier(value) {
-  if (!Number.isFinite(value)) return 0;
-  return clamp(Math.round(value / 10) * 10, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER);
-}
-
 function normalizeActionText(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-function isRestAction(playerAction, t) {
-  const normalized = normalizeActionText(playerAction);
-  if (!normalized) return false;
-
-  const localizedRestAction = normalizeActionText(t('gameplay.restAction'));
-  if (localizedRestAction && normalized === localizedRestAction) return true;
-
-  // Fallback for custom/manual rest commands across languages.
-  return normalized.includes('rest') || normalized.includes('odpoc');
-}
 
 function downgradeLowConfidenceDialogueSegments(segments) {
   return (segments || []).map((seg) => {
@@ -360,28 +332,6 @@ function enrichDialogueSpeakers({
   };
 }
 
-function buildAutomaticRestRecovery(state) {
-  const character = state?.character;
-  if (!character) return null;
-
-  const maxWounds = character.maxWounds ?? character.wounds ?? 0;
-  const currentWounds = character.wounds ?? maxWounds;
-  const woundsToHeal = Math.max(0, maxWounds - currentWounds);
-
-  const needs = character.needs || {};
-  const needsChanges = {};
-  for (const key of ['hunger', 'thirst', 'bladder', 'hygiene', 'rest']) {
-    // Rest should always fully satisfy needs after all other scene deltas are applied.
-    // Using +100 guarantees clamp-to-100 even if needs were decayed earlier in this update.
-    if (typeof needs[key] !== 'number') continue;
-    needsChanges[key] = 100;
-  }
-
-  return {
-    woundsChange: woundsToHeal > 0 ? woundsToHeal : undefined,
-    needsChanges,
-  };
-}
 
 function mergeNpcHintsFromDialogue(stateChanges, dialogueSegments, worldNpcs, { currentLocation = '', playerName = '' } = {}) {
   const next = { ...(stateChanges || {}) };
@@ -591,11 +541,17 @@ export function useAI() {
         }
         const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
         const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
-        const testsFrequency = settings.dmSettings?.testsFrequency ?? 50;
-        const shouldRollDice = !isPassiveSceneAction && Math.random() * 100 < testsFrequency;
-        const preRolledDice = (!isFirstScene && shouldRollDice) ? rollD100() : null;
-        const skipDiceRoll = isPassiveSceneAction || (!isFirstScene && !shouldRollDice);
-        const momentumBonus = state.momentumBonus || 0;
+
+        // Resolve all deterministic mechanics BEFORE AI call
+        const resolved = resolveMechanics({
+          state,
+          playerAction,
+          settings,
+          isFirstScene,
+          isCustomAction,
+          fromAutoPlayer,
+          t,
+        });
 
         const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
         const triggeredAgendas = !isFirstScene ? checkNpcAgendas(state.world?.npcAgendas, state) : [];
@@ -630,9 +586,7 @@ export function useAI() {
             needsSystemEnabled,
             isCustomAction,
             fromAutoPlayer,
-            preRolledDice,
-            skipDiceRoll,
-            momentumBonus,
+            resolvedMechanics: resolved,
             localLLMConfig,
             modelTier: aiModelTier,
             alternateApiKey,
@@ -705,7 +659,7 @@ export function useAI() {
               const retryAction = `[SYSTEM: COMBAT MUST START THIS SCENE] ${playerAction}`;
               const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
                 state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+                { needsSystemEnabled, isCustomAction, fromAutoPlayer, resolvedMechanics: resolved, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
               );
               if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
               if (retryResult.stateChanges?.combatUpdate?.active === true) {
@@ -757,7 +711,7 @@ export function useAI() {
               const retryAction = `[SYSTEM: DIALOGUE MODE MUST START THIS SCENE] ${playerAction}`;
               const { result: retryResult, usage: retryUsage } = await aiService.generateScene(
                 state, settings.dmSettings, retryAction, false, aiProvider, apiKey, language, enhancedContext,
-                { needsSystemEnabled, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
+                { needsSystemEnabled, isCustomAction, fromAutoPlayer, resolvedMechanics: resolved, localLLMConfig, modelTier: aiModelTier, alternateApiKey, explicitModel: aiModel || null }
               );
               if (retryUsage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', retryUsage) });
               if (retryResult.stateChanges?.dialogueUpdate?.active === true) {
@@ -786,122 +740,13 @@ export function useAI() {
 
         const incomingDialogueSegments = normalizeIncomingDialogueSegments(result.dialogueSegments || []);
 
-        if (result.diceRoll && result.diceRoll.roll != null && result.diceRoll.target != null) {
-          let resolvedCharacteristic = resolveDiceRollCharacteristic(result.diceRoll, playerAction);
-          if (!resolvedCharacteristic) {
-            result.diceRoll = null;
-          } else {
-            result.diceRoll.characteristic = resolvedCharacteristic;
+        // Use FE-resolved dice roll instead of AI-generated one
+        result.diceRoll = resolved.diceRoll || null;
 
-            if (result.diceRoll.characteristicValue == null) {
-              result.diceRoll.characteristicValue = state.character?.characteristics?.[resolvedCharacteristic] ?? null;
-            }
-
-            if (result.diceRoll.characteristicValue == null) {
-              result.diceRoll = null;
-            } else {
-              const bestSkill = pickBestSkill(
-                result.diceRoll.suggestedSkills,
-                state.character?.skills,
-                state.character?.characteristics,
-              );
-              if (bestSkill) {
-                result.diceRoll.skill = bestSkill.skill;
-                result.diceRoll.skillAdvances = bestSkill.advances;
-                if (bestSkill.characteristic !== resolvedCharacteristic) {
-                  resolvedCharacteristic = bestSkill.characteristic;
-                  result.diceRoll.characteristic = resolvedCharacteristic;
-                  result.diceRoll.characteristicValue =
-                    state.character?.characteristics?.[resolvedCharacteristic] ?? result.diceRoll.characteristicValue;
-                }
-                result.diceRoll.baseTarget = result.diceRoll.characteristicValue + bestSkill.advances;
-              }
-
-              const originalTarget = result.diceRoll.target;
-              const roll = result.diceRoll.roll;
-              const bonus = result.diceRoll.creativityBonus || 0;
-              const momentum = result.diceRoll.momentumBonus || 0;
-              const disposition = result.diceRoll.dispositionBonus || 0;
-              const providedDifficultyModifier = result.diceRoll.difficultyModifier != null
-                ? normalizeDifficultyModifier(result.diceRoll.difficultyModifier)
-                : null;
-
-              let baseTarget;
-              if (result.diceRoll.baseTarget) {
-                baseTarget = result.diceRoll.baseTarget;
-              } else if (result.diceRoll.characteristicValue != null && result.diceRoll.skillAdvances != null) {
-                baseTarget = result.diceRoll.characteristicValue + result.diceRoll.skillAdvances;
-              } else {
-                baseTarget = result.diceRoll.target - bonus - momentum - disposition - (providedDifficultyModifier ?? 0);
-              }
-              result.diceRoll.baseTarget = baseTarget;
-
-              if (result.diceRoll.skillAdvances == null && result.diceRoll.characteristicValue != null) {
-                result.diceRoll.skillAdvances = Math.max(0, baseTarget - result.diceRoll.characteristicValue);
-              }
-
-              if (result.diceRoll.skill) {
-                const normalized = normalizeSkillName(result.diceRoll.skill);
-                if (normalized) {
-                  result.diceRoll.skill = normalized;
-                }
-              }
-              if (!result.diceRoll.skill && result.diceRoll.skillAdvances > 0) {
-                const inferred = inferSkillFromCharacter(
-                  resolvedCharacteristic,
-                  result.diceRoll.skillAdvances,
-                  state.character?.skills
-                );
-                if (inferred) result.diceRoll.skill = inferred;
-              }
-
-              const talentResult = getApplicableTalentBonus(
-                state.character?.talents,
-                resolvedCharacteristic,
-                result.diceRoll.skill,
-              );
-              const talentBonus = talentResult ? talentResult.bonus : 0;
-              result.diceRoll.talentBonus = talentBonus;
-              result.diceRoll.applicableTalent = talentResult ? talentResult.talent : null;
-
-              const totalBonus = bonus + momentum + disposition;
-              const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-              const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - talentBonus - cappedBonus);
-              result.diceRoll.difficultyModifier = difficultyModifier;
-              const effectiveTarget = baseTarget + talentBonus + cappedBonus + difficultyModifier;
-              result.diceRoll.target = effectiveTarget;
-
-              const isCriticalSuccess = roll >= 1 && roll <= 4;
-              const isCriticalFailure = roll >= 96 && roll <= 100;
-              const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
-
-              result.diceRoll.success = isSuccess;
-              result.diceRoll.criticalSuccess = isCriticalSuccess;
-              result.diceRoll.criticalFailure = isCriticalFailure;
-              result.diceRoll.sl = calculateSL(roll, effectiveTarget);
-
-              const sl = result.diceRoll.sl;
-              const currentMomentum = state.momentumBonus || 0;
-              const newValue = sl * 5;
-              let nextMomentum;
-              if (sl === 0) {
-                nextMomentum = currentMomentum > 0 ? Math.max(0, currentMomentum - 5) : currentMomentum < 0 ? Math.min(0, currentMomentum + 5) : 0;
-              } else if (sl > 0) {
-                if (currentMomentum < 0) {
-                  nextMomentum = newValue;
-                } else {
-                  nextMomentum = newValue > currentMomentum ? newValue : Math.round((newValue + currentMomentum) / 2);
-                }
-              } else {
-                if (currentMomentum > 0) {
-                  nextMomentum = newValue;
-                } else {
-                  nextMomentum = newValue < currentMomentum ? newValue : Math.round((newValue + currentMomentum) / 2);
-                }
-              }
-              dispatch({ type: 'SET_MOMENTUM', payload: Math.max(-30, Math.min(30, nextMomentum)) });
-            }
-          }
+        // Update momentum AFTER the roll for next scene
+        if (resolved.diceRoll) {
+          const nextMomentum = calculateNextMomentum(state.momentumBonus || 0, resolved.diceRoll.sl);
+          dispatch({ type: 'SET_MOMENTUM', payload: nextMomentum });
         }
 
         const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
@@ -1071,23 +916,19 @@ export function useAI() {
           }
         }
 
-        const attemptedRest = isRestAction(playerAction, t);
-        const restSucceeded = attemptedRest && (!result.diceRoll || result.diceRoll.success === true);
-        if (attemptedRest) {
-          const automaticRecovery = buildAutomaticRestRecovery(state);
-          if (automaticRecovery) {
-            const mergedNeedsChanges = {
-              ...(result.stateChanges?.needsChanges || {}),
-              ...(automaticRecovery.needsChanges || {}),
-            };
-            result.stateChanges = {
-              ...(result.stateChanges || {}),
-              ...(restSucceeded && automaticRecovery.woundsChange !== undefined
-                ? { woundsChange: automaticRecovery.woundsChange }
-                : {}),
-              ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
-            };
-          }
+        // Apply rest recovery from pre-resolved mechanics (10% HP/hour)
+        if (resolved.isRest && resolved.restRecovery) {
+          const mergedNeedsChanges = {
+            ...(result.stateChanges?.needsChanges || {}),
+            ...(resolved.restRecovery.needsChanges || {}),
+          };
+          result.stateChanges = {
+            ...(result.stateChanges || {}),
+            ...(resolved.restRecovery.woundsChange !== undefined
+              ? { woundsChange: resolved.restRecovery.woundsChange }
+              : {}),
+            ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
+          };
         }
 
         result.stateChanges = mergeNpcHintsFromDialogue(
