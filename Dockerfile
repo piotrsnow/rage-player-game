@@ -40,11 +40,8 @@ COPY --from=backend-deps /app/backend/node_modules ./node_modules
 # Place built frontend where the server expects it
 COPY --from=frontend-build /app/dist ./public/dist
 
-# Copy frontend source files that the backend imports at runtime
-COPY src/services/diceRollInference.js /app/src/services/diceRollInference.js
-COPY src/data/wfrp.js /app/src/data/wfrp.js
-COPY src/data/wfrpTalents.js /app/src/data/wfrpTalents.js
-COPY src/locales/pl.json /app/src/locales/pl.json
+# Copy shared domain modules used by backend runtime imports
+COPY shared/ /app/shared/
 
 ENV NODE_ENV=production
 ENV PORT=8080
