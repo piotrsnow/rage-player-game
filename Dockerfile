@@ -31,6 +31,9 @@ RUN apk add --no-cache tini
 
 WORKDIR /app/backend
 
+# Preserve ESM semantics for files under /app/shared (*.js with import/export)
+COPY package.json /app/package.json
+
 # Copy backend source (node_modules excluded via .dockerignore)
 COPY backend/ .
 
@@ -41,7 +44,8 @@ COPY --from=backend-deps /app/backend/node_modules ./node_modules
 COPY --from=frontend-build /app/dist ./public/dist
 
 # Copy shared domain modules used by backend runtime imports
-COPY shared/ /app/shared/
+# (copying from build stage avoids context/sync mismatches in CI)
+COPY --from=frontend-build /app/shared /app/shared
 
 ENV NODE_ENV=production
 ENV PORT=8080
