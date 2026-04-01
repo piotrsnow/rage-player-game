@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo } from 'react';
-import { MELEE_RANGE, BATTLEFIELD_MAX } from '../../data/wfrpCombat';
+import { gameData } from '../../services/gameDataService';
 
 const COLORS = {
   bg: '#0e0e10',
@@ -58,13 +58,13 @@ function roundRect(ctx, x, y, w, h, r) {
 
 function yardToX(position, canvasW) {
   const usable = canvasW - BATTLEFIELD_PAD_X * 2;
-  return BATTLEFIELD_PAD_X + (position / BATTLEFIELD_MAX) * usable;
+  return BATTLEFIELD_PAD_X + (position / gameData.BATTLEFIELD_MAX) * usable;
 }
 
 function xToYard(x, canvasW) {
   const usable = canvasW - BATTLEFIELD_PAD_X * 2;
-  const raw = ((x - BATTLEFIELD_PAD_X) / usable) * BATTLEFIELD_MAX;
-  return Math.max(0, Math.min(BATTLEFIELD_MAX, Math.round(raw)));
+  const raw = ((x - BATTLEFIELD_PAD_X) / usable) * gameData.BATTLEFIELD_MAX;
+  return Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, Math.round(raw)));
 }
 
 function initParticles(w, h) {
@@ -423,7 +423,7 @@ function drawBattlefield(ctx, w, bfTop, bfH, now) {
   roundRect(ctx, BATTLEFIELD_PAD_X - 12, bfTop - 4, w - (BATTLEFIELD_PAD_X - 12) * 2, bfH + 8, 6);
   ctx.fill();
 
-  for (let yard = 0; yard <= BATTLEFIELD_MAX; yard++) {
+  for (let yard = 0; yard <= gameData.BATTLEFIELD_MAX; yard++) {
     const x = yardToX(yard, w);
     const isMajor = yard % 5 === 0;
     ctx.strokeStyle = isMajor ? 'rgba(72,71,74,0.25)' : COLORS.yardLine;
@@ -449,7 +449,7 @@ function drawMovementZone(ctx, w, bfTop, bfH, myCombatant, hoverYard) {
 
   const pos = myCombatant.position ?? 0;
   const minYard = Math.max(0, pos - remaining);
-  const maxYard = Math.min(BATTLEFIELD_MAX, pos + remaining);
+  const maxYard = Math.min(gameData.BATTLEFIELD_MAX, pos + remaining);
   const x1 = yardToX(minYard, w);
   const x2 = yardToX(maxYard, w);
 
@@ -483,7 +483,7 @@ function drawMeleeEngagements(ctx, combatants, w, centerY, now) {
   for (const f of friendlyActive) {
     for (const e of enemyActive) {
       const dist = Math.abs((f.position ?? 0) - (e.position ?? 0));
-      if (dist <= MELEE_RANGE) {
+      if (dist <= gameData.MELEE_RANGE) {
         const x1 = yardToX(f.position ?? 0, w);
         const x2 = yardToX(e.position ?? 0, w);
         const midX = (x1 + x2) / 2;

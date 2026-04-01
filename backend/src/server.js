@@ -22,6 +22,8 @@ import { geminiProxyRoutes } from './routes/proxy/gemini.js';
 import { meshyProxyRoutes } from './routes/proxy/meshy.js';
 import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
+import { aiRoutes } from './routes/ai.js';
+import { gameDataRoutes } from './routes/gameData.js';
 import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -80,7 +82,17 @@ await fastify.register(async function musicScope(app) {
   app.register(musicRoutes);
 }, { prefix: '/music' });
 
+await fastify.register(async function aiScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: '1 minute' } };
+  });
+  app.register(aiRoutes, { prefix: '/ai' });
+});
+
 await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
+
+// Static game rules data — no auth, generous rate limit
+await fastify.register(gameDataRoutes, { prefix: '/game-data' });
 
 startRoomCleanup();
 
@@ -94,7 +106,8 @@ if (existsSync(STATIC_ROOT)) {
     if (request.url.startsWith('/auth') || request.url.startsWith('/campaigns') ||
         request.url.startsWith('/characters') || request.url.startsWith('/media') ||
         request.url.startsWith('/proxy') || request.url.startsWith('/music') ||
-        request.url.startsWith('/multiplayer') || request.url.startsWith('/health')) {
+        request.url.startsWith('/multiplayer') || request.url.startsWith('/ai') ||
+        request.url.startsWith('/health')) {
       return reply.code(404).send({ error: 'Not found' });
     }
     return reply.sendFile('index.html');

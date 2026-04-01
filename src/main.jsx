@@ -10,7 +10,7 @@ import './i18n';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
+  // <React.StrictMode>
     <ErrorBoundary>
       <BrowserRouter>
         <SettingsProvider>
@@ -22,5 +22,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         </SettingsProvider>
       </BrowserRouter>
     </ErrorBoundary>
-  </React.StrictMode>
+  // </React.StrictMode>
 );

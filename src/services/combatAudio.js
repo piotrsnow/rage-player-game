@@ -1,4 +1,6 @@
-import { getWeaponData } from '../data/wfrpCombat';
+import { gameData } from './gameDataService';
+
+const getWeaponData = (name) => gameData.getWeaponData(name);
 
 const CATEGORY_VARIANTS = {
   meleeAttack: [

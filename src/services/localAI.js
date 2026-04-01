@@ -1,10 +1,11 @@
 import { getBonus, formatMoney } from './gameState';
-import { BESTIARY, formatBestiaryForPrompt } from '../data/wfrpBestiary';
+import { gameData } from './gameDataService';
 import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
 import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
 import { buildUnmetNeedsBlock, buildNeedsEnforcementReminder } from './prompts';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 import { formatTalentsForPrompt } from '../data/wfrpTalents';
+import { formatResolvedCheck } from './mechanics/index';
 
 function normalizeEndpoint(endpoint) {
   return String(endpoint || '').replace(/\/+$/, '');
@@ -310,7 +311,7 @@ Rules (short): d100, target = characteristic + skill advances + talentBonus; SL 
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 
-Bestiary sample:\n${formatBestiaryForPrompt(Object.values(BESTIARY).slice(0, 5))}
+Bestiary sample:\n${gameData.formatBestiaryForPrompt(Object.values(gameData.bestiary).slice(0, 5))}
 
 Output valid JSON only (no markdown). All player-facing text in ${lang}. Include stateChanges.timeAdvance.hoursElapsed every scene; stateChanges.currentLocation when moving; questUpdates when objectives met.`;
 }
@@ -319,12 +320,10 @@ export function buildReducedScenePrompt(
   playerAction,
   isFirstScene = false,
   language = 'en',
-  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, fromAutoPlayer = false, preRolledDice = null, skipDiceRoll = false, momentumBonus = 0 } = {},
+  { needsSystemEnabled = false, characterNeeds = null, isCustomAction = false, fromAutoPlayer = false, resolvedMechanics = null } = {},
   dmSettings = null,
 ) {
   const lang = language === 'pl' ? 'Polish' : 'English';
-  const testsPct = dmSettings?.testsFrequency ?? 50;
-  const applyCreativityBonus = isCustomAction || fromAutoPlayer;
 
   const reducedStateJson = `{
   "narrative": "prose in ${lang}, 1–3 short paragraphs",
@@ -333,7 +332,6 @@ export function buildReducedScenePrompt(
     { "type": "dialogue", "character": "NPC name", "gender": "male|female", "text": "..." }
   ],
   "suggestedActions": ["opt1", "opt2", "opt3", "opt4", "opt5", "opt6"],
-  "diceRoll": null,
   "stateChanges": {
     "woundsChange": 0,
     "xp": 0,
@@ -367,10 +365,9 @@ Write narrative and suggestedActions in ${lang}. Return exactly 6 suggestedActio
   return `${needsReminder}${actionLine}
 ${playerHasDialogue ? 'DIALOGUE line = exact PC speech — include verbatim in narrative.' : 'Quoted text in the action = PC speech (work into narrative).'}
 
-Feasibility first: impossible=auto-fail (diceRoll=null), trivial=auto-succeed (diceRoll=null). Then resolve with WFRP d100 when uncertain (~${testsPct}% of actions need a roll).
-${skipDiceRoll ? 'DICE ROLL OVERRIDE: This action does NOT require a dice roll. Set diceRoll to null.' : (preRolledDice ? `Use roll=${preRolledDice} in diceRoll; do not invent another roll.` : '')}
-${applyCreativityBonus ? (isCustomAction ? 'Custom action: add creativityBonus 5–25 to base target; set diceRoll.baseTarget, creativityBonus, target (effective).' : 'Auto-player-chosen action: add creativityBonus 5–25 (same scale as custom) for how well the choice fits the PC; set diceRoll.baseTarget, creativityBonus, target (effective). Minimum +5 when creativityBonus is used.') : ''}
-${momentumBonus !== 0 ? `Momentum ${momentumBonus > 0 ? '+' : ''}${momentumBonus} adjusts target once; set diceRoll.momentumBonus.` : ''}
+SKILL CHECK (resolved by game engine):
+${formatResolvedCheck(resolvedMechanics?.diceRoll)}
+${resolvedMechanics?.diceRoll ? 'Narrate consistent with the outcome above. DO NOT include "diceRoll" in your response.' : 'No dice check. DO NOT include "diceRoll" in your response.'}
 
 JSON only — no soundEffect, musicPrompt, atmosphere, or imagePrompt.
 Always include dialogueSegments:
@@ -381,7 +378,6 @@ Always include dialogueSegments:
 
 ${reducedStateJson}
 
-diceRoll when needed: {"type":"d100","roll","characteristic":"<ws/bs/s/t/i/ag/dex/int/wp/fel>","characteristicValue":<raw stat>,"skillAdvances":<advances or 0>,"applicableTalent":"<talent name or null>","talentBonus":<number or 0>,${applyCreativityBonus ? '"baseTarget","creativityBonus",' : ''}${momentumBonus !== 0 ? '"momentumBonus",' : ''}"target","sl","skill","success","criticalSuccess","criticalFailure"}. ALWAYS include characteristic, characteristicValue, skillAdvances. Check character Talents for matching [+X] bonuses. For social speech/persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, return diceRoll=null.
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}

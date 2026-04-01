@@ -48,12 +48,12 @@ model Achievement {
 }
 
 model Campaign {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  name      String   @default("")
-  genre     String   @default("")
-  tone      String   @default("")
-  data       String   // Full game state JSON
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  name       String   @default("")
+  genre      String   @default("")
+  tone       String   @default("")
+  coreState  String   @default("{}") // Lean state: character, combat, dialogue, world basics, quests
   isPublic   Boolean  @default(false)
   shareToken String?  @unique
   rating     Float    @default(0)
@@ -66,6 +66,83 @@ model Campaign {
 
   @@index([userId])
   @@index([isPublic])
+}
+
+model CampaignScene {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId       String   @db.ObjectId
+  sceneIndex       Int
+  narrative        String
+  chosenAction     String?
+  suggestedActions String   @default("[]")
+  dialogueSegments String   @default("[]")
+  imagePrompt      String?
+  imageUrl         String?
+  soundEffect      String?
+  diceRoll         String?
+  stateChanges     String?
+  scenePacing      String?
+  embeddingText    String?
+  createdAt        DateTime @default(now())
+
+  @@index([campaignId, sceneIndex])
+}
+
+model CampaignKnowledge {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId    String   @db.ObjectId
+  entryType     String // "event" | "decision" | "plotThread" | "character" | "location"
+  summary       String
+  content       String // JSON: full entry data
+  tags          String   @default("[]")
+  importance    String?
+  status        String?
+  sceneIndex    Int?
+  embeddingText String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([campaignId, entryType])
+}
+
+model CampaignNPC {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId    String   @db.ObjectId
+  npcId         String
+  name          String
+  gender        String   @default("unknown")
+  role          String?
+  personality   String?
+  attitude      String   @default("neutral")
+  disposition   Int      @default(0)
+  alive         Boolean  @default(true)
+  lastLocation  String?
+  factionId     String?
+  notes         String?
+  relationships String   @default("[]")
+  embeddingText String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([campaignId])
+  @@unique([campaignId, npcId])
+}
+
+model CampaignCodex {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId     String   @db.ObjectId
+  codexKey       String
+  name           String
+  category       String
+  tags           String   @default("[]")
+  fragments      String // JSON array of fragments
+  relatedEntries String   @default("[]")
+  embeddingText  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([campaignId])
+  @@unique([campaignId, codexKey])
 }
 
 model Character {

@@ -20,7 +20,7 @@ export const AI_MODELS = [
   { id: 'o4-mini',                    provider: 'openai',    label: 'o4-mini',               cost: '~$1.10 / $4.40 per 1M tokens', tier: 'premium' },
   { id: 'o3-mini',                    provider: 'openai',    label: 'o3-mini',               cost: '~$1.10 / $4.40 per 1M tokens', tier: 'premium' },
   { id: 'claude-sonnet-4-20250514',   provider: 'anthropic', label: 'Claude Sonnet 4',      cost: '~$3.00 / $15 per 1M tokens', tier: 'premium' },
-  { id: 'claude-3-5-haiku-20241022',  provider: 'anthropic', label: 'Claude 3.5 Haiku',     cost: '~$0.80 / $4.00 per 1M tokens', tier: 'standard' },
+  { id: 'claude-haiku-4-5-20251001',   provider: 'anthropic', label: 'Claude 4.5 Haiku',     cost: '~$0.80 / $4.00 per 1M tokens', tier: 'standard' },
   { id: 'claude-3-7-sonnet-20250219', provider: 'anthropic', label: 'Claude 3.7 Sonnet',    cost: '~$3.00 / $15 per 1M tokens', tier: 'premium' },
 ];
 
@@ -31,7 +31,7 @@ export const RECOMMENDED_MODELS = {
 
 const MODEL_MAP = {
   openai:    { standard: 'gpt-5.4-mini',             premium: 'gpt-5.4' },
-  anthropic: { standard: 'claude-3-5-haiku-20241022', premium: 'claude-sonnet-4-20250514' },
+  anthropic: { standard: 'claude-haiku-4-5-20251001', premium: 'claude-sonnet-4-20250514' },
 };
 
 const TASK_TIER_OVERRIDE = {
@@ -540,7 +540,7 @@ export const aiService = {
     const model = explicitModel || selectModel(provider, modelTier, 'generateCampaign');
     const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
     const userPrompt = buildCampaignCreationPrompt(settings, language);
-    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 4000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 8000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
     const validated = safeParseAIResponse(result, CampaignResponseSchema);
     if (validated.ok) return { result: validated.data, usage };
 
@@ -608,9 +608,7 @@ export const aiService = {
     needsSystemEnabled = false,
     isCustomAction = false,
     fromAutoPlayer = false,
-    preRolledDice = null,
-    skipDiceRoll = false,
-    momentumBonus = 0,
+    resolvedMechanics = null,
     localLLMConfig = null,
     modelTier = 'premium',
     alternateApiKey = null,
@@ -630,7 +628,7 @@ export const aiService = {
     });
     const completionBudget = Number.isFinite(sceneTokenBudget) ? sceneTokenBudget : governance.sceneTokenBudget;
     const promptBudget = Number.isFinite(promptTokenBudget) ? promptTokenBudget : governance.promptTokenBudget;
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, preRolledDice, skipDiceRoll, momentumBonus, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
+    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, resolvedMechanics, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
 
     let systemPrompt, userPrompt;
     if (localLLMConfig?.enabled && localLLMConfig?.reducedPrompt) {
@@ -704,6 +702,61 @@ export const aiService = {
       }),
       usage,
     };
+  },
+
+  /**
+   * Generate a scene via backend tool-use endpoint.
+   * Backend builds lean prompts and AI can dynamically fetch context via tools.
+   */
+  async generateSceneViaBackend(campaignId, playerAction, {
+    provider = 'openai',
+    model = null,
+    language = 'pl',
+    dmSettings = {},
+    resolvedMechanics = null,
+    needsSystemEnabled = false,
+    characterNeeds = null,
+    dialogue = null,
+    dialogueCooldown = 0,
+    isFirstScene = false,
+    isCustomAction = false,
+    fromAutoPlayer = false,
+    sceneCount = 0,
+    gameState = null,
+  } = {}) {
+    const data = await apiClient.post(`/ai/campaigns/${campaignId}/generate-scene`, {
+      playerAction: playerAction || '',
+      provider,
+      model,
+      language,
+      dmSettings,
+      resolvedMechanics,
+      needsSystemEnabled,
+      characterNeeds,
+      dialogue,
+      dialogueCooldown,
+      isFirstScene,
+      isCustomAction,
+      fromAutoPlayer,
+      sceneCount,
+    });
+
+    const scene = data.scene || {};
+
+    // Post-process suggested actions (same as frontend flow)
+    if (scene.suggestedActions && gameState) {
+      scene.suggestedActions = postProcessSuggestedActions({
+        suggestedActions: scene.suggestedActions,
+        language,
+        gameState,
+        narrative: scene.narrative,
+        stateChanges: scene.stateChanges,
+      });
+    }
+
+    scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendToolUse: true };
+
+    return { result: scene, usage: data.usage || null };
   },
 
   async generateRecap(

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { useTranslation } from 'react-i18next';
 import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
+import { gameData } from '../services/gameDataService';
 
 const SettingsContext = createContext(null);
 
@@ -220,6 +221,7 @@ export function SettingsProvider({ children }) {
       const timer = setTimeout(() => {
         if (apiClient.isConnected()) {
           fetchBackendKeys();
+          gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
         }
       }, 100);
       return () => clearTimeout(timer);

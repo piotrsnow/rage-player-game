@@ -401,10 +401,37 @@ export function safeParseAIResponse(raw, schema) {
     return { ok: true, data: parsed.data, error: null };
   }
 
-  console.warn('[aiResponseValidator] Schema validation failed, using raw data with defaults:', parsed.error.issues?.slice(0, 3));
-  const partial = schema.safeParse({ ...getSchemaDefaults(schema), ...normalizedData });
+  console.warn('[aiResponseValidator] Schema validation failed, using raw data with defaults:', parsed.error.issues?.slice(0, 5));
+
+  // Second attempt: merge defaults under the data (data fields take priority)
+  const withDefaults = { ...getSchemaDefaults(schema), ...normalizedData };
+  const partial = schema.safeParse(withDefaults);
   if (partial.success) {
     return { ok: true, data: partial.data, error: null };
+  }
+
+  // Third attempt: fix specific fields that failed validation
+  if (schema === SceneResponseSchema) {
+    const defaults = getSchemaDefaults(schema);
+    const patched = { ...withDefaults };
+    for (const issue of (parsed.error?.issues || [])) {
+      const topField = issue.path?.[0];
+      if (topField && defaults[topField] !== undefined) {
+        patched[topField] = defaults[topField];
+      }
+    }
+    // Ensure suggestedActions has at least 1 item
+    if (!Array.isArray(patched.suggestedActions) || patched.suggestedActions.length === 0) {
+      patched.suggestedActions = defaults.suggestedActions;
+    }
+    // Ensure narrative is non-empty
+    if (typeof patched.narrative !== 'string' || !patched.narrative.trim()) {
+      patched.narrative = defaults.narrative;
+    }
+    const lastChance = schema.safeParse(patched);
+    if (lastChance.success) {
+      return { ok: true, data: lastChance.data, error: null };
+    }
   }
 
   return {
@@ -484,12 +511,42 @@ function normalizeSceneResponseCandidate(rawData) {
     data.suggestedActions = extractFallbackActions(data) || undefined;
   }
 
+  // Ensure suggestedActions always has at least 1 item (schema requires min(1))
+  if (!Array.isArray(data.suggestedActions) || data.suggestedActions.length === 0) {
+    const lang = inferNarrativeLanguage(data.narrative || '');
+    data.suggestedActions = lang === 'pl'
+      ? ['Rozglądam się dookoła', 'Badam okolicę']
+      : ['I look around', 'I investigate the area'];
+  }
+
   if (data.atmosphere == null || typeof data.atmosphere !== 'object' || Array.isArray(data.atmosphere)) {
     data.atmosphere = {};
   }
 
+  // Filter non-object items from top-level questOffers
+  if (Array.isArray(data.questOffers)) {
+    data.questOffers = data.questOffers.filter(
+      (item) => item && typeof item === 'object' && !Array.isArray(item)
+    );
+  }
+
+  // diceRoll is resolved by the game engine, not AI — strip if AI returns it
+  if (data.diceRoll !== undefined) {
+    delete data.diceRoll;
+  }
+
   if (data.stateChanges == null || typeof data.stateChanges !== 'object' || Array.isArray(data.stateChanges)) {
     data.stateChanges = {};
+  }
+
+  // Filter out non-object items from stateChanges arrays (AI sometimes returns plain strings)
+  const arrayFields = ['codexUpdates', 'narrativeSeeds', 'npcAgendas', 'npcs', 'questUpdates', 'pendingCallbacks', 'questOffers'];
+  for (const field of arrayFields) {
+    if (Array.isArray(data.stateChanges[field])) {
+      data.stateChanges[field] = data.stateChanges[field].filter(
+        (item) => item && typeof item === 'object' && !Array.isArray(item)
+      );
+    }
   }
 
   const rawTimeAdvance = data.stateChanges?.timeAdvance;
@@ -829,9 +886,9 @@ function extractFallbackActions(data) {
 function getSchemaDefaults(schema) {
   if (schema === SceneResponseSchema) {
     return {
-      narrative: '',
+      narrative: '...',
       dialogueSegments: [],
-      suggestedActions: [],
+      suggestedActions: ['Rozglądam się dookoła', 'Badam okolicę'],
       questOffers: [],
       stateChanges: {},
       atmosphere: {},

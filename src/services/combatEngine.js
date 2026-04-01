@@ -1,21 +1,26 @@
 import { rollD100, calculateSL, getBonus } from './gameState';
-import { getHitLocation, getWeaponData, getArmourAP, MANOEUVRES, MELEE_RANGE, BATTLEFIELD_MAX, DEFAULT_MOVEMENT } from '../data/wfrpCombat';
+import { gameData } from './gameDataService';
 import { rollCriticalWound, getCriticalEffectSummary } from '../data/wfrpCriticals';
 import { performCastingTest } from './magicEngine';
+
+// Convenience aliases — read from cached game data (evaluated at call time, not import time)
+const getHitLocation = (roll) => gameData.getHitLocation(roll);
+const getWeaponData = (name) => gameData.getWeaponData(name);
+const getArmourAP = (items, loc) => gameData.getArmourAP(items, loc);
 
 const CRITICAL_HIT_DAMAGE_BONUS = 2;
 const CRITICAL_HIT_MIN_DAMAGE = 1;
 const MAX_COMBAT_CREATIVITY_BONUS = 25;
 
 function getMovementAllowance(combatant) {
-  return combatant.characteristics?.m || DEFAULT_MOVEMENT;
+  return combatant.characteristics?.m || gameData.DEFAULT_MOVEMENT;
 }
 
 function assignInitialPositions(combatants) {
   const friendlies = combatants.filter((c) => c.type === 'player' || c.type === 'ally');
   const enemies = combatants.filter((c) => c.type === 'enemy');
   friendlies.forEach((c, i) => { c.position = 2 + i * 2; });
-  enemies.forEach((c, i) => { c.position = BATTLEFIELD_MAX - 2 - i * 2; });
+  enemies.forEach((c, i) => { c.position = gameData.BATTLEFIELD_MAX - 2 - i * 2; });
 }
 
 export function getDistance(a, b) {
@@ -23,7 +28,7 @@ export function getDistance(a, b) {
 }
 
 export function isInMeleeRange(a, b) {
-  return getDistance(a, b) <= MELEE_RANGE;
+  return getDistance(a, b) <= gameData.MELEE_RANGE;
 }
 const COMBAT_CREATIVITY_KEYWORDS = [
   'wall', 'table', 'chair', 'barrel', 'torch', 'rope', 'chain', 'sand', 'mud', 'stairs',
@@ -146,7 +151,7 @@ export function moveCombatant(combat, actorId, targetPosition) {
   const actor = state.combatants.find((c) => c.id === actorId);
   if (!actor || actor.isDefeated) return { combat: state, moved: false };
 
-  const clampedTarget = Math.max(0, Math.min(BATTLEFIELD_MAX, Math.round(targetPosition)));
+  const clampedTarget = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, Math.round(targetPosition)));
   const dist = Math.abs(clampedTarget - (actor.position ?? 0));
   const remaining = actor.movementAllowance - (actor.movementUsed || 0);
   if (dist === 0 || dist > remaining) return { combat: state, moved: false };
@@ -237,7 +242,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
   const actor = state.combatants.find((c) => c.id === actorId);
   const target = targetId ? state.combatants.find((c) => c.id === targetId) : null;
-  const manoeuvre = MANOEUVRES[manoeuvreKey];
+  const manoeuvre = gameData.manoeuvres[manoeuvreKey];
   const customDescription = sanitizeCombatDescription(options.customDescription);
 
   if (!actor || !manoeuvre) return { combat: state, result: null };
@@ -263,7 +268,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
   if (target && manoeuvre.closesDistance) {
     const dir = target.position > actor.position ? 1 : -1;
     actor.position = target.position - dir;
-    actor.position = Math.max(0, Math.min(BATTLEFIELD_MAX, actor.position));
+    actor.position = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, actor.position));
   }
 
   const log = [];
@@ -616,10 +621,10 @@ export function getEnemyAction(combat, enemyId) {
     return { manoeuvre: 'flee', targetId: target.id };
   }
 
-  const inMelee = dist <= MELEE_RANGE;
+  const inMelee = dist <= gameData.MELEE_RANGE;
 
   if (!inMelee) {
-    if (dist <= MELEE_RANGE + (enemy.movementAllowance - (enemy.movementUsed || 0))) {
+    if (dist <= gameData.MELEE_RANGE + (enemy.movementAllowance - (enemy.movementUsed || 0))) {
       return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
     }
     return { manoeuvre: 'charge', targetId: target.id, moveToward: target.id };
@@ -629,7 +634,7 @@ export function getEnemyAction(combat, enemyId) {
     return { manoeuvre: 'feint', targetId: target.id };
   }
 
-  if (Math.random() < 0.15 && dist > MELEE_RANGE) {
+  if (Math.random() < 0.15 && dist > gameData.MELEE_RANGE) {
     return { manoeuvre: 'charge', targetId: target.id };
   }
 
@@ -652,12 +657,12 @@ export function resolveEnemyTurns(combat) {
     if (action) {
       if (action.moveToward) {
         const moveTarget = state.combatants.find((c) => c.id === action.moveToward);
-        if (moveTarget && !isInMeleeRange(current, moveTarget) && !MANOEUVRES[action.manoeuvre]?.closesDistance) {
+        if (moveTarget && !isInMeleeRange(current, moveTarget) && !gameData.manoeuvres[action.manoeuvre]?.closesDistance) {
           const dir = moveTarget.position > current.position ? 1 : -1;
           const remaining = current.movementAllowance - (current.movementUsed || 0);
           const moveDist = Math.min(remaining, getDistance(current, moveTarget) - 1);
           if (moveDist > 0) {
-            current.position = Math.max(0, Math.min(BATTLEFIELD_MAX, current.position + dir * moveDist));
+            current.position = Math.max(0, Math.min(gameData.BATTLEFIELD_MAX, current.position + dir * moveDist));
             current.movementUsed = (current.movementUsed || 0) + moveDist;
           }
         }

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MANOEUVRES, MELEE_RANGE } from '../../data/wfrpCombat';
+import { gameData } from '../../services/gameDataService';
 import { useCombatAudio } from '../../hooks/useCombatAudio';
 import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -52,7 +52,7 @@ function formatSignedNumber(value) {
 }
 
 function isCustomAttackManoeuvre(manoeuvreKey) {
-  return Boolean(manoeuvreKey && MANOEUVRES[manoeuvreKey]?.type === 'offensive');
+  return Boolean(manoeuvreKey && gameData.manoeuvres[manoeuvreKey]?.type === 'offensive');
 }
 
 function summarizeLogEntry(entry) {
@@ -433,7 +433,7 @@ export default function CombatPanel({
 
   const availableManoeuvres = useMemo(() => {
     const charForSkills = myCombatant || character;
-    return Object.entries(MANOEUVRES).filter(([key]) => {
+    return Object.entries(gameData.manoeuvres).filter(([key]) => {
       if (key === 'castSpell' && !charForSkills?.skills?.['Channelling']) return false;
       return true;
     });
@@ -622,7 +622,7 @@ export default function CombatPanel({
 
   const handleManoeuvreSelect = (key) => {
     setSelectedManoeuvre(key);
-    const man = MANOEUVRES[key];
+    const man = gameData.manoeuvres[key];
     if (man.type !== 'offensive') {
       setCustomDescription('');
     }
@@ -832,7 +832,7 @@ export default function CombatPanel({
 
   const handleExecute = () => {
     if (!selectedManoeuvre || !isMyTurn) return;
-    const man = MANOEUVRES[selectedManoeuvre];
+    const man = gameData.manoeuvres[selectedManoeuvre];
     const needsTarget = man.type === 'offensive' || man.type === 'magic';
     if (needsTarget && !selectedTarget) return;
     const trimmedDescription = customDescription.trim();
@@ -955,11 +955,11 @@ export default function CombatPanel({
 
   const selectedTargetOutOfMeleeRange = useMemo(() => {
     if (!selectedManoeuvre || !selectedTarget) return false;
-    const man = MANOEUVRES[selectedManoeuvre];
+    const man = gameData.manoeuvres[selectedManoeuvre];
     if (man.range !== 'melee') return false;
     const target = combat.combatants.find((c) => c.id === selectedTarget);
     if (!target || !myCombatant) return false;
-    return getDistance(myCombatant, target) > MELEE_RANGE;
+    return getDistance(myCombatant, target) > gameData.MELEE_RANGE;
   }, [selectedManoeuvre, selectedTarget, combat.combatants, myCombatant]);
 
   return (
@@ -1108,7 +1108,7 @@ export default function CombatPanel({
                 ))}
               </div>
 
-              {selectedManoeuvre && (MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && (
+              {selectedManoeuvre && (gameData.manoeuvres[selectedManoeuvre]?.type === 'offensive' || gameData.manoeuvres[selectedManoeuvre]?.type === 'magic') && (
                 <div className="space-y-1.5">
                   <div className="text-[11px] text-on-surface-variant">
                     {t('combat.selectTarget', 'Select Target')}:
@@ -1213,7 +1213,7 @@ export default function CombatPanel({
 
               <button
                 onClick={handleExecute}
-                disabled={!selectedManoeuvre || ((MANOEUVRES[selectedManoeuvre]?.type === 'offensive' || MANOEUVRES[selectedManoeuvre]?.type === 'magic') && !selectedTarget) || selectedTargetOutOfMeleeRange}
+                disabled={!selectedManoeuvre || ((gameData.manoeuvres[selectedManoeuvre]?.type === 'offensive' || gameData.manoeuvres[selectedManoeuvre]?.type === 'magic') && !selectedTarget) || selectedTargetOutOfMeleeRange}
                 className="w-full px-4 py-2.5 text-[12px] font-bold uppercase tracking-widest bg-error/15 text-error border border-error/20 rounded-sm hover:bg-error/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {selectedTargetOutOfMeleeRange ? t('combat.outOfRangeShort', 'Out of range') : t('combat.execute', 'Execute')}
