@@ -105,22 +105,38 @@ export async function aiRoutes(fastify) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const savedScene = await prisma.campaignScene.create({
-      data: {
-        campaignId,
-        sceneIndex: scene.sceneIndex ?? 0,
-        narrative: scene.narrative || '',
-        chosenAction: scene.chosenAction || null,
-        suggestedActions: JSON.stringify(scene.suggestedActions || []),
-        dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
-        imagePrompt: scene.imagePrompt || null,
-        imageUrl: scene.imageUrl || null,
-        soundEffect: scene.soundEffect || null,
-        diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
-        stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
-        scenePacing: scene.scenePacing || 'exploration',
-      },
+    const sceneIndex = Number.isInteger(scene.sceneIndex) ? scene.sceneIndex : 0;
+    const normalizedSuggestedActions = Array.isArray(scene.suggestedActions)
+      ? scene.suggestedActions
+      : (Array.isArray(scene.actions) ? scene.actions : []);
+    const normalizedImageUrl = scene.imageUrl || scene.image || null;
+
+    const existingScene = await prisma.campaignScene.findFirst({
+      where: { campaignId, sceneIndex },
+      select: { id: true },
     });
+
+    const payload = {
+      campaignId,
+      sceneIndex,
+      narrative: scene.narrative || '',
+      chosenAction: scene.chosenAction || null,
+      suggestedActions: JSON.stringify(normalizedSuggestedActions),
+      dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
+      imagePrompt: scene.imagePrompt || null,
+      imageUrl: normalizedImageUrl,
+      soundEffect: scene.soundEffect || null,
+      diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
+      stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
+      scenePacing: scene.scenePacing || 'exploration',
+    };
+
+    const savedScene = existingScene
+      ? await prisma.campaignScene.update({
+          where: { id: existingScene.id },
+          data: payload,
+        })
+      : await prisma.campaignScene.create({ data: payload });
 
     // Generate embedding async
     const embeddingText = buildSceneEmbeddingText(savedScene);
@@ -159,9 +175,16 @@ export async function aiRoutes(fastify) {
       take: parseInt(limit),
       skip: parseInt(offset),
     });
+    const dedupedByIndex = new Map();
+    for (const s of scenes) {
+      if (!dedupedByIndex.has(s.sceneIndex)) {
+        dedupedByIndex.set(s.sceneIndex, s);
+      }
+    }
+    const uniqueScenes = Array.from(dedupedByIndex.values());
 
     // Parse JSON fields
-    return scenes.map((s) => ({
+    return uniqueScenes.map((s) => ({
       ...s,
       suggestedActions: JSON.parse(s.suggestedActions || '[]'),
       dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),

@@ -51,6 +51,31 @@ function parseRecapMetadata(raw) {
   }
 }
 
+function buildDistinctSceneCountMap(rows) {
+  const perCampaign = new Map();
+  for (const row of rows) {
+    if (!perCampaign.has(row.campaignId)) {
+      perCampaign.set(row.campaignId, new Set());
+    }
+    perCampaign.get(row.campaignId).add(row.sceneIndex);
+  }
+  return Object.fromEntries(
+    Array.from(perCampaign.entries()).map(([campaignId, indices]) => [campaignId, indices.size])
+  );
+}
+
+function dedupeScenesByIndexAsc(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const byIndex = new Map();
+  for (const scene of rows) {
+    const existing = byIndex.get(scene.sceneIndex);
+    if (!existing || new Date(scene.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+      byIndex.set(scene.sceneIndex, scene);
+    }
+  }
+  return Array.from(byIndex.values()).sort((a, b) => a.sceneIndex - b.sceneIndex);
+}
+
 export async function campaignRoutes(fastify) {
   // ── Public routes (no auth) ──────────────────────────────────────────
 
@@ -86,11 +111,10 @@ export async function campaignRoutes(fastify) {
     // Get scene counts for all campaigns in one query
     const campaignIds = campaigns.map((c) => c.id);
     const sceneCounts = await prisma.campaignScene.groupBy({
-      by: ['campaignId'],
+      by: ['campaignId', 'sceneIndex'],
       where: { campaignId: { in: campaignIds } },
-      _count: true,
     });
-    const sceneCountMap = Object.fromEntries(sceneCounts.map((s) => [s.campaignId, s._count]));
+    const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
     return {
       campaigns: campaigns.map((c) => {
@@ -141,8 +165,9 @@ export async function campaignRoutes(fastify) {
       where: { campaignId: campaign.id },
       orderBy: { sceneIndex: 'asc' },
     });
+    const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-    return { ...campaign, coreState, scenes };
+    return { ...campaign, coreState, scenes: dedupedScenes };
   });
 
   fastify.get('/share/:token', async (request, reply) => {
@@ -167,6 +192,7 @@ export async function campaignRoutes(fastify) {
       where: { campaignId: campaign.id },
       orderBy: { sceneIndex: 'asc' },
     });
+    const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
     return {
       id: campaign.id,
@@ -176,7 +202,7 @@ export async function campaignRoutes(fastify) {
       createdAt: campaign.createdAt,
       author: campaign.user?.email ? campaign.user.email.slice(0, 2) + '***' : 'Anonymous',
       coreState,
-      scenes,
+      scenes: dedupedScenes,
     };
   });
 
@@ -262,11 +288,10 @@ export async function campaignRoutes(fastify) {
 
       const campaignIds = campaigns.map((c) => c.id);
       const sceneCounts = await prisma.campaignScene.groupBy({
-        by: ['campaignId'],
+        by: ['campaignId', 'sceneIndex'],
         where: { campaignId: { in: campaignIds } },
-        _count: true,
       });
-      const sceneCountMap = Object.fromEntries(sceneCounts.map((s) => [s.campaignId, s._count]));
+      const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
       return campaigns.map((c) => ({
         id: c.id,
@@ -296,8 +321,9 @@ export async function campaignRoutes(fastify) {
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
       });
+      const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-      const parsedScenes = scenes.map((s) => ({
+      const parsedScenes = dedupedScenes.map((s) => ({
         ...s,
         suggestedActions: JSON.parse(s.suggestedActions || '[]'),
         dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),

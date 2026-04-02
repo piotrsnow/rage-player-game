@@ -31,17 +31,28 @@ function _parseBackendCampaign(full) {
     ? JSON.parse(full.coreState) : (full.coreState || {});
 
   if (full.scenes?.length) {
-    state.scenes = full.scenes.map((s) => ({
-      ...s,
-      suggestedActions: typeof s.suggestedActions === 'string'
-        ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
-      dialogueSegments: typeof s.dialogueSegments === 'string'
-        ? JSON.parse(s.dialogueSegments) : s.dialogueSegments || [],
-      diceRoll: typeof s.diceRoll === 'string'
-        ? JSON.parse(s.diceRoll) : s.diceRoll,
-      stateChanges: typeof s.stateChanges === 'string'
-        ? JSON.parse(s.stateChanges) : s.stateChanges,
-    }));
+    const bySceneIndex = new Map();
+    for (const s of full.scenes) {
+      const existing = bySceneIndex.get(s.sceneIndex);
+      const existingTime = existing?.createdAt ? new Date(existing.createdAt).getTime() : 0;
+      const currentTime = s?.createdAt ? new Date(s.createdAt).getTime() : 0;
+      if (!existing || currentTime >= existingTime) {
+        bySceneIndex.set(s.sceneIndex, s);
+      }
+    }
+    state.scenes = Array.from(bySceneIndex.values())
+      .sort((a, b) => (a.sceneIndex ?? 0) - (b.sceneIndex ?? 0))
+      .map((s) => ({
+        ...s,
+        suggestedActions: typeof s.suggestedActions === 'string'
+          ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
+        dialogueSegments: typeof s.dialogueSegments === 'string'
+          ? JSON.parse(s.dialogueSegments) : s.dialogueSegments || [],
+        diceRoll: typeof s.diceRoll === 'string'
+          ? JSON.parse(s.diceRoll) : s.diceRoll,
+        stateChanges: typeof s.stateChanges === 'string'
+          ? JSON.parse(s.stateChanges) : s.stateChanges,
+      }));
   }
 
   if (!state.campaign) state.campaign = {};
@@ -124,12 +135,14 @@ export const storage = {
   async _saveNewScenes(backendId, scenes) {
     if (!scenes?.length) return;
     const lastSaved = _sceneIndexCache.get(backendId) ?? -1;
-    const newScenes = scenes.filter((_, i) => i > lastSaved);
-    for (const scene of newScenes) {
+    const newScenes = scenes
+      .map((scene, i) => ({ scene, i }))
+      .filter(({ i }) => i > lastSaved);
+    for (const { scene, i } of newScenes) {
       try {
         await apiClient.post(`/ai/campaigns/${backendId}/scenes`, {
           ...scene,
-          sceneIndex: scenes.indexOf(scene),
+          sceneIndex: i,
         });
       } catch (err) {
         console.warn('[storage] Scene save failed:', err.message);
