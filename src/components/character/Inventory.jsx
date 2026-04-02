@@ -62,6 +62,7 @@ function InventoryImage({
   alt,
   sizeClass,
   fallbackIcon,
+  fallbackIconClass = 'text-xl',
   wrapperClassName = '',
   imageClassName = '',
   showLargePreview = false,
@@ -87,7 +88,7 @@ function InventoryImage({
     return (
       <div className={`relative ${sizeClass} ${wrapperClassName}`}>
         <span
-          className="material-symbols-outlined text-xl text-on-surface-variant/80"
+          className={`material-symbols-outlined ${fallbackIconClass} text-on-surface-variant/80`}
           style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
         >
           {fallbackIcon}
@@ -179,7 +180,7 @@ function ItemDetailBox({ item }) {
 export default function Inventory({ items = [], money }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
-  const maxSlots = 20;
+  const maxSlots = 40;
   const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const selectedItem = items.find(i => i.id === selectedItemId) || null;
@@ -216,8 +217,9 @@ export default function Inventory({ items = [], money }) {
               <InventoryImage
                 imageUrl={resolvedImageUrl}
                 alt={item.name}
-                sizeClass="w-10 h-10"
+                sizeClass="w-8 h-8"
                 fallbackIcon={icon}
+                fallbackIconClass="text-base"
                 imageClassName="group-hover:scale-110 transition-transform"
                 wrapperClassName="flex items-center justify-center"
                 showLargePreview
