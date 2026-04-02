@@ -13,7 +13,7 @@ import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
-import { detectCombatIntent } from '../services/prompts';
+import { detectCombatIntent, buildSpeculativeImageDescription } from '../services/prompts';
 import { calculateTensionScore } from '../services/tensionTracker';
 import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
@@ -527,6 +527,8 @@ export function useAI() {
       sceneGenStartRef.current = Date.now();
       setSceneGenStartTime(Date.now());
 
+      let earlyImagePromise = null;
+
       try {
         const promptProfile = resolvePromptProfile(settings.dmSettings, aiModelTier, Boolean(localLLMConfig?.enabled));
         const governance = getSceneAIGovernance({
@@ -609,6 +611,38 @@ export function useAI() {
               timestamp: Date.now(),
             },
           });
+        }
+
+        const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
+        if (imageGenEnabled && hasImageKey && !isFirstScene) {
+          const previousScene = state.scenes?.[state.scenes.length - 1];
+          if (previousScene?.narrative) {
+            const speculativeDesc = buildSpeculativeImageDescription(
+              previousScene.narrative,
+              playerAction,
+              resolved.diceRoll
+            );
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
+            earlyImagePromise = imageService.generateSceneImage(
+              '',
+              state.campaign?.genre,
+              state.campaign?.tone,
+              imageApiKey,
+              imageProvider,
+              speculativeDesc,
+              state.campaign?.backendId,
+              imageStyle,
+              darkPalette,
+              state.character?.age,
+              state.character?.gender,
+              {},
+              imageSeriousness,
+              state.character?.portraitUrl || null
+            ).catch((imgErr) => {
+              console.warn('Early image generation failed:', imgErr.message);
+              return null;
+            });
+          }
         }
 
         const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
@@ -889,6 +923,21 @@ export function useAI() {
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
 
+        if (earlyImagePromise) {
+          const capturedSceneId = sceneId;
+          earlyImagePromise.then((imageUrl) => {
+            if (imageUrl) {
+              dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+              dispatch({
+                type: 'UPDATE_SCENE_IMAGE',
+                payload: { sceneId: capturedSceneId, image: imageUrl },
+              });
+              setTimeout(() => autoSave(), 300);
+            }
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
+          });
+        }
+
         const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
         if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
           const playerChatContent = playerAction === '[CONTINUE]'
@@ -1113,8 +1162,7 @@ export function useAI() {
           });
         }
 
-        const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
-        if (imageGenEnabled && hasImageKey) {
+        if (!earlyImagePromise && imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
             const imageUrl = await imageService.generateSceneImage(
@@ -1148,6 +1196,11 @@ export function useAI() {
 
         return result;
       } catch (err) {
+        if (earlyImagePromise) {
+          earlyImagePromise.finally(() => {
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
+          });
+        }
         recordCompletedSceneGenTiming();
         dispatch({ type: 'SET_ERROR', payload: err.message });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });

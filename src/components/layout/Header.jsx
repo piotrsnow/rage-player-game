@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -6,6 +6,7 @@ import { useGlobalMusic } from '../../contexts/MusicContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useGame } from '../../contexts/GameContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { storage } from '../../services/storage';
 
 export default function Header() {
   const location = useLocation();
@@ -25,8 +26,25 @@ export default function Header() {
     ? 'text-error border-error/30'
     : 'text-primary border-primary/30';
 
+  const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const saveTimeoutRef = useRef(null);
+
+  const handleSaveCampaign = useCallback(async () => {
+    if (saveStatus === 'saving' || !state.campaign) return;
+    setSaveStatus('saving');
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    try {
+      await storage.saveCampaign(state);
+      setSaveStatus('saved');
+      saveTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (err) {
+      console.error('[Header] Manual save error:', err);
+      setSaveStatus('idle');
+    }
+  }, [saveStatus, state]);
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -141,6 +159,24 @@ export default function Header() {
               <span className="material-symbols-outlined text-sm">{mp.state.connected ? 'wifi' : 'wifi_off'}</span>
               {mpStatusLabel}
             </span>
+          )}
+          {hasActiveGame && !isMultiplayer && (
+            <button
+              type="button"
+              onClick={handleSaveCampaign}
+              disabled={saveStatus === 'saving'}
+              aria-label={t('nav.saveCampaign')}
+              title={saveStatus === 'saved' ? t('nav.campaignSaved') : t('nav.saveCampaign')}
+              className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-all active:scale-95 duration-200 ${
+                saveStatus === 'saved'
+                  ? 'text-primary bg-primary/15'
+                  : 'text-on-surface-variant hover:text-tertiary hover:bg-surface-container-high/40'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-lg ${saveStatus === 'saving' ? 'animate-spin' : ''}`}>
+                {saveStatus === 'saving' ? 'progress_activity' : saveStatus === 'saved' ? 'check_circle' : 'save'}
+              </span>
+            </button>
           )}
           {hasActiveGame && (
             <Link

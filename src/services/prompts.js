@@ -1666,6 +1666,33 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
   return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
+export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome) {
+  const parts = [];
+
+  if (previousNarrative) {
+    parts.push(`Previous scene: ${sanitizeForImageGen(previousNarrative.substring(0, 200))}`);
+  }
+
+  const skip = !playerAction || playerAction === '[CONTINUE]' || playerAction === '[WAIT]' || playerAction.startsWith('[IDLE_WORLD_EVENT');
+  if (!skip) {
+    parts.push(`The character now: ${sanitizeForImageGen(playerAction.substring(0, 150))}`);
+  }
+
+  if (diceOutcome) {
+    if (diceOutcome.criticalSuccess) {
+      parts.push('Outcome: spectacular, extraordinary success — triumphant, glorious moment.');
+    } else if (diceOutcome.criticalFailure) {
+      parts.push('Outcome: dramatic, catastrophic failure — disaster, chaos, everything goes wrong.');
+    } else if (diceOutcome.success) {
+      parts.push('Outcome: the action succeeds.');
+    } else {
+      parts.push('Outcome: the action fails, complications arise.');
+    }
+  }
+
+  return parts.join(' ');
+}
+
 export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
   const isGemini = provider === 'gemini';
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');

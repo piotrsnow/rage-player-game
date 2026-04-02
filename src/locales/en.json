@@ -172,7 +172,10 @@
     "play": "Play",
     "character": "Character",
     "gallery": "Gallery",
-    "keys": "Keys"
+    "keys": "Keys",
+    "saveCampaign": "Save Campaign",
+    "saving": "Saving...",
+    "campaignSaved": "Saved!"
   },
   "keys": {
     "title": "API Keys",

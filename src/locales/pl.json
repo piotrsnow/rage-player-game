@@ -173,7 +173,10 @@
     "play": "Graj",
     "character": "Postać",
     "gallery": "Galeria",
-    "keys": "Klucze"
+    "keys": "Klucze",
+    "saveCampaign": "Zapisz Kampanię",
+    "saving": "Zapisywanie...",
+    "campaignSaved": "Zapisano!"
   },
   "keys": {
     "title": "Klucze API",
