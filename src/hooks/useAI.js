@@ -13,7 +13,7 @@ import { validateStateChanges } from '../services/stateValidator';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarningsForPrompt } from '../services/worldConsistency';
-import { detectCombatIntent } from '../services/prompts';
+import { detectCombatIntent, buildSpeculativeImageDescription } from '../services/prompts';
 import { calculateTensionScore } from '../services/tensionTracker';
 import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
@@ -381,11 +381,13 @@ export function useAI() {
   const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
+  const compressionInFlightRef = useRef(false);
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
+  const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
     const history = loadSceneGenDurationHistory();
     sceneGenDurationHistoryRef.current = history;
@@ -395,12 +397,25 @@ export function useAI() {
   const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
+  const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
   const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
   const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
+
+  const inferSkillCheckFn = useCallback(
+    async (actionText, characterSkills) => {
+      if (localLLMConfig?.enabled) return null;
+      const { result, usage } = await aiService.inferSkillCheck(
+        actionText, characterSkills, aiProvider, apiKey, { alternateApiKey }
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+      return result;
+    },
+    [aiProvider, apiKey, alternateApiKey, localLLMConfig?.enabled, dispatch]
+  );
 
   const recordCompletedSceneGenTiming = useCallback(() => {
     if (!sceneGenStartRef.current) return;
@@ -435,6 +450,7 @@ export function useAI() {
           provider: imageProvider,
           imageStyle,
           darkPalette,
+          seriousness: imageSeriousness,
           campaignId: state.campaign?.backendId,
         });
         if (!imageUrl) return null;
@@ -508,8 +524,11 @@ export function useAI() {
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
+      setEarlyDiceRoll(null);
       sceneGenStartRef.current = Date.now();
       setSceneGenStartTime(Date.now());
+
+      let earlyImagePromise = null;
 
       try {
         const promptProfile = resolvePromptProfile(settings.dmSettings, aiModelTier, Boolean(localLLMConfig?.enabled));
@@ -545,7 +564,7 @@ export function useAI() {
         const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
 
         // Resolve all deterministic mechanics BEFORE AI call
-        const resolved = resolveMechanics({
+        const resolved = await resolveMechanics({
           state,
           playerAction,
           settings,
@@ -553,7 +572,79 @@ export function useAI() {
           isCustomAction,
           fromAutoPlayer,
           t,
+          inferSkillCheckFn,
         });
+
+        if (resolved.diceRoll) {
+          setEarlyDiceRoll(resolved.diceRoll);
+          if (!isFirstScene && playerAction && !Boolean(isIdleWorldEvent || playerAction === '[WAIT]')) {
+            const playerChatContent = playerAction === '[CONTINUE]'
+              ? t('gameplay.continueChatMessage')
+              : playerAction;
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_player_early`,
+                role: 'player',
+                content: playerChatContent,
+                timestamp: Date.now(),
+              },
+            });
+          }
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_roll`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: t('system.diceRollMessage', {
+                skill: resolved.diceRoll.skill,
+                roll: resolved.diceRoll.roll,
+                target: resolved.diceRoll.target || resolved.diceRoll.dc,
+                sl: resolved.diceRoll.sl ?? 0,
+                result: resolved.diceRoll.criticalSuccess
+                  ? t('common.criticalSuccess')
+                  : resolved.diceRoll.criticalFailure
+                    ? t('common.criticalFailure')
+                    : resolved.diceRoll.success ? t('common.success') : t('common.failure'),
+              }),
+              diceData: resolved.diceRoll,
+              timestamp: Date.now(),
+            },
+          });
+        }
+
+        const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
+        if (imageGenEnabled && hasImageKey && !isFirstScene) {
+          const previousScene = state.scenes?.[state.scenes.length - 1];
+          if (previousScene?.narrative) {
+            const speculativeDesc = buildSpeculativeImageDescription(
+              previousScene.narrative,
+              playerAction,
+              resolved.diceRoll
+            );
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
+            earlyImagePromise = imageService.generateSceneImage(
+              '',
+              state.campaign?.genre,
+              state.campaign?.tone,
+              imageApiKey,
+              imageProvider,
+              speculativeDesc,
+              state.campaign?.backendId,
+              imageStyle,
+              darkPalette,
+              state.character?.age,
+              state.character?.gender,
+              {},
+              imageSeriousness,
+              state.character?.portraitUrl || null
+            ).catch((imgErr) => {
+              console.warn('Early image generation failed:', imgErr.message);
+              return null;
+            });
+          }
+        }
 
         const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
         const triggeredAgendas = !isFirstScene ? checkNpcAgendas(state.world?.npcAgendas, state) : [];
@@ -586,11 +677,14 @@ export function useAI() {
             const { scenes: allScenes, isLoading, isGeneratingScene, isGeneratingImage, error: _err, ...rest } = state;
             const coreState = { ...rest };
             if (coreState.chatHistory?.length > 10) coreState.chatHistory = coreState.chatHistory.slice(-10);
+            const characterState = coreState.character || {};
+            delete coreState.character;
             const created = await apiClient.post('/campaigns', {
               name: state.campaign?.name || '',
               genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '',
               coreState,
+              characterState,
             });
             backendCampaignId = created.id;
             // Mutate in place — same pattern as storage.js; persisted on next autoSave
@@ -835,7 +929,23 @@ export function useAI() {
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
 
-        if (!isFirstScene && playerAction && !isPassiveSceneAction) {
+        if (earlyImagePromise) {
+          const capturedSceneId = sceneId;
+          earlyImagePromise.then((imageUrl) => {
+            if (imageUrl) {
+              dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+              dispatch({
+                type: 'UPDATE_SCENE_IMAGE',
+                payload: { sceneId: capturedSceneId, image: imageUrl },
+              });
+              setTimeout(() => autoSave(), 300);
+            }
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
+          });
+        }
+
+        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
+        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
           const playerChatContent = playerAction === '[CONTINUE]'
             ? t('gameplay.continueChatMessage')
             : playerAction;
@@ -871,30 +981,6 @@ export function useAI() {
               role: 'system',
               subtype: 'wait',
               content: t('gameplay.waitSystemMessage'),
-              timestamp: Date.now(),
-            },
-          });
-        }
-
-        if (result.diceRoll) {
-          dispatch({
-            type: 'ADD_CHAT_MESSAGE',
-            payload: {
-              id: `msg_${Date.now()}_roll`,
-              role: 'system',
-              subtype: 'dice_roll',
-              content: t('system.diceRollMessage', {
-                skill: result.diceRoll.skill,
-                roll: result.diceRoll.roll,
-                target: result.diceRoll.target || result.diceRoll.dc,
-                sl: result.diceRoll.sl ?? 0,
-                result: result.diceRoll.criticalSuccess
-                  ? t('common.criticalSuccess')
-                  : result.diceRoll.criticalFailure
-                    ? t('common.criticalFailure')
-                    : result.diceRoll.success ? t('common.success') : t('common.failure'),
-              }),
-              diceData: result.diceRoll,
               timestamp: Date.now(),
             },
           });
@@ -1081,9 +1167,11 @@ export function useAI() {
         // Auto-save after scene resolution (delay for state to settle)
         setTimeout(() => autoSave(), 300);
 
-        if (contextManager.needsCompression(state)) {
+        if (!compressionInFlightRef.current && contextManager.needsCompression(state)) {
+          compressionInFlightRef.current = true;
           const gen = ++compressionGenRef.current;
           contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
+            compressionInFlightRef.current = false;
             if (gen !== compressionGenRef.current) return;
             if (compResult?.summary) {
               const worldUpdate = { compressedHistory: compResult.summary };
@@ -1096,11 +1184,12 @@ export function useAI() {
             if (compResult?.usage) {
               dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', compResult.usage) });
             }
+          }).catch(() => {
+            compressionInFlightRef.current = false;
           });
         }
 
-        const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
-        if (imageGenEnabled && hasImageKey) {
+        if (!earlyImagePromise && imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
             const imageUrl = await imageService.generateSceneImage(
@@ -1114,7 +1203,10 @@ export function useAI() {
               imageStyle,
               darkPalette,
               state.character?.age,
-              state.character?.gender
+              state.character?.gender,
+              {},
+              imageSeriousness,
+              state.character?.portraitUrl || null
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -1131,13 +1223,18 @@ export function useAI() {
 
         return result;
       } catch (err) {
+        if (earlyImagePromise) {
+          earlyImagePromise.finally(() => {
+            dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
+          });
+        }
         recordCompletedSceneGenTiming();
         dispatch({ type: 'SET_ERROR', payload: err.message });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages, inferSkillCheckFn]
   );
 
   const generateCampaign = useCallback(
@@ -1226,7 +1323,9 @@ export function useAI() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew) }
+          { forceNew: Boolean(options.forceNew) },
+          imageSeriousness,
+          state.character?.portraitUrl || null
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -1244,7 +1343,7 @@ export function useAI() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, hasApiKey, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, hasApiKey, dispatch, autoSave]
   );
 
   const generateCombatCommentary = useCallback(
@@ -1440,6 +1539,8 @@ export function useAI() {
     [dispatch]
   );
 
+  const clearEarlyDiceRoll = useCallback(() => setEarlyDiceRoll(null), []);
+
   return {
     generateScene,
     generateCampaign,
@@ -1454,5 +1555,7 @@ export function useAI() {
     declineQuestOffer,
     sceneGenStartTime,
     lastSceneGenMs,
+    earlyDiceRoll,
+    clearEarlyDiceRoll,
   };
 }

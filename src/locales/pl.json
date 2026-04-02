@@ -1,6 +1,7 @@
 {
   "common": {
     "appName": "Nikczemny Krzemuch",
+    "tagline": "Krainy kości i chaosu",
     "logoPath": "/nikczemnu_logo.png",
     "level": "Poziom",
     "lvl": "Poz.",
@@ -30,6 +31,7 @@
     "failure": "Porażka!",
     "criticalSuccess": "Krytyczny sukces!",
     "criticalFailure": "Krytyczna porażka!",
+    "target": "Cel",
     "check": "Test",
     "vs": "vs",
     "dc": "ST",
@@ -171,7 +173,10 @@
     "play": "Graj",
     "character": "Postać",
     "gallery": "Galeria",
-    "keys": "Klucze"
+    "keys": "Klucze",
+    "saveCampaign": "Zapisz Kampanię",
+    "saving": "Zapisywanie...",
+    "campaignSaved": "Zapisano!"
   },
   "keys": {
     "title": "Klucze API",
@@ -220,6 +225,8 @@
     "libraryCharacterNotFound": "Nie znaleziono postaci w bibliotece",
     "useCampaignChar": "Użyj z kampanii",
     "useLibraryChar": "Użyj aktualnej",
+    "loadingWorld": "Wczytywanie świata...",
+    "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
     "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
   },
   "creator": {
@@ -289,11 +296,13 @@
     }
   },
   "gameplay": {
+    "loadingCampaign": "Wczytywanie kampanii...",
     "pettyMagic": "Drobna magia",
     "chooseAction": "Wybierz Akcję",
     "dmWeavesFate": "MG splata przeznaczenie...",
     "goToSettings": "Idź do Ustawień",
     "diceCheck": "Test {{skill}}",
+    "rollLabel": "Rzut",
     "diceResult": "k100: {{roll}} vs {{target}} (PS {{sl}})",
     "adventureBegins": "Twoja przygoda się zaczyna...",
     "conjuringVision": "Przywoływanie wizji...",
@@ -366,6 +375,8 @@
     "characterDeadDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna.",
     "share": "Udostępnij link do kampanii",
     "shareCopied": "Link skopiowany do schowka!",
+    "refresh": "Odśwież",
+    "refreshTooltip": "Wczytaj kampanię ponownie",
     "contextDepth": "Kontekst fabulary",
     "contextDepthTooltip": "Ile kontekstu fabularnego wysyłać do AI. 100% = pełna historia, NPC, questy, wiedza. Niżej = szybsze i tańsze odpowiedzi, ale AI mniej pamięta.",
     "contextLevel_full": "Pełny",
@@ -612,6 +623,7 @@
     "assetCacheCleared": "Cache assetów wyczyszczony",
     "imageProvider": "Dostawca Obrazów",
     "dalleLabel": "DALL-E 3 (OpenAI) — wysoka jakość, wolniejszy",
+    "gptImageLabel": "GPT Image 1.5 (OpenAI) — najlepsza jakość, zdjęcia referencyjne",
     "stabilityLabel": "Stable Diffusion 3 (Stability AI) — szybki",
     "stabilityApiKey": "Klucz API Stability AI",
     "stabilityApiKeyDesc": "Zdobądź klucz na platform.stability.ai",
@@ -736,6 +748,14 @@
       "heightened": "Wzmożony",
       "theatrical": "Teatralny"
     },
+    "narratorSeriousness": "Powaga obrazków",
+    "narratorSeriousnessDesc": "Od głupkowatego absurdu po śmiertelną powagę w generowanych obrazach",
+    "seriousnessLabels": {
+      "silly": "Głupie",
+      "lighthearted": "Lekkie",
+      "serious": "Poważne",
+      "grave": "Śmiertelnie poważne"
+    },
     "imageStyle": "Styl Obrazu",
     "imageStyleDesc": "Styl artystyczny generowanych przez AI ilustracji scen i portretów",
     "imageStyles": {
@@ -750,7 +770,9 @@
       "vanGogh": "Van Gogh",
       "photoreal": "Fotorealizm",
       "retro": "Styl retro",
-      "gothic": "Gotyk"
+      "gothic": "Gotyk",
+      "hiphop": "Hip-Hop",
+      "crayon": "Kredki"
     },
     "darkPalette": "Ciemna paleta kolorów",
     "darkPaletteDesc": "Preferuj ciemne, mroczne kolory w generowanych obrazach",
@@ -1128,7 +1150,9 @@
     "referencePhotoRequired": "Zdjęcie referencyjne",
     "referencePhotoOptional": "Zdjęcie referencyjne opcjonalne",
     "clearReferencePhoto": "Wyczyść zdjęcie",
-    "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy."
+    "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy.",
+    "portraitDescGptImage": "AI wygeneruje portret fantasy twojej postaci. Możesz dodać zdjęcie referencyjne, aby zachować podobieństwo twarzy w portrecie.",
+    "referencePhotoHintGptImage": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem zachowa twoje rysy twarzy i tożsamość."
   },
   "characterPicker": {
     "title": "Twoja Postać",
@@ -2220,6 +2244,7 @@
     "goHome": "Wróć na stronę główną",
     "readOnlyBanner": "Tryb podglądu",
     "scenes": "scen",
+    "refresh": "Odśwież kampanię",
     "test": "Test"
   }
 }

@@ -1,5 +1,5 @@
 import { rollD100 } from '../gameState.js';
-import { resolveSkillCheck } from './skillCheck.js';
+import { resolveSkillCheck, inferActionContext } from './skillCheck.js';
 import { isRestAction, calculateRestRecovery } from './restRecovery.js';
 import { resolveActionDisposition } from './dispositionBonus.js';
 
@@ -74,9 +74,10 @@ function getCreativityBonus(actionText, isCustomAction, fromAutoPlayer) {
  * @param {boolean} params.isCustomAction
  * @param {boolean} params.fromAutoPlayer
  * @param {Function} params.t - i18next translation function
- * @returns {ResolvedMechanics}
+ * @param {Function|null} params.inferSkillCheckFn - async AI inference: (actionText, skills) => { characteristic, skill, difficultyModifier } | { skip: true }
+ * @returns {Promise<ResolvedMechanics>}
  */
-export function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t }) {
+export async function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t, inferSkillCheckFn = null }) {
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPassiveAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
   const isRest = isRestAction(playerAction, t);
@@ -93,15 +94,37 @@ export function resolveMechanics({ state, playerAction, settings, isFirstScene, 
     const currentMomentum = state.momentumBonus || 0;
     const creativityBonus = getCreativityBonus(playerAction, isCustomAction, fromAutoPlayer);
 
-    diceRoll = resolveSkillCheck({
-      character: state.character,
-      actionText: playerAction,
-      roll,
-      currentMomentum,
-      worldNpcs: state.world?.npcs || [],
-      resolveDisposition: resolveActionDisposition,
-      creativityBonus,
-    });
+    let actionContext = null;
+    if (inferSkillCheckFn) {
+      try {
+        const aiResult = await inferSkillCheckFn(playerAction, state.character?.skills);
+        if (aiResult && !aiResult.skip) {
+          actionContext = {
+            characteristic: aiResult.characteristic,
+            suggestedSkills: aiResult.skill ? [aiResult.skill] : [],
+            difficultyModifier: typeof aiResult.difficultyModifier === 'number' ? aiResult.difficultyModifier : 0,
+          };
+        }
+      } catch (err) {
+        console.warn('[resolveMechanics] AI skill inference failed, falling back to regex:', err.message);
+        actionContext = inferActionContext(playerAction);
+      }
+    } else {
+      actionContext = inferActionContext(playerAction);
+    }
+
+    if (actionContext) {
+      diceRoll = resolveSkillCheck({
+        character: state.character,
+        actionText: playerAction,
+        roll,
+        currentMomentum,
+        worldNpcs: state.world?.npcs || [],
+        resolveDisposition: resolveActionDisposition,
+        creativityBonus,
+        actionContext,
+      });
+    }
   }
 
   // Rest recovery (applied after AI call, but calculated now)

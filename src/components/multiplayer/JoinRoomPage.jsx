@@ -6,12 +6,14 @@ import { useModals } from '../../contexts/ModalContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import { translateCareer } from '../../utils/wfrpTranslate';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import Button from '../ui/Button';
 
 export default function JoinRoomPage() {
   const navigate = useNavigate();
   const { code } = useParams();
   const { t, i18n } = useTranslation();
+  useDocumentTitle(t('multiplayer.joinTitle'));
   const mp = useMultiplayer();
   const { openSettings } = useModals();
 

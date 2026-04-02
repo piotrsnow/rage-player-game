@@ -36,9 +36,11 @@ import { useAutoPlayer } from '../../hooks/useAutoPlayer';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import TypewriterActionOverlay from './TypewriterActionOverlay';
+import DiceRollAnimationOverlay from './DiceRollAnimationOverlay';
 import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
 function hashSummaryCacheKey(input) {
   const text = String(input || '');
@@ -50,6 +52,14 @@ function hashSummaryCacheKey(input) {
   return (hash >>> 0).toString(16);
 }
 
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < (str || '').length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 function shuffleArray(items) {
   const arr = [...items];
   for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -59,7 +69,7 @@ function shuffleArray(items) {
   return arr;
 }
 
-export default function GameplayPage({ readOnly = false, shareToken = null }) {
+export default function GameplayPage({ readOnly = false, shareToken = null, onRefresh = null }) {
   // Temporary kill switch for timer-driven idle world events.
   const IDLE_WORLD_EVENTS_ENABLED = false;
   const MAX_SCENE_IMAGE_REPAIR_ATTEMPTS = 2;
@@ -76,7 +86,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs } = useAI();
+  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -123,6 +133,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
   const totalPlayTime = initialTotalPlayTimeRef.current + sessionSeconds;
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
@@ -176,6 +187,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   }, []);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+  useDocumentTitle(campaign?.name);
   const character = isMultiplayer
     ? mpGameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mpGameState?.characters?.[0]
     : state.character;
@@ -233,9 +245,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   useEffect(() => {
     if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
       setViewingSceneIndex(null);
+
+      const newestScene = scenes[scenes.length - 1];
+      const newestSceneMessage = newestScene?.id
+        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
+        : null;
+      const newestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
+
+      if (newestSceneMessage?.id) {
+        requestChatScrollToMessage(newestSceneMessage.id);
+      } else if (newestDmMessage?.id) {
+        requestChatScrollToMessage(newestDmMessage.id);
+      }
     }
     prevScenesLenRef.current = scenes.length;
-  }, [scenes.length]);
+  }, [scenes.length, scenes, chatHistory, requestChatScrollToMessage]);
 
   useEffect(() => {
     if (isGeneratingScene) {
@@ -250,15 +274,22 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
     const hasNewMessages = chatHistory.length > prevChatHistoryLenRef.current;
     if (hasNewMessages) {
+      const newestScene = scenes[scenes.length - 1];
+      const latestSceneMessage = newestScene?.id
+        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
+        : null;
+      const latestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
       const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
-      if (latestDiceRollMessage?.id) {
-        requestChatScrollToMessage(latestDiceRollMessage.id);
+
+      const preferredMessageId = latestSceneMessage?.id || latestDmMessage?.id || latestDiceRollMessage?.id;
+      if (preferredMessageId) {
+        requestChatScrollToMessage(preferredMessageId);
       }
     }
 
     wasGeneratingSceneRef.current = false;
     prevChatHistoryLenRef.current = chatHistory.length;
-  }, [isGeneratingScene, chatHistory, requestChatScrollToMessage]);
+  }, [isGeneratingScene, chatHistory, scenes, requestChatScrollToMessage]);
 
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
@@ -531,6 +562,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
   const [typewriterAction, setTypewriterAction] = useState(null);
   const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
+  const [pendingOverlayText, setPendingOverlayText] = useState(null);
   const typewriterNextIndexRef = useRef(null);
 
   autoPlayRef.current = autoPlayScenes;
@@ -767,21 +799,69 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
   const handlePlayerActionOverlayComplete = useCallback(() => {
     setPlayerActionOverlayText(null);
-  }, []);
+    if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
+      const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
+      if (latestDm) {
+        narrator.speakSingle(latestDm, latestDm.id);
+      }
+    }
+  }, [settings.narratorEnabled, settings.narratorAutoPlay, narrator, chatHistory]);
+
+  const OVERLAY_LEAD_TIME_SECONDS = 12;
+
+  useEffect(() => {
+    if (!pendingOverlayText) return;
+    const narratorIdle = narrator.playbackState === 'idle';
+    const nearEnd = narrator.narrationSecondsRemaining <= OVERLAY_LEAD_TIME_SECONDS;
+    if (narratorIdle || nearEnd) {
+      setPlayerActionOverlayText(pendingOverlayText);
+      setPendingOverlayText(null);
+    }
+  }, [pendingOverlayText, narrator.playbackState, narrator.narrationSecondsRemaining]);
 
   useEffect(() => {
     if (campaign || isMultiplayer || readOnly) return;
     if (urlCampaignId) {
-      const data = storage.loadCampaign(urlCampaignId);
-      if (data) {
-        dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-        return;
-      }
-      navigate('/', { replace: true, state: { campaignNotFound: true } });
-      return;
+      let cancelled = false;
+      storage.loadCampaign(urlCampaignId)
+        .then((data) => {
+          if (cancelled) return;
+          if (data) {
+            dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+            storage.saveLocalSnapshot(data);
+          } else {
+            navigate('/', { replace: true, state: { campaignNotFound: true } });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) navigate('/', { replace: true, state: { campaignNotFound: true } });
+        });
+      return () => { cancelled = true; };
     }
     navigate('/');
   }, [campaign, isMultiplayer, readOnly, navigate, urlCampaignId, dispatch]);
+
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      if (readOnly && onRefresh) {
+        await onRefresh();
+      } else if (isMultiplayer) {
+        await mp.rejoinRoom();
+      } else {
+        const id = campaign?.backendId || urlCampaignId;
+        if (id) {
+          const data = await storage.loadCampaign(id);
+          if (data) dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+        }
+      }
+    } catch (err) {
+      console.warn('[GameplayPage] Refresh failed:', err.message);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [isRefreshing, readOnly, onRefresh, isMultiplayer, mp, campaign?.backendId, urlCampaignId, dispatch]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -972,7 +1052,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
     if (!fromAutoPlayer && action) {
-      setPlayerActionOverlayText(action);
+      const narratorIsActive = narrator.playbackState === 'playing' || narrator.playbackState === 'loading';
+      if (narratorIsActive && settings.narratorEnabled && settings.narratorAutoPlay) {
+        setPendingOverlayText(action);
+      } else {
+        setPlayerActionOverlayText(action);
+      }
     }
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer);
@@ -980,6 +1065,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
       // Error displayed in UI via context
     }
   };
+
+  const handleFieldTurnReady = useCallback(() => {
+    if (!state.world?.fieldMap) return;
+    const fm = state.world.fieldMap;
+    const buf = fm.stepBuffer || [];
+    const from = buf.length > 0 ? buf[0] : fm.playerPos;
+    const to = fm.playerPos;
+    const uniqueTiles = new Set(buf.map((s) => s.tile)).size;
+    const idleSteps = buf.filter((s) => s.x === from.x && s.y === from.y).length;
+    const discovered = fm.discoveredPoi.map((p) => `${p.tile}@(${p.x},${p.y})`).join(', ');
+    const actionText = `[FIELD_MOVE] steps=${buf.length} from=(${from.x},${from.y}) to=(${to.x},${to.y}) uniqueTiles=${uniqueTiles} idleSteps=${idleSteps} biome=${fm.activeBiome}${discovered ? ` discovered=${discovered}` : ''}`;
+    dispatch({ type: 'FIELD_MAP_RESET_STEPS' });
+    generateScene(actionText, false, false).catch(() => {});
+  }, [state.world?.fieldMap, dispatch, generateScene]);
 
   const handleSceneGridChange = useCallback((sceneId, nextSceneGrid) => {
     if (!sceneId || !nextSceneGrid) return;
@@ -991,6 +1090,19 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     dispatch({ type: 'UPDATE_SCENE_GRID', payload });
     setTimeout(() => autoSave(), 250);
   }, [isMultiplayer, mp, dispatch, autoSave]);
+
+  useEffect(() => {
+    if ((settings.sceneVisualization || 'image') !== 'map') return;
+    if (state.world?.fieldMap) return;
+    if (!state.campaign) return;
+    dispatch({
+      type: 'INIT_FIELD_MAP',
+      payload: {
+        seed: state.campaign.id ? hashCode(state.campaign.id) : Date.now(),
+        activeBiome: 'plains',
+      },
+    });
+  }, [settings.sceneVisualization, state.world?.fieldMap, state.campaign, dispatch]);
 
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
@@ -1380,7 +1492,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   };
 
-  if (!campaign) return null;
+  if (!campaign) return (
+    <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <LoadingSpinner size="lg" text={t('gameplay.loadingCampaign', 'Loading campaign...')} />
+    </div>
+  );
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
@@ -1563,6 +1679,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                   {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
                 </div>
               ) : null}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                title={t('gameplay.refreshTooltip', 'Reload campaign')}
+                aria-label={t('gameplay.refresh', 'Refresh')}
+                className={`material-symbols-outlined text-sm transition-colors ${
+                  isRefreshing ? 'text-primary animate-spin' : 'text-outline hover:text-primary'
+                }`}
+              >
+                {isRefreshing ? 'progress_activity' : 'refresh'}
+              </button>
               {!readOnly && (
                 <>
                   {/* Auto-Player toggle (solo only) */}
@@ -1745,6 +1872,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
             interactiveMap={!isMultiplayer && !readOnly && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active')}
             onSceneGridChange={handleSceneGridChange}
+            onFieldTurnReady={handleFieldTurnReady}
             onImageError={(sceneId) => {
               if (!sceneId) return;
               if (isMultiplayer && !mp.state.isHost) return;
@@ -1769,6 +1897,15 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene}
+              loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
+              loaderEstimatedMs={lastSceneGenMs}
+            />
+          )}
+          {earlyDiceRoll && (
+            <DiceRollAnimationOverlay
+              diceRoll={earlyDiceRoll}
+              onDismiss={clearEarlyDiceRoll}
             />
           )}
         </div>
@@ -2075,7 +2212,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
         <ChatPanel
           messages={chatHistory}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)

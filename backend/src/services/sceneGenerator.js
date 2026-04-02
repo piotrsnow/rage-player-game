@@ -431,7 +431,7 @@ async function callOpenAI(messages, { tools = [], model, temperature = 0.8, maxT
     model: model || 'gpt-5.4',
     messages,
     temperature,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
   };
 
   if (tools.length > 0) {
@@ -509,14 +509,52 @@ export async function generateScene(campaignId, playerAction, {
   fromAutoPlayer = false,
   sceneCount = 0,
 } = {}) {
-  // 1. Load campaign core state
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    select: { coreState: true },
-  });
+  // 1. Load campaign core state + normalized data
+  const [campaign, dbNpcs, dbQuests] = await Promise.all([
+    prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { coreState: true, characterState: true },
+    }),
+    prisma.campaignNPC.findMany({ where: { campaignId } }),
+    prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
+  ]);
 
   if (!campaign) throw new Error('Campaign not found');
   const coreState = JSON.parse(campaign.coreState);
+
+  // Inject characterState
+  const charState = JSON.parse(campaign.characterState || '{}');
+  if (Object.keys(charState).length > 0) coreState.character = charState;
+
+  // Inject normalized NPCs
+  if (dbNpcs.length > 0) {
+    if (!coreState.world) coreState.world = {};
+    coreState.world.npcs = dbNpcs.map((n) => ({
+      name: n.name, gender: n.gender, role: n.role,
+      personality: n.personality, attitude: n.attitude, disposition: n.disposition,
+      alive: n.alive, lastLocation: n.lastLocation, factionId: n.factionId,
+      notes: n.notes, relationships: JSON.parse(n.relationships || '[]'),
+    }));
+  }
+
+  // Inject normalized quests
+  if (dbQuests.length > 0) {
+    const active = [];
+    const completed = [];
+    for (const q of dbQuests) {
+      const quest = {
+        id: q.questId, name: q.name, type: q.type, description: q.description,
+        completionCondition: q.completionCondition, questGiverId: q.questGiverId,
+        turnInNpcId: q.turnInNpcId, locationId: q.locationId,
+        prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
+        objectives: JSON.parse(q.objectives || '[]'),
+        reward: q.reward ? JSON.parse(q.reward) : null,
+      };
+      if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });
+      else active.push(quest);
+    }
+    coreState.quests = { active, completed };
+  }
 
   // 2. Load recent scenes
   const recentScenes = await prisma.campaignScene.findMany({

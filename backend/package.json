@@ -19,6 +19,7 @@
     "import:prefabs:scan-gcp:dry": "node scripts/importPrefabsFromModels3d.js --scan-gcp --dry-run"
   },
   "dependencies": {
+    "@fastify/compress": "^8.3.1",
     "@fastify/cors": "^10.0.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^9.0.0",

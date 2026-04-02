@@ -1,6 +1,7 @@
 {
   "common": {
     "appName": "Dungeons & Sillicons",
+    "tagline": "Realms of dice & chaos",
     "logoPath": "/nikczemnu_logo_en.png",
     "level": "Level",
     "lvl": "Lv.",
@@ -30,6 +31,7 @@
     "failure": "Failure!",
     "criticalSuccess": "Critical Success!",
     "criticalFailure": "Critical Failure!",
+    "target": "Target",
     "check": "Check",
     "vs": "vs",
     "dc": "DC",
@@ -170,7 +172,10 @@
     "play": "Play",
     "character": "Character",
     "gallery": "Gallery",
-    "keys": "Keys"
+    "keys": "Keys",
+    "saveCampaign": "Save Campaign",
+    "saving": "Saving...",
+    "campaignSaved": "Saved!"
   },
   "keys": {
     "title": "API Keys",
@@ -219,6 +224,8 @@
     "libraryCharacterNotFound": "Character not found in library",
     "useCampaignChar": "Use Campaign Version",
     "useLibraryChar": "Use Library Version",
+    "loadingWorld": "Loading world...",
+    "loadingWorldHint": "Preparing your adventure, please wait",
     "campaignNotFound": "Campaign not found. It may have been deleted."
   },
   "creator": {
@@ -288,11 +295,13 @@
     }
   },
   "gameplay": {
+    "loadingCampaign": "Loading campaign...",
     "pettyMagic": "Petty Magic",
     "chooseAction": "Choose Your Action",
     "dmWeavesFate": "The DM weaves fate...",
     "goToSettings": "Go to Settings",
     "diceCheck": "{{skill}} Check",
+    "rollLabel": "Roll",
     "diceResult": "d100: {{roll}} vs {{target}} (SL {{sl}})",
     "adventureBegins": "Your adventure begins...",
     "conjuringVision": "Conjuring vision...",
@@ -365,6 +374,8 @@
     "characterDeadDesc": "With no Fate points remaining, death is final.",
     "share": "Share campaign link",
     "shareCopied": "Link copied to clipboard!",
+    "refresh": "Refresh",
+    "refreshTooltip": "Reload campaign from storage",
     "contextDepth": "Story context",
     "contextDepthTooltip": "How much story context to send to AI. 100% = full history, NPCs, quests, knowledge. Lower = faster and cheaper responses, but AI remembers less.",
     "contextLevel_full": "Full",
@@ -611,6 +622,7 @@
     "assetCacheCleared": "Asset cache cleared",
     "imageProvider": "Image Provider",
     "dalleLabel": "DALL-E 3 (OpenAI) — high quality, slower",
+    "gptImageLabel": "GPT Image 1.5 (OpenAI) — best quality, reference photos",
     "stabilityLabel": "Stable Diffusion 3 (Stability AI) — fast",
     "stabilityApiKey": "Stability AI API Key",
     "stabilityApiKeyDesc": "Get your key at platform.stability.ai",
@@ -735,6 +747,14 @@
       "heightened": "Heightened",
       "theatrical": "Theatrical"
     },
+    "narratorSeriousness": "Image Seriousness",
+    "narratorSeriousnessDesc": "From silly and goofy to grave and somber mood in generated images",
+    "seriousnessLabels": {
+      "silly": "Silly",
+      "lighthearted": "Lighthearted",
+      "serious": "Serious",
+      "grave": "Grave"
+    },
     "imageStyle": "Image Style",
     "imageStyleDesc": "Art style for AI-generated scene images and portraits",
     "imageStyles": {
@@ -749,7 +769,9 @@
       "vanGogh": "Van Gogh",
       "photoreal": "Photorealistic",
       "retro": "Retro Style",
-      "gothic": "Gothic"
+      "gothic": "Gothic",
+      "hiphop": "Hip-Hop",
+      "crayon": "Crayon"
     },
     "darkPalette": "Dark Color Palette",
     "darkPaletteDesc": "Prefer dark, moody colors in generated images",
@@ -1127,7 +1149,9 @@
     "referencePhotoRequired": "Reference photo",
     "referencePhotoOptional": "Reference photo optional",
     "clearReferencePhoto": "Clear photo",
-    "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance."
+    "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance.",
+    "portraitDescGptImage": "AI will generate a fantasy portrait of your character. You can add a reference photo to preserve your facial likeness in the portrait.",
+    "referencePhotoHintGptImage": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will preserve your face and identity."
   },
   "characterPicker": {
     "title": "Your Character",
@@ -2219,6 +2243,7 @@
     "goHome": "Go to home page",
     "readOnlyBanner": "Read-only view",
     "scenes": "scenes",
+    "refresh": "Refresh campaign",
     "test": "Test"
   }
 }

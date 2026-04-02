@@ -326,6 +326,27 @@
   animation: typewriterGlow 4s ease-in-out infinite;
 }
 
+@keyframes diceOverlayFlyIn {
+  0% {
+    transform: translate(-60vw, 50vh) scale(0.3) rotate(25deg);
+    opacity: 0;
+    filter: blur(6px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.animate-dice-fly-in {
+  animation: diceOverlayFlyIn 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes micPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.4); }
   50% { box-shadow: 0 0 0 8px rgba(255, 82, 82, 0); }

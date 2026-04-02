@@ -15,6 +15,7 @@ import CharacterCreationModal from '../character/CharacterCreationModal';
 import PortraitGenerator from '../character/PortraitGenerator';
 import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
 import { useModals } from '../../contexts/ModalContext';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
 
 const genreIds = ['Fantasy', 'Sci-Fi', 'Horror'];
@@ -65,6 +66,7 @@ function ChipGroup({ options, value, onChange, showIcons = false, icons = {}, la
 export default function CampaignCreatorPage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  useDocumentTitle(t('creator.title'));
   const { generateCampaign, generateStoryPrompt } = useAI();
   const { startNewCampaign } = useGameState();
   const { settings, hasApiKey } = useSettings();
@@ -307,7 +309,7 @@ export default function CampaignCreatorPage() {
         storage.saveLastCharacterName(createdCharacter.name);
       }
       const result = await generateCampaign(formWithChar);
-      const newCampaignId = startNewCampaign(result, formWithChar);
+      const newCampaignId = await startNewCampaign(result, formWithChar);
       navigate(`/play/${newCampaignId}`);
     } catch {
       // Error is handled via context

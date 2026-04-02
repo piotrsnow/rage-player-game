@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback } from 'react';
 
-const ModalContext = createContext(null);
+const ModalContext = (import.meta.hot?.data?.ModalContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.ModalContext = ModalContext;
 
 export function ModalProvider({ children }) {
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false);

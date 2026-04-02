@@ -4,7 +4,8 @@ import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
 import { gameData } from '../services/gameDataService';
 
-const SettingsContext = createContext(null);
+const SettingsContext = (import.meta.hot?.data?.SettingsContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.SettingsContext = SettingsContext;
 
 const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', gemini: '' };
 
@@ -144,6 +145,7 @@ const defaultSettings = {
     narratorDetail: 50,
     narratorHumor: 20,
     narratorDrama: 50,
+    narratorSeriousness: 50,
     narratorCustomInstructions: '',
     imageStyle: 'painting',
     darkPalette: false,
@@ -294,8 +296,8 @@ export function SettingsProvider({ children }) {
     fetchBackendKeys();
     await loadSharedVoiceSettings();
 
-    storage.syncCampaigns().catch((err) => {
-      console.warn('[SettingsContext] Campaign sync after login failed:', err.message);
+    storage.migrateLocalCampaignsToBackend().catch((err) => {
+      console.warn('[SettingsContext] Campaign migration failed:', err.message);
     });
   }, [fetchBackendKeys, loadSharedVoiceSettings]);
 

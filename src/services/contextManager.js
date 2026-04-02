@@ -301,11 +301,13 @@ export const contextManager = {
     const scenesOutsideWindow = sceneCount - FULL_SCENE_COUNT - MEDIUM_SCENE_COUNT;
     if (scenesOutsideWindow <= 0) return false;
 
-    if (!gameState.world?.compressedHistory) {
-      return sceneCount > COMPRESSION_THRESHOLD;
-    }
-
-    return scenesOutsideWindow > 0 && scenesOutsideWindow % INCREMENTAL_COMPRESSION_INTERVAL === 0;
+    // Unified interval logic: trigger at every INCREMENTAL_COMPRESSION_INTERVAL
+    // scenes outside the context window (10, 20, 30 …).
+    // Previously, the no-history branch used `sceneCount > COMPRESSION_THRESHOLD`
+    // which returned true EVERY turn once past the threshold, causing a
+    // summarisation call on every single action when the quality gate kept
+    // rejecting the result (compressedHistory never set → condition true again).
+    return scenesOutsideWindow % INCREMENTAL_COMPRESSION_INTERVAL === 0;
   },
 
   buildEntitySnapshot(gameState) {

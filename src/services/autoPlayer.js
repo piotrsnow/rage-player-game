@@ -267,7 +267,7 @@ async function callAutoPlayerAI(provider, _apiKey, systemPrompt, userPrompt, mod
       ],
       model,
       temperature: 0.9,
-      max_tokens: 300,
+      max_completion_tokens: 300,
       response_format: { type: 'json_object' },
     });
     const content = data.choices[0]?.message?.content;

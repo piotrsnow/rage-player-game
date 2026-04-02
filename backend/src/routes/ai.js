@@ -37,7 +37,7 @@ export async function aiRoutes(fastify) {
       sceneCount = 0,
     } = request.body;
 
-    if (!playerAction && !isFirstScene) {
+    if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
       return reply.code(400).send({ error: 'playerAction is required' });
     }
 
@@ -105,22 +105,38 @@ export async function aiRoutes(fastify) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const savedScene = await prisma.campaignScene.create({
-      data: {
-        campaignId,
-        sceneIndex: scene.sceneIndex ?? 0,
-        narrative: scene.narrative || '',
-        chosenAction: scene.chosenAction || null,
-        suggestedActions: JSON.stringify(scene.suggestedActions || []),
-        dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
-        imagePrompt: scene.imagePrompt || null,
-        imageUrl: scene.imageUrl || null,
-        soundEffect: scene.soundEffect || null,
-        diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
-        stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
-        scenePacing: scene.scenePacing || 'exploration',
-      },
+    const sceneIndex = Number.isInteger(scene.sceneIndex) ? scene.sceneIndex : 0;
+    const normalizedSuggestedActions = Array.isArray(scene.suggestedActions)
+      ? scene.suggestedActions
+      : (Array.isArray(scene.actions) ? scene.actions : []);
+    const normalizedImageUrl = scene.imageUrl || scene.image || null;
+
+    const existingScene = await prisma.campaignScene.findFirst({
+      where: { campaignId, sceneIndex },
+      select: { id: true },
     });
+
+    const payload = {
+      campaignId,
+      sceneIndex,
+      narrative: scene.narrative || '',
+      chosenAction: scene.chosenAction || null,
+      suggestedActions: JSON.stringify(normalizedSuggestedActions),
+      dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
+      imagePrompt: scene.imagePrompt || null,
+      imageUrl: normalizedImageUrl,
+      soundEffect: scene.soundEffect || null,
+      diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
+      stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
+      scenePacing: scene.scenePacing || 'exploration',
+    };
+
+    const savedScene = existingScene
+      ? await prisma.campaignScene.update({
+          where: { id: existingScene.id },
+          data: payload,
+        })
+      : await prisma.campaignScene.create({ data: payload });
 
     // Generate embedding async
     const embeddingText = buildSceneEmbeddingText(savedScene);
@@ -133,6 +149,100 @@ export async function aiRoutes(fastify) {
     }
 
     return { sceneId: savedScene.id, sceneIndex: savedScene.sceneIndex };
+  });
+
+  /**
+   * POST /ai/campaigns/:id/scenes/bulk
+   *
+   * Save multiple scenes in one request. DB writes run with bounded
+   * concurrency (5) instead of sequentially. Embeddings are fire-and-forget.
+   */
+  fastify.post('/campaigns/:id/scenes/bulk', async (request, reply) => {
+    const campaignId = request.params.id;
+    const scenes = request.body?.scenes;
+
+    if (!Array.isArray(scenes) || scenes.length === 0) {
+      return reply.code(400).send({ error: 'scenes array is required' });
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { userId: true },
+    });
+
+    if (!campaign || campaign.userId !== request.user.id) {
+      return reply.code(403).send({ error: 'Not authorized' });
+    }
+
+    const existingScenes = await prisma.campaignScene.findMany({
+      where: {
+        campaignId,
+        sceneIndex: { in: scenes.map((s) => Number.isInteger(s.sceneIndex) ? s.sceneIndex : -1) },
+      },
+      select: { id: true, sceneIndex: true },
+    });
+    const existingByIndex = new Map(existingScenes.map((s) => [s.sceneIndex, s.id]));
+
+    const CONCURRENCY = 5;
+    const results = [];
+    let i = 0;
+
+    while (i < scenes.length) {
+      const batch = scenes.slice(i, i + CONCURRENCY);
+      const settled = await Promise.allSettled(
+        batch.map((scene) => {
+          const sceneIndex = Number.isInteger(scene.sceneIndex) ? scene.sceneIndex : 0;
+          const normalizedSuggestedActions = Array.isArray(scene.suggestedActions)
+            ? scene.suggestedActions
+            : (Array.isArray(scene.actions) ? scene.actions : []);
+
+          const payload = {
+            campaignId,
+            sceneIndex,
+            narrative: scene.narrative || '',
+            chosenAction: scene.chosenAction || null,
+            suggestedActions: JSON.stringify(normalizedSuggestedActions),
+            dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
+            imagePrompt: scene.imagePrompt || null,
+            imageUrl: scene.imageUrl || scene.image || null,
+            soundEffect: scene.soundEffect || null,
+            diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
+            stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
+            scenePacing: scene.scenePacing || 'exploration',
+          };
+
+          const existingId = existingByIndex.get(sceneIndex);
+          const dbOp = existingId
+            ? prisma.campaignScene.update({ where: { id: existingId }, data: payload })
+            : prisma.campaignScene.create({ data: payload });
+
+          return dbOp.then((saved) => {
+            if (!existingId) {
+              const embeddingText = buildSceneEmbeddingText(saved);
+              if (embeddingText) {
+                embedText(embeddingText)
+                  .then((emb) => {
+                    if (emb) writeEmbedding('CampaignScene', saved.id, emb, embeddingText);
+                  })
+                  .catch((err) => console.error('Scene embedding failed:', err.message));
+              }
+            }
+            return { sceneId: saved.id, sceneIndex: saved.sceneIndex };
+          });
+        }),
+      );
+
+      for (const r of settled) {
+        results.push(
+          r.status === 'fulfilled'
+            ? r.value
+            : { error: r.reason?.message || 'save failed' },
+        );
+      }
+      i += CONCURRENCY;
+    }
+
+    return { saved: results.filter((r) => !r.error).length, total: scenes.length, results };
   });
 
   /**
@@ -159,9 +269,16 @@ export async function aiRoutes(fastify) {
       take: parseInt(limit),
       skip: parseInt(offset),
     });
+    const dedupedByIndex = new Map();
+    for (const s of scenes) {
+      if (!dedupedByIndex.has(s.sceneIndex)) {
+        dedupedByIndex.set(s.sceneIndex, s);
+      }
+    }
+    const uniqueScenes = Array.from(dedupedByIndex.values());
 
     // Parse JSON fields
-    return scenes.map((s) => ({
+    return uniqueScenes.map((s) => ({
       ...s,
       suggestedActions: JSON.parse(s.suggestedActions || '[]'),
       dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),
@@ -181,22 +298,31 @@ export async function aiRoutes(fastify) {
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { userId: true, coreState: true },
+      select: { userId: true, coreState: true, characterState: true },
     });
 
     if (!campaign || campaign.userId !== request.user.id) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const currentState = JSON.parse(campaign.coreState);
-    const mergedState = deepMerge(currentState, updates);
+    const data = { lastSaved: new Date() };
+
+    if (updates.character) {
+      const currentChar = JSON.parse(campaign.characterState || '{}');
+      data.characterState = JSON.stringify(deepMerge(currentChar, updates.character));
+      const { character: _c, ...rest } = updates;
+      const currentState = JSON.parse(campaign.coreState);
+      if (Object.keys(rest).length > 0) {
+        data.coreState = JSON.stringify(deepMerge(currentState, rest));
+      }
+    } else {
+      const currentState = JSON.parse(campaign.coreState);
+      data.coreState = JSON.stringify(deepMerge(currentState, updates));
+    }
 
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: {
-        coreState: JSON.stringify(mergedState),
-        lastSaved: new Date(),
-      },
+      data,
     });
 
     return { ok: true };

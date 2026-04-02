@@ -17,11 +17,12 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
   const provider = settings.imageProvider || 'dalle';
   const isDalle = provider === 'dalle';
+  const isGptImage = provider === 'gpt-image';
   const isGemini = provider === 'gemini';
-  const canUseReferenceImage = isGemini || provider === 'stability';
+  const canUseReferenceImage = isGemini || isGptImage || provider === 'stability';
   const requiresReferenceImage = provider === 'stability';
   const apiKey = null;
-  const keyProvider = isDalle ? 'openai' : isGemini ? 'gemini' : 'stability';
+  const keyProvider = (isDalle || isGptImage) ? 'openai' : isGemini ? 'gemini' : 'stability';
   const hasKey = settings.useBackend && hasApiKey(keyProvider);
 
   const [photoBlob, setPhotoBlob] = useState(null);
@@ -55,6 +56,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         provider,
         settings.dmSettings?.imageStyle || 'painting',
         settings.dmSettings?.darkPalette || false,
+        settings.dmSettings?.narratorSeriousness ?? null,
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);
@@ -184,7 +186,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
-        {isGemini ? t('charCreator.portraitDescGemini') : t('charCreator.portraitDesc')}
+        {isGemini ? t('charCreator.portraitDescGemini') : isGptImage ? t('charCreator.portraitDescGptImage') : t('charCreator.portraitDesc')}
       </p>
 
       {canUseReferenceImage && (
@@ -256,9 +258,9 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
             </div>
           )}
 
-          {isGemini && !photoBlob && (
+          {(isGemini || isGptImage) && !photoBlob && (
             <p className="text-[11px] text-on-surface-variant text-center">
-              {t('charCreator.referencePhotoHintGemini')}
+              {t(isGptImage ? 'charCreator.referencePhotoHintGptImage' : 'charCreator.referencePhotoHintGemini')}
             </p>
           )}
 

@@ -3,13 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
-import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { getPersistedRejoinInfo, clearPersistedRejoinInfo } from '../../services/websocket';
-import { createCampaignId } from '../../services/gameState';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
@@ -118,6 +117,7 @@ export default function LobbyPage() {
   const { t } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
+  useDocumentTitle(t('common.tagline'));
   const { backendUser, hasApiKey } = useSettings();
   const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
@@ -129,6 +129,7 @@ export default function LobbyPage() {
   const [libraryCharacter, setLibraryCharacter] = useState(undefined);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [campaignNotFound, setCampaignNotFound] = useState(false);
+  const [loadingCampaignId, setLoadingCampaignId] = useState(null);
 
   useEffect(() => {
     if (location.state?.campaignNotFound) {
@@ -139,42 +140,41 @@ export default function LobbyPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setSyncing(true);
+    storage.getCampaigns()
+      .then((list) => {
+        if (cancelled) return;
+        setCampaigns(list);
+        if (backendUser && apiClient.isConnected() && list.some((c) => c.source === 'remote' && !c.characterName && c.sceneCount > 0)) {
+          apiClient.post('/campaigns/backfill-summaries')
+            .then(() => storage.getCampaigns())
+            .then((fresh) => { if (!cancelled) setCampaigns(fresh); })
+            .catch(() => {});
+        }
+      })
+      .catch(() => { if (!cancelled) setCampaigns([]); })
+      .finally(() => {
+        if (!cancelled) setSyncing(false);
+      });
 
-    setCampaigns(storage.getCampaigns());
-
-    if (apiClient.isConnected()) {
-      setSyncing(true);
-      storage.syncCampaigns()
-        .then((synced) => {
-          if (!cancelled) {
-            setCampaigns(synced);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) {
-            setSyncing(false);
-          }
-        });
-    } else {
-      setSyncing(false);
-    }
-
-    const persisted = getPersistedRejoinInfo();
-    if (persisted?.roomCode && apiClient.isConnected()) {
-      apiClient.get('/multiplayer/my-sessions')
-        .then((res) => {
-          const sessions = res?.sessions || [];
-          const match = sessions.find((s) => s.roomCode === persisted.roomCode);
-          if (match) {
-            setRejoinInfo({ ...persisted, ...match });
-          } else {
-            clearPersistedRejoinInfo();
-          }
-        })
-        .catch(() => {
-          setRejoinInfo(persisted);
-        });
+    if (backendUser && apiClient.isConnected()) {
+      const persisted = getPersistedRejoinInfo();
+      if (persisted?.roomCode) {
+        apiClient.get('/multiplayer/my-sessions')
+          .then((res) => {
+            if (cancelled) return;
+            const sessions = res?.sessions || [];
+            const match = sessions.find((s) => s.roomCode === persisted.roomCode);
+            if (match) {
+              setRejoinInfo({ ...persisted, ...match });
+            } else {
+              clearPersistedRejoinInfo();
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setRejoinInfo(persisted);
+          });
+      }
     }
 
     return () => {
@@ -216,67 +216,72 @@ export default function LobbyPage() {
       };
     }
     dispatch({ type: 'LOAD_CAMPAIGN', payload });
+    storage.saveLocalSnapshot(payload);
     setPendingCampaign(null);
     setLibraryCharacter(undefined);
-    navigate(`/play/${payload.campaign.id}`);
+    navigate(`/play/${payload.campaign.backendId || payload.campaign.id}`);
   };
 
-  const handleLoad = (campaign) => {
-    openCharacterChoice(campaign);
+  const handleLoad = async (campaign) => {
+    if (loadingCampaignId) return;
+    setLoadingCampaignId(campaign.id);
+    try {
+      const campaignPromise = campaign.source === 'local'
+        ? Promise.resolve(storage.loadLocalSnapshot())
+        : storage.loadCampaign(campaign.id);
+      const [data, chars] = await Promise.all([
+        campaignPromise,
+        storage.getCharactersAsync().catch(() => []),
+      ]);
+      if (data) {
+        setPendingCampaign(data);
+        if (data.character) {
+          const match = storage.findMatchingLibraryCharacter(data.character, chars);
+          setLibraryCharacter(match ?? null);
+        } else {
+          setLibraryCharacter(undefined);
+        }
+        setLibraryLoading(false);
+      }
+    } catch (err) {
+      console.warn('[LobbyPage] Failed to load campaign:', err.message);
+    } finally {
+      setLoadingCampaignId(null);
+    }
   };
 
   const handleDelete = async (id) => {
-    await storage.deleteCampaign(id);
-    setCampaigns(storage.getCampaigns());
+    const target = campaigns.find((c) => c.id === id);
+    if (target?.source === 'local') {
+      storage.clearLocalSnapshot();
+    } else {
+      await storage.deleteCampaign(id);
+    }
+    try {
+      setCampaigns(await storage.getCampaigns());
+    } catch { setCampaigns([]); }
     setShowDeleteConfirm(null);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     const activeId = storage.getActiveCampaignId();
-    if (activeId) {
-      const data = storage.loadCampaign(activeId);
-      if (data) {
-        openCharacterChoice(data);
-        return;
+    if (activeId && campaigns.length > 0) {
+      const match = campaigns.find((c) => c.id === activeId);
+      if (match) {
+        setSyncing(true);
+        try {
+          const data = await storage.loadCampaign(match.id);
+          if (data) { openCharacterChoice(data); return; }
+        } catch { /* ignore */ } finally { setSyncing(false); }
       }
     }
     if (campaigns.length > 0) {
-      openCharacterChoice(campaigns[0]);
+      setSyncing(true);
+      try {
+        const data = await storage.loadCampaign(campaigns[0].id);
+        if (data) openCharacterChoice(data);
+      } catch { /* ignore */ } finally { setSyncing(false); }
     }
-  };
-
-  const handleForkFromScene = (campaignData, sceneIndex) => {
-    const baseName = (campaignData.campaign?.name || 'Campaign').replace(/\s*\(\d+\)$/, '');
-    const existingNames = new Set(campaigns.map((c) => c.campaign?.name));
-    let suffix = 2;
-    while (existingNames.has(`${baseName} (${suffix})`)) suffix++;
-    const forkedName = `${baseName} (${suffix})`;
-
-    const trimmedScenes = (campaignData.scenes || []).slice(0, sceneIndex + 1);
-    const lastSceneTimestamp = trimmedScenes[trimmedScenes.length - 1]?.timestamp;
-    const trimmedChat = lastSceneTimestamp
-      ? (campaignData.chatHistory || []).filter((m) => !m.timestamp || m.timestamp <= lastSceneTimestamp)
-      : (campaignData.chatHistory || []).slice(0, (sceneIndex + 1) * 5);
-
-    const forked = structuredClone(campaignData);
-    forked.campaign = {
-      ...forked.campaign,
-      id: createCampaignId(),
-      name: forkedName,
-      backendId: undefined,
-      forkedFrom: campaignData.campaign?.id,
-      forkedAtScene: sceneIndex,
-    };
-    forked.scenes = trimmedScenes;
-    forked.chatHistory = trimmedChat;
-    forked.combat = null;
-    forked.undoStack = [];
-    forked.lastSaved = Date.now();
-
-    storage.saveCampaign(forked);
-    setCampaigns(storage.getCampaigns());
-    dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
-    navigate(`/play/${forked.campaign.id}`);
   };
 
   useEffect(() => {
@@ -457,17 +462,16 @@ export default function LobbyPage() {
             <div className="space-y-1">
               {campaigns.map((c, i) => (
                 <CampaignCard
-                  key={c.campaign?.id || c.campaign?.backendId || i}
+                  key={c.id || i}
                   campaign={c}
+                  loading={loadingCampaignId === c.id}
+                  disabled={!!loadingCampaignId}
                   onLoad={() => handleLoad(c)}
                   onDelete={() =>
-                    showDeleteConfirm === c.campaign.id
-                      ? handleDelete(c.campaign.id)
-                      : setShowDeleteConfirm(c.campaign.id)
+                    showDeleteConfirm === c.id
+                      ? handleDelete(c.id)
+                      : setShowDeleteConfirm(c.id)
                   }
-                  onExportLog={() => exportAsMarkdown(c)}
-                  onExportJson={() => exportAsJson(c)}
-                  onForkFromScene={(sceneIndex) => handleForkFromScene(c, sceneIndex)}
                 />
               ))}
             </div>

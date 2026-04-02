@@ -6,7 +6,8 @@ import { useLocalMusic } from '../hooks/useLocalMusic';
 
 const GENRE_MUSIC_FOLDER = { 'Sci-Fi': 'scifi' };
 
-const MusicContext = createContext(null);
+const MusicContext = (import.meta.hot?.data?.MusicContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.MusicContext = MusicContext;
 
 export function MusicProvider({ children }) {
   const location = useLocation();

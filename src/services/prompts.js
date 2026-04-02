@@ -969,10 +969,15 @@ Respond with ONLY valid JSON in this exact format:
     "activeEffects": [],
     "moneyChange": null,
     "currentLocation": "Location Name",
+    "mapMode": "pola",
+    "roadVariant": null,
     "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
 ${needsSystemEnabled ? '\nFor stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Use null if no needs changed.\n' : ''}
+For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
+For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
+
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour: quick interaction=0.25, short action/combat=0.5, exploration=0.75-1. Only resting (2-4) and sleeping (6-8) should exceed 1 hour.
 
 For stateChanges.journalEntries: provide 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant player decisions, discoveries, or combat outcomes. Each entry should be a self-contained 1-2 sentence summary. Do NOT log trivial details.
@@ -992,6 +997,7 @@ NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
+  const isFieldMove = playerAction && playerAction.startsWith('[FIELD_MOVE]');
   const isContinue = playerAction === '[CONTINUE]';
   const isWait = playerAction === '[WAIT]';
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
@@ -1088,6 +1094,21 @@ TRUCE RULES (MANDATORY — the player FORCED A TRUCE from a position of strength
   * Faction enemies → use "factionChanges" to reflect the power shift (fear, grudging respect, or escalation).
 - The player is in a DOMINANT position. Suggest actions that reflect this: demand information, interrogate survivors, loot fallen enemies, let them go with a warning, take prisoners, tend to wounds, press the advantage.
 - The truce may have future consequences — enemies may return with reinforcements, spread word of the player's prowess, or honor/betray the ceasefire.` : ''}`
+    : isFieldMove
+    ? `FIELD MAP MOVEMENT — ${playerAction}
+
+The player has been traveling on the overworld field map. The technical payload above describes their movement — distance covered, starting/ending position, biome, and any points of interest discovered.
+
+RULES FOR THIS SCENE (MANDATORY):
+- This is a TRAVEL scene. The character has been walking through the ${playerAction.match(/biome=(\w+)/)?.[1] || 'unknown'} biome on the field map.
+- Narrate what happens during the journey: encounters, observations, weather, discoveries, atmosphere.
+- If the player discovered POIs (buildings, shrines, portals, etc.), describe them in detail and offer interaction opportunities.
+- If the player moved very little or stayed idle (high idleSteps), narrate local ambiance or small events instead of travel.
+- Keep the narrative moderate in length (2-3 paragraphs) unless something significant occurs.
+- Include timeAdvance proportional to steps taken (15 steps ≈ 0.5 to 1 hour depending on terrain).
+- suggestedActions should reflect what the player can do at their current location: explore nearby structures, set up camp, forage, investigate, or continue moving.
+- You may introduce random encounters, NPC travelers, environmental hazards, or quest hooks based on the biome and distance covered.
+- Do NOT start combat unless the narrative strongly calls for it (random bandit ambush, wild beast encounter, etc.).`
     : playerHasDialogue
       ? `The player's ACTION: ${actionPart}
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
@@ -1259,6 +1280,8 @@ Respond with ONLY valid JSON in this exact format:
     "dialogueUpdate": "INCLUDE dialogueUpdate OBJECT WITH active:true AND npcs ARRAY WHEN DIALOGUE MODE STARTS — omit or set null when no dialogue mode",
     "knowledgeUpdates": null,
     "codexUpdates": [],
+    "mapMode": "pola",
+    "roadVariant": null,
     "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
@@ -1303,6 +1326,8 @@ For stateChanges.mapChanges: log environmental changes to locations (traps set, 
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
 For stateChanges.currentLocation: update whenever the player moves to a new location.
+For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
+For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
 ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 For sceneGrid: MANDATORY in every scene. Build a coherent 2D grid around the current action. width/height must be 8-16, tiles must exactly match those dimensions, and every row must be equal length. Use tile symbols: W=wall, F=floor, P=player start, E=exit/path, D=door, I=interactive point. Include entities with x/y coordinates for player and all visible NPCs/enemies. Keep entities on walkable tiles only.
@@ -1482,7 +1507,9 @@ IMPORTANT for characterSuggestion:
 - Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
-The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.`;
+The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.
+
+IMPORTANT for firstScene stateChanges (if included) or top-level initialMapMode: Include "mapMode" in the firstScene's context. The opening scene should establish the field-map mode: "trakt" (road/path), "pola" (open fields), "wnetrze" (interior), or "las" (forest). If the scene starts in a tavern, set "wnetrze"; if on a road, set "trakt"; if in a forest, set "las"; if in open countryside, set "pola".`;
 }
 
 const SANITIZE_PATTERNS = [
@@ -1566,6 +1593,16 @@ const IMAGE_STYLE_PROMPTS = {
     portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
     negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
   },
+  hiphop: {
+    prompt: 'urban hip-hop graffiti art style, bold spray-paint strokes, vibrant neon colors on concrete, street art murals, dripping paint, boombox culture aesthetic, thick outlines, stylized lettering accents',
+    portrait: 'hip-hop street art portrait, spray-paint on brick wall, bold outlines, vibrant neon colors, graffiti style, urban swagger, dripping paint details',
+    negative: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate',
+  },
+  crayon: {
+    prompt: 'child-like crayon drawing on white paper, waxy texture, uneven coloring, playful naive art style, visible paper grain, bright primary colors, simple bold shapes, charming imperfect lines',
+    portrait: 'crayon portrait drawing, waxy colorful strokes, child-like naive art style, uneven coloring, white paper background, playful and charming',
+    negative: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render',
+  },
 };
 
 const TONE_MODIFIERS = {
@@ -1573,6 +1610,21 @@ const TONE_MODIFIERS = {
   Epic: 'grand scale, dramatic golden-hour lighting, heroic composition, sweeping vista',
   Humorous: 'warm vibrant colors, whimsical playful details, lighthearted cheerful mood',
 };
+
+const SERIOUSNESS_MODIFIERS = {
+  silly: 'whimsical goofy scene, exaggerated cartoon-like proportions, playful absurd humor, comical expressions, slapstick energy',
+  lighthearted: 'lighthearted cheerful mood, playful atmosphere, warm inviting tones, slight whimsy',
+  serious: 'serious dignified atmosphere, realistic proportions, dramatic weight, solemn composed mood',
+  grave: 'gravely somber atmosphere, oppressive heavy mood, no levity, dark weighty tension, haunting stillness',
+};
+
+function getSeriousnessDirective(seriousness) {
+  const val = seriousness ?? 50;
+  if (val < 25) return SERIOUSNESS_MODIFIERS.silly;
+  if (val < 50) return SERIOUSNESS_MODIFIERS.lighthearted;
+  if (val < 75) return SERIOUSNESS_MODIFIERS.serious;
+  return SERIOUSNESS_MODIFIERS.grave;
+}
 
 function getImageStyleDirective(imageStyle, field = 'prompt') {
   const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
@@ -1584,12 +1636,16 @@ export function getImageStyleNegative(imageStyle) {
   return entry.negative || '';
 }
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null) {
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false) {
   const isGemini = provider === 'gemini';
 
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones, and dark atmospheric hues.' : '';
+  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
+  const portraitRefDirective = hasPortraitRef
+    ? ' The main character from the reference portrait image must appear in the scene, maintaining their visual identity, face, and likeness.'
+    : '';
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
   const sceneDesc = sanitizeForImageGen(rawDesc);
@@ -1600,17 +1656,45 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
     : '';
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false } = {}) {
+export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome) {
+  const parts = [];
+
+  if (previousNarrative) {
+    parts.push(`Previous scene: ${sanitizeForImageGen(previousNarrative.substring(0, 200))}`);
+  }
+
+  const skip = !playerAction || playerAction === '[CONTINUE]' || playerAction === '[WAIT]' || playerAction.startsWith('[IDLE_WORLD_EVENT');
+  if (!skip) {
+    parts.push(`The character now: ${sanitizeForImageGen(playerAction.substring(0, 150))}`);
+  }
+
+  if (diceOutcome) {
+    if (diceOutcome.criticalSuccess) {
+      parts.push('Outcome: spectacular, extraordinary success — triumphant, glorious moment.');
+    } else if (diceOutcome.criticalFailure) {
+      parts.push('Outcome: dramatic, catastrophic failure — disaster, chaos, everything goes wrong.');
+    } else if (diceOutcome.success) {
+      parts.push('Outcome: the action succeeds.');
+    } else {
+      parts.push('Outcome: the action fails, complications arise.');
+    }
+  }
+
+  return parts.join(' ');
+}
+
+export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
   const isGemini = provider === 'gemini';
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones.' : '';
+  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
   const itemName = sanitizeForImageGen(item?.name || 'Unknown item');
   const itemType = sanitizeForImageGen(item?.type || 'misc');
   const itemRarity = sanitizeForImageGen(item?.rarity || 'common');
@@ -1618,13 +1702,13 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const worldContext = sanitizeForImageGen(genre || 'Fantasy');
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false) {
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isGemini = provider === 'gemini';
@@ -1646,16 +1730,21 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
     : '';
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
+  const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} No text, no watermarks, no borders.`;
+  if (provider === 'gpt-image') {
+    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
+  }
+
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en', options = {}) {

@@ -16,7 +16,8 @@ import {
   canAdvanceTier,
 } from '../data/wfrp';
 
-const GameContext = createContext(null);
+const GameContext = (import.meta.hot?.data?.GameContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.GameContext = GameContext;
 const FORTUNE_REGEN_MS = 24 * 60 * 60 * 1000;
 const RESOLVE_REGEN_MS = 48 * 60 * 60 * 1000;
 
@@ -280,6 +281,22 @@ function gameReducer(state, action) {
       if (loaded.world && !loaded.world.codex) {
         loaded.world.codex = {};
       }
+      if (loaded.world && loaded.world.fieldMap) {
+        loaded.world.fieldMap = {
+          seed: 0,
+          chunkSize: 64,
+          chunks: {},
+          playerPos: { x: 32, y: 32 },
+          activeBiome: 'plains',
+          mapMode: 'pola',
+          roadVariant: null,
+          stepCounter: 0,
+          stepBuffer: [],
+          discoveredPoi: [],
+          interior: null,
+          ...loaded.world.fieldMap,
+        };
+      }
       if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
       if (loaded.character?.voiceId && loaded.character.name) {
         if (!loaded.characterVoiceMap) loaded.characterVoiceMap = {};
@@ -290,6 +307,52 @@ function gameReducer(state, action) {
           };
         }
       }
+
+      if (loaded.scenes?.length) {
+        const existingDmSceneIds = new Set(
+          (loaded.chatHistory || [])
+            .filter((m) => m.role === 'dm' && m.sceneId)
+            .map((m) => m.sceneId),
+        );
+        const reconstructed = [];
+        loaded.scenes.forEach((scene, idx) => {
+          if (!scene.id || existingDmSceneIds.has(scene.id)) return;
+          const ts = scene.timestamp || Date.now();
+          if (idx > 0 && scene.chosenAction) {
+            reconstructed.push({
+              id: `msg_reconstructed_${scene.id}_player`,
+              role: 'player',
+              content: scene.chosenAction,
+              timestamp: ts - 2,
+            });
+          }
+          if (scene.diceRoll) {
+            reconstructed.push({
+              id: `msg_reconstructed_${scene.id}_roll`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: `${scene.diceRoll.skill}: ${scene.diceRoll.roll} / ${scene.diceRoll.target || scene.diceRoll.dc} (SL ${scene.diceRoll.sl ?? 0})`,
+              diceData: scene.diceRoll,
+              timestamp: ts - 1,
+            });
+          }
+          reconstructed.push({
+            id: `msg_reconstructed_${scene.id}_dm`,
+            role: 'dm',
+            sceneId: scene.id,
+            content: scene.narrative || '',
+            scenePacing: scene.scenePacing || 'exploration',
+            dialogueSegments: scene.dialogueSegments || [],
+            soundEffect: scene.soundEffect || null,
+            timestamp: ts,
+          });
+        });
+        if (reconstructed.length > 0) {
+          loaded.chatHistory = [...(loaded.chatHistory || []), ...reconstructed]
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        }
+      }
+
       return loaded;
     }
 
@@ -1450,6 +1513,26 @@ function gameReducer(state, action) {
         next.world = { ...next.world, knowledgeBase: kb };
       }
 
+      if (changes.mapMode && next.world?.fieldMap) {
+        const fm = next.world.fieldMap;
+        const newMode = changes.mapMode;
+        const newVariant = newMode === 'trakt' ? (changes.roadVariant || null) : null;
+        if (fm.mapMode !== newMode || fm.roadVariant !== newVariant) {
+          next.world = {
+            ...next.world,
+            fieldMap: {
+              ...fm,
+              mapMode: newMode,
+              roadVariant: newVariant,
+              chunks: {},
+              stepCounter: 0,
+              stepBuffer: [],
+              discoveredPoi: [],
+            },
+          };
+        }
+      }
+
       return next;
     }
 
@@ -1613,6 +1696,145 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'INIT_FIELD_MAP': {
+      const { seed, chunkSize, playerPos, activeBiome, mapMode, roadVariant } = action.payload;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            seed: seed || Date.now(),
+            chunkSize: chunkSize || 64,
+            chunks: {},
+            playerPos: playerPos || { x: 32, y: 32 },
+            activeBiome: activeBiome || 'plains',
+            mapMode: mapMode || 'pola',
+            roadVariant: roadVariant || null,
+            stepCounter: 0,
+            stepBuffer: [],
+            discoveredPoi: [],
+            interior: null,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_CHUNKS': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            chunks: { ...state.world.fieldMap.chunks, ...action.payload },
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_MOVE_PLAYER': {
+      if (!state.world?.fieldMap) return state;
+      const fm = state.world.fieldMap;
+      const { x, y, tile, biome } = action.payload;
+      const nextCounter = fm.stepCounter + 1;
+      const nextBuffer = [...fm.stepBuffer, { x, y, tile, biome, ts: Date.now() }];
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...fm,
+            playerPos: { x, y },
+            stepCounter: nextCounter,
+            stepBuffer: nextBuffer,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_RESET_STEPS': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            stepCounter: 0,
+            stepBuffer: [],
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_DISCOVER_POI': {
+      if (!state.world?.fieldMap) return state;
+      const existing = state.world.fieldMap.discoveredPoi;
+      const poi = action.payload;
+      if (existing.some((p) => p.x === poi.x && p.y === poi.y)) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            discoveredPoi: [...existing, poi],
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_BIOME': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            activeBiome: action.payload,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_MODE': {
+      if (!state.world?.fieldMap) return state;
+      const { mapMode, roadVariant } = action.payload;
+      const fm = state.world.fieldMap;
+      if (fm.mapMode === mapMode && fm.roadVariant === (roadVariant || null)) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...fm,
+            mapMode: mapMode || fm.mapMode,
+            roadVariant: mapMode === 'trakt' ? (roadVariant || null) : null,
+            chunks: {},
+            stepCounter: 0,
+            stepBuffer: [],
+            discoveredPoi: [],
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_INTERIOR': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            interior: action.payload,
+          },
+        },
+      };
+    }
+
     default:
       return state;
   }
@@ -1621,35 +1843,50 @@ function gameReducer(state, action) {
 export function GameProvider({ children }) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const stateRef = useRef(state);
+  const saveTimerRef = useRef(null);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   const autoSave = useCallback(() => {
-    const current = stateRef.current;
-    if (current.campaign) {
-      try {
-        const result = storage.saveCampaign(current);
-        if (result?.pruned) {
-          console.warn('[GameContext] Save required pruning – old scene images were removed to free space');
-        }
-        if (result && !result.saved) {
-          console.error('[GameContext] Campaign could not be saved – localStorage quota full');
-        }
-      } catch (err) {
-        console.error('[GameContext] Unexpected save error:', err);
-      }
-
-      if (current.character) {
-        const charCopy = { ...current.character };
-        storage.saveCharacter(charCopy).then(() => {
-          if (!current.character.localId && charCopy.localId) {
-            dispatch({ type: 'SET_CHARACTER_LOCAL_ID', payload: charCopy.localId });
-          }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      const current = stateRef.current;
+      if (current.campaign) {
+        storage.saveCampaign(current).catch((err) => {
+          console.error('[GameContext] Save error:', err);
         });
+
+        if (current.character) {
+          const charCopy = { ...current.character };
+          storage.saveCharacter(charCopy).then(() => {
+            if (!current.character.localId && charCopy.localId) {
+              dispatch({ type: 'SET_CHARACTER_LOCAL_ID', payload: charCopy.localId });
+            }
+          });
+        }
       }
-    }
+    }, 1500);
+  }, []);
+
+  useEffect(() => {
+    const flushSave = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        const current = stateRef.current;
+        if (current.campaign) {
+          storage.saveCampaign(current).catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('beforeunload', flushSave);
+    return () => {
+      window.removeEventListener('beforeunload', flushSave);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
   const value = {

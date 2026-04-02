@@ -9,7 +9,7 @@ import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import DiceRoller from '../../effects/DiceRoller';
 import SceneCanvas from './SceneCanvas';
-import SceneGridMap from './SceneGridMap';
+import FieldMapCanvas from './FieldMapCanvas';
 import { translateSkill } from '../../utils/wfrpTranslate';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
@@ -337,6 +337,7 @@ export default function ScenePanel({
   multiplayerPlayers = [],
   interactiveMap = false,
   onSceneGridChange,
+  onFieldTurnReady,
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
@@ -601,7 +602,7 @@ export default function ScenePanel({
           </div>
         </>
       )}
-      {/* Scene background: 3D, AI image, tactical map, canvas 2D, or placeholder */}
+      {/* Scene background: 3D, AI image, field map, canvas 2D, or placeholder */}
       {(settings.sceneVisualization || 'image') === '3d' ? (
         <Suspense fallback={
           <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
@@ -617,28 +618,19 @@ export default function ScenePanel({
       ) : (settings.sceneVisualization || 'image') === 'canvas' ? (
         <SceneCanvas scene={scene} />
       ) : (settings.sceneVisualization || 'image') === 'map' ? (
-        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center p-4">
-          <SceneGridMap
-            sceneGrid={scene?.sceneGrid}
-            world={world || state.world}
-            characterName={characterName || state.character?.name}
-            multiplayerPlayers={multiplayerPlayers}
-            interactive={interactiveMap}
-            controlledEntityName={characterName || state.character?.name}
-            onSceneGridChange={(nextGrid) => {
-              if (!scene?.id || !nextGrid || !onSceneGridChange) return;
-              onSceneGridChange(scene.id, nextGrid);
-            }}
-          />
-        </div>
-      ) : (settings.sceneVisualization || 'image') === 'image' && scene?.sceneGrid ? (
-        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest flex items-center justify-center p-4">
-          <SceneGridMap
-            sceneGrid={scene.sceneGrid}
-            world={world || state.world}
-            characterName={characterName || state.character?.name}
-            multiplayerPlayers={multiplayerPlayers}
-          />
+        <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest">
+          {state.world?.fieldMap ? (
+            <FieldMapCanvas
+              onFieldTurnReady={onFieldTurnReady}
+              scene={scene}
+              world={world}
+              characterName={characterName}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <LoadingSpinner size="md" text={t('common.loading')} />
+            </div>
+          )}
         </div>
       ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc) ? (
         <>

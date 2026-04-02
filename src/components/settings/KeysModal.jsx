@@ -215,6 +215,7 @@ export default function KeysModal({ onClose }) {
                     <div className="space-y-3 mb-8">
                       {[
                         { id: 'dalle', icon: 'auto_awesome', label: t('settings.dalleLabel') },
+                        { id: 'gpt-image', icon: 'brush', label: t('settings.gptImageLabel') },
                         { id: 'stability', icon: 'speed', label: t('settings.stabilityLabel') },
                         { id: 'gemini', icon: 'stars', label: t('settings.geminiLabel') },
                       ].map((opt) => (

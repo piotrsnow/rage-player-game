@@ -7,6 +7,7 @@ function getSettingsBackendUrl() {
     const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return '';
     const s = JSON.parse(raw);
+    if (!s?.useBackend) return '';
     const u = s?.backendUrl;
     return typeof u === 'string' ? u.replace(/\/+$/, '') : '';
   } catch {
@@ -14,7 +15,7 @@ function getSettingsBackendUrl() {
   }
 }
 
-let _baseUrl = '';
+let _baseUrl = getSettingsBackendUrl();
 let _token = '';
 
 export const apiClient = {

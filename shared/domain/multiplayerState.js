@@ -401,6 +401,23 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
     });
   }
 
+  if (stateChanges.mapMode && updatedWorld.fieldMap) {
+    const fm = updatedWorld.fieldMap;
+    const newMode = stateChanges.mapMode;
+    const newVariant = newMode === 'trakt' ? (stateChanges.roadVariant || null) : null;
+    if (fm.mapMode !== newMode || fm.roadVariant !== newVariant) {
+      updatedWorld.fieldMap = {
+        ...fm,
+        mapMode: newMode,
+        roadVariant: newVariant,
+        chunks: {},
+        stepCounter: 0,
+        stepBuffer: [],
+        discoveredPoi: [],
+      };
+    }
+  }
+
   return {
     characters: updatedCharacters,
     world: updatedWorld,

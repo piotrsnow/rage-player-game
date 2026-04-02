@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
@@ -6,6 +6,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useAI } from '../../hooks/useAI';
 import { apiClient } from '../../services/apiClient';
+import { storage } from '../../services/storage';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
@@ -18,6 +19,8 @@ export default function Sidebar() {
   const { generateScene } = useAI();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
   const [activeNeedKey, setActiveNeedKey] = useState(null);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const saveTimeoutRef = useRef(null);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const hasActiveGame = !!state.campaign || isMultiplayer;
@@ -76,6 +79,20 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
       setActiveNeedKey(null);
     }
   };
+
+  const handleSaveCampaign = useCallback(async () => {
+    if (saveStatus === 'saving' || !state.campaign) return;
+    setSaveStatus('saving');
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    try {
+      await storage.saveCampaign(state);
+      setSaveStatus('saved');
+      saveTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (err) {
+      console.error('[Sidebar] Manual save error:', err);
+      setSaveStatus('idle');
+    }
+  }, [saveStatus, state]);
 
   const modalActions = {
     '/character': openCharacterSheet,
@@ -169,6 +186,32 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
         })}
       </nav>
 
+      {hasActiveGame && !isMultiplayer && (
+        <div className="px-4 pb-4 pt-2">
+          <button
+            onClick={handleSaveCampaign}
+            disabled={saveStatus === 'saving'}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-sm text-xs font-label uppercase tracking-widest transition-all duration-300 border ${
+              saveStatus === 'saved'
+                ? 'bg-primary/20 border-primary/40 text-primary shadow-[0_0_12px_rgba(197,154,255,0.15)]'
+                : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:text-primary hover:border-primary/30 hover:bg-primary/10'
+            }`}
+          >
+            {saveStatus === 'saving' ? (
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+            ) : saveStatus === 'saved' ? (
+              <span className="material-symbols-outlined text-sm">check_circle</span>
+            ) : (
+              <span className="material-symbols-outlined text-sm">save</span>
+            )}
+            {saveStatus === 'saving'
+              ? t('nav.saving')
+              : saveStatus === 'saved'
+                ? t('nav.campaignSaved')
+                : t('nav.saveCampaign')}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import SceneGenerationProgress from './SceneGenerationProgress';
 
 const CHAR_INTERVAL_MS = 35;
 const TYPING_SFX_COUNT = 3;
@@ -14,6 +15,9 @@ export default function TypewriterActionOverlay({
   typingSpeedMultiplier = 1,
   holdOpen = false,
   holdingDurationMs = 1500,
+  showLoader = false,
+  loaderStartTime,
+  loaderEstimatedMs,
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
@@ -38,6 +42,16 @@ export default function TypewriterActionOverlay({
         }
       }
       offset += line.length + 1;
+    }
+
+    const quoteRe = /[„\u201C«"]([^„\u201C«"\u201D"»]+)[\u201D"»]/g;
+    let qm;
+    while ((qm = quoteRe.exec(text)) !== null) {
+      const start = qm.index;
+      const end = start + qm[0].length;
+      for (let i = start; i < end; i += 1) {
+        if (marks[i] === 0) marks[i] = 1;
+      }
     }
 
     return marks;
@@ -104,11 +118,13 @@ export default function TypewriterActionOverlay({
     <div
       className={`fixed inset-0 z-[70] flex items-center justify-center ${
         phase === 'fading' ? 'animate-typewriter-fade-out' : ''
-      }`}
+      } ${phase === 'holding' ? 'cursor-pointer' : ''}`}
       style={{
         background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
         backdropFilter: 'blur(6px)',
+        paddingBottom: '160px',
       }}
+      onClick={() => { if (phase === 'holding') setPhase('fading'); }}
     >
       {/* Decorative glow behind the panel */}
       <div
@@ -159,7 +175,7 @@ export default function TypewriterActionOverlay({
                   color: charHighlightKinds[i] === 2
                     ? 'rgba(255, 210, 150, 0.98)'
                     : charHighlightKinds[i] === 1
-                      ? 'rgba(190, 236, 255, 0.96)'
+                      ? 'rgba(255, 190, 210, 0.96)'
                       : 'rgba(232, 210, 255, 0.9)',
                   textShadow: charHighlightKinds[i] !== 0
                     ? '0 0 8px rgba(170, 120, 255, 0.25)'
@@ -189,6 +205,13 @@ export default function TypewriterActionOverlay({
           <div className="w-1.5 h-1.5 rounded-full bg-primary/30" />
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
         </div>
+
+        {showLoader && (
+          <SceneGenerationProgress
+            startTime={loaderStartTime}
+            estimatedMs={loaderEstimatedMs}
+          />
+        )}
       </div>
     </div>
   );

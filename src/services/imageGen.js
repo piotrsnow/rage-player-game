@@ -66,6 +66,67 @@ async function generateWithDalle(prompt, apiKey) {
   return b64 ? `data:image/png;base64,${b64}` : null;
 }
 
+async function generateWithGptImage(prompt, apiKey) {
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1.5',
+      prompt,
+      n: 1,
+      size: '1536x1024',
+      quality: 'medium',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `GPT Image API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0]?.b64_json;
+  return b64 ? `data:image/png;base64,${b64}` : null;
+}
+
+async function generateSceneWithGptImageEdits(prompt, portraitUrl, apiKey) {
+  const portraitResp = await fetch(portraitUrl);
+  if (!portraitResp.ok) throw new Error('Failed to fetch portrait for scene reference');
+  const portraitBuf = await portraitResp.arrayBuffer();
+  const b64Portrait = btoa(String.fromCharCode(...new Uint8Array(portraitBuf)));
+  const mime = portraitUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png';
+  const dataUrl = `data:${mime};base64,${b64Portrait}`;
+
+  const response = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1.5',
+      images: [{ image_url: dataUrl }],
+      prompt,
+      n: 1,
+      size: '1536x1024',
+      quality: 'medium',
+      input_fidelity: 'low',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `GPT Image edit API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0]?.b64_json;
+  return b64 ? `data:image/png;base64,${b64}` : null;
+}
+
 async function generateWithStability(prompt, apiKey, negativePrompt) {
   const formData = new FormData();
   formData.append('prompt', prompt);
@@ -198,7 +259,7 @@ async function generatePortraitWithGeminiImg2Img(imageBlob, prompt, apiKey) {
 }
 
 async function generateViaProxy(prompt, provider, campaignId, options = {}) {
-  const { forceNew = false } = options;
+  const { forceNew = false, portraitUrl = null } = options;
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
@@ -211,13 +272,21 @@ async function generateViaProxy(prompt, provider, campaignId, options = {}) {
     const data = await apiClient.post('/proxy/gemini/generate', body);
     return resolveMediaUrl(data.url);
   }
+  if (provider === 'gpt-image') {
+    if (portraitUrl) {
+      const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5' });
+      return resolveMediaUrl(data.url);
+    }
+    const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5' });
+    return resolveMediaUrl(data.url);
+  }
   const data = await apiClient.post('/proxy/openai/images', body);
   return resolveMediaUrl(data.url);
 }
 
 function resolveMediaUrl(url) {
   if (!url) return null;
-  return url;
+  return apiClient.resolveMediaUrl(url);
 }
 
 async function generatePortraitWithDalle(prompt, apiKey) {
@@ -240,6 +309,32 @@ async function generatePortraitWithDalle(prompt, apiKey) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error?.message || `DALL-E API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0]?.b64_json;
+  return b64 ? `data:image/png;base64,${b64}` : null;
+}
+
+async function generatePortraitWithGptImage(prompt, apiKey) {
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1.5',
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'medium',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `GPT Image API error: ${response.status}`);
   }
 
   const data = await response.json();
@@ -294,6 +389,53 @@ async function generatePortraitViaProxy(imageBlob, prompt, strength) {
   return resolveMediaUrl(data.url);
 }
 
+async function generatePortraitWithGptImageEdits(imageBlob, prompt, apiKey) {
+  const buf = await imageBlob.arrayBuffer();
+  const b64Image = btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const dataUrl = `data:image/jpeg;base64,${b64Image}`;
+
+  const response = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-image-1.5',
+      images: [{ image_url: dataUrl }],
+      prompt,
+      n: 1,
+      size: '1024x1024',
+      quality: 'medium',
+      input_fidelity: 'high',
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `GPT Image edit API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0]?.b64_json;
+  return b64 ? `data:image/png;base64,${b64}` : null;
+}
+
+async function generatePortraitViaProxyGptImageEdits(imageBlob, prompt) {
+  const formData = new FormData();
+  formData.append('image', imageBlob, 'photo.jpg');
+  formData.append('prompt', prompt);
+  formData.append('size', '1024x1024');
+  formData.append('quality', 'medium');
+  formData.append('inputFidelity', 'high');
+
+  const data = await apiClient.request('/proxy/openai/portrait', {
+    method: 'POST',
+    body: formData,
+  });
+  return resolveMediaUrl(data.url);
+}
+
 async function generatePortraitViaProxyDalle(prompt) {
   const data = await apiClient.post('/proxy/openai/images', {
     prompt,
@@ -320,11 +462,12 @@ async function generatePortraitViaProxyGeminiImg2Img(imageBlob, prompt) {
 }
 
 export const imageService = {
-  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}) {
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender);
+  async generateSceneImage(narrative, genre, tone, apiKey, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
+    const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait);
 
     if (apiClient.isConnected()) {
-      return generateViaProxy(prompt, provider, campaignId, options);
+      return generateViaProxy(prompt, provider, campaignId, { ...options, portraitUrl: hasPortrait ? portraitUrl : null });
     }
 
     if (!apiKey) {
@@ -340,12 +483,20 @@ export const imageService = {
       const imageUrl = await generateWithGemini(prompt, apiKey);
       return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
     }
+    if (provider === 'gpt-image') {
+      if (hasPortrait) {
+        const imageUrl = await generateSceneWithGptImageEdits(prompt, portraitUrl, apiKey);
+        return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
+      }
+      const imageUrl = await generateWithGptImage(prompt, apiKey);
+      return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
+    }
     const imageUrl = await generateWithDalle(prompt, apiKey);
     return resizeImageDataUrl(imageUrl, getGeneratedImageScale(provider));
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false) {
-    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, apiKey, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null) {
+    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness);
 
     if (provider === 'dalle') {
       if (apiClient.isConnected()) {
@@ -355,6 +506,23 @@ export const imageService = {
         throw new Error('OpenAI API key required for portrait generation.');
       }
       return generatePortraitWithDalle(prompt, apiKey);
+    }
+
+    if (provider === 'gpt-image') {
+      if (apiClient.isConnected()) {
+        if (imageBlob) {
+          return generatePortraitViaProxyGptImageEdits(imageBlob, prompt);
+        }
+        const data = await apiClient.post('/proxy/openai/images', { prompt, model: 'gpt-image-1.5', size: '1024x1024' });
+        return resolveMediaUrl(data.url);
+      }
+      if (!apiKey) {
+        throw new Error('OpenAI API key required for portrait generation.');
+      }
+      if (imageBlob) {
+        return generatePortraitWithGptImageEdits(imageBlob, prompt, apiKey);
+      }
+      return generatePortraitWithGptImage(prompt, apiKey);
     }
 
     if (provider === 'gemini') {
@@ -383,7 +551,7 @@ export const imageService = {
     return generatePortraitWithStability(imageBlob, prompt, apiKey, strength);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, campaignId = null } = {}) {
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null } = {}) {
     if (!apiClient.isConnected()) {
       throw new Error('Backend connection required for item image generation.');
     }
@@ -393,6 +561,7 @@ export const imageService = {
       provider,
       imageStyle,
       darkPalette,
+      seriousness,
     });
     return generateViaProxy(prompt, provider, campaignId);
   },
