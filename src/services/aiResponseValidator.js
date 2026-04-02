@@ -256,7 +256,7 @@ const StateChangesSchema = z.object({
     active: z.boolean(),
     enemies: z.array(z.object({
       name: z.string(),
-      characteristics: z.object({}).passthrough(),
+      characteristics: z.object({}).passthrough().optional().default({}),
       wounds: z.number().optional(),
       maxWounds: z.number().optional(),
       skills: z.object({}).passthrough().optional().default({}),

@@ -14,6 +14,7 @@ import {
   buildCodexEmbeddingText,
 } from './embeddingService.js';
 import { writeEmbedding } from './vectorSearchService.js';
+import { findClosestBestiaryEntry } from '../data/wfrpEquipment.js';
 
 const MAX_TOOL_ROUNDS = 3;
 
@@ -235,7 +236,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. "I examine the d
 - removeItems: only items in character's inventory.
 - moneyChange: {gold,silver,copper} deltas for purchases (negative) and income (positive). Engine validates.
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with SL: crit success +3-5, marginal success +1-2, marginal fail -1-2, crit fail -5-8.
-- combatUpdate: {active:true, enemies:[{name, characteristics:{ws,bs,s,t,i,ag,dex,int,wp,fel}, wounds, maxWounds, skills:{}, traits:[], armour:{head,body,arms,legs}, weapons:[]}], reason}. Include ONLY when combat starts. BEFORE creating enemies: call get_bestiary to get stat templates and get_equipment_catalog for valid weapon/armor names. Weapons[] and armour{} MUST use exact names from the catalog.
+- combatUpdate: {active:true, enemies:[{name}], reason}. Include ONLY when combat starts. The game engine automatically assigns balanced stat blocks based on enemy names — you only need to provide the name.
 - dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
 - codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
 - knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
@@ -267,9 +268,9 @@ ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/
 - get_quest_details(quest_name): quest info, objectives, rewards, progress
 - get_location_history(location_name): location details, past visits, events
 - get_codex_entry(topic): discovered lore, artifacts, factions, world knowledge
-- get_equipment_catalog(category): valid weapons/armor with stats. MUST call before creating combatUpdate or giving items. category: "weapons", "armor", or "all"
-- get_bestiary(query): stat block templates for common enemies. MUST call before creating combatUpdate — use these stats instead of inventing. query: enemy name, type, or threat level
-IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems MUST exactly match names from get_equipment_catalog. Call it before any combat or item reward scene.`,
+- get_equipment_catalog(category): valid weapons/armor with stats. MUST call before giving items. category: "weapons", "armor", or "all"
+- get_bestiary(query): stat block templates for common enemies. query: enemy name, type, or threat level. Note: the engine fills in enemy stats automatically, but you can call this for narrative reference.
+IMPORTANT: Weapon/armor names in stateChanges.newItems MUST exactly match names from get_equipment_catalog. Call it before any item reward scene.`,
   );
 
   // ── RESPONSE FORMAT ──
@@ -550,6 +551,24 @@ export async function generateScene(campaignId, playerAction, {
     sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
   } else {
     sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
+  }
+
+  // 4b. Fill in enemy stats from bestiary (AI provides name, engine provides stats)
+  if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
+    sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
+      const match = findClosestBestiaryEntry(enemy.name);
+      if (!match) return enemy;
+      return {
+        name: enemy.name,
+        characteristics: match.characteristics,
+        wounds: match.maxWounds,
+        maxWounds: match.maxWounds,
+        skills: match.skills,
+        traits: match.traits,
+        armour: match.armour,
+        weapons: match.weapons,
+      };
+    });
   }
 
   // 5. Save scene to database

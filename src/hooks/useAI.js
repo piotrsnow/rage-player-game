@@ -22,6 +22,7 @@ import { hasNamedSpeaker } from '../services/dialogueSegments';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 import { resolveMechanics } from '../services/mechanics/index';
 import { calculateNextMomentum } from '../services/mechanics/momentumTracker';
+import { gameData } from '../services/gameDataService';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
@@ -719,19 +720,24 @@ export function useAI() {
               return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
             });
             const fallbackEnemyName = fallbackNpc?.name || t('gameplay.combatFallbackEnemyName', 'Hostile Foe');
+            const bestiaryMatch = gameData.findClosestBestiaryEntry(fallbackEnemyName);
+            const fallbackStats = bestiaryMatch || {
+              characteristics: { ws: 30, bs: 30, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 20 },
+              maxWounds: 10, skills: { 'Melee (Basic)': 5 }, traits: [], armour: { body: 1 }, weapons: ['Hand Weapon'],
+            };
             result.stateChanges = {
               ...(result.stateChanges || {}),
               combatUpdate: {
                 active: true,
                 enemies: [{
                   name: fallbackEnemyName,
-                  characteristics: { ws: 35, bs: 25, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 15 },
-                  wounds: 10,
-                  maxWounds: 10,
-                  skills: { 'Melee (Basic)': 5 },
-                  traits: [],
-                  armour: { body: 0 },
-                  weapons: ['Hand Weapon'],
+                  characteristics: fallbackStats.characteristics,
+                  wounds: fallbackStats.maxWounds,
+                  maxWounds: fallbackStats.maxWounds,
+                  skills: fallbackStats.skills,
+                  traits: fallbackStats.traits || [],
+                  armour: fallbackStats.armour || { body: 0 },
+                  weapons: fallbackStats.weapons || ['Hand Weapon'],
                 }],
                 reason: 'Combat intent fallback (AI omitted combatUpdate)',
               },
@@ -941,6 +947,9 @@ export function useAI() {
             ...(resolved.restRecovery.woundsChange !== undefined
               ? { woundsChange: resolved.restRecovery.woundsChange }
               : {}),
+            ...(resolved.restRecovery.fortuneChange !== undefined
+              ? { fortuneChange: resolved.restRecovery.fortuneChange }
+              : {}),
             ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
           };
         }
@@ -954,6 +963,24 @@ export function useAI() {
             playerName: activeChar?.name || state.character?.name || '',
           }
         );
+
+        // Fill in enemy stats from bestiary (AI provides name, engine provides stats)
+        if (result.stateChanges?.combatUpdate?.enemies?.length && gameData.isLoaded) {
+          result.stateChanges.combatUpdate.enemies = result.stateChanges.combatUpdate.enemies.map((enemy) => {
+            const match = gameData.findClosestBestiaryEntry(enemy.name);
+            if (!match) return enemy;
+            return {
+              name: enemy.name,
+              characteristics: match.characteristics,
+              wounds: match.maxWounds,
+              maxWounds: match.maxWounds,
+              skills: match.skills,
+              traits: match.traits,
+              armour: match.armour,
+              weapons: match.weapons,
+            };
+          });
+        }
 
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);

@@ -1,5 +1,8 @@
+import { NEED_KEYWORD_HINTS } from '../autoPlayer.js';
+
 const HEAL_RATE_PER_HOUR = 0.10;
 const NEEDS_KEYS = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
+const REST_KEYWORDS = NEED_KEYWORD_HINTS.rest;
 
 /**
  * Check if the player action is a rest/sleep command.
@@ -16,7 +19,7 @@ export function isRestAction(playerAction, t) {
     if (localizedRestAction && normalized === localizedRestAction) return true;
   }
 
-  return normalized.includes('rest') || normalized.includes('odpoc');
+  return REST_KEYWORDS.some((kw) => normalized.includes(kw));
 }
 
 /**
@@ -39,11 +42,18 @@ export function calculateRestRecovery(character, hoursSlept = 0.5) {
   const needsChanges = {};
   for (const key of NEEDS_KEYS) {
     if (typeof needs[key] !== 'number') continue;
-    needsChanges[key] = 100;
+    const delta = 100 - needs[key];
+    if (delta > 0) needsChanges[key] = delta;
   }
+
+  // Fortune resets to Fate value after rest
+  const fate = character.fate ?? 0;
+  const fortune = character.fortune ?? 0;
+  const fortuneChange = fate > fortune ? fate - fortune : undefined;
 
   return {
     woundsChange: healed > 0 ? healed : undefined,
     needsChanges,
+    fortuneChange,
   };
 }

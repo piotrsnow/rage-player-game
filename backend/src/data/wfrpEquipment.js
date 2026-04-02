@@ -233,6 +233,33 @@ export function formatWeaponCatalog(category = 'all') {
   return lines.join('\n');
 }
 
+/**
+ * Find the closest bestiary entry for an enemy name.
+ * Returns the raw bestiary object (with .name attached) or null.
+ * Matching order: exact name → partial name → threat-level fallback (Bandit).
+ */
+export function findClosestBestiaryEntry(enemyName) {
+  if (!enemyName) return null;
+  const q = enemyName.toLowerCase();
+  const entries = Object.entries(BESTIARY);
+
+  // Exact match
+  for (const [name, entry] of entries) {
+    if (name.toLowerCase() === q) return { ...entry, name };
+  }
+
+  // Partial match (enemy name contains bestiary name or vice versa)
+  for (const [name, entry] of entries) {
+    const bName = name.toLowerCase();
+    if (q.includes(bName) || bName.includes(q)) return { ...entry, name };
+  }
+
+  // Fallback: use Bandit as generic humanoid template
+  if (BESTIARY['Bandit']) return { ...BESTIARY['Bandit'], name: 'Bandit' };
+
+  return null;
+}
+
 export function searchBestiary(query) {
   const q = query.toLowerCase();
   const matches = Object.entries(BESTIARY).filter(([name, entry]) => {

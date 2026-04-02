@@ -716,14 +716,10 @@ BACKGROUND MUSIC:
 Include a "musicPrompt" field with a short English description of the ideal instrumental background music for the scene (e.g. "tense orchestral strings with low brass, dark dungeon atmosphere" or "peaceful acoustic guitar with birdsong, sunny meadow"). Focus on instruments, tempo, and emotional tone. Keep it under 200 characters. Use null only if the scene should be silent.
 
 ${(() => {
-  const hasCombat = !!gameState?.combat;
   const recentJournal = (world?.eventHistory || []).slice(-1)[0] || '';
   const combatJustEnded = /^Combat:\s*(Victory|Defeat)\b/.test(recentJournal);
-  if (combatJustEnded) return 'BESTIARY: Combat just ended — do not start another fight immediately. Bestiary available on demand for future encounters.\n';
-  const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
-  const combatLikely = hasCombat || /\b(attack|fight|combat|ambush|hostile|enemy|enemies|bandits?|creatures?|wolves|monsters?)\b/.test(recentNarrative);
-  if (!combatLikely) return 'BESTIARY: Available on demand — when combat starts, creature stats will be referenced automatically.\n';
-  return `BESTIARY REFERENCE (use these stats for combat encounters instead of inventing stats):\n${gameData.formatBestiaryForPrompt(Object.values(gameData.bestiary).slice(0, 15))}\nUse the stats above for known creature types. For creatures not listed, create comparable stats.\n`;
+  if (combatJustEnded) return 'Combat just ended — do not start another fight immediately.\n';
+  return 'ENEMY STATS: The game engine automatically assigns balanced stat blocks to enemies in combatUpdate based on their name. You only need to provide the enemy name, wounds estimate, and weapon/armor names. The engine handles characteristics, skills, and traits.\n';
 })()}
 ${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
 ${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
@@ -836,7 +832,7 @@ Include combatUpdate when the narrative describes the beginning of a hostile com
 
 PLAYER-INITIATED COMBAT (MANDATORY):
 When the player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation (e.g. "atakuję", "rozpoczynam walkę", "wyzywam go na pojedynek", "rzucam się na niego", "I attack", "I start a fight"), you MUST include "combatUpdate" in stateChanges with appropriate enemies:
-- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY if matching, or create contextually appropriate stats (a town guard is tougher than a beggar; a noble's bodyguard is tougher than a town guard).
+- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY — pick the closest match and adapt (a town guard → Bandit with +5 WS; a noble's bodyguard → Chaos Warrior scaled down). NEVER invent stats from scratch.
 - If the player attacks a named NPC, that NPC becomes an enemy combatant. Their allies/guards may also join the fight.
 - The narrative should briefly describe the moment of escalation — the player draws a weapon, the NPC's eyes widen, bystanders scatter — then combat begins via combatUpdate.
 - If there is genuinely no one to fight (empty location, no NPCs, no creatures), narrate that there is no target and do NOT include combatUpdate.
@@ -1109,26 +1105,26 @@ The player pressed the "Initiate Combat" button. You MUST analyze ALL NPCs prese
 - NPCs with attitude "hostile" or negative disposition MUST become enemies.
 - NPCs with attitude "neutral" or "friendly" should generally NOT become enemies unless the narrative context demands it (e.g. they are secretly working with the hostile NPCs, or story logic dictates they would join the fight).
 - If there are no hostile NPCs present, introduce contextually appropriate enemies (bandits ambush, creatures emerge, etc.) or narrate that there is no immediate threat and do NOT include combatUpdate.
-- You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array with full stat blocks.
+- You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array. The game engine will fill in stats automatically based on enemy names.
 - For any NPC that becomes an enemy, also include them in stateChanges.npcs with action "update" and attitude "hostile".
 Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`;
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "Bandit"}], "reason": "why combat started"}\n`;
   } else if (attackedNpcName) {
     combatReminder = `\n\nPLAYER ATTACKS SPECIFIC NPC — MANDATORY RESPONSE REQUIREMENT:
-The player is deliberately attacking "${attackedNpcName}". This NPC MUST be included in combatUpdate.enemies with appropriate stat blocks, regardless of their current attitude (even if friendly or neutral).
+The player is deliberately attacking "${attackedNpcName}". This NPC MUST be included in combatUpdate.enemies, regardless of their current attitude (even if friendly or neutral).
 - "${attackedNpcName}" becomes hostile. Include them in stateChanges.npcs with action "update" and attitude "hostile".
 - Check if "${attackedNpcName}" has allies, guards, or companions present in the scene. If so, those allies should also join as enemies in combatUpdate (and also be set to hostile in stateChanges.npcs).
 - Other NPCs who are NOT allied with the target should react appropriately: bystanders flee, authorities may intervene later, witnesses remember.
 - The narrative should describe the moment of aggression — the player strikes first, the target's shock or readiness, the chaos that ensues.
-- You MUST include "combatUpdate" in stateChanges with "active": true and the enemies array.
+- You MUST include "combatUpdate" in stateChanges with "active": true and the enemies array. The game engine will fill in stats automatically.
 Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "${attackedNpcName}", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 12, "maxWounds": 12, "skills": {}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "Player attacked ${attackedNpcName}"}\n`;
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "${attackedNpcName}"}], "reason": "Player attacked ${attackedNpcName}"}\n`;
   } else if (combatIntentDetected) {
     combatReminder = `\n\nCOMBAT INTENT DETECTED — MANDATORY RESPONSE REQUIREMENT:
-The player is explicitly initiating combat. You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array containing stat blocks for the opponents.
-Use NPCs present in the scene as enemies. If no specific NPCs are present, use contextually appropriate opponents (tavern patrons, guards, etc.).
+The player is explicitly initiating combat. You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array.
+Use NPCs present in the scene as enemies. If no specific NPCs are present, use contextually appropriate opponents (bandits, guards, etc.).
 Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "Tavern Thug", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5}, "traits": [], "armour": {"body": 0}, "weapons": ["Hand Weapon"]}], "reason": "why combat started"}\n`;
+Example: "combatUpdate": {"active": true, "enemies": [{"name": "Bandit"}], "reason": "why combat started"}\n`;
   }
 
   const isPostDialogue = playerAction && playerAction.startsWith('[Dialogue ended:');
