@@ -56,9 +56,9 @@ function RewardBadge({ reward, compact = false, t }) {
   );
 }
 
-export default function QuestLog({ active = [], completed = [], npcs = [] }) {
+export default function QuestLog({ active = [], completed = [], npcs = [], onVerifyObjective = null }) {
   const { t } = useTranslation();
-  const { verifyQuestObjective } = useAI();
+  const { verifyQuestObjective: verifyQuestObjectiveSolo } = useAI();
   const [selectedId, setSelectedId] = useState(null);
   const [verifyingId, setVerifyingId] = useState(null);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -327,7 +327,8 @@ export default function QuestLog({ active = [], completed = [], npcs = [] }) {
                                 setVerifyingId(obj.id);
                                 setVerifyResult(null);
                                 try {
-                                  const res = await verifyQuestObjective(selected.id, obj.id);
+                                  const verifier = onVerifyObjective || verifyQuestObjectiveSolo;
+                                  const res = await verifier(selected.id, obj.id);
                                   setVerifyResult({ objectiveId: obj.id, fulfilled: res.fulfilled, reasoning: res.reasoning });
                                 } catch {
                                   setVerifyResult({ objectiveId: obj.id, fulfilled: false, reasoning: t('quests.verifyError') });

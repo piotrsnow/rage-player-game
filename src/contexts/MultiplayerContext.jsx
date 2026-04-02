@@ -520,6 +520,7 @@ function mpReducer(state, action) {
 export function MultiplayerProvider({ children }) {
   const [state, dispatch] = useReducer(mpReducer, initialState);
   const sceneCallbackRef = useRef(null);
+  const pendingQuestVerifyRef = useRef(new Map());
 
   useEffect(() => {
     const unsubs = [
@@ -575,6 +576,19 @@ export function MultiplayerProvider({ children }) {
       wsService.on(WS_SERVER_TYPES.QUEST_OFFER_UPDATE, (msg) => {
         dispatch({ type: 'QUEST_OFFER_UPDATE', payload: msg });
       }),
+      wsService.on(WS_SERVER_TYPES.QUEST_OBJECTIVE_VERIFIED, (msg) => {
+        const requestId = msg?.requestId;
+        if (!requestId) return;
+        const pending = pendingQuestVerifyRef.current.get(requestId);
+        if (!pending) return;
+        pendingQuestVerifyRef.current.delete(requestId);
+        clearTimeout(pending.timeoutId);
+        pending.resolve({
+          fulfilled: !!msg.fulfilled,
+          reasoning: typeof msg.reasoning === 'string' ? msg.reasoning : '',
+          alreadyCompleted: !!msg.alreadyCompleted,
+        });
+      }),
       wsService.on(WS_SERVER_TYPES.CHARACTER_SYNCED, (msg) => {
         dispatch({ type: 'CHARACTER_SYNCED', payload: msg });
       }),
@@ -608,7 +622,14 @@ export function MultiplayerProvider({ children }) {
       }),
       wsService.on(WS_SERVER_TYPES.ERROR, (msg) => dispatch({ type: 'SET_ERROR', payload: msg })),
     ];
-    return () => unsubs.forEach((fn) => fn());
+    return () => {
+      unsubs.forEach((fn) => fn());
+      for (const [, pending] of pendingQuestVerifyRef.current.entries()) {
+        clearTimeout(pending.timeoutId);
+        pending.reject(new Error('Quest objective verification was cancelled.'));
+      }
+      pendingQuestVerifyRef.current.clear();
+    };
   }, []);
 
   const connect = useCallback(() => {
@@ -638,9 +659,13 @@ export function MultiplayerProvider({ children }) {
     wsService.send(WS_CLIENT_TYPES.CREATE_ROOM);
   }, [ensureConnected]);
 
-  const joinRoom = useCallback(async (code) => {
+  const joinRoom = useCallback(async (code, options = {}) => {
     await ensureConnected();
-    wsService.send(WS_CLIENT_TYPES.JOIN_ROOM, { roomCode: code.toUpperCase() });
+    wsService.send(WS_CLIENT_TYPES.JOIN_ROOM, {
+      roomCode: code.toUpperCase(),
+      language: options.language,
+      characterData: options.characterData || null,
+    });
   }, [ensureConnected]);
 
   const convertToMultiplayer = useCallback(async (gameState, settings) => {
@@ -738,6 +763,36 @@ export function MultiplayerProvider({ children }) {
     });
   }, []);
 
+  const verifyQuestObjective = useCallback((questId, objectiveId, language = 'en') => (
+    new Promise((resolve, reject) => {
+      if (!questId || !objectiveId) {
+        reject(new Error('Missing quest or objective id'));
+        return;
+      }
+
+      const requestId = `verify_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const timeoutId = setTimeout(() => {
+        pendingQuestVerifyRef.current.delete(requestId);
+        reject(new Error('Quest objective verification timed out.'));
+      }, 25000);
+
+      pendingQuestVerifyRef.current.set(requestId, { resolve, reject, timeoutId });
+
+      const sent = wsService.send(WS_CLIENT_TYPES.VERIFY_QUEST_OBJECTIVE, {
+        requestId,
+        questId,
+        objectiveId,
+        language,
+      });
+
+      if (!sent) {
+        clearTimeout(timeoutId);
+        pendingQuestVerifyRef.current.delete(requestId);
+        reject(new Error('Multiplayer connection is offline.'));
+      }
+    })
+  ), []);
+
   const value = {
     state,
     dispatch,
@@ -766,6 +821,7 @@ export function MultiplayerProvider({ children }) {
     endMultiplayerCombat,
     clearPendingCombatManoeuvre,
     sendTyping,
+    verifyQuestObjective,
   };
 
   return (

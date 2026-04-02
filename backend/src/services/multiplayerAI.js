@@ -1571,3 +1571,47 @@ export async function compressOldScenes(gameState, _encryptedApiKeys, language =
     return null;
   }
 }
+
+export async function verifyMultiplayerQuestObjective(
+  storyContext,
+  questName,
+  questDescription,
+  objectiveDescription,
+  language = 'en'
+) {
+  const langInstruction = language === 'pl'
+    ? 'Write reasoning in Polish.'
+    : 'Write reasoning in English.';
+
+  const messages = [
+    {
+      role: 'system',
+      content: `You verify quest objective completion for a multiplayer WFRP session.
+Return ONLY valid JSON with this exact shape:
+{
+  "fulfilled": true or false,
+  "reasoning": "short explanation based on evidence from the story context"
+}
+Rules:
+- fulfilled=true only when evidence is explicit and unambiguous.
+- If evidence is weak or missing, return fulfilled=false.
+- Keep reasoning concise (1-3 sentences).
+${langInstruction}`,
+    },
+    {
+      role: 'user',
+      content: `QUEST: ${questName || 'Unknown quest'}
+QUEST DESCRIPTION: ${questDescription || 'N/A'}
+OBJECTIVE TO VERIFY: ${objectiveDescription || 'N/A'}
+
+STORY CONTEXT:
+${storyContext || 'No story context available.'}`,
+    },
+  ];
+
+  const result = await callAI(messages);
+  return {
+    fulfilled: Boolean(result?.fulfilled),
+    reasoning: typeof result?.reasoning === 'string' ? result.reasoning.trim() : '',
+  };
+}

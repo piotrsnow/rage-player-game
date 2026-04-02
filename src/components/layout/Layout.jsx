@@ -51,6 +51,9 @@ function ModalLayer() {
         <TasksInfoModal
           world={isMultiplayer ? mp.state.gameState?.world : state.world}
           quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
+          onVerifyObjective={isMultiplayer
+            ? (questId, objectiveId) => mp.verifyQuestObjective(questId, objectiveId, settings.language || 'en')
+            : null}
           onClose={closeTasksInfo}
         />
       )}

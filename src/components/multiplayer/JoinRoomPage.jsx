@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
 import { apiClient } from '../../services/apiClient';
+import { storage } from '../../services/storage';
+import { translateCareer } from '../../utils/wfrpTranslate';
 import Button from '../ui/Button';
 
 export default function JoinRoomPage() {
   const navigate = useNavigate();
   const { code } = useParams();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const mp = useMultiplayer();
   const { openSettings } = useModals();
 
@@ -18,7 +20,46 @@ export default function JoinRoomPage() {
   const [rooms, setRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [savedCharacters, setSavedCharacters] = useState([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState('');
   const isConnected = apiClient.isConnected();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const chars = await storage.getCharactersAsync();
+        if (cancelled) return;
+        setSavedCharacters(chars || []);
+        if ((chars || []).length > 0) {
+          const firstId = chars[0].backendId || chars[0].localId || chars[0].id || '';
+          setSelectedCharacterId(firstId);
+        }
+      } catch {
+        if (cancelled) return;
+        const chars = storage.getCharacters();
+        setSavedCharacters(chars || []);
+        if ((chars || []).length > 0) {
+          const firstId = chars[0].backendId || chars[0].localId || chars[0].id || '';
+          setSelectedCharacterId(firstId);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedCharacter = savedCharacters.find((ch) => {
+    const charId = ch.backendId || ch.localId || ch.id;
+    return charId === selectedCharacterId;
+  }) || null;
+  const selectedCharacterForJoin = selectedCharacter
+    ? {
+        ...selectedCharacter,
+        career: selectedCharacter.career || selectedCharacter.careerData || null,
+      }
+    : null;
 
   useEffect(() => {
     if (mp.state.isMultiplayer && mp.state.roomCode) {
@@ -56,7 +97,10 @@ export default function JoinRoomPage() {
     setError(null);
     setJoining(true);
     try {
-      await mp.joinRoom(roomCode.trim());
+      await mp.joinRoom(roomCode.trim(), {
+        language: i18n.language || 'en',
+        characterData: selectedCharacterForJoin,
+      });
     } catch (err) {
       setError(err.message || t('multiplayer.connectionError', 'Failed to connect to multiplayer server.'));
     } finally {
@@ -69,7 +113,10 @@ export default function JoinRoomPage() {
     setRoomCode(code);
     setJoining(true);
     try {
-      await mp.joinRoom(code);
+      await mp.joinRoom(code, {
+        language: i18n.language || 'en',
+        characterData: selectedCharacterForJoin,
+      });
     } catch (err) {
       setError(err.message || t('multiplayer.connectionError', 'Failed to connect to multiplayer server.'));
     } finally {
@@ -118,6 +165,40 @@ export default function JoinRoomPage() {
             autoFocus
             className="w-full text-center font-headline text-4xl tracking-[0.4em] bg-transparent border-0 border-b-2 border-outline-variant/30 focus:border-primary/60 focus:ring-0 text-on-surface py-4 px-2 placeholder:text-outline/20"
           />
+        </div>
+
+        <div>
+          <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+            {t('characterPicker.useExisting', 'Use existing character')}
+          </label>
+          {savedCharacters.length === 0 ? (
+            <div className="text-xs text-on-surface-variant border border-outline-variant/20 rounded-sm px-3 py-3 bg-surface-container/20">
+              {t('characterPicker.noCharacters', 'No saved characters. You can still join and create one later.')}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <select
+                value={selectedCharacterId}
+                onChange={(e) => setSelectedCharacterId(e.target.value)}
+                className="w-full bg-surface-container/40 border border-outline-variant/30 text-on-surface rounded-sm px-3 py-2 text-sm focus:border-primary/60 focus:ring-0"
+              >
+                {savedCharacters.map((ch) => {
+                  const charId = ch.backendId || ch.localId || ch.id;
+                  const career = ch.career?.name || ch.careerData?.name || '';
+                  return (
+                    <option key={charId} value={charId}>
+                      {`${ch.name} · ${t(`species.${ch.species}`, { defaultValue: ch.species })}${career ? ` · ${translateCareer(career, t)}` : ''}`}
+                    </option>
+                  );
+                })}
+              </select>
+              {selectedCharacter && (
+                <div className="text-xs text-on-surface-variant">
+                  {t('multiplayer.joinAs', 'Joining as')}: <span className="text-on-surface font-semibold">{selectedCharacter.name}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {error && (

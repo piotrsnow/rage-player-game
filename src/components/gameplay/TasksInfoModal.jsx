@@ -3,7 +3,7 @@ import { useModalA11y } from '../../hooks/useModalA11y';
 import QuestLog from '../character/QuestLog';
 import CodexPanel from '../character/CodexPanel';
 
-export default function TasksInfoModal({ world, quests, onClose }) {
+export default function TasksInfoModal({ world, quests, onClose, onVerifyObjective = null }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
 
@@ -41,7 +41,12 @@ export default function TasksInfoModal({ world, quests, onClose }) {
         </div>
 
         <div className="overflow-y-auto custom-scrollbar flex-1 px-4 md:px-10 py-8 space-y-8">
-          <QuestLog active={activeQuests} completed={completedQuests} npcs={npcs} />
+          <QuestLog
+            active={activeQuests}
+            completed={completedQuests}
+            npcs={npcs}
+            onVerifyObjective={onVerifyObjective}
+          />
           {Object.keys(codex).length > 0 && <CodexPanel codex={codex} />}
         </div>
       </div>

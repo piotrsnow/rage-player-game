@@ -6,7 +6,14 @@ import {
   saveRoomToDB, deleteRoomFromDB, loadActiveSessionsFromDB, findSessionInDB, restoreRoom,
   listJoinableRooms, disconnectPlayer, listUserRooms, restorePendingActions,
 } from '../services/roomManager.js';
-import { generateMultiplayerScene, generateMultiplayerCampaign, generateMidGameCharacter, needsCompression, compressOldScenes } from '../services/multiplayerAI.js';
+import {
+  generateMultiplayerScene,
+  generateMultiplayerCampaign,
+  generateMidGameCharacter,
+  needsCompression,
+  compressOldScenes,
+  verifyMultiplayerQuestObjective,
+} from '../services/multiplayerAI.js';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
 import { AIServiceError, toClientAiError } from '../services/aiErrors.js';
@@ -38,6 +45,29 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
     periodResolver: hourToPeriod,
     decayNeeds,
   });
+}
+
+function normalizeJoinCharacter(characterData) {
+  if (!characterData || typeof characterData !== 'object') return null;
+  const name = typeof characterData.name === 'string' ? characterData.name.trim() : '';
+  if (!name) return null;
+  const gender = typeof characterData.gender === 'string' && characterData.gender
+    ? characterData.gender
+    : 'male';
+  const career = characterData.career || characterData.careerData || null;
+  return {
+    ...characterData,
+    name,
+    gender,
+    career,
+  };
+}
+
+function buildArrivalNarrative(playerName, language = 'en') {
+  if (typeof language === 'string' && language.toLowerCase().startsWith('pl')) {
+    return `${playerName} dołącza do drużyny i zajmuje miejsce przy ognisku, gotów ruszyć dalej.`;
+  }
+  return `${playerName} joins the party and takes a place by the campfire, ready for the journey ahead.`;
 }
 
 export async function multiplayerRoutes(fastify) {
@@ -220,20 +250,39 @@ export async function multiplayerRoutes(fastify) {
             const result = joinRoom(msg.roomCode, uid, ws);
             odId = result.odId;
             roomCode = result.room.roomCode;
+            const player = result.room.players.get(odId);
+            const selectedCharacter = normalizeJoinCharacter(msg.characterData);
+
+            if (player && selectedCharacter) {
+              player.name = selectedCharacter.name;
+              player.gender = selectedCharacter.gender;
+              player.characterData = selectedCharacter;
+            }
 
             if (result.room.phase === 'playing' && result.room.gameState) {
-              const player = result.room.players.get(odId);
-              const charResult = await generateMidGameCharacter(
-                result.room.gameState,
-                result.room.settings,
-                player.name,
-                player.gender,
-                null,
-                msg.language || 'en',
-                player.characterData || null,
-              );
+              let newChar;
+              let arrivalNarrative;
+              if (selectedCharacter) {
+                newChar = {
+                  ...selectedCharacter,
+                  odId,
+                  playerName: selectedCharacter.name,
+                };
+                arrivalNarrative = buildArrivalNarrative(newChar.name, msg.language || 'en');
+              } else {
+                const charResult = await generateMidGameCharacter(
+                  result.room.gameState,
+                  result.room.settings,
+                  player.name,
+                  player.gender,
+                  null,
+                  msg.language || 'en',
+                  player.characterData || null,
+                );
+                newChar = { ...charResult.character, odId };
+                arrivalNarrative = charResult.arrivalNarrative;
+              }
 
-              const newChar = { ...charResult.character, odId };
               result.room.gameState.characters = [...(result.room.gameState.characters || []), newChar];
 
               const careerName = newChar.career?.name || newChar.class || 'Adventurer';
@@ -244,8 +293,8 @@ export async function multiplayerRoutes(fastify) {
               const arrivalMsg = {
                 id: `msg_arrival_${Date.now()}`,
                 role: 'dm',
-                content: charResult.arrivalNarrative,
-                dialogueSegments: [{ type: 'narration', text: charResult.arrivalNarrative }],
+                content: arrivalNarrative,
+                dialogueSegments: [{ type: 'narration', text: arrivalNarrative }],
                 timestamp: Date.now(),
               };
               result.room.gameState.chatHistory = [...(result.room.gameState.chatHistory || []), arrivalMsg];
@@ -286,8 +335,8 @@ export async function multiplayerRoutes(fastify) {
                 player: {
                   odId,
                   userId: uid,
-                  name: 'Adventurer',
-                  gender: 'male',
+                  name: player?.name || 'Adventurer',
+                  gender: player?.gender || 'male',
                   photo: null,
                   isHost: false,
                   pendingAction: null,
@@ -712,6 +761,140 @@ export async function multiplayerRoutes(fastify) {
               status: 'declined',
               room: sanitizeRoom(room),
             });
+            break;
+          }
+
+          case 'VERIFY_QUEST_OBJECTIVE': {
+            if (!roomCode || !odId) throw new Error('Not in a room');
+            const room = getRoom(roomCode);
+            if (!room) throw new Error('Room not found');
+            if (!room.gameState?.quests?.active) throw new Error('Game not in progress');
+
+            const { questId, objectiveId, requestId } = msg;
+            if (!questId || !objectiveId || !requestId) break;
+
+            const quest = room.gameState.quests.active.find((q) => q.id === questId);
+            if (!quest) {
+              sendTo(room, odId, {
+                type: 'QUEST_OBJECTIVE_VERIFIED',
+                requestId,
+                questId,
+                objectiveId,
+                fulfilled: false,
+                reasoning: 'Quest not found.',
+              });
+              break;
+            }
+
+            const objective = quest.objectives?.find((o) => o.id === objectiveId);
+            if (!objective) {
+              sendTo(room, odId, {
+                type: 'QUEST_OBJECTIVE_VERIFIED',
+                requestId,
+                questId,
+                objectiveId,
+                fulfilled: false,
+                reasoning: 'Objective not found.',
+              });
+              break;
+            }
+
+            if (objective.completed) {
+              sendTo(room, odId, {
+                type: 'QUEST_OBJECTIVE_VERIFIED',
+                requestId,
+                questId,
+                objectiveId,
+                fulfilled: true,
+                reasoning: msg.language === 'pl'
+                  ? 'Cel jest już oznaczony jako ukończony.'
+                  : 'This objective is already marked as completed.',
+                alreadyCompleted: true,
+              });
+              break;
+            }
+
+            const world = room.gameState.world || {};
+            const scenes = room.gameState.scenes || [];
+            const recentScenes = scenes.slice(-12);
+            const contextParts = [];
+
+            if (world.compressedHistory) {
+              contextParts.push(`ARCHIVED HISTORY:\n${world.compressedHistory}`);
+            }
+            if (Array.isArray(world.eventHistory) && world.eventHistory.length > 0) {
+              const lastEvents = world.eventHistory.slice(-40);
+              contextParts.push(`STORY JOURNAL:\n${lastEvents.map((entry, idx) => `${idx + 1}. ${entry}`).join('\n')}`);
+            }
+            if (recentScenes.length > 0) {
+              contextParts.push(
+                `RECENT SCENES:\n${recentScenes
+                  .map((scene, idx) => {
+                    const number = scenes.length - recentScenes.length + idx + 1;
+                    return `Scene ${number}: ${(scene?.narrative || '').slice(0, 1600)}`;
+                  })
+                  .join('\n\n')}`
+              );
+            }
+
+            const storyContext = contextParts.join('\n\n') || 'No story events yet.';
+            const verification = await verifyMultiplayerQuestObjective(
+              storyContext,
+              quest.name,
+              quest.description,
+              objective.description,
+              msg.language || 'en',
+            );
+
+            if (!verification.fulfilled) {
+              sendTo(room, odId, {
+                type: 'QUEST_OBJECTIVE_VERIFIED',
+                requestId,
+                questId,
+                objectiveId,
+                fulfilled: false,
+                reasoning: verification.reasoning || '',
+              });
+              break;
+            }
+
+            room.gameState.quests.active = room.gameState.quests.active.map((activeQuest) => {
+              if (activeQuest.id !== questId) return activeQuest;
+              return {
+                ...activeQuest,
+                objectives: (activeQuest.objectives || []).map((obj) =>
+                  obj.id === objectiveId ? { ...obj, completed: true } : obj
+                ),
+              };
+            });
+
+            const objectiveMessage = {
+              id: `msg_${Date.now()}_quest_obj_verify`,
+              role: 'system',
+              subtype: 'quest_objective_completed',
+              content: msg.language === 'pl'
+                ? `Cel ukończony: ${quest.name} — ${objective.description}`
+                : `Objective completed: ${quest.name} — ${objective.description}`,
+              timestamp: Date.now(),
+            };
+            room.gameState.chatHistory = [...(room.gameState.chatHistory || []), objectiveMessage];
+            setGameState(roomCode, room.gameState);
+
+            broadcast(room, {
+              type: 'ROOM_STATE',
+              room: sanitizeRoom(room),
+            });
+
+            sendTo(room, odId, {
+              type: 'QUEST_OBJECTIVE_VERIFIED',
+              requestId,
+              questId,
+              objectiveId,
+              fulfilled: true,
+              reasoning: verification.reasoning || '',
+            });
+
+            saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after quest verification failed'));
             break;
           }
 
