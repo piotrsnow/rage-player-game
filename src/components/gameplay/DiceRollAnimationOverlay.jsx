@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
 import { translateSkill } from '../../utils/wfrpTranslate';
 
-const RESULT_HOLD_MS = 2800;
+const RESULT_HOLD_MS = 4200;
 const FADE_OUT_MS = 600;
 
 function getOutcomeLabel(dr, t) {
@@ -73,16 +73,16 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
       className={`fixed inset-0 z-[80] pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{ paddingTop: '160px' }}
+      style={{ paddingTop: '320px' }}
     >
       {/* 3D Dice roller area */}
-      <div className="relative w-[260px] h-[200px] -mt-16">
+      <div className="relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in">
         <DiceRoller
           diceRoll={dr}
           onComplete={handleRollComplete}
           showOverlayResult={false}
           sizeMultiplier={3}
-          durationMultiplier={1}
+          durationMultiplier={2.6}
           variant="overlay"
           isVisible
         />

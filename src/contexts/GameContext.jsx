@@ -1843,27 +1843,50 @@ function gameReducer(state, action) {
 export function GameProvider({ children }) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const stateRef = useRef(state);
+  const saveTimerRef = useRef(null);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
   const autoSave = useCallback(() => {
-    const current = stateRef.current;
-    if (current.campaign) {
-      storage.saveCampaign(current).catch((err) => {
-        console.error('[GameContext] Save error:', err);
-      });
-
-      if (current.character) {
-        const charCopy = { ...current.character };
-        storage.saveCharacter(charCopy).then(() => {
-          if (!current.character.localId && charCopy.localId) {
-            dispatch({ type: 'SET_CHARACTER_LOCAL_ID', payload: charCopy.localId });
-          }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      const current = stateRef.current;
+      if (current.campaign) {
+        storage.saveCampaign(current).catch((err) => {
+          console.error('[GameContext] Save error:', err);
         });
+
+        if (current.character) {
+          const charCopy = { ...current.character };
+          storage.saveCharacter(charCopy).then(() => {
+            if (!current.character.localId && charCopy.localId) {
+              dispatch({ type: 'SET_CHARACTER_LOCAL_ID', payload: charCopy.localId });
+            }
+          });
+        }
       }
-    }
+    }, 1500);
+  }, []);
+
+  useEffect(() => {
+    const flushSave = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        const current = stateRef.current;
+        if (current.campaign) {
+          storage.saveCampaign(current).catch(() => {});
+        }
+      }
+    };
+    window.addEventListener('beforeunload', flushSave);
+    return () => {
+      window.removeEventListener('beforeunload', flushSave);
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, []);
 
   const value = {
