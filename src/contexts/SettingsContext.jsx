@@ -294,8 +294,8 @@ export function SettingsProvider({ children }) {
     fetchBackendKeys();
     await loadSharedVoiceSettings();
 
-    storage.syncCampaigns().catch((err) => {
-      console.warn('[SettingsContext] Campaign sync after login failed:', err.message);
+    storage.migrateLocalCampaignsToBackend().catch((err) => {
+      console.warn('[SettingsContext] Campaign migration failed:', err.message);
     });
   }, [fetchBackendKeys, loadSharedVoiceSettings]);
 

@@ -1804,17 +1804,9 @@ export function GameProvider({ children }) {
   const autoSave = useCallback(() => {
     const current = stateRef.current;
     if (current.campaign) {
-      try {
-        const result = storage.saveCampaign(current);
-        if (result?.pruned) {
-          console.warn('[GameContext] Save required pruning – old scene images were removed to free space');
-        }
-        if (result && !result.saved) {
-          console.error('[GameContext] Campaign could not be saved – localStorage quota full');
-        }
-      } catch (err) {
-        console.error('[GameContext] Unexpected save error:', err);
-      }
+      storage.saveCampaign(current).catch((err) => {
+        console.error('[GameContext] Save error:', err);
+      });
 
       if (current.character) {
         const charCopy = { ...current.character };

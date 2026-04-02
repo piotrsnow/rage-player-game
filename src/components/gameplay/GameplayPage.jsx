@@ -39,6 +39,7 @@ import TypewriterActionOverlay from './TypewriterActionOverlay';
 import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
 function hashSummaryCacheKey(input) {
   const text = String(input || '');
@@ -184,6 +185,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   }, []);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+  useDocumentTitle(campaign?.name);
   const character = isMultiplayer
     ? mpGameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mpGameState?.characters?.[0]
     : state.character;
@@ -799,13 +801,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   useEffect(() => {
     if (campaign || isMultiplayer || readOnly) return;
     if (urlCampaignId) {
-      const data = storage.loadCampaign(urlCampaignId);
-      if (data) {
-        dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-        return;
-      }
-      navigate('/', { replace: true, state: { campaignNotFound: true } });
-      return;
+      let cancelled = false;
+      storage.loadCampaign(urlCampaignId)
+        .then((data) => {
+          if (cancelled) return;
+          if (data) {
+            dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+          } else {
+            navigate('/', { replace: true, state: { campaignNotFound: true } });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) navigate('/', { replace: true, state: { campaignNotFound: true } });
+        });
+      return () => { cancelled = true; };
     }
     navigate('/');
   }, [campaign, isMultiplayer, readOnly, navigate, urlCampaignId, dispatch]);

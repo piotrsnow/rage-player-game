@@ -3,13 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
-import { exportAsMarkdown, exportAsJson } from '../../services/exportLog';
 import { getPersistedRejoinInfo, clearPersistedRejoinInfo } from '../../services/websocket';
-import { createCampaignId } from '../../services/gameState';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 import CampaignCard from './CampaignCard';
@@ -118,6 +117,7 @@ export default function LobbyPage() {
   const { t } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
+  useDocumentTitle(t('common.tagline'));
   const { backendUser, hasApiKey } = useSettings();
   const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
@@ -140,23 +140,18 @@ export default function LobbyPage() {
   useEffect(() => {
     let cancelled = false;
 
-    setCampaigns(storage.getCampaigns());
-
     if (apiClient.isConnected()) {
       setSyncing(true);
-      storage.syncCampaigns()
-        .then((synced) => {
-          if (!cancelled) {
-            setCampaigns(synced);
-          }
+      storage.getCampaigns()
+        .then((list) => {
+          if (!cancelled) setCampaigns(list);
         })
         .catch(() => {})
         .finally(() => {
-          if (!cancelled) {
-            setSyncing(false);
-          }
+          if (!cancelled) setSyncing(false);
         });
     } else {
+      setCampaigns([]);
       setSyncing(false);
     }
 
@@ -218,65 +213,48 @@ export default function LobbyPage() {
     dispatch({ type: 'LOAD_CAMPAIGN', payload });
     setPendingCampaign(null);
     setLibraryCharacter(undefined);
-    navigate(`/play/${payload.campaign.id}`);
+    navigate(`/play/${payload.campaign.backendId || payload.campaign.id}`);
   };
 
-  const handleLoad = (campaign) => {
-    openCharacterChoice(campaign);
+  const handleLoad = async (campaign) => {
+    setSyncing(true);
+    try {
+      const data = await storage.loadCampaign(campaign.id);
+      if (data) openCharacterChoice(data);
+    } catch (err) {
+      console.warn('[LobbyPage] Failed to load campaign:', err.message);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleDelete = async (id) => {
     await storage.deleteCampaign(id);
-    setCampaigns(storage.getCampaigns());
+    try {
+      setCampaigns(await storage.getCampaigns());
+    } catch { /* ignore */ }
     setShowDeleteConfirm(null);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     const activeId = storage.getActiveCampaignId();
-    if (activeId) {
-      const data = storage.loadCampaign(activeId);
-      if (data) {
-        openCharacterChoice(data);
-        return;
+    if (activeId && campaigns.length > 0) {
+      const match = campaigns.find((c) => c.id === activeId);
+      if (match) {
+        setSyncing(true);
+        try {
+          const data = await storage.loadCampaign(match.id);
+          if (data) { openCharacterChoice(data); return; }
+        } catch { /* ignore */ } finally { setSyncing(false); }
       }
     }
     if (campaigns.length > 0) {
-      openCharacterChoice(campaigns[0]);
+      setSyncing(true);
+      try {
+        const data = await storage.loadCampaign(campaigns[0].id);
+        if (data) openCharacterChoice(data);
+      } catch { /* ignore */ } finally { setSyncing(false); }
     }
-  };
-
-  const handleForkFromScene = (campaignData, sceneIndex) => {
-    const baseName = (campaignData.campaign?.name || 'Campaign').replace(/\s*\(\d+\)$/, '');
-    const existingNames = new Set(campaigns.map((c) => c.campaign?.name));
-    let suffix = 2;
-    while (existingNames.has(`${baseName} (${suffix})`)) suffix++;
-    const forkedName = `${baseName} (${suffix})`;
-
-    const trimmedScenes = (campaignData.scenes || []).slice(0, sceneIndex + 1);
-    const lastSceneTimestamp = trimmedScenes[trimmedScenes.length - 1]?.timestamp;
-    const trimmedChat = lastSceneTimestamp
-      ? (campaignData.chatHistory || []).filter((m) => !m.timestamp || m.timestamp <= lastSceneTimestamp)
-      : (campaignData.chatHistory || []).slice(0, (sceneIndex + 1) * 5);
-
-    const forked = structuredClone(campaignData);
-    forked.campaign = {
-      ...forked.campaign,
-      id: createCampaignId(),
-      name: forkedName,
-      backendId: undefined,
-      forkedFrom: campaignData.campaign?.id,
-      forkedAtScene: sceneIndex,
-    };
-    forked.scenes = trimmedScenes;
-    forked.chatHistory = trimmedChat;
-    forked.combat = null;
-    forked.undoStack = [];
-    forked.lastSaved = Date.now();
-
-    storage.saveCampaign(forked);
-    setCampaigns(storage.getCampaigns());
-    dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
-    navigate(`/play/${forked.campaign.id}`);
   };
 
   useEffect(() => {
@@ -457,17 +435,14 @@ export default function LobbyPage() {
             <div className="space-y-1">
               {campaigns.map((c, i) => (
                 <CampaignCard
-                  key={c.campaign?.id || c.campaign?.backendId || i}
+                  key={c.id || i}
                   campaign={c}
                   onLoad={() => handleLoad(c)}
                   onDelete={() =>
-                    showDeleteConfirm === c.campaign.id
-                      ? handleDelete(c.campaign.id)
-                      : setShowDeleteConfirm(c.campaign.id)
+                    showDeleteConfirm === c.id
+                      ? handleDelete(c.id)
+                      : setShowDeleteConfirm(c.id)
                   }
-                  onExportLog={() => exportAsMarkdown(c)}
-                  onExportJson={() => exportAsJson(c)}
-                  onForkFromScene={(sceneIndex) => handleForkFromScene(c, sceneIndex)}
                 />
               ))}
             </div>

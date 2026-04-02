@@ -7,6 +7,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useGame } from '../../contexts/GameContext';
 import { storage } from '../../services/storage';
 import { createCampaignId, createSceneId, getCampaignSummary } from '../../services/gameState';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import Button from '../ui/Button';
 import GlassCard from '../ui/GlassCard';
 
@@ -451,6 +452,7 @@ function CampaignDetailModal({ entry, onClose, onPlayFromStart, resolveImage, on
 
 export default function GalleryPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('gallery.title'));
   const navigate = useNavigate();
   const { settings, hasApiKey } = useSettings();
   const { dispatch } = useGame();
@@ -592,12 +594,12 @@ export default function GalleryPage() {
   const resolveImage = useCallback((url) => apiClient.resolveMediaUrl(url), []);
 
   const handlePlayFromStart = useCallback(
-    (gameState) => {
+    async (gameState) => {
       const forked = forkPlayFromStart(gameState);
-      storage.saveCampaign(forked);
+      await storage.saveCampaign(forked);
       dispatch({ type: 'LOAD_CAMPAIGN', payload: forked });
       setSelected(null);
-      navigate(`/play/${forked.campaign.id}`);
+      navigate(`/play/${forked.campaign.backendId || forked.campaign.id}`);
     },
     [dispatch, navigate],
   );

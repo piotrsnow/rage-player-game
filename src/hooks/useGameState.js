@@ -84,7 +84,7 @@ export function useGameState() {
   const { state, dispatch, autoSave } = useGame();
 
   const startNewCampaign = useCallback(
-    (aiResult, campaignSettings) => {
+    async (aiResult, campaignSettings) => {
       const campaignId = createCampaignId();
       const campaign = {
         id: campaignId,
@@ -205,19 +205,23 @@ export function useGameState() {
         scenes: [firstScene],
         chatHistory,
       };
-      storage.saveCampaign(fullState);
+      await storage.saveCampaign(fullState);
 
-      return campaignId;
+      return campaign.backendId || campaignId;
     },
     [dispatch]
   );
 
   const loadCampaign = useCallback(
-    (campaignId) => {
-      const data = storage.loadCampaign(campaignId);
-      if (data) {
-        dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-        return true;
+    async (campaignId) => {
+      try {
+        const data = await storage.loadCampaign(campaignId);
+        if (data) {
+          dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+          return true;
+        }
+      } catch (err) {
+        console.warn('[useGameState] Failed to load campaign:', err.message);
       }
       return false;
     },

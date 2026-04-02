@@ -57,8 +57,8 @@ export default function DMSettingsPage({ onClose }) {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   };
 
-  const handleExportConfig = () => {
-    storage.exportConfig();
+  const handleExportConfig = async () => {
+    await storage.exportConfig();
   };
 
   const handleImportConfig = async (e) => {

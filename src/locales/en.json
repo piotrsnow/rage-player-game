@@ -1,6 +1,7 @@
 {
   "common": {
     "appName": "Dungeons & Sillicons",
+    "tagline": "Realms of dice & chaos",
     "logoPath": "/nikczemnu_logo_en.png",
     "level": "Level",
     "lvl": "Lv.",

@@ -241,10 +241,44 @@ export async function campaignRoutes(fastify) {
     app.get('/', async (request) => {
       const campaigns = await prisma.campaign.findMany({
         where: { userId: request.user.id },
-        select: { id: true, name: true, genre: true, tone: true, lastSaved: true, createdAt: true },
+        select: { id: true, name: true, genre: true, tone: true, coreState: true, lastSaved: true, createdAt: true },
         orderBy: { lastSaved: 'desc' },
       });
-      return campaigns;
+
+      const campaignIds = campaigns.map((c) => c.id);
+      const sceneCounts = await prisma.campaignScene.groupBy({
+        by: ['campaignId'],
+        where: { campaignId: { in: campaignIds } },
+        _count: true,
+      });
+      const sceneCountMap = Object.fromEntries(sceneCounts.map((s) => [s.campaignId, s._count]));
+
+      return campaigns.map((c) => {
+        let characterName = '';
+        let characterCareer = '';
+        let characterTier = 1;
+        let totalCost = 0;
+        try {
+          const state = JSON.parse(c.coreState || '{}');
+          characterName = state.character?.name || '';
+          characterCareer = state.character?.career?.name || '';
+          characterTier = state.character?.career?.tier || 1;
+          totalCost = state.aiCosts?.total || 0;
+        } catch { /* ignore */ }
+        return {
+          id: c.id,
+          name: c.name,
+          genre: c.genre,
+          tone: c.tone,
+          lastSaved: c.lastSaved,
+          createdAt: c.createdAt,
+          characterName,
+          characterCareer,
+          characterTier,
+          sceneCount: sceneCountMap[c.id] || 0,
+          totalCost,
+        };
+      });
     });
 
     app.get('/:id', async (request, reply) => {
@@ -256,14 +290,12 @@ export async function campaignRoutes(fastify) {
       let coreState = {};
       try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
-      // Load recent scenes from normalized collection
       const scenes = await prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
-        orderBy: { sceneIndex: 'desc' },
-        take: 10,
+        orderBy: { sceneIndex: 'asc' },
       });
 
-      const parsedScenes = scenes.reverse().map((s) => ({
+      const parsedScenes = scenes.map((s) => ({
         ...s,
         suggestedActions: JSON.parse(s.suggestedActions || '[]'),
         dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),
