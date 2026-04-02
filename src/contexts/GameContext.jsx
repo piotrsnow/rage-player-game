@@ -280,6 +280,20 @@ function gameReducer(state, action) {
       if (loaded.world && !loaded.world.codex) {
         loaded.world.codex = {};
       }
+      if (loaded.world && loaded.world.fieldMap) {
+        loaded.world.fieldMap = {
+          seed: 0,
+          chunkSize: 64,
+          chunks: {},
+          playerPos: { x: 32, y: 32 },
+          activeBiome: 'plains',
+          stepCounter: 0,
+          stepBuffer: [],
+          discoveredPoi: [],
+          interior: null,
+          ...loaded.world.fieldMap,
+        };
+      }
       if (loaded.campaign && !loaded.campaign.status) loaded.campaign.status = 'active';
       if (loaded.character?.voiceId && loaded.character.name) {
         if (!loaded.characterVoiceMap) loaded.characterVoiceMap = {};
@@ -1610,6 +1624,121 @@ function gameReducer(state, action) {
       return {
         ...state,
         world: { ...state.world, exploredLocations: [...explored] },
+      };
+    }
+
+    case 'INIT_FIELD_MAP': {
+      const { seed, chunkSize, playerPos, activeBiome } = action.payload;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            seed: seed || Date.now(),
+            chunkSize: chunkSize || 64,
+            chunks: {},
+            playerPos: playerPos || { x: 32, y: 32 },
+            activeBiome: activeBiome || 'plains',
+            stepCounter: 0,
+            stepBuffer: [],
+            discoveredPoi: [],
+            interior: null,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_CHUNKS': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            chunks: { ...state.world.fieldMap.chunks, ...action.payload },
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_MOVE_PLAYER': {
+      if (!state.world?.fieldMap) return state;
+      const fm = state.world.fieldMap;
+      const { x, y, tile, biome } = action.payload;
+      const nextCounter = fm.stepCounter + 1;
+      const nextBuffer = [...fm.stepBuffer, { x, y, tile, biome, ts: Date.now() }];
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...fm,
+            playerPos: { x, y },
+            stepCounter: nextCounter,
+            stepBuffer: nextBuffer,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_RESET_STEPS': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            stepCounter: 0,
+            stepBuffer: [],
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_DISCOVER_POI': {
+      if (!state.world?.fieldMap) return state;
+      const existing = state.world.fieldMap.discoveredPoi;
+      const poi = action.payload;
+      if (existing.some((p) => p.x === poi.x && p.y === poi.y)) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            discoveredPoi: [...existing, poi],
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_BIOME': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            activeBiome: action.payload,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_INTERIOR': {
+      if (!state.world?.fieldMap) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...state.world.fieldMap,
+            interior: action.payload,
+          },
+        },
       };
     }
 

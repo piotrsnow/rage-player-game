@@ -217,7 +217,7 @@ async function generateViaProxy(prompt, provider, campaignId, options = {}) {
 
 function resolveMediaUrl(url) {
   if (!url) return null;
-  return url;
+  return apiClient.resolveMediaUrl(url);
 }
 
 async function generatePortraitWithDalle(prompt, apiKey) {

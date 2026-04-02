@@ -996,6 +996,7 @@ NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
 
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
+  const isFieldMove = playerAction && playerAction.startsWith('[FIELD_MOVE]');
   const isContinue = playerAction === '[CONTINUE]';
   const isWait = playerAction === '[WAIT]';
   const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
@@ -1092,6 +1093,21 @@ TRUCE RULES (MANDATORY — the player FORCED A TRUCE from a position of strength
   * Faction enemies → use "factionChanges" to reflect the power shift (fear, grudging respect, or escalation).
 - The player is in a DOMINANT position. Suggest actions that reflect this: demand information, interrogate survivors, loot fallen enemies, let them go with a warning, take prisoners, tend to wounds, press the advantage.
 - The truce may have future consequences — enemies may return with reinforcements, spread word of the player's prowess, or honor/betray the ceasefire.` : ''}`
+    : isFieldMove
+    ? `FIELD MAP MOVEMENT — ${playerAction}
+
+The player has been traveling on the overworld field map. The technical payload above describes their movement — distance covered, starting/ending position, biome, and any points of interest discovered.
+
+RULES FOR THIS SCENE (MANDATORY):
+- This is a TRAVEL scene. The character has been walking through the ${playerAction.match(/biome=(\w+)/)?.[1] || 'unknown'} biome on the field map.
+- Narrate what happens during the journey: encounters, observations, weather, discoveries, atmosphere.
+- If the player discovered POIs (buildings, shrines, portals, etc.), describe them in detail and offer interaction opportunities.
+- If the player moved very little or stayed idle (high idleSteps), narrate local ambiance or small events instead of travel.
+- Keep the narrative moderate in length (2-3 paragraphs) unless something significant occurs.
+- Include timeAdvance proportional to steps taken (15 steps ≈ 0.5 to 1 hour depending on terrain).
+- suggestedActions should reflect what the player can do at their current location: explore nearby structures, set up camp, forage, investigate, or continue moving.
+- You may introduce random encounters, NPC travelers, environmental hazards, or quest hooks based on the biome and distance covered.
+- Do NOT start combat unless the narrative strongly calls for it (random bandit ambush, wild beast encounter, etc.).`
     : playerHasDialogue
       ? `The player's ACTION: ${actionPart}
 The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`

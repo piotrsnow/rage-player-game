@@ -50,6 +50,14 @@ function hashSummaryCacheKey(input) {
   return (hash >>> 0).toString(16);
 }
 
+function hashCode(str) {
+  let h = 0;
+  for (let i = 0; i < (str || '').length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 function shuffleArray(items) {
   const arr = [...items];
   for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -233,9 +241,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
   useEffect(() => {
     if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
       setViewingSceneIndex(null);
+
+      const newestScene = scenes[scenes.length - 1];
+      const newestSceneMessage = newestScene?.id
+        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
+        : null;
+      const newestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
+
+      if (newestSceneMessage?.id) {
+        requestChatScrollToMessage(newestSceneMessage.id);
+      } else if (newestDmMessage?.id) {
+        requestChatScrollToMessage(newestDmMessage.id);
+      }
     }
     prevScenesLenRef.current = scenes.length;
-  }, [scenes.length]);
+  }, [scenes.length, scenes, chatHistory, requestChatScrollToMessage]);
 
   useEffect(() => {
     if (isGeneratingScene) {
@@ -250,15 +270,22 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
     const hasNewMessages = chatHistory.length > prevChatHistoryLenRef.current;
     if (hasNewMessages) {
+      const newestScene = scenes[scenes.length - 1];
+      const latestSceneMessage = newestScene?.id
+        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
+        : null;
+      const latestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
       const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
-      if (latestDiceRollMessage?.id) {
-        requestChatScrollToMessage(latestDiceRollMessage.id);
+
+      const preferredMessageId = latestSceneMessage?.id || latestDmMessage?.id || latestDiceRollMessage?.id;
+      if (preferredMessageId) {
+        requestChatScrollToMessage(preferredMessageId);
       }
     }
 
     wasGeneratingSceneRef.current = false;
     prevChatHistoryLenRef.current = chatHistory.length;
-  }, [isGeneratingScene, chatHistory, requestChatScrollToMessage]);
+  }, [isGeneratingScene, chatHistory, scenes, requestChatScrollToMessage]);
 
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
@@ -981,6 +1008,20 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
   };
 
+  const handleFieldTurnReady = useCallback(() => {
+    if (!state.world?.fieldMap) return;
+    const fm = state.world.fieldMap;
+    const buf = fm.stepBuffer || [];
+    const from = buf.length > 0 ? buf[0] : fm.playerPos;
+    const to = fm.playerPos;
+    const uniqueTiles = new Set(buf.map((s) => s.tile)).size;
+    const idleSteps = buf.filter((s) => s.x === from.x && s.y === from.y).length;
+    const discovered = fm.discoveredPoi.map((p) => `${p.tile}@(${p.x},${p.y})`).join(', ');
+    const actionText = `[FIELD_MOVE] steps=${buf.length} from=(${from.x},${from.y}) to=(${to.x},${to.y}) uniqueTiles=${uniqueTiles} idleSteps=${idleSteps} biome=${fm.activeBiome}${discovered ? ` discovered=${discovered}` : ''}`;
+    dispatch({ type: 'FIELD_MAP_RESET_STEPS' });
+    generateScene(actionText, false, false).catch(() => {});
+  }, [state.world?.fieldMap, dispatch, generateScene]);
+
   const handleSceneGridChange = useCallback((sceneId, nextSceneGrid) => {
     if (!sceneId || !nextSceneGrid) return;
     const payload = { sceneId, sceneGrid: nextSceneGrid };
@@ -991,6 +1032,19 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     dispatch({ type: 'UPDATE_SCENE_GRID', payload });
     setTimeout(() => autoSave(), 250);
   }, [isMultiplayer, mp, dispatch, autoSave]);
+
+  useEffect(() => {
+    if ((settings.sceneVisualization || 'image') !== 'map') return;
+    if (state.world?.fieldMap) return;
+    if (!state.campaign) return;
+    dispatch({
+      type: 'INIT_FIELD_MAP',
+      payload: {
+        seed: state.campaign.id ? hashCode(state.campaign.id) : Date.now(),
+        activeBiome: 'plains',
+      },
+    });
+  }, [settings.sceneVisualization, state.world?.fieldMap, state.campaign, dispatch]);
 
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
@@ -1745,6 +1799,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
             multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
             interactiveMap={!isMultiplayer && !readOnly && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active')}
             onSceneGridChange={handleSceneGridChange}
+            onFieldTurnReady={handleFieldTurnReady}
             onImageError={(sceneId) => {
               if (!sceneId) return;
               if (isMultiplayer && !mp.state.isHost) return;
