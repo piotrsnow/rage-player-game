@@ -138,27 +138,35 @@ export default function LobbyPage() {
   }, [location.state, navigate]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    if (apiClient.isConnected()) {
-      setSyncing(true);
-      storage.getCampaigns()
-        .then((list) => {
-          if (!cancelled) setCampaigns(list);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (!cancelled) setSyncing(false);
-        });
-    } else {
+    if (!backendUser || !apiClient.isConnected()) {
       setCampaigns([]);
       setSyncing(false);
+      return;
     }
 
+    let cancelled = false;
+    setSyncing(true);
+    storage.getCampaigns()
+      .then((list) => {
+        if (cancelled) return;
+        setCampaigns(list);
+        if (list.some((c) => !c.characterName && c.sceneCount > 0)) {
+          apiClient.post('/campaigns/backfill-summaries')
+            .then(() => storage.getCampaigns())
+            .then((fresh) => { if (!cancelled) setCampaigns(fresh); })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSyncing(false);
+      });
+
     const persisted = getPersistedRejoinInfo();
-    if (persisted?.roomCode && apiClient.isConnected()) {
+    if (persisted?.roomCode) {
       apiClient.get('/multiplayer/my-sessions')
         .then((res) => {
+          if (cancelled) return;
           const sessions = res?.sessions || [];
           const match = sessions.find((s) => s.roomCode === persisted.roomCode);
           if (match) {
@@ -168,7 +176,7 @@ export default function LobbyPage() {
           }
         })
         .catch(() => {
-          setRejoinInfo(persisted);
+          if (!cancelled) setRejoinInfo(persisted);
         });
     }
 

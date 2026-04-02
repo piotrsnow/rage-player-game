@@ -9,6 +9,17 @@ const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
 const SUMMARY_CACHE_MAX_ITEMS = 40;
 
+function extractSummaryFields(coreState) {
+  if (!coreState) return {};
+  const obj = typeof coreState === 'string' ? JSON.parse(coreState) : coreState;
+  return {
+    characterName: obj.character?.name || '',
+    characterCareer: obj.character?.career?.name || '',
+    characterTier: obj.character?.career?.tier || 1,
+    totalCost: obj.aiCosts?.total || 0,
+  };
+}
+
 async function withRetry(fn) {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -241,7 +252,11 @@ export async function campaignRoutes(fastify) {
     app.get('/', async (request) => {
       const campaigns = await prisma.campaign.findMany({
         where: { userId: request.user.id },
-        select: { id: true, name: true, genre: true, tone: true, coreState: true, lastSaved: true, createdAt: true },
+        select: {
+          id: true, name: true, genre: true, tone: true,
+          characterName: true, characterCareer: true, characterTier: true, totalCost: true,
+          lastSaved: true, createdAt: true,
+        },
         orderBy: { lastSaved: 'desc' },
       });
 
@@ -253,32 +268,19 @@ export async function campaignRoutes(fastify) {
       });
       const sceneCountMap = Object.fromEntries(sceneCounts.map((s) => [s.campaignId, s._count]));
 
-      return campaigns.map((c) => {
-        let characterName = '';
-        let characterCareer = '';
-        let characterTier = 1;
-        let totalCost = 0;
-        try {
-          const state = JSON.parse(c.coreState || '{}');
-          characterName = state.character?.name || '';
-          characterCareer = state.character?.career?.name || '';
-          characterTier = state.character?.career?.tier || 1;
-          totalCost = state.aiCosts?.total || 0;
-        } catch { /* ignore */ }
-        return {
-          id: c.id,
-          name: c.name,
-          genre: c.genre,
-          tone: c.tone,
-          lastSaved: c.lastSaved,
-          createdAt: c.createdAt,
-          characterName,
-          characterCareer,
-          characterTier,
-          sceneCount: sceneCountMap[c.id] || 0,
-          totalCost,
-        };
-      });
+      return campaigns.map((c) => ({
+        id: c.id,
+        name: c.name,
+        genre: c.genre,
+        tone: c.tone,
+        lastSaved: c.lastSaved,
+        createdAt: c.createdAt,
+        characterName: c.characterName || '',
+        characterCareer: c.characterCareer || '',
+        characterTier: c.characterTier || 1,
+        sceneCount: sceneCountMap[c.id] || 0,
+        totalCost: c.totalCost || 0,
+      }));
     });
 
     app.get('/:id', async (request, reply) => {
@@ -308,6 +310,8 @@ export async function campaignRoutes(fastify) {
 
     app.post('/', async (request) => {
       const { name, genre, tone, coreState } = request.body;
+      let summary = {};
+      try { summary = extractSummaryFields(coreState); } catch { /* ignore */ }
 
       const campaign = await prisma.campaign.create({
         data: {
@@ -316,6 +320,7 @@ export async function campaignRoutes(fastify) {
           genre: genre || '',
           tone: tone || '',
           coreState: JSON.stringify(coreState || {}),
+          ...summary,
           lastSaved: new Date(),
           shareToken: crypto.randomUUID(),
         },
@@ -338,7 +343,12 @@ export async function campaignRoutes(fastify) {
       if (name !== undefined) updateData.name = name;
       if (genre !== undefined) updateData.genre = genre;
       if (tone !== undefined) updateData.tone = tone;
-      if (coreState !== undefined) updateData.coreState = JSON.stringify(coreState);
+      if (coreState !== undefined) {
+        updateData.coreState = JSON.stringify(coreState);
+        try {
+          Object.assign(updateData, extractSummaryFields(coreState));
+        } catch { /* ignore */ }
+      }
 
       const campaign = await withRetry(() =>
         prisma.campaign.update({
@@ -367,6 +377,24 @@ export async function campaignRoutes(fastify) {
       ]);
       await prisma.campaign.delete({ where: { id: request.params.id } });
       return { success: true };
+    });
+
+    app.post('/backfill-summaries', async (request) => {
+      const campaigns = await prisma.campaign.findMany({
+        where: { userId: request.user.id, characterName: '' },
+        select: { id: true, coreState: true },
+      });
+      let updated = 0;
+      for (const c of campaigns) {
+        try {
+          const summary = extractSummaryFields(c.coreState);
+          if (summary.characterName || summary.totalCost) {
+            await prisma.campaign.update({ where: { id: c.id }, data: summary });
+            updated++;
+          }
+        } catch { /* skip broken entries */ }
+      }
+      return { updated, total: campaigns.length };
     });
 
     app.post('/:id/share', async (request, reply) => {
