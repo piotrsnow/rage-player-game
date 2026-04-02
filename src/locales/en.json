@@ -617,7 +617,7 @@
     "assetCacheCleared": "Asset cache cleared",
     "imageProvider": "Image Provider",
     "dalleLabel": "DALL-E 3 (OpenAI) — high quality, slower",
-    "gptImageLabel": "GPT Image 1 (OpenAI) — best quality, newest",
+    "gptImageLabel": "GPT Image 1.5 (OpenAI) — best quality, reference photos",
     "stabilityLabel": "Stable Diffusion 3 (Stability AI) — fast",
     "stabilityApiKey": "Stability AI API Key",
     "stabilityApiKeyDesc": "Get your key at platform.stability.ai",
