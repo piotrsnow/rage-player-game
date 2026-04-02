@@ -374,6 +374,15 @@ export const ObjectiveVerificationSchema = z.object({
   reasoning: z.string().optional().default(''),
 }).passthrough();
 
+export const SkillCheckInferenceSchema = z.union([
+  z.object({
+    characteristic: z.enum(CHARACTERISTIC_KEYS),
+    skill: z.string().optional(),
+    difficultyModifier: z.number().min(-40).max(40).optional().default(0),
+  }).passthrough(),
+  z.object({ skip: z.literal(true) }).passthrough(),
+]);
+
 export function safeParseJSON(raw) {
   if (typeof raw === 'object' && raw !== null) return { ok: true, data: raw };
   try {

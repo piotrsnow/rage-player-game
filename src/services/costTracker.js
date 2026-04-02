@@ -5,8 +5,13 @@ const PRICING = {
     'gpt-5.4-nano': { input: 0.20 / 1_000_000, output: 1.25 / 1_000_000 },
     'gpt-4o': { input: 2.50 / 1_000_000, output: 10.00 / 1_000_000 },
     'gpt-4o-mini': { input: 0.15 / 1_000_000, output: 0.60 / 1_000_000 },
+    'gpt-4.1': { input: 2.00 / 1_000_000, output: 8.00 / 1_000_000 },
+    'gpt-4.1-mini': { input: 0.40 / 1_000_000, output: 1.60 / 1_000_000 },
+    'gpt-4.1-nano': { input: 0.10 / 1_000_000, output: 0.40 / 1_000_000 },
     'claude-sonnet-4-20250514': { input: 3.00 / 1_000_000, output: 15.00 / 1_000_000 },
+    'claude-haiku-4-5-20251001': { input: 0.80 / 1_000_000, output: 4.00 / 1_000_000 },
     'claude-3-5-haiku-20241022': { input: 0.80 / 1_000_000, output: 4.00 / 1_000_000 },
+    'claude-3-7-sonnet-20250219': { input: 3.00 / 1_000_000, output: 15.00 / 1_000_000 },
   },
   image: {
     'dall-e-3': 0.080,

@@ -401,6 +401,18 @@ export function useAI() {
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
   const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
 
+  const inferSkillCheckFn = useCallback(
+    async (actionText, characterSkills) => {
+      if (localLLMConfig?.enabled) return null;
+      const { result, usage } = await aiService.inferSkillCheck(
+        actionText, characterSkills, aiProvider, apiKey, { alternateApiKey }
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+      return result;
+    },
+    [aiProvider, apiKey, alternateApiKey, localLLMConfig?.enabled, dispatch]
+  );
+
   const recordCompletedSceneGenTiming = useCallback(() => {
     if (!sceneGenStartRef.current) return;
     const elapsed = Date.now() - sceneGenStartRef.current;
@@ -544,7 +556,7 @@ export function useAI() {
         const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
 
         // Resolve all deterministic mechanics BEFORE AI call
-        const resolved = resolveMechanics({
+        const resolved = await resolveMechanics({
           state,
           playerAction,
           settings,
@@ -552,6 +564,7 @@ export function useAI() {
           isCustomAction,
           fromAutoPlayer,
           t,
+          inferSkillCheckFn,
         });
 
         const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
@@ -585,11 +598,14 @@ export function useAI() {
             const { scenes: allScenes, isLoading, isGeneratingScene, isGeneratingImage, error: _err, ...rest } = state;
             const coreState = { ...rest };
             if (coreState.chatHistory?.length > 10) coreState.chatHistory = coreState.chatHistory.slice(-10);
+            const characterState = coreState.character || {};
+            delete coreState.character;
             const created = await apiClient.post('/campaigns', {
               name: state.campaign?.name || '',
               genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '',
               coreState,
+              characterState,
             });
             backendCampaignId = created.id;
             // Mutate in place — same pattern as storage.js; persisted on next autoSave
@@ -1110,7 +1126,7 @@ export function useAI() {
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages]
+    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages, inferSkillCheckFn]
   );
 
   const generateCampaign = useCallback(

@@ -204,22 +204,31 @@ export async function aiRoutes(fastify) {
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { userId: true, coreState: true },
+      select: { userId: true, coreState: true, characterState: true },
     });
 
     if (!campaign || campaign.userId !== request.user.id) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const currentState = JSON.parse(campaign.coreState);
-    const mergedState = deepMerge(currentState, updates);
+    const data = { lastSaved: new Date() };
+
+    if (updates.character) {
+      const currentChar = JSON.parse(campaign.characterState || '{}');
+      data.characterState = JSON.stringify(deepMerge(currentChar, updates.character));
+      const { character: _c, ...rest } = updates;
+      const currentState = JSON.parse(campaign.coreState);
+      if (Object.keys(rest).length > 0) {
+        data.coreState = JSON.stringify(deepMerge(currentState, rest));
+      }
+    } else {
+      const currentState = JSON.parse(campaign.coreState);
+      data.coreState = JSON.stringify(deepMerge(currentState, updates));
+    }
 
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: {
-        coreState: JSON.stringify(mergedState),
-        lastSaved: new Date(),
-      },
+      data,
     });
 
     return { ok: true };

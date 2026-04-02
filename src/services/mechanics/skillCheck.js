@@ -86,8 +86,8 @@ export function inferActionContext(actionText) {
  * @param {number} [params.creativityBonus] - bonus for custom/auto-player actions (0-25)
  * @returns {import('./index.js').ResolvedSkillCheck | null}
  */
-export function resolveSkillCheck({ character, actionText, roll, currentMomentum = 0, worldNpcs = [], resolveDisposition, creativityBonus = 0 }) {
-  const context = inferActionContext(actionText);
+export function resolveSkillCheck({ character, actionText, roll, currentMomentum = 0, worldNpcs = [], resolveDisposition, creativityBonus = 0, actionContext = null }) {
+  const context = actionContext || inferActionContext(actionText);
   if (!context) return null;
 
   const characteristics = character?.characteristics;

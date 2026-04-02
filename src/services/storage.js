@@ -117,11 +117,15 @@ export const storage = {
     const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = gameState;
     const coreState = { ...rest };
 
+    const characterState = coreState.character || {};
+    delete coreState.character;
+
     const payload = {
       name: gameState.campaign?.name || '',
       genre: gameState.campaign?.genre || '',
       tone: gameState.campaign?.tone || '',
       coreState,
+      characterState,
     };
 
     const backendId = gameState.campaign?.backendId;
@@ -225,11 +229,14 @@ export const storage = {
       try {
         const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = entry;
         const coreState = { ...rest };
+        const characterState = coreState.character || {};
+        delete coreState.character;
         const created = await apiClient.post('/campaigns', {
           name: entry.campaign?.name || '',
           genre: entry.campaign?.genre || '',
           tone: entry.campaign?.tone || '',
           coreState,
+          characterState,
         });
         if (scenes?.length) {
           for (let i = 0; i < scenes.length; i++) {

@@ -5,6 +5,7 @@ import {
   safeParseJSON, safeParseAIResponse, withRetry,
   SceneResponseSchema, CampaignResponseSchema, CompressionResponseSchema,
   RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema, CombatCommentaryResponseSchema,
+  SkillCheckInferenceSchema,
 } from './aiResponseValidator';
 import { enforcePromptTokenBudget, getSceneAIGovernance, resolvePromptProfile } from './promptGovernance';
 
@@ -30,8 +31,8 @@ export const RECOMMENDED_MODELS = {
 };
 
 const MODEL_MAP = {
-  openai:    { standard: 'gpt-5.4-mini',             premium: 'gpt-5.4' },
-  anthropic: { standard: 'claude-haiku-4-5-20251001', premium: 'claude-sonnet-4-20250514' },
+  openai:    { nano: 'gpt-5.4-nano', standard: 'gpt-5.4-mini',             premium: 'gpt-5.4' },
+  anthropic: { nano: 'claude-haiku-4-5-20251001', standard: 'claude-haiku-4-5-20251001', premium: 'claude-sonnet-4-20250514' },
 };
 
 const TASK_TIER_OVERRIDE = {
@@ -41,6 +42,7 @@ const TASK_TIER_OVERRIDE = {
   verifyObjective:  'standard',
   generateStoryPrompt: 'standard',
   generateCombatCommentary: 'standard',
+  inferSkillCheck:  'nano',
 };
 
 export function selectModel(provider, tier, taskType) {
@@ -1049,5 +1051,23 @@ export const aiService = {
       },
       usage,
     };
+  },
+
+  async inferSkillCheck(actionText, characterSkills, provider, apiKey, { alternateApiKey = null } = {}) {
+    const model = selectModel(provider, 'nano', 'inferSkillCheck');
+    const systemPrompt = 'WFRP 4e skill check classifier. Given a player action, return JSON with the most appropriate d100 test.\nValid characteristics: ws, bs, s, t, i, ag, dex, int, wp, fel.\nReturn: {"characteristic":"<key>","skill":"<WFRP 4e skill name>","difficultyModifier":<-40 to 40 step 10>}\nIf the action is trivial/automatic and needs no test, return: {"skip":true}\nPrefer the character\'s trained skills when relevant. Respond with JSON only.';
+    const skillList = Object.entries(characterSkills || {})
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `${k} +${v}`)
+      .join(', ');
+    const userPrompt = `Action: "${actionText}"\nCharacter skills: ${skillList || 'none'}`;
+    const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 100, {
+      model, modelTier: 'nano', taskType: 'inferSkillCheck', alternateApiKey,
+    });
+    const parsed = safeParseJSON(result);
+    if (!parsed.ok) return { result: { skip: true }, usage };
+    const validated = SkillCheckInferenceSchema.safeParse(parsed.data);
+    if (!validated.success) return { result: { skip: true }, usage };
+    return { result: validated.data, usage };
   },
 };

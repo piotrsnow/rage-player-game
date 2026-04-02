@@ -561,6 +561,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const [typewriterAction, setTypewriterAction] = useState(null);
   const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
+  const [pendingOverlayText, setPendingOverlayText] = useState(null);
   const typewriterNextIndexRef = useRef(null);
 
   autoPlayRef.current = autoPlayScenes;
@@ -797,7 +798,25 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const handlePlayerActionOverlayComplete = useCallback(() => {
     setPlayerActionOverlayText(null);
-  }, []);
+    if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
+      const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
+      if (latestDm) {
+        narrator.speakSingle(latestDm, latestDm.id);
+      }
+    }
+  }, [settings.narratorEnabled, settings.narratorAutoPlay, narrator, chatHistory]);
+
+  const OVERLAY_LEAD_TIME_SECONDS = 12;
+
+  useEffect(() => {
+    if (!pendingOverlayText) return;
+    const narratorIdle = narrator.playbackState === 'idle';
+    const nearEnd = narrator.narrationSecondsRemaining <= OVERLAY_LEAD_TIME_SECONDS;
+    if (narratorIdle || nearEnd) {
+      setPlayerActionOverlayText(pendingOverlayText);
+      setPendingOverlayText(null);
+    }
+  }, [pendingOverlayText, narrator.playbackState, narrator.narrationSecondsRemaining]);
 
   useEffect(() => {
     if (campaign || isMultiplayer || readOnly) return;
@@ -1032,7 +1051,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
     if (!fromAutoPlayer && action) {
-      setPlayerActionOverlayText(action);
+      const narratorIsActive = narrator.playbackState === 'playing' || narrator.playbackState === 'loading';
+      if (narratorIsActive && settings.narratorEnabled && settings.narratorAutoPlay) {
+        setPendingOverlayText(action);
+      } else {
+        setPlayerActionOverlayText(action);
+      }
     }
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer);
@@ -2178,7 +2202,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         <ChatPanel
           messages={chatHistory}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)

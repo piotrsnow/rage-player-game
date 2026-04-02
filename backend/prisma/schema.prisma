@@ -53,7 +53,8 @@ model Campaign {
   name           String   @default("")
   genre          String   @default("")
   tone           String   @default("")
-  coreState      String   @default("{}") // Lean state: character, combat, dialogue, world basics, quests
+  coreState      String   @default("{}") // Lean state: combat, dialogue, world basics (minus npcs/knowledge/quests/character)
+  characterState String   @default("{}") // JSON: in-campaign character snapshot (evolves independently from Character library)
   characterName  String   @default("")
   characterCareer String  @default("")
   characterTier  Int      @default(1)
@@ -147,6 +148,29 @@ model CampaignCodex {
 
   @@index([campaignId])
   @@unique([campaignId, codexKey])
+}
+
+model CampaignQuest {
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId           String    @db.ObjectId
+  questId              String
+  name                 String
+  type                 String    @default("side")
+  description          String    @default("")
+  completionCondition  String?
+  questGiverId         String?
+  turnInNpcId          String?
+  locationId           String?
+  prerequisiteQuestIds String    @default("[]")
+  objectives           String    @default("[]")
+  reward               String?
+  status               String    @default("active") // "active" | "completed"
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([campaignId])
+  @@unique([campaignId, questId])
 }
 
 model Character {

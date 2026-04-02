@@ -9,15 +9,245 @@ const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
 const SUMMARY_CACHE_MAX_ITEMS = 40;
 
-function extractSummaryFields(coreState) {
-  if (!coreState) return {};
-  const obj = typeof coreState === 'string' ? JSON.parse(coreState) : coreState;
+function extractSummaryFields(coreState, characterState) {
+  if (!coreState && !characterState) return {};
+  const obj = typeof coreState === 'string' ? JSON.parse(coreState) : (coreState || {});
+  let charObj = obj.character;
+  if (!charObj || Object.keys(charObj).length === 0) {
+    const cs = typeof characterState === 'string' ? JSON.parse(characterState || '{}') : (characterState || {});
+    if (cs && Object.keys(cs).length > 0) charObj = cs;
+  }
   return {
-    characterName: obj.character?.name || '',
-    characterCareer: obj.character?.career?.name || '',
-    characterTier: obj.character?.career?.tier || 1,
+    characterName: charObj?.name || '',
+    characterCareer: charObj?.career?.name || '',
+    characterTier: charObj?.career?.tier || 1,
     totalCost: obj.aiCosts?.total || 0,
   };
+}
+
+function stripNormalizedFromCoreState(coreStateObj) {
+  const slim = { ...coreStateObj };
+
+  const characterState = slim.character || {};
+  delete slim.character;
+
+  const npcs = slim.world?.npcs || [];
+  if (slim.world && 'npcs' in slim.world) {
+    const { npcs: _n, ...worldRest } = slim.world;
+    slim.world = worldRest;
+  }
+
+  const knowledgeEvents = slim.world?.knowledgeBase?.events || [];
+  const knowledgeDecisions = slim.world?.knowledgeBase?.decisions || [];
+  if (slim.world?.knowledgeBase && ('events' in slim.world.knowledgeBase || 'decisions' in slim.world.knowledgeBase)) {
+    const { events: _e, decisions: _d, ...kbRest } = slim.world.knowledgeBase;
+    slim.world = { ...slim.world, knowledgeBase: kbRest };
+  }
+
+  const quests = slim.quests || { active: [], completed: [] };
+  delete slim.quests;
+
+  return { slim, characterState, npcs, knowledgeEvents, knowledgeDecisions, quests };
+}
+
+async function syncNPCsToNormalized(campaignId, npcs) {
+  if (!Array.isArray(npcs) || npcs.length === 0) return;
+  for (const npc of npcs) {
+    if (!npc.name) continue;
+    const npcId = npc.name.toLowerCase().replace(/\s+/g, '_');
+    try {
+      const data = {
+        name: npc.name,
+        gender: npc.gender || 'unknown',
+        role: npc.role || null,
+        personality: npc.personality || null,
+        attitude: npc.attitude || 'neutral',
+        disposition: npc.disposition ?? 0,
+        alive: npc.alive ?? true,
+        lastLocation: npc.lastLocation || null,
+        factionId: npc.factionId || null,
+        notes: npc.notes || null,
+        relationships: JSON.stringify(npc.relationships || []),
+      };
+      await prisma.campaignNPC.upsert({
+        where: { campaignId_npcId: { campaignId, npcId } },
+        create: { campaignId, npcId, ...data },
+        update: data,
+      });
+    } catch (err) {
+      console.error(`[campaigns] NPC sync failed for ${npc.name}:`, err.message);
+    }
+  }
+}
+
+async function syncKnowledgeToNormalized(campaignId, events, decisions) {
+  if (events.length === 0 && decisions.length === 0) return;
+  const existing = await prisma.campaignKnowledge.findMany({
+    where: { campaignId, entryType: { in: ['event', 'decision'] } },
+    select: { summary: true, entryType: true },
+  });
+  const existingKeys = new Set(existing.map((e) => `${e.entryType}:${e.summary}`));
+
+  for (const e of events) {
+    const summary = e.summary || (typeof e === 'string' ? e : '');
+    if (!summary) continue;
+    if (existingKeys.has(`event:${summary}`)) continue;
+    try {
+      await prisma.campaignKnowledge.create({
+        data: {
+          campaignId,
+          entryType: 'event',
+          summary,
+          content: JSON.stringify(e),
+          importance: e.importance || null,
+          tags: JSON.stringify(e.tags || []),
+          sceneIndex: e.sceneIndex ?? null,
+        },
+      });
+    } catch (err) {
+      console.error('[campaigns] Knowledge event sync failed:', err.message);
+    }
+  }
+
+  for (const d of decisions) {
+    const summary = `${d.choice || ''} -> ${d.consequence || ''}`;
+    if (!d.choice) continue;
+    if (existingKeys.has(`decision:${summary}`)) continue;
+    try {
+      await prisma.campaignKnowledge.create({
+        data: {
+          campaignId,
+          entryType: 'decision',
+          summary,
+          content: JSON.stringify(d),
+          importance: d.importance || null,
+          tags: JSON.stringify(d.tags || []),
+          sceneIndex: d.sceneIndex ?? null,
+        },
+      });
+    } catch (err) {
+      console.error('[campaigns] Knowledge decision sync failed:', err.message);
+    }
+  }
+}
+
+async function syncQuestsToNormalized(campaignId, quests) {
+  const active = quests.active || [];
+  const completed = quests.completed || [];
+  const all = [
+    ...active.map((q) => ({ ...q, _status: 'active' })),
+    ...completed.map((q) => ({ ...q, _status: 'completed' })),
+  ];
+  if (all.length === 0) return;
+  for (const q of all) {
+    if (!q.id || !q.name) continue;
+    try {
+      const data = {
+        name: q.name,
+        type: q.type || 'side',
+        description: q.description || '',
+        completionCondition: q.completionCondition || null,
+        questGiverId: q.questGiverId || null,
+        turnInNpcId: q.turnInNpcId || q.questGiverId || null,
+        locationId: q.locationId || null,
+        prerequisiteQuestIds: JSON.stringify(q.prerequisiteQuestIds || []),
+        objectives: JSON.stringify(q.objectives || []),
+        reward: q.reward ? JSON.stringify(q.reward) : null,
+        status: q._status,
+        completedAt: q.completedAt ? new Date(q.completedAt) : null,
+      };
+      await prisma.campaignQuest.upsert({
+        where: { campaignId_questId: { campaignId, questId: q.id } },
+        create: { campaignId, questId: q.id, ...data },
+        update: data,
+      });
+    } catch (err) {
+      console.error(`[campaigns] Quest sync failed for ${q.name}:`, err.message);
+    }
+  }
+}
+
+async function reconstructFromNormalized(campaignId, coreState, rawCharacterState) {
+  let charState = {};
+  try {
+    charState = typeof rawCharacterState === 'string'
+      ? JSON.parse(rawCharacterState) : (rawCharacterState || {});
+  } catch { /* empty */ }
+  if (Object.keys(charState).length > 0) {
+    coreState.character = charState;
+  }
+
+  if (!coreState.world) coreState.world = {};
+
+  const dbNpcs = await prisma.campaignNPC.findMany({ where: { campaignId } });
+  if (dbNpcs.length > 0) {
+    coreState.world.npcs = dbNpcs.map((n) => ({
+      name: n.name,
+      gender: n.gender,
+      role: n.role,
+      personality: n.personality,
+      attitude: n.attitude,
+      disposition: n.disposition,
+      alive: n.alive,
+      lastLocation: n.lastLocation,
+      factionId: n.factionId,
+      notes: n.notes,
+      relationships: JSON.parse(n.relationships || '[]'),
+    }));
+  }
+
+  if (!coreState.world.knowledgeBase) {
+    coreState.world.knowledgeBase = { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] };
+  }
+  const dbKnowledge = await prisma.campaignKnowledge.findMany({
+    where: { campaignId, entryType: { in: ['event', 'decision'] } },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (dbKnowledge.length > 0) {
+    const events = [];
+    const decisions = [];
+    for (const k of dbKnowledge) {
+      try {
+        const content = JSON.parse(k.content);
+        if (k.entryType === 'event') events.push({ ...content, sceneIndex: k.sceneIndex });
+        else decisions.push({ ...content, sceneIndex: k.sceneIndex });
+      } catch { /* skip malformed */ }
+    }
+    if (events.length > 0) coreState.world.knowledgeBase.events = events;
+    if (decisions.length > 0) coreState.world.knowledgeBase.decisions = decisions;
+  }
+
+  const dbQuests = await prisma.campaignQuest.findMany({
+    where: { campaignId },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (dbQuests.length > 0) {
+    const active = [];
+    const completed = [];
+    for (const q of dbQuests) {
+      const quest = {
+        id: q.questId,
+        name: q.name,
+        type: q.type,
+        description: q.description,
+        completionCondition: q.completionCondition,
+        questGiverId: q.questGiverId,
+        turnInNpcId: q.turnInNpcId,
+        locationId: q.locationId,
+        prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
+        objectives: JSON.parse(q.objectives || '[]'),
+        reward: q.reward ? JSON.parse(q.reward) : null,
+      };
+      if (q.status === 'completed') {
+        completed.push({ ...quest, completedAt: q.completedAt?.getTime?.() || q.completedAt, rewardGranted: true });
+      } else {
+        active.push(quest);
+      }
+    }
+    coreState.quests = { active, completed };
+  }
+
+  return coreState;
 }
 
 async function withRetry(fn) {
@@ -107,7 +337,7 @@ export async function campaignRoutes(fastify) {
         select: {
           id: true, name: true, genre: true, tone: true,
           rating: true, playCount: true,
-          coreState: true, createdAt: true,
+          coreState: true, characterState: true, createdAt: true,
           user: { select: { email: true } },
         },
         orderBy,
@@ -129,6 +359,10 @@ export async function campaignRoutes(fastify) {
       campaigns: campaigns.map((c) => {
         let parsed = {};
         try { parsed = JSON.parse(c.coreState); } catch { /* empty */ }
+        let charParsed = parsed.character;
+        if (!charParsed || Object.keys(charParsed).length === 0) {
+          try { charParsed = JSON.parse(c.characterState || '{}'); } catch { /* empty */ }
+        }
         return {
           id: c.id,
           name: c.name,
@@ -141,8 +375,8 @@ export async function campaignRoutes(fastify) {
           sceneCount: sceneCountMap[c.id] || 0,
           worldDescription: parsed.campaign?.worldDescription?.substring(0, 300) || '',
           hook: parsed.campaign?.hook?.substring(0, 200) || '',
-          characterName: parsed.character?.name || '',
-          characterCareer: parsed.character?.career?.name || '',
+          characterName: charParsed?.name || '',
+          characterCareer: charParsed?.career?.name || '',
         };
       }),
       total,
@@ -155,7 +389,7 @@ export async function campaignRoutes(fastify) {
       select: {
         id: true, name: true, genre: true, tone: true,
         rating: true, playCount: true,
-        coreState: true, isPublic: true, createdAt: true,
+        coreState: true, characterState: true, isPublic: true, createdAt: true,
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
@@ -170,6 +404,8 @@ export async function campaignRoutes(fastify) {
     let coreState = {};
     try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
+    await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
+
     const scenes = await prisma.campaignScene.findMany({
       where: { campaignId: campaign.id },
       orderBy: { sceneIndex: 'asc' },
@@ -177,7 +413,8 @@ export async function campaignRoutes(fastify) {
     });
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-    return { ...campaign, coreState, scenes: dedupedScenes };
+    const { characterState: _cs, ...campaignRest } = campaign;
+    return { ...campaignRest, coreState, scenes: dedupedScenes };
   });
 
   fastify.get('/share/:token', async (request, reply) => {
@@ -185,7 +422,7 @@ export async function campaignRoutes(fastify) {
       where: { shareToken: request.params.token },
       select: {
         id: true, name: true, genre: true, tone: true,
-        coreState: true, createdAt: true,
+        coreState: true, characterState: true, createdAt: true,
         user: { select: { email: true } },
       },
     });
@@ -193,6 +430,8 @@ export async function campaignRoutes(fastify) {
 
     let coreState = {};
     try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
+
+    await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
 
     if (!coreState.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
       coreState.narratorVoiceId = config.elevenlabsDefaultVoiceId;
@@ -328,6 +567,8 @@ export async function campaignRoutes(fastify) {
       let coreState = {};
       try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
+      await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
+
       const scenes = await prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
@@ -335,13 +576,20 @@ export async function campaignRoutes(fastify) {
       });
       const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-      return { ...campaign, coreState, scenes: dedupedScenes };
+      const { characterState: _cs, ...campaignRest } = campaign;
+      return { ...campaignRest, coreState, scenes: dedupedScenes };
     });
 
     app.post('/', async (request) => {
-      const { name, genre, tone, coreState } = request.body;
+      const { name, genre, tone, coreState: rawCoreState, characterState: rawCharState } = request.body;
+      const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
+
+      const { slim, characterState: extractedChar, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+        stripNormalizedFromCoreState(parsed);
+
+      const charToStore = rawCharState || extractedChar;
       let summary = {};
-      try { summary = extractSummaryFields(coreState); } catch { /* ignore */ }
+      try { summary = extractSummaryFields(slim, charToStore); } catch { /* ignore */ }
 
       const campaign = await prisma.campaign.create({
         data: {
@@ -349,16 +597,22 @@ export async function campaignRoutes(fastify) {
           name: name || '',
           genre: genre || '',
           tone: tone || '',
-          coreState: JSON.stringify(coreState || {}),
+          coreState: JSON.stringify(slim),
+          characterState: JSON.stringify(charToStore || {}),
           ...summary,
           lastSaved: new Date(),
           shareToken: crypto.randomUUID(),
         },
       });
 
-      let parsedCoreState = {};
-      try { parsedCoreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
-      return { ...campaign, coreState: parsedCoreState, scenes: [] };
+      syncNPCsToNormalized(campaign.id, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
+      syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
+      syncQuestsToNormalized(campaign.id, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+
+      const fullState = { ...slim, character: charToStore };
+      if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
+      if (quests.active?.length || quests.completed?.length) fullState.quests = quests;
+      return { ...campaign, coreState: fullState, scenes: [] };
     });
 
     app.put('/:id', async (request, reply) => {
@@ -367,17 +621,29 @@ export async function campaignRoutes(fastify) {
       });
       if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-      const { name, genre, tone, coreState } = request.body;
+      const { name, genre, tone, coreState: rawCoreState, characterState: rawCharState } = request.body;
       const updateData = { lastSaved: new Date() };
 
       if (name !== undefined) updateData.name = name;
       if (genre !== undefined) updateData.genre = genre;
       if (tone !== undefined) updateData.tone = tone;
-      if (coreState !== undefined) {
-        updateData.coreState = JSON.stringify(coreState);
+
+      if (rawCoreState !== undefined) {
+        const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
+        const { slim, characterState: extractedChar, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+          stripNormalizedFromCoreState(parsed);
+
+        const charToStore = rawCharState || extractedChar;
+        updateData.coreState = JSON.stringify(slim);
+        updateData.characterState = JSON.stringify(charToStore || {});
         try {
-          Object.assign(updateData, extractSummaryFields(coreState));
+          Object.assign(updateData, extractSummaryFields(slim, charToStore));
         } catch { /* ignore */ }
+
+        const campaignId = request.params.id;
+        syncNPCsToNormalized(campaignId, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
+        syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
+        syncQuestsToNormalized(campaignId, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
       }
 
       const campaign = await withRetry(() =>
@@ -404,6 +670,7 @@ export async function campaignRoutes(fastify) {
         prisma.campaignNPC.deleteMany({ where: { campaignId: request.params.id } }),
         prisma.campaignKnowledge.deleteMany({ where: { campaignId: request.params.id } }),
         prisma.campaignCodex.deleteMany({ where: { campaignId: request.params.id } }),
+        prisma.campaignQuest.deleteMany({ where: { campaignId: request.params.id } }),
       ]);
       await prisma.campaign.delete({ where: { id: request.params.id } });
       return { success: true };
@@ -412,12 +679,12 @@ export async function campaignRoutes(fastify) {
     app.post('/backfill-summaries', async (request) => {
       const campaigns = await prisma.campaign.findMany({
         where: { userId: request.user.id, characterName: '' },
-        select: { id: true, coreState: true },
+        select: { id: true, coreState: true, characterState: true },
       });
       let updated = 0;
       for (const c of campaigns) {
         try {
-          const summary = extractSummaryFields(c.coreState);
+          const summary = extractSummaryFields(c.coreState, c.characterState);
           if (summary.characterName || summary.totalCost) {
             await prisma.campaign.update({ where: { id: c.id }, data: summary });
             updated++;

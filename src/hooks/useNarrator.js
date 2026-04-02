@@ -35,6 +35,7 @@ const HIGHLIGHT_SCALE_MIN = 0.85;
 const HIGHLIGHT_SCALE_MAX = 1.2;
 const MAX_NATURAL_PLAYBACK_RATE = 2;
 const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
+const CHARS_PER_SECOND_ESTIMATE = 14;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -116,6 +117,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const holdStartAtRef = useRef(0);
   const holdRafRef = useRef(null);
   const [narrationFastForwardRate, setNarrationFastForwardRate] = useState(1);
+  const [narrationSecondsRemaining, setNarrationSecondsRemaining] = useState(0);
+  const remainingTextCharsRef = useRef(0);
   const reportNarratorError = useCallback((message) => {
     if (!message || viewerMode) return;
     dispatch({ type: 'SET_ERROR', payload: message });
@@ -180,6 +183,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const startHighlightLoop = useCallback((audio, words, logicalSegmentIndex, messageId, wordOffset, segmentWordOffset, fullText, sentence) => {
     stopHighlightLoop();
     let lastActiveIdx = -1;
+    let lastRemainingUpdate = 0;
     const tick = () => {
       if (!audio || audio.paused || audio.ended) {
         setHighlightInfo(null);
@@ -216,6 +220,14 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         fullText,
         sentenceWordIndex: activeIdx,
       });
+      const now = performance.now();
+      if (now - lastRemainingUpdate > 1000) {
+        lastRemainingUpdate = now;
+        const adur = Number.isFinite(audio.duration) ? audio.duration : 0;
+        const audioRemaining = Math.max(0, (adur - audio.currentTime) / (audio.playbackRate || 1));
+        const textRemaining = remainingTextCharsRef.current / CHARS_PER_SECOND_ESTIMATE;
+        setNarrationSecondsRemaining(Math.max(0, audioRemaining + textRemaining));
+      }
       highlightRafRef.current = requestAnimationFrame(tick);
     };
     highlightRafRef.current = requestAnimationFrame(tick);
@@ -320,6 +332,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       segmentWordOffset += wordsCount;
       stopHighlightLoop();
       audioRef.current = null;
+      remainingTextCharsRef.current = Math.max(0, remainingTextCharsRef.current - chunk.length);
     }
     return Math.max(0, wordOffset - initialWordOffset);
   }, [startHighlightLoop, stopHighlightLoop, dispatch, fetchTts, viewerMode]);
@@ -328,6 +341,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     const myGeneration = generationRef.current;
 
     if (queueRef.current.length === 0) {
+      remainingTextCharsRef.current = 0;
+      setNarrationSecondsRemaining(0);
       setPlaybackState(STATES.IDLE);
       setCurrentMessageId(null);
       setCurrentSegmentIndex(-1);
@@ -417,6 +432,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         if (chunks.length <= 1) return [{ ...seg, text, logicalSegmentIndex }];
         return chunks.map((chunk) => ({ ...seg, text: chunk, logicalSegmentIndex }));
       });
+
+      remainingTextCharsRef.current = normalizedSegments.reduce((sum, seg) => sum + (seg.text?.trim()?.length || 0), 0)
+        + queueRef.current.slice(1).reduce((sum, item) => sum + (item.narrative?.length || 0), 0);
+      setNarrationSecondsRemaining(remainingTextCharsRef.current / CHARS_PER_SECOND_ESTIMATE);
 
       const localVoiceMap = new Map();
 
@@ -553,6 +572,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
             stopHighlightLoop();
             audioRef.current = null;
+            remainingTextCharsRef.current = Math.max(0, remainingTextCharsRef.current - text.length);
             const wordsCount = (prefetched.words || []).length;
             globalWordOffset += wordsCount;
             segmentWordOffsets.set(logicalSegmentIndex, segmentWordOffset + wordsCount);
@@ -636,6 +656,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     abortRef.current = true;
     queueRef.current = [];
     cleanup();
+    remainingTextCharsRef.current = 0;
+    setNarrationSecondsRemaining(0);
     setPlaybackState(STATES.IDLE);
     setCurrentMessageId(null);
     setCurrentSegmentIndex(-1);
@@ -683,6 +705,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
   return {
     playbackState,
+    narrationSecondsRemaining,
     currentMessageId,
     currentSegmentIndex,
     currentCharacter,
