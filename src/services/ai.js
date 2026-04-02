@@ -420,7 +420,7 @@ async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, mo
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       temperature: 0.8,
       response_format: { type: 'json_object' },
     }),

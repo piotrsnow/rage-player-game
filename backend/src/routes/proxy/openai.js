@@ -38,7 +38,7 @@ export async function openaiProxyRoutes(fastify) {
       });
     }
 
-    const { messages, model, temperature, response_format } = request.body;
+    const { messages, model, temperature, response_format, max_completion_tokens } = request.body;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -51,6 +51,7 @@ export async function openaiProxyRoutes(fastify) {
         messages,
         temperature: temperature ?? 0.8,
         ...(response_format ? { response_format } : {}),
+        ...(max_completion_tokens ? { max_completion_tokens } : {}),
       }),
     });
 

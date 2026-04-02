@@ -430,7 +430,7 @@ async function callOpenAI(messages, { tools = [], model, temperature = 0.8, maxT
     model: model || 'gpt-5.4',
     messages,
     temperature,
-    max_tokens: maxTokens,
+    max_completion_tokens: maxTokens,
   };
 
   if (tools.length > 0) {
