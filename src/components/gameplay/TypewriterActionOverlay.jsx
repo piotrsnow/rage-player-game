@@ -171,7 +171,7 @@ export default function TypewriterActionOverlay({
                   color: charHighlightKinds[i] === 2
                     ? 'rgba(255, 210, 150, 0.98)'
                     : charHighlightKinds[i] === 1
-                      ? 'rgba(190, 236, 255, 0.96)'
+                      ? 'rgba(255, 190, 210, 0.96)'
                       : 'rgba(232, 210, 255, 0.9)',
                   textShadow: charHighlightKinds[i] !== 0
                     ? '0 0 8px rgba(170, 120, 255, 0.25)'
