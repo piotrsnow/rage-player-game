@@ -73,6 +73,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
       className={`fixed inset-0 z-[80] pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
+      style={{ paddingTop: '160px' }}
     >
       {/* 3D Dice roller area */}
       <div className="relative w-[260px] h-[200px] -mt-16">

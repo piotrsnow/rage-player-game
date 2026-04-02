@@ -380,6 +380,7 @@ export function useAI() {
   const { settings, hasApiKey } = useSettings();
 
   const compressionGenRef = useRef(0);
+  const compressionInFlightRef = useRef(false);
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
@@ -1090,9 +1091,11 @@ export function useAI() {
         // Auto-save after scene resolution (delay for state to settle)
         setTimeout(() => autoSave(), 300);
 
-        if (contextManager.needsCompression(state)) {
+        if (!compressionInFlightRef.current && contextManager.needsCompression(state)) {
+          compressionInFlightRef.current = true;
           const gen = ++compressionGenRef.current;
           contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
+            compressionInFlightRef.current = false;
             if (gen !== compressionGenRef.current) return;
             if (compResult?.summary) {
               const worldUpdate = { compressedHistory: compResult.summary };
@@ -1105,6 +1108,8 @@ export function useAI() {
             if (compResult?.usage) {
               dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', compResult.usage) });
             }
+          }).catch(() => {
+            compressionInFlightRef.current = false;
           });
         }
 

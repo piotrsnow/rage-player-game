@@ -93,6 +93,8 @@ export const storage = {
 
     this.saveLocalSnapshot(gameState);
 
+    if (!apiClient.isConnected()) return { saved: false, local: true };
+
     const existing = _pendingBackendSaves.get(campaignId);
     if (existing) {
       try { await existing; } catch { /* ignore */ }
@@ -161,17 +163,22 @@ export const storage = {
     const newScenes = scenes
       .map((scene, i) => ({ scene, i }))
       .filter(({ i }) => i > lastSaved);
+    let highestSaved = lastSaved;
     for (const { scene, i } of newScenes) {
       try {
         await apiClient.post(`/ai/campaigns/${backendId}/scenes`, {
           ...scene,
           sceneIndex: i,
         });
+        highestSaved = i;
       } catch (err) {
-        console.warn('[storage] Scene save failed:', err.message);
+        console.warn('[storage] Scene save failed at index %d:', i, err.message);
+        break;
       }
     }
-    _sceneIndexCache.set(backendId, scenes.length - 1);
+    if (highestSaved > lastSaved) {
+      _sceneIndexCache.set(backendId, highestSaved);
+    }
   },
 
   async loadCampaign(backendId) {

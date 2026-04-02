@@ -114,11 +114,13 @@ export default function TypewriterActionOverlay({
     <div
       className={`fixed inset-0 z-[70] flex items-center justify-center ${
         phase === 'fading' ? 'animate-typewriter-fade-out' : ''
-      }`}
+      } ${phase === 'holding' ? 'cursor-pointer' : ''}`}
       style={{
         background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
         backdropFilter: 'blur(6px)',
+        paddingBottom: '160px',
       }}
+      onClick={() => { if (phase === 'holding') setPhase('fading'); }}
     >
       {/* Decorative glow behind the panel */}
       <div
