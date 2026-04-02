@@ -41,6 +41,53 @@ function HighlightedText({ text, highlightInfo, segmentIndex, messageId, classNa
   );
 }
 
+function normalizeForNarrativeDedup(text) {
+  if (typeof text !== 'string') return '';
+  return text
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .toLowerCase()
+    .replace(/^[\s"'`]+|[\s"'`]+$/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isDialogueDuplicateOfNarration(dialogueText, narrativeText) {
+  const normalizedDialogue = normalizeForNarrativeDedup(dialogueText);
+  const normalizedNarrative = normalizeForNarrativeDedup(narrativeText);
+  if (!normalizedDialogue || !normalizedNarrative) return false;
+  if (normalizedDialogue === normalizedNarrative) return true;
+
+  const shorter = normalizedDialogue.length <= normalizedNarrative.length ? normalizedDialogue : normalizedNarrative;
+  const longer = shorter === normalizedDialogue ? normalizedNarrative : normalizedDialogue;
+  if (longer.includes(shorter) && (shorter.length / longer.length) >= 0.9) {
+    return true;
+  }
+
+  const dialogueWords = normalizedDialogue.split(' ');
+  const narrativeWords = normalizedNarrative.split(' ');
+  const minLength = Math.min(dialogueWords.length, narrativeWords.length);
+  const maxLength = Math.max(dialogueWords.length, narrativeWords.length);
+  if (maxLength === 0) return false;
+
+  let samePositionCount = 0;
+  for (let i = 0; i < minLength; i += 1) {
+    if (dialogueWords[i] === narrativeWords[i]) {
+      samePositionCount += 1;
+    }
+  }
+  return (samePositionCount / maxLength) >= 0.9;
+}
+
+function filterDuplicateDialogueSegments(segments, narrativeText) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+  return segments.filter((segment) => {
+    if (segment?.type !== 'dialogue') return true;
+    return !isDialogueDuplicateOfNarration(segment?.text, narrativeText);
+  });
+}
+
 function DialogueSegments({ segments, narrator, messageId }) {
   const { t } = useTranslation();
   if (!segments || segments.length === 0) return null;
@@ -217,12 +264,15 @@ function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
   const [showRawAiSpeech, setShowRawAiSpeech] = useState(false);
 
-  const hasSegments = message.dialogueSegments && message.dialogueSegments.length > 0;
-  const shouldRenderSegments = hasSegments;
+  const narrativeText = typeof message.content === 'string' ? message.content : '';
+  const sourceSegments = Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [];
+  const visibleSegments = filterDuplicateDialogueSegments(sourceSegments, narrativeText);
+  const hasVisibleDialogue = visibleSegments.some((segment) => segment?.type === 'dialogue');
+  const shouldRenderSegments = visibleSegments.length > 0 && hasVisibleDialogue;
   const rawAiSpeech = message.rawAiSpeech && typeof message.rawAiSpeech === 'object'
     ? message.rawAiSpeech
     : {
-      narrative: typeof message.content === 'string' ? message.content : '',
+      narrative: narrativeText,
       dialogueSegments: Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [],
       scenePacing: message.scenePacing || 'exploration',
     };
@@ -243,10 +293,10 @@ function DmMessage({ message, narrator }) {
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
             {shouldRenderSegments ? (
-              <DialogueSegments segments={message.dialogueSegments} narrator={narrator} messageId={message.id} />
+              <DialogueSegments segments={visibleSegments} narrator={narrator} messageId={message.id} />
             ) : (
               <p className="text-xs text-on-surface-variant leading-snug italic">
-                <HighlightedText text={message.content} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
+                <HighlightedText text={narrativeText} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
               </p>
             )}
           </div>

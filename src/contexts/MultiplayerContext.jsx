@@ -475,15 +475,24 @@ function mpReducer(state, action) {
         isTyping,
         draft = '',
       } = action.payload;
+      const normalizedDraft = typeof draft === 'string' ? draft : '';
       const typingPlayers = { ...state.typingPlayers };
       if (isTyping) {
         typingPlayers[typingOdId] = {
           name: playerName,
-          draft: typeof draft === 'string' ? draft : '',
+          draft: normalizedDraft,
           isTyping: true,
         };
       } else {
-        delete typingPlayers[typingOdId];
+        if (normalizedDraft) {
+          typingPlayers[typingOdId] = {
+            name: playerName,
+            draft: normalizedDraft,
+            isTyping: false,
+          };
+        } else {
+          delete typingPlayers[typingOdId];
+        }
       }
       return { ...state, typingPlayers };
     }

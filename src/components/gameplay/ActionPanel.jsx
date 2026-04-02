@@ -117,10 +117,13 @@ export default function ActionPanel({
     mp.sendTyping(isTyping, String(draft || '').slice(0, TYPING_DRAFT_MAX_LENGTH));
   }, [mp]);
 
-  const emitTypingStop = useCallback(() => {
+  const emitTypingStop = useCallback((preserveDraft = false) => {
     if (isTypingRef.current) {
       isTypingRef.current = false;
-      sendTypingState(false, '');
+      const finalDraft = preserveDraft
+        ? String(queuedDraftRef.current || '').slice(0, TYPING_DRAFT_MAX_LENGTH)
+        : '';
+      sendTypingState(false, finalDraft);
     }
     clearInterval(typingKeepAliveRef.current);
     typingKeepAliveRef.current = null;
@@ -157,12 +160,12 @@ export default function ActionPanel({
         }, 900);
       }
       clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = setTimeout(emitTypingStop, 2000);
+      typingTimerRef.current = setTimeout(() => emitTypingStop(true), 2000);
     } else {
       clearTimeout(typingTimerRef.current);
       clearTimeout(typingBroadcastTimerRef.current);
       typingBroadcastTimerRef.current = null;
-      emitTypingStop();
+      emitTypingStop(false);
     }
   }, [isMultiplayer, emitTypingStop, scheduleTypingBroadcast, sendTypingState]);
 
@@ -184,7 +187,7 @@ export default function ActionPanel({
     if (action && !disabled) {
       if (listening) toggle();
       clearTimeout(typingTimerRef.current);
-      emitTypingStop();
+      emitTypingStop(false);
       if (isMultiplayer) {
         mp.submitAction(action, true);
       } else {
@@ -214,7 +217,7 @@ export default function ActionPanel({
     clearTimeout(typingTimerRef.current);
     clearTimeout(typingBroadcastTimerRef.current);
     typingBroadcastTimerRef.current = null;
-    emitTypingStop();
+    emitTypingStop(false);
     mp.soloAction(action, false, settings.language || 'en', settings.dmSettings);
   };
 
@@ -225,7 +228,7 @@ export default function ActionPanel({
       clearTimeout(typingTimerRef.current);
       clearTimeout(typingBroadcastTimerRef.current);
       typingBroadcastTimerRef.current = null;
-      emitTypingStop();
+      emitTypingStop(false);
       mp.soloAction(action, true, settings.language || 'en', settings.dmSettings);
       setCustomAction('');
     }
