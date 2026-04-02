@@ -292,6 +292,7 @@
     }
   },
   "gameplay": {
+    "loadingCampaign": "Wczytywanie kampanii...",
     "pettyMagic": "Drobna magia",
     "chooseAction": "Wybierz Akcję",
     "dmWeavesFate": "MG splata przeznaczenie...",

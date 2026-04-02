@@ -16,7 +16,8 @@ import {
   canAdvanceTier,
 } from '../data/wfrp';
 
-const GameContext = createContext(null);
+const GameContext = (import.meta.hot?.data?.GameContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.GameContext = GameContext;
 const FORTUNE_REGEN_MS = 24 * 60 * 60 * 1000;
 const RESOLVE_REGEN_MS = 48 * 60 * 60 * 1000;
 
@@ -306,6 +307,52 @@ function gameReducer(state, action) {
           };
         }
       }
+
+      if (loaded.scenes?.length) {
+        const existingDmSceneIds = new Set(
+          (loaded.chatHistory || [])
+            .filter((m) => m.role === 'dm' && m.sceneId)
+            .map((m) => m.sceneId),
+        );
+        const reconstructed = [];
+        loaded.scenes.forEach((scene, idx) => {
+          if (!scene.id || existingDmSceneIds.has(scene.id)) return;
+          const ts = scene.timestamp || Date.now();
+          if (idx > 0 && scene.chosenAction) {
+            reconstructed.push({
+              id: `msg_reconstructed_${scene.id}_player`,
+              role: 'player',
+              content: scene.chosenAction,
+              timestamp: ts - 2,
+            });
+          }
+          if (scene.diceRoll) {
+            reconstructed.push({
+              id: `msg_reconstructed_${scene.id}_roll`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: `${scene.diceRoll.skill}: ${scene.diceRoll.roll} / ${scene.diceRoll.target || scene.diceRoll.dc} (SL ${scene.diceRoll.sl ?? 0})`,
+              diceData: scene.diceRoll,
+              timestamp: ts - 1,
+            });
+          }
+          reconstructed.push({
+            id: `msg_reconstructed_${scene.id}_dm`,
+            role: 'dm',
+            sceneId: scene.id,
+            content: scene.narrative || '',
+            scenePacing: scene.scenePacing || 'exploration',
+            dialogueSegments: scene.dialogueSegments || [],
+            soundEffect: scene.soundEffect || null,
+            timestamp: ts,
+          });
+        });
+        if (reconstructed.length > 0) {
+          loaded.chatHistory = [...(loaded.chatHistory || []), ...reconstructed]
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        }
+      }
+
       return loaded;
     }
 

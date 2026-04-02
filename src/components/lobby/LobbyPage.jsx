@@ -216,6 +216,7 @@ export default function LobbyPage() {
       };
     }
     dispatch({ type: 'LOAD_CAMPAIGN', payload });
+    storage.saveLocalSnapshot(payload);
     setPendingCampaign(null);
     setLibraryCharacter(undefined);
     navigate(`/play/${payload.campaign.backendId || payload.campaign.id}`);

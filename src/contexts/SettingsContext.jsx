@@ -4,7 +4,8 @@ import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
 import { gameData } from '../services/gameDataService';
 
-const SettingsContext = createContext(null);
+const SettingsContext = (import.meta.hot?.data?.SettingsContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.SettingsContext = SettingsContext;
 
 const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', gemini: '' };
 

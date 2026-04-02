@@ -116,9 +116,6 @@ export const storage = {
   async _doSave(gameState) {
     const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = gameState;
     const coreState = { ...rest };
-    if (coreState.chatHistory?.length > 10) {
-      coreState.chatHistory = coreState.chatHistory.slice(-10);
-    }
 
     const payload = {
       name: gameState.campaign?.name || '',
@@ -228,9 +225,6 @@ export const storage = {
       try {
         const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = entry;
         const coreState = { ...rest };
-        if (coreState.chatHistory?.length > 10) {
-          coreState.chatHistory = coreState.chatHistory.slice(-10);
-        }
         const created = await apiClient.post('/campaigns', {
           name: entry.campaign?.name || '',
           genre: entry.campaign?.genre || '',
@@ -276,9 +270,6 @@ export const storage = {
       const snapshot = { ...clean };
       if (snapshot.scenes?.length > 10) {
         snapshot.scenes = snapshot.scenes.slice(-10);
-      }
-      if (snapshot.chatHistory?.length > 10) {
-        snapshot.chatHistory = snapshot.chatHistory.slice(-10);
       }
       snapshot._snapshotTime = Date.now();
       localStorage.setItem(CURRENT_CAMPAIGN_KEY, JSON.stringify(snapshot));

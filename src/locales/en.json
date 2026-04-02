@@ -291,6 +291,7 @@
     }
   },
   "gameplay": {
+    "loadingCampaign": "Loading campaign...",
     "pettyMagic": "Petty Magic",
     "chooseAction": "Choose Your Action",
     "dmWeavesFate": "The DM weaves fate...",

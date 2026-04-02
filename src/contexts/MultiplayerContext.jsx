@@ -8,7 +8,8 @@ import {
   WS_SERVER_TYPES,
 } from '../../shared/contracts/multiplayer.js';
 
-const MultiplayerContext = createContext(null);
+const MultiplayerContext = (import.meta.hot?.data?.MultiplayerContext) || createContext(null);
+if (import.meta.hot) import.meta.hot.data.MultiplayerContext = MultiplayerContext;
 
 const initialState = {
   isMultiplayer: false,

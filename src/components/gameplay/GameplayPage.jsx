@@ -808,6 +808,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           if (cancelled) return;
           if (data) {
             dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+            storage.saveLocalSnapshot(data);
           } else {
             navigate('/', { replace: true, state: { campaignNotFound: true } });
           }
@@ -1466,7 +1467,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
   };
 
-  if (!campaign) return null;
+  if (!campaign) return (
+    <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+      <LoadingSpinner size="lg" text={t('gameplay.loadingCampaign', 'Loading campaign...')} />
+    </div>
+  );
 
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
