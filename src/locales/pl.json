@@ -298,6 +298,7 @@
     "dmWeavesFate": "MG splata przeznaczenie...",
     "goToSettings": "Idź do Ustawień",
     "diceCheck": "Test {{skill}}",
+    "rollLabel": "Rzut",
     "diceResult": "k100: {{roll}} vs {{target}} (PS {{sl}})",
     "adventureBegins": "Twoja przygoda się zaczyna...",
     "conjuringVision": "Przywoływanie wizji...",

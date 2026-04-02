@@ -385,6 +385,7 @@ export function useAI() {
   const sceneGenDurationHistoryRef = useRef(null);
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
+  const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
     const history = loadSceneGenDurationHistory();
     sceneGenDurationHistoryRef.current = history;
@@ -521,6 +522,7 @@ export function useAI() {
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
+      setEarlyDiceRoll(null);
       sceneGenStartRef.current = Date.now();
       setSceneGenStartTime(Date.now());
 
@@ -570,6 +572,7 @@ export function useAI() {
         });
 
         if (resolved.diceRoll) {
+          setEarlyDiceRoll(resolved.diceRoll);
           if (!isFirstScene && playerAction && !Boolean(isIdleWorldEvent || playerAction === '[WAIT]')) {
             const playerChatContent = playerAction === '[CONTINUE]'
               ? t('gameplay.continueChatMessage')
@@ -1451,6 +1454,8 @@ export function useAI() {
     [dispatch]
   );
 
+  const clearEarlyDiceRoll = useCallback(() => setEarlyDiceRoll(null), []);
+
   return {
     generateScene,
     generateCampaign,
@@ -1465,5 +1470,7 @@ export function useAI() {
     declineQuestOffer,
     sceneGenStartTime,
     lastSceneGenMs,
+    earlyDiceRoll,
+    clearEarlyDiceRoll,
   };
 }

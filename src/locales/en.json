@@ -297,6 +297,7 @@
     "dmWeavesFate": "The DM weaves fate...",
     "goToSettings": "Go to Settings",
     "diceCheck": "{{skill}} Check",
+    "rollLabel": "Roll",
     "diceResult": "d100: {{roll}} vs {{target}} (SL {{sl}})",
     "adventureBegins": "Your adventure begins...",
     "conjuringVision": "Conjuring vision...",

@@ -36,6 +36,7 @@ import { useAutoPlayer } from '../../hooks/useAutoPlayer';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import TypewriterActionOverlay from './TypewriterActionOverlay';
+import DiceRollAnimationOverlay from './DiceRollAnimationOverlay';
 import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
@@ -85,7 +86,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs } = useAI();
+  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -1896,6 +1897,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
+            />
+          )}
+          {earlyDiceRoll && (
+            <DiceRollAnimationOverlay
+              diceRoll={earlyDiceRoll}
+              onDismiss={clearEarlyDiceRoll}
             />
           )}
         </div>
