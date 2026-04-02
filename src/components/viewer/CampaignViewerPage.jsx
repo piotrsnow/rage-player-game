@@ -19,8 +19,8 @@ export default function CampaignViewerPage() {
 
   const backendUrl = apiClient.getBaseUrl() || settings.backendUrl || '';
 
-  const fetchAndLoad = useCallback(async () => {
-    if (loadedRef.current) return;
+  const fetchAndLoad = useCallback(async (force = false) => {
+    if (!force && loadedRef.current) return;
     if (!shareToken) {
       setError(t('viewer.notFound'));
       setLoading(false);
@@ -50,6 +50,7 @@ export default function CampaignViewerPage() {
       }
 
       loadedRef.current = true;
+      setError(null);
       dispatch({ type: 'LOAD_CAMPAIGN', payload: gameState });
     } catch {
       setError(t('viewer.notFound'));
@@ -60,6 +61,12 @@ export default function CampaignViewerPage() {
 
   useEffect(() => {
     fetchAndLoad();
+  }, [fetchAndLoad]);
+
+  const handleRefresh = useCallback(async () => {
+    loadedRef.current = false;
+    setError(null);
+    await fetchAndLoad(true);
   }, [fetchAndLoad]);
 
   if (loading) {
@@ -82,5 +89,5 @@ export default function CampaignViewerPage() {
     );
   }
 
-  return <GameplayPage readOnly shareToken={shareToken} />;
+  return <GameplayPage readOnly shareToken={shareToken} onRefresh={handleRefresh} />;
 }

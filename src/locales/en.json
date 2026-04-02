@@ -368,6 +368,8 @@
     "characterDeadDesc": "With no Fate points remaining, death is final.",
     "share": "Share campaign link",
     "shareCopied": "Link copied to clipboard!",
+    "refresh": "Refresh",
+    "refreshTooltip": "Reload campaign from storage",
     "contextDepth": "Story context",
     "contextDepthTooltip": "How much story context to send to AI. 100% = full history, NPCs, quests, knowledge. Lower = faster and cheaper responses, but AI remembers less.",
     "contextLevel_full": "Full",
@@ -2222,6 +2224,7 @@
     "goHome": "Go to home page",
     "readOnlyBanner": "Read-only view",
     "scenes": "scenes",
+    "refresh": "Refresh campaign",
     "test": "Test"
   }
 }

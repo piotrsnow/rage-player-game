@@ -139,46 +139,42 @@ export default function LobbyPage() {
   }, [location.state, navigate]);
 
   useEffect(() => {
-    if (!backendUser || !apiClient.isConnected()) {
-      setCampaigns([]);
-      setSyncing(false);
-      return;
-    }
-
     let cancelled = false;
     setSyncing(true);
     storage.getCampaigns()
       .then((list) => {
         if (cancelled) return;
         setCampaigns(list);
-        if (list.some((c) => !c.characterName && c.sceneCount > 0)) {
+        if (backendUser && apiClient.isConnected() && list.some((c) => c.source === 'remote' && !c.characterName && c.sceneCount > 0)) {
           apiClient.post('/campaigns/backfill-summaries')
             .then(() => storage.getCampaigns())
             .then((fresh) => { if (!cancelled) setCampaigns(fresh); })
             .catch(() => {});
         }
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setCampaigns([]); })
       .finally(() => {
         if (!cancelled) setSyncing(false);
       });
 
-    const persisted = getPersistedRejoinInfo();
-    if (persisted?.roomCode) {
-      apiClient.get('/multiplayer/my-sessions')
-        .then((res) => {
-          if (cancelled) return;
-          const sessions = res?.sessions || [];
-          const match = sessions.find((s) => s.roomCode === persisted.roomCode);
-          if (match) {
-            setRejoinInfo({ ...persisted, ...match });
-          } else {
-            clearPersistedRejoinInfo();
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setRejoinInfo(persisted);
-        });
+    if (backendUser && apiClient.isConnected()) {
+      const persisted = getPersistedRejoinInfo();
+      if (persisted?.roomCode) {
+        apiClient.get('/multiplayer/my-sessions')
+          .then((res) => {
+            if (cancelled) return;
+            const sessions = res?.sessions || [];
+            const match = sessions.find((s) => s.roomCode === persisted.roomCode);
+            if (match) {
+              setRejoinInfo({ ...persisted, ...match });
+            } else {
+              clearPersistedRejoinInfo();
+            }
+          })
+          .catch(() => {
+            if (!cancelled) setRejoinInfo(persisted);
+          });
+      }
     }
 
     return () => {
@@ -229,7 +225,12 @@ export default function LobbyPage() {
     if (loadingCampaignId) return;
     setLoadingCampaignId(campaign.id);
     try {
-      const data = await storage.loadCampaign(campaign.id);
+      let data;
+      if (campaign.source === 'local') {
+        data = storage.loadLocalSnapshot();
+      } else {
+        data = await storage.loadCampaign(campaign.id);
+      }
       if (data) openCharacterChoice(data);
     } catch (err) {
       console.warn('[LobbyPage] Failed to load campaign:', err.message);
@@ -239,10 +240,15 @@ export default function LobbyPage() {
   };
 
   const handleDelete = async (id) => {
-    await storage.deleteCampaign(id);
+    const target = campaigns.find((c) => c.id === id);
+    if (target?.source === 'local') {
+      storage.clearLocalSnapshot();
+    } else {
+      await storage.deleteCampaign(id);
+    }
     try {
       setCampaigns(await storage.getCampaigns());
-    } catch { /* ignore */ }
+    } catch { setCampaigns([]); }
     setShowDeleteConfirm(null);
   };
 

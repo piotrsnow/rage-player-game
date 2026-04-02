@@ -68,7 +68,7 @@ function shuffleArray(items) {
   return arr;
 }
 
-export default function GameplayPage({ readOnly = false, shareToken = null }) {
+export default function GameplayPage({ readOnly = false, shareToken = null, onRefresh = null }) {
   // Temporary kill switch for timer-driven idle world events.
   const IDLE_WORLD_EVENTS_ENABLED = false;
   const MAX_SCENE_IMAGE_REPAIR_ATTEMPTS = 2;
@@ -132,6 +132,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
 
   const totalPlayTime = initialTotalPlayTimeRef.current + sessionSeconds;
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
   const [gmModalOpen, setGmModalOpen] = useState(false);
   const [mpPanelOpen, setMpPanelOpen] = useState(false);
@@ -818,6 +819,28 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
     }
     navigate('/');
   }, [campaign, isMultiplayer, readOnly, navigate, urlCampaignId, dispatch]);
+
+  const handleRefresh = useCallback(async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      if (readOnly && onRefresh) {
+        await onRefresh();
+      } else if (isMultiplayer) {
+        await mp.rejoinRoom();
+      } else {
+        const id = campaign?.backendId || urlCampaignId;
+        if (id) {
+          const data = await storage.loadCampaign(id);
+          if (data) dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+        }
+      }
+    } catch (err) {
+      console.warn('[GameplayPage] Refresh failed:', err.message);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [isRefreshing, readOnly, onRefresh, isMultiplayer, mp, campaign?.backendId, urlCampaignId, dispatch]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -1626,6 +1649,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
                   {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
                 </div>
               ) : null}
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                title={t('gameplay.refreshTooltip', 'Reload campaign')}
+                aria-label={t('gameplay.refresh', 'Refresh')}
+                className={`material-symbols-outlined text-sm transition-colors ${
+                  isRefreshing ? 'text-primary animate-spin' : 'text-outline hover:text-primary'
+                }`}
+              >
+                {isRefreshing ? 'progress_activity' : 'refresh'}
+              </button>
               {!readOnly && (
                 <>
                   {/* Auto-Player toggle (solo only) */}

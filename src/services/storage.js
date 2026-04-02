@@ -2,6 +2,7 @@ import { apiClient } from './apiClient';
 import { normalizeCharacterAge } from './characterAge';
 
 const CAMPAIGNS_KEY = 'nikczemny_krzemuch_campaigns';
+const CURRENT_CAMPAIGN_KEY = 'nikczemny_krzemuch_current_campaign';
 const SETTINGS_KEY = 'nikczemny_krzemuch_settings';
 const ACTIVE_CAMPAIGN_KEY = 'nikczemny_krzemuch_active';
 const LAST_CHARACTER_NAME_KEY = 'nikczemny_krzemuch_last_character_name';
@@ -64,12 +65,44 @@ function _parseBackendCampaign(full) {
 
 export const storage = {
   async getCampaigns() {
-    return apiClient.get('/campaigns');
+    let campaigns = [];
+
+    if (apiClient.isConnected()) {
+      try {
+        const list = await apiClient.get('/campaigns');
+        campaigns = list.map((c) => ({ ...c, source: 'remote' }));
+      } catch { /* offline or error — continue with local only */ }
+    }
+
+    const local = this.loadLocalSnapshot();
+    if (local?.campaign) {
+      const localId = local.campaign.backendId || local.campaign.id;
+      const alreadyInRemote = campaigns.some((c) => c.id === localId);
+      if (!alreadyInRemote) {
+        campaigns.unshift({
+          id: localId,
+          name: local.campaign.name || '',
+          genre: local.campaign.genre || '',
+          tone: local.campaign.tone || '',
+          lastSaved: local.lastSaved || Date.now(),
+          characterName: local.character?.name || '',
+          characterCareer: local.character?.career?.name || '',
+          characterTier: local.character?.career?.tier || 1,
+          sceneCount: local.scenes?.length || 0,
+          totalCost: local.aiCosts?.total || 0,
+          source: 'local',
+        });
+      }
+    }
+
+    return campaigns;
   },
 
   async saveCampaign(gameState) {
     const campaignId = gameState.campaign?.id;
     if (!campaignId) return { saved: false };
+
+    this.saveLocalSnapshot(gameState);
 
     const existing = _pendingBackendSaves.get(campaignId);
     if (existing) {
@@ -152,12 +185,23 @@ export const storage = {
   },
 
   async loadCampaign(backendId) {
-    const full = await apiClient.get(`/campaigns/${backendId}`);
-    const state = _parseBackendCampaign(full);
-    if (state.scenes?.length) {
-      _sceneIndexCache.set(backendId, state.scenes.length - 1);
+    if (apiClient.isConnected()) {
+      try {
+        const full = await apiClient.get(`/campaigns/${backendId}`);
+        const state = _parseBackendCampaign(full);
+        if (state.scenes?.length) {
+          _sceneIndexCache.set(backendId, state.scenes.length - 1);
+        }
+        return state;
+      } catch { /* fall through to local snapshot */ }
     }
-    return state;
+
+    const local = this.loadLocalSnapshot();
+    if (local?.campaign) {
+      const localId = local.campaign.backendId || local.campaign.id;
+      if (localId === backendId) return local;
+    }
+    return null;
   },
 
   async deleteCampaign(backendId) {
@@ -165,6 +209,11 @@ export const storage = {
     const activeId = this.getActiveCampaignId();
     if (activeId === backendId) {
       localStorage.removeItem(ACTIVE_CAMPAIGN_KEY);
+    }
+    const local = this.loadLocalSnapshot();
+    if (local?.campaign) {
+      const localId = local.campaign.backendId || local.campaign.id;
+      if (localId === backendId) this.clearLocalSnapshot();
     }
     _sceneIndexCache.delete(backendId);
   },
@@ -230,6 +279,37 @@ export const storage = {
     } else {
       localStorage.removeItem(ACTIVE_CAMPAIGN_KEY);
     }
+  },
+
+  saveLocalSnapshot(gameState) {
+    try {
+      const { isLoading, isGeneratingScene, isGeneratingImage, error, ...clean } = gameState;
+      const snapshot = { ...clean };
+      if (snapshot.scenes?.length > 10) {
+        snapshot.scenes = snapshot.scenes.slice(-10);
+      }
+      if (snapshot.chatHistory?.length > 10) {
+        snapshot.chatHistory = snapshot.chatHistory.slice(-10);
+      }
+      snapshot._snapshotTime = Date.now();
+      localStorage.setItem(CURRENT_CAMPAIGN_KEY, JSON.stringify(snapshot));
+      localStorage.removeItem(CAMPAIGNS_KEY);
+    } catch (e) {
+      console.warn('[storage] Failed to save local snapshot:', e.message);
+    }
+  },
+
+  loadLocalSnapshot() {
+    try {
+      const data = localStorage.getItem(CURRENT_CAMPAIGN_KEY);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearLocalSnapshot() {
+    localStorage.removeItem(CURRENT_CAMPAIGN_KEY);
   },
 
   getSettings() {

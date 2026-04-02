@@ -80,10 +80,13 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
         <div className="flex flex-col items-end gap-2 shrink-0 ml-4">
           <div className="flex items-center gap-1.5">
             <span
-              className="material-symbols-outlined text-xs text-primary-dim"
-              title={t('lobby.synced', 'Synced')}
+              className={`material-symbols-outlined text-xs ${campaign.source === 'local' ? 'text-tertiary-dim' : 'text-primary-dim'}`}
+              title={campaign.source === 'local' ? t('lobby.localOnly', 'Local') : t('lobby.synced', 'Synced')}
             >
-              cloud_done
+              {campaign.source === 'local' ? 'save' : 'cloud_done'}
+            </span>
+            <span className={`text-[10px] font-bold ${campaign.source === 'local' ? 'text-tertiary-dim' : 'text-primary-dim'}`}>
+              {campaign.source === 'local' ? t('lobby.localOnly', 'Local') : t('lobby.synced', 'Synced')}
             </span>
             <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
           </div>
