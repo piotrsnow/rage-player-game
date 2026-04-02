@@ -64,6 +64,15 @@ function buildDistinctSceneCountMap(rows) {
   );
 }
 
+const SCENE_CLIENT_SELECT = {
+  id: true, campaignId: true, sceneIndex: true,
+  narrative: true, chosenAction: true,
+  suggestedActions: true, dialogueSegments: true,
+  imagePrompt: true, imageUrl: true, soundEffect: true,
+  diceRoll: true, stateChanges: true, scenePacing: true,
+  createdAt: true,
+};
+
 function dedupeScenesByIndexAsc(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
   const byIndex = new Map();
@@ -164,6 +173,7 @@ export async function campaignRoutes(fastify) {
     const scenes = await prisma.campaignScene.findMany({
       where: { campaignId: campaign.id },
       orderBy: { sceneIndex: 'asc' },
+      select: SCENE_CLIENT_SELECT,
     });
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
@@ -191,6 +201,7 @@ export async function campaignRoutes(fastify) {
     const scenes = await prisma.campaignScene.findMany({
       where: { campaignId: campaign.id },
       orderBy: { sceneIndex: 'asc' },
+      select: SCENE_CLIENT_SELECT,
     });
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
@@ -320,18 +331,11 @@ export async function campaignRoutes(fastify) {
       const scenes = await prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
+        select: SCENE_CLIENT_SELECT,
       });
       const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-      const parsedScenes = dedupedScenes.map((s) => ({
-        ...s,
-        suggestedActions: JSON.parse(s.suggestedActions || '[]'),
-        dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),
-        diceRoll: s.diceRoll ? JSON.parse(s.diceRoll) : null,
-        stateChanges: s.stateChanges ? JSON.parse(s.stateChanges) : null,
-      }));
-
-      return { ...campaign, coreState, scenes: parsedScenes };
+      return { ...campaign, coreState, scenes: dedupedScenes };
     });
 
     app.post('/', async (request) => {

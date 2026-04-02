@@ -160,10 +160,6 @@ export default function FieldMapCanvas({ onFieldTurnReady, scene, world, charact
   }, [fieldMap?.playerPos?.x, fieldMap?.playerPos?.y, fieldMap?.seed, fieldMap?.mapMode, fieldMap?.roadVariant]);
 
   useEffect(() => {
-    _draw();
-  }, [fieldMap?.playerPos, viewSize, mapEntities, scene?.id]);
-
-  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -231,6 +227,10 @@ export default function FieldMapCanvas({ onFieldTurnReady, scene, world, charact
     () => buildEntityList(world, scene, characterName),
     [world?.npcs, world?.currentLocation, scene?.id, scene?.dialogueSegments, characterName]
   );
+
+  useEffect(() => {
+    _draw();
+  }, [fieldMap?.playerPos, viewSize, mapEntities, scene?.id]);
 
   const entityPositionsRef = useRef(new Map());
 

@@ -225,13 +225,23 @@ export default function LobbyPage() {
     if (loadingCampaignId) return;
     setLoadingCampaignId(campaign.id);
     try {
-      let data;
-      if (campaign.source === 'local') {
-        data = storage.loadLocalSnapshot();
-      } else {
-        data = await storage.loadCampaign(campaign.id);
+      const campaignPromise = campaign.source === 'local'
+        ? Promise.resolve(storage.loadLocalSnapshot())
+        : storage.loadCampaign(campaign.id);
+      const [data, chars] = await Promise.all([
+        campaignPromise,
+        storage.getCharactersAsync().catch(() => []),
+      ]);
+      if (data) {
+        setPendingCampaign(data);
+        if (data.character) {
+          const match = storage.findMatchingLibraryCharacter(data.character, chars);
+          setLibraryCharacter(match ?? null);
+        } else {
+          setLibraryCharacter(undefined);
+        }
+        setLibraryLoading(false);
       }
-      if (data) openCharacterChoice(data);
     } catch (err) {
       console.warn('[LobbyPage] Failed to load campaign:', err.message);
     } finally {
