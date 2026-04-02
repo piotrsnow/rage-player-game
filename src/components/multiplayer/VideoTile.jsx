@@ -15,7 +15,7 @@ export default function VideoTile({
 }) {
   const { t } = useTranslation();
   const videoRef = useRef(null);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(!isLocal);
   const [volume, setVolume] = useState(1);
   const [showVolume, setShowVolume] = useState(false);
 
@@ -24,14 +24,24 @@ export default function VideoTile({
     if (!video) return;
     if (stream) {
       video.srcObject = stream;
-      const maybePromise = video.play?.();
-      if (maybePromise?.catch) {
-        maybePromise.catch(() => {});
-      }
+      // Browsers may block autoplay with sound; start remote streams muted.
+      if (!isLocal) video.muted = true;
+      const tryPlay = () => {
+        const maybePromise = video.play?.();
+        if (maybePromise?.catch) {
+          maybePromise.catch(() => {});
+        }
+      };
+      tryPlay();
+      video.onloadedmetadata = tryPlay;
     } else {
       video.srcObject = null;
+      video.onloadedmetadata = null;
     }
-  }, [stream]);
+    return () => {
+      if (video) video.onloadedmetadata = null;
+    };
+  }, [stream, isLocal]);
 
   useEffect(() => {
     const video = videoRef.current;

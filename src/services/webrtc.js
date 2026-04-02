@@ -27,6 +27,7 @@ class WebRTCService {
     this._handlers = new Map();
     this._myOdId = null;
     this._pendingCandidates = new Map();
+    this._pendingOffers = new Set();
     this._unsubscribers = [];
   }
 
@@ -152,6 +153,7 @@ class WebRTCService {
       pc.close();
       this._peers.delete(remoteOdId);
       this._pendingCandidates.delete(remoteOdId);
+      this._pendingOffers.delete(remoteOdId);
       this._emit('peerDisconnected', remoteOdId);
     }
   }
@@ -163,6 +165,7 @@ class WebRTCService {
     }
     this._peers.clear();
     this._pendingCandidates.clear();
+    this._pendingOffers.clear();
   }
 
   destroy() {
@@ -206,7 +209,14 @@ class WebRTCService {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
         this._peers.delete(remoteOdId);
         this._pendingCandidates.delete(remoteOdId);
+        this._pendingOffers.delete(remoteOdId);
         this._emit('peerDisconnected', remoteOdId);
+      }
+    };
+    pc.onsignalingstatechange = () => {
+      if (pc.signalingState === 'stable' && this._pendingOffers.has(remoteOdId)) {
+        this._pendingOffers.delete(remoteOdId);
+        this._createAndSendOffer(remoteOdId).catch(() => {});
       }
     };
 
@@ -220,6 +230,7 @@ class WebRTCService {
     if (this._peers.has(fromOdId)) {
       this._peers.get(fromOdId).close();
       this._peers.delete(fromOdId);
+      this._pendingOffers.delete(fromOdId);
     }
 
     const pc = this._createPeerConnection(fromOdId);
@@ -353,8 +364,10 @@ class WebRTCService {
     if (!pc) return;
     if (pc.signalingState !== 'stable') {
       this._debug('offer-skipped-unstable', { remoteOdId, signalingState: pc.signalingState });
+      this._pendingOffers.add(remoteOdId);
       return;
     }
+    this._pendingOffers.delete(remoteOdId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     this._debug('offer-sent', { remoteOdId });

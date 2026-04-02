@@ -299,13 +299,26 @@ export default function ActionPanel({
     () => teamPlayers.map((player) => {
       const isMe = player.odId === mp.state.myOdId;
       const localDraft = customAction.trim().slice(0, TYPING_DRAFT_MAX_LENGTH);
+      const remoteTyping = typingByPlayer[player.odId] || null;
+      const remoteDraft = (remoteTyping?.draft || '').trim();
+      const pendingAction = typeof player.pendingAction === 'string' ? player.pendingAction.trim() : '';
+      const effectiveDraft = isMe
+        ? localDraft
+        : (remoteDraft || pendingAction);
+      const isTyping = isMe
+        ? (isTypingRef.current && Boolean(localDraft))
+        : Boolean(remoteTyping?.isTyping);
+      const status = isTyping
+        ? 'typing'
+        : effectiveDraft
+          ? 'ready'
+          : 'idle';
       return {
         odId: player.odId,
         name: isMe ? t('chat.you') : (player.name || t('multiplayer.player', { defaultValue: 'Player' })),
-        draft: isMe ? localDraft : (typingByPlayer[player.odId]?.draft || ''),
-        isTyping: isMe
-          ? (isTypingRef.current && Boolean(localDraft))
-          : Boolean(typingByPlayer[player.odId]?.isTyping),
+        draft: effectiveDraft,
+        isTyping,
+        status,
       };
     }),
     [teamPlayers, typingByPlayer, mp.state.myOdId, customAction, t]
@@ -389,12 +402,18 @@ export default function ActionPanel({
                 <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/85 truncate">
                   {member.name}
                 </span>
-                <span className={`text-[9px] font-label uppercase tracking-widest ${member.isTyping ? 'text-primary' : 'text-on-surface-variant/45'}`}>
-                  {member.isTyping ? 'typing' : 'idle'}
+                <span className={`text-[9px] font-label uppercase tracking-widest ${
+                  member.status === 'typing'
+                    ? 'text-primary'
+                    : member.status === 'ready'
+                      ? 'text-tertiary'
+                      : 'text-on-surface-variant/45'
+                }`}>
+                  {member.status}
                 </span>
               </div>
               <div className={`text-[11px] leading-snug ${member.isTyping ? 'text-on-surface' : 'text-on-surface-variant/60'}`}>
-                <AnimatedTypingDraft text={member.isTyping ? member.draft : ''} />
+                <AnimatedTypingDraft text={member.draft} />
               </div>
             </div>
           ))}
