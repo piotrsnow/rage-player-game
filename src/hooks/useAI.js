@@ -394,6 +394,7 @@ export function useAI() {
   const { aiProvider, openaiApiKey, anthropicApiKey, sceneVisualization, imageProvider, stabilityApiKey, geminiApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
+  const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
@@ -446,6 +447,7 @@ export function useAI() {
           provider: imageProvider,
           imageStyle,
           darkPalette,
+          seriousness: imageSeriousness,
           campaignId: state.campaign?.backendId,
         });
         if (!imageUrl) return null;
@@ -1118,7 +1120,10 @@ export function useAI() {
               imageStyle,
               darkPalette,
               state.character?.age,
-              state.character?.gender
+              state.character?.gender,
+              {},
+              imageSeriousness,
+              state.character?.portraitUrl || null
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({
@@ -1230,7 +1235,9 @@ export function useAI() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew) }
+          { forceNew: Boolean(options.forceNew) },
+          imageSeriousness,
+          state.character?.portraitUrl || null
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
@@ -1248,7 +1255,7 @@ export function useAI() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, hasApiKey, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, hasApiKey, dispatch, autoSave]
   );
 
   const generateCombatCommentary = useCallback(

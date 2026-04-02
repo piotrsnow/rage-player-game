@@ -742,8 +742,8 @@
       "heightened": "Heightened",
       "theatrical": "Theatrical"
     },
-    "narratorSeriousness": "Seriousness",
-    "narratorSeriousnessDesc": "From silly and absurd to grave and dead-serious",
+    "narratorSeriousness": "Image Seriousness",
+    "narratorSeriousnessDesc": "From silly and goofy to grave and somber mood in generated images",
     "seriousnessLabels": {
       "silly": "Silly",
       "lighthearted": "Lighthearted",
@@ -1144,7 +1144,9 @@
     "referencePhotoRequired": "Reference photo",
     "referencePhotoOptional": "Reference photo optional",
     "clearReferencePhoto": "Clear photo",
-    "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance."
+    "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance.",
+    "portraitDescGptImage": "AI will generate a fantasy portrait of your character. You can add a reference photo to preserve your facial likeness in the portrait.",
+    "referencePhotoHintGptImage": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will preserve your face and identity."
   },
   "characterPicker": {
     "title": "Your Character",

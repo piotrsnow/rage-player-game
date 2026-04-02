@@ -743,8 +743,8 @@
       "heightened": "Wzmożony",
       "theatrical": "Teatralny"
     },
-    "narratorSeriousness": "Powaga",
-    "narratorSeriousnessDesc": "Od głupkowatego absurdu po śmiertelną powagę",
+    "narratorSeriousness": "Powaga obrazków",
+    "narratorSeriousnessDesc": "Od głupkowatego absurdu po śmiertelną powagę w generowanych obrazach",
     "seriousnessLabels": {
       "silly": "Głupie",
       "lighthearted": "Lekkie",
@@ -1145,7 +1145,9 @@
     "referencePhotoRequired": "Zdjęcie referencyjne",
     "referencePhotoOptional": "Zdjęcie referencyjne opcjonalne",
     "clearReferencePhoto": "Wyczyść zdjęcie",
-    "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy."
+    "referencePhotoHintGemini": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem będzie próbować zachować podobieństwo twarzy.",
+    "portraitDescGptImage": "AI wygeneruje portret fantasy twojej postaci. Możesz dodać zdjęcie referencyjne, aby zachować podobieństwo twarzy w portrecie.",
+    "referencePhotoHintGptImage": "Bez zdjęcia AI wygeneruje portret tylko z opisu postaci. Ze zdjęciem zachowa twoje rysy twarzy i tożsamość."
   },
   "characterPicker": {
     "title": "Twoja Postać",

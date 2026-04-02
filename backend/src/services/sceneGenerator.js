@@ -68,14 +68,13 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   const detail = sliderLabel(dmSettings.narratorDetail ?? 50, ['minimal', 'balanced', 'rich', 'lavish']);
   const humor = sliderLabel(dmSettings.narratorHumor ?? 20, ['serious', 'dry wit', 'frequent humor', 'comedic']);
   const drama = sliderLabel(dmSettings.narratorDrama ?? 50, ['understated', 'measured', 'heightened', 'theatrical']);
-  const seriousness = sliderLabel(dmSettings.narratorSeriousness ?? 50, ['silly', 'lighthearted', 'serious', 'grave']);
 
   sections.push(
     `You are the Game Master for "${campaign.name || 'Unnamed'}", a WFRP 4th Edition RPG.
 Genre: ${campaign.genre || 'Fantasy'} | Tone: ${campaign.tone || 'Dark'} | Style: ${campaign.style || 'Hybrid'}
 Difficulty: ${difficultyLabel(dmSettings.difficulty ?? 50)} | Narrative chaos: ${narrativeLabel(dmSettings.narrativeStyle ?? 50)}
 Response length: ${responseLengthLabel(dmSettings.responseLength ?? 50)}
-Narrator voice: poeticism=${poeticism}, grittiness=${grittiness}, detail=${detail}, humor=${humor}, drama=${drama}, seriousness=${seriousness}
+Narrator voice: poeticism=${poeticism}, grittiness=${grittiness}, detail=${detail}, humor=${humor}, drama=${drama}
 ${dmSettings.narratorCustomInstructions ? `Extra narrator instructions: ${dmSettings.narratorCustomInstructions}` : ''}
 World: ${campaign.worldDescription || 'A dark fantasy world.'}
 ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,

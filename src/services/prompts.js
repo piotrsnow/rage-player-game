@@ -337,7 +337,6 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const detailLabel = (dmSettings.narratorDetail ?? 50) < 25 ? 'minimal, only essential details' : (dmSettings.narratorDetail ?? 50) < 50 ? 'balanced descriptions' : (dmSettings.narratorDetail ?? 50) < 75 ? 'rich environmental detail' : 'lavishly detailed, painting every sensory element';
   const humorLabel = (dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent situational humor woven into narration without breaking immersion' : 'heavily comedic and irreverent, but still rooted in character-driven situations and world logic';
   const dramaLabel = (dmSettings.narratorDrama ?? 50) < 25 ? 'understated and subtle' : (dmSettings.narratorDrama ?? 50) < 50 ? 'measured dramatic pacing' : (dmSettings.narratorDrama ?? 50) < 75 ? 'heightened drama and tension' : 'maximally theatrical, grandiose and operatic';
-  const seriousnessLabel = (dmSettings.narratorSeriousness ?? 50) < 25 ? 'silly, goofy and absurd — embrace ridiculous situations, slapstick, and nonsensical logic' : (dmSettings.narratorSeriousness ?? 50) < 50 ? 'lighthearted — playful tone, not taking things too seriously, occasional goofiness' : (dmSettings.narratorSeriousness ?? 50) < 75 ? 'serious and grounded — treat the world and events with weight and consequence' : 'gravely serious — somber, weighty, no levity whatsoever, every moment matters';
   const narratorCustomInstructions = (dmSettings?.narratorCustomInstructions || '').trim();
 
   const npcs = world?.npcs || [];
@@ -461,7 +460,6 @@ NARRATOR VOICE & STYLE:
 - Environmental detail: ${detailLabel}
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
-- Seriousness: ${seriousnessLabel}
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
 ${narratorCustomInstructions ? `- Extra narrator instructions from player: ${narratorCustomInstructions}` : ''}
 
@@ -1617,6 +1615,21 @@ const TONE_MODIFIERS = {
   Humorous: 'warm vibrant colors, whimsical playful details, lighthearted cheerful mood',
 };
 
+const SERIOUSNESS_MODIFIERS = {
+  silly: 'whimsical goofy scene, exaggerated cartoon-like proportions, playful absurd humor, comical expressions, slapstick energy',
+  lighthearted: 'lighthearted cheerful mood, playful atmosphere, warm inviting tones, slight whimsy',
+  serious: 'serious dignified atmosphere, realistic proportions, dramatic weight, solemn composed mood',
+  grave: 'gravely somber atmosphere, oppressive heavy mood, no levity, dark weighty tension, haunting stillness',
+};
+
+function getSeriousnessDirective(seriousness) {
+  const val = seriousness ?? 50;
+  if (val < 25) return SERIOUSNESS_MODIFIERS.silly;
+  if (val < 50) return SERIOUSNESS_MODIFIERS.lighthearted;
+  if (val < 75) return SERIOUSNESS_MODIFIERS.serious;
+  return SERIOUSNESS_MODIFIERS.grave;
+}
+
 function getImageStyleDirective(imageStyle, field = 'prompt') {
   const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
   return entry[field] || entry.prompt;
@@ -1627,12 +1640,16 @@ export function getImageStyleNegative(imageStyle) {
   return entry.negative || '';
 }
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null) {
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false) {
   const isGemini = provider === 'gemini';
 
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones, and dark atmospheric hues.' : '';
+  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
+  const portraitRefDirective = hasPortraitRef
+    ? ' The main character from the reference portrait image must appear in the scene, maintaining their visual identity, face, and likeness.'
+    : '';
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
   const sceneDesc = sanitizeForImageGen(rawDesc);
@@ -1643,17 +1660,18 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
     : '';
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
 }
 
-export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false } = {}) {
+export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
   const isGemini = provider === 'gemini';
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones.' : '';
+  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
   const itemName = sanitizeForImageGen(item?.name || 'Unknown item');
   const itemType = sanitizeForImageGen(item?.type || 'misc');
   const itemRarity = sanitizeForImageGen(item?.rarity || 'common');
@@ -1661,13 +1679,13 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   const worldContext = sanitizeForImageGen(genre || 'Fantasy');
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false) {
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isGemini = provider === 'gemini';
@@ -1689,16 +1707,21 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
     ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
     : '';
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
+  const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective} No text, no watermarks, no borders.`;
+  if (provider === 'gpt-image') {
+    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
+  }
+
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en', options = {}) {

@@ -346,14 +346,6 @@ export default function DMSettingsPage({ onClose }) {
                     displayValue={`${settings.dmSettings.narratorDrama ?? 50}% — ${dramaLabel}`}
                   />
 
-                  <Slider
-                    label={t('settings.narratorSeriousness')}
-                    description={t('settings.narratorSeriousnessDesc')}
-                    value={settings.dmSettings.narratorSeriousness ?? 50}
-                    onChange={(v) => updateDMSettings({ narratorSeriousness: v })}
-                    displayValue={`${settings.dmSettings.narratorSeriousness ?? 50}% — ${seriousnessLabel}`}
-                  />
-
                   <div className="mt-6">
                     <label className="block font-headline text-sm text-tertiary mb-2">
                       {t('settings.narratorCustomInstructions')}
@@ -522,6 +514,16 @@ export default function DMSettingsPage({ onClose }) {
                       </div>
                     </div>
                   )}
+
+                  <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
+                    <Slider
+                      label={t('settings.narratorSeriousness')}
+                      description={t('settings.narratorSeriousnessDesc')}
+                      value={settings.dmSettings.narratorSeriousness ?? 50}
+                      onChange={(v) => updateDMSettings({ narratorSeriousness: v })}
+                      displayValue={`${settings.dmSettings.narratorSeriousness ?? 50}% — ${seriousnessLabel}`}
+                    />
+                  </div>
 
                   <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
                     <div>
