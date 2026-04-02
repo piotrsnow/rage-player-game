@@ -389,7 +389,12 @@ export function sendTo(room, odId, message) {
   const player = room.players.get(odId);
   if (player?.ws?.readyState === 1) {
     player.ws.send(typeof message === 'string' ? message : JSON.stringify(message));
+    return true;
   }
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('[roomManager] sendTo skipped: target socket not open', { roomCode: room?.roomCode, odId });
+  }
+  return false;
 }
 
 function touchRoom(roomCode) {

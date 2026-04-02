@@ -115,7 +115,6 @@ export default function FloatingVideoPanel({ visible, onClose }) {
         const stream = remoteStreams.get(player.odId);
         const connState = connectionStates.get(player.odId) || 'new';
         const trackState = remoteTrackStates.get(player.odId);
-        if (!stream && connState !== 'connecting' && connState !== 'new') return null;
         const idx = tileIndex++;
         return (
           <FloatingVideoTile

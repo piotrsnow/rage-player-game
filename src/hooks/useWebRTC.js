@@ -77,7 +77,7 @@ export function useWebRTC(myOdId, players, isActive) {
       });
     });
     const unsubConnected = wsService.on('_connected', () => {
-      if (!initializedRef.current || !webrtcService.localStream) return;
+      if (!initializedRef.current) return;
       webrtcService.disconnectAll();
       connectedPeersRef.current.clear();
       setRemoteStreams(new Map());
@@ -111,7 +111,7 @@ export function useWebRTC(myOdId, players, isActive) {
   }, [isActive, myOdId, shouldInitiateOffer]);
 
   useEffect(() => {
-    if (!isActive || !myOdId || !initializedRef.current || !webrtcService.localStream) return;
+    if (!isActive || !myOdId || !initializedRef.current) return;
 
     const remotePlayers = (players || []).filter((p) => p.odId !== myOdId);
 
@@ -139,9 +139,16 @@ export function useWebRTC(myOdId, players, isActive) {
       setLocalStream(stream);
       setCameraEnabled(true);
       setMicEnabled(true);
+      const remotePlayers = (playersRef.current || []).filter((p) => p.odId !== myOdId);
+      for (const player of remotePlayers) {
+        if (!connectedPeersRef.current.has(player.odId) && shouldInitiateOffer(player.odId)) {
+          connectedPeersRef.current.add(player.odId);
+          webrtcService.connectToPeer(player.odId);
+        }
+      }
     }
     return stream;
-  }, []);
+  }, [myOdId, shouldInitiateOffer]);
 
   const stopCamera = useCallback(() => {
     webrtcService.disconnectAll();

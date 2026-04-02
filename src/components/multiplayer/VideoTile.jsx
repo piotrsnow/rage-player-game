@@ -47,6 +47,7 @@ export default function VideoTile({
 
   const videoOff = isLocal ? !cameraEnabled : remoteCameraOn === false;
   const audioOff = isLocal ? !micEnabled : remoteMicOn === false;
+  const hasVideo = Boolean(stream) && !videoOff;
 
   const stateColor =
     connectionState === 'connected' ? 'bg-green-500' :
@@ -61,12 +62,14 @@ export default function VideoTile({
         autoPlay
         playsInline
         muted={isLocal || muted}
-        className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : ''} ${videoOff ? 'hidden' : ''}`}
+        className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : ''} ${hasVideo ? '' : 'hidden'}`}
       />
 
-      {videoOff && (
+      {!hasVideo && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-container-highest/90">
-          <span className="material-symbols-outlined text-3xl text-outline/40">videocam_off</span>
+          <span className="material-symbols-outlined text-3xl text-outline/40">
+            {connectionState === 'connecting' || connectionState === 'new' ? 'sync' : 'videocam_off'}
+          </span>
         </div>
       )}
 
