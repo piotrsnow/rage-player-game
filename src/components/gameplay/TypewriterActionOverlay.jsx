@@ -40,6 +40,16 @@ export default function TypewriterActionOverlay({
       offset += line.length + 1;
     }
 
+    const quoteRe = /[„\u201C«"]([^„\u201C«"\u201D"»]+)[\u201D"»]/g;
+    let qm;
+    while ((qm = quoteRe.exec(text)) !== null) {
+      const start = qm.index;
+      const end = start + qm[0].length;
+      for (let i = start; i < end; i += 1) {
+        if (marks[i] === 0) marks[i] = 1;
+      }
+    }
+
     return marks;
   }, [text]);
 

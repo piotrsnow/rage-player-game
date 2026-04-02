@@ -287,6 +287,8 @@ function gameReducer(state, action) {
           chunks: {},
           playerPos: { x: 32, y: 32 },
           activeBiome: 'plains',
+          mapMode: 'pola',
+          roadVariant: null,
           stepCounter: 0,
           stepBuffer: [],
           discoveredPoi: [],
@@ -1464,6 +1466,26 @@ function gameReducer(state, action) {
         next.world = { ...next.world, knowledgeBase: kb };
       }
 
+      if (changes.mapMode && next.world?.fieldMap) {
+        const fm = next.world.fieldMap;
+        const newMode = changes.mapMode;
+        const newVariant = newMode === 'trakt' ? (changes.roadVariant || null) : null;
+        if (fm.mapMode !== newMode || fm.roadVariant !== newVariant) {
+          next.world = {
+            ...next.world,
+            fieldMap: {
+              ...fm,
+              mapMode: newMode,
+              roadVariant: newVariant,
+              chunks: {},
+              stepCounter: 0,
+              stepBuffer: [],
+              discoveredPoi: [],
+            },
+          };
+        }
+      }
+
       return next;
     }
 
@@ -1628,7 +1650,7 @@ function gameReducer(state, action) {
     }
 
     case 'INIT_FIELD_MAP': {
-      const { seed, chunkSize, playerPos, activeBiome } = action.payload;
+      const { seed, chunkSize, playerPos, activeBiome, mapMode, roadVariant } = action.payload;
       return {
         ...state,
         world: {
@@ -1639,6 +1661,8 @@ function gameReducer(state, action) {
             chunks: {},
             playerPos: playerPos || { x: 32, y: 32 },
             activeBiome: activeBiome || 'plains',
+            mapMode: mapMode || 'pola',
+            roadVariant: roadVariant || null,
             stepCounter: 0,
             stepBuffer: [],
             discoveredPoi: [],
@@ -1723,6 +1747,28 @@ function gameReducer(state, action) {
           fieldMap: {
             ...state.world.fieldMap,
             activeBiome: action.payload,
+          },
+        },
+      };
+    }
+
+    case 'FIELD_MAP_SET_MODE': {
+      if (!state.world?.fieldMap) return state;
+      const { mapMode, roadVariant } = action.payload;
+      const fm = state.world.fieldMap;
+      if (fm.mapMode === mapMode && fm.roadVariant === (roadVariant || null)) return state;
+      return {
+        ...state,
+        world: {
+          ...state.world,
+          fieldMap: {
+            ...fm,
+            mapMode: mapMode || fm.mapMode,
+            roadVariant: mapMode === 'trakt' ? (roadVariant || null) : null,
+            chunks: {},
+            stepCounter: 0,
+            stepBuffer: [],
+            discoveredPoi: [],
           },
         },
       };

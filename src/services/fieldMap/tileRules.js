@@ -98,6 +98,112 @@ export function getBiomeFarms(biome) {
 
 export const ALL_BIOMES = Object.keys(BIOME_GROUND);
 
+const MAP_MODE_PROFILES = {
+  pola: {
+    biome: 'plains',
+    treeDensity: 0.04,
+    waterChance: 0.3,
+    buildingChance: 0.2,
+    farmChance: 0.45,
+    roadChance: 0.25,
+    propDensity: 6,
+    mountainChance: 0,
+  },
+  las: {
+    biome: 'forest',
+    treeDensity: 0.28,
+    waterChance: 0.2,
+    buildingChance: 0.08,
+    farmChance: 0,
+    roadChance: 0.15,
+    propDensity: 5,
+    mountainChance: 0,
+  },
+  trakt: {
+    pola: {
+      biome: 'plains',
+      treeDensity: 0.03,
+      waterChance: 0.15,
+      buildingChance: 0.15,
+      farmChance: 0.35,
+      roadChance: 1.0,
+      propDensity: 8,
+      mountainChance: 0,
+    },
+    las: {
+      biome: 'forest',
+      treeDensity: 0.22,
+      waterChance: 0.1,
+      buildingChance: 0.05,
+      farmChance: 0,
+      roadChance: 1.0,
+      propDensity: 4,
+      mountainChance: 0,
+    },
+    miasto: {
+      biome: 'plains',
+      treeDensity: 0.01,
+      waterChance: 0.05,
+      buildingChance: 0.55,
+      farmChance: 0,
+      roadChance: 1.0,
+      propDensity: 12,
+      mountainChance: 0,
+      cityTiles: true,
+    },
+  },
+  wnetrze: {
+    biome: 'ruins',
+    treeDensity: 0,
+    waterChance: 0,
+    buildingChance: 0,
+    farmChance: 0,
+    roadChance: 0,
+    propDensity: 10,
+    mountainChance: 0,
+    interior: true,
+  },
+};
+
+const INTERIOR_FLOOR = ['ground_bricks_dark', 'ground_bricks_mixed', 'ground_bricks_purple', 'ground_bricks_dark2'];
+const INTERIOR_FLOOR_ACCENT = ['rug_round_red', 'ground_bricks_blue'];
+const INTERIOR_PROPS = [
+  'campfire_small', 'candles', 'table_stone', 'bookshelf_blue', 'shelf_wood',
+  'bench', 'chest_gold', 'chest_dark', 'bag_sack', 'barrel', 'plant_potted',
+  'banner_red', 'wardrobe_wood', 'bookshelf_tall', 'bookshelf_short',
+  'rug_round_red', 'signboard',
+];
+const CITY_PROPS = [
+  'sign_post', 'well_dark', 'bench', 'banner_red', 'banner_blue',
+  'signboard', 'signboard_double', 'plant_potted', 'campfire_small',
+  'sign_small', 'bag_sack',
+];
+
+export function getMapModeProfile(mapMode, roadVariant) {
+  if (mapMode === 'trakt') {
+    return MAP_MODE_PROFILES.trakt[roadVariant] || MAP_MODE_PROFILES.trakt.pola;
+  }
+  return MAP_MODE_PROFILES[mapMode] || MAP_MODE_PROFILES.pola;
+}
+
+export function getInteriorFloor() { return INTERIOR_FLOOR; }
+export function getInteriorFloorAccent() { return INTERIOR_FLOOR_ACCENT; }
+export function getInteriorProps() { return INTERIOR_PROPS; }
+export function getCityProps() { return CITY_PROPS; }
+
+const LANDMARKS = [
+  'shrine_red', 'portal_blue', 'well_dark', 'campfire_large',
+  'obelisk', 'chapel_small', 'tower_round', 'bonfire',
+  'ritual_circle_gold', 'cross_stone',
+];
+
+const BREADCRUMBS = [
+  'sign_post', 'sign_small', 'signboard', 'torch',
+];
+
+export function getLandmarks() { return LANDMARKS; }
+export function getBreadcrumbs() { return BREADCRUMBS; }
+
 export function getRoadTile(neighbors) {
   const { n, s, e, w } = neighbors;
   const count = [n, s, e, w].filter(Boolean).length;

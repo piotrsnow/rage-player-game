@@ -6,6 +6,8 @@ export const CHUNK_CACHE_LIMIT = 128;
 export const PREFETCH_EDGE_DISTANCE = 8;
 export const TILE_PX = 16;
 
+export const MAP_MODE_DEFAULT = 'pola';
+
 export function createDefaultFieldMap() {
   return {
     seed: 0,
@@ -13,6 +15,8 @@ export function createDefaultFieldMap() {
     chunks: {},
     playerPos: { x: 32, y: 32 },
     activeBiome: 'plains',
+    mapMode: MAP_MODE_DEFAULT,
+    roadVariant: null,
     stepCounter: 0,
     stepBuffer: [],
     discoveredPoi: [],

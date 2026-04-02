@@ -229,7 +229,12 @@ const CombatCrySchema = z.object({
   text: z.string().min(1),
 }).passthrough();
 
+const MAP_MODES = ['trakt', 'pola', 'wnetrze', 'las'];
+const ROAD_VARIANTS = ['pola', 'las', 'miasto'];
+
 const StateChangesSchema = z.object({
+  mapMode: z.enum(MAP_MODES).optional(),
+  roadVariant: z.enum(ROAD_VARIANTS).optional(),
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
   fortuneChange: z.number().optional(),
@@ -284,6 +289,8 @@ const StateChangesSchema = z.object({
   npcAgendas: z.array(NpcAgendaSchema).optional().default([]),
   pendingCallbacks: z.array(CallbackSchema).optional().default([]),
 }).passthrough().optional().default({});
+
+export { MAP_MODES, ROAD_VARIANTS };
 
 export const SCENE_PACING_TYPES = [
   'combat', 'chase', 'stealth', 'exploration',

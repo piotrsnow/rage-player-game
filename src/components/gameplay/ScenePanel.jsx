@@ -620,7 +620,12 @@ export default function ScenePanel({
       ) : (settings.sceneVisualization || 'image') === 'map' ? (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest">
           {state.world?.fieldMap ? (
-            <FieldMapCanvas onFieldTurnReady={onFieldTurnReady} />
+            <FieldMapCanvas
+              onFieldTurnReady={onFieldTurnReady}
+              scene={scene}
+              world={world}
+              characterName={characterName}
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <LoadingSpinner size="md" text={t('common.loading')} />

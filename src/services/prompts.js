@@ -973,10 +973,15 @@ Respond with ONLY valid JSON in this exact format:
     "activeEffects": [],
     "moneyChange": null,
     "currentLocation": "Location Name",
+    "mapMode": "pola",
+    "roadVariant": null,
     "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
 ${needsSystemEnabled ? '\nFor stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Use null if no needs changed.\n' : ''}
+For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
+For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
+
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour: quick interaction=0.25, short action/combat=0.5, exploration=0.75-1. Only resting (2-4) and sleeping (6-8) should exceed 1 hour.
 
 For stateChanges.journalEntries: provide 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant player decisions, discoveries, or combat outcomes. Each entry should be a self-contained 1-2 sentence summary. Do NOT log trivial details.
@@ -1279,6 +1284,8 @@ Respond with ONLY valid JSON in this exact format:
     "dialogueUpdate": "INCLUDE dialogueUpdate OBJECT WITH active:true AND npcs ARRAY WHEN DIALOGUE MODE STARTS — omit or set null when no dialogue mode",
     "knowledgeUpdates": null,
     "codexUpdates": [],
+    "mapMode": "pola",
+    "roadVariant": null,
     "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
   }
 }
@@ -1323,6 +1330,8 @@ For stateChanges.mapChanges: log environmental changes to locations (traps set, 
 For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
 For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
 For stateChanges.currentLocation: update whenever the player moves to a new location.
+For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
+For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
 ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 For sceneGrid: MANDATORY in every scene. Build a coherent 2D grid around the current action. width/height must be 8-16, tiles must exactly match those dimensions, and every row must be equal length. Use tile symbols: W=wall, F=floor, P=player start, E=exit/path, D=door, I=interactive point. Include entities with x/y coordinates for player and all visible NPCs/enemies. Keep entities on walkable tiles only.
@@ -1502,7 +1511,9 @@ IMPORTANT for characterSuggestion:
 - Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
-The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.`;
+The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.
+
+IMPORTANT for firstScene stateChanges (if included) or top-level initialMapMode: Include "mapMode" in the firstScene's context. The opening scene should establish the field-map mode: "trakt" (road/path), "pola" (open fields), "wnetrze" (interior), or "las" (forest). If the scene starts in a tavern, set "wnetrze"; if on a road, set "trakt"; if in a forest, set "las"; if in open countryside, set "pola".`;
 }
 
 const SANITIZE_PATTERNS = [
