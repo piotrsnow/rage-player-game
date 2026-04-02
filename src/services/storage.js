@@ -16,7 +16,55 @@ const LOCAL_ONLY_SETTINGS_KEYS = [
 const GLOBAL_VOICE_SETTINGS_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
 const _pendingBackendSaves = new Map();
-const _sceneIndexCache = new Map();
+const _pendingFollowUp = new Map();
+
+const SCENE_INDEX_CACHE_KEY = 'nikczemny_krzemuch_scene_idx';
+
+const _sceneIndexCache = {
+  _mem: new Map(),
+  _loaded: false,
+
+  _loadFromStorage() {
+    if (this._loaded) return;
+    this._loaded = true;
+    try {
+      const raw = localStorage.getItem(SCENE_INDEX_CACHE_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        for (const [k, v] of Object.entries(obj)) this._mem.set(k, v);
+      }
+    } catch { /* ignore corrupt data */ }
+  },
+
+  _persist() {
+    try {
+      const obj = Object.fromEntries(this._mem);
+      localStorage.setItem(SCENE_INDEX_CACHE_KEY, JSON.stringify(obj));
+    } catch { /* quota exceeded — non-critical */ }
+  },
+
+  get(backendId) {
+    this._loadFromStorage();
+    return this._mem.get(backendId);
+  },
+
+  set(backendId, index) {
+    this._loadFromStorage();
+    this._mem.set(backendId, index);
+    this._persist();
+  },
+
+  delete(backendId) {
+    this._loadFromStorage();
+    this._mem.delete(backendId);
+    this._persist();
+  },
+
+  has(backendId) {
+    this._loadFromStorage();
+    return this._mem.has(backendId);
+  },
+};
 
 function sanitizeSettings(settings) {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -95,9 +143,9 @@ export const storage = {
 
     if (!apiClient.isConnected()) return { saved: false, local: true };
 
-    const existing = _pendingBackendSaves.get(campaignId);
-    if (existing) {
-      try { await existing; } catch { /* ignore */ }
+    if (_pendingBackendSaves.has(campaignId)) {
+      _pendingFollowUp.set(campaignId, gameState);
+      return { saved: false, queued: true };
     }
 
     const promise = this._doSave(gameState);
@@ -109,8 +157,11 @@ export const storage = {
       console.warn('[storage] Save failed:', err.message);
       return { saved: false };
     } finally {
-      if (_pendingBackendSaves.get(campaignId) === promise) {
-        _pendingBackendSaves.delete(campaignId);
+      _pendingBackendSaves.delete(campaignId);
+      const followUp = _pendingFollowUp.get(campaignId);
+      if (followUp) {
+        _pendingFollowUp.delete(campaignId);
+        this.saveCampaign(followUp).catch(() => {});
       }
     }
   },
@@ -140,31 +191,51 @@ export const storage = {
         gameState.campaign.backendId = created.id;
       }
       if (scenes?.length) {
-        for (let i = 0; i < scenes.length; i++) {
-          try {
-            await apiClient.post(`/ai/campaigns/${created.id}/scenes`, {
-              ...scenes[i],
-              sceneIndex: i,
-            });
-          } catch (err) {
-            console.warn('[storage] Scene save failed:', err.message);
-          }
-        }
-        _sceneIndexCache.set(created.id, scenes.length - 1);
+        await this._saveNewScenes(created.id, scenes, true);
       }
     }
 
     this.setActiveCampaignId(gameState.campaign.backendId || gameState.campaign.id);
   },
 
-  async _saveNewScenes(backendId, scenes) {
+  async _saveNewScenes(backendId, scenes, forceAll = false) {
     if (!scenes?.length) return;
-    const lastSaved = _sceneIndexCache.get(backendId) ?? -1;
+    const lastSaved = forceAll ? -1 : (_sceneIndexCache.get(backendId) ?? -1);
     const newScenes = scenes
       .map((scene, i) => ({ scene, i }))
       .filter(({ i }) => i > lastSaved);
+    if (newScenes.length === 0) return;
+
+    const CHUNK = 20;
     let highestSaved = lastSaved;
-    for (const { scene, i } of newScenes) {
+
+    for (let start = 0; start < newScenes.length; start += CHUNK) {
+      const chunk = newScenes.slice(start, start + CHUNK);
+      try {
+        const res = await apiClient.post(`/ai/campaigns/${backendId}/scenes/bulk`, {
+          scenes: chunk.map(({ scene, i }) => ({ ...scene, sceneIndex: i })),
+        });
+        const lastInChunk = chunk[chunk.length - 1].i;
+        if (res.saved > 0 && lastInChunk > highestSaved) {
+          highestSaved = lastInChunk;
+        }
+      } catch (err) {
+        if (err.message?.includes('404') || err.message?.includes('API error: 404')) {
+          await this._saveNewScenesLegacy(backendId, newScenes.slice(start), highestSaved);
+          return;
+        }
+        console.warn('[storage] Bulk scene save failed at chunk %d:', start, err.message);
+        break;
+      }
+    }
+
+    if (highestSaved > lastSaved) {
+      _sceneIndexCache.set(backendId, highestSaved);
+    }
+  },
+
+  async _saveNewScenesLegacy(backendId, remaining, highestSaved) {
+    for (const { scene, i } of remaining) {
       try {
         await apiClient.post(`/ai/campaigns/${backendId}/scenes`, {
           ...scene,
@@ -176,9 +247,7 @@ export const storage = {
         break;
       }
     }
-    if (highestSaved > lastSaved) {
-      _sceneIndexCache.set(backendId, highestSaved);
-    }
+    _sceneIndexCache.set(backendId, highestSaved);
   },
 
   async loadCampaign(backendId) {
@@ -246,14 +315,11 @@ export const storage = {
           characterState,
         });
         if (scenes?.length) {
-          for (let i = 0; i < scenes.length; i++) {
-            try {
-              await apiClient.post(`/ai/campaigns/${created.id}/scenes`, {
-                ...scenes[i],
-                sceneIndex: i,
-              });
-            } catch { /* best-effort */ }
-          }
+          try {
+            await apiClient.post(`/ai/campaigns/${created.id}/scenes/bulk`, {
+              scenes: scenes.map((s, i) => ({ ...s, sceneIndex: i })),
+            });
+          } catch { /* best-effort */ }
         }
       } catch (err) {
         console.warn('[storage] Campaign migration failed for:', entry.campaign?.name, err.message);

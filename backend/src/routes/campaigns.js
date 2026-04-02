@@ -255,7 +255,7 @@ async function withRetry(fn) {
     try {
       return await fn();
     } catch (err) {
-      const isRetryable = err.code === 'P2034';
+      const isRetryable = err.code === 'P2034' || err.code === 'P2028';
       if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
       await new Promise((r) => setTimeout(r, RETRY_BASE_MS * 2 ** attempt));
     }
@@ -605,9 +605,9 @@ export async function campaignRoutes(fastify) {
         },
       });
 
-      syncNPCsToNormalized(campaign.id, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
-      syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
-      syncQuestsToNormalized(campaign.id, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+      await syncNPCsToNormalized(campaign.id, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
+      await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
+      await syncQuestsToNormalized(campaign.id, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
 
       const fullState = { ...slim, character: charToStore };
       if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
@@ -628,6 +628,8 @@ export async function campaignRoutes(fastify) {
       if (genre !== undefined) updateData.genre = genre;
       if (tone !== undefined) updateData.tone = tone;
 
+      let pendingSync = null;
+
       if (rawCoreState !== undefined) {
         const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
         const { slim, characterState: extractedChar, npcs, knowledgeEvents, knowledgeDecisions, quests } =
@@ -640,10 +642,7 @@ export async function campaignRoutes(fastify) {
           Object.assign(updateData, extractSummaryFields(slim, charToStore));
         } catch { /* ignore */ }
 
-        const campaignId = request.params.id;
-        syncNPCsToNormalized(campaignId, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
-        syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
-        syncQuestsToNormalized(campaignId, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+        pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
       }
 
       const campaign = await withRetry(() =>
@@ -652,6 +651,13 @@ export async function campaignRoutes(fastify) {
           data: updateData,
         }),
       );
+
+      if (pendingSync) {
+        const { campaignId, npcs, knowledgeEvents, knowledgeDecisions, quests } = pendingSync;
+        await syncNPCsToNormalized(campaignId, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
+        await syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
+        await syncQuestsToNormalized(campaignId, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+      }
 
       let parsedCoreState = {};
       try { parsedCoreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
