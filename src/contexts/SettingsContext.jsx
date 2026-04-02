@@ -145,6 +145,7 @@ const defaultSettings = {
     narratorDetail: 50,
     narratorHumor: 20,
     narratorDrama: 50,
+    narratorSeriousness: 50,
     narratorCustomInstructions: '',
     imageStyle: 'painting',
     darkPalette: false,

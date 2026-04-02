@@ -173,6 +173,7 @@ export default function DMSettingsPage({ onClose }) {
   const detailLevelLabel = (settings.dmSettings.narratorDetail ?? 50) < 25 ? t('settings.detailLabels.minimal') : (settings.dmSettings.narratorDetail ?? 50) < 50 ? t('settings.detailLabels.balanced') : (settings.dmSettings.narratorDetail ?? 50) < 75 ? t('settings.detailLabels.rich') : t('settings.detailLabels.lavish');
   const humorLabel = (settings.dmSettings.narratorHumor ?? 20) < 25 ? t('settings.humorLabels.serious') : (settings.dmSettings.narratorHumor ?? 20) < 50 ? t('settings.humorLabels.dry') : (settings.dmSettings.narratorHumor ?? 20) < 75 ? t('settings.humorLabels.witty') : t('settings.humorLabels.absurd');
   const dramaLabel = (settings.dmSettings.narratorDrama ?? 50) < 25 ? t('settings.dramaLabels.subtle') : (settings.dmSettings.narratorDrama ?? 50) < 50 ? t('settings.dramaLabels.measured') : (settings.dmSettings.narratorDrama ?? 50) < 75 ? t('settings.dramaLabels.heightened') : t('settings.dramaLabels.theatrical');
+  const seriousnessLabel = (settings.dmSettings.narratorSeriousness ?? 50) < 25 ? t('settings.seriousnessLabels.silly') : (settings.dmSettings.narratorSeriousness ?? 50) < 50 ? t('settings.seriousnessLabels.lighthearted') : (settings.dmSettings.narratorSeriousness ?? 50) < 75 ? t('settings.seriousnessLabels.serious') : t('settings.seriousnessLabels.grave');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('settings.title')} onClick={onClose}>
@@ -345,6 +346,14 @@ export default function DMSettingsPage({ onClose }) {
                     displayValue={`${settings.dmSettings.narratorDrama ?? 50}% — ${dramaLabel}`}
                   />
 
+                  <Slider
+                    label={t('settings.narratorSeriousness')}
+                    description={t('settings.narratorSeriousnessDesc')}
+                    value={settings.dmSettings.narratorSeriousness ?? 50}
+                    onChange={(v) => updateDMSettings({ narratorSeriousness: v })}
+                    displayValue={`${settings.dmSettings.narratorSeriousness ?? 50}% — ${seriousnessLabel}`}
+                  />
+
                   <div className="mt-6">
                     <label className="block font-headline text-sm text-tertiary mb-2">
                       {t('settings.narratorCustomInstructions')}
@@ -466,6 +475,8 @@ export default function DMSettingsPage({ onClose }) {
                           { id: 'photoreal', icon: 'photo_camera' },
                           { id: 'retro', icon: 'grid_on' },
                           { id: 'gothic', icon: 'castle' },
+                          { id: 'hiphop', icon: 'mic' },
+                          { id: 'crayon', icon: 'draw' },
                         ].map((style) => (
                           <button
                             key={style.id}

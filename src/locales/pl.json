@@ -618,6 +618,7 @@
     "assetCacheCleared": "Cache assetów wyczyszczony",
     "imageProvider": "Dostawca Obrazów",
     "dalleLabel": "DALL-E 3 (OpenAI) — wysoka jakość, wolniejszy",
+    "gptImageLabel": "GPT Image 1 (OpenAI) — najlepsza jakość, najnowszy",
     "stabilityLabel": "Stable Diffusion 3 (Stability AI) — szybki",
     "stabilityApiKey": "Klucz API Stability AI",
     "stabilityApiKeyDesc": "Zdobądź klucz na platform.stability.ai",
@@ -742,6 +743,14 @@
       "heightened": "Wzmożony",
       "theatrical": "Teatralny"
     },
+    "narratorSeriousness": "Powaga",
+    "narratorSeriousnessDesc": "Od głupkowatego absurdu po śmiertelną powagę",
+    "seriousnessLabels": {
+      "silly": "Głupie",
+      "lighthearted": "Lekkie",
+      "serious": "Poważne",
+      "grave": "Śmiertelnie poważne"
+    },
     "imageStyle": "Styl Obrazu",
     "imageStyleDesc": "Styl artystyczny generowanych przez AI ilustracji scen i portretów",
     "imageStyles": {
@@ -756,7 +765,9 @@
       "vanGogh": "Van Gogh",
       "photoreal": "Fotorealizm",
       "retro": "Styl retro",
-      "gothic": "Gotyk"
+      "gothic": "Gotyk",
+      "hiphop": "Hip-Hop",
+      "crayon": "Kredki"
     },
     "darkPalette": "Ciemna paleta kolorów",
     "darkPaletteDesc": "Preferuj ciemne, mroczne kolory w generowanych obrazach",

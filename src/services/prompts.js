@@ -337,6 +337,7 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const detailLabel = (dmSettings.narratorDetail ?? 50) < 25 ? 'minimal, only essential details' : (dmSettings.narratorDetail ?? 50) < 50 ? 'balanced descriptions' : (dmSettings.narratorDetail ?? 50) < 75 ? 'rich environmental detail' : 'lavishly detailed, painting every sensory element';
   const humorLabel = (dmSettings.narratorHumor ?? 20) < 25 ? 'completely serious' : (dmSettings.narratorHumor ?? 20) < 50 ? 'occasional dry wit' : (dmSettings.narratorHumor ?? 20) < 75 ? 'frequent situational humor woven into narration without breaking immersion' : 'heavily comedic and irreverent, but still rooted in character-driven situations and world logic';
   const dramaLabel = (dmSettings.narratorDrama ?? 50) < 25 ? 'understated and subtle' : (dmSettings.narratorDrama ?? 50) < 50 ? 'measured dramatic pacing' : (dmSettings.narratorDrama ?? 50) < 75 ? 'heightened drama and tension' : 'maximally theatrical, grandiose and operatic';
+  const seriousnessLabel = (dmSettings.narratorSeriousness ?? 50) < 25 ? 'silly, goofy and absurd — embrace ridiculous situations, slapstick, and nonsensical logic' : (dmSettings.narratorSeriousness ?? 50) < 50 ? 'lighthearted — playful tone, not taking things too seriously, occasional goofiness' : (dmSettings.narratorSeriousness ?? 50) < 75 ? 'serious and grounded — treat the world and events with weight and consequence' : 'gravely serious — somber, weighty, no levity whatsoever, every moment matters';
   const narratorCustomInstructions = (dmSettings?.narratorCustomInstructions || '').trim();
 
   const npcs = world?.npcs || [];
@@ -460,6 +461,7 @@ NARRATOR VOICE & STYLE:
 - Environmental detail: ${detailLabel}
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
+- Seriousness: ${seriousnessLabel}
 Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
 ${narratorCustomInstructions ? `- Extra narrator instructions from player: ${narratorCustomInstructions}` : ''}
 
@@ -1596,6 +1598,16 @@ const IMAGE_STYLE_PROMPTS = {
     prompt: 'gothic fantasy artwork, towering cathedral arches, ornate stonework, candlelit gloom, medieval illuminated detail, solemn dramatic composition, sacred and ominous atmosphere',
     portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
     negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
+  },
+  hiphop: {
+    prompt: 'urban hip-hop graffiti art style, bold spray-paint strokes, vibrant neon colors on concrete, street art murals, dripping paint, boombox culture aesthetic, thick outlines, stylized lettering accents',
+    portrait: 'hip-hop street art portrait, spray-paint on brick wall, bold outlines, vibrant neon colors, graffiti style, urban swagger, dripping paint details',
+    negative: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate',
+  },
+  crayon: {
+    prompt: 'child-like crayon drawing on white paper, waxy texture, uneven coloring, playful naive art style, visible paper grain, bright primary colors, simple bold shapes, charming imperfect lines',
+    portrait: 'crayon portrait drawing, waxy colorful strokes, child-like naive art style, uneven coloring, white paper background, playful and charming',
+    negative: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render',
   },
 };
 

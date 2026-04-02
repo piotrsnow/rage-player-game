@@ -17,11 +17,12 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
   const provider = settings.imageProvider || 'dalle';
   const isDalle = provider === 'dalle';
+  const isGptImage = provider === 'gpt-image';
   const isGemini = provider === 'gemini';
   const canUseReferenceImage = isGemini || provider === 'stability';
   const requiresReferenceImage = provider === 'stability';
   const apiKey = null;
-  const keyProvider = isDalle ? 'openai' : isGemini ? 'gemini' : 'stability';
+  const keyProvider = (isDalle || isGptImage) ? 'openai' : isGemini ? 'gemini' : 'stability';
   const hasKey = settings.useBackend && hasApiKey(keyProvider);
 
   const [photoBlob, setPhotoBlob] = useState(null);

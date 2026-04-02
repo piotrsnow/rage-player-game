@@ -67,10 +67,13 @@ export async function openaiProxyRoutes(fastify) {
       });
     }
 
-    const { prompt, size, quality, campaignId, forceNew = false } = request.body;
+    const { prompt, size, quality, campaignId, forceNew = false, model: requestedModel } = request.body;
+
+    const isGptImage = requestedModel === 'gpt-image-1';
+    const imageModel = isGptImage ? 'gpt-image-1' : 'dall-e-3';
 
     const cacheParams = {
-      provider: 'dalle',
+      provider: isGptImage ? 'gpt-image' : 'dalle',
       prompt,
       resolutionScale: GENERATED_IMAGE_SCALE,
       ...(forceNew ? { requestTs: Date.now() } : {}),
@@ -85,27 +88,24 @@ export async function openaiProxyRoutes(fastify) {
       }
     }
 
+    const bodyPayload = isGptImage
+      ? { model: imageModel, prompt, n: 1, size: size || '1536x1024', quality: quality || 'medium' }
+      : { model: imageModel, prompt, n: 1, size: size || '1792x1024', quality: quality || 'standard', response_format: 'b64_json' };
+
     const response = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt,
-        n: 1,
-        size: size || '1792x1024',
-        quality: quality || 'standard',
-        response_format: 'b64_json',
-      }),
+      body: JSON.stringify(bodyPayload),
     });
 
     if (!response.ok) {
       try {
         await parseProviderError(response, 'openai');
       } catch (err) {
-        const clientErr = toClientAiError(err, 'DALL-E request failed.');
+        const clientErr = toClientAiError(err, `${isGptImage ? 'GPT Image' : 'DALL-E'} request failed.`);
         return reply.code(err instanceof AIServiceError ? err.statusCode : response.status).send({
           error: clientErr.message,
           code: clientErr.code,
@@ -115,7 +115,7 @@ export async function openaiProxyRoutes(fastify) {
 
     const data = await response.json();
     const b64 = data.data[0]?.b64_json;
-    if (!b64) return reply.code(500).send({ error: 'No image returned from DALL-E' });
+    if (!b64) return reply.code(500).send({ error: `No image returned from ${isGptImage ? 'GPT Image' : 'DALL-E'}` });
 
     const originalBuffer = Buffer.from(b64, 'base64');
     const buffer = await downscaleGeneratedImage(originalBuffer);

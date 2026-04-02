@@ -567,6 +567,44 @@ export function useAI() {
           inferSkillCheckFn,
         });
 
+        if (resolved.diceRoll) {
+          if (!isFirstScene && playerAction && !Boolean(isIdleWorldEvent || playerAction === '[WAIT]')) {
+            const playerChatContent = playerAction === '[CONTINUE]'
+              ? t('gameplay.continueChatMessage')
+              : playerAction;
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_player_early`,
+                role: 'player',
+                content: playerChatContent,
+                timestamp: Date.now(),
+              },
+            });
+          }
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_roll`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: t('system.diceRollMessage', {
+                skill: resolved.diceRoll.skill,
+                roll: resolved.diceRoll.roll,
+                target: resolved.diceRoll.target || resolved.diceRoll.dc,
+                sl: resolved.diceRoll.sl ?? 0,
+                result: resolved.diceRoll.criticalSuccess
+                  ? t('common.criticalSuccess')
+                  : resolved.diceRoll.criticalFailure
+                    ? t('common.criticalFailure')
+                    : resolved.diceRoll.success ? t('common.success') : t('common.failure'),
+              }),
+              diceData: resolved.diceRoll,
+              timestamp: Date.now(),
+            },
+          });
+        }
+
         const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
         const triggeredAgendas = !isFirstScene ? checkNpcAgendas(state.world?.npcAgendas, state) : [];
         const readySeeds = !isFirstScene ? checkSeedResolution(state.world?.narrativeSeeds, state) : [];
@@ -845,7 +883,8 @@ export function useAI() {
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
 
-        if (!isFirstScene && playerAction && !isPassiveSceneAction) {
+        const earlyPlayerMsgSent = Boolean(resolved.diceRoll);
+        if (!earlyPlayerMsgSent && !isFirstScene && playerAction && !isPassiveSceneAction) {
           const playerChatContent = playerAction === '[CONTINUE]'
             ? t('gameplay.continueChatMessage')
             : playerAction;
@@ -881,30 +920,6 @@ export function useAI() {
               role: 'system',
               subtype: 'wait',
               content: t('gameplay.waitSystemMessage'),
-              timestamp: Date.now(),
-            },
-          });
-        }
-
-        if (result.diceRoll) {
-          dispatch({
-            type: 'ADD_CHAT_MESSAGE',
-            payload: {
-              id: `msg_${Date.now()}_roll`,
-              role: 'system',
-              subtype: 'dice_roll',
-              content: t('system.diceRollMessage', {
-                skill: result.diceRoll.skill,
-                roll: result.diceRoll.roll,
-                target: result.diceRoll.target || result.diceRoll.dc,
-                sl: result.diceRoll.sl ?? 0,
-                result: result.diceRoll.criticalSuccess
-                  ? t('common.criticalSuccess')
-                  : result.diceRoll.criticalFailure
-                    ? t('common.criticalFailure')
-                    : result.diceRoll.success ? t('common.success') : t('common.failure'),
-              }),
-              diceData: result.diceRoll,
               timestamp: Date.now(),
             },
           });
