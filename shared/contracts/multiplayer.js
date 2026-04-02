@@ -70,6 +70,8 @@ export const AI_ERROR_CODES = Object.freeze({
   AI_REQUEST_FAILED: 'AI_REQUEST_FAILED',
 });
 
+export const TYPING_DRAFT_MAX_LENGTH = 220;
+
 const CLIENT_TYPE_SET = new Set(Object.values(WS_CLIENT_TYPES));
 const SERVER_TYPE_SET = new Set(Object.values(WS_SERVER_TYPES));
 

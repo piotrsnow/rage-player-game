@@ -683,10 +683,11 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
 
     const parsed = safeParseAIResponse(raw, SceneResponseSchema);
     expect(parsed.ok).toBe(true);
-    expect(parsed.data.suggestedActions).toEqual([
+    expect(parsed.data.suggestedActions.slice(0, 2)).toEqual([
       'I inspect the bell tower',
       'I ask the guard what happened',
     ]);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
   });
 
   it('builds contextual fallback actions when suggestedActions are missing', () => {
@@ -700,7 +701,7 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
 
     const parsed = safeParseAIResponse(raw, SceneResponseSchema);
     expect(parsed.ok).toBe(true);
-    expect(parsed.data.suggestedActions.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
     expect(parsed.data.suggestedActions.some((action) => /Młynarz Odo|Stary Młyn/i.test(action))).toBe(true);
   });
 
@@ -720,7 +721,7 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
 
     const parsed = safeParseAIResponse(raw, SceneResponseSchema);
     expect(parsed.ok).toBe(true);
-    expect(parsed.data.suggestedActions.length).toBeGreaterThanOrEqual(2);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
     expect(parsed.data.suggestedActions.every((action) => action.length > 15)).toBe(true);
     expect(parsed.data.suggestedActions.some((action) => /Brat Konrad|Ruiny Kaplicy|medalik|ślady krwi/i.test(action))).toBe(true);
   });
@@ -737,7 +738,7 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
 
     const parsed = safeParseAIResponse(raw, SceneResponseSchema);
     expect(parsed.ok).toBe(true);
-    expect(parsed.data.suggestedActions).toHaveLength(1);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
     expect(parsed.data.suggestedActions[0]).not.toMatch(/^continue$/i);
     expect(parsed.data.suggestedActions[0]).toMatch(/Dockmaster Rinn|South Docks|Black Gull|sealed crate/i);
   });

@@ -161,7 +161,7 @@ export default function DialoguePanel({
             {t('dialogue.yourTurn')}
           </label>
           <div className="grid grid-cols-2 gap-1.5">
-            {actions.slice(0, 6).map((action, i) => (
+            {actions.slice(0, 3).map((action, i) => (
               <button
                 key={`${action.substring(0, 30)}_${i}`}
                 onClick={() => handleSuggestedReply(action)}

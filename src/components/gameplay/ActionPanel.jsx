@@ -7,6 +7,7 @@ import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import PendingActions from '../multiplayer/PendingActions';
 import Tooltip from '../ui/Tooltip';
 import { parseActionSegments } from '../../services/actionParser';
+import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
 
 const normalizeQuotes = (text) =>
   text.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u2039\u203A\uFF02`\u0060\u00B4]/g, '"');
@@ -25,6 +26,49 @@ const QUICK_BUTTON_STYLES = {
   indigo: 'text-indigo-300/90 hover:text-indigo-200 bg-indigo-500/8 hover:bg-indigo-500/14 border-indigo-400/20 hover:border-indigo-300/35',
 };
 
+function AnimatedTypingDraft({ text }) {
+  const prevTextRef = useRef('');
+  const [animateFromIndex, setAnimateFromIndex] = useState(0);
+
+  useEffect(() => {
+    const prev = prevTextRef.current;
+    if (typeof text !== 'string') {
+      prevTextRef.current = '';
+      setAnimateFromIndex(0);
+      return;
+    }
+
+    if (text.startsWith(prev) && text.length > prev.length) {
+      setAnimateFromIndex(prev.length);
+    } else {
+      setAnimateFromIndex(0);
+    }
+    prevTextRef.current = text;
+  }, [text]);
+
+  if (!text) {
+    return <span className="text-[11px] text-on-surface-variant/55 italic">...</span>;
+  }
+
+  return (
+    <>
+      <style>
+        {`@keyframes mpTypingZoomOut{0%{opacity:0;transform:scale(1.35)}100%{opacity:1;transform:scale(1)}}`}
+      </style>
+      <span className="whitespace-pre-wrap break-words">
+        {text.split('').map((char, index) => (
+          <span
+            key={`${char}_${index}`}
+            style={index >= animateFromIndex ? { display: 'inline-block', animation: 'mpTypingZoomOut 220ms ease-out' } : undefined}
+          >
+            {char}
+          </span>
+        ))}
+      </span>
+    </>
+  );
+}
+
 export default function ActionPanel({
   actions = [],
   onAction,
@@ -35,6 +79,8 @@ export default function ActionPanel({
   character = null,
   dilemma = null,
   lastChosenAction = null,
+  multiplayerPlayers = [],
+  typingPlayers = {},
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -62,40 +108,63 @@ export default function ActionPanel({
   });
 
   const typingTimerRef = useRef(null);
+  const typingBroadcastTimerRef = useRef(null);
+  const queuedDraftRef = useRef('');
   const isTypingRef = useRef(false);
+
+  const sendTypingState = useCallback((isTyping, draft = '') => {
+    mp.sendTyping(isTyping, String(draft || '').slice(0, TYPING_DRAFT_MAX_LENGTH));
+  }, [mp]);
 
   const emitTypingStop = useCallback(() => {
     if (isTypingRef.current) {
       isTypingRef.current = false;
-      mp.sendTyping(false);
+      sendTypingState(false, '');
     }
-  }, [mp]);
+  }, [sendTypingState]);
+
+  const scheduleTypingBroadcast = useCallback((draft) => {
+    queuedDraftRef.current = String(draft || '').slice(0, TYPING_DRAFT_MAX_LENGTH);
+    if (typingBroadcastTimerRef.current) return;
+    typingBroadcastTimerRef.current = setTimeout(() => {
+      typingBroadcastTimerRef.current = null;
+      if (isTypingRef.current) {
+        sendTypingState(true, queuedDraftRef.current);
+      }
+    }, 120);
+  }, [sendTypingState]);
 
   const handleTypingChange = useCallback((value) => {
     setCustomAction(value);
     if (!isMultiplayer) return;
 
     if (value.trim()) {
+      const draft = value.trim().slice(0, TYPING_DRAFT_MAX_LENGTH);
       if (!isTypingRef.current) {
         isTypingRef.current = true;
-        mp.sendTyping(true);
+        sendTypingState(true, draft);
+      } else {
+        scheduleTypingBroadcast(draft);
       }
       clearTimeout(typingTimerRef.current);
       typingTimerRef.current = setTimeout(emitTypingStop, 2000);
     } else {
       clearTimeout(typingTimerRef.current);
+      clearTimeout(typingBroadcastTimerRef.current);
+      typingBroadcastTimerRef.current = null;
       emitTypingStop();
     }
-  }, [isMultiplayer, mp, emitTypingStop]);
+  }, [isMultiplayer, emitTypingStop, scheduleTypingBroadcast, sendTypingState]);
 
   useEffect(() => {
     return () => {
       clearTimeout(typingTimerRef.current);
+      clearTimeout(typingBroadcastTimerRef.current);
       if (isTypingRef.current) {
-        mp.sendTyping(false);
+        sendTypingState(false, '');
       }
     };
-  }, [mp]);
+  }, [sendTypingState]);
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
@@ -130,6 +199,10 @@ export default function ActionPanel({
   };
 
   const handleSoloSuggestedAction = (action) => {
+    clearTimeout(typingTimerRef.current);
+    clearTimeout(typingBroadcastTimerRef.current);
+    typingBroadcastTimerRef.current = null;
+    emitTypingStop();
     mp.soloAction(action, false, settings.language || 'en', settings.dmSettings);
   };
 
@@ -137,6 +210,10 @@ export default function ActionPanel({
     const action = normalizeQuotes(customAction.trim());
     if (action) {
       if (listening) toggle();
+      clearTimeout(typingTimerRef.current);
+      clearTimeout(typingBroadcastTimerRef.current);
+      typingBroadcastTimerRef.current = null;
+      emitTypingStop();
       mp.soloAction(action, true, settings.language || 'en', settings.dmSettings);
       setCustomAction('');
     }
@@ -201,6 +278,22 @@ export default function ActionPanel({
     : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
   const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
   const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
+  const teamPlayers = useMemo(
+    () => (multiplayerPlayers?.length ? multiplayerPlayers : (mp.state.players || [])),
+    [multiplayerPlayers, mp.state.players]
+  );
+  const typingByPlayer = multiplayerPlayers?.length ? typingPlayers : (mp.state.typingPlayers || {});
+  const teammateTypingPanels = useMemo(
+    () => teamPlayers
+      .filter((player) => player.odId !== mp.state.myOdId)
+      .map((player) => ({
+        odId: player.odId,
+        name: player.name || t('multiplayer.player', { defaultValue: 'Player' }),
+        draft: typingByPlayer[player.odId]?.draft || '',
+        isTyping: Boolean(typingByPlayer[player.odId]?.isTyping),
+      })),
+    [teamPlayers, typingByPlayer, mp.state.myOdId, t]
+  );
 
   const renderQuickActionButton = ({
     id,
@@ -302,7 +395,7 @@ export default function ActionPanel({
         <div className="space-y-2">
           {/* Row 1: suggested action buttons */}
           <div className="grid grid-cols-3 gap-2">
-            {actions.slice(0, 6).map((action, i) => (
+            {actions.slice(0, 3).map((action, i) => (
               <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
                 <button
                   data-testid="suggested-action"
@@ -332,6 +425,33 @@ export default function ActionPanel({
               </div>
             ))}
           </div>
+
+          {isMultiplayer && teammateTypingPanels.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pt-0.5">
+              {teammateTypingPanels.map((member) => (
+                <div
+                  key={member.odId}
+                  className={`rounded-sm border px-2.5 py-2 min-h-[54px] transition-all ${
+                    member.isTyping
+                      ? 'border-primary/35 bg-primary/8 shadow-[0_0_12px_rgba(197,154,255,0.15)]'
+                      : 'border-outline-variant/20 bg-surface-container-high/35'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/85 truncate">
+                      {member.name}
+                    </span>
+                    <span className={`text-[9px] font-label uppercase tracking-widest ${member.isTyping ? 'text-primary' : 'text-on-surface-variant/45'}`}>
+                      {member.isTyping ? 'typing' : 'idle'}
+                    </span>
+                  </div>
+                  <div className={`text-[11px] leading-snug ${member.isTyping ? 'text-on-surface' : 'text-on-surface-variant/60'}`}>
+                    <AnimatedTypingDraft text={member.isTyping ? member.draft : ''} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Combat picker dropdown (absolute positioned) */}
           {combatPickerOpen && (

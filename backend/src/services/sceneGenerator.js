@@ -222,7 +222,7 @@ Narration segments = VERBATIM full narrative text (not summarized). Never embed 
   // ── SUGGESTED ACTIONS ──
   sections.push(
     `SUGGESTED ACTIONS:
-Return exactly 6 suggestedActions in PC voice (1st person, e.g. "I examine the door"). 4 grounded + up to 2 chaotic/humorous. Exactly 2 must be direct speech ("I say: \"...\""). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.`,
+Return exactly 3 suggestedActions in PC voice (1st person, e.g. "I examine the door"). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech ("I say: \"...\""). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.`,
   );
 
   // ── STATE CHANGES RULES ──
@@ -279,7 +279,7 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "narrative": "string (required)",
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
-  "suggestedActions": ["exactly 6 actions"],
+  "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
   "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...},
   "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",

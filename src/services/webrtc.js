@@ -5,6 +5,20 @@ const ICE_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
+function mapMediaError(err) {
+  const name = err?.name || '';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+    return 'permission_denied';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
+    return 'device_not_found';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'device_in_use';
+  }
+  return 'unknown_media_error';
+}
+
 class WebRTCService {
   constructor() {
     this._peers = new Map();
@@ -33,16 +47,35 @@ class WebRTCService {
   }
 
   async startLocalStream({ video = true, audio = true } = {}) {
-    if (this._localStream) return this._localStream;
+    if (this._localStream) {
+      this._emit('localStream', this._localStream);
+      return this._localStream;
+    }
+    if (!globalThis?.navigator?.mediaDevices?.getUserMedia) {
+      this._emit('error', {
+        type: 'media',
+        code: 'unsupported_media_api',
+        error: new Error('MediaDevices API is not available'),
+      });
+      return null;
+    }
+    if (globalThis?.window?.isSecureContext === false) {
+      this._emit('error', {
+        type: 'media',
+        code: 'insecure_context',
+        error: new Error('Camera access requires a secure context (HTTPS or localhost)'),
+      });
+      return null;
+    }
     try {
-      this._localStream = await navigator.mediaDevices.getUserMedia({
+      this._localStream = await globalThis.navigator.mediaDevices.getUserMedia({
         video: video ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false,
         audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
       });
       this._emit('localStream', this._localStream);
       return this._localStream;
     } catch (err) {
-      this._emit('error', { type: 'media', error: err });
+      this._emit('error', { type: 'media', code: mapMediaError(err), error: err });
       return null;
     }
   }
@@ -83,6 +116,14 @@ class WebRTCService {
 
   async connectToPeer(remoteOdId) {
     if (this._peers.has(remoteOdId)) return;
+    if (!wsService.connected) {
+      this._emit('error', {
+        type: 'signal',
+        code: 'ws_not_connected',
+        error: new Error('WebSocket is not connected'),
+      });
+      return;
+    }
     const pc = this._createPeerConnection(remoteOdId);
 
     if (this._localStream) {
@@ -94,10 +135,18 @@ class WebRTCService {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    wsService.send('WEBRTC_OFFER', {
+    const sent = wsService.send('WEBRTC_OFFER', {
       targetOdId: remoteOdId,
       offer: { type: offer.type, sdp: offer.sdp },
     });
+    if (!sent) {
+      this.disconnectFromPeer(remoteOdId);
+      this._emit('error', {
+        type: 'signal',
+        code: 'signal_send_failed',
+        error: new Error('Failed to send WEBRTC_OFFER'),
+      });
+    }
   }
 
   disconnectFromPeer(remoteOdId) {
@@ -133,10 +182,17 @@ class WebRTCService {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        wsService.send('WEBRTC_ICE', {
+        const sent = wsService.send('WEBRTC_ICE', {
           targetOdId: remoteOdId,
           candidate: event.candidate.toJSON(),
         });
+        if (!sent) {
+          this._emit('error', {
+            type: 'signal',
+            code: 'signal_send_failed',
+            error: new Error('Failed to send WEBRTC_ICE'),
+          });
+        }
       }
     };
 
@@ -186,10 +242,17 @@ class WebRTCService {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    wsService.send('WEBRTC_ANSWER', {
+    const sent = wsService.send('WEBRTC_ANSWER', {
       targetOdId: fromOdId,
       answer: { type: answer.type, sdp: answer.sdp },
     });
+    if (!sent) {
+      this._emit('error', {
+        type: 'signal',
+        code: 'signal_send_failed',
+        error: new Error('Failed to send WEBRTC_ANSWER'),
+      });
+    }
   }
 
   async _handleAnswer(msg) {

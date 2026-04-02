@@ -331,7 +331,7 @@ export function buildReducedScenePrompt(
     { "type": "narration", "text": "..." },
     { "type": "dialogue", "character": "NPC name", "gender": "male|female", "text": "..." }
   ],
-  "suggestedActions": ["opt1", "opt2", "opt3", "opt4", "opt5", "opt6"],
+  "suggestedActions": ["opt1", "opt2", "opt3"],
   "stateChanges": {
     "woundsChange": 0,
     "xp": 0,
@@ -352,7 +352,7 @@ ${reducedStateJson}
 
 Optional stateChanges: journalEntries (1–2 strings), npcs (brief introduce), mapChanges, moneyChange, activeEffects, combatUpdate if fight starts.
 timeAdvance.hoursElapsed: ~0.25–1 for opening.
-Write narrative and suggestedActions in ${lang}. Return exactly 6 suggestedActions; exactly 2 must be direct PC dialogue lines (what the player character says aloud). Up to 2 may be absurd/chaotic but still actionable in-scene.`;
+Write narrative and suggestedActions in ${lang}. Return exactly 3 suggestedActions; exactly 1 must be a direct PC dialogue line (what the player character says aloud). Up to 1 may be absurd/chaotic but still actionable in-scene.`;
   }
 
   const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
@@ -381,5 +381,5 @@ ${reducedStateJson}
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
 ${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}
-All narrative and suggestedActions in ${lang}. Return exactly 6 suggestedActions; exactly 2 must be direct PC dialogue lines (what the player character says aloud). Up to 2 may be absurd/chaotic but still actionable in-scene.`;
+All narrative and suggestedActions in ${lang}. Return exactly 3 suggestedActions; exactly 1 must be a direct PC dialogue line (what the player character says aloud). Up to 1 may be absurd/chaotic but still actionable in-scene.`;
 }

@@ -354,13 +354,13 @@ function postProcessSuggestedActions({
     normalizedAiActions.push(action);
     seen.add(normalized);
   }
-  if (normalizedAiActions.length > 0) return normalizedAiActions.slice(0, 6);
+  if (normalizedAiActions.length > 0) return normalizedAiActions.slice(0, 3);
 
   const currentLocation = stateChanges?.currentLocation || gameState?.world?.currentLocation || '';
   const npcs = pickContextualNpcs(gameState, stateChanges);
   const sceneIndex = (gameState?.scenes?.length || 0) + 1;
   const contextualFallback = buildFallbackActions(language, { narrative, currentLocation, npcs }, { sceneIndex });
-  return contextualFallback.slice(0, 6);
+  return contextualFallback.slice(0, 3);
 }
 
 function buildDegradedSceneResponse({ language = 'en', reason = 'validation_failed', rawResult = null, gameState = null, degradeType = 'schema_validation' } = {}) {

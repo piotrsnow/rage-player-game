@@ -27,6 +27,16 @@ export default function FloatingVideoPanel({ visible, onClose }) {
 
   const [started, setStarted] = useState(false);
 
+  const cameraErrorText = (() => {
+    const code = error?.code;
+    if (code === 'insecure_context') return t('webcam.cameraErrorInsecureContext');
+    if (code === 'unsupported_media_api') return t('webcam.cameraErrorUnsupported');
+    if (code === 'permission_denied') return t('webcam.cameraErrorPermissionDenied');
+    if (code === 'device_not_found') return t('webcam.cameraErrorDeviceNotFound');
+    if (code === 'device_in_use') return t('webcam.cameraErrorDeviceInUse');
+    return t('webcam.cameraError');
+  })();
+
   const handleStart = useCallback(async () => {
     const stream = await startCamera();
     if (stream) setStarted(true);
@@ -62,7 +72,7 @@ export default function FloatingVideoPanel({ visible, onClose }) {
       >
         <span className="material-symbols-outlined text-4xl text-outline/30">video_camera_front</span>
         {error && (
-          <p className="text-[11px] text-error text-center px-2">{t('webcam.cameraError')}</p>
+          <p className="text-[11px] text-error text-center px-2">{cameraErrorText}</p>
         )}
         <button
           onClick={handleStart}

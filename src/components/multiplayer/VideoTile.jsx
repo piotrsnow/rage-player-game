@@ -24,6 +24,10 @@ export default function VideoTile({
     if (!video) return;
     if (stream) {
       video.srcObject = stream;
+      const maybePromise = video.play?.();
+      if (maybePromise?.catch) {
+        maybePromise.catch(() => {});
+      }
     } else {
       video.srcObject = null;
     }

@@ -15,6 +15,7 @@ import {
   createWsMessage,
   normalizeClientWsType,
   normalizeMultiplayerStateChanges,
+  TYPING_DRAFT_MAX_LENGTH,
   WS_SERVER_TYPES,
 } from '../../../shared/contracts/multiplayer.js';
 
@@ -871,11 +872,14 @@ export async function multiplayerRoutes(fastify) {
             if (!typingRoom) break;
             const typingPlayer = typingRoom.players.get(odId);
             if (!typingPlayer) break;
+            const rawDraft = typeof msg.draft === 'string' ? msg.draft : '';
+            const draft = rawDraft.trim().slice(0, TYPING_DRAFT_MAX_LENGTH);
             broadcast(typingRoom, {
               type: 'TYPING',
               odId,
               playerName: typingPlayer.name,
               isTyping: !!msg.isTyping,
+              draft,
             }, odId);
             break;
           }

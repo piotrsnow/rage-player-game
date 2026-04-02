@@ -301,7 +301,7 @@ export const SceneResponseSchema = z.object({
   imagePrompt: z.string().nullable().optional(),
   sceneGrid: SceneGridSchema,
   atmosphere: AtmosphereSchema,
-  suggestedActions: z.array(z.string()).min(1).max(8),
+  suggestedActions: z.array(z.string()).length(3),
   questOffers: z.array(QuestOfferSchema).optional().default([]),
   stateChanges: StateChangesSchema,
   diceRoll: DiceRollSchema,
@@ -420,8 +420,8 @@ export function safeParseAIResponse(raw, schema) {
         patched[topField] = defaults[topField];
       }
     }
-    // Ensure suggestedActions has at least 1 item
-    if (!Array.isArray(patched.suggestedActions) || patched.suggestedActions.length === 0) {
+    // Ensure suggestedActions has exactly 3 items
+    if (!Array.isArray(patched.suggestedActions) || patched.suggestedActions.length !== 3) {
       patched.suggestedActions = defaults.suggestedActions;
     }
     // Ensure narrative is non-empty
@@ -498,26 +498,41 @@ function normalizeSceneResponseCandidate(rawData) {
         seen.add(key);
         return true;
       });
-    data.suggestedActions = contextualizeSuggestedActions(dedupedActions, data).slice(0, 8);
+    data.suggestedActions = contextualizeSuggestedActions(dedupedActions, data).slice(0, 3);
     if (data.suggestedActions.length === 0) {
       data.suggestedActions = extractFallbackActions(data) || undefined;
     }
   } else if (typeof data.suggestedActions === 'string') {
     const single = data.suggestedActions.trim();
     data.suggestedActions = single
-      ? contextualizeSuggestedActions([single], data).slice(0, 8)
+      ? contextualizeSuggestedActions([single], data).slice(0, 3)
       : extractFallbackActions(data) || undefined;
   } else {
     data.suggestedActions = extractFallbackActions(data) || undefined;
   }
 
-  // Ensure suggestedActions always has at least 1 item (schema requires min(1))
-  if (!Array.isArray(data.suggestedActions) || data.suggestedActions.length === 0) {
-    const lang = inferNarrativeLanguage(data.narrative || '');
-    data.suggestedActions = lang === 'pl'
-      ? ['Rozglądam się dookoła', 'Badam okolicę']
-      : ['I look around', 'I investigate the area'];
+  // Ensure suggestedActions always has exactly 3 items.
+  const lang = inferNarrativeLanguage(data.narrative || '');
+  const defaultActions = lang === 'pl'
+    ? ['Rozglądam się dookoła', 'Badam okolicę', 'Pytam najbliższą osobę o szczegóły']
+    : ['I look around', 'I investigate the area', 'I ask the nearest person for details'];
+  const fallbackPool = extractFallbackActions(data) || [];
+  const normalizedSeen = new Set();
+  const completedActions = [];
+  const appendUnique = (action) => {
+    const trimmed = typeof action === 'string' ? action.trim() : '';
+    if (!trimmed) return;
+    const key = normalizeAction(trimmed);
+    if (!key || normalizedSeen.has(key)) return;
+    normalizedSeen.add(key);
+    completedActions.push(trimmed);
+  };
+  if (Array.isArray(data.suggestedActions)) {
+    data.suggestedActions.forEach(appendUnique);
   }
+  fallbackPool.forEach(appendUnique);
+  defaultActions.forEach(appendUnique);
+  data.suggestedActions = completedActions.slice(0, 3);
 
   if (data.atmosphere == null || typeof data.atmosphere !== 'object' || Array.isArray(data.atmosphere)) {
     data.atmosphere = {};
@@ -880,7 +895,7 @@ function extractFallbackActions(data) {
     .filter(Boolean)
     .filter((action, index, arr) => arr.indexOf(action) === index);
 
-  return uniqueActions.length >= 2 ? uniqueActions.slice(0, 6) : null;
+  return uniqueActions.length >= 1 ? uniqueActions.slice(0, 3) : null;
 }
 
 function getSchemaDefaults(schema) {
@@ -888,7 +903,7 @@ function getSchemaDefaults(schema) {
     return {
       narrative: '...',
       dialogueSegments: [],
-      suggestedActions: ['Rozglądam się dookoła', 'Badam okolicę'],
+      suggestedActions: ['Rozglądam się dookoła', 'Badam okolicę', 'Pytam najbliższą osobę o szczegóły'],
       questOffers: [],
       stateChanges: {},
       atmosphere: {},

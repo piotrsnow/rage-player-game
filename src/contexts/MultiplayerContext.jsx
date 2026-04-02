@@ -74,6 +74,11 @@ function mpReducer(state, action) {
         players: action.payload.room.players,
         gameState: action.payload.room.gameState,
         roomSettings: action.payload.room.settings ?? state.roomSettings,
+        typingPlayers: Object.fromEntries(
+          Object.entries(state.typingPlayers).filter(([id]) =>
+            action.payload.room.players.some((player) => player.odId === id)
+          )
+        ),
       };
 
     case 'ROOM_CONVERTED':
@@ -114,6 +119,11 @@ function mpReducer(state, action) {
         gameState: action.payload.room.gameState ?? state.gameState,
         isHost: action.payload.room.players.find((p) => p.odId === state.myOdId)?.isHost || state.isHost,
         roomSettings: action.payload.room.settings ?? state.roomSettings,
+        typingPlayers: Object.fromEntries(
+          Object.entries(state.typingPlayers).filter(([id]) =>
+            action.payload.room.players.some((player) => player.odId === id)
+          )
+        ),
       };
 
     case 'PLAYER_DISCONNECTED':
@@ -459,10 +469,19 @@ function mpReducer(state, action) {
       };
 
     case 'TYPING_UPDATE': {
-      const { odId: typingOdId, playerName, isTyping } = action.payload;
+      const {
+        odId: typingOdId,
+        playerName,
+        isTyping,
+        draft = '',
+      } = action.payload;
       const typingPlayers = { ...state.typingPlayers };
       if (isTyping) {
-        typingPlayers[typingOdId] = playerName;
+        typingPlayers[typingOdId] = {
+          name: playerName,
+          draft: typeof draft === 'string' ? draft : '',
+          isTyping: true,
+        };
       } else {
         delete typingPlayers[typingOdId];
       }
@@ -703,8 +722,11 @@ export function MultiplayerProvider({ children }) {
     dispatch({ type: 'COMBAT_MANOEUVRE', payload: null });
   }, []);
 
-  const sendTyping = useCallback((isTyping) => {
-    wsService.send(WS_CLIENT_TYPES.TYPING, { isTyping });
+  const sendTyping = useCallback((isTyping, draft = '') => {
+    wsService.send(WS_CLIENT_TYPES.TYPING, {
+      isTyping,
+      draft: typeof draft === 'string' ? draft : '',
+    });
   }, []);
 
   const value = {

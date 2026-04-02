@@ -9,6 +9,30 @@ const DEFAULT_W = 280;
 const DEFAULT_H = 210;
 const CASCADE_OFFSET = 30;
 
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeTileLayout({ pos, size, collapsed }) {
+  const viewportW = Math.max(320, window.innerWidth || 0);
+  const viewportH = Math.max(240, window.innerHeight || 0);
+
+  const safeW = Number.isFinite(size?.w) ? clampNumber(size.w, MIN_W, Math.max(MIN_W, viewportW - 16)) : DEFAULT_W;
+  const safeH = Number.isFinite(size?.h) ? clampNumber(size.h, MIN_H, Math.max(MIN_H, viewportH - 16)) : DEFAULT_H;
+
+  const tileW = collapsed ? 200 : safeW;
+  const tileH = collapsed ? 48 : safeH;
+  const maxX = Math.max(0, viewportW - tileW - 8);
+  const maxY = Math.max(0, viewportH - tileH - 8);
+  const safeX = Number.isFinite(pos?.x) ? clampNumber(pos.x, 0, maxX) : 16;
+  const safeY = Number.isFinite(pos?.y) ? clampNumber(pos.y, 0, maxY) : 16;
+
+  return {
+    pos: { x: safeX, y: safeY },
+    size: { w: safeW, h: safeH },
+  };
+}
+
 function loadTileState(id) {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + id);
@@ -53,6 +77,35 @@ export default function FloatingVideoTile({
     h: saved.current?.h ?? DEFAULT_H,
   });
   const [collapsed, setCollapsed] = useState(saved.current?.collapsed ?? false);
+
+  useEffect(() => {
+    const normalized = normalizeTileLayout({ pos, size, collapsed });
+    if (normalized.pos.x !== pos.x || normalized.pos.y !== pos.y) {
+      setPos(normalized.pos);
+    }
+    if (normalized.size.w !== size.w || normalized.size.h !== size.h) {
+      setSize(normalized.size);
+    }
+
+    const handleResize = () => {
+      const next = normalizeTileLayout({
+        pos: { x: normalized.pos.x, y: normalized.pos.y },
+        size: { w: normalized.size.w, h: normalized.size.h },
+        collapsed,
+      });
+      setPos((prev) => {
+        if (prev.x === next.pos.x && prev.y === next.pos.y) return prev;
+        return next.pos;
+      });
+      setSize((prev) => {
+        if (prev.w === next.size.w && prev.h === next.size.h) return prev;
+        return next.size;
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     saveTileState(tileId, { x: pos.x, y: pos.y, w: size.w, h: size.h, collapsed });

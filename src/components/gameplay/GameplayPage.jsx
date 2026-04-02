@@ -2039,6 +2039,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null }) {
               character={character}
               dilemma={currentScene.dilemma}
               lastChosenAction={lastChosenAction}
+              multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
+              typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
             />
           </div>
         )}

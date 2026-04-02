@@ -652,7 +652,9 @@ function SystemMessage({ message }) {
 
 function TypingIndicator({ typingPlayers }) {
   const { t } = useTranslation();
-  const names = Object.values(typingPlayers || {});
+  const names = Object.values(typingPlayers || {})
+    .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
+    .filter(Boolean);
   if (names.length === 0) return null;
 
   const label = names.length === 1

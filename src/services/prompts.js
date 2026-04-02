@@ -177,7 +177,7 @@ Unmet needs: ${urgent.join('; ')}.
 YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
-3. At least ONE of the six suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
+3. At least ONE of the three suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
 4. The game engine automatically applies a -10 penalty to related skill checks when needs are critical. Reflect this in the narrative — the character struggles with focus, coordination, or social grace.\n`;
 }
 
@@ -543,7 +543,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: At least ONE of the six suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
+- MANDATORY: At least ONE of the three suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
@@ -637,8 +637,8 @@ Write ALL narrative text, dialogue, descriptions, quest names, quest completion 
 SUGGESTED ACTIONS (PLAYER CHARACTER VOICE):
 Every string in "suggestedActions" must read as something the player character intends to do or say — first person ("I examine the door", "I tell him I'm not interested") or a consistent imperative from the PC's agency ("Search the chest" meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
 VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like "Look around", "Move on", or "Talk to someone".${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from recent scenes: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
-ACTION COUNT RULE: Return exactly 6 suggestedActions. Keep at least 4 grounded and practical. Up to 2 may be absurd, chaotic, or darkly humorous, but still actionable by the player character in this scene.
-DIALOGUE RULE: Exactly 2 of the 6 suggestedActions MUST be direct spoken lines the PC can say aloud (dialogue-style actions). Prefer explicit speech format, e.g. "I say: \"...\"" (or Polish equivalent).
+ACTION COUNT RULE: Return exactly 3 suggestedActions. Keep at least 2 grounded and practical. Up to 1 may be absurd, chaotic, or darkly humorous, but still actionable by the player character in this scene.
+DIALOGUE RULE: Exactly 1 of the 3 suggestedActions MUST be a direct spoken line the PC can say aloud (dialogue-style action). Prefer explicit speech format, e.g. "I say: \"...\"" (or Polish equivalent).
 
 INSTRUCTIONS:
 1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
@@ -964,7 +964,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["(EXACTLY 6 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 2 should be direct PC dialogue lines like I say: \"...\")"],
+  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 1 should be a direct PC dialogue line like I say: \"...\")"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
@@ -1234,7 +1234,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["(EXACTLY 6 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions. EXACTLY 2 should be direct PC dialogue lines)"],
+  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions. EXACTLY 1 should be a direct PC dialogue line)"],
   "questOffers": [],
   "stateChanges": {
     "woundsChange": 0,

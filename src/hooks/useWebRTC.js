@@ -12,11 +12,26 @@ export function useWebRTC(myOdId, players, isActive) {
   const [error, setError] = useState(null);
   const initializedRef = useRef(false);
   const connectedPeersRef = useRef(new Set());
+  const playersRef = useRef([]);
+
+  useEffect(() => {
+    playersRef.current = players || [];
+  }, [players]);
+
+  const shouldInitiateOffer = useCallback((remoteOdId) => {
+    if (!myOdId || !remoteOdId) return false;
+    return String(myOdId).localeCompare(String(remoteOdId)) < 0;
+  }, [myOdId]);
 
   useEffect(() => {
     if (!isActive || !myOdId || initializedRef.current) return;
     webrtcService.init(myOdId);
     initializedRef.current = true;
+    if (webrtcService.localStream) {
+      setLocalStream(webrtcService.localStream);
+      setCameraEnabled(webrtcService.getTrackEnabled('video'));
+      setMicEnabled(webrtcService.getTrackEnabled('audio'));
+    }
 
     const unsubLocal = webrtcService.on('localStream', setLocalStream);
     const unsubRemote = webrtcService.on('remoteStream', ({ odId, stream }) => {
@@ -61,6 +76,21 @@ export function useWebRTC(myOdId, players, isActive) {
         return next;
       });
     });
+    const unsubConnected = wsService.on('_connected', () => {
+      if (!initializedRef.current || !webrtcService.localStream) return;
+      webrtcService.disconnectAll();
+      connectedPeersRef.current.clear();
+      setRemoteStreams(new Map());
+      setConnectionStates(new Map());
+      setRemoteTrackStates(new Map());
+
+      const remotePlayers = (playersRef.current || []).filter((p) => p.odId !== myOdId);
+      for (const player of remotePlayers) {
+        if (!shouldInitiateOffer(player.odId)) continue;
+        connectedPeersRef.current.add(player.odId);
+        webrtcService.connectToPeer(player.odId);
+      }
+    });
 
     return () => {
       unsubLocal();
@@ -69,6 +99,7 @@ export function useWebRTC(myOdId, players, isActive) {
       unsubDisconnect();
       unsubError();
       unsubTrackState();
+      unsubConnected();
       webrtcService.destroy();
       initializedRef.current = false;
       connectedPeersRef.current.clear();
@@ -77,7 +108,7 @@ export function useWebRTC(myOdId, players, isActive) {
       setConnectionStates(new Map());
       setRemoteTrackStates(new Map());
     };
-  }, [isActive, myOdId]);
+  }, [isActive, myOdId, shouldInitiateOffer]);
 
   useEffect(() => {
     if (!isActive || !myOdId || !initializedRef.current || !webrtcService.localStream) return;
@@ -85,6 +116,7 @@ export function useWebRTC(myOdId, players, isActive) {
     const remotePlayers = (players || []).filter((p) => p.odId !== myOdId);
 
     for (const player of remotePlayers) {
+      if (!shouldInitiateOffer(player.odId)) continue;
       if (!connectedPeersRef.current.has(player.odId)) {
         connectedPeersRef.current.add(player.odId);
         webrtcService.connectToPeer(player.odId);
@@ -98,12 +130,13 @@ export function useWebRTC(myOdId, players, isActive) {
         webrtcService.disconnectFromPeer(odId);
       }
     }
-  }, [isActive, myOdId, players, localStream]);
+  }, [isActive, myOdId, players, localStream, shouldInitiateOffer]);
 
   const startCamera = useCallback(async () => {
     setError(null);
     const stream = await webrtcService.startLocalStream({ video: true, audio: true });
     if (stream) {
+      setLocalStream(stream);
       setCameraEnabled(true);
       setMicEnabled(true);
     }
