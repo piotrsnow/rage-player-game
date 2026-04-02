@@ -19,7 +19,7 @@ const genreGlowColors = {
   Horror: 'hover:shadow-[0_4px_24px_rgba(255,110,132,0.12)]',
 };
 
-export default function CampaignCard({ campaign, onLoad, onDelete }) {
+export default function CampaignCard({ campaign, onLoad, onDelete, loading, disabled }) {
   const { t, i18n } = useTranslation();
   const lastPlayed = new Date(campaign.lastSaved).toLocaleDateString(i18n.language === 'pl' ? 'pl-PL' : undefined, {
     month: 'short',
@@ -35,9 +35,20 @@ export default function CampaignCard({ campaign, onLoad, onDelete }) {
   return (
     <div className="animate-fade-in" data-testid="campaign-card">
       <div
-        onClick={onLoad}
-        className={`p-5 bg-surface-container-low hover:bg-surface-container transition-all duration-300 cursor-pointer group flex items-start justify-between border-l-2 ${borderColor} rounded-sm hover:translate-y-[-1px] ${glowColor}`}
+        onClick={disabled ? undefined : onLoad}
+        className={`relative p-5 bg-surface-container-low transition-all duration-300 group flex items-start justify-between border-l-2 ${borderColor} rounded-sm ${
+          disabled
+            ? 'opacity-60 cursor-default'
+            : `hover:bg-surface-container cursor-pointer hover:translate-y-[-1px] ${glowColor}`
+        } ${loading ? '!opacity-100 border-l-primary' : ''}`}
       >
+        {loading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-surface-container-low/80 backdrop-blur-[2px] rounded-sm">
+            <span className="material-symbols-outlined text-2xl text-primary animate-spin mb-2">progress_activity</span>
+            <p className="text-sm text-primary font-headline">{t('lobby.loadingWorld', 'Loading world...')}</p>
+            <p className="text-[10px] text-on-surface-variant mt-1">{t('lobby.loadingWorldHint', 'Preparing your adventure, please wait')}</p>
+          </div>
+        )}
         <div className="flex items-start gap-4 flex-1 min-w-0">
           <div className="w-10 h-10 bg-surface-container-high rounded-sm flex items-center justify-center border border-primary/10 shrink-0 group-hover:border-primary/25 transition-colors">
             <span className="material-symbols-outlined text-primary-dim group-hover:text-primary transition-colors">
@@ -76,17 +87,19 @@ export default function CampaignCard({ campaign, onLoad, onDelete }) {
             </span>
             <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
           </div>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              className="material-symbols-outlined text-sm text-outline hover:text-error transition-colors p-1 rounded-sm hover:bg-error/10"
-            >
-              delete
-            </button>
-          </div>
+          {!loading && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!disabled) onDelete();
+                }}
+                className="material-symbols-outlined text-sm text-outline hover:text-error transition-colors p-1 rounded-sm hover:bg-error/10"
+              >
+                delete
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

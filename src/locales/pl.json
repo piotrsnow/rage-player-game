@@ -221,6 +221,8 @@
     "libraryCharacterNotFound": "Nie znaleziono postaci w bibliotece",
     "useCampaignChar": "Użyj z kampanii",
     "useLibraryChar": "Użyj aktualnej",
+    "loadingWorld": "Wczytywanie świata...",
+    "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
     "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
   },
   "creator": {

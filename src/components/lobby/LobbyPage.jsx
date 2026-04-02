@@ -129,6 +129,7 @@ export default function LobbyPage() {
   const [libraryCharacter, setLibraryCharacter] = useState(undefined);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [campaignNotFound, setCampaignNotFound] = useState(false);
+  const [loadingCampaignId, setLoadingCampaignId] = useState(null);
 
   useEffect(() => {
     if (location.state?.campaignNotFound) {
@@ -225,14 +226,15 @@ export default function LobbyPage() {
   };
 
   const handleLoad = async (campaign) => {
-    setSyncing(true);
+    if (loadingCampaignId) return;
+    setLoadingCampaignId(campaign.id);
     try {
       const data = await storage.loadCampaign(campaign.id);
       if (data) openCharacterChoice(data);
     } catch (err) {
       console.warn('[LobbyPage] Failed to load campaign:', err.message);
     } finally {
-      setSyncing(false);
+      setLoadingCampaignId(null);
     }
   };
 
@@ -445,6 +447,8 @@ export default function LobbyPage() {
                 <CampaignCard
                   key={c.id || i}
                   campaign={c}
+                  loading={loadingCampaignId === c.id}
+                  disabled={!!loadingCampaignId}
                   onLoad={() => handleLoad(c)}
                   onDelete={() =>
                     showDeleteConfirm === c.id

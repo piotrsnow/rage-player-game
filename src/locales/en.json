@@ -220,6 +220,8 @@
     "libraryCharacterNotFound": "Character not found in library",
     "useCampaignChar": "Use Campaign Version",
     "useLibraryChar": "Use Library Version",
+    "loadingWorld": "Loading world...",
+    "loadingWorldHint": "Preparing your adventure, please wait",
     "campaignNotFound": "Campaign not found. It may have been deleted."
   },
   "creator": {
