@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import SceneGenerationProgress from './SceneGenerationProgress';
 
 const CHAR_INTERVAL_MS = 35;
 const TYPING_SFX_COUNT = 3;
@@ -14,6 +15,9 @@ export default function TypewriterActionOverlay({
   typingSpeedMultiplier = 1,
   holdOpen = false,
   holdingDurationMs = 1500,
+  showLoader = false,
+  loaderStartTime,
+  loaderEstimatedMs,
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
@@ -201,6 +205,13 @@ export default function TypewriterActionOverlay({
           <div className="w-1.5 h-1.5 rounded-full bg-primary/30" />
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
         </div>
+
+        {showLoader && (
+          <SceneGenerationProgress
+            startTime={loaderStartTime}
+            estimatedMs={loaderEstimatedMs}
+          />
+        )}
       </div>
     </div>
   );

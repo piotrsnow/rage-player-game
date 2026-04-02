@@ -1897,6 +1897,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene}
+              loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
+              loaderEstimatedMs={lastSceneGenMs}
             />
           )}
           {earlyDiceRoll && (
