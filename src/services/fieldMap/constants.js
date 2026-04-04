@@ -1,7 +1,7 @@
 export const CHUNK_SIZE = 64;
 export const CHUNK_SIZE_INTERIOR = 24;
 export const VIEWPORT_RADIUS = 12;
-export const STEPS_PER_TURN = 15;
+export const STEPS_PER_TURN = 215;
 export const CHUNK_CACHE_LIMIT = 128;
 export const PREFETCH_EDGE_DISTANCE = 8;
 export const TILE_PX = 16;

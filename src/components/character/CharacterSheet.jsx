@@ -288,10 +288,6 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               </div>
             </div>
           )}
-        </div>
-
-        <div className="lg:col-span-4 space-y-6 animate-fade-in">
-          <Inventory items={character.inventory} money={character.money} />
 
           <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">
             <div className="absolute top-0 right-0 p-4">
@@ -311,6 +307,10 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               )}
             </div>
           </div>
+        </div>
+
+        <div className="lg:col-span-4 space-y-6 animate-fade-in">
+          <Inventory items={character.inventory} money={character.money} />
         </div>
       </div>
 

@@ -1,6 +1,8 @@
 import { prisma } from '../lib/prisma.js';
 import bcrypt from 'bcrypt';
+import { ObjectId } from 'mongodb';
 import { resolveApiKey } from '../services/apiKeyService.js';
+import { getCollection } from '../services/mongoNative.js';
 const SALT_ROUNDS = 12;
 const SHARED_VOICE_SCOPE = 'voices';
 const SHARED_VOICE_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
@@ -93,6 +95,36 @@ async function getOrCreateSharedVoiceSettings(userId) {
     }
     throw error;
   }
+}
+
+async function updateUserSettingsDocument(userId, data) {
+  const users = await getCollection('User');
+  const update = {
+    ...data,
+    updatedAt: new Date(),
+  };
+
+  const result = await users.findOneAndUpdate(
+    { _id: new ObjectId(userId) },
+    { $set: update },
+    {
+      returnDocument: 'after',
+      projection: { _id: 1, email: 1, settings: 1 },
+    },
+  );
+
+  const user = result && typeof result === 'object' && 'value' in result
+    ? result.value
+    : result;
+  if (!user) {
+    throw { statusCode: 404, message: 'User not found' };
+  }
+
+  return {
+    id: user._id.toString(),
+    email: user.email,
+    settings: user.settings,
+  };
 }
 
 export async function authRoutes(fastify) {
@@ -209,11 +241,7 @@ export async function authRoutes(fastify) {
       data.apiKeys = encrypt(JSON.stringify(apiKeys));
     }
 
-    const user = await prisma.user.update({
-      where: { id: request.user.id },
-      data,
-      select: { id: true, email: true, settings: true },
-    });
+    const user = await updateUserSettingsDocument(request.user.id, data);
 
     return { ...user, settings: JSON.parse(user.settings) };
   });

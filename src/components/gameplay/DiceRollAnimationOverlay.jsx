@@ -30,12 +30,13 @@ function getOutcomeBorder(dr) {
   return dr.success ? 'border-emerald-500/40' : 'border-rose-500/40';
 }
 
-export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
+export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen = false }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState('rolling');
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
   const diceRollRef = useRef(diceRoll);
+  const wasHeldRef = useRef(false);
 
   useEffect(() => {
     diceRollRef.current = diceRoll;
@@ -47,7 +48,12 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
 
   useEffect(() => {
     if (phase === 'result') {
-      const timer = setTimeout(() => setPhase('fading'), RESULT_HOLD_MS);
+      if (holdOpen) {
+        wasHeldRef.current = true;
+        return undefined;
+      }
+      const delay = wasHeldRef.current ? 0 : RESULT_HOLD_MS;
+      const timer = setTimeout(() => setPhase('fading'), delay);
       return () => clearTimeout(timer);
     }
     if (phase === 'fading') {
@@ -56,7 +62,7 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
       }, FADE_OUT_MS);
       return () => clearTimeout(timer);
     }
-  }, [phase]);
+  }, [phase, holdOpen]);
 
   const dr = diceRollRef.current;
   if (!dr) return null;
@@ -73,10 +79,14 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
       className={`fixed inset-0 z-[80] pointer-events-none flex flex-col items-center justify-center transition-opacity duration-500 ${
         phase === 'fading' ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{ paddingTop: '320px' }}
+      style={{ paddingTop: '430px' }}
     >
-      {/* 3D Dice roller area */}
-      <div className="relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in">
+      {/* 3D Dice roller area — fades out once roll completes, slightly before result card appears */}
+      <div className={`relative w-[260px] h-[200px] -mt-16 animate-dice-fly-in transition-all ease-out ${
+        phase === 'rolling'
+          ? 'opacity-100 scale-100 duration-0'
+          : 'opacity-0 scale-90 -translate-y-3 duration-[400ms]'
+      }`}>
         <DiceRoller
           diceRoll={dr}
           onComplete={handleRollComplete}
@@ -88,12 +98,12 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss }) {
         />
       </div>
 
-      {/* Result card - appears after roll animation finishes */}
+      {/* Result card - appears after roll animation finishes, slightly after dice fade */}
       <div
-        className={`mt-2 transition-all duration-500 ease-out ${
+        className={`mt-2 transition-all ease-out ${
           phase === 'rolling'
-            ? 'opacity-0 translate-y-4 scale-90'
-            : 'opacity-100 translate-y-0 scale-100'
+            ? 'opacity-0 translate-y-4 scale-90 duration-0'
+            : 'opacity-100 translate-y-0 scale-100 duration-500 delay-150'
         }`}
       >
         <div
