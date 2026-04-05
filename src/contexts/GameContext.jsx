@@ -192,7 +192,6 @@ const initialState = {
     codex: {},
     narrativeSeeds: [],
     npcAgendas: [],
-    tensionHistory: [],
   },
   quests: { active: [], completed: [] },
   scenes: [],
@@ -475,39 +474,11 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'UPDATE_CHARACTER_STATS':
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          characteristics: { ...state.character.characteristics, ...action.payload },
-        },
-      };
-
-    case 'UPDATE_CAREER': {
-      const { career } = action.payload;
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          career: { ...state.character.career, ...career },
-        },
-      };
-    }
-
     case 'SPEND_FORTUNE': {
       if (state.character.fortune <= 0) return state;
       return {
         ...state,
         character: { ...state.character, fortune: state.character.fortune - 1 },
-      };
-    }
-
-    case 'SPEND_FATE': {
-      if (state.character.fate <= 0) return state;
-      return {
-        ...state,
-        character: { ...state.character, fate: state.character.fate - 1 },
       };
     }
 
@@ -519,47 +490,6 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'SPEND_RESILIENCE': {
-      if (state.character.resilience <= 0) return state;
-      return {
-        ...state,
-        character: { ...state.character, resilience: state.character.resilience - 1 },
-      };
-    }
-
-    case 'UPDATE_SKILLS': {
-      const { skills } = action.payload;
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          skills: { ...state.character.skills, ...skills },
-        },
-      };
-    }
-
-    case 'ADD_TALENT': {
-      const { talent } = action.payload;
-      if (state.character.talents.includes(talent)) return state;
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          talents: [...state.character.talents, talent],
-        },
-      };
-    }
-
-    case 'SPEND_XP': {
-      const { cost } = action.payload;
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          xpSpent: state.character.xpSpent + cost,
-        },
-      };
-    }
 
     case 'SPEND_XP_CHARACTERISTIC': {
       const { key } = action.payload;
@@ -679,24 +609,6 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'ADD_INVENTORY_ITEM':
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          inventory: [...state.character.inventory, action.payload],
-        },
-      };
-
-    case 'REMOVE_INVENTORY_ITEM':
-      return {
-        ...state,
-        character: {
-          ...state.character,
-          inventory: state.character.inventory.filter((i) => i.id !== action.payload),
-        },
-      };
-
     case 'UPDATE_INVENTORY_ITEM_IMAGE': {
       const { itemId, imageUrl } = action.payload || {};
       if (!itemId || !state.character?.inventory?.length) return state;
@@ -726,18 +638,6 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'COMPLETE_QUEST': {
-      const quest = state.quests.active.find((q) => q.id === action.payload);
-      if (!quest) return state;
-      return {
-        ...state,
-        quests: {
-          active: state.quests.active.filter((q) => q.id !== action.payload),
-          completed: [...state.quests.completed, { ...quest, completedAt: Date.now() }],
-        },
-      };
-    }
-
     case 'UPDATE_SCENE_QUEST_OFFER': {
       const { sceneId, offerId, status } = action.payload;
       return {
@@ -761,15 +661,6 @@ function gameReducer(state, action) {
         world: { ...state.world, ...action.payload },
       };
 
-    case 'ADD_WORLD_FACT':
-      return {
-        ...state,
-        world: {
-          ...state.world,
-          facts: [...state.world.facts, action.payload],
-        },
-      };
-
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload };
 
@@ -784,21 +675,6 @@ function gameReducer(state, action) {
 
     case 'SET_MOMENTUM':
       return { ...state, momentumBonus: action.payload };
-
-    case 'UPDATE_SCENE_MUSIC':
-      return state;
-
-    case 'END_CAMPAIGN': {
-      const { status, epilogue } = action.payload;
-      return {
-        ...state,
-        campaign: {
-          ...state.campaign,
-          status: status || 'completed',
-          epilogue: epilogue || '',
-        },
-      };
-    }
 
     case 'APPLY_STATE_CHANGES': {
       const changes = action.payload;
@@ -1602,16 +1478,6 @@ function gameReducer(state, action) {
       return { ...state, dialogue: null, dialogueCooldown: cooldown };
     }
 
-    case 'UPDATE_FACTIONS': {
-      return {
-        ...state,
-        world: {
-          ...state.world,
-          factions: { ...(state.world.factions || {}), ...action.payload },
-        },
-      };
-    }
-
     case 'ADD_PARTY_COMPANION': {
       const companion = { ...action.payload, type: 'companion' };
       return { ...state, party: [...(state.party || []), companion] };
@@ -1624,13 +1490,6 @@ function gameReducer(state, action) {
         party: (state.party || []).map((m) =>
           (m.id || m.name) === id ? { ...m, ...updates } : m
         ),
-      };
-    }
-
-    case 'REMOVE_PARTY_COMPANION': {
-      return {
-        ...state,
-        party: (state.party || []).filter((m) => (m.id || m.name) !== action.payload),
       };
     }
 
@@ -1648,26 +1507,6 @@ function gameReducer(state, action) {
 
     case 'SET_PLAY_TIME': {
       return { ...state, totalPlayTime: action.payload || 0 };
-    }
-
-    case 'UPDATE_MAGIC': {
-      return { ...state, magic: { ...(state.magic || {}), ...action.payload } };
-    }
-
-    case 'UPDATE_WEATHER': {
-      return {
-        ...state,
-        world: { ...state.world, weather: action.payload },
-      };
-    }
-
-    case 'ADD_EXPLORED_LOCATION': {
-      const explored = new Set(state.world.exploredLocations || []);
-      explored.add(action.payload);
-      return {
-        ...state,
-        world: { ...state.world, exploredLocations: [...explored] },
-      };
     }
 
     case 'INIT_FIELD_MAP': {
