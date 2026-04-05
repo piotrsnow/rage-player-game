@@ -1047,7 +1047,6 @@ export function useAI() {
 
           const previousFactions = { ...(state.world?.factions || {}) };
 
-          dispatch({ type: 'PUSH_UNDO' });
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: validated });
           if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
             void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });

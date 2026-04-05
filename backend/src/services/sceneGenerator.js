@@ -132,6 +132,44 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
   }
   if (worldLines.length) sections.push(worldLines.join('\n'));
 
+  // ── KNOWN NPC SUMMARY (top NPCs by disposition magnitude) ──
+  if (npcs.length > 0) {
+    const knownNpcs = npcs
+      .filter(n => n.alive !== false)
+      .sort((a, b) => Math.abs(b.disposition || 0) - Math.abs(a.disposition || 0))
+      .slice(0, 8);
+    if (knownNpcs.length > 0) {
+      const npcLines = ['Key NPCs (disposition):'];
+      for (const n of knownNpcs) {
+        npcLines.push(`- ${n.name} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}${n.lastLocation ? ', ' + n.lastLocation : ''}`);
+      }
+      sections.push(npcLines.join('\n'));
+    }
+  }
+
+  // ── KEY PLOT FACTS ──
+  const keyPlotFacts = world.keyPlotFacts || [];
+  if (keyPlotFacts.length > 0) {
+    sections.push(`Key plot facts:\n${keyPlotFacts.map(f => `- ${f}`).join('\n')}`);
+  }
+
+  // ── CODEX SUMMARY (already discovered by player) ──
+  const codexSummary = world.codexSummary || [];
+  if (codexSummary.length > 0) {
+    const codexLines = [`ALREADY DISCOVERED BY PLAYER (DO NOT REPEAT — reveal NEW aspects only):`];
+    codexLines.push(`${codexSummary.length} entries total.`);
+    for (const entry of codexSummary.slice(0, 10)) {
+      let line = `- ${entry.name} [${entry.category}]: known = ${entry.knownAspects.join(', ') || 'none'}`;
+      if (entry.canReveal.length > 0) {
+        line += ` → can still reveal: ${entry.canReveal.join(', ')}`;
+      } else {
+        line += ' → fully known';
+      }
+      codexLines.push(line);
+    }
+    sections.push(codexLines.join('\n'));
+  }
+
   // ── NEEDS SYSTEM ──
   if (needsSystemEnabled && characterNeeds) {
     const needNames = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
@@ -259,17 +297,46 @@ ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/
 - Item/money acquisition: if narrative says character gains anything, stateChanges MUST match. No exceptions.`,
   );
 
-  // ── TOOLS ──
+  // ── CODEX RULES ──
   sections.push(
-    `CONTEXT TOOLS — use when you need more information:
-- search_campaign_memory(query): past events, story details, scene history
-- get_npc_details(npc_name): full NPC profile, personality, relationships
-- get_quest_details(quest_name): quest info, objectives, rewards, progress
-- get_location_history(location_name): location details, past visits, events
-- get_codex_entry(topic): discovered lore, artifacts, factions, world knowledge
-- get_equipment_catalog(category): valid weapons/armor with stats. MUST call before creating combatUpdate or giving items. category: "weapons", "armor", or "all"
-- get_bestiary(query): stat block templates for common enemies. MUST call before creating combatUpdate — use these stats instead of inventing. query: enemy name, type, or threat level
-IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems MUST exactly match names from get_equipment_catalog. Call it before any combat or item reward scene.`,
+    `CODEX RULES:
+- Each NPC reveals ONE fragment per interaction. Never dump lore — drip-feed it.
+- Aspect depends on NPC role: scholars/wizards→history/technical/political, peasants→rumor (may be inaccurate), soldiers/guards→location/weakness, merchants→technical/description, nobles→political/history.
+- Some knowledge (especially weaknesses) requires the RIGHT source NPC — not everyone knows everything.
+- The "ALREADY DISCOVERED" section above lists what the player has previously uncovered. Do NOT repeat known aspects — reveal NEW information only.
+- Call get_codex_entry() to check full fragment details before adding codexUpdates to existing entries.
+- Use relatedEntries to link connected codex items (weapon→creator, place→faction, etc.).
+- Max 10 fragments per entry.`,
+  );
+
+  // ── MANDATORY TOOL PROTOCOL ──
+  sections.push(
+    `MANDATORY TOOL PROTOCOL:
+MUST call before generating narrative:
+1. Combat start → get_bestiary() + get_equipment_catalog()
+2. First visit at new location → get_location_history()
+3. Player references past events (not in Recent History) → search_campaign_memory()
+4. Player asks about lore/artifacts → get_codex_entry()
+5. Adding codexUpdates to existing entry → get_codex_entry() to check existing fragments
+6. Item reward or loot with weapons/armor → get_equipment_catalog()
+SHOULD call when beneficial:
+7. Extended NPC dialogue (3+ rounds) → get_npc_details() for personality/speech patterns
+8. Quest-related scenes → get_quest_details() for full objective details
+DO NOT call tools for:
+- Basic narration without NPC interaction
+- Actions in current location (use inline discoveries above)
+- NPCs already listed in "Key NPCs" section above
+IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems MUST exactly match names from get_equipment_catalog.`,
+  );
+
+  // ── PRE-FLIGHT CHECKLIST ──
+  sections.push(
+    `BEFORE GENERATING RESPONSE, check:
+- Am I at a new location? → call get_location_history()
+- Is an NPC speaking that I have no details for? → call get_npc_details()
+- Does the player reference old events not in Recent History? → call search_campaign_memory()
+- Is combat starting? → call get_bestiary() + get_equipment_catalog()
+- Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
   );
 
   // ── RESPONSE FORMAT ──
@@ -508,14 +575,26 @@ export async function generateScene(campaignId, playerAction, {
   fromAutoPlayer = false,
   sceneCount = 0,
 } = {}) {
-  // 1. Load campaign core state + normalized data
-  const [campaign, dbNpcs, dbQuests] = await Promise.all([
+  // 1. Load campaign core state + normalized data + codex + knowledge
+  const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
     prisma.campaign.findUnique({
       where: { id: campaignId },
       select: { coreState: true, characterState: true },
     }),
     prisma.campaignNPC.findMany({ where: { campaignId } }),
     prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
+    prisma.campaignCodex.findMany({
+      where: { campaignId },
+      select: { codexKey: true, name: true, category: true, fragments: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 15,
+    }),
+    prisma.campaignKnowledge.findMany({
+      where: { campaignId, importance: { in: ['high', 'critical'] } },
+      select: { summary: true, importance: true },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
   ]);
 
   if (!campaign) throw new Error('Campaign not found');
@@ -555,11 +634,29 @@ export async function generateScene(campaignId, playerAction, {
     coreState.quests = { active, completed };
   }
 
+  // Inject codex summary for inline context
+  if (dbCodex.length > 0) {
+    if (!coreState.world) coreState.world = {};
+    const ASPECT_TYPES = ['history', 'description', 'location', 'weakness', 'rumor', 'technical', 'political'];
+    coreState.world.codexSummary = dbCodex.map((c) => {
+      const fragments = JSON.parse(c.fragments || '[]');
+      const knownAspects = [...new Set(fragments.map(f => f.aspect).filter(Boolean))];
+      const canReveal = ASPECT_TYPES.filter(a => !knownAspects.includes(a));
+      return { name: c.name, category: c.category, knownAspects, canReveal };
+    });
+  }
+
+  // Inject key plot facts for inline context
+  if (dbKnowledge.length > 0) {
+    if (!coreState.world) coreState.world = {};
+    coreState.world.keyPlotFacts = dbKnowledge.map(k => k.summary);
+  }
+
   // 2. Load recent scenes
   const recentScenes = await prisma.campaignScene.findMany({
     where: { campaignId },
     orderBy: { sceneIndex: 'desc' },
-    take: 3,
+    take: 5,
   });
   recentScenes.reverse(); // chronological order
 

@@ -208,7 +208,6 @@ const initialState = {
   combat: null,
   dialogue: null,
   dialogueCooldown: 0,
-  undoStack: [],
   achievements: createDefaultAchievementState(),
   magic: { storedWindPoints: 0, activeSpells: [], knownSpells: [] },
   narrationTime: 0,
@@ -1575,31 +1574,6 @@ function gameReducer(state, action) {
 
     case 'SET_NARRATOR_VOICE':
       return { ...state, narratorVoiceId: action.payload || null };
-
-    case 'PUSH_UNDO': {
-      const MAX_UNDO = 10;
-      const snapshot = {
-        timestamp: Date.now(),
-        character: state.character ? structuredClone(state.character) : null,
-        world: state.world ? structuredClone(state.world) : null,
-        quests: state.quests ? structuredClone(state.quests) : null,
-      };
-      const stack = [...(state.undoStack || []), snapshot];
-      return { ...state, undoStack: stack.length > MAX_UNDO ? stack.slice(-MAX_UNDO) : stack };
-    }
-
-    case 'UNDO_STATE_CHANGES': {
-      const stack = state.undoStack || [];
-      if (stack.length === 0) return state;
-      const last = stack[stack.length - 1];
-      return {
-        ...state,
-        character: last.character || state.character,
-        world: last.world || state.world,
-        quests: last.quests || state.quests,
-        undoStack: stack.slice(0, -1),
-      };
-    }
 
     case 'START_COMBAT': {
       return { ...state, combat: action.payload };

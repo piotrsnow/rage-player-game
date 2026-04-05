@@ -137,7 +137,6 @@ function forkPlayFromStart(sourceState) {
     scenes: newScenes,
     chatHistory: newChat,
     quests: { active: [], completed: [] },
-    undoStack: [],
     lastSaved: Date.now(),
     aiCosts: {
       total: 0,
