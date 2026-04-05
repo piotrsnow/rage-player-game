@@ -1141,15 +1141,6 @@ export function useAI() {
           }
         }
 
-        if (!isFirstScene) {
-          dispatch({
-            type: 'UPDATE_WORLD',
-            payload: {
-              tensionHistory: [...(state.world?.tensionHistory || []).slice(-20), tensionScore],
-            },
-          });
-        }
-
         if (state.dialogue?.active && result.stateChanges?.dialogueUpdate?.active !== false) {
           const advanced = advanceDialogueRound(state.dialogue);
           if (!advanced.active) {
