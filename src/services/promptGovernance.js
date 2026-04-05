@@ -12,14 +12,14 @@ const PROFILE_CONFIG = {
     id: 'balanced',
     sceneTokenBudget: 1450,
     promptTokenBudget: 4800,
-    contextDepthCap: { standard: 60, premium: 80 },
+    contextDepthCap: { standard: 100, premium: 100 },
     guidance: 'Balance pacing, flavor, and mechanics with moderate detail.',
   },
   deep: {
     id: 'deep',
     sceneTokenBudget: 1800,
     promptTokenBudget: 6000,
-    contextDepthCap: { standard: 75, premium: 100 },
+    contextDepthCap: { standard: 100, premium: 100 },
     guidance: 'Allow richer detail and callbacks while keeping strict JSON compliance.',
   },
 };

@@ -967,7 +967,7 @@ export const aiService = {
     const model = selectModel(provider, modelTier, 'compressScenes');
     const langNote = language === 'pl' ? ' Write the summary in Polish, matching the language of the source scenes.' : '';
     const systemPrompt = `You are a narrative summarizer for an RPG game. Compress scene histories into concise but complete summaries that preserve all important details: NPC names, locations, player decisions, consequences, combat outcomes, items found, and plot developments. Always respond with valid JSON only.${langNote}`;
-    const userPrompt = `Summarize the following RPG scene history into a concise narrative summary (max 1500 characters). Preserve key facts: NPC names and fates, locations visited, items acquired/lost, major decisions and their consequences, combat outcomes, and unresolved plot threads.\n\nSCENES:\n${scenesText}\n\nRespond with JSON: {"summary": "Your compressed summary here..."}`;
+    const userPrompt = `Summarize the following RPG scene history into a concise narrative summary (max 4500 characters). Preserve key facts: NPC names and fates, locations visited, items acquired/lost, major decisions and their consequences, combat outcomes, and unresolved plot threads.\n\nSCENES:\n${scenesText}\n\nRespond with JSON: {"summary": "Your compressed summary here..."}`;
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 800, { model, modelTier, taskType: 'compressScenes', alternateApiKey });
     const validated = safeParseAIResponse(result, CompressionResponseSchema);
     if (validated.ok) return { result: validated.data, usage };

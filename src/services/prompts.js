@@ -319,7 +319,8 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
 
   const difficultyLabel = dmSettings.difficulty < 25 ? 'Easy' : dmSettings.difficulty < 50 ? 'Normal' : dmSettings.difficulty < 75 ? 'Hard' : 'Expert';
   const narrativeLabel = dmSettings.narrativeStyle < 25 ? 'Predictable' : dmSettings.narrativeStyle < 50 ? 'Balanced' : dmSettings.narrativeStyle < 75 ? 'Chaotic' : 'Wild';
-  const responseLabel = dmSettings.responseLength < 33 ? 'short (2-3 sentences)' : dmSettings.responseLength < 66 ? 'medium (1-2 paragraphs)' : 'long (3+ paragraphs)';
+  const responseSentenceCount = Math.min(10, Math.floor((dmSettings.responseLength ?? 0) / 10) + 1);
+  const responseLabel = `${responseSentenceCount} ${responseSentenceCount === 1 ? 'sentence' : 'sentences'}`;
 
   const testsFrequency = dmSettings.testsFrequency ?? 50;
   const testsLabel = testsFrequency < 20

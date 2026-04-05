@@ -559,18 +559,3 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   return { validated, warnings: allWarnings, corrections: allCorrections };
 }
 
-const MAX_UNDO_STACK = 10;
-
-export function pushUndoEntry(undoStack, stateSnapshot) {
-  const stack = [...(undoStack || [])];
-  stack.push({
-    timestamp: Date.now(),
-    character: stateSnapshot.character,
-    world: stateSnapshot.world,
-    quests: stateSnapshot.quests,
-  });
-  if (stack.length > MAX_UNDO_STACK) {
-    stack.shift();
-  }
-  return stack;
-}

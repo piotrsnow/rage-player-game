@@ -202,6 +202,7 @@ export default function Inventory({ items = [], money }) {
           <CoinDisplay value={purse.copper} label={t('currency.copperShort')} color="bg-orange-600/80 text-orange-100" />
         </div>
       </div>
+      {selectedItem && <ItemDetailBox item={selectedItem} />}
       <div className="grid grid-cols-4 gap-3">
         {items.map((item) => {
           const rarity = rarityColors[item.rarity] || rarityColors.common;
@@ -243,7 +244,6 @@ export default function Inventory({ items = [], money }) {
           />
         ))}
       </div>
-      {selectedItem && <ItemDetailBox item={selectedItem} />}
     </div>
   );
 }

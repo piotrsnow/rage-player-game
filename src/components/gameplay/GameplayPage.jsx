@@ -1139,6 +1139,34 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 0 : 1500;
 
+  const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
+  const [diceAfterTypewriter, setDiceAfterTypewriter] = useState(false);
+  const diceTypewriterTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (diceTypewriterTimerRef.current) {
+      clearTimeout(diceTypewriterTimerRef.current);
+      diceTypewriterTimerRef.current = null;
+    }
+
+    if (overlayText && earlyDiceRoll) {
+      diceTypewriterTimerRef.current = setTimeout(
+        () => setDiceAfterTypewriter(true),
+        DICE_AFTER_TYPEWRITER_DELAY_MS
+      );
+      return () => {
+        if (diceTypewriterTimerRef.current) {
+          clearTimeout(diceTypewriterTimerRef.current);
+          diceTypewriterTimerRef.current = null;
+        }
+      };
+    }
+
+    if (!earlyDiceRoll) {
+      setDiceAfterTypewriter(false);
+    }
+  }, [overlayText, earlyDiceRoll]);
+
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
   const handleIdleEvent = useCallback(({ roll, threshold }) => {
@@ -1902,10 +1930,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               loaderEstimatedMs={lastSceneGenMs}
             />
           )}
-          {earlyDiceRoll && (
+          {earlyDiceRoll && (diceAfterTypewriter || !overlayText) && (
             <DiceRollAnimationOverlay
               diceRoll={earlyDiceRoll}
               onDismiss={clearEarlyDiceRoll}
+              holdOpen={!!overlayText}
             />
           )}
         </div>
