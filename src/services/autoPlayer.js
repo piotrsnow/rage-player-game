@@ -15,7 +15,7 @@ const VERBOSITY_CHANCE = {
   high: 0.8,
 };
 
-const NEED_KEYWORD_HINTS = {
+export const NEED_KEYWORD_HINTS = {
   hunger: ['eat', 'food', 'meal', 'ration', 'zje', 'jedz', 'posilek', 'jedzenie'],
   thirst: ['drink', 'water', 'ale', 'wine', 'wody', 'pije', 'napoj'],
   rest: ['rest', 'sleep', 'camp', 'nap', 'odpoc', 'spac', 'drzem'],

@@ -78,6 +78,7 @@ function createDefaultCharacter() {
     statuses: [],
     backstory: '',
     customAttackPresets: [],
+    equippedWeapon: '',
     needs: createDefaultNeeds(),
     criticalWounds: [],
   };
@@ -609,6 +610,15 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'EQUIP_WEAPON':
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          equippedWeapon: action.payload || '',
+        },
+      };
+
     case 'UPDATE_INVENTORY_ITEM_IMAGE': {
       const { itemId, imageUrl } = action.payload || {};
       if (!itemId || !state.character?.inventory?.length) return state;
@@ -896,6 +906,7 @@ function gameReducer(state, action) {
           }
         }
         next.quests = { ...next.quests, active: activeQuests };
+
       }
 
       if (changes.worldFacts) {

@@ -128,17 +128,13 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
   }
 
   // Rest recovery (applied after AI call, but calculated now)
+  // Dice roll for rest affects narrative only — healing always applies.
+  // Failed rest: reduced healing (half hours). Succeeded/no roll: full 8 hours.
   let restRecovery = null;
   if (isRest) {
     const restSucceeded = !diceRoll || diceRoll.success === true;
-    if (restSucceeded) {
-      // hoursSlept will be merged with AI's timeAdvance later; default 8 for rest
-      restRecovery = calculateRestRecovery(state.character, 8);
-    } else {
-      // Failed rest: still satisfy needs but no healing
-      restRecovery = calculateRestRecovery(state.character, 0);
-      if (restRecovery) restRecovery.woundsChange = undefined;
-    }
+    const restHours = restSucceeded ? 8 : 4;
+    restRecovery = calculateRestRecovery(state.character, restHours);
   }
 
   return {

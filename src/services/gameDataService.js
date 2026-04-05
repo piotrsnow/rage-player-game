@@ -109,6 +109,31 @@ export const gameData = {
     return this.bestiary[name] || null;
   },
 
+  /**
+   * Find the closest bestiary match for an enemy name (fuzzy).
+   * Matching: exact → partial name → Bandit fallback.
+   * Returns { name, ...stats } or null.
+   */
+  findClosestBestiaryEntry(enemyName) {
+    if (!enemyName) return null;
+    const q = enemyName.toLowerCase();
+    const entries = Object.entries(this.bestiary);
+
+    // Exact match
+    for (const [name, entry] of entries) {
+      if (name.toLowerCase() === q) return { ...entry, name };
+    }
+    // Partial match
+    for (const [name, entry] of entries) {
+      const bName = name.toLowerCase();
+      if (q.includes(bName) || bName.includes(q)) return { ...entry, name };
+    }
+    // Fallback: Bandit as generic humanoid template
+    const bandit = this.bestiary['Bandit'];
+    if (bandit) return { ...bandit, name: 'Bandit' };
+    return null;
+  },
+
   getBestiaryByType(type) {
     return Object.values(this.bestiary).filter((b) => b.type === type);
   },

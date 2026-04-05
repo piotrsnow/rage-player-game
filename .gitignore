@@ -54,3 +54,7 @@ e2e/.auth/
 *.pem
 backend/kawadlaprzyjaciol-a37c9df44bc5.json
 backend/3dmodels/
+kawadla*
+.claude*
+.env*
+CLAUDE*

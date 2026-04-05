@@ -496,6 +496,7 @@ export const storage = {
           inventory: character.inventory,
           customAttackPresets: character.customAttackPresets || [],
           money: character.money || { gold: 0, silver: 0, copper: 0 },
+          equippedWeapon: character.equippedWeapon || '',
           portraitUrl: character.portraitUrl || '',
           campaignCount: character.campaignCount || 0,
           voiceId: character.voiceId || null,

@@ -36,9 +36,12 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
   const healthPct = combatant.maxWounds > 0 ? combatant.wounds / combatant.maxWounds : 0;
   const activeConditions = (combatant.conditions || []).filter((c) => c !== 'fled' || combatant.isDefeated);
 
-  const mainWeapon = (combatant.weapons || combatant.inventory || [])
-    .map((w) => (typeof w === 'string' ? w : w.name))
-    .find(Boolean);
+  const mainWeapon = (() => {
+    if (combatant.equippedWeapon) return combatant.equippedWeapon;
+    return (combatant.weapons || combatant.inventory || [])
+      .map((w) => (typeof w === 'string' ? w : w.name))
+      .find(Boolean);
+  })();
 
   const armourSummary = (() => {
     if (combatant.armour && typeof combatant.armour === 'object' && !Array.isArray(combatant.armour)) {
