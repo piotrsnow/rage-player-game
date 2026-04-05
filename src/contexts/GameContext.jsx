@@ -78,6 +78,7 @@ function createDefaultCharacter() {
     statuses: [],
     backstory: '',
     customAttackPresets: [],
+    equippedWeapon: '',
     needs: createDefaultNeeds(),
     criticalWounds: [],
   };
@@ -679,6 +680,15 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'EQUIP_WEAPON':
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          equippedWeapon: action.payload || '',
+        },
+      };
+
     case 'ADD_INVENTORY_ITEM':
       return {
         ...state,
@@ -688,14 +698,20 @@ function gameReducer(state, action) {
         },
       };
 
-    case 'REMOVE_INVENTORY_ITEM':
+    case 'REMOVE_INVENTORY_ITEM': {
+      const removedItem = state.character.inventory.find((i) => i.id === action.payload);
+      const newEquipped = removedItem?.name === state.character.equippedWeapon
+        ? ''
+        : state.character.equippedWeapon;
       return {
         ...state,
         character: {
           ...state.character,
           inventory: state.character.inventory.filter((i) => i.id !== action.payload),
+          equippedWeapon: newEquipped,
         },
       };
+    }
 
     case 'UPDATE_INVENTORY_ITEM_IMAGE': {
       const { itemId, imageUrl } = action.payload || {};
@@ -1010,16 +1026,68 @@ function gameReducer(state, action) {
 
       if (changes.questUpdates?.length > 0) {
         const activeQuests = [...next.quests.active];
+        const appliedUpdates = [];
         for (const update of changes.questUpdates) {
           const qIdx = activeQuests.findIndex((q) => q.id === update.questId);
           if (qIdx >= 0 && activeQuests[qIdx].objectives) {
+            const existingObj = activeQuests[qIdx].objectives.find((obj) => obj.id === update.objectiveId);
+            if (existingObj && existingObj.completed && update.completed) continue;
             const objectives = activeQuests[qIdx].objectives.map((obj) =>
               obj.id === update.objectiveId ? { ...obj, completed: !!update.completed } : obj
             );
             activeQuests[qIdx] = { ...activeQuests[qIdx], objectives };
+            appliedUpdates.push(update);
           }
         }
+        changes.questUpdates = appliedUpdates;
         next.quests = { ...next.quests, active: activeQuests };
+
+        const autoCompleted = activeQuests.filter(
+          (q) => q.objectives?.length > 0 && q.objectives.every((o) => o.completed)
+        );
+        if (autoCompleted.length > 0) {
+          const autoIds = autoCompleted.map((q) => q.id);
+          let totalRewardXp = 0;
+          let rewardMoney = { gold: 0, silver: 0, copper: 0 };
+          const rewardItems = [];
+          for (const q of autoCompleted) {
+            if (q.reward) {
+              if (q.reward.xp) totalRewardXp += q.reward.xp;
+              if (q.reward.money) {
+                rewardMoney.gold += q.reward.money.gold || 0;
+                rewardMoney.silver += q.reward.money.silver || 0;
+                rewardMoney.copper += q.reward.money.copper || 0;
+              }
+              if (q.reward.items?.length > 0) rewardItems.push(...q.reward.items);
+            }
+          }
+          if (totalRewardXp > 0) {
+            next.character = { ...next.character, xp: (next.character.xp || 0) + totalRewardXp };
+          }
+          if (rewardMoney.gold || rewardMoney.silver || rewardMoney.copper) {
+            const cur = next.character.money || { gold: 0, silver: 0, copper: 0 };
+            next.character = {
+              ...next.character,
+              money: normalizeMoney({
+                gold: (cur.gold || 0) + rewardMoney.gold,
+                silver: (cur.silver || 0) + rewardMoney.silver,
+                copper: (cur.copper || 0) + rewardMoney.copper,
+              }),
+            };
+          }
+          if (rewardItems.length > 0) {
+            next.character = {
+              ...next.character,
+              inventory: [...(next.character.inventory || []), ...rewardItems],
+            };
+          }
+          if (!changes.completedQuests) changes.completedQuests = [];
+          changes.completedQuests = [...new Set([...changes.completedQuests, ...autoIds])];
+          next.quests = {
+            active: next.quests.active.filter((q) => !autoIds.includes(q.id)),
+            completed: [...next.quests.completed, ...autoCompleted.map((q) => ({ ...q, completedAt: Date.now(), rewardGranted: true }))],
+          };
+        }
       }
 
       if (changes.worldFacts) {

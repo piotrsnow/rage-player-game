@@ -125,7 +125,7 @@ function InventoryImage({
   );
 }
 
-function ItemDetailBox({ item }) {
+function ItemDetailBox({ item, isEquipped, onEquip }) {
   const { t } = useTranslation();
 
   const rarity = item.rarity || 'common';
@@ -133,6 +133,7 @@ function ItemDetailBox({ item }) {
   const badgeColor = rarityBadgeColors[rarity] || rarityBadgeColors.common;
   const icon = typeIcons[item.type] || typeIcons.misc;
   const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
+  const isWeapon = item.type === 'weapon';
 
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
@@ -173,11 +174,30 @@ function ItemDetailBox({ item }) {
           {item.description}
         </p>
       )}
+
+      {isWeapon && onEquip && (
+        <div className="border-t border-outline-variant/10 pt-3 mt-3">
+          {isEquipped ? (
+            <div className="flex items-center gap-1.5 text-[11px] text-primary font-bold">
+              <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+              {t('inventory.equipped', 'Equipped')}
+            </div>
+          ) : (
+            <button
+              onClick={() => onEquip(item.name)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">swords</span>
+              {t('inventory.equip', 'Equip')}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function Inventory({ items = [], money }) {
+export default function Inventory({ items = [], money, equippedWeapon = '', onEquipWeapon }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
   const maxSlots = 40;
@@ -209,10 +229,11 @@ export default function Inventory({ items = [], money }) {
           const icon = typeIcons[item.type] || typeIcons.misc;
           const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
+          const isEquipped = item.type === 'weapon' && item.name === equippedWeapon;
           return (
             <div
               key={item.id}
-              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''}`}
+              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${isEquipped ? 'ring-1 ring-primary/40' : ''}`}
               onClick={() => setSelectedItemId(isSelected ? null : item.id)}
             >
               <InventoryImage
@@ -228,6 +249,11 @@ export default function Inventory({ items = [], money }) {
               <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
                 {item.name}
               </span>
+              {isEquipped && (
+                <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
+                  <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
+                </div>
+              )}
               {item.rarity === 'legendary' && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
               )}
@@ -244,6 +270,13 @@ export default function Inventory({ items = [], money }) {
           />
         ))}
       </div>
+      {selectedItem && (
+        <ItemDetailBox
+          item={selectedItem}
+          isEquipped={selectedItem.type === 'weapon' && selectedItem.name === equippedWeapon}
+          onEquip={onEquipWeapon}
+        />
+      )}
     </div>
   );
 }

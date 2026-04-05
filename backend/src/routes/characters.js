@@ -88,6 +88,7 @@ export async function characterRoutes(fastify) {
         backstory: body.backstory || '',
         inventory: JSON.stringify(body.inventory || []),
         money: JSON.stringify(body.money || {}),
+        equippedWeapon: body.equippedWeapon || '',
         portraitUrl: body.portraitUrl || '',
         campaignCount: body.campaignCount ?? 0,
         voiceId: body.voiceId || '',
@@ -135,6 +136,7 @@ export async function characterRoutes(fastify) {
     if (body.money !== undefined) updateData.money = JSON.stringify(body.money);
     if (body.portraitUrl !== undefined) updateData.portraitUrl = body.portraitUrl;
     if (body.campaignCount !== undefined) updateData.campaignCount = body.campaignCount;
+    if (body.equippedWeapon !== undefined) updateData.equippedWeapon = body.equippedWeapon;
     if (body.voiceId !== undefined) updateData.voiceId = body.voiceId || '';
     if (body.voiceName !== undefined) updateData.voiceName = body.voiceName || '';
 

@@ -12,6 +12,15 @@ const CRITICAL_HIT_DAMAGE_BONUS = 2;
 const CRITICAL_HIT_MIN_DAMAGE = 1;
 const MAX_COMBAT_CREATIVITY_BONUS = 25;
 
+function getMainWeapon(actor) {
+  if (actor.equippedWeapon && getWeaponData(actor.equippedWeapon)) {
+    return actor.equippedWeapon;
+  }
+  return (actor.weapons || actor.inventory || [])
+    .map((w) => (typeof w === 'string' ? w : w.name))
+    .find((w) => getWeaponData(w)) || 'Hand Weapon';
+}
+
 function getMovementAllowance(combatant) {
   return combatant.characteristics?.m || gameData.DEFAULT_MOVEMENT;
 }
@@ -76,6 +85,7 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
     skills: { ...playerCharacter.skills },
     talents: [...(playerCharacter.talents || [])],
     inventory: [...(playerCharacter.inventory || [])],
+    equippedWeapon: playerCharacter.equippedWeapon || '',
     advantage: 0,
     initiative: 0,
     conditions: [],
@@ -450,9 +460,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       const hitLoc = getHitLocation(attackRoll);
       const sb = getBonus(actor.characteristics?.s || 30);
 
-      const mainWeapon = (actor.weapons || actor.inventory || [])
-        .map((w) => (typeof w === 'string' ? w : w.name))
-        .find((w) => getWeaponData(w)) || 'Hand Weapon';
+      const mainWeapon = getMainWeapon(actor);
       const weaponData = getWeaponData(mainWeapon);
       result.weaponName = mainWeapon;
 
@@ -525,9 +533,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       result.criticalWound = criticalWound;
       result.targetDefeated = target.isDefeated;
     } else {
-      const mainWeapon = (actor.weapons || actor.inventory || [])
-        .map((w) => (typeof w === 'string' ? w : w.name))
-        .find((w) => getWeaponData(w)) || 'Hand Weapon';
+      const mainWeapon = getMainWeapon(actor);
       result.weaponName = mainWeapon;
       if (actor.advantage > 0) actor.advantage = Math.max(0, actor.advantage - 1);
       target.advantage += 1;
