@@ -13,6 +13,7 @@ import Inventory from './Inventory';
 import StatusBar from '../ui/StatusBar';
 import AdvancementPanel from './AdvancementPanel';
 import PortraitGenerator from './PortraitGenerator';
+import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
 import Tooltip from '../ui/Tooltip';
@@ -35,7 +36,7 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime', color: 'tertiary' },
 ];
 
-function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer, onPortraitChange, campaign }) {
+function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer, onPortraitChange, campaign, scenes }) {
   const [editingPortrait, setEditingPortrait] = useState(false);
   const canEditPortrait = !!onPortraitChange && !isMultiplayer;
 
@@ -318,10 +319,13 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           </div>
         </div>
 
-        <div className="lg:col-span-4 space-y-6 animate-fade-in">
-          <Inventory items={character.inventory} money={character.money} />
-        </div>
       </div>
+
+      {scenes && (
+        <div className="mt-8 animate-fade-in">
+          <CharacterHistoryPanel scenes={scenes} t={t} />
+        </div>
+      )}
 
     </>
   );
@@ -663,6 +667,7 @@ export default function CharacterSheet({ onClose }) {
                 dispatch={dispatch}
                 isMultiplayer={isMultiplayer}
                 campaign={campaign}
+                scenes={isMultiplayer ? mpGameState?.scenes : state.scenes}
                 onPortraitChange={(url) => {
                   dispatch({ type: 'UPDATE_CHARACTER', payload: { portraitUrl: url } });
                   setTimeout(() => autoSave(), 300);

@@ -337,6 +337,24 @@ function buildFallbackNarrative(language = 'en') {
   return 'The situation around you stays tense but readable. You gather your thoughts, assess risks and opportunities, and notice subtle reactions in the world around you. This is a good moment to choose your next move deliberately.';
 }
 
+function sanitizePolishAction(action) {
+  let text = action;
+  // "I say:" / "I tell X:" → "Mówię:" / "Mówię do X:"
+  text = text.replace(/^I say:\s*/i, 'Mówię: ');
+  text = text.replace(/^I tell\s+([^:]+):\s*/i, 'Mówię do $1: ');
+  text = text.replace(/^I ask\s+([^:]+):\s*/i, 'Pytam $1: ');
+  text = text.replace(/^I shout(?:\s+(?:to|at)\s+([^:]+))?:\s*/i, (_, name) =>
+    name ? `Krzyczę do ${name}: ` : 'Krzyczę: ');
+  text = text.replace(/^I whisper(?:\s+to\s+([^:]+))?:\s*/i, (_, name) =>
+    name ? `Szepczę do ${name}: ` : 'Szepczę: ');
+  // Leading "I " before a Polish verb (e.g. "I pytam", "I porównuję")
+  const polishVerbAfterI = /^I\s+([a-ząćęłńóśźż])/i;
+  if (polishVerbAfterI.test(text)) {
+    text = text.replace(polishVerbAfterI, (_, firstChar) => firstChar.toUpperCase());
+  }
+  return text;
+}
+
 function postProcessSuggestedActions({
   suggestedActions,
   language = 'en',
@@ -353,7 +371,7 @@ function postProcessSuggestedActions({
   for (const action of aiCandidates) {
     const normalized = normalizeActionForComparison(action);
     if (!normalized || seen.has(normalized)) continue;
-    normalizedAiActions.push(action);
+    normalizedAiActions.push(language === 'pl' ? sanitizePolishAction(action) : action);
     seen.add(normalized);
   }
   if (normalizedAiActions.length > 0) return normalizedAiActions.slice(0, 3);
@@ -543,7 +561,7 @@ export const aiService = {
     const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
     const userPrompt = buildCampaignCreationPrompt(settings, language);
     const { result, usage } = await callAI(provider, apiKey, systemPrompt, userPrompt, 8000, { model, modelTier, taskType: 'generateCampaign', alternateApiKey });
-    const validated = safeParseAIResponse(result, CampaignResponseSchema);
+    const validated = safeParseAIResponse(result, CampaignResponseSchema, { language });
     if (validated.ok) return { result: validated.data, usage };
 
     const raw = validated.data || {};
@@ -666,7 +684,7 @@ export const aiService = {
       completionBudget,
       { localLLMConfig, model, modelTier, taskType: 'generateScene', alternateApiKey }
     );
-    const validated = safeParseAIResponse(result, SceneResponseSchema);
+    const validated = safeParseAIResponse(result, SceneResponseSchema, { language });
     if (validated.ok) {
       validated.data.suggestedActions = postProcessSuggestedActions({
         suggestedActions: validated.data.suggestedActions,

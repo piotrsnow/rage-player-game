@@ -173,6 +173,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [shareLoading, setShareLoading] = useState(false);
   const [mpSceneGenStartTime, setMpSceneGenStartTime] = useState(null);
   const prevScenesLenRef = useRef(0);
+  const initialViewerChatAlignDoneRef = useRef(false);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
   const handleSceneNavRef = useRef(null);
@@ -243,7 +244,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   })();
 
   useEffect(() => {
-    if (scenes.length > prevScenesLenRef.current && prevScenesLenRef.current > 0) {
+    if (scenes.length > prevScenesLenRef.current) {
       setViewingSceneIndex(null);
 
       const newestScene = scenes[scenes.length - 1];
@@ -564,6 +565,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
   const [pendingOverlayText, setPendingOverlayText] = useState(null);
   const typewriterNextIndexRef = useRef(null);
+  const sceneGenSucceededRef = useRef(false);
 
   autoPlayRef.current = autoPlayScenes;
   displayedSceneIndexRef.current = displayedSceneIndex;
@@ -798,14 +800,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   }, [scenes.length]);
 
   const handlePlayerActionOverlayComplete = useCallback(() => {
+    clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
+    if (!sceneGenSucceededRef.current) return;
     if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
       const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
       if (latestDm) {
         narrator.speakSingle(latestDm, latestDm.id);
       }
     }
-  }, [settings.narratorEnabled, settings.narratorAutoPlay, narrator, chatHistory]);
+  }, [settings.narratorEnabled, settings.narratorAutoPlay, narrator, chatHistory, clearEarlyDiceRoll]);
 
   const OVERLAY_LEAD_TIME_SECONDS = 12;
 
@@ -902,7 +906,30 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     const clamped = Math.max(0, Math.min(scenes.length - 1, idx));
     setViewingSceneIndex(clamped);
     handleSceneNavigation(clamped);
+    initialViewerChatAlignDoneRef.current = false;
   }, [readOnly, scenes?.length, location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    if (!scenes || scenes.length === 0) return;
+    if (!chatHistory || chatHistory.length === 0) return;
+    if (initialViewerChatAlignDoneRef.current) return;
+
+    const safeIndex = Number.isInteger(viewingSceneIndex)
+      ? Math.max(0, Math.min(scenes.length - 1, viewingSceneIndex))
+      : 0;
+    const scene = scenes[safeIndex];
+    if (!scene) return;
+
+    const targetMsg = scene.id ? chatHistory.find((m) => m.sceneId === scene.id) : null;
+    const fallbackMsg = !targetMsg ? chatHistory.filter((m) => m.role === 'dm')[safeIndex] : null;
+    const preferredMessageId = targetMsg?.id || fallbackMsg?.id;
+
+    if (preferredMessageId) {
+      requestChatScrollToMessage(preferredMessageId);
+      initialViewerChatAlignDoneRef.current = true;
+    }
+  }, [readOnly, scenes, chatHistory, viewingSceneIndex, requestChatScrollToMessage]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -1051,6 +1078,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const handleAction = async (action, isCustomAction = false, fromAutoPlayer = false) => {
     consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
+    sceneGenSucceededRef.current = false;
     if (!fromAutoPlayer && action) {
       const narratorIsActive = narrator.playbackState === 'playing' || narrator.playbackState === 'loading';
       if (narratorIsActive && settings.narratorEnabled && settings.narratorAutoPlay) {
@@ -1061,6 +1089,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
     try {
       await generateScene(action, false, isCustomAction, fromAutoPlayer);
+      sceneGenSucceededRef.current = true;
     } catch {
       // Error displayed in UI via context
     }
@@ -1137,7 +1166,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     ? (isGeneratingScene ? 3 : 1)
     : 1;
   const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
-  const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 0 : 1500;
+  const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
 
   const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
   const [diceAfterTypewriter, setDiceAfterTypewriter] = useState(false);
@@ -1162,9 +1191,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       };
     }
 
-    if (!earlyDiceRoll) {
-      setDiceAfterTypewriter(false);
-    }
+    setDiceAfterTypewriter(false);
   }, [overlayText, earlyDiceRoll]);
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
@@ -1930,7 +1957,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               loaderEstimatedMs={lastSceneGenMs}
             />
           )}
-          {earlyDiceRoll && (diceAfterTypewriter || !overlayText) && (
+          {earlyDiceRoll && diceAfterTypewriter && (
             <DiceRollAnimationOverlay
               diceRoll={earlyDiceRoll}
               onDismiss={clearEarlyDiceRoll}
@@ -2106,15 +2133,22 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               combat={state.combat}
               dispatch={dispatch}
               onCastSpell={(result) => {
+                const spellName = t(`magic.spellData.${result.spell?.name}.name`, '') || result.spell?.name || t('magic.spells');
+                let content;
+                if (result.success) {
+                  content = t('magic.chatCastSuccess', { spell: spellName, sl: result.totalSL || result.sl });
+                } else if (result.miscast) {
+                  content = t('magic.chatCastFailMiscast', { spell: spellName });
+                } else {
+                  content = t('magic.chatCastFail', { spell: spellName });
+                }
                 dispatch({
                   type: 'ADD_CHAT_MESSAGE',
                   payload: {
                     id: `msg_${Date.now()}_magic`,
                     role: 'system',
                     subtype: 'magic_cast',
-                    content: result.success
-                      ? `${result.spell?.name || 'Spell'} cast successfully (SL: ${result.totalSL || result.sl})`
-                      : `${result.spell?.name || 'Spell'} failed${result.miscast ? ' — MISCAST!' : ''}`,
+                    content,
                     timestamp: Date.now(),
                   },
                 });
@@ -2241,7 +2275,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         <ChatPanel
           messages={chatHistory}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText && !playerActionOverlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)

@@ -261,7 +261,7 @@ Narration segments = VERBATIM full narrative text (not summarized). Never embed 
   // ── SUGGESTED ACTIONS ──
   sections.push(
     `SUGGESTED ACTIONS:
-Return exactly 3 suggestedActions in PC voice (1st person, e.g. "I examine the door"). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech ("I say: \"...\""). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.`,
+Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === 'pl' ? '"Oglądam drzwi"' : '"I examine the door"'}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\"."'}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${language === 'pl' ? ' CRITICAL: All suggestedActions must be in Polish. NEVER use English "I say:", "I ask", "I tell". Use "Mówię:", "Pytam:", "Krzyczę:". Do NOT prefix with "I".' : ''}`,
   );
 
   // ── STATE CHANGES RULES ──

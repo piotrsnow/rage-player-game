@@ -161,7 +161,7 @@ export function buildUnmetNeedsBlock(needs) {
   return `CHARACTER NEEDS STATUS (always factor these into narration, NPC reactions, and outcomes):\n${lines.join('\n')}\n\n`;
 }
 
-export function buildNeedsEnforcementReminder(needs) {
+export function buildNeedsEnforcementReminder(needs, language = 'en') {
   if (!needs) return '';
   const urgent = [];
   for (const [key] of Object.entries(NEEDS_LABELS)) {
@@ -177,7 +177,7 @@ Unmet needs: ${urgent.join('; ')}.
 YOU MUST:
 1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
 2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
-3. At least ONE of the three suggestedActions MUST address the most urgent unmet need (e.g. "I look for food", "I search for water", "I find somewhere to rest").
+3. At least ONE of the three suggestedActions MUST address the most urgent unmet need (e.g. "${language === 'pl' ? 'Szukam jedzenia' : 'I look for food'}", "${language === 'pl' ? 'Szukam wody' : 'I search for water'}", "${language === 'pl' ? 'Szukam miejsca do odpoczynku' : 'I find somewhere to rest'}").
 4. The game engine automatically applies a -10 penalty to related skill checks when needs are critical. Reflect this in the narrative — the character struggles with focus, coordination, or social grace.\n`;
 }
 
@@ -544,7 +544,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
 - Use stateChanges.needsChanges as DELTAS: {"hunger": 60} means +60 to hunger. Can be negative too.
-- MANDATORY: At least ONE of the three suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. "I look for something to eat", "I search for water", "I find a place to sleep").
+- MANDATORY: At least ONE of the three suggestedActions MUST directly address the most urgent unmet need in the PC's voice (e.g. ${language === 'pl' ? '"Szukam czegoś do jedzenia", "Szukam wody", "Szukam miejsca do snu"' : '"I look for something to eat", "I search for water", "I find a place to sleep"'}).
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
@@ -636,10 +636,11 @@ ${contextDepth >= 100 ? buildRelationshipGraphBlock(npcs, quests, world?.faction
 Write ALL narrative text, dialogue, descriptions, quest names, quest completion conditions, quest objectives, item names, item descriptions, and suggested actions in ${language === 'pl' ? 'Polish' : 'English'}.
 
 SUGGESTED ACTIONS (PLAYER CHARACTER VOICE):
-Every string in "suggestedActions" must read as something the player character intends to do or say — first person ("I examine the door", "I tell him I'm not interested") or a consistent imperative from the PC's agency ("Search the chest" meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
-VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like "Look around", "Move on", or "Talk to someone".${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from recent scenes: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
+Every string in "suggestedActions" must read as something the player character intends to do or say — first person (${language === 'pl' ? '"Oglądam drzwi", "Mówię mu, że nie jestem zainteresowany"' : '"I examine the door", "I tell him I\'m not interested"'}) or a consistent imperative from the PC's agency (${language === 'pl' ? '"Przeszukuję skrzynię"' : '"Search the chest"'} meaning the PC does it). Avoid dry GM-style labels with no actor ("Investigation", "Talk to NPC").
+VARIETY IS CRITICAL: Each set of suggestedActions MUST be unique and specific to the current scene's narrative, characters, objects, and situation. Reference concrete scene details — NPC names, items, locations, events. Never use vague filler like ${language === 'pl' ? '"Rozglądam się", "Idę dalej", "Rozmawiam z kimś"' : '"Look around", "Move on", "Talk to someone"'}.${previousSuggestedActions.length > 0 ? `\nDO NOT REPEAT these actions from recent scenes: ${previousSuggestedActions.map(a => `"${a}"`).join(', ')}` : ''}
 ACTION COUNT RULE: Return exactly 3 suggestedActions. Keep at least 2 grounded and practical. Up to 1 may be absurd, chaotic, or darkly humorous, but still actionable by the player character in this scene.
-DIALOGUE RULE: Exactly 1 of the 3 suggestedActions MUST be a direct spoken line the PC can say aloud (dialogue-style action). Prefer explicit speech format, e.g. "I say: \"...\"" (or Polish equivalent).
+DIALOGUE RULE: Exactly 1 of the 3 suggestedActions MUST be a direct spoken line the PC can say aloud (dialogue-style action). Prefer explicit speech format, e.g. ${language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\""'}.${language === 'pl' ? `
+POLISH LANGUAGE RULE (CRITICAL): Every suggestedAction MUST be written entirely in Polish. NEVER start an action with the English word "I" — use Polish first-person verbs directly: "Oglądam", "Pytam", "Mówię:", "Przeszukuję". NEVER use "I say:", "I tell", "I ask" — use "Mówię:", "Pytam:", "Krzyczę:" instead. Do NOT prefix actions with the Polish conjunction "I" (meaning "and") — start directly with the verb.` : ''}
 
 INSTRUCTIONS:
 1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
@@ -882,7 +883,7 @@ Occasionally (every 8-15 scenes), when the character rests or sleeps, you may ge
 - Reflect the character's fears, guilt, or desires
 - Deliver cryptic messages from magical or divine forces
 - Revisit and recontextualize past events
-Dream scenes should feel distinct: distorted reality, non-linear time, symbolic imagery. Dice checks are not used in dreams. suggestedActions should be dream-like and in the PC's voice, e.g. "I follow the voice", "I reach for the mirror", "I try to wake up".
+Dream scenes should feel distinct: distorted reality, non-linear time, symbolic imagery. Dice checks are not used in dreams. suggestedActions should be dream-like and in the PC's voice, e.g. ${language === 'pl' ? '"Podążam za głosem", "Sięgam po lustro", "Próbuję się obudzić"' : '"I follow the voice", "I reach for the mirror", "I try to wake up"'}.
 
 NPC AGENDA SYSTEM:
 NPCs have lives and goals that advance between scenes. You may include npcAgendas in stateChanges to track off-screen NPC activity:
@@ -914,7 +915,7 @@ export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, l
   sceneTokenBudget = null,
   promptTokenBudget = null,
 } = {}, dmSettings = null) {
-  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Phrase each suggestedAction from the player character's perspective (first-person intent like "I search the chest" or clear PC-agency phrasing), not neutral GM-style labels. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.`;
+  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Phrase each suggestedAction from the player character's perspective (first-person intent like "${language === 'pl' ? 'Przeszukuję skrzynię' : 'I search the chest'}" or clear PC-agency phrasing), not neutral GM-style labels. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.${language === 'pl' ? ' CRITICAL: suggestedActions must be fully in Polish — NEVER use English "I say:", "I ask", "I tell" — use "Mówię:", "Pytam:", etc. Do NOT start actions with "I" or "I ".' : ''}`;
   const governanceReminder = `\nPROMPT GOVERNANCE:
 - Profile: ${promptProfile}
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
@@ -961,7 +962,7 @@ Respond with ONLY valid JSON in this exact format:
     "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
     "transition": "dissolve | fade | arcane_wipe"
   },
-  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 1 should be a direct PC dialogue line like I say: \"...\")"],
+  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 1 should be a direct PC dialogue line like ${language === 'pl' ? 'Mówię: \\"...\\"' : 'I say: \\"...\\"'})"],
   "stateChanges": {
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
@@ -1027,7 +1028,7 @@ RULES FOR THIS SCENE (MANDATORY):
 - The event CAN optionally plant a subtle quest hook or introduce a character, but it does NOT have to. Most of the time, keep it purely atmospheric.
 - No skill test is needed for this scene.
 - Do NOT start combat. Do NOT include combatUpdate.
-- suggestedActions should include reactions to what just happened in the PC's voice (e.g. "I kneel to pet the cat", "I go over to the vendor", "I brush off the mess and act casual", "I ignore it and walk on") plus normal exploration options.
+- suggestedActions should include reactions to what just happened in the PC's voice (e.g. ${language === 'pl' ? '"Klękam, żeby pogłaskać kota", "Podchodzę do sprzedawcy", "Otrzepuję się i udaję, że nic się nie stało", "Ignoruję to i idę dalej"' : '"I kneel to pet the cat", "I go over to the vendor", "I brush off the mess and act casual", "I ignore it and walk on"'}) plus normal exploration options.
 - stateChanges should be minimal or empty. A small timeAdvance (5-15 minutes) is appropriate.`
     : isWait
     ? `PLAYER CHOSE "WAIT" — PASSIVE OBSERVATION.
@@ -1040,7 +1041,7 @@ RULES FOR THIS SCENE (MANDATORY):
 - Advance the situation or plot thread; do not stall the story.
 - No skill test for this scene.
 - Do NOT start combat in this scene unless an external force attacks without the player provoking it; if combat starts, it is because the world came to them.
-- suggestedActions should offer ways to re-engage in first person or clear PC intent: "I speak up", "I step in", "I slip away", "I take a closer look", etc.
+- suggestedActions should offer ways to re-engage in first person or clear PC intent: ${language === 'pl' ? '"Odezwuję się", "Wkraczam", "Wymykam się", "Przyglądam się bliżej"' : '"I speak up", "I step in", "I slip away", "I take a closer look"'}, etc.
 - Include a modest timeAdvance (15 minutes to a few hours) if appropriate.`
     : isContinue
     ? `PLAYER CHOSE "CONTINUE" — KEEP THE STORY MOVING.
@@ -1333,7 +1334,7 @@ ${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the charac
 For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
 For sceneGrid: MANDATORY in every scene. Build a coherent 2D grid around the current action. width/height must be 8-16, tiles must exactly match those dimensions, and every row must be equal length. Use tile symbols: W=wall, F=floor, P=player start, E=exit/path, D=door, I=interactive point. Include entities with x/y coordinates for player and all visible NPCs/enemies. Keep entities on walkable tiles only.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}${buildPacingPressure(scenes)}${shouldGenerateDilemma(scenes) ? '\nDILEMMA OPPORTUNITY: It has been several scenes since the last moral dilemma. Consider presenting one if the narrative naturally supports it — include a "dilemma" field with 2-4 meaningful choices.\n' : ''}${langReminder}`;
+The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds, language) : ''}${buildPacingPressure(scenes)}${shouldGenerateDilemma(scenes) ? '\nDILEMMA OPPORTUNITY: It has been several scenes since the last moral dilemma. Consider presenting one if the narrative naturally supports it — include a "dilemma" field with 2-4 meaningful choices.\n' : ''}${langReminder}`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {
@@ -1427,7 +1428,7 @@ Respond with ONLY valid JSON:
       "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
       "transition": "fade"
     },
-    "suggestedActions": ["I look around and take in the situation", "I greet the nearest person and introduce myself", "I keep quiet and observe", "I head toward the most interesting lead I can see"],
+    "suggestedActions": ${language === 'pl' ? '["Rozglądam się i oceniam sytuację", "Witam najbliższą osobę i przedstawiam się", "Milczę i obserwuję", "Kieruję się w stronę najbardziej interesującego tropu"]' : '["I look around and take in the situation", "I greet the nearest person and introduce myself", "I keep quiet and observe", "I head toward the most interesting lead I can see"]'},
     "journalEntries": ["Concise 1-2 sentence summary of a key event from the opening scene"]
   },
   "initialQuest": {

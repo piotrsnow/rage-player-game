@@ -86,6 +86,9 @@ export default function ActionPanel({
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [dialoguePickerOpen, setDialoguePickerOpen] = useState(false);
   const [selectedDialogueNpcs, setSelectedDialogueNpcs] = useState([]);
+  const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
+  const longPressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
   const { t } = useTranslation();
   const { settings } = useSettings();
   const mp = useMultiplayer();
@@ -174,6 +177,7 @@ export default function ActionPanel({
       clearTimeout(typingTimerRef.current);
       clearTimeout(typingBroadcastTimerRef.current);
       clearInterval(typingKeepAliveRef.current);
+      clearTimeout(longPressTimerRef.current);
       typingKeepAliveRef.current = null;
       if (isTypingRef.current) {
         sendTypingState(false, '');
@@ -198,12 +202,29 @@ export default function ActionPanel({
   };
 
   const handleSuggestedAction = (action) => {
+    if (longPressFiredRef.current) return;
     if (isMultiplayer) {
       mp.submitAction(action, false);
     } else {
       onAction(action, false);
     }
   };
+
+  const handleLongPressDown = useCallback((index, action) => {
+    longPressFiredRef.current = false;
+    setLongPressActiveIndex(index);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      setLongPressActiveIndex(null);
+      setCustomAction(action);
+      textareaRef.current?.focus();
+    }, 1000);
+  }, []);
+
+  const handleLongPressUpOrLeave = useCallback(() => {
+    clearTimeout(longPressTimerRef.current);
+    setLongPressActiveIndex(null);
+  }, []);
 
   const handleWithdraw = () => {
     mp.withdrawAction();
@@ -465,10 +486,21 @@ export default function ActionPanel({
                 <button
                   data-testid="suggested-action"
                   onClick={() => handleSuggestedAction(action)}
+                  onPointerDown={() => handleLongPressDown(i, action)}
+                  onPointerUp={handleLongPressUpOrLeave}
+                  onPointerLeave={handleLongPressUpOrLeave}
+                  onContextMenu={(e) => e.preventDefault()}
                   disabled={disabled || hasPendingAction}
-                  className="flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
+                  className="relative overflow-hidden flex-1 text-left px-3 py-2.5 bg-surface-container-high/40 hover:bg-surface-container-high border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all duration-300 group disabled:opacity-50 disabled:pointer-events-none hover:translate-y-[-1px] hover:shadow-[0_4px_16px_rgba(0,0,0,0.3)]"
                 >
-                  <div className="flex items-center gap-2">
+                  <div
+                    className="absolute inset-0 bg-primary/15 pointer-events-none origin-left"
+                    style={{
+                      transform: longPressActiveIndex === i ? 'scaleX(1)' : 'scaleX(0)',
+                      transition: longPressActiveIndex === i ? 'transform 1s linear' : 'none',
+                    }}
+                  />
+                  <div className="relative flex items-center gap-2">
                     <span className="w-5 h-5 shrink-0 flex items-center justify-center rounded-full bg-gradient-to-br from-primary-dim/20 to-primary/10 text-primary font-headline text-xs leading-none border border-primary/15 group-hover:border-primary/30 group-hover:shadow-[0_0_8px_rgba(197,154,255,0.2)] transition-all">
                       {i + 1}
                     </span>
