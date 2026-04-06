@@ -1443,6 +1443,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
   const scene = {
     id: sceneId,
     narrative: result.narrative || '',
+    scenePacing: result.scenePacing || 'exploration',
     dialogueSegments: finalSegments,
     actions: ensureSuggestedActions(result, {
       language,
@@ -1458,9 +1459,16 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     atmosphere: result.atmosphere || {},
     diceRoll: result.diceRoll || null,
     diceRolls: result.diceRolls || [],
+    cutscene: result.cutscene || null,
+    dilemma: result.dilemma || null,
     playerActions: actions.map((a) => ({ name: a.name, action: a.action })),
     timestamp: Date.now(),
-    ...(stateChanges.combatUpdate && { stateChanges: { combatUpdate: stateChanges.combatUpdate } }),
+    ...((stateChanges.combatUpdate || stateChanges.dialogueUpdate) && {
+      stateChanges: {
+        ...(stateChanges.combatUpdate && { combatUpdate: stateChanges.combatUpdate }),
+        ...(stateChanges.dialogueUpdate && { dialogueUpdate: stateChanges.dialogueUpdate }),
+      },
+    }),
   };
 
   const waitSystemText = language === 'pl' ? 'Czekam i patrzę, co wydarzy się dalej.' : 'I wait and see what happens next.';
