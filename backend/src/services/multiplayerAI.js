@@ -785,12 +785,20 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
+NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on SL — NOT flat +5/-5:
+- Critical success: +3 to +5, Strong success (SL 3+): +2 to +3, Marginal success (SL 0-2): +1 to +2
+- Marginal failure (SL -1 to -2): -1 to -2, Hard failure (SL -3 or worse): -3 to -5, Critical failure: -5 to -8
+NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships".
 
 COMBAT ENCOUNTERS (MULTIPLAYER):
-When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges with enemy data. The client-side combat engine handles turn-by-turn tactical resolution.
-{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}], "reason": "Short description of why combat started"}}
-PLAYER-INITIATED COMBAT: When ANY player's action explicitly involves attacking, starting a fight, or provoking a confrontation, you MUST include "combatUpdate" with appropriate enemies built from NPCs present in the scene. Use the BESTIARY for matching stat blocks, or create contextually appropriate stats. The narrative should briefly describe the escalation, then combat begins via combatUpdate. Do NOT narrate combat without including combatUpdate. Set combatUpdate to null when no combat starts.
+When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges.
+{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name"}], "reason": "Short description of why combat started"}}
+The game engine assigns balanced stat blocks based on enemy names. Set combatUpdate to null when no combat starts.
+
+For stateChanges.factionChanges: {"faction_id": delta} when actions affect a faction. Use null if none.
+For stateChanges.knowledgeUpdates, narrativeSeeds, resolvedSeeds, npcAgendas: see normal scene documentation.
+For stateChanges.dialogueUpdate: include when dialogue mode starts. Use null otherwise.
+For stateChanges.campaignEnd: only for definitive conclusions. Use null otherwise.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
   }
@@ -918,12 +926,29 @@ QUEST DISCOVERY: When any player explicitly asks about available work, tasks, qu
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-NPC DISPOSITION TRACKING: When a dice roll directly involves interaction with an NPC (social, combat, trade, persuasion, etc.), include that NPC in stateChanges.npcs with "dispositionChange": +5 if the roll succeeded, or -5 if it failed. This tracks how favorably the NPC views the player.
+NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
+- Critical success: +3 to +5, Strong success (SL 3+): +2 to +3, Marginal success (SL 0-2): +1 to +2
+- Marginal failure (SL -1 to -2): -1 to -2, Hard failure (SL -3 or worse): -3 to -5, Critical failure: -5 to -8
+- Betrayal, broken promise, or threat: -8 to -10
+NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships" ([{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]).
 
 COMBAT ENCOUNTERS (MULTIPLAYER):
-When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges with enemy data. The client-side combat engine handles turn-by-turn tactical resolution for all players.
-{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}], "reason": "Short description of why combat started"}}
-PLAYER-INITIATED COMBAT: When ANY player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation, you MUST include "combatUpdate" with appropriate enemies. Use NPCs currently present in the scene as enemies with stat blocks from the BESTIARY if matching, or create contextually appropriate stats. The narrative should briefly describe the escalation, then combat begins via combatUpdate. Respect player agency: if a player wants to fight, they fight. Do NOT narrate combat without including combatUpdate. Set combatUpdate to null when no combat starts.
+When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges.
+{"combatUpdate": {"active": true, "enemies": [{"name": "Enemy Name"}], "reason": "Short description of why combat started"}}
+The game engine assigns balanced stat blocks based on enemy names — you only need to provide the name.
+PLAYER-INITIATED COMBAT: When ANY player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation, you MUST include "combatUpdate" with appropriate enemies. Use NPCs currently present in the scene. Respect player agency: if a player wants to fight, they fight. Do NOT narrate combat without including combatUpdate. Set combatUpdate to null when no combat starts.
+
+For stateChanges.factionChanges: {"faction_id": delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Use null if no faction changes.
+For stateChanges.knowledgeUpdates: {"events": [{"summary": "...", "importance": "minor|major|critical", "tags": []}], "decisions": [{"choice": "...", "consequence": "...", "tags": []}], "plotThreads": [{"id": "...", "name": "...", "status": "active|resolved|abandoned", "relatedNpcIds": [], "relatedQuestIds": []}]}. Use null if no knowledge updates.
+For stateChanges.narrativeSeeds: array of foreshadowing details: [{"id": "seed_id", "description": "what the player notices", "payoffCondition": "location|scenes", "payoffHint": "GM note on resolution", "location": "where it pays off"}]. Plant 0-1 per scene. Use empty array [] if none.
+For stateChanges.resolvedSeeds: array of seed IDs whose payoff is woven into this scene. Use empty array [] if none.
+For stateChanges.npcAgendas: array of off-screen NPC activities: [{"npcName": "NPC", "goal": "what they want", "nextAction": "what they will do", "urgency": "low|medium|high", "triggerAfterScenes": 3}]. Use empty array [] if none.
+For stateChanges.dialogueUpdate: {"active": true, "npcs": [{name, attitude, goal}], "reason": "..."} when structured dialogue mode starts. Use null otherwise.
+For stateChanges.campaignEnd: {"status": "completed"|"failed", "epilogue": "2-3 paragraph epilogue"} ONLY for definitive campaign conclusions. Use null otherwise.
+
+For scenePacing (MANDATORY): return one of: combat, chase, stealth, exploration, dialogue, travel_montage, celebration, rest, dramatic, dream, cutscene. Match prose style to the chosen pacing type.
+For cutscene: {"title": "Meanwhile...", "narrative": "1-2 paragraphs", "location": "Location", "characters": ["NPC"]}. Use sparingly. Set to null when not using. Never include player characters.
+For dilemma: {"title": "...", "stakes": "...", "options": [{"label": "...", "consequence": "...", "action": "..."}]}. 2-4 options. Use every 5-8 scenes when narrative supports it. Set to null otherwise.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
 }
