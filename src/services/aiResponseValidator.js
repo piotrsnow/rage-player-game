@@ -400,14 +400,14 @@ export function safeParseJSON(raw) {
   }
 }
 
-export function safeParseAIResponse(raw, schema) {
+export function safeParseAIResponse(raw, schema, { language } = {}) {
   const jsonResult = safeParseJSON(raw);
   if (!jsonResult.ok) {
     return { ok: false, error: jsonResult.error, data: null };
   }
 
   const normalizedData = schema === SceneResponseSchema
-    ? normalizeSceneResponseCandidate(jsonResult.data)
+    ? normalizeSceneResponseCandidate(jsonResult.data, language)
     : schema === CampaignResponseSchema
       ? normalizeCampaignResponseCandidate(jsonResult.data)
       : jsonResult.data;
@@ -470,7 +470,7 @@ function formatZodIssues(issues = []) {
     .join('; ');
 }
 
-function normalizeSceneResponseCandidate(rawData) {
+function normalizeSceneResponseCandidate(rawData, explicitLanguage) {
   if (!rawData || typeof rawData !== 'object') return rawData;
 
   const data = { ...rawData };
@@ -502,7 +502,7 @@ function normalizeSceneResponseCandidate(rawData) {
   }
 
   if (data.suggestedActions == null) {
-    data.suggestedActions = extractFallbackActions(data) || undefined;
+    data.suggestedActions = extractFallbackActions(data, explicitLanguage) || undefined;
   } else if (Array.isArray(data.suggestedActions)) {
     const seen = new Set();
     const dedupedActions = data.suggestedActions
@@ -516,19 +516,19 @@ function normalizeSceneResponseCandidate(rawData) {
       });
     data.suggestedActions = contextualizeSuggestedActions(dedupedActions, data).slice(0, 3);
     if (data.suggestedActions.length === 0) {
-      data.suggestedActions = extractFallbackActions(data) || undefined;
+      data.suggestedActions = extractFallbackActions(data, explicitLanguage) || undefined;
     }
   } else if (typeof data.suggestedActions === 'string') {
     const single = data.suggestedActions.trim();
     data.suggestedActions = single
       ? contextualizeSuggestedActions([single], data).slice(0, 3)
-      : extractFallbackActions(data) || undefined;
+      : extractFallbackActions(data, explicitLanguage) || undefined;
   } else {
-    data.suggestedActions = extractFallbackActions(data) || undefined;
+    data.suggestedActions = extractFallbackActions(data, explicitLanguage) || undefined;
   }
 
   // Ensure suggestedActions always has exactly 3 items.
-  const lang = inferNarrativeLanguage(data.narrative || '');
+  const lang = explicitLanguage || inferNarrativeLanguage(data.narrative || '');
   const defaultActions = lang === 'pl'
     ? ['Rozglądam się dookoła', 'Badam okolicę', 'Pytam najbliższą osobę o szczegóły']
     : ['I look around', 'I investigate the area', 'I ask the nearest person for details'];
@@ -861,10 +861,10 @@ function pickVariant(variants, seed, offset = 0) {
   return variants[(seed + offset) % variants.length];
 }
 
-function extractFallbackActions(data) {
+function extractFallbackActions(data, explicitLanguage) {
   if (!data?.narrative || typeof data.narrative !== 'string') return null;
   const text = data.narrative;
-  const language = inferNarrativeLanguage(text);
+  const language = explicitLanguage || inferNarrativeLanguage(text);
   const npcs = (data.stateChanges?.npcs || []).map(n => n.name).filter(Boolean);
   const loc = data.stateChanges?.currentLocation;
   const firstQuestOffer = Array.isArray(data.questOffers) && data.questOffers.length > 0

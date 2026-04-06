@@ -766,4 +766,49 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
       'I head for the customs office',
     ]);
   });
+
+  it('uses Polish fallbacks when language is explicitly "pl" and suggestedActions are missing', () => {
+    const raw = {
+      narrative: 'Stary most skrzypi pod ciężarem wozu.',
+      stateChanges: {
+        currentLocation: 'Most na Reiku',
+        npcs: [{ action: 'introduce', name: 'Woźnica Henryk' }],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema, { language: 'pl' });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
+    parsed.data.suggestedActions.forEach((action) => {
+      expect(action).not.toMatch(/^I\s/);
+    });
+  });
+
+  it('does not leak English "I ..." defaults into Polish scene with short narrative', () => {
+    const raw = {
+      narrative: 'Cicho.',
+      stateChanges: {},
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema, { language: 'pl' });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
+    parsed.data.suggestedActions.forEach((action) => {
+      expect(action).not.toMatch(/^I\s/);
+    });
+  });
+
+  it('uses English fallbacks when language is explicitly "en"', () => {
+    const raw = {
+      narrative: 'The road stretches ahead through dense fog.',
+      stateChanges: {
+        currentLocation: 'Foggy Road',
+        npcs: [],
+      },
+    };
+
+    const parsed = safeParseAIResponse(raw, SceneResponseSchema, { language: 'en' });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.suggestedActions).toHaveLength(3);
+  });
 });

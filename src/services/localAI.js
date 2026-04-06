@@ -380,6 +380,6 @@ ${reducedStateJson}
 
 Keep stateChanges focused: woundsChange, xp, items, quests (new/completed/questUpdates), timeAdvance, currentLocation${needsSystemEnabled ? ', needsChanges when relevant' : ''}. You may add short journalEntries, npcs, moneyChange, combatUpdate if needed.
 
-${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds) : ''}
+${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds, language) : ''}
 All narrative and suggestedActions in ${lang}. Return exactly 3 suggestedActions; exactly 1 must be a direct PC dialogue line (what the player character says aloud). Up to 1 may be absurd/chaotic but still actionable in-scene.`;
 }

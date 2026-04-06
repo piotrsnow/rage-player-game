@@ -214,12 +214,14 @@ export function resolveMiscast(roll) {
   );
   if (!row) {
     return {
+      id: 'unknown',
       severity: 'unknown',
       description: 'No miscast entry matched.',
       mechanicalEffect: 'GM adjudicates.',
     };
   }
   return {
+    id: `r${row.range[0]}`,
     severity: row.severity,
     description: row.description,
     mechanicalEffect: row.mechanicalEffect,
@@ -302,18 +304,9 @@ export function calculateOvercast(sl, cn, willpowerValue) {
     ? getBonus(Number(willpowerValue))
     : null;
 
-  const summary =
-    overcasts > 0
-      ? wpb != null
-        ? `${overcasts} overcast(s): each pick +1 Damage, +${wpb} yards range (WPB), or +1 duration step (GM).`
-        : `${overcasts} overcast(s): each may improve damage (+1), range (WPB yards), or duration (GM).`
-      : 'No overcasts — SL does not exceed CN.';
-
   return {
     overcasts,
     effects: {
-      summary,
-      perOvercastOptions: ['+1 Damage', '+1× Willpower Bonus yards range (where applicable)', '+1 duration step (GM)'],
       magnitude: overcasts,
       ...(wpb != null ? { willpowerBonus: wpb } : {}),
     },
@@ -334,7 +327,11 @@ export function formatCastingResultForPrompt(result) {
 
   if (result.overcasts > 0) {
     const oc = calculateOvercast(result.totalSL, result.spellCn);
-    lines.push(`Overcasts: ${result.overcasts}. ${oc.effects.summary}`);
+    const wpb = oc.effects.willpowerBonus;
+    const ocSummary = wpb != null
+      ? `${result.overcasts} overcast(s): each pick +1 Damage, +${wpb} yards range (WPB), or +1 duration step (GM).`
+      : `${result.overcasts} overcast(s): each may improve damage (+1), range (WPB yards), or duration (GM).`;
+    lines.push(`Overcasts: ${result.overcasts}. ${ocSummary}`);
   }
 
   if (result.miscast) {
