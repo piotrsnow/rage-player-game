@@ -1,4 +1,4 @@
-import { SKILLS, TALENTS } from '../data/wfrp';
+import { SKILL_NAMES } from '../data/rpgSystem';
 import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
 import { createItemId } from './gameState.js';
 
@@ -370,19 +370,10 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
     validated.needsChanges = validatedNeeds;
   }
 
-  if (validated.skillAdvances && typeof validated.skillAdvances === 'object') {
-    const allSkillNames = [...SKILLS.basic, ...SKILLS.advanced].map((s) => s.name);
-    for (const skillName of Object.keys(validated.skillAdvances)) {
-      if (!allSkillNames.includes(skillName)) {
+  if (validated.skillProgress && typeof validated.skillProgress === 'object') {
+    for (const skillName of Object.keys(validated.skillProgress)) {
+      if (!SKILL_NAMES.includes(skillName)) {
         warnings.push(`Unknown skill: "${skillName}"`);
-      }
-    }
-  }
-
-  if (validated.newTalents && Array.isArray(validated.newTalents)) {
-    for (const talent of validated.newTalents) {
-      if (!TALENTS.includes(talent)) {
-        warnings.push(`Unknown talent: "${talent}"`);
       }
     }
   }

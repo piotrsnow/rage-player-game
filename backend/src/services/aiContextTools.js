@@ -116,7 +116,7 @@ export const CONTEXT_TOOLS_OPENAI = [
     function: {
       name: 'get_bestiary',
       description:
-        'Get WFRP stat block templates for common enemies (Skaven, Beastmen, Greenskins, Undead, Chaos, Animals, Humans). Use when creating combatUpdate enemies — copy or adapt stat blocks from here instead of inventing stats.',
+        'Get stat block templates for common enemies (Skaven, Beastmen, Greenskins, Undead, Chaos, Animals, Humans). Use when creating combatUpdate enemies — the engine auto-converts these to RPGon attributes.',
       parameters: {
         type: 'object',
         properties: {

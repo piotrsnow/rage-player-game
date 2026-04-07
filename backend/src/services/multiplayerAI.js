@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { generateStateChangeMessages } from './stateChangeMessages.js';
-import { resolveDiceRollCharacteristic } from '../../../shared/domain/diceRollInference.js';
-import { getApplicableTalentBonus } from '../../../shared/domain/wfrpTalents.js';
+import { resolveDiceRollAttribute } from '../../../shared/domain/diceRollInference.js';
+// RPGon: no talent bonuses
 import { AIServiceError, AI_ERROR_CODES, parseProviderError } from './aiErrors.js';
 
 const MAX_COMBINED_BONUS = 30;
@@ -561,16 +561,13 @@ function buildMultiplayerSystemPrompt(gameState, settings, players, language = '
     : 'No locations mapped yet.';
 
   const charLines = (gameState.characters || []).map((c) => {
-    const career = c.career || {};
-    const chars = c.characteristics || {};
-    const charStr = Object.entries(chars).map(([k, v]) => `${k.toUpperCase()}:${v}`).join(' ');
-    let line = `- ${c.name} (${c.species || 'Human'} ${career.name || 'Adventurer'}, Tier ${career.tier || 1}): Wounds ${c.wounds}/${c.maxWounds}, Move ${c.movement || 4}`;
-    line += `\n  Characteristics: ${charStr || 'unknown'}`;
-    line += `\n  Fate/Fortune: ${c.fate ?? 0}/${c.fortune ?? 0}, Resilience/Resolve: ${c.resilience ?? 0}/${c.resolve ?? 0}`;
+    const attrs = c.attributes || {};
+    const attrStr = Object.entries(attrs).map(([k, v]) => `${k.toUpperCase()}:${v}`).join(' ');
+    let line = `- ${c.name} (${c.species || 'Human'}): Wounds ${c.wounds}/${c.maxWounds}`;
+    line += `\n  Attributes: ${attrStr || 'unknown'}`;
+    if (c.mana != null) line += `\n  Mana: ${c.mana}/${c.maxMana || c.mana}`;
     const skillStr = Object.entries(c.skills || {}).map(([s, v]) => `${s}:${v}`).join(', ');
     if (skillStr) line += `\n  Skills: ${skillStr}`;
-    const talentStr = (c.talents || []).join(', ');
-    if (talentStr) line += `\n  Talents: ${talentStr}`;
     const inv = (c.inventory || []).map((i) => (typeof i === 'string' ? i : i.name)).join(', ');
     line += `\n  Inventory: ${inv || 'Empty'}`;
     const m = c.money || { gold: 0, silver: 0, copper: 0 };
@@ -677,10 +674,10 @@ When a player attempts a social, trade, persuasion, or other interpersonal skill
 When this modifier applies, include "dispositionBonus" in the diceRoll entry with the modifier value. Keep it separate from "difficultyModifier".
 
 MULTIPLAYER INSTRUCTIONS:
-1. You are running a MULTIPLAYER session using the WFRP 4th Edition system. Multiple players act simultaneously each round.
+1. You are running a MULTIPLAYER session using the RPGon system (d50-based). Multiple players act simultaneously each round.
 2. When resolving actions, consider ALL submitted actions together and resolve them simultaneously.
 3. Describe what happens to each character individually.
-4. Include per-character stateChanges so each player's wounds/XP/inventory/skills can be updated independently. Use WFRP mechanics (wounds, characteristics, career skills).
+4. Include per-character stateChanges so each player's wounds/XP/inventory/skills can be updated independently. Use RPGon mechanics (wounds, attributes, skills).
 5. All players see the same scene narrative.
 6. Maintain fairness — give each player meaningful consequences for their actions.
 7. Generate suggested actions that are generic enough for any player to take.
@@ -701,7 +698,7 @@ CODEX SYSTEM (detailed lore and knowledge discovery):
 When any player asks about, investigates, or learns about something specific, generate a detailed codex fragment via stateChanges.codexUpdates. Each NPC reveals only ONE fragment per interaction based on their role (scholars know history, peasants know rumors, soldiers know weaknesses/locations). Check the PLAYER CODEX above — never repeat known information. Format:
 {"codexUpdates": [{"id": "unique-slug", "name": "Subject Name", "category": "artifact|person|place|event|faction|creature|concept", "fragment": {"content": "2-4 sentences of specific detail...", "source": "Who revealed this", "aspect": "history|description|location|weakness|rumor|technical|political"}, "tags": ["relevant", "tags"], "relatedEntries": []}]}
 
-CURRENCY SYSTEM (WFRP):
+CURRENCY SYSTEM:
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
 - When a character BUYS or PAYS, deduct via perCharacter moneyChange (negative deltas). If a character cannot afford the purchase, it MUST FAIL.
 - When a character RECEIVES money (loot, payment, selling, rewards), use positive deltas.
@@ -717,13 +714,12 @@ Services: healer 5 SS, blacksmith repair 3 SS, ferry 2 CP
 Animals: riding horse 50 GC, mule 15 GC`;
 }
 
-function rollD100() {
-  return Math.floor(Math.random() * 100) + 1;
+function rollD50() {
+  return Math.floor(Math.random() * 50) + 1;
 }
 
-function calculateSL(roll, target) {
-  const diff = target - roll;
-  return diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
+function calculateMargin(total, threshold) {
+  return total - threshold;
 }
 
 function buildMultiplayerScenePrompt(actions, isFirstScene = false, language = 'en', { needsSystemEnabled = false, characters = null } = {}, dmSettings = null, preRolledDice = null, characterMomentum = null, skipDiceRolls = null) {
@@ -785,9 +781,9 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on SL — NOT flat +5/-5:
-- Critical success: +3 to +5, Strong success (SL 3+): +2 to +3, Marginal success (SL 0-2): +1 to +2
-- Marginal failure (SL -1 to -2): -1 to -2, Hard failure (SL -3 or worse): -3 to -5, Critical failure: -5 to -8
+NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on margin — NOT flat +5/-5:
+- Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
+- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships".
 
 COMBAT ENCOUNTERS (MULTIPLAYER):
@@ -822,7 +818,7 @@ CRITICAL: The dialogueSegments array must cover the FULL narrative broken into n
   const actionLines = actions
     .map((a) => {
       const skipRoll = skipDiceRolls?.[a.name];
-      const diceInfo = !skipRoll && preRolledDice?.[a.name] ? ` [PRE-ROLLED d100: ${preRolledDice[a.name]}]` : '';
+      const diceInfo = !skipRoll && preRolledDice?.[a.name] ? ` [PRE-ROLLED d50: ${preRolledDice[a.name]}]` : '';
       const skipInfo = skipRoll ? ' [NO DICE ROLL]' : '';
       const momInfo = !skipRoll && characterMomentum?.[a.name] !== 0 && characterMomentum?.[a.name] != null ? ` [MOMENTUM ${characterMomentum[a.name] > 0 ? '+' : ''}${characterMomentum[a.name]}]` : '';
       return `- ${a.name} (${a.gender}): ${a.action}${a.isCustom ? ' [CUSTOM ACTION]' : ''}${diceInfo}${skipInfo}${momInfo}`;
@@ -843,11 +839,11 @@ Resolve ALL player actions simultaneously. Describe what happens to each charact
 FEASIBILITY CHECK: Before rolling dice, verify each action is possible given the NPCs and features present at the current location. Impossible actions auto-fail (no diceRolls entry). Trivial/certain actions auto-succeed (no diceRolls entry). Only roll for uncertain outcomes.
 Simple repositioning or low-risk movement such as taking a step back, moving aside, or cautiously backing away is usually trivial. Prefer no dice roll unless the scene is actively dangerous; if you do require a roll, expose that ease with difficultyModifier +20 or +30.
 
-DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. Build each roll like this: "baseTarget" = characteristic + skill advances, "difficultyModifier" = an explicit difficulty step, and "target" = the final effective target used for success comparison.
-CHARACTERISTIC RULE: Every diceRolls entry MUST include a valid WFRP characteristic key: ws, bs, s, t, i, ag, dex, int, wp, or fel. For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, omit that character from diceRolls instead of guessing.
+DICE ROLL FREQUENCY: The dice roll frequency is ~${testsFrequency}%. For each player's action, decide whether a roll is needed based on this frequency. At high values (80%+), even trivial actions require a roll. Each character who needs a test gets their own entry in the diceRolls array. Build each roll like this: "baseTarget" = attribute + skill level, "difficultyModifier" = an explicit difficulty step, and "target" = the final effective target used for success comparison.
+ATTRIBUTE RULE: Every diceRolls entry MUST include a valid RPGon attribute key: sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, or szczescie. For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to charyzma unless a more specific skill clearly implies another attribute. Never invent non-RPGon stats. If you cannot determine a valid attribute, omit that character from diceRolls instead of guessing.
 DIFFICULTY MODIFIER: Always expose task difficulty explicitly via "difficultyModifier" instead of hiding it inside "target". Use only one of these values: +40, +30, +20, +10, 0, -10, -20, -30, -40. Guide: +40 routine, +30 easy, +20 favorable, +10 slightly favorable, 0 standard, -10 challenging, -20 hard, -30 very hard, -40 extreme / nearly suicidal.
 NPC DISPOSITION MODIFIERS: When a roll involves direct NPC interaction (social, trade, persuasion), apply the NPC's disposition as a separate target modifier: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in the diceRoll entry.
-${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d100 value shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
+${preRolledDice ? `PRE-ROLLED DICE: Each character has a pre-rolled d50 value (1-50) shown above. You MUST use these exact values as the "roll" in diceRolls. Do NOT generate your own roll numbers. First determine each character's skill and target number (including creativity bonus for custom actions), then check whether the pre-rolled value succeeds or fails against the target, and THEN write the narrative matching those outcomes.` : ''}
 ${skipDiceRolls && Object.keys(skipDiceRolls).length > 0 ? `DICE ROLL OVERRIDE: Characters marked [NO DICE ROLL] above do NOT require a dice roll this round. Do NOT include them in the diceRolls array. Resolve their actions narratively without mechanical dice resolution.` : ''}
 ${hasCustomActions ? `
 CREATIVITY BONUS: Actions marked [CUSTOM ACTION] were written by the player (not selected from suggestions). Evaluate the creativity, originality, and cleverness of each custom action.
@@ -875,7 +871,7 @@ IMPORTANT: Resolve dice checks FIRST for all characters, then write the narrativ
 
 Respond with ONLY valid JSON:
 {
-  "diceRolls": [{"character": "CharacterName", "type": "d100", "roll": 42, "target": 65, "sl": 2, "skill": "Athletics", "success": true}],
+  "diceRolls": [{"character": "CharacterName", "type": "d50", "roll": 22, "target": 35, "margin": 12, "skill": "Atletyka", "success": true}],
   "narrative": "2-3 paragraphs resolving all actions and setting up the next decision...",
   "dialogueSegments": [
     {"type": "narration", "text": "Prose..."},
@@ -916,7 +912,7 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 LOOT RARITY GATING: Scenes 1-15: only "common"/"uncommon" items. Scenes 16-30: "rare" allowed. Scenes 31+: "exotic" possible but with narrative cost (thieves, faction interest, rumors). Always set the "rarity" field.
 ITEM VALIDATION: Characters can ONLY use items currently in their inventory. If a player references an item they don't have, the action MUST fail narratively. Only include items in removeItems that exist in the character's inventory.${needsPerCharDoc}
 
-For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d100", "roll": <1-100>, "characteristic": "<ws/bs/s/t/i/ag/dex/int/wp/fel>", "characteristicValue": <number — raw stat value>, "skillAdvances": <number — advances in the tested skill, 0 if untrained>, "baseTarget": <number — characteristic + skill advances only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "sl": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d100 values for each character.' : ''} For social speech and persuasion use Fel unless a more specific WFRP skill says otherwise. If no valid WFRP characteristic fits, omit that character from diceRolls. For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll is 01-04). Rolls 96-00 are always failure. The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
+For diceRolls: an array of per-character dice roll results. Each entry: {"character": "CharacterName", "type": "d50", "roll": <1-50>, "attribute": "<sila/inteligencja/charyzma/zrecznosc/wytrzymalosc/szczescie>", "attributeValue": <number — raw stat value 1-25>, "skillLevel": <number — skill level, 0 if untrained>, "baseTarget": <number — attribute + skill level only>, "difficultyModifier": <one of 40, 30, 20, 10, 0, -10, -20, -30, -40>, "target": <number — the EFFECTIVE target used for success comparison>, "margin": <number>, "skill": "<skill name>", "success": <boolean>}. For custom actions, also include: "creativityBonus": <number 10-40>. ${preRolledDice ? 'Use the pre-rolled d50 values for each character.' : ''} For social speech and persuasion use charyzma unless a more specific skill says otherwise. If no valid RPGon attribute fits, omit that character from diceRolls. For custom actions: "target" = baseTarget + difficultyModifier + creativityBonus (+ any other applicable modifiers). For normal actions: "target" = baseTarget + difficultyModifier (+ any other applicable modifiers). "difficultyModifier" must always be explicit; do not hide it only inside "target". Determine success by comparing roll to target: success = (roll <= target) OR (roll === 1, critical success). Roll 50 is always failure (critical failure). The narrative MUST match all dice outcomes. Include a roll for each character whose action warrants a test based on the configured frequency (~${testsFrequency}%). At 80%+, nearly every character rolls. Use empty array [] only when dice frequency is low and no actions warrant tests.
 
 For stateChanges.newQuests: array of new quests to add. Each quest: {"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal to finish the quest", "objectives": [{"id": "obj_1", "description": "Milestone"}]}. "objectives" are 2-5 optional milestones guiding through the story. Use empty array [] if no new quests.
 For stateChanges.completedQuests: array of quest IDs to mark as completed. Use empty array [] if none completed.
@@ -926,9 +922,9 @@ QUEST DISCOVERY: When any player explicitly asks about available work, tasks, qu
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
-- Critical success: +3 to +5, Strong success (SL 3+): +2 to +3, Marginal success (SL 0-2): +1 to +2
-- Marginal failure (SL -1 to -2): -1 to -2, Hard failure (SL -3 or worse): -3 to -5, Critical failure: -5 to -8
+NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on margin — NOT a flat +5/-5:
+- Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
+- Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
 - Betrayal, broken promise, or threat: -8 to -10
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships" ([{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]).
 
@@ -1059,7 +1055,7 @@ export async function generateMultiplayerCampaign(settings, players, _encryptedA
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Instead, ground the campaign in a believable world and derive comedy from 1-2 genuinely controversial, provocative, or morally ambiguous elements — corrupt institutions, taboo customs, ethically questionable practices, morally grey factions, or politically charged conflicts. Comedy should emerge from how characters earnestly navigate these uncomfortable realities: dark irony, social satire, awkward moral dilemmas, characters taking absurd stances on serious issues. Sharp wit about real controversies, not random nonsense.\n`
     : '';
 
-  const prompt = `Create a new MULTIPLAYER WFRP 4th Edition campaign with these parameters:
+  const prompt = `Create a new MULTIPLAYER RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
@@ -1092,7 +1088,7 @@ Generate the campaign foundation. The characters are already pre-created by the 
 ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
   const messages = [
-    { role: 'system', content: `You are a creative WFRP 4th Edition campaign designer. Create immersive multiplayer campaigns. Players already have pre-created characters — do not generate characters. Always respond with valid JSON. Write in ${language === 'pl' ? 'Polish' : 'English'}.` },
+    { role: 'system', content: `You are a creative RPGon campaign designer. Create immersive multiplayer campaigns. Players already have pre-created characters — do not generate characters. Always respond with valid JSON. Write in ${language === 'pl' ? 'Polish' : 'English'}.` },
     { role: 'user', content: prompt },
   ];
 
@@ -1106,18 +1102,12 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       name: cd.name || p.name,
       gender: cd.gender || p.gender || 'male',
       species: cd.species || 'Human',
-      career: cd.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
-      characteristics: cd.characteristics || { ws: 31, bs: 25, s: 34, t: 28, i: 30, ag: 33, dex: 27, int: 35, wp: 29, fel: 32 },
-      advances: cd.advances || { ws: 0, bs: 0, s: 0, t: 0, i: 0, ag: 0, dex: 0, int: 0, wp: 0, fel: 0 },
+      attributes: cd.attributes || { sila: 12, inteligencja: 12, charyzma: 12, zrecznosc: 12, wytrzymalosc: 12, szczescie: 5 },
       wounds: cd.wounds ?? cd.maxWounds ?? 12,
       maxWounds: cd.maxWounds ?? 12,
-      movement: cd.movement ?? 4,
-      fate: cd.fate ?? 2,
-      fortune: cd.fortune ?? cd.fate ?? 2,
-      resilience: cd.resilience ?? 1,
-      resolve: cd.resolve ?? cd.resilience ?? 1,
+      mana: cd.mana ?? 0,
+      maxMana: cd.maxMana ?? 0,
       skills: cd.skills || {},
-      talents: cd.talents || [],
       inventory: cd.inventory || [],
       money: cd.money || { gold: 0, silver: 5, copper: 0 },
       statuses: cd.statuses || [],
@@ -1218,18 +1208,12 @@ export async function generateMidGameCharacter(gameState, settings, playerName, 
         name: cd.name || playerName,
         gender: cd.gender || playerGender || 'male',
         species: cd.species || 'Human',
-        career: cd.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
-        characteristics: cd.characteristics || {},
-        advances: cd.advances || {},
+        attributes: cd.attributes || { sila: 12, inteligencja: 12, charyzma: 12, zrecznosc: 12, wytrzymalosc: 12, szczescie: 5 },
         wounds: cd.wounds ?? cd.maxWounds ?? 12,
         maxWounds: cd.maxWounds ?? 12,
-        movement: cd.movement ?? 4,
-        fate: cd.fate ?? 2,
-        fortune: cd.fortune ?? cd.fate ?? 2,
-        resilience: cd.resilience ?? 1,
-        resolve: cd.resolve ?? cd.resilience ?? 1,
+        mana: cd.mana ?? 0,
+        maxMana: cd.maxMana ?? 0,
         skills: cd.skills || {},
-        talents: cd.talents || [],
         inventory: cd.inventory || [],
         money: cd.money || { gold: 0, silver: 5, copper: 0 },
         statuses: cd.statuses || [],
@@ -1248,7 +1232,7 @@ export async function generateMidGameCharacter(gameState, settings, playerName, 
 
   const campaign = gameState.campaign || {};
 
-  const prompt = `A new player is joining a MULTIPLAYER WFRP 4th Edition campaign mid-game.
+  const prompt = `A new player is joining a MULTIPLAYER RPGon campaign mid-game.
 
 CAMPAIGN: "${campaign.name || 'Unnamed'}"
 - Genre: ${settings.genre || 'Fantasy'}
@@ -1261,18 +1245,16 @@ ${existingChars}
 
 NEW PLAYER: ${playerName} (${playerGender})
 
-Create a WFRP character for this new player that fits the campaign.
+Create a RPGon character for this new player that fits the campaign.
 
 Respond with ONLY valid JSON:
 {
   "name": "${playerName}",
   "species": "Human",
-  "career": {"class": "Warriors", "name": "Soldier", "tier": 1, "tierName": "Recruit", "status": "Silver 1"},
-  "characteristics": {"ws": 31, "bs": 25, "s": 34, "t": 28, "i": 30, "ag": 33, "dex": 27, "int": 35, "wp": 29, "fel": 32},
-  "skills": {"Melee (Basic)": 5, "Dodge": 5},
-  "talents": ["Warrior Born", "Drilled"],
+  "attributes": {"sila": 12, "inteligencja": 14, "charyzma": 10, "zrecznosc": 13, "wytrzymalosc": 11, "szczescie": 5},
+  "skills": {"Atletyka": 5, "Uniki": 3},
   "wounds": 12, "maxWounds": 12,
-  "movement": 4, "fate": 2, "resilience": 1,
+  "mana": 0, "maxMana": 0,
   "inventory": [],
   "backstory": "2-3 sentences explaining how they arrive mid-adventure",
   "arrivalNarrative": "1-2 sentences describing the character appearing/arriving in the current scene"
@@ -1281,7 +1263,7 @@ Respond with ONLY valid JSON:
 ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
 
   const messages = [
-    { role: 'system', content: `You are a WFRP 4th Edition character designer. Create balanced characters that fit existing campaigns. Write in ${language === 'pl' ? 'Polish' : 'English'}. Always respond with valid JSON.` },
+    { role: 'system', content: `You are a RPGon character designer. Create balanced characters that fit existing campaigns. Write in ${language === 'pl' ? 'Polish' : 'English'}. Always respond with valid JSON.` },
     { role: 'user', content: prompt },
   ];
 
@@ -1293,18 +1275,12 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       name: result.name || playerName,
       gender: playerGender || 'male',
       species: result.species || 'Human',
-      career: result.career || { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' },
-      characteristics: result.characteristics || { ws: 31, bs: 25, s: 34, t: 28, i: 30, ag: 33, dex: 27, int: 35, wp: 29, fel: 32 },
-      advances: { ws: 0, bs: 0, s: 0, t: 0, i: 0, ag: 0, dex: 0, int: 0, wp: 0, fel: 0 },
+      attributes: result.attributes || { sila: 12, inteligencja: 12, charyzma: 12, zrecznosc: 12, wytrzymalosc: 12, szczescie: 5 },
       wounds: result.wounds ?? result.maxWounds ?? 12,
       maxWounds: result.maxWounds ?? 12,
-      movement: result.movement ?? 4,
-      fate: result.fate ?? 2,
-      fortune: result.fate ?? 2,
-      resilience: result.resilience ?? 1,
-      resolve: result.resilience ?? 1,
+      mana: result.mana ?? 0,
+      maxMana: result.maxMana ?? 0,
       skills: result.skills || {},
-      talents: result.talents || [],
       inventory: result.inventory ?? [],
       money: { gold: 0, silver: 5, copper: 0 },
       statuses: [],
@@ -1329,7 +1305,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     if (a.action === '[WAIT]') {
       skipDiceRolls[a.name] = true;
     } else if (Math.random() * 100 < testsFrequency) {
-      preRolledDice[a.name] = rollD100();
+      preRolledDice[a.name] = rollD50();
     } else {
       skipDiceRolls[a.name] = true;
     }
@@ -1350,15 +1326,15 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     const characterName = dr.character || fallbackCharacterName;
     const actionText = actionByName.get(characterName)?.action || actions[0]?.action || '';
     const characterData = characterByName.get(characterName) || null;
-    const resolvedCharacteristic = resolveDiceRollCharacteristic(dr, actionText);
-    if (!resolvedCharacteristic) return null;
+    const resolvedAttribute = resolveDiceRollAttribute(dr, actionText);
+    if (!resolvedAttribute) return null;
 
-    dr.characteristic = resolvedCharacteristic;
-    if (dr.characteristicValue == null) {
-      dr.characteristicValue = characterData?.characteristics?.[resolvedCharacteristic] ?? null;
+    dr.attribute = resolvedAttribute;
+    if (dr.attributeValue == null) {
+      dr.attributeValue = characterData?.attributes?.[resolvedAttribute] ?? null;
     }
 
-    return dr.characteristicValue == null ? null : dr;
+    return dr.attributeValue == null ? null : dr;
   }
 
   function recalcDiceRoll(dr) {
@@ -1375,41 +1351,30 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       let baseTarget;
       if (dr.baseTarget) {
         baseTarget = dr.baseTarget;
-      } else if (dr.characteristicValue != null && dr.skillAdvances != null) {
-        baseTarget = dr.characteristicValue + dr.skillAdvances;
+      } else if (dr.attributeValue != null && dr.skillLevel != null) {
+        baseTarget = dr.attributeValue + dr.skillLevel;
       } else {
         baseTarget = dr.target - bonus - momentum - disposition - (providedDifficultyModifier ?? 0);
       }
       dr.baseTarget = baseTarget;
 
-      if (dr.skillAdvances == null && dr.characteristicValue != null) {
-        dr.skillAdvances = Math.max(0, baseTarget - dr.characteristicValue);
+      if (dr.skillLevel == null && dr.attributeValue != null) {
+        dr.skillLevel = Math.max(0, baseTarget - dr.attributeValue);
       }
-
-      const characterName = dr.character || null;
-      const characterData = characterByName.get(characterName) || null;
-      const talentResult = getApplicableTalentBonus(
-        characterData?.talents,
-        dr.characteristic,
-        dr.skill,
-      );
-      const talentBonus = talentResult ? talentResult.bonus : 0;
-      dr.talentBonus = talentBonus;
-      dr.applicableTalent = talentResult ? talentResult.talent : null;
 
       const totalBonus = bonus + momentum + disposition;
       const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
-      const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - talentBonus - cappedBonus);
+      const difficultyModifier = providedDifficultyModifier ?? snapDifficultyModifier(originalTarget - baseTarget - cappedBonus);
       dr.difficultyModifier = difficultyModifier;
-      const effectiveTarget = baseTarget + talentBonus + cappedBonus + difficultyModifier;
+      const effectiveTarget = baseTarget + cappedBonus + difficultyModifier;
       dr.target = effectiveTarget;
 
-      const isCriticalSuccess = roll >= 1 && roll <= 4;
-      const isCriticalFailure = roll >= 96 && roll <= 100;
+      const isCriticalSuccess = roll === 1;
+      const isCriticalFailure = roll === 50;
       dr.success = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
       dr.criticalSuccess = isCriticalSuccess;
       dr.criticalFailure = isCriticalFailure;
-      dr.sl = calculateSL(roll, effectiveTarget);
+      dr.margin = roll <= effectiveTarget ? effectiveTarget - roll : -(roll - effectiveTarget);
     }
   }
 
@@ -1528,7 +1493,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
         id: `msg_${Date.now()}_roll_${dr.character}`,
         role: 'system',
         subtype: 'dice_roll',
-        content: `🎲 ${dr.character} — ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+        content: `🎲 ${dr.character} — ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — margin ${dr.margin ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
         diceData: dr,
         timestamp: Date.now(),
       });
@@ -1539,7 +1504,7 @@ export async function generateMultiplayerScene(gameState, settings, players, act
       id: `msg_${Date.now()}_roll`,
       role: 'system',
       subtype: 'dice_roll',
-      content: `🎲 ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — SL ${dr.sl ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
+      content: `🎲 ${dr.skill || 'Check'}: ${dr.roll ?? '?'} vs ${dr.target ?? '?'} — margin ${dr.margin ?? 0} — ${dr.success ? 'Success' : 'Failure'}`,
       diceData: dr,
       timestamp: Date.now(),
     });
@@ -1619,7 +1584,7 @@ export async function verifyMultiplayerQuestObjective(
   const messages = [
     {
       role: 'system',
-      content: `You verify quest objective completion for a multiplayer WFRP session.
+      content: `You verify quest objective completion for a multiplayer RPGon session.
 Return ONLY valid JSON with this exact shape:
 {
   "fulfilled": true or false,

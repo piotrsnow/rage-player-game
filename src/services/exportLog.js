@@ -101,7 +101,7 @@ export function exportAsMarkdown(campaignState) {
       if (scene.diceRoll) {
         const d = scene.diceRoll;
         const outcome = d.success ? 'Success' : 'Failure';
-        lines.push(`**Dice Roll:** ${d.skill} — d100 roll ${d.roll} vs target ${d.target || d.dc} — SL ${d.sl ?? 0} — ${outcome}`);
+        lines.push(`**Dice Roll:** ${d.skill} — d50 roll ${d.roll} vs target ${d.target || d.dc} — margin ${d.margin ?? 0} — ${outcome}`);
         lines.push('');
       }
       if (scene.narrative) {

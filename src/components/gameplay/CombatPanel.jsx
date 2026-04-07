@@ -84,9 +84,8 @@ function buildCombatLogDetails(result, t) {
     details.push(
       `${t('combat.logAttack', 'Atak')}: ${t('combat.logRoll', 'rzut')} ${attackRoll.roll} ${t('common.vs', 'vs')} ${result.attackBreakdown.target}` +
       ` | ${t('combat.logBase', 'bazowe')} ${result.attackBreakdown.baseTarget}` +
-      ` | ${t('combat.logAdvantage', 'przewaga')} ${formatSignedNumber(result.attackBreakdown.advantageBonus || 0)}` +
       ` | ${t('combat.logCreativity', 'kreatywność')} ${formatSignedNumber(result.attackBreakdown.creativityBonus || 0)}` +
-      ` | ${t('combat.logSL', 'SL')} ${formatSignedNumber(attackRoll.sl || 0)}`
+      ` | ${t('combat.logMargin', 'margines')} ${formatSignedNumber(attackRoll.margin ?? attackRoll.sl ?? 0)}`
     );
   }
 
@@ -97,7 +96,7 @@ function buildCombatLogDetails(result, t) {
         `${t('combat.logDefense', 'Obrona')}: ${t('combat.logRoll', 'rzut')} ${defenseRoll.roll} ${t('common.vs', 'vs')} ${result.defenseBreakdown.target}` +
         ` | ${t('combat.logBase', 'bazowe')} ${result.defenseBreakdown.baseTarget}` +
         ` | ${t('combat.logDefendBonus', 'obrona')} ${formatSignedNumber(result.defenseBreakdown.defendBonus || 0)}` +
-        ` | ${t('combat.logSL', 'SL')} ${formatSignedNumber(defenseRoll.sl || 0)}`
+        ` | ${t('combat.logMargin', 'margines')} ${formatSignedNumber(defenseRoll.margin ?? defenseRoll.sl ?? 0)}`
       );
     }
   }
@@ -107,7 +106,7 @@ function buildCombatLogDetails(result, t) {
     details.push(
       `${t('combat.logCast', 'Magia')}: ${t('combat.logRoll', 'rzut')} ${castRoll.roll} ${t('common.vs', 'vs')} ${result.castBreakdown.target}` +
       ` | ${t('combat.logBase', 'bazowe')} ${result.castBreakdown.baseTarget}` +
-      ` | ${t('combat.logSL', 'SL')} ${formatSignedNumber(castRoll.sl || 0)}`
+      ` | ${t('combat.logMargin', 'margines')} ${formatSignedNumber(castRoll.margin ?? castRoll.sl ?? 0)}`
     );
   }
 
@@ -116,33 +115,29 @@ function buildCombatLogDetails(result, t) {
     details.push(
       `${t('combat.logFlee', 'Ucieczka')}: ${t('combat.logRoll', 'rzut')} ${checkRoll.roll} ${t('common.vs', 'vs')} ${result.checkBreakdown.target}` +
       ` | ${t('combat.logBase', 'bazowe')} ${result.checkBreakdown.baseTarget}` +
-      ` | ${t('combat.logSL', 'SL')} ${formatSignedNumber(checkRoll.sl || 0)}`
+      ` | ${t('combat.logMargin', 'margines')} ${formatSignedNumber(checkRoll.margin ?? checkRoll.sl ?? 0)}`
     );
   }
 
-  if (result.damageBreakdown?.willpowerBonus != null) {
-    details.push(
-      `${t('combat.logDamage', 'Obrażenia')}: ${t('combat.logWpBonus', 'WPB')} ${result.damageBreakdown.willpowerBonus}` +
-      ` + ${t('combat.logTotalSL', 'suma SL')} ${formatSignedNumber(result.damageBreakdown.totalSL || 0)}` +
-      ` - ${t('combat.logTB', 'TB')} ${result.damageBreakdown.toughnessBonus}` +
-      ` = ${result.damageBreakdown.totalDamage}`
-    );
-  } else if (result.damageBreakdown?.formula) {
-    const critChunk = result.damageBreakdown.criticalBonusDamage
-      ? ` + ${t('combat.logCrit', 'kryt')} ${result.damageBreakdown.criticalBonusDamage}`
-      : '';
+  if (result.damageBreakdown) {
+    const db = result.damageBreakdown;
     const minOneChunk = result.minimumDamageApplied
       ? ` (${t('combat.logMinOne', 'minimum 1')})`
       : '';
-    details.push(
-      `${t('combat.logDamage', 'Obrażenia')}: ${result.weaponName || t('combat.logWeapon', 'Broń')}` +
-      ` (${result.damageBreakdown.formula} => ${result.damageBreakdown.total})` +
-      ` + ${t('combat.logNetSL', 'net SL')} ${formatSignedNumber(result.damageBreakdown.netSL || 0)}` +
-      `${critChunk}` +
-      ` - ${t('combat.logTB', 'TB')} ${result.damageBreakdown.toughnessBonus}` +
-      ` - ${t('combat.logAP', 'AP')} ${result.damageBreakdown.armourPoints}` +
-      ` = ${result.damageBreakdown.totalDamage}${minOneChunk}`
-    );
+    if (db.formula) {
+      details.push(
+        `${t('combat.logDamage', 'Obrażenia')}: ${result.weaponName || t('combat.logWeapon', 'Broń')}` +
+        ` (${db.formula} => ${db.total})` +
+        ` + ${t('combat.logMargin', 'margines')} ${formatSignedNumber(db.margin ?? db.netSL ?? 0)}` +
+        ` - ${t('combat.logEndurance', 'WYT')} ${db.enduranceDefense ?? db.toughnessBonus ?? 0}` +
+        ` - ${t('combat.logAP', 'AP')} ${db.armourPoints ?? 0}` +
+        ` = ${db.totalDamage}${minOneChunk}`
+      );
+    } else {
+      details.push(
+        `${t('combat.logDamage', 'Obrażenia')}: ${db.totalDamage}${minOneChunk}`
+      );
+    }
   }
 
   return details;
@@ -434,7 +429,7 @@ export default function CombatPanel({
   const availableManoeuvres = useMemo(() => {
     const charForSkills = myCombatant || character;
     return Object.entries(gameData.manoeuvres).filter(([key]) => {
-      if (key === 'castSpell' && !charForSkills?.skills?.['Channelling']) return false;
+      if (key === 'castSpell' && !charForSkills?.spells?.known?.length) return false;
       return true;
     });
   }, [myCombatant, character]);
@@ -675,18 +670,6 @@ export default function CombatPanel({
         details: buildCombatLogDetails(result, t),
         id: `hit_${uid}`,
       });
-      if (result.criticalWound) {
-        addLogEntry({
-          type: 'critical',
-          actor: result.targetName || '?',
-          action: '',
-          target: '',
-          critName: result.criticalWound.name || '',
-          critEffect: result.criticalWound.effect || '',
-          actorColor: targetColor,
-          id: `crit_${uid}`,
-        });
-      }
       if (result.targetDefeated) {
         addLogEntry({
           type: 'defeat',
@@ -773,21 +756,6 @@ export default function CombatPanel({
           timestamp: ts,
         },
       });
-      if (result.criticalWound) {
-        dispatch({
-          type: 'ADD_CHAT_MESSAGE',
-          payload: {
-            id: `msg_${ts}_crit_${uid()}`,
-            role: 'system',
-            subtype: 'combat_critical',
-            content: t('combat.chatCritical', {
-              target: result.targetName || '?',
-              wound: result.criticalWound.name || '',
-            }),
-            timestamp: ts,
-          },
-        });
-      }
       if (result.targetDefeated) {
         dispatch({
           type: 'ADD_CHAT_MESSAGE',
@@ -1321,9 +1289,6 @@ export default function CombatPanel({
                   </div>
 
                   <div className="flex items-center gap-2 mt-1 text-[9px] text-on-surface-variant">
-                    {c.advantage > 0 && (
-                      <span>{t('combat.advantage', 'Adv')} <span className="text-primary font-bold">+{c.advantage}</span></span>
-                    )}
                     {c.position != null && (
                       <span>{t('combat.position', 'Pos')} <span className="font-bold text-on-surface">{c.position}y</span></span>
                     )}

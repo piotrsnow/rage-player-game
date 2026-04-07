@@ -1,10 +1,9 @@
-import { getBonus, formatMoney } from './gameState';
+import { formatMoney } from './gameState';
 import { gameData } from './gameDataService';
-import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
-import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/rpgFactions';
 import { buildUnmetNeedsBlock, buildNeedsEnforcementReminder } from './prompts';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
-import { formatTalentsForPrompt } from '../data/wfrpTalents';
+// RPGon: no critical wounds or talents
 import { formatResolvedCheck } from './mechanics/index';
 
 function normalizeEndpoint(endpoint) {
@@ -148,7 +147,7 @@ function compactDmSummary(dmSettings) {
   const len = d.responseLength < 33 ? 'short' : d.responseLength < 66 ? 'medium' : 'long';
   const tests = d.testsFrequency ?? 50;
   const custom = (d.narratorCustomInstructions || '').trim();
-  return `Difficulty ${diff}, narrative ${narr}, response ${len}, ~${tests}% actions need d100 tests. Voice: poeticism ${d.narratorPoeticism ?? 50}, grit ${d.narratorGrittiness ?? 30}, detail ${d.narratorDetail ?? 50}, humor ${d.narratorHumor ?? 20}, drama ${d.narratorDrama ?? 50}.${custom ? ` Player narrator instructions: ${custom}.` : ''} Avoid repetitive tax/tax-collector metaphors unless directly relevant to the scene.`;
+  return `Difficulty ${diff}, narrative ${narr}, response ${len}, ~${tests}% actions need d50 tests. Voice: poeticism ${d.narratorPoeticism ?? 50}, grit ${d.narratorGrittiness ?? 30}, detail ${d.narratorDetail ?? 50}, humor ${d.narratorHumor ?? 20}, drama ${d.narratorDrama ?? 50}.${custom ? ` Player narrator instructions: ${custom}.` : ''} Avoid repetitive tax/tax-collector metaphors unless directly relevant to the scene.`;
 }
 
 export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en', enhancedContext = null, { needsSystemEnabled = false } = {}) {
@@ -203,14 +202,11 @@ export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en',
     ? activeEffects.slice(0, 6).map((e) => `- ${e.type}: ${e.description?.slice(0, 100) || ''} @ ${e.location || '?'}`).join('\n')
     : 'None';
 
-  const chars = character?.characteristics || {};
-  const adv = character?.advances || {};
-  const charCompact = ['ws', 'bs', 's', 't', 'i', 'ag', 'dex', 'int', 'wp', 'fel']
+  const attrs = character?.attributes || {};
+  const charCompact = ['sila', 'inteligencja', 'charyzma', 'zrecznosc', 'wytrzymalosc', 'szczescie']
     .map((key) => {
-      const val = chars[key] || 0;
-      const bonus = getBonus(val);
-      const a = adv[key] || 0;
-      return `${key.toUpperCase()}:${val}(+${bonus}${a ? ` +${a}adv` : ''})`;
+      const val = attrs[key] || 0;
+      return `${key.toUpperCase()}:${val}`;
     })
     .join(' ');
 
@@ -257,10 +253,7 @@ export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en',
         .join('\n') || 'Start.';
   }
 
-  const critBlock =
-    character?.criticalWounds?.length > 0
-      ? `${formatCriticalWoundsForPrompt(character.criticalWounds)}\nReflect injuries in play; healCriticalWound in stateChanges when treated.\n`
-      : '';
+  const critBlock = '';
 
   const needsBlock =
     needsSystemEnabled && character?.needs
@@ -282,17 +275,16 @@ export function buildReducedSystemPrompt(gameState, dmSettings, language = 'en',
 
   const lang = language === 'pl' ? 'Polish' : 'English';
 
-  return `You are the GM for WFRP 4e campaign "${campaign?.name || 'Campaign'}".
+  return `You are the GM for RPGon campaign "${campaign?.name || 'Campaign'}".
 
 ${compactDmSummary(dmSettings)}
 World: ${(campaign?.worldDescription || '').slice(0, 400)}
 Hook: ${(campaign?.hook || '').slice(0, 300)}
 
 PC: ${character?.name || '?'} (${character?.species || 'Human'}) — ${careerInfo}
-XP ${character?.xp || 0} (spent ${character?.xpSpent || 0}) | Wounds ${character?.wounds ?? 0}/${character?.maxWounds ?? 0} | M ${character?.movement ?? 4} | Fate ${character?.fate ?? 0} Fortune ${character?.fortune ?? 0}
-Chars: ${charCompact}
+XP ${character?.xp || 0} (spent ${character?.xpSpent || 0}) | Wounds ${character?.wounds ?? 0}/${character?.maxWounds ?? 0} | M ${character?.movement ?? 4} | Mana ${character?.mana?.current ?? 0}/${character?.mana?.max ?? 0}
+Attrs: ${charCompact}
 Skills: ${skillList}
-Talents: ${formatTalentsForPrompt((character?.talents || []).slice(0, 12))}
 Inv: ${inventory} | Money: ${moneyDisplay} | Status: ${statuses}
 ${critBlock}${needsBlock}
 Loc: ${currentLoc}
@@ -307,7 +299,7 @@ Quests:\n${activeQuests}
 ${factionLines ? `Factions: ${factionLines}\n` : ''}
 History:\n${sceneHistory}
 
-Rules (short): d100, target = characteristic + skill advances + talentBonus; SL = (target−roll)/10 toward 0; 01–04 crit success, 96–00 crit fail; failed roll = failed action in fiction. Fortune/Fate/Resolve as usual. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "characteristic" (ws/bs/s/t/i/ag/dex/int/wp/fel), "characteristicValue" (raw stat), and "skillAdvances" (advances, 0 if untrained). Check the character's Talents for [+X] bonuses — if a talent matches the characteristic or skill, include "applicableTalent" and "talentBonus" in diceRoll. For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to Fel unless a more specific WFRP skill clearly implies another characteristic. Never invent non-WFRP stats such as "charisma". If you cannot determine a valid WFRP characteristic, set diceRoll to null.
+Rules (short): d50 system. Roll d50, total = roll + attribute + skill + bonuses vs threshold. Margin = total - threshold; margin >= 0 = success. Roll 1 = critical success, roll 50 = critical failure. Attributes: sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie (1-25). Skills level 0-25. XP +20–50 sometimes. Money: GC/SS/CP (1GC=10SS=100CP). combatUpdate in stateChanges when a fight starts. EVERY diceRoll MUST include "attribute" (sila/inteligencja/charyzma/zrecznosc/wytrzymalosc/szczescie), "attributeValue" (raw stat 1-25), and "skillLevel" (level, 0 if untrained). For speech, persuasion, bargaining, bluffing, charming, greeting, and asking questions, default to charyzma. If you cannot determine a valid RPGon attribute, set diceRoll to null.
 Feasibility: impossible actions (target not present, physically impossible) = auto-fail, diceRoll=null. Trivial actions (walking, sitting, picking up nearby object) = auto-succeed, diceRoll=null. Only roll for uncertain outcomes. Only suggest actions involving NPCs/features present at current location.
 NPC disposition modifiers for social/trade/persuasion tests: >=30:+15, >=15:+10, >=5:+5, neutral:0, <=-5:-5, <=-15:-10, <=-30:-15. Include "dispositionBonus" in diceRoll when applicable.
 

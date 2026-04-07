@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
-import { translateSkill } from '../../utils/wfrpTranslate';
+import { translateSkill } from '../../utils/rpgTranslate';
 import { parseActionSegments } from '../../services/actionParser';
 import { splitTextForHighlight } from '../../services/elevenlabs';
 import Tooltip from '../ui/Tooltip';

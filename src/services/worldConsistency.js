@@ -1,4 +1,4 @@
-import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/rpgFactions';
 
 const FACTION_DISPOSITION_FACTOR = 0.3;
 const FACTION_CHANGE_THRESHOLD = 15;

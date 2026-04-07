@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { NODE_COLORS } from '../../../services/gmDataTransformer';
-import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
 
 export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelectNode }) {
   const { t } = useTranslation();
@@ -88,8 +88,8 @@ function NpcDetail({ data, isPC, t }) {
   return (
     <div className="space-y-2 text-[11px] text-on-surface-variant">
       {isPC && data.species && <Field label={t('gmModal.detail.species')} value={data.species} />}
-      {isPC && data.career && (
-        <Field label={t('gmModal.detail.career')} value={`${data.career.name} (${t('gmModal.detail.tier')} ${data.career.tier})`} />
+      {isPC && data.mana && (
+        <Field label="Mana" value={`${data.mana.current}/${data.mana.max}`} />
       )}
       {data.role && <Field label={t('gmModal.detail.role')} value={data.role} />}
       {data.personality && <Field label={t('gmModal.detail.personality')} value={data.personality} />}

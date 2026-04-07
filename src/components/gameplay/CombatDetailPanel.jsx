@@ -97,12 +97,6 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
       </div>
 
       <div className="flex items-center gap-3 text-[10px]">
-        {combatant.advantage > 0 && (
-          <div className="flex items-center gap-1">
-            <span className="text-on-surface-variant">{t('combat.advantage', 'Adv')}</span>
-            <span className="text-primary font-bold">+{combatant.advantage}</span>
-          </div>
-        )}
         {combatant.position != null && (
           <div className="flex items-center gap-1">
             <span className="text-on-surface-variant">{t('combat.position', 'Pos')}</span>
@@ -123,18 +117,6 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
         <div className="flex flex-wrap gap-1">
           {activeConditions.map((cond, i) => (
             <ConditionBadge key={`${cond}_${i}`} condition={cond} />
-          ))}
-        </div>
-      )}
-
-      {combatant.criticalWounds?.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] text-tertiary font-bold uppercase tracking-wider">{t('combat.criticalWounds', 'Criticals')}</div>
-          {combatant.criticalWounds.map((cw, i) => (
-            <div key={`crit_${i}`} className="text-[10px] text-on-surface-variant leading-snug pl-2 border-l-2 border-tertiary/30">
-              {cw.name || t('combat.criticalWound', 'Critical wound')}
-              {cw.effect && <span className="text-outline-variant"> — {cw.effect}</span>}
-            </div>
           ))}
         </div>
       )}

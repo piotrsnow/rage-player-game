@@ -30,7 +30,7 @@ import QuestOffersPanel from './QuestOffersPanel';
 import GMModal from './gm/GMModal';
 import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
 import { useModals } from '../../contexts/ModalContext';
-import { translateCareer } from '../../utils/wfrpTranslate';
+import { translateAttribute } from '../../utils/rpgTranslate';
 import { createMultiplayerCombatState } from '../../services/combatEngine';
 import { useAutoPlayer } from '../../hooks/useAutoPlayer';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
@@ -1200,7 +1200,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     if (!IDLE_WORLD_EVENTS_ENABLED) return;
     if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
     consecutiveIdleEventsRef.current += 1;
-    generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
+    generateScene(`[IDLE_WORLD_EVENT: d50=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
   }, [IDLE_WORLD_EVENTS_ENABLED, generateScene]);
 
   const idlePaused = isMultiplayer
@@ -1227,7 +1227,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     dispatch({ type: 'END_COMBAT' });
 
     const combatJournal = summary.playerSurvived
-      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}`
+      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`
       : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
 
     const stateChanges = {
@@ -1235,13 +1235,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     };
     if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
     if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
 
-    if (!summary.playerSurvived && character) {
-      const critCount = (character.criticalWoundCount || 0) + 1;
-      if (critCount >= 3 && (character.fate || 0) <= 0) {
-        stateChanges.forceStatus = 'dead';
-      }
+    if (!summary.playerSurvived) {
+      stateChanges.forceStatus = 'dead';
     }
 
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
@@ -1269,8 +1265,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
 
     const combatActionText = summary.playerSurvived
-      ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
-      : `[Combat resolved: the player LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They were reduced to 0 wounds and did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss.${summary.woundsChange ? ` The player took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` The player suffered ${summary.criticalWounds.length} critical wound(s).` : ''} Narrate ONLY the defeat aftermath: capture, rescue, being left for dead, waking up wounded, losing gear, or enemies taking control. NEVER describe this as a victory, clean escape, or total enemy defeat.]`;
+      ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}]`
+      : `[Combat resolved: the player LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They were reduced to 0 wounds and did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss.${summary.woundsChange ? ` The player took ${Math.abs(summary.woundsChange)} wounds.` : ''} Narrate ONLY the defeat aftermath: capture, rescue, being left for dead, waking up wounded, losing gear, or enemies taking control. NEVER describe this as a victory, clean escape, or total enemy defeat.]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -1286,7 +1282,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     };
     if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
     if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
 
     const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
@@ -1303,7 +1298,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     });
     setTimeout(() => autoSave(), 300);
 
-    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
+    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -1319,7 +1314,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     };
     if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
     if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
     dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
 
     const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
@@ -1336,7 +1330,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     });
     setTimeout(() => autoSave(), 300);
 
-    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
+    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
 
     generateScene(combatActionText, false, false).catch(() => {});
   };
@@ -1382,7 +1376,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       perCharForServer[name] = {
         wounds: data.wounds || 0,
         xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
+        manaChange: data.manaChange || 0,
       };
     }
 
@@ -1414,7 +1408,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       perCharForServer[name] = {
         wounds: data.wounds || 0,
         xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
+        manaChange: data.manaChange || 0,
       };
     }
 
@@ -1442,7 +1436,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       perCharForServer[name] = {
         wounds: data.wounds || 0,
         xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
+        manaChange: data.manaChange || 0,
       };
     }
 
@@ -1730,7 +1724,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               ) : displayCharacter ? (
                 <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
                   <span>{displayCharacter.name}</span>
-                  <span>{translateCareer(displayCharacter.career?.name, t)}</span>
+                  <span>{t(`species.${displayCharacter.species}`, { defaultValue: displayCharacter.species })}</span>
                   {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
                 </div>
               ) : null}
@@ -2010,22 +2004,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {displayCharacter && (
           <div className="lg:hidden space-y-3 px-2">
-            {(() => {
-              const fate = displayCharacter.fate ?? 0;
-              const resilience = displayCharacter.resilience ?? 0;
-              const fortune = displayCharacter.fortune ?? fate;
-              const resolve = displayCharacter.resolve ?? resilience;
-
-              return (
-                <div className="grid grid-cols-2 gap-4">
-                  <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
-                  <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant uppercase tracking-widest">
-                    <span>{t('common.fortune')} {fortune}/{fate}</span>
-                    <span>{t('common.resolve')} {resolve}/{resilience}</span>
-                  </div>
-                </div>
-              );
-            })()}
+            <div className="grid grid-cols-2 gap-4">
+              <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
+              {displayCharacter.mana && (
+                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="tertiary" />
+              )}
+            </div>
           </div>
         )}
 
@@ -2131,16 +2115,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <MagicPanel
               character={character}
               combat={state.combat}
-              dispatch={dispatch}
               onCastSpell={(result) => {
-                const spellName = t(`magic.spellData.${result.spell?.name}.name`, '') || result.spell?.name || t('magic.spells');
+                const spellName = result.spellName || result.spell?.name || t('magic.spells');
                 let content;
                 if (result.success) {
-                  content = t('magic.chatCastSuccess', { spell: spellName, sl: result.totalSL || result.sl });
-                } else if (result.miscast) {
-                  content = t('magic.chatCastFailMiscast', { spell: spellName });
+                  content = t('magic.chatCastSuccess', { spell: spellName, defaultValue: `Rzucono ${spellName}` });
                 } else {
-                  content = t('magic.chatCastFail', { spell: spellName });
+                  content = result.error || t('magic.chatCastFail', { spell: spellName, defaultValue: `Nie udalo sie rzucic ${spellName}` });
                 }
                 dispatch({
                   type: 'ADD_CHAT_MESSAGE',

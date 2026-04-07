@@ -9,7 +9,7 @@ import resolveEffects from '../../effects/resolveEffects';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneCanvas from './SceneCanvas';
 import FieldMapCanvas from './FieldMapCanvas';
-import { translateSkill } from '../../utils/wfrpTranslate';
+import { translateSkill } from '../../utils/rpgTranslate';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 const NEW_IMAGE_DELAY_MS = 1000;
@@ -17,7 +17,6 @@ const NEW_IMAGE_DELAY_MS = 1000;
 function CompactBonusTags({ dr, t, className = '' }) {
   const hasTags = (dr.characteristic && dr.characteristicValue != null)
     || dr.skillAdvances > 0
-    || (dr.talentBonus > 0 && dr.applicableTalent)
     || dr.creativityBonus > 0
     || (dr.difficultyModifier != null && dr.difficultyModifier !== 0)
     || (dr.momentumBonus != null && dr.momentumBonus !== 0)
@@ -33,11 +32,6 @@ function CompactBonusTags({ dr, t, className = '' }) {
       {dr.skillAdvances > 0 && (
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-400/15 text-emerald-300 border border-emerald-400/30">
           {translateSkill(dr.skill, t)} +{dr.skillAdvances}
-        </span>
-      )}
-      {dr.talentBonus > 0 && dr.applicableTalent && (
-        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-400/15 text-yellow-300 border border-yellow-400/30">
-          {t('gameplay.talentBonus', { talent: dr.applicableTalent, bonus: '+' + dr.talentBonus })}
         </span>
       )}
       {dr.creativityBonus > 0 && (
@@ -98,13 +92,6 @@ function OverlayModifierList({ dr, t, outcomeTint = false }) {
       key: 'skill',
       label: `${translateSkill(dr.skill, t)} +${dr.skillAdvances}`,
       className: tintClass || 'bg-emerald-400/15 text-emerald-300 border-emerald-400/30',
-    });
-  }
-  if (dr.talentBonus > 0 && dr.applicableTalent) {
-    modifiers.push({
-      key: 'talent',
-      label: t('gameplay.talentBonus', { talent: dr.applicableTalent, bonus: '+' + dr.talentBonus }),
-      className: tintClass || 'bg-yellow-400/15 text-yellow-300 border-yellow-400/30',
     });
   }
   if (dr.creativityBonus > 0) {

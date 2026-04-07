@@ -9,7 +9,7 @@ import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
-import { translateCareer, translateTierName } from '../../utils/wfrpTranslate';
+import { translateAttribute } from '../../utils/rpgTranslate';
 
 export default function Sidebar() {
   const location = useLocation();
@@ -27,10 +27,7 @@ export default function Sidebar() {
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
     : state.character;
-  const fate = character?.fate ?? 0;
-  const resilience = character?.resilience ?? 0;
-  const fortune = character?.fortune ?? fate;
-  const resolve = character?.resolve ?? resilience;
+  const mana = character?.mana || { current: 0, max: 0 };
   const timeState = isMultiplayer
     ? mp.state.gameState?.world?.timeState
     : state.world?.timeState;
@@ -132,16 +129,15 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
             <div className="min-w-0">
               <div className="font-headline text-tertiary text-sm font-bold truncate">{character.name}</div>
               <div className="text-[10px] text-on-surface-variant uppercase tracking-widest truncate">
-                {translateCareer(character.career?.name, t)} · {translateTierName(character.career?.tierName, t)}
+                {t(`species.${character.species}`, { defaultValue: character.species })}
               </div>
             </div>
           </div>
           <div className="space-y-3">
             <StatusBar label={t('common.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
-            <div className="flex justify-between text-[10px] uppercase tracking-widest text-on-surface-variant mt-2">
-              <span>{t('common.fortune')} {fortune}/{fate}</span>
-              <span>{t('common.resolve')} {resolve}/{resilience}</span>
-            </div>
+            {mana.max > 0 && (
+              <StatusBar label="Mana" current={mana.current} max={mana.max} color="tertiary" />
+            )}
           </div>
           <div className="mt-4">
             <NeedsPanel

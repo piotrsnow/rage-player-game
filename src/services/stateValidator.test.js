@@ -1,19 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('../data/wfrp', () => ({
-  SKILLS: { basic: [], advanced: [] },
-  TALENTS: [],
-  getAdvancementCost: () => 25,
-  ADVANCEMENT_COSTS: {},
-  isCharacteristicInCareer: () => false,
-  isSkillInCareer: () => false,
-  isTalentInCareer: () => false,
-  getCareerByName: () => null,
-  canAdvanceTier: () => false,
-}));
-
 import { validateStateChanges, validateMultiplayerStateChanges } from './stateValidator.js';
-import { calculateSL } from './gameState.js';
+import { calculateNextMomentum } from './mechanics/momentumTracker.js';
 
 const baseCharacter = {
   wounds: 10,
@@ -141,33 +129,6 @@ describe('validateStateChanges', () => {
   });
 });
 
-describe('calculateSL — clamping to +-10', () => {
-  it('returns 0 for exact target match', () => {
-    expect(calculateSL(50, 50)).toBe(0);
-  });
-
-  it('returns positive SL for success', () => {
-    expect(calculateSL(10, 50)).toBe(4);
-  });
-
-  it('returns negative SL for failure', () => {
-    expect(calculateSL(80, 50)).toBe(-3);
-  });
-
-  it('clamps extremely high SL to +10', () => {
-    expect(calculateSL(1, 150)).toBe(10);
-  });
-
-  it('clamps extremely low SL to -10', () => {
-    expect(calculateSL(100, 0)).toBe(-10);
-  });
-
-  it('does not clamp SL within normal range', () => {
-    expect(calculateSL(20, 80)).toBe(6);
-    expect(calculateSL(90, 30)).toBe(-6);
-  });
-});
-
 describe('NPC disposition delta validation', () => {
   it('clamps positive disposition delta to +10', () => {
     const { validated, corrections } = validateStateChanges(
@@ -256,71 +217,43 @@ describe('item rarity warnings', () => {
   });
 });
 
-function calcMomentum(sl) {
-  const raw = sl > 0 ? sl * 5 + 5 : sl < 0 ? sl * 5 - 5 : 0;
-  return Math.max(-45, Math.min(45, raw));
-}
-
-describe('momentum capping', () => {
-  it('momentum formula sl*5+5 / sl*5-5 with offset from zero', () => {
-    const sl8 = calculateSL(1, 85);
-    expect(sl8).toBe(8);
-    expect(calcMomentum(sl8)).toBe(45);
-
-    const slNeg8 = calculateSL(95, 10);
-    expect(slNeg8).toBe(-8);
-    expect(calcMomentum(slNeg8)).toBe(-45);
-
-    expect(calcMomentum(0)).toBe(0);
+describe('momentum (margin-based, range ±10)', () => {
+  it('returns 0 momentum on zero margin (decays toward 0)', () => {
+    expect(calculateNextMomentum(0, 0)).toBe(0);
   });
 
-  it('extreme SL values produce capped momentum', () => {
-    const sl10 = calculateSL(1, 120);
-    expect(sl10).toBe(10);
-    expect(calcMomentum(sl10)).toBe(45);
-
-    const slNeg10 = calculateSL(100, 0);
-    expect(slNeg10).toBe(-10);
-    expect(calcMomentum(slNeg10)).toBe(-45);
+  it('pushes momentum positive on success (positive margin)', () => {
+    const next = calculateNextMomentum(0, 10);
+    expect(next).toBeGreaterThan(0);
+    expect(next).toBeLessThanOrEqual(10);
   });
 
-  it('moderate SL values apply +5/-5 offset', () => {
-    expect(calcMomentum(2)).toBe(15);   // 2*5+5
-    expect(calcMomentum(-2)).toBe(-15);  // -2*5-5
-    expect(calcMomentum(1)).toBe(10);   // 1*5+5
-    expect(calcMomentum(-1)).toBe(-10);  // -1*5-5
-  });
-});
-
-describe('combined bonus capping', () => {
-  it('caps total bonus at +30', () => {
-    const creativity = 25;
-    const momentum = 20;
-    const disposition = 15;
-    const totalBonus = creativity + momentum + disposition;
-    const cappedBonus = Math.min(totalBonus, 30);
-    expect(cappedBonus).toBe(30);
+  it('pushes momentum negative on failure (negative margin)', () => {
+    const next = calculateNextMomentum(0, -10);
+    expect(next).toBeLessThan(0);
+    expect(next).toBeGreaterThanOrEqual(-10);
   });
 
-  it('does not cap bonus within limit', () => {
-    const creativity = 10;
-    const momentum = 10;
-    const disposition = 5;
-    const totalBonus = creativity + momentum + disposition;
-    const cappedBonus = Math.min(totalBonus, 30);
-    expect(cappedBonus).toBe(25);
+  it('clamps momentum to +10 max', () => {
+    const next = calculateNextMomentum(8, 100);
+    expect(next).toBeLessThanOrEqual(10);
   });
 
-  it('correctly recalculates effective target with capped bonus', () => {
-    const baseTarget = 35;
-    const creativity = 25;
-    const momentum = 20;
-    const disposition = 15;
-    const totalBonus = creativity + momentum + disposition;
-    const cappedBonus = Math.min(totalBonus, 30);
-    const effectiveTarget = baseTarget + cappedBonus;
-    expect(effectiveTarget).toBe(65);
-    expect(effectiveTarget).toBeLessThan(baseTarget + totalBonus);
+  it('clamps momentum to -10 min', () => {
+    const next = calculateNextMomentum(-8, -100);
+    expect(next).toBeGreaterThanOrEqual(-10);
+  });
+
+  it('decays positive momentum toward 0 on neutral margin', () => {
+    const next = calculateNextMomentum(5, 0);
+    expect(next).toBeLessThan(5);
+    expect(next).toBeGreaterThanOrEqual(0);
+  });
+
+  it('decays negative momentum toward 0 on neutral margin', () => {
+    const next = calculateNextMomentum(-5, 0);
+    expect(next).toBeGreaterThan(-5);
+    expect(next).toBeLessThanOrEqual(0);
   });
 });
 

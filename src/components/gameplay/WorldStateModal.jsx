@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import MapCanvas from './MapCanvas';
 import CustomSelect from '../ui/CustomSelect';
-import { FACTION_DEFINITIONS, getReputationTierData } from '../../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../data/rpgFactions';
 
 const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
 const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };

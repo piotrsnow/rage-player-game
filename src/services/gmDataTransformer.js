@@ -1,4 +1,4 @@
-import { FACTION_DEFINITIONS } from '../data/wfrpFactions';
+import { FACTION_DEFINITIONS } from '../data/rpgFactions';
 
 export function buildGraphData(gameState) {
   const nodes = [];

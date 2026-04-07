@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
 
 const ENTITY_FILTERS = ['all', 'npcs', 'locations', 'factions'];
 

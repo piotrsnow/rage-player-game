@@ -1,25 +1,15 @@
 import { createContext, useContext, useReducer, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../services/storage';
-import { calculateWounds, normalizeMoney } from '../services/gameState';
+import { calculateMaxWounds, normalizeMoney } from '../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../services/characterAge';
 import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 import { reduceMultiplayerSlice } from './slices/multiplayerSlice';
-import {
-  getAdvancementCost,
-  ADVANCEMENT_COSTS,
-  isCharacteristicInCareer,
-  isSkillInCareer,
-  isTalentInCareer,
-  getCareerByName,
-  canAdvanceTier,
-} from '../data/wfrp';
+import { SKILL_CAPS, createStartingSkills } from '../data/rpgSystem';
 
 const GameContext = (import.meta.hot?.data?.GameContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.GameContext = GameContext;
-const FORTUNE_REGEN_MS = 24 * 60 * 60 * 1000;
-const RESOLVE_REGEN_MS = 48 * 60 * 60 * 1000;
 
 function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -42,88 +32,39 @@ function normalizeCustomAttackPresets(presets) {
 const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 
 function createDefaultCharacter() {
+  const attributes = { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 };
   return {
     name: 'Adventurer',
     age: DEFAULT_CHARACTER_AGE,
     species: 'Human',
-    career: {
-      class: 'Warriors',
-      name: 'Soldier',
-      tier: 1,
-      tierName: 'Recruit',
-      status: 'Silver 1',
-    },
-    xp: 0,
-    xpSpent: 0,
-    characteristics: {
-      ws: 31, bs: 25, s: 34, t: 28,
-      i: 30, ag: 33, dex: 27, int: 35,
-      wp: 29, fel: 32,
-    },
-    advances: {
-      ws: 0, bs: 0, s: 0, t: 0,
-      i: 0, ag: 0, dex: 0, int: 0,
-      wp: 0, fel: 0,
-    },
-    wounds: 12,
-    maxWounds: 12,
+    attributes,
+    mana: { current: 0, max: 0 },
+    wounds: calculateMaxWounds(attributes.wytrzymalosc),
+    maxWounds: calculateMaxWounds(attributes.wytrzymalosc),
     movement: 4,
-    fate: 2,
-    fortune: 2,
-    resilience: 1,
-    resolve: 1,
-    skills: {},
-    talents: [],
+    skills: createStartingSkills('Human'),
+    spells: { known: [], usageCounts: {}, scrolls: [] },
     inventory: [],
     statuses: [],
     backstory: '',
     customAttackPresets: [],
     equippedWeapon: '',
     needs: createDefaultNeeds(),
-    criticalWounds: [],
+    xp: 0,
+    xpSpent: 0,
+    lastTrainingScene: -SKILL_CAPS.basic, // allow training immediately
   };
 }
 
-function normalizeCharacterMetaCurrencies(character) {
+function normalizeCharacter(character) {
   if (!character) return character;
-
-  const fate = Math.max(0, Number(character.fate ?? 0));
-  const resilience = Math.max(0, Number(character.resilience ?? 0));
-  const fortuneFallback = character.fortune == null ? fate : Number(character.fortune);
-  const resolveFallback = character.resolve == null ? resilience : Number(character.resolve);
-
-  const fortune = Number.isFinite(fortuneFallback)
-    ? Math.max(0, Math.min(fate, fortuneFallback))
-    : fate;
-  const resolve = Number.isFinite(resolveFallback)
-    ? Math.max(0, Math.min(resilience, resolveFallback))
-    : resilience;
-
   return {
     ...character,
     age: normalizeCharacterAge(character.age),
-    fate,
-    resilience,
-    fortune,
-    resolve,
-  };
-}
-
-function applyOfflineMetaCurrencyRegen(character, lastSavedAt) {
-  const normalized = normalizeCharacterMetaCurrencies(character);
-  if (!normalized || !lastSavedAt) return normalized;
-
-  const elapsedMs = Math.max(0, Date.now() - Number(lastSavedAt || 0));
-  if (!elapsedMs) return normalized;
-
-  const fortuneTicks = Math.floor(elapsedMs / FORTUNE_REGEN_MS);
-  const resolveTicks = Math.floor(elapsedMs / RESOLVE_REGEN_MS);
-  if (!fortuneTicks && !resolveTicks) return normalized;
-
-  return {
-    ...normalized,
-    fortune: Math.min(normalized.fate, normalized.fortune + fortuneTicks),
-    resolve: Math.min(normalized.resilience, normalized.resolve + resolveTicks),
+    // Ensure new system fields exist on loaded characters
+    attributes: character.attributes || { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
+    mana: character.mana || { current: 0, max: 0 },
+    spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
   };
 }
 
@@ -209,7 +150,7 @@ const initialState = {
   dialogue: null,
   dialogueCooldown: 0,
   achievements: createDefaultAchievementState(),
-  magic: { storedWindPoints: 0, activeSpells: [], knownSpells: [] },
+  magic: { activeSpells: [] },
   narrationTime: 0,
   totalPlayTime: 0,
 };
@@ -222,7 +163,7 @@ function gameReducer(state, action) {
   switch (action.type) {
     case 'START_CAMPAIGN': {
       const rawChar = action.payload.character || createDefaultCharacter();
-      const char = normalizeCharacterMetaCurrencies(rawChar);
+      const char = normalizeCharacter(rawChar);
       const campaignData = {
         ...action.payload.campaign,
         status: 'active',
@@ -259,14 +200,13 @@ function gameReducer(state, action) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
       }
       if (loaded.character) {
-        const normalizedCharacter = {
+        loaded.character = normalizeCharacter({
           ...loaded.character,
           customAttackPresets: normalizeCustomAttackPresets(loaded.character.customAttackPresets),
-        };
-        loaded.character = applyOfflineMetaCurrencyRegen(normalizedCharacter, action.payload?.lastSaved);
+        });
       }
       if (!loaded.achievements) loaded.achievements = createDefaultAchievementState();
-      if (!loaded.magic) loaded.magic = { storedWindPoints: 0, activeSpells: [], knownSpells: [] };
+      if (!loaded.magic) loaded.magic = { activeSpells: [] };
       if (loaded.narrationTime == null) loaded.narrationTime = 0;
       if (loaded.totalPlayTime == null) loaded.totalPlayTime = 0;
       if (!loaded.dialogue) loaded.dialogue = null;
@@ -326,11 +266,15 @@ function gameReducer(state, action) {
             });
           }
           if (scene.diceRoll) {
+            const dr = scene.diceRoll;
+            const label = dr.margin !== undefined
+              ? `${dr.skill || '?'}: ${dr.total ?? dr.roll} vs ${dr.threshold ?? dr.target ?? dr.dc} (margines ${dr.margin ?? 0})`
+              : `${dr.skill || '?'}: ${dr.roll} / ${dr.target || dr.dc} (SL ${dr.sl ?? 0})`;
             reconstructed.push({
               id: `msg_reconstructed_${scene.id}_roll`,
               role: 'system',
               subtype: 'dice_roll',
-              content: `${scene.diceRoll.skill}: ${scene.diceRoll.roll} / ${scene.diceRoll.target || scene.diceRoll.dc} (SL ${scene.diceRoll.sl ?? 0})`,
+              content: label,
               diceData: scene.diceRoll,
               timestamp: ts - 1,
             });
@@ -475,136 +419,23 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'SPEND_FORTUNE': {
-      if (state.character.fortune <= 0) return state;
-      return {
-        ...state,
-        character: { ...state.character, fortune: state.character.fortune - 1 },
-      };
-    }
-
-    case 'SPEND_RESOLVE': {
-      if (state.character.resolve <= 0) return state;
-      return {
-        ...state,
-        character: { ...state.character, resolve: state.character.resolve - 1 },
-      };
-    }
-
-
-    case 'SPEND_XP_CHARACTERISTIC': {
-      const { key } = action.payload;
+    case 'TRAIN_SKILL': {
+      const { skillName, sceneCount } = action.payload;
       const char = state.character;
       if (!char) return state;
-      const currentAdv = char.advances?.[key] || 0;
-      const inCareer = isCharacteristicInCareer(key, char.career?.name, char.career?.tier);
-      const cost = getAdvancementCost(currentAdv, inCareer);
-      const available = (char.xp || 0) - (char.xpSpent || 0);
-      if (cost > available) return state;
-
-      const newAdvances = { ...char.advances, [key]: currentAdv + 1 };
-      const newChars = { ...char.characteristics, [key]: (char.characteristics[key] || 0) + 1 };
-      const newMaxWounds = calculateWounds(newChars);
+      const skill = char.skills?.[skillName];
+      if (!skill) return state;
+      const scenesSinceTraining = sceneCount - (char.lastTrainingScene || 0);
+      if (scenesSinceTraining < 20) return state; // training cooldown
+      if (skill.cap >= SKILL_CAPS.max) return state;
       return {
         ...state,
         character: {
           ...char,
-          xpSpent: char.xpSpent + cost,
-          advances: newAdvances,
-          characteristics: newChars,
-          maxWounds: newMaxWounds,
-          wounds: Math.min(char.wounds, newMaxWounds),
-        },
-      };
-    }
-
-    case 'SPEND_XP_SKILL': {
-      const { skill } = action.payload;
-      const char = state.character;
-      if (!char) return state;
-      const currentAdv = char.skills?.[skill] || 0;
-      const inCareer = isSkillInCareer(skill, char.career?.name, char.career?.tier);
-      const cost = getAdvancementCost(currentAdv, inCareer);
-      const available = (char.xp || 0) - (char.xpSpent || 0);
-      if (cost > available) return state;
-
-      return {
-        ...state,
-        character: {
-          ...char,
-          xpSpent: char.xpSpent + cost,
-          skills: { ...char.skills, [skill]: currentAdv + 1 },
-        },
-      };
-    }
-
-    case 'SPEND_XP_TALENT': {
-      const { talent } = action.payload;
-      const char = state.character;
-      if (!char) return state;
-      if (char.talents?.includes(talent)) return state;
-      const inCareer = isTalentInCareer(talent, char.career?.name, char.career?.tier);
-      const cost = inCareer ? ADVANCEMENT_COSTS.talentInCareer : ADVANCEMENT_COSTS.talentOutOfCareer;
-      const available = (char.xp || 0) - (char.xpSpent || 0);
-      if (cost > available) return state;
-
-      return {
-        ...state,
-        character: {
-          ...char,
-          xpSpent: char.xpSpent + cost,
-          talents: [...(char.talents || []), talent],
-        },
-      };
-    }
-
-    case 'CHANGE_CAREER': {
-      const { careerName } = action.payload;
-      const char = state.character;
-      if (!char) return state;
-      const newCareer = getCareerByName(careerName);
-      if (!newCareer) return state;
-      const sameClass = newCareer.class === char.career?.class;
-      const cost = sameClass
-        ? ADVANCEMENT_COSTS.careerChangeSameClass
-        : ADVANCEMENT_COSTS.careerChangeDifferentClass;
-      const available = (char.xp || 0) - (char.xpSpent || 0);
-      if (cost > available) return state;
-
-      const tierData = newCareer.tiers[0];
-      return {
-        ...state,
-        character: {
-          ...char,
-          xpSpent: char.xpSpent + cost,
-          career: {
-            class: newCareer.class,
-            name: newCareer.name,
-            tier: 1,
-            tierName: tierData?.name || newCareer.name,
-            status: tierData?.status || 'Silver 1',
-          },
-        },
-      };
-    }
-
-    case 'ADVANCE_CAREER_TIER': {
-      const char = state.character;
-      if (!char || !canAdvanceTier(char)) return state;
-      const career = getCareerByName(char.career?.name);
-      if (!career) return state;
-      const nextTier = (char.career?.tier || 1) + 1;
-      if (nextTier > 4) return state;
-      const tierData = career.tiers[nextTier - 1];
-      return {
-        ...state,
-        character: {
-          ...char,
-          career: {
-            ...char.career,
-            tier: nextTier,
-            tierName: tierData?.name || char.career.tierName,
-            status: tierData?.status || char.career.status,
+          lastTrainingScene: sceneCount,
+          skills: {
+            ...char.skills,
+            [skillName]: { ...skill, cap: Math.min(SKILL_CAPS.max, skill.cap + 1) },
           },
         },
       };
@@ -705,25 +536,12 @@ function gameReducer(state, action) {
           const newWounds = Math.max(0, Math.min(next.character.maxWounds, next.character.wounds + changes.woundsChange));
           next.character.wounds = newWounds;
 
-          // Critical wounds & death mechanics
           if (newWounds === 0 && changes.woundsChange < 0) {
-            const currentCritCount = next.character.criticalWoundCount || 0;
-            next.character.criticalWoundCount = currentCritCount + 1;
-
-            if (next.character.criticalWoundCount >= 3) {
-              if (next.character.fate > 0) {
-                next.character.fate = next.character.fate - 1;
-                next.character.fortune = Math.min(next.character.fortune, next.character.fate);
-                next.character.criticalWoundCount = 2;
-                next.character.wounds = 1;
-              } else {
-                next.character.status = 'dead';
-              }
-            }
+            next.character.status = 'dead';
           }
         }
         if (changes.xp !== undefined) {
-          next.character.xp = next.character.xp + changes.xp;
+          next.character.xp = (next.character.xp || 0) + changes.xp;
         }
       }
 
@@ -732,66 +550,74 @@ function gameReducer(state, action) {
         next.character.status = changes.forceStatus;
       }
 
-      if (changes.fortuneChange !== undefined && next.character) {
-        next.character = { ...next.character };
-        next.character.fortune = Math.max(0, Math.min(next.character.fate, next.character.fortune + changes.fortuneChange));
+      if (changes.manaChange !== undefined && next.character) {
+        const mana = { ...(next.character.mana || { current: 0, max: 0 }) };
+        mana.current = Math.max(0, Math.min(mana.max, mana.current + changes.manaChange));
+        next.character = { ...next.character, mana };
       }
 
-      if (changes.resolveChange !== undefined && next.character) {
-        next.character = { ...next.character };
-        next.character.resolve = Math.max(0, Math.min(next.character.resilience, next.character.resolve + changes.resolveChange));
+      if (changes.manaMaxChange !== undefined && next.character) {
+        const mana = { ...(next.character.mana || { current: 0, max: 0 }) };
+        mana.max = Math.max(0, mana.max + changes.manaMaxChange);
+        next.character = { ...next.character, mana };
       }
 
-      if (changes.fateChange !== undefined && next.character) {
-        next.character = { ...next.character };
-        next.character.fate = Math.max(0, next.character.fate + changes.fateChange);
-        next.character.fortune = Math.min(next.character.fortune, next.character.fate);
-      }
-
-      if (changes.resilienceChange !== undefined && next.character) {
-        next.character = { ...next.character };
-        next.character.resilience = Math.max(0, next.character.resilience + changes.resilienceChange);
-        next.character.resolve = Math.min(next.character.resolve, next.character.resilience);
-      }
-
-      if (changes.careerAdvance && next.character) {
+      if (changes.attributeChanges && next.character) {
+        const attrs = { ...next.character.attributes };
+        for (const [key, amount] of Object.entries(changes.attributeChanges)) {
+          attrs[key] = Math.max(1, (attrs[key] || 0) + amount);
+        }
+        const newMaxWounds = calculateMaxWounds(attrs.wytrzymalosc);
         next.character = {
           ...next.character,
-          career: { ...next.character.career, ...changes.careerAdvance },
+          attributes: attrs,
+          maxWounds: newMaxWounds,
+          wounds: Math.min(next.character.wounds, newMaxWounds),
         };
       }
 
-      if (changes.skillAdvances && next.character) {
+      if (changes.skillProgress && next.character) {
         const skills = { ...next.character.skills };
-        for (const [skillName, advanceAmount] of Object.entries(changes.skillAdvances)) {
-          skills[skillName] = (skills[skillName] || 0) + advanceAmount;
+        for (const [skillName, progress] of Object.entries(changes.skillProgress)) {
+          const current = skills[skillName] || { level: 0, progress: 0, cap: SKILL_CAPS.basic };
+          const newProgress = current.progress + progress;
+          const threshold = (current.level + 1) * 3; // progress needed to level up
+          if (newProgress >= threshold && current.level < current.cap) {
+            skills[skillName] = { ...current, level: current.level + 1, progress: 0 };
+          } else {
+            skills[skillName] = { ...current, progress: Math.min(newProgress, threshold - 1) };
+          }
         }
         next.character = { ...next.character, skills };
       }
 
-      if (changes.newTalents?.length > 0 && next.character) {
-        const talents = [...next.character.talents];
-        for (const t of changes.newTalents) {
-          if (!talents.includes(t)) talents.push(t);
+      if (changes.spellUsage && next.character) {
+        const spells = { ...(next.character.spells || { known: [], usageCounts: {}, scrolls: [] }) };
+        const counts = { ...spells.usageCounts };
+        for (const [spellName, uses] of Object.entries(changes.spellUsage)) {
+          counts[spellName] = (counts[spellName] || 0) + uses;
         }
-        next.character = { ...next.character, talents };
+        next.character = { ...next.character, spells: { ...spells, usageCounts: counts } };
       }
 
-      if (changes.characteristicAdvances && next.character) {
-        const advances = { ...next.character.advances };
-        const chars = { ...next.character.characteristics };
-        for (const [key, amount] of Object.entries(changes.characteristicAdvances)) {
-          advances[key] = (advances[key] || 0) + amount;
-          chars[key] = (chars[key] || 0) + amount;
+      if (changes.learnSpell && next.character) {
+        const spells = { ...(next.character.spells || { known: [], usageCounts: {}, scrolls: [] }) };
+        if (!spells.known.includes(changes.learnSpell)) {
+          spells.known = [...spells.known, changes.learnSpell];
         }
-        const newMaxWounds = calculateWounds(chars);
-        next.character = {
-          ...next.character,
-          advances,
-          characteristics: chars,
-          maxWounds: newMaxWounds,
-          wounds: Math.min(next.character.wounds, newMaxWounds),
-        };
+        next.character = { ...next.character, spells };
+      }
+
+      if (changes.consumeScroll && next.character) {
+        const spells = { ...(next.character.spells || { known: [], usageCounts: {}, scrolls: [] }) };
+        spells.scrolls = spells.scrolls.filter((s) => s !== changes.consumeScroll);
+        next.character = { ...next.character, spells };
+      }
+
+      if (changes.addScroll && next.character) {
+        const spells = { ...(next.character.spells || { known: [], usageCounts: {}, scrolls: [] }) };
+        spells.scrolls = [...spells.scrolls, changes.addScroll];
+        next.character = { ...next.character, spells };
       }
 
       if (changes.newItems) {
@@ -1244,22 +1070,6 @@ function gameReducer(state, action) {
           }
         }
         next.world = { ...next.world, activeEffects: effects };
-      }
-
-      if (changes.criticalWounds && Array.isArray(changes.criticalWounds) && next.character) {
-        next.character = {
-          ...next.character,
-          criticalWounds: [...(next.character.criticalWounds || []), ...changes.criticalWounds],
-        };
-      }
-
-      if (changes.healCriticalWound && next.character) {
-        next.character = {
-          ...next.character,
-          criticalWounds: (next.character.criticalWounds || []).filter(
-            (cw) => cw.name !== changes.healCriticalWound
-          ),
-        };
       }
 
       if (changes.factionChanges && typeof changes.factionChanges === 'object') {

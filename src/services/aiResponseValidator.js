@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { CHARACTERISTIC_KEYS } from '../data/wfrp.js';
+import { ATTRIBUTE_KEYS } from '../data/rpgSystem.js';
 import { hasNamedSpeaker, isGenericSpeakerName } from './dialogueSegments.js';
 
-const CharacteristicKeySchema = z.enum(CHARACTERISTIC_KEYS);
+const AttributeKeySchema = z.enum(ATTRIBUTE_KEYS);
 
 const AtmosphereSchema = z.object({
   weather: z.string().optional().default('clear'),
@@ -21,21 +21,19 @@ const DialogueSegmentSchema = z.object({
 
 const DiceRollSchema = z.object({
   type: z.string().optional(),
-  roll: z.number().optional(),
-  target: z.number().optional(),
-  sl: z.number().optional(),
+  roll: z.number().optional(),         // d50 roll
+  total: z.number().optional(),        // roll + attribute + skill + momentum + creativity
+  threshold: z.number().optional(),    // difficulty threshold
+  margin: z.number().optional(),       // total - threshold (positive = success)
   skill: z.string().optional(),
   suggestedSkills: z.array(z.string()).optional().default([]),
-  characteristic: CharacteristicKeySchema.optional(),
-  characteristicValue: z.number().optional(),
-  skillAdvances: z.number().optional(),
+  attribute: AttributeKeySchema.optional(),
+  attributeValue: z.number().optional(),
+  skillLevel: z.number().optional(),
   success: z.boolean().optional(),
-  criticalSuccess: z.boolean().optional().default(false),
-  criticalFailure: z.boolean().optional().default(false),
-  difficultyModifier: z.number().min(-40).max(40).optional(),
-  dispositionBonus: z.number().optional(),
-  applicableTalent: z.string().nullable().optional(),
-  talentBonus: z.number().optional().default(0),
+  luckySuccess: z.boolean().optional().default(false), // auto-success from Szczescie
+  momentum: z.number().optional(),
+  creativityBonus: z.number().optional(),
 }).passthrough().nullable().optional();
 
 const NpcRelationshipSchema = z.object({
@@ -237,8 +235,14 @@ const StateChangesSchema = z.object({
   roadVariant: z.enum(ROAD_VARIANTS).optional(),
   woundsChange: z.number().optional(),
   xp: z.number().optional(),
-  fortuneChange: z.number().optional(),
-  resolveChange: z.number().optional(),
+  manaChange: z.number().optional(),
+  manaMaxChange: z.number().optional(),
+  attributeChanges: z.record(AttributeKeySchema, z.number()).nullable().optional(),
+  skillProgress: z.record(z.string(), z.number()).nullable().optional(),
+  spellUsage: z.record(z.string(), z.number()).nullable().optional(),
+  learnSpell: z.string().nullable().optional(),
+  consumeScroll: z.string().nullable().optional(),
+  addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
   newQuests: z.array(QuestSchema).optional().default([]),
@@ -247,9 +251,6 @@ const StateChangesSchema = z.object({
   worldFacts: z.array(z.string()).optional().default([]),
   journalEntries: z.array(z.string()).optional().default([]),
   statuses: z.any().nullable().optional(),
-  skillAdvances: z.any().nullable().optional(),
-  newTalents: z.array(z.string()).nullable().optional(),
-  careerAdvance: z.any().nullable().optional(),
   npcs: z.array(NpcChangeSchema).optional().default([]),
   mapChanges: z.array(z.any()).optional().default([]),
   timeAdvance: TimeAdvanceSchema,
@@ -319,12 +320,9 @@ export const SceneResponseSchema = z.object({
 const CharacterSuggestionSchema = z.object({
   name: z.string(),
   species: z.string().optional().default('Human'),
-  career: z.any().optional(),
-  characteristics: z.any().optional(),
+  attributes: z.any().optional(),
   skills: z.any().optional().default({}),
-  talents: z.array(z.string()).optional().default([]),
-  fate: z.number().optional().default(2),
-  resilience: z.number().optional().default(1),
+  mana: z.object({ current: z.number(), max: z.number() }).optional(),
   backstory: z.string().optional().default(''),
   inventory: z.array(z.union([InventoryItemSchema, z.string()])).optional().default([]),
   money: z.any().optional(),
@@ -376,9 +374,9 @@ export const ObjectiveVerificationSchema = z.object({
 
 export const SkillCheckInferenceSchema = z.union([
   z.object({
-    characteristic: z.enum(CHARACTERISTIC_KEYS),
+    attribute: z.enum(ATTRIBUTE_KEYS),
     skill: z.string().optional(),
-    difficultyModifier: z.number().min(-40).max(40).optional().default(0),
+    difficulty: z.enum(['easy', 'medium', 'hard', 'veryHard', 'extreme']).optional().default('medium'),
   }).passthrough(),
   z.object({ skip: z.literal(true) }).passthrough(),
 ]);

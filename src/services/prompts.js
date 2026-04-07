@@ -1,13 +1,13 @@
-import { getBonus, formatMoney } from './gameState';
+import { formatMoney } from './gameState.js';
 import { formatResolvedCheck } from './mechanics/index';
 import { gameData } from './gameDataService';
-import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
-import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
-import { formatMagicForPrompt } from '../data/wfrpMagic';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/rpgFactions';
+import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT, formatAttributesForPrompt, formatSkillsForPrompt, formatSystemRulesForPrompt } from '../data/rpgSystem';
+// formatMagicForPrompt available from rpgMagic if needed for spell tree overview
+import { formatMagicStatusForPrompt } from './magicEngine';
 import { formatWeatherForPrompt } from './weatherEngine';
 import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
-import { formatTalentsForPrompt } from '../data/wfrpTalents';
 import { calculateTensionScore, getTensionGuidance } from './tensionTracker';
 import {
   checkSeedResolution, formatSeedsForPrompt,
@@ -381,26 +381,11 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     ? activeEffects.map((e) => `- [${e.type}] ${e.description} (at ${e.location || 'unknown location'}${e.placedBy ? `, by ${e.placedBy}` : ''})`).join('\n')
     : 'No active effects.';
 
-  // WFRP character state
-  const chars = character?.characteristics || {};
-  const adv = character?.advances || {};
-  const charLines = ['WS', 'BS', 'S', 'T', 'I', 'Ag', 'Dex', 'Int', 'WP', 'Fel'].map((label, idx) => {
-    const key = ['ws', 'bs', 's', 't', 'i', 'ag', 'dex', 'int', 'wp', 'fel'][idx];
-    const val = chars[key] || 0;
-    const bonus = getBonus(val);
-    const advances = adv[key] || 0;
-    return `${label}: ${val} (Bonus ${bonus}${advances > 0 ? `, +${advances} advances` : ''})`;
-  }).join(', ');
-
-  const skillList = character?.skills && Object.keys(character.skills).length > 0
-    ? Object.entries(character.skills).map(([name, advances]) => `${name} +${advances}`).join(', ')
-    : 'None';
-
-  const talentList = formatTalentsForPrompt(character?.talents);
-
-  const careerInfo = character?.career
-    ? `${character.career.name} (${character.career.class}), Tier ${character.career.tier}: ${character.career.tierName}, Status: ${character.career.status}`
-    : 'Unknown';
+  // RPGon character state
+  const attrLine = formatAttributesForPrompt(character?.attributes || {});
+  const mana = character?.mana || { current: 0, max: 0 };
+  const skillList = formatSkillsForPrompt(character?.skills);
+  const magicStatus = formatMagicStatusForPrompt(character);
 
   const allScenes = gameState.scenes || [];
   const previousSuggestedActions = collectRecentSuggestedActions(allScenes, 3);
@@ -441,12 +426,14 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
       .join('\n') || 'No scenes yet - this is the beginning of the story.';
   }
 
-  return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under the Warhammer Fantasy Roleplay 4th Edition (WFRP 4e) rules system.
+  return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under a custom RPG system (RPGon).
+
+${formatSystemRulesForPrompt()}
 
 CAMPAIGN SETTINGS:
 - Genre: ${campaign?.genre || 'Fantasy'}
 - Tone: ${campaign?.tone || 'Epic'}
-- Play Style: ${campaign?.style || 'Hybrid'} (narrative + d100 skill tests)
+- Play Style: ${campaign?.style || 'Hybrid'} (narrative + d50 skill tests)
 - Difficulty: ${difficultyLabel}
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
@@ -498,20 +485,17 @@ ${campaign?.worldDescription || 'The Old World awaits — a grim and perilous re
 STORY HOOK:
 ${campaign?.hook || 'An adventure begins...'}
 
-CHARACTER STATE (WFRP 4e):
+CHARACTER STATE (RPGon):
 - Name: ${character?.name || 'Unknown'}, ${character?.species || 'Human'}
-- Career: ${careerInfo}
-- XP: ${character?.xp || 0} total, ${character?.xpSpent || 0} spent (${(character?.xp || 0) - (character?.xpSpent || 0)} available)
-- Characteristics: ${charLines}
+- Attributes (1-25): ${attrLine}
+- Mana: ${mana.current}/${mana.max}
 - Wounds: ${character?.wounds ?? 0}/${character?.maxWounds ?? 0}, Movement: ${character?.movement ?? 4}
-- Fate: ${character?.fate ?? 0}, Fortune: ${character?.fortune ?? 0}
-- Resilience: ${character?.resilience ?? 0}, Resolve: ${character?.resolve ?? 0}
 - Skills: ${skillList}
-- Talents: ${talentList}
+- Magic: ${magicStatus}
 - Inventory: ${inventory}
 - Money: ${moneyDisplay}
 - Statuses: ${statuses}
-${character?.criticalWounds?.length > 0 ? `\n${formatCriticalWoundsForPrompt(character.criticalWounds)}\nCRITICAL WOUND RULES: Active critical wounds impose penalties on the character's tests and movement. When narrating, reflect the character's injuries — limping, pain, restricted movement, bleeding. Critical wounds that require surgery can only be healed by a trained healer/surgeon. Bleeding wounds worsen over time without treatment. Include "healCriticalWound" in stateChanges (string: wound name) when a critical wound is successfully treated.\n` : ''}${(() => {
+${(() => {
   if (!needsSystemEnabled || !character?.needs) return '';
   const needsDefs = [
     { key: 'hunger', zeroLabel: null, critLabel: 'weak, dizzy, stomach pains' },
@@ -539,7 +523,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - At 0 for bladder: the character wets themselves — narrate the embarrassment and NPC reactions.
 - At 0 for rest: the character collapses/falls asleep involuntarily.
 - ALWAYS weave these critical need effects into the narrative — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
-- MECHANICAL PENALTIES: Apply -10 to related skill test targets for each critical need: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple critical needs stack.
+- MECHANICAL PENALTIES: Critical needs raise skill test difficulty. Hunger/thirst penalize physical tests (Sila, Zrecznosc, Wytrzymalosc), rest penalizes ALL tests, hygiene penalizes social tests (Charyzma). Multiple critical needs stack.
 - When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), you MUST use stateChanges.needsChanges to restore it. Never narrate eating/drinking/resting without updating the corresponding need.
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
@@ -548,26 +532,23 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
-WFRP 4e RULES FOR THE GM:
-- Dice rolls and skill checks are handled entirely by the game engine. DO NOT include a "diceRoll" field in your response. The user prompt will tell you the resolved outcome (success/failure/critical, SL) — narrate accordingly.
+RPGon RULES FOR THE GM:
+- Dice rolls and skill checks are handled entirely by the game engine. DO NOT include a "diceRoll" field in your response. The user prompt will tell you the resolved outcome (success/failure, margin, lucky success) — narrate accordingly.
 - When a skill check result is SUCCESS, the narrative MUST describe the action succeeding.
 - When a skill check result is FAILURE, the narrative MUST describe the action failing — the character does NOT succeed.
-- CRITICAL SUCCESS: narrate an exceptionally favorable outcome — extra benefits, impressive feats, bonus loot.
-- CRITICAL FAILURE: narrate a disastrous outcome — injury (woundsChange), broken equipment, angered NPCs, embarrassing mishaps.
-- SL magnitude: +3 or higher = impressive success, -3 or lower = severe failure. Scale narrative intensity with SL.
-- Fortune points can be spent to reroll or add +1 SL. Fate points cheat death. Resolve replenishes Resilience.
-- Wounds represent physical damage. At 0 Wounds, the character takes Critical Wounds.
+- LUCKY SUCCESS (Szczescie): The character's luck intervenes — narrate a fortunate twist or coincidence that turns the situation.
+- Wounds represent physical damage. At 0 Wounds, the character dies (unless rescued).
 - Award XP (typically 20-50 per scene) via stateChanges.xp for good roleplay, clever solutions, and combat.
-- When the character uses Fortune/Resolve, reflect it in stateChanges (fortuneChange/resolveChange as negative deltas).
-- Fortune resets to Fate value after a night's rest.
+- Mana is a rare resource. Include manaChange in stateChanges when spells are cast. Include manaMaxChange when magical stones are found.
+- Track spell usage via stateChanges.spellUsage ({"spellName": 1}) for progression in spell trees.
+- Track skill progress via stateChanges.skillProgress ({"skillName": 1-3}) for meaningful skill uses. Harder/riskier uses give more progress.
 
-GRADED SUCCESS & FAILURE (use SL to determine outcome severity — never purely binary):
-- CRITICAL SUCCESS (roll 01-04): Automatic success with spectacular bonus effects — extra loot, awed NPCs, lasting advantage. Award +1 to +3 bonus SL.
-- STRONG SUCCESS (SL +3 or higher): Clear, decisive success with potential bonus benefits.
-- MARGINAL SUCCESS (SL 0 to +2): SUCCESS AT A COST — the action succeeds, but with a complication: minor wound, lost item, time wasted, noise attracting attention, partial information, NPC annoyance, or an unintended side effect. The goal is achieved, but not cleanly.
-- MARGINAL FAILURE (SL -1 to -2): FAILURE WITH OPPORTUNITY — the action fails, but the character learns something useful, a new option opens, or they narrowly avoid the worst outcome. Still a real failure — no hidden success.
-- HARD FAILURE (SL -3 or worse): Significant consequences — wounds, broken items, reputation loss, faction alerts, enemy gains advantage, rumor spreads. Always include at least one stateChanges consequence.
-- CRITICAL FAILURE (roll 96-100): Catastrophic — lasting stateChanges consequences are MANDATORY (wound, item loss, faction change, NPC hostility, or new complication).
+GRADED SUCCESS & FAILURE (use margin to determine outcome severity — never purely binary):
+- LUCKY SUCCESS: Szczescie auto-success — describe a fortunate twist, improbable luck, or divine intervention.
+- GREAT SUCCESS (margin +15 or higher): Clear, decisive success with bonus benefits.
+- STANDARD SUCCESS (margin 0 to +14): SUCCESS — the action succeeds. Margin 0-5 may include a minor complication.
+- STANDARD FAILURE (margin -1 to -14): The action fails but without catastrophe. Character learns something or avoids the worst.
+- HARD FAILURE (margin -15 or worse): Significant consequences — wounds, broken items, reputation loss, faction alerts. Always include at least one stateChanges consequence.
 
 CONSEQUENCE SYSTEM (MANDATORY for risky actions, especially failures):
 Every risky action should generate at least one consequence from this list: reputation change (factionChanges), NPC disposition shift, time loss, resource loss, wound, rumor spread (worldFacts), price changes, quest complication, new enemy, or environmental change.
@@ -643,9 +624,9 @@ DIALOGUE RULE: Exactly 1 of the 3 suggestedActions MUST be a direct spoken line 
 POLISH LANGUAGE RULE (CRITICAL): Every suggestedAction MUST be written entirely in Polish. NEVER start an action with the English word "I" — use Polish first-person verbs directly: "Oglądam", "Pytam", "Mówię:", "Przeszukuję". NEVER use "I say:", "I tell", "I ask" — use "Mówię:", "Pytam:", "Krzyczę:" instead. Do NOT prefix actions with the Polish conjunction "I" (meaning "and") — start directly with the verb.` : ''}
 
 INSTRUCTIONS:
-1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
+1. Stay in character as a skilled, atmospheric Game Master running the RPGon system.
 2. Maintain narrative consistency with established world facts and events.
-3. In hybrid mode, suggest d100 skill tests for uncertain outcomes. State the skill, target number, and resolve with SL.
+3. In hybrid mode, skill tests are handled by the game engine (d50 system). The prompt provides resolved outcomes — narrate accordingly.
 4. Track consequences of player decisions across scenes.
 5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The Old World is grim and perilous.
 6. Always respond with valid JSON matching the requested format.
@@ -669,7 +650,7 @@ ACTION FEASIBILITY (MANDATORY):
 - EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified.
 - suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere. Each suggestion MUST stay in the player character's voice (see SUGGESTED ACTIONS above).
 
-CURRENCY SYSTEM (WFRP):
+CURRENCY SYSTEM:
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
 - When the player BUYS or PAYS for anything, ALWAYS deduct the cost via stateChanges.moneyChange (use negative deltas, e.g. {"gold": 0, "silver": -2, "copper": -5} to spend 2 SS 5 CP).
 - If the player cannot afford the purchase (not enough money), the purchase MUST FAIL — narrate the merchant refusing or the character realizing they lack funds.
@@ -723,9 +704,10 @@ ${(() => {
   if (combatJustEnded) return 'Combat just ended — do not start another fight immediately.\n';
   return 'ENEMY STATS: The game engine automatically assigns balanced stat blocks to enemies in combatUpdate based on their name. You only need to provide the enemy name, wounds estimate, and weapon/armor names. The engine handles characteristics, skills, and traits.\n';
 })()}
-${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
-${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
-The character can cast spells using Channelling (WP) and Language (Magick) tests. Casting Number (CN) is the SL required. Doubles on casting rolls cause Miscasts. When the character attempts magic, describe the wind of magic flowing and the spell's visual effects.
+${character?.spells?.known?.length > 0 || (character?.mana?.max || 0) > 0 ? `MAGIC SYSTEM (RPGon):
+${magicStatus}
+The character casts spells by spending Mana. Spells are organized in spell trees — using a spell progresses toward unlocking the next one. Scrolls can be used to learn new spells (25% + Intelligence bonus) or for one-shot casting.
+When the character casts a spell, include manaChange (negative) and spellUsage in stateChanges.
 ` : ''}${gameState?.world?.weather ? `CURRENT WEATHER:
 ${formatWeatherForPrompt(gameState.world.weather)}
 Factor weather conditions into outdoor scenes — visibility, movement, NPC behavior, and test modifiers.
@@ -825,16 +807,17 @@ When generating a combat encounter, include "combatUpdate" in stateChanges with 
   "combatUpdate": {
     "active": true,
     "enemies": [
-      {"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
+      {"name": "Enemy Name", "attributes": {"sila": 10, "inteligencja": 8, "charyzma": 5, "zrecznosc": 10, "wytrzymalosc": 12, "szczescie": 3}, "wounds": 15, "maxWounds": 15, "skills": {"Walka bronia jednoręczna": {"level": 3}, "Uniki": {"level": 2}}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
     ],
     "reason": "Short description of why combat started"
   }
 }
 Include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+Enemy attributes use the RPGon 1-25 scale. Wounds = wytrzymalosc * 2 + 10. Typical enemies: weak (attr 5-8, 15-20 wounds), medium (attr 10-14, 25-35 wounds), strong (attr 15-20, 40-50 wounds).
 
 PLAYER-INITIATED COMBAT (MANDATORY):
 When the player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation (e.g. "atakuję", "rozpoczynam walkę", "wyzywam go na pojedynek", "rzucam się na niego", "I attack", "I start a fight"), you MUST include "combatUpdate" in stateChanges with appropriate enemies:
-- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY — pick the closest match and adapt (a town guard → Bandit with +5 WS; a noble's bodyguard → Chaos Warrior scaled down). NEVER invent stats from scratch.
+- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY — pick the closest match and adapt.
 - If the player attacks a named NPC, that NPC becomes an enemy combatant. Their allies/guards may also join the fight.
 - The narrative should briefly describe the moment of escalation — the player draws a weapon, the NPC's eyes widen, bystanders scatter — then combat begins via combatUpdate.
 - If there is genuinely no one to fight (empty location, no NPCs, no creatures), narrate that there is no target and do NOT include combatUpdate.
@@ -1218,9 +1201,10 @@ ${formatResolvedCheck(resolvedMechanics?.diceRoll)}
 ${resolvedMechanics?.diceRoll ? `IMPORTANT: The skill check above was resolved by the game engine. Your narrative MUST be consistent with the outcome:
 - If the result is SUCCESS, the character succeeds at the action.
 - If the result is FAILURE, the character fails — do NOT narrate success.
-- If CRITICAL SUCCESS, describe an exceptional success with bonus effects.
-- If CRITICAL FAILURE, describe a spectacular failure with extra consequences.
-- The SL magnitude indicates how well/poorly: SL +3 or higher = impressive, SL -3 or lower = very bad.
+- If LUCKY SUCCESS (Szczescie), describe a fortunate twist or coincidence.
+- If GREAT SUCCESS (margin 15+), describe an impressive success with bonus effects.
+- If HARD FAILURE (margin -15 or worse), describe a significant failure with consequences.
+- The margin magnitude indicates how well/poorly the action went. Scale narrative intensity with margin.
 DO NOT include a "diceRoll" field in your JSON response — the game engine handles all mechanics.` : 'No skill check for this action. DO NOT include a "diceRoll" field in your JSON response.'}
 
 Respond with ONLY valid JSON in this exact format:
@@ -1258,8 +1242,13 @@ Respond with ONLY valid JSON in this exact format:
   "stateChanges": {
     "woundsChange": 0,
     "xp": 0,
-    "fortuneChange": 0,
-    "resolveChange": 0,
+    "manaChange": 0,
+    "attributeChanges": null,
+    "skillProgress": null,
+    "spellUsage": null,
+    "learnSpell": null,
+    "consumeScroll": null,
+    "addScroll": null,
     "newItems": [],
     "removeItems": [],
     "newQuests": [],
@@ -1268,9 +1257,6 @@ Respond with ONLY valid JSON in this exact format:
     "worldFacts": [],
     "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
     "statuses": null,
-    "skillAdvances": null,
-    "newTalents": null,
-    "careerAdvance": null,
     "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5, "factionId": "faction_id_or_null", "relationships": [{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]}],
     "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
     "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
@@ -1290,7 +1276,7 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). manaChange is a DELTA (negative when casting spells). skillProgress maps skill names to progress points (1-3, higher for harder/riskier uses). spellUsage maps spell names to use count (usually 1). learnSpell is a spell name when learned from scroll. consumeScroll is a scroll name when consumed. addScroll is a scroll name when found. newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
 QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "locationId": "Primary quest location name", "offeredBy": "NPC name or source", "reward": {"xp": 50, "money": {"gold": 1, "silver": 0, "copper": 0}, "items": [], "description": "50 XP and 1 Gold Crown"}, "type": "main|side|personal"}. "locationId" is MANDATORY for every quest offer and must point to a concrete place in the current world (existing location or a newly introduced one). Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
@@ -1302,9 +1288,7 @@ LOOT RARITY GATING (enforced by campaign progression):
 - COST OF OWNERSHIP: Rare and exotic items draw attention. NPCs comment on them, thieves target the character, factions want them, and rumors spread about whoever carries them. Include these consequences in worldFacts and NPC reactions.
 - Always set the "rarity" field on new items: "common", "uncommon", "rare", or "exotic".
 For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
-For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
-For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Mighty Blow"]. Use null if none.
-For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
+For stateChanges.skillProgress: an object mapping skill names to progress points, e.g. {"Walka bronia jednoręczna": 2, "Uniki": 1}. Award 1 point for routine use, 2-3 for difficult/risky/dramatic uses. Skills level up automatically when enough progress accumulates. Use null if no skill progress.
 
 For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
 CRITICAL NPC NAME RULE: Do NOT create NPC entries for anonymous/descriptive speakers such as "głos zza kamienia", "voice from behind the door", "someone", or "unknown". These belong in narrative/dialogue only, not in stateChanges.npcs.
@@ -1313,12 +1297,12 @@ NPC RELATIONSHIP TRACKING: When introducing or updating NPCs, include these opti
 - "relatedQuestIds": array of quest IDs this NPC is involved in (as quest giver, target, or participant)
 - "relationships": array of NPC-to-NPC relationships: [{"npcName": "Other NPC Name", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]
 These relationships persist across scenes and are used for world consistency. Always set factionId for NPCs who belong to a known faction.
-NPC DISPOSITION TRACKING: When a skill check involves interaction with an NPC (check the SKILL CHECK section in user prompt for the outcome), include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
-- Critical success: +3 to +5
-- Strong success (SL 3+): +2 to +3
-- Marginal success (SL 0-2): +1 to +2
-- Marginal failure (SL -1 to -2): -1 to -2
-- Hard failure (SL -3 or worse): -3 to -5
+NPC DISPOSITION TRACKING: When a skill check involves interaction with an NPC (check the SKILL CHECK section in user prompt for the outcome), include that NPC in stateChanges.npcs with a variable "dispositionChange" based on outcome:
+- Lucky success: +3 to +5
+- Great success (margin 15+): +2 to +3
+- Standard success (margin 0-14): +1 to +2
+- Standard failure (margin -1 to -14): -1 to -2
+- Hard failure (margin -15 or worse): -3 to -5
 - Critical failure: -5 to -8
 - Betrayal, broken promise, or threat: -8 to -10 (immediate, regardless of roll)
 Trust builds SLOWLY but breaks FAST. Disposition delta is capped at +-10 per scene by the game engine.
@@ -1350,10 +1334,6 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `- Character species: ${settings.species}`
     : '- Character species: not specified (suggest a fitting species — Human, Halfling, Dwarf, High Elf, or Wood Elf)';
 
-  const careerLine = settings.careerPreference
-    ? `- Preferred career: ${settings.careerPreference}`
-    : '- Career: not specified (suggest a career fitting the story and species)';
-
   const existingCharNote = settings.existingCharacter
     ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene narrative and dialogueSegments. The characterSuggestion stats will be ignored — focus on making the firstScene narrative fit this character's identity.`
     : '';
@@ -1362,7 +1342,7 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Ground the campaign in a believable world and derive comedy from character flaws, social misunderstandings, irony, awkward situations, and moral dilemmas. Keep wit sharp but varied. Avoid repeating one joke template or one recurring comparison (for example constant tax/tax-collector jokes).`
     : '';
 
-  return `Create a new WFRP 4th Edition campaign with these parameters:
+  return `Create a new RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
@@ -1370,36 +1350,25 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
 - Campaign Length: ${settings.length}
 ${characterNameLine}
 ${speciesLine}
-${careerLine}
 - Player's story idea: "${settings.storyPrompt}"
 ${langInstruction}${existingCharNote}${humorousToneGuidance}
 
-Generate the campaign foundation. The game uses Warhammer Fantasy Roleplay 4th Edition rules. The 10 characteristics are: WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), I (Initiative), Ag (Agility), Dex (Dexterity), Int (Intelligence), WP (Willpower), Fel (Fellowship). Each characteristic is generated as 2d10 + species base modifier (typically 20 for Humans).
+Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 
 Respond with ONLY valid JSON:
 {
   "name": "A compelling campaign name (3-5 words)",
-  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state of the Old World",
+  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "name": "${settings.characterName?.trim() || 'A fitting character name'}",
     "species": "${settings.species || 'Human'}",
-    "career": {
-      "class": "Career class (Academics/Burghers/Courtiers/Peasants/Rangers/Riverfolk/Rogues/Warriors)",
-      "name": "Career name (e.g. Soldier, Wizard, Rat Catcher)",
-      "tier": 1,
-      "tierName": "Tier 1 name of the career",
-      "status": "Social status (e.g. Silver 1, Brass 3)"
+    "attributes": {
+      "sila": 12, "inteligencja": 10, "charyzma": 11, "zrecznosc": 13, "wytrzymalosc": 10, "szczescie": 7
     },
-    "characteristics": {
-      "ws": 31, "bs": 25, "s": 34, "t": 28, "i": 30,
-      "ag": 33, "dex": 27, "int": 35, "wp": 29, "fel": 32
-    },
-    "skills": {"Melee (Basic)": 5, "Dodge": 3, "Cool": 3, "Endurance": 5, "Perception": 3, "Athletics": 3, "Gossip": 3, "Ranged (Bow)": 3},
-    "talents": ["Warrior Born", "Drilled"],
-    "fate": 2,
-    "resilience": 1,
-    "backstory": "2-3 sentences of character backstory tied to the world and the Old World setting",
+    "skills": {"Walka bronia jednoręczna": {"level": 3}, "Uniki": {"level": 2}, "Spostrzegawczosc": {"level": 2}, "Perswazja": {"level": 1}},
+    "mana": {"current": 0, "max": 0},
+    "backstory": "2-3 sentences of character backstory tied to the world",
     "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}],
     "money": {"gold": 0, "silver": 5, "copper": 0}
   },
@@ -1501,12 +1470,11 @@ IMPORTANT for initialQuest and initialNPCs:
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 
 IMPORTANT for characterSuggestion:
-- Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.
-- Skills object maps skill name to number of advances (typically 3-10 for starting character). Include 6-10 career-appropriate skills.
-- Include 1-3 starting talents from the career's tier 1 talent list.
-- Set fate/resilience based on species (Human: fate 2, resilience 1; Dwarf: fate 0, resilience 2; Halfling: fate 0, resilience 2; Elves: fate 0, resilience 0).
-- Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).
-- Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.
+- Generate attributes on the 1-25 scale. Starting characters typically have attributes 8-15, with species modifiers applied (Dwarves: +2 Sila, +3 Wytrzymalosc; Elves: +2 Inteligencja, +2 Zrecznosc; Halflings: +2 Zrecznosc, +3 Szczescie).
+- Skills use {"skillName": {"level": N}} format where level is 0-5 for starting characters. Include 4-8 skills.
+- Set mana to {"current": 0, "max": 0} for non-magical characters. Elves start with {"current": 2, "max": 2}.
+- Include 2-5 starting inventory items (weapons, tools, gear).
+- Set starting money to {gold:0, silver:1-5, copper:0} for typical characters.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
 The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
 
 export default function GMOverviewTab({ gameState }) {
   const { t } = useTranslation();
@@ -140,11 +140,9 @@ export default function GMOverviewTab({ gameState }) {
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-[11px] text-on-surface-variant">
             <Field label={t('gmModal.detail.species')} value={character.species} />
-            <Field label={t('gmModal.detail.career')} value={`${character.career?.name || '?'} (T${character.career?.tier || 1})`} />
             <Field label={t('gmModal.detail.wounds')} value={`${character.wounds} / ${character.maxWounds}`} />
+            <Field label="Mana" value={`${character.mana?.current ?? 0} / ${character.mana?.max ?? 0}`} />
             <Field label="XP" value={`${character.xp || 0} (${t('gmModal.overview.spent')}: ${character.xpSpent || 0})`} />
-            <Field label={t('gmModal.overview.fate')} value={`${character.fortune ?? '?'} / ${character.fate ?? '?'}`} />
-            <Field label={t('gmModal.overview.resilience')} value={`${character.resolve ?? '?'} / ${character.resilience ?? '?'}`} />
           </div>
         </div>
       )}

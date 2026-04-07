@@ -1,11 +1,11 @@
 import { useCallback } from 'react';
 import { useGame, createDefaultNeeds } from '../contexts/GameContext';
 import { storage } from '../services/storage';
-import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds, generateStartingMoney } from '../services/gameState';
+import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
-import { SPECIES, CHARACTERISTIC_KEYS, getCareerByName } from '../data/wfrp';
+import { SPECIES, createStartingSkills } from '../data/rpgSystem';
 
-function buildWfrpCharacter(aiResult, campaignSettings) {
+function buildCharacter(aiResult, campaignSettings) {
   // If a fully pre-built character was created via the CharacterCreationModal, use it directly
   if (campaignSettings.createdCharacter) {
     const cc = campaignSettings.createdCharacter;
@@ -20,60 +20,29 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
   const species = SPECIES[speciesName] || SPECIES.Human;
 
   const aiChar = aiResult.characterSuggestion || {};
-  const characteristics = aiChar.characteristics || generateCharacteristics(speciesName);
+  const attributes = aiChar.attributes || generateAttributes(speciesName);
 
-  const advances = {};
-  for (const key of CHARACTERISTIC_KEYS) {
-    advances[key] = 0;
-  }
+  const maxWounds = calculateMaxWounds(attributes.wytrzymalosc ?? 10);
 
-  const careerName = aiChar.career?.name || campaignSettings.careerPreference || 'Soldier';
-  const careerDef = getCareerByName(careerName);
-  const careerClass = careerDef?.class || aiChar.career?.class || 'Warriors';
-  const tier = aiChar.career?.tier || 1;
-  const tierData = careerDef?.tiers?.[tier - 1];
-
-  const career = {
-    class: careerClass,
-    name: careerName,
-    tier,
-    tierName: tierData?.name || aiChar.career?.tierName || careerName,
-    status: tierData?.status || aiChar.career?.status || 'Silver 1',
-  };
-
-  const maxWounds = calculateWounds(characteristics);
-
-  const skills = {};
-  if (aiChar.skills && typeof aiChar.skills === 'object' && !Array.isArray(aiChar.skills)) {
-    Object.assign(skills, aiChar.skills);
-  } else if (tierData?.skills) {
-    for (const skill of tierData.skills) {
-      skills[skill] = 5;
-    }
-  }
-
-  const talents = aiChar.talents || tierData?.talents?.slice(0, 2) || [];
+  const skills = aiChar.skills && typeof aiChar.skills === 'object' && !Array.isArray(aiChar.skills)
+    ? aiChar.skills
+    : createStartingSkills(speciesName);
 
   return {
     name: campaignSettings.characterName?.trim() || aiChar.name || 'Adventurer',
     age: normalizeCharacterAge(aiChar.age ?? campaignSettings.characterAge),
     species: speciesName,
-    career,
     xp: 0,
     xpSpent: 0,
-    characteristics,
-    advances,
+    attributes,
     wounds: maxWounds,
     maxWounds,
     movement: species.movement,
-    fate: aiChar.fate ?? species.fate,
-    fortune: aiChar.fate ?? species.fate,
-    resilience: aiChar.resilience ?? species.resilience,
-    resolve: aiChar.resilience ?? species.resilience,
+    mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
+    spells: { known: [], usageCounts: {}, scrolls: [] },
     skills,
-    talents,
     inventory: aiChar.inventory || [],
-    money: aiChar.money || generateStartingMoney(career.status),
+    money: aiChar.money || generateStartingMoney(),
     statuses: [],
     backstory: aiChar.backstory || '',
     needs: createDefaultNeeds(),
@@ -100,25 +69,20 @@ export function useGameState() {
 
       const character = campaignSettings.existingCharacter
         ? {
-            characteristics: generateCharacteristics(campaignSettings.existingCharacter.species || 'Human'),
-            advances: Object.fromEntries(CHARACTERISTIC_KEYS.map((k) => [k, 0])),
-            skills: {},
-            talents: [],
+            attributes: generateAttributes(campaignSettings.existingCharacter.species || 'Human'),
+            skills: createStartingSkills(campaignSettings.existingCharacter.species || 'Human'),
             inventory: [],
             money: { gold: 0, silver: 0, copper: 0 },
             movement: 4,
-            fate: 2,
-            fortune: 2,
-            resilience: 1,
-            resolve: 1,
+            mana: { current: 0, max: 0 },
+            spells: { known: [], usageCounts: {}, scrolls: [] },
             statuses: [],
             backstory: '',
-            criticalWounds: [],
             ...campaignSettings.existingCharacter,
             age: normalizeCharacterAge(campaignSettings.existingCharacter.age),
             needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
           }
-        : buildWfrpCharacter(aiResult, campaignSettings);
+        : buildCharacter(aiResult, campaignSettings);
 
       const firstScene = {
         id: createSceneId(),

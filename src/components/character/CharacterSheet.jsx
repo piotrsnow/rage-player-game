@@ -15,7 +15,8 @@ import AdvancementPanel from './AdvancementPanel';
 import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
-import { translateSkill, translateTalent, translateCareer, translateTierName, translateStatus } from '../../utils/wfrpTranslate';
+import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { ATTRIBUTE_SHORT } from '../../data/rpgSystem';
 import Tooltip from '../ui/Tooltip';
 
 function getTooltipKey(name) {
@@ -78,7 +79,9 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                       <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
                     </div>
                   </div>
-                  <p className="text-primary font-headline text-2xl">{t('common.tier')} {character.career?.tier}</p>
+                  {character.mana && (
+                    <p className="text-primary font-headline text-lg">Mana {character.mana.current}/{character.mana.max}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -111,7 +114,6 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                 species={character.species}
                 age={character.age}
                 gender={character.gender}
-                careerName={character.career?.name}
                 genre={campaign?.genre}
                 initialPortrait={character.portraitUrl}
                 onPortraitReady={(url) => {
@@ -143,47 +145,9 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                   <span className="text-error text-xs font-bold uppercase tracking-widest">{t('character.dead', 'DEAD')}</span>
                 </div>
               )}
-              {(character.criticalWoundCount || 0) > 0 && character.status !== 'dead' && (
-                <div className="px-3 py-1 bg-error/10 border border-error/20 rounded-sm text-center">
-                  <span className="text-error text-[10px] uppercase tracking-widest">
-                    {t('character.criticalWoundCount', 'Critical Wounds')}: {character.criticalWoundCount}/3
-                  </span>
-                </div>
+              {character.mana && (
+                <StatusBar label="Mana" current={character.mana.current} max={character.mana.max} color="tertiary" />
               )}
-              <div className="grid grid-cols-2 gap-3 mt-3">
-                <div className="text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.fate')}</span>
-                  <p className="text-tertiary font-headline text-lg">{character.fate}</p>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.fortune')}</span>
-                  <p className="text-primary font-headline text-lg">{character.fortune}</p>
-                  {!isMultiplayer && dispatch && character.fortune > 0 && (
-                    <button
-                      onClick={() => dispatch({ type: 'SPEND_FORTUNE' })}
-                      className="mt-1 text-[9px] text-primary/70 hover:text-primary uppercase tracking-widest transition-colors"
-                    >
-                      {t('character.spendFortune', 'Spend (reroll)')}
-                    </button>
-                  )}
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.resilience')}</span>
-                  <p className="text-tertiary font-headline text-lg">{character.resilience}</p>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] uppercase tracking-widest text-on-surface-variant">{t('character.resolve')}</span>
-                  <p className="text-primary font-headline text-lg">{character.resolve}</p>
-                  {!isMultiplayer && dispatch && character.resolve > 0 && (
-                    <button
-                      onClick={() => dispatch({ type: 'SPEND_RESOLVE' })}
-                      className="mt-1 text-[9px] text-primary/70 hover:text-primary uppercase tracking-widest transition-colors"
-                    >
-                      {t('character.spendResolve', 'Spend (remove condition)')}
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -230,7 +194,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
         </div>
 
         <div className="lg:col-span-5 space-y-6 animate-fade-in">
-          <StatsGrid characteristics={character.characteristics} advances={character.advances} />
+          <StatsGrid attributes={character.attributes || character.characteristics} mana={character.mana} />
 
           {character.skills && Object.keys(character.skills).length > 0 && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
@@ -239,52 +203,37 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
                 {t('character.skills')}
               </h3>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                {Object.entries(character.skills).map(([name, adv]) => (
-                  <Tooltip key={name} content={t(`tooltips.skills.${getTooltipKey(name)}`, { defaultValue: '' })}>
-                    <div className="flex justify-between text-on-surface-variant w-full">
-                      <span>{translateSkill(name, t)}</span>
-                      <span className="text-primary-dim font-bold">+{adv}</span>
-                    </div>
-                  </Tooltip>
-                ))}
+                {Object.entries(character.skills)
+                  .filter(([, v]) => {
+                    const level = typeof v === 'object' ? v.level : (v || 0);
+                    return level > 0;
+                  })
+                  .map(([name, v]) => {
+                    const level = typeof v === 'object' ? v.level : (v || 0);
+                    return (
+                      <Tooltip key={name} content={t(`tooltips.skills.${getTooltipKey(name)}`, { defaultValue: '' })}>
+                        <div className="flex justify-between text-on-surface-variant w-full">
+                          <span>{translateSkill(name, t)}</span>
+                          <span className="text-primary-dim font-bold">{level}</span>
+                        </div>
+                      </Tooltip>
+                    );
+                  })}
               </div>
             </div>
           )}
 
-          {character.talents?.length > 0 && (
-            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
+          {character.spells?.known?.length > 0 && (
+            <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm">
               <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">star</span>
-                {t('character.talents')}
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                {t('magic.spells', 'Zaklecia')}
               </h3>
               <div className="flex flex-wrap gap-2">
-                {character.talents.map((talent) => (
-                  <Tooltip key={talent} content={t(`tooltips.talents.${getTooltipKey(talent)}`, { defaultValue: '' })}>
-                    <span className="px-3 py-1 bg-surface-container-high text-on-surface-variant text-xs rounded-sm border border-outline-variant/10">
-                      {translateTalent(talent, t)}
-                    </span>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {character.criticalWounds?.length > 0 && (
-            <div className="bg-surface-container-low p-6 border border-error/15 rounded-sm">
-              <h3 className="text-error font-headline mb-4 flex items-center gap-2">
-                <span className="material-symbols-outlined text-sm">healing</span>
-                {t('character.criticalWounds', 'Critical Wounds')}
-              </h3>
-              <div className="space-y-2">
-                {character.criticalWounds.map((cw, i) => (
-                  <div key={i} className="p-2 bg-error-container/10 rounded-sm border border-error/10">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-sm font-bold text-error">{cw.name}</span>
-                      <span className="text-[9px] text-error/70 uppercase tracking-wider">{cw.location} — {cw.severity}</span>
-                    </div>
-                    <p className="text-[11px] text-on-surface-variant">{cw.effect}</p>
-                    <p className="text-[10px] text-outline mt-0.5">{cw.duration}</p>
-                  </div>
+                {character.spells.known.map((spell) => (
+                  <span key={spell} className="px-3 py-1 bg-tertiary/10 text-tertiary text-xs rounded-sm border border-tertiary/20">
+                    {spell}
+                  </span>
                 ))}
               </div>
             </div>
@@ -480,8 +429,6 @@ export default function CharacterSheet({ onClose }) {
                   <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
                     <span>{t(`species.${browsingCharacter.species}`, { defaultValue: browsingCharacter.species })}</span>
                     <span className="w-1 h-1 bg-primary rounded-full" />
-                    <span>{translateCareer((browsingCharacter.career || browsingCharacter.careerData)?.name, t)} ({translateTierName((browsingCharacter.career || browsingCharacter.careerData)?.tierName, t)})</span>
-                    <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{t('character.gender')}: {getGenderLabel(browsingCharacter.gender, t)}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{t('character.age')}: {browsingCharacter.age ?? 23}</span>
@@ -491,7 +438,7 @@ export default function CharacterSheet({ onClose }) {
                 </div>
 
                 <CharacterPanel
-                  character={{ ...browsingCharacter, career: browsingCharacter.career || browsingCharacter.careerData }}
+                  character={browsingCharacter}
                   settings={settings}
                   t={t}
                   characterVoiceMap={{}}
@@ -528,7 +475,6 @@ export default function CharacterSheet({ onClose }) {
                   <div className="animate-fade-in">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-8">
                       {libraryChars.map((ch) => {
-                        const career = ch.careerData || ch.career || {};
                         const charId = ch.backendId || ch.localId || ch.id;
                         return (
                           <div
@@ -543,11 +489,9 @@ export default function CharacterSheet({ onClose }) {
                               <div className="min-w-0 flex-1">
                                 <p className="font-headline text-sm truncate text-tertiary">{ch.name}</p>
                                 <p className="text-[10px] text-on-surface-variant truncate">
-                                  {t(`species.${ch.species}`, { defaultValue: ch.species })} · {career.name ? translateCareer(career.name, t) : '—'}
+                                  {t(`species.${ch.species}`, { defaultValue: ch.species })}
                                 </p>
                                 <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
-                                  <span>{t('characterPicker.tierLabel')} {career.tier || 1}</span>
-                                  <span>·</span>
                                   <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
                                 </div>
                               </div>
@@ -634,10 +578,6 @@ export default function CharacterSheet({ onClose }) {
                 </h1>
                 <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
                   <span>{t(`species.${displayCharacter.species}`, { defaultValue: displayCharacter.species })}</span>
-                  <span className="w-1 h-1 bg-primary rounded-full" />
-                  <span>{translateCareer(displayCharacter.career?.name, t)} ({translateTierName(displayCharacter.career?.tierName, t)})</span>
-                  <span className="w-1 h-1 bg-primary rounded-full" />
-                  <span>{translateStatus(displayCharacter.career?.status, t)}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{t('character.gender')}: {getGenderLabel(displayCharacter.gender, t)}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />

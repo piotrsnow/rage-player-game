@@ -75,7 +75,8 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   const drama = sliderLabel(dmSettings.narratorDrama ?? 50, ['understated', 'measured', 'heightened', 'theatrical']);
 
   sections.push(
-    `You are the Game Master for "${campaign.name || 'Unnamed'}", a WFRP 4th Edition RPG.
+    `You are the Game Master for "${campaign.name || 'Unnamed'}", an RPGon custom RPG.
+System: d50 + attribute (1-25) + skill (0-25) + momentum (±10) + creativity (0-10) vs difficulty threshold (30/40/55/65/80). Szczescie gives X% auto-success. Mana for spells (1-5 cost). 9 spell trees with progression.
 Genre: ${campaign.genre || 'Fantasy'} | Tone: ${campaign.tone || 'Dark'} | Style: ${campaign.style || 'Hybrid'}
 Difficulty: ${difficultyLabel(dmSettings.difficulty ?? 50)} | Narrative chaos: ${narrativeLabel(dmSettings.narrativeStyle ?? 50)}
 Response length: ${responseLengthLabel(dmSettings.responseLength ?? 50)}
@@ -87,30 +88,27 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
 
   // ── CHARACTER STATE ──
   const charLines = [`PC: ${character.name || 'Unknown'} (${character.species || 'Human'})`];
-  if (character.career) charLines.push(`Career: ${character.career.name || ''} (${character.career.tierName || ''}), Status: ${character.career.status || ''}`);
-  if (character.characteristics) {
-    const c = character.characteristics;
-    charLines.push(`Stats: WS:${c.ws||0} BS:${c.bs||0} S:${c.s||0} T:${c.t||0} I:${c.i||0} Ag:${c.ag||0} Dex:${c.dex||0} Int:${c.int||0} WP:${c.wp||0} Fel:${c.fel||0}`);
+  if (character.attributes) {
+    const a = character.attributes;
+    charLines.push(`Attributes: SIL:${a.sila||0} INT:${a.inteligencja||0} CHA:${a.charyzma||0} ZRC:${a.zrecznosc||0} WYT:${a.wytrzymalosc||0} SZC:${a.szczescie||0}`);
   }
-  charLines.push(`Wounds: ${character.wounds ?? 0}/${character.maxWounds ?? 0} | Fate: ${character.fate ?? 0} Fortune: ${character.fortune ?? 0} | Resilience: ${character.resilience ?? 0} Resolve: ${character.resolve ?? 0}`);
+  const mana = character.mana || { current: 0, max: 0 };
+  charLines.push(`Wounds: ${character.wounds ?? 0}/${character.maxWounds ?? 0} | Mana: ${mana.current}/${mana.max}`);
   charLines.push(`XP: ${character.xp || 0} total, ${(character.xp || 0) - (character.xpSpent || 0)} available`);
   if (character.skills && Object.keys(character.skills).length > 0) {
-    charLines.push(`Skills: ${Object.entries(character.skills).map(([k, v]) => `${k}+${v}`).join(', ')}`);
+    const skillEntries = Object.entries(character.skills)
+      .filter(([, v]) => (typeof v === 'object' ? v.level : v) > 0)
+      .map(([k, v]) => `${k}:${typeof v === 'object' ? v.level : v}`);
+    if (skillEntries.length) charLines.push(`Skills: ${skillEntries.join(', ')}`);
   }
-  if (character.talents?.length) {
-    const talents = Array.isArray(character.talents)
-      ? character.talents.map(t => typeof t === 'string' ? t : t.name || t).join(', ')
-      : '';
-    if (talents) charLines.push(`Talents: ${talents}`);
+  if (character.spells?.known?.length) {
+    charLines.push(`Known spells: ${character.spells.known.join(', ')}`);
   }
   if (character.inventory?.length) {
     charLines.push(`Inventory: ${character.inventory.map((i) => typeof i === 'string' ? i : `${i.name} (${i.type})`).join(', ')}`);
   }
   charLines.push(`Money: ${formatMoney(character.money)}`);
   if (character.statuses?.length) charLines.push(`Statuses: ${character.statuses.join(', ')}`);
-  if (character.criticalWounds?.length) {
-    charLines.push(`Critical Wounds: ${character.criticalWounds.map(w => typeof w === 'string' ? w : w.description || w.name).join('; ')}`);
-  }
   sections.push(charLines.join('\n'));
 
   // ── WORLD STATE ──
@@ -239,8 +237,8 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
   // ── CORE GAME RULES (compressed) ──
   sections.push(
     `CORE RULES:
-- Dice/skill checks: resolved by game engine BEFORE your response. User prompt has the result (skill, SL, success/failure). Narrate accordingly. DO NOT include "diceRoll" in response.
-- SL scaling: crit success=spectacular bonus, SL+3=decisive, SL 0-2=success+complication, SL -1/-2=fail+opportunity, SL≤-3=hard fail+consequence, crit fail=catastrophic lasting consequence.
+- Dice/skill checks: resolved by game engine BEFORE your response. User prompt has the result (skill, margin, success/failure). Narrate accordingly. DO NOT include "diceRoll" in response.
+- Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for deltas. Engine validates affordability. Check character Money before purchases.
@@ -291,7 +289,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - newItems: for ANY item acquired in narrative — never narrate pickup without {id,name,type,description,rarity} in newItems. Rarity: common/uncommon (early), rare (mid), exotic (late+consequences). For weapons/armor: name MUST match get_equipment_catalog exactly.
 - removeItems: only items in character's inventory.
 - moneyChange: {gold,silver,copper} deltas for purchases (negative) and income (positive). Engine validates.
-- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with SL: crit success +3-5, marginal success +1-2, marginal fail -1-2, crit fail -5-8.
+- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - combatUpdate: {active:true, enemies:[{name}], reason}. Include ONLY when combat starts. The game engine automatically assigns balanced stat blocks based on enemy names — you only need to provide the name.
 - dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
 - codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
@@ -301,7 +299,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - factionChanges: {faction_id: delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk.
 - worldFacts: strings of new information for world state.
 - woundsChange: delta (negative=damage, positive=healing).
-- fortuneChange/resolveChange: deltas when spent (usually negative).
+- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}. skillProgress: {"skillName": 1-3}.
 ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}.' : ''}
 - campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
   );
@@ -492,10 +490,10 @@ Narrator SILENT — only NPCs speak. All dialogueSegments must be type "dialogue
   // Resolved mechanics
   if (resolvedMechanics?.diceRoll) {
     const r = resolvedMechanics.diceRoll;
-    const outcomeLabel = r.criticalSuccess ? 'CRITICAL SUCCESS' : r.criticalFailure ? 'CRITICAL FAILURE' : r.success ? 'SUCCESS' : 'FAILURE';
+    const outcomeLabel = r.luckySuccess ? 'LUCKY SUCCESS' : r.success ? (r.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS') : (r.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
     parts.push(`SKILL CHECK (engine-resolved, DO NOT recalculate):
-Skill: ${r.skill || '?'} | Target: ${r.target} | Roll: ${r.roll} | SL: ${r.sl >= 0 ? '+' : ''}${r.sl} | Result: ${outcomeLabel}
-Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}. Scale intensity with SL magnitude.`);
+Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} + creativity=${r.creativityBonus || 0} = ${r.total || r.roll} vs ${r.threshold || r.target} | Margin: ${r.margin ?? r.sl ?? 0} | Result: ${outcomeLabel}
+Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}. Scale intensity with margin.`);
   } else if (!isPostCombat && !isIdleWorldEvent) {
     parts.push('No skill check for this action.');
   }
@@ -877,9 +875,19 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
         const match = findClosestBestiaryEntry(enemy.name);
         if (!match) return enemy;
+        // Convert WFRP bestiary stats to RPGon attributes (1-25 scale)
+        const wc = match.characteristics || {};
+        const toAttr = (val) => Math.max(1, Math.min(25, Math.round((val || 30) / 4)));
         return {
           name: enemy.name,
-          characteristics: match.characteristics,
+          attributes: {
+            sila: toAttr(wc.s || wc.ws),
+            inteligencja: toAttr(wc.int),
+            charyzma: toAttr(wc.fel),
+            zrecznosc: toAttr(wc.ag || wc.i),
+            wytrzymalosc: toAttr(wc.t),
+            szczescie: Math.max(1, Math.round((wc.int || 20) / 10)),
+          },
           wounds: match.maxWounds,
           maxWounds: match.maxWounds,
           skills: match.skills,
@@ -1194,9 +1202,18 @@ export async function generateScene(campaignId, playerAction, {
     sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
       const match = findClosestBestiaryEntry(enemy.name);
       if (!match) return enemy;
+      const wc = match.characteristics || {};
+      const toAttr = (val) => Math.max(1, Math.min(25, Math.round((val || 30) / 4)));
       return {
         name: enemy.name,
-        characteristics: match.characteristics,
+        attributes: {
+          sila: toAttr(wc.s || wc.ws),
+          inteligencja: toAttr(wc.int),
+          charyzma: toAttr(wc.fel),
+          zrecznosc: toAttr(wc.ag || wc.i),
+          wytrzymalosc: toAttr(wc.t),
+          szczescie: Math.max(1, Math.round((wc.int || 20) / 10)),
+        },
         wounds: match.maxWounds,
         maxWounds: match.maxWounds,
         skills: match.skills,

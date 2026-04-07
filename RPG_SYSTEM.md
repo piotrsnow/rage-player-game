@@ -304,9 +304,69 @@ Jest to dokument roboczy i będzie rozszerzany o kolejne ustalenia.
 | Nauka zaklęć ze scrolli | Gotowe |
 | Jednorazowe użycie scrolla do rzutu czaru | Gotowe |
 | Drzewka zaklęć z progresją przez używanie | Gotowe |
+| Sposób testowania (`d50` + progi trudności) | Gotowe |
+| Mechanika walki (atak, obrażenia, unik) | Gotowe |
+| Rzucanie zaklęć (mana, bez testu) | Gotowe |
 
 | Do ustalenia | Status |
 | --- | --- |
-| Sposób testowania | Otwarte |
 | Wpływ cech na walkę, dialogi i eksplorację | Otwarte |
 | Dokładny wzór bonusu `Inteligencji` do nauki zaklęć | Otwarte |
+
+## 9. Sposób testowania (mechanika rzutów)
+
+### 9.1 Kość i podstawowa formuła
+
+| Element | Ustalenie |
+| --- | --- |
+| Kość bazowa | `d50` (zakres `1-50`) |
+| Formuła testu | `Wynik = d50 + Cecha + Poziom Umiejętności + Momentum + Kreatywność + Przychylność` |
+| Próg trudności | Stała wartość zależna od trudności testu |
+| Sukces | `Wynik ≥ Próg Trudności` |
+| Margines | `Wynik − Próg Trudności` (dodatni = sukces, ujemny = porażka) |
+
+### 9.2 Progi trudności
+
+| Trudność | Próg |
+| --- | --- |
+| Bardzo łatwa | `15` |
+| Łatwa | `25` |
+| Przeciętna | `35` |
+| Trudna | `45` |
+| Bardzo trudna | `55` |
+| Niezwykle trudna | `65` |
+
+### 9.3 Modyfikatory
+
+| Modyfikator | Zakres | Opis |
+| --- | --- | --- |
+| Momentum | `−10` do `+10` | Narastająca seria sukcesów lub porażek. Rośnie o `+1` po sukcesie, maleje o `−1` po porażce |
+| Kreatywność | `0` do `+10` | Bonus za kreatywne, taktyczne lub fabularne opisanie akcji |
+| Przychylność BN | zmienny | Bonus za pozytywne nastawienie BN-a (dotyczy testów `Charyzmy`) |
+
+### 9.4 Mechanika Szczęścia
+
+| Element | Ustalenie |
+| --- | --- |
+| Sprawdzenie | Przed rzutem `d50` losowana jest wartość `1-100` |
+| Gwarantowany sukces | Jeśli wylosowana wartość ≤ `Szczęście` postaci, test jest automatycznym sukcesem |
+| Zastosowanie | Działa na każdy test, niezależnie od trudności |
+
+### 9.5 Walka
+
+| Element | Ustalenie |
+| --- | --- |
+| Atak wręcz | Test `d50 + Siła + Walka bronią` vs próg trudności |
+| Atak dystansowy | Test `d50 + Zręczność + Celność` vs próg trudności |
+| Obrażenia | `Siła + Bonus broni − Wytrzymałość celu − Pancerz celu` (minimum `1`) |
+| Margines | Dodatni margines udanego ataku dodaje się do obrażeń |
+| Unik | Test `d50 + Zręczność + Uniki` vs próg trudności |
+
+### 9.6 Rzucanie zaklęć
+
+| Element | Ustalenie |
+| --- | --- |
+| Koszt | Zaklęcie kosztuje `Mana` z drzewka zaklęć |
+| Test | Nie wymaga osobnego testu — jeśli postać ma wystarczającą manę, zaklęcie jest rzucone |
+| Efekt | Zdefiniowany przez konkretne zaklęcie w drzewku |
+| Progresja | Użycie zaklęcia daje biegłość; po `5 × koszt many` użyć odblokowuje się kolejny poziom |

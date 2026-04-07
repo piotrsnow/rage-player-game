@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
-import { translateSkill } from '../../utils/wfrpTranslate';
+import { translateSkill } from '../../utils/rpgTranslate';
 
 const RESULT_HOLD_MS = 4200;
 const FADE_OUT_MS = 600;
@@ -151,18 +151,18 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
             )}
 
             {/* Divider */}
-            {dr.sl != null && <div className="w-px h-10 bg-outline-variant/20" />}
+            {(dr.margin ?? dr.sl) != null && <div className="w-px h-10 bg-outline-variant/20" />}
 
-            {/* SL */}
-            {dr.sl != null && (
+            {/* Margin */}
+            {(dr.margin ?? dr.sl) != null && (
               <div className="flex flex-col items-center">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70">
-                  SL
+                  {t('gameplay.margin', 'Margines')}
                 </span>
                 <span className={`font-mono text-3xl font-black leading-none ${
-                  dr.sl >= 0 ? 'text-emerald-300' : 'text-rose-400'
+                  (dr.margin ?? dr.sl) >= 0 ? 'text-emerald-300' : 'text-rose-400'
                 }`}>
-                  {dr.sl > 0 ? '+' : ''}{dr.sl}
+                  {(dr.margin ?? dr.sl) > 0 ? '+' : ''}{dr.margin ?? dr.sl}
                 </span>
               </div>
             )}

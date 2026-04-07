@@ -1,19 +1,19 @@
 /**
- * Convert NPC disposition score to a target modifier.
- * Thresholds from WFRP4e social interaction rules.
+ * Convert NPC disposition score to a bonus/penalty for d50 tests.
+ * Scaled for the d50 system (smaller modifiers than d100).
  *
- * @param {number} disposition
- * @returns {number} modifier (-15 to +15)
+ * @param {number} disposition - NPC disposition (-50 to +50)
+ * @returns {number} modifier (-5 to +5)
  */
 export function getDispositionModifier(disposition) {
   if (typeof disposition !== 'number' || !Number.isFinite(disposition)) return 0;
-  if (disposition >= 30) return 15;
-  if (disposition >= 15) return 10;
-  if (disposition >= 5) return 5;
+  if (disposition >= 30) return 5;
+  if (disposition >= 15) return 3;
+  if (disposition >= 5) return 1;
   if (disposition > -5) return 0;
-  if (disposition > -15) return -5;
-  if (disposition > -30) return -10;
-  return -15;
+  if (disposition > -15) return -1;
+  if (disposition > -30) return -3;
+  return -5;
 }
 
 /**

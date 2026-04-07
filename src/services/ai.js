@@ -1175,7 +1175,7 @@ export const aiService = {
 
   async inferSkillCheck(actionText, characterSkills, provider, apiKey, { alternateApiKey = null } = {}) {
     const model = selectModel(provider, 'nano', 'inferSkillCheck');
-    const systemPrompt = 'WFRP 4e skill check classifier. Given a player action, return JSON with the most appropriate d100 test.\nValid characteristics: ws, bs, s, t, i, ag, dex, int, wp, fel.\nReturn: {"characteristic":"<key>","skill":"<WFRP 4e skill name>","difficultyModifier":<-40 to 40 step 10>}\nIf the action is trivial/automatic and needs no test, return: {"skip":true}\nPrefer the character\'s trained skills when relevant. Respond with JSON only.';
+    const systemPrompt = 'RPGon skill check classifier. Given a player action, return JSON with the most appropriate d50 test.\nValid attributes: sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie.\nReturn: {"attribute":"<key>","skill":"<RPGon skill name>","difficultyModifier":<-40 to 40 step 10>}\nIf the action is trivial/automatic and needs no test, return: {"skip":true}\nPrefer the character\'s trained skills when relevant. Respond with JSON only.';
     const skillList = Object.entries(characterSkills || {})
       .filter(([, v]) => v > 0)
       .map(([k, v]) => `${k} +${v}`)
