@@ -1,4 +1,4 @@
-import { generateScene } from '../services/sceneGenerator.js';
+import { generateScene, generateSceneStream } from '../services/sceneGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import {
   embedText,
@@ -84,6 +84,82 @@ export async function aiRoutes(fastify) {
         code: err.code || 'SCENE_GENERATION_ERROR',
       });
     }
+  });
+
+  /**
+   * POST /ai/campaigns/:id/generate-scene-stream
+   *
+   * Generate a new scene with SSE streaming.
+   * Events: intent, context_ready, chunk, complete, error
+   */
+  fastify.post('/campaigns/:id/generate-scene-stream', async (request, reply) => {
+    const campaignId = request.params.id;
+    const {
+      playerAction,
+      provider = 'openai',
+      model,
+      language = 'pl',
+      dmSettings = {},
+      resolvedMechanics = null,
+      needsSystemEnabled = false,
+      characterNeeds = null,
+      dialogue = null,
+      dialogueCooldown = 0,
+      isFirstScene = false,
+      sceneCount = 0,
+    } = request.body;
+
+    if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
+      return reply.code(400).send({ error: 'playerAction is required' });
+    }
+
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { userId: true },
+    });
+
+    if (!campaign) {
+      return reply.code(404).send({ error: 'Campaign not found' });
+    }
+
+    if (campaign.userId !== request.user.id) {
+      return reply.code(403).send({ error: 'Not authorized' });
+    }
+
+    // SSE headers
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    await generateSceneStream(
+      campaignId,
+      playerAction || '[FIRST_SCENE]',
+      {
+        provider,
+        model,
+        language,
+        dmSettings,
+        resolvedMechanics,
+        needsSystemEnabled,
+        characterNeeds,
+        dialogue,
+        dialogueCooldown,
+        isFirstScene,
+        sceneCount,
+      },
+      (event) => {
+        try {
+          reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+        } catch {
+          // client disconnected
+        }
+      },
+    );
+
+    reply.raw.end();
   });
 
   /**

@@ -5,7 +5,10 @@ import {
   CONTEXT_TOOLS_OPENAI,
   CONTEXT_TOOLS_ANTHROPIC,
   executeToolCall,
+  assembleContext,
 } from './aiContextTools.js';
+import { classifyIntent } from './intentClassifier.js';
+import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
 import {
   embedText,
   buildSceneEmbeddingText,
@@ -54,6 +57,7 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   needsSystemEnabled = false,
   characterNeeds = null,
   sceneCount = 0,
+  skipToolProtocol = false,
 } = {}) {
   const cs = coreState;
   const campaign = cs.campaign || {};
@@ -205,8 +209,22 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
     sections.push(questLines.join('\n'));
   }
 
-  // ── RECENT SCENES ──
-  if (recentScenes.length > 0) {
+  // ── RECENT CONTEXT ──
+  // Prefer compressed gameStateSummary (nano-generated facts) over full scenes
+  const gameStateSummary = cs.gameStateSummary;
+  if (gameStateSummary?.length > 0) {
+    sections.push(`Recent Story Facts:\n${gameStateSummary.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
+    // Still include last scene for immediate context
+    if (recentScenes.length > 0) {
+      const last = recentScenes[recentScenes.length - 1];
+      const action = last.chosenAction ? `Player: ${last.chosenAction}\n` : '';
+      const narrative = (last.narrative || '').length > 300
+        ? last.narrative.slice(0, 300) + '...'
+        : last.narrative;
+      sections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
+    }
+  } else if (recentScenes.length > 0) {
+    // Fallback: full recent scenes (before compression is populated)
     const sceneLines = ['Recent History:'];
     for (const scene of recentScenes) {
       const action = scene.chosenAction ? `Player: ${scene.chosenAction}\n` : '';
@@ -310,9 +328,10 @@ ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/
 - Max 10 fragments per entry.`,
   );
 
-  // ── MANDATORY TOOL PROTOCOL ──
-  sections.push(
-    `MANDATORY TOOL PROTOCOL:
+  // ── MANDATORY TOOL PROTOCOL (skipped in 2-stage pipeline) ──
+  if (!skipToolProtocol) {
+    sections.push(
+      `MANDATORY TOOL PROTOCOL:
 MUST call before generating narrative:
 1. Combat start → get_bestiary() + get_equipment_catalog()
 2. First visit at new location → get_location_history()
@@ -328,17 +347,18 @@ DO NOT call tools for:
 - Actions in current location (use inline discoveries above)
 - NPCs already listed in "Key NPCs" section above
 IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems MUST exactly match names from get_equipment_catalog.`,
-  );
+    );
 
-  // ── PRE-FLIGHT CHECKLIST ──
-  sections.push(
-    `BEFORE GENERATING RESPONSE, check:
+    // ── PRE-FLIGHT CHECKLIST ──
+    sections.push(
+      `BEFORE GENERATING RESPONSE, check:
 - Am I at a new location? → call get_location_history()
 - Is an NPC speaking that I have no details for? → call get_npc_details()
 - Does the player reference old events not in Recent History? → call search_campaign_memory()
 - Is combat starting? → call get_bestiary() + get_equipment_catalog()
 - Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
-  );
+    );
+  }
 
   // ── RESPONSE FORMAT ──
   sections.push(
@@ -486,6 +506,442 @@ Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}.
   }
 
   return parts.join('\n\n');
+}
+
+// ── CONTEXT SECTION BUILDER (for 2-stage pipeline) ──
+
+/**
+ * Format pre-fetched context blocks into a prompt section.
+ */
+function buildContextSection(contextBlocks) {
+  if (!contextBlocks) return '';
+
+  const parts = [];
+
+  // NPCs
+  for (const [name, data] of Object.entries(contextBlocks.npcs || {})) {
+    if (data && !data.startsWith('No NPC found')) {
+      parts.push(`[NPC: ${name}]\n${data}`);
+    }
+  }
+
+  // Quests
+  for (const [name, data] of Object.entries(contextBlocks.quests || {})) {
+    if (data && !data.startsWith('No quest found')) {
+      parts.push(`[Quest: ${name}]\n${data}`);
+    }
+  }
+
+  // Location
+  if (contextBlocks.location && !contextBlocks.location.startsWith('No location found')) {
+    parts.push(`[Location]\n${contextBlocks.location}`);
+  }
+
+  // Codex
+  for (const [topic, data] of Object.entries(contextBlocks.codex || {})) {
+    if (data && !data.startsWith('No codex entry')) {
+      parts.push(`[Codex: ${topic}]\n${data}`);
+    }
+  }
+
+  // Memory search results
+  if (contextBlocks.memory && !contextBlocks.memory.startsWith('No relevant')) {
+    parts.push(`[Campaign Memory]\n${contextBlocks.memory}`);
+  }
+
+  if (parts.length === 0) return '';
+  return `\n── EXPANDED CONTEXT (use in your response) ──\n${parts.join('\n\n')}`;
+}
+
+/**
+ * Run the 2-stage pipeline: intent classification → context assembly → single AI call.
+ */
+async function runTwoStagePipeline(systemPrompt, userPrompt, contextBlocks, { provider = 'openai', model } = {}) {
+  // Build the full prompt with pre-fetched context injected
+  const contextSection = buildContextSection(contextBlocks);
+  const enrichedSystemPrompt = contextSection
+    ? systemPrompt + contextSection
+    : systemPrompt;
+
+  if (provider === 'openai') {
+    const response = await callOpenAI(
+      [
+        { role: 'system', content: enrichedSystemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      { tools: [], model },
+    );
+    const choice = response.choices?.[0];
+    if (!choice) throw new Error('No response from OpenAI (2-stage)');
+    return parseAIResponse(choice.message.content);
+  } else {
+    const response = await callAnthropic(
+      [{ role: 'user', content: userPrompt }],
+      { tools: [], system: enrichedSystemPrompt, model },
+    );
+    const textBlock = response.content?.find((c) => c.type === 'text');
+    if (!textBlock) throw new Error('No text response from Anthropic (2-stage)');
+    return parseAIResponse(textBlock.text);
+  }
+}
+
+// ── STREAMING AI CALLERS ──
+
+/**
+ * Call OpenAI with streaming enabled. Yields text chunks via callback.
+ * Returns the full accumulated text.
+ */
+async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxTokens = 4096 } = {}, onChunk) {
+  const apiKey = requireServerApiKey('openai', 'OpenAI');
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || 'gpt-5.4',
+      messages,
+      temperature,
+      max_completion_tokens: maxTokens,
+      response_format: { type: 'json_object' },
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    await parseProviderError(response, 'openai');
+  }
+
+  let accumulated = '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+    for (const line of lines) {
+      const data = line.slice(6);
+      if (data === '[DONE]') continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          accumulated += delta;
+          if (onChunk) onChunk(delta);
+        }
+      } catch {
+        // skip malformed SSE lines
+      }
+    }
+  }
+
+  return accumulated;
+}
+
+/**
+ * Call Anthropic with streaming enabled. Yields text chunks via callback.
+ * Returns the full accumulated text.
+ */
+async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, system = null } = {}, onChunk) {
+  const apiKey = requireServerApiKey('anthropic', 'Anthropic');
+
+  const body = {
+    model: model || 'claude-sonnet-4-20250514',
+    max_tokens: maxTokens,
+    messages,
+    temperature,
+    stream: true,
+  };
+  if (system) body.system = system;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    await parseProviderError(response, 'anthropic');
+  }
+
+  let accumulated = '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+    for (const line of lines) {
+      const data = line.slice(6);
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+          accumulated += parsed.delta.text;
+          if (onChunk) onChunk(parsed.delta.text);
+        }
+      } catch {
+        // skip malformed SSE lines
+      }
+    }
+  }
+
+  return accumulated;
+}
+
+/**
+ * Run the 2-stage pipeline with streaming. Returns parsed scene via callback events.
+ */
+async function runTwoStagePipelineStreaming(systemPrompt, userPrompt, contextBlocks, { provider = 'openai', model } = {}, onChunk) {
+  const contextSection = buildContextSection(contextBlocks);
+  const enrichedSystemPrompt = contextSection
+    ? systemPrompt + contextSection
+    : systemPrompt;
+
+  let fullText;
+  if (provider === 'openai') {
+    fullText = await callOpenAIStreaming(
+      [
+        { role: 'system', content: enrichedSystemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      { model },
+      onChunk,
+    );
+  } else {
+    fullText = await callAnthropicStreaming(
+      [{ role: 'user', content: userPrompt }],
+      { system: enrichedSystemPrompt, model },
+      onChunk,
+    );
+  }
+
+  return parseAIResponse(fullText);
+}
+
+/**
+ * Generate a scene with SSE streaming. Emits events via the onEvent callback.
+ * Events: { type: 'intent', data }, { type: 'context_ready' }, { type: 'chunk', text }, { type: 'complete', data }, { type: 'error', error }
+ */
+export async function generateSceneStream(campaignId, playerAction, options = {}, onEvent) {
+  const {
+    provider = 'openai',
+    model,
+    language = 'pl',
+    dmSettings = {},
+    resolvedMechanics = null,
+    needsSystemEnabled = false,
+    characterNeeds = null,
+    dialogue = null,
+    dialogueCooldown = 0,
+    isFirstScene = false,
+    sceneCount = 0,
+  } = options;
+
+  try {
+    // 1. Load campaign data (same as generateScene)
+    const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
+      prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { coreState: true, characterState: true },
+      }),
+      prisma.campaignNPC.findMany({ where: { campaignId } }),
+      prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
+      prisma.campaignCodex.findMany({
+        where: { campaignId },
+        select: { codexKey: true, name: true, category: true, fragments: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 15,
+      }),
+      prisma.campaignKnowledge.findMany({
+        where: { campaignId, importance: { in: ['high', 'critical'] } },
+        select: { summary: true, importance: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+    ]);
+
+    if (!campaign) throw new Error('Campaign not found');
+    const coreState = JSON.parse(campaign.coreState);
+
+    const charState = JSON.parse(campaign.characterState || '{}');
+    if (Object.keys(charState).length > 0) coreState.character = charState;
+
+    if (dbNpcs.length > 0) {
+      if (!coreState.world) coreState.world = {};
+      coreState.world.npcs = dbNpcs.map((n) => ({
+        name: n.name, gender: n.gender, role: n.role,
+        personality: n.personality, attitude: n.attitude, disposition: n.disposition,
+        alive: n.alive, lastLocation: n.lastLocation, factionId: n.factionId,
+        notes: n.notes, relationships: JSON.parse(n.relationships || '[]'),
+      }));
+    }
+
+    if (dbQuests.length > 0) {
+      const active = [];
+      const completed = [];
+      for (const q of dbQuests) {
+        const quest = {
+          id: q.questId, name: q.name, type: q.type, description: q.description,
+          completionCondition: q.completionCondition, questGiverId: q.questGiverId,
+          turnInNpcId: q.turnInNpcId, locationId: q.locationId,
+          prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
+          objectives: JSON.parse(q.objectives || '[]'),
+          reward: q.reward ? JSON.parse(q.reward) : null,
+        };
+        if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });
+        else active.push(quest);
+      }
+      coreState.quests = { active, completed };
+    }
+
+    if (dbCodex.length > 0) {
+      if (!coreState.world) coreState.world = {};
+      const ASPECT_TYPES = ['history', 'description', 'location', 'weakness', 'rumor', 'technical', 'political'];
+      coreState.world.codexSummary = dbCodex.map((c) => {
+        const fragments = JSON.parse(c.fragments || '[]');
+        const knownAspects = [...new Set(fragments.map(f => f.aspect).filter(Boolean))];
+        const canReveal = ASPECT_TYPES.filter(a => !knownAspects.includes(a));
+        return { name: c.name, category: c.category, knownAspects, canReveal };
+      });
+    }
+
+    if (dbKnowledge.length > 0) {
+      if (!coreState.world) coreState.world = {};
+      coreState.world.keyPlotFacts = dbKnowledge.map(k => k.summary);
+    }
+
+    // 2. Intent classification
+    const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
+      dialogue,
+      isFirstScene,
+      provider,
+    });
+    onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
+
+    // 3. Context assembly
+    const currentLocation = coreState.world?.currentLocation || '';
+    const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
+    onEvent({ type: 'context_ready' });
+
+    // 4. Build prompts
+    const recentScenes = await prisma.campaignScene.findMany({
+      where: { campaignId },
+      orderBy: { sceneIndex: 'desc' },
+      take: 5,
+    });
+    recentScenes.reverse();
+
+    const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
+      dmSettings,
+      needsSystemEnabled,
+      characterNeeds,
+      sceneCount,
+      skipToolProtocol: true,
+    });
+
+    const userPrompt = buildUserPrompt(playerAction, {
+      resolvedMechanics,
+      dialogue,
+      dialogueCooldown,
+      isFirstScene,
+      needsSystemEnabled,
+      characterNeeds,
+      language,
+      sceneCount,
+    });
+
+    // 5. Streaming AI call
+    const sceneResult = await runTwoStagePipelineStreaming(
+      systemPrompt, userPrompt, contextBlocks,
+      { provider, model },
+      (text) => onEvent({ type: 'chunk', text }),
+    );
+
+    // 6. Fill enemy stats from bestiary
+    if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
+      sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
+        const match = findClosestBestiaryEntry(enemy.name);
+        if (!match) return enemy;
+        return {
+          name: enemy.name,
+          characteristics: match.characteristics,
+          wounds: match.maxWounds,
+          maxWounds: match.maxWounds,
+          skills: match.skills,
+          traits: match.traits,
+          armour: match.armour,
+          weapons: match.weapons,
+        };
+      });
+    }
+
+    // 7. Save scene
+    const lastScene = recentScenes[recentScenes.length - 1];
+    const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
+
+    const savedScene = await prisma.campaignScene.create({
+      data: {
+        campaignId,
+        sceneIndex: newSceneIndex,
+        narrative: sceneResult.narrative || '',
+        chosenAction: playerAction,
+        suggestedActions: JSON.stringify(sceneResult.suggestedActions || []),
+        dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
+        imagePrompt: sceneResult.imagePrompt || null,
+        soundEffect: sceneResult.soundEffect || null,
+        diceRoll: sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null,
+        stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
+        scenePacing: sceneResult.scenePacing || 'exploration',
+      },
+    });
+
+    // 8. Async: embedding + state changes + memory compression
+    generateSceneEmbedding(savedScene).catch(err =>
+      console.error('Failed to generate scene embedding:', err.message)
+    );
+    if (sceneResult.stateChanges) {
+      processStateChanges(campaignId, sceneResult.stateChanges).catch(err =>
+        console.error('Failed to process state changes:', err.message)
+      );
+    }
+    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction).catch(err =>
+      console.error('Failed to compress scene to summary:', err.message)
+    );
+    const newLoc = sceneResult.stateChanges?.currentLocation;
+    const prevLoc = coreState.world?.currentLocation;
+    if (newLoc && prevLoc && newLoc !== prevLoc) {
+      generateLocationSummary(campaignId, newLoc, prevLoc).catch(err =>
+        console.error('Failed to generate location summary:', err.message)
+      );
+    }
+
+    // 9. Complete
+    onEvent({
+      type: 'complete',
+      data: {
+        scene: sceneResult,
+        sceneIndex: newSceneIndex,
+        sceneId: savedScene.id,
+      },
+    });
+  } catch (err) {
+    onEvent({ type: 'error', error: err.message || 'Stream generation failed', code: err.code || 'STREAM_ERROR' });
+  }
 }
 
 /**
@@ -662,13 +1118,6 @@ export async function generateScene(campaignId, playerAction, {
   recentScenes.reverse(); // chronological order
 
   // 3. Build prompts
-  const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
-    dmSettings,
-    needsSystemEnabled,
-    characterNeeds,
-    sceneCount,
-  });
-
   const userPrompt = buildUserPrompt(playerAction, {
     resolvedMechanics,
     dialogue,
@@ -680,12 +1129,64 @@ export async function generateScene(campaignId, playerAction, {
     sceneCount,
   });
 
-  // 4. Run tool-use loop
+  // 4. Run pipeline (2-stage or tool-use)
+  const useTwoStage = dmSettings.useTwoStagePipeline !== false; // default: enabled
   let sceneResult;
-  if (provider === 'openai') {
-    sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
+
+  if (useTwoStage) {
+    try {
+      // Stage 1: Intent classification
+      const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
+        dialogue,
+        isFirstScene,
+        provider,
+      });
+
+      // Stage 2: Context assembly (parallel DB queries)
+      const currentLocation = coreState.world?.currentLocation || '';
+      const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
+
+      // Build system prompt WITHOUT tool protocol sections
+      const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
+        dmSettings,
+        needsSystemEnabled,
+        characterNeeds,
+        sceneCount,
+        skipToolProtocol: true,
+      });
+
+      // Stage 3: Single AI call with pre-fetched context
+      sceneResult = await runTwoStagePipeline(systemPrompt, userPrompt, contextBlocks, {
+        provider,
+        model,
+      });
+    } catch (err) {
+      console.warn('Two-stage pipeline failed, falling back to tool-use:', err.message);
+      const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
+        dmSettings,
+        needsSystemEnabled,
+        characterNeeds,
+        sceneCount,
+      });
+      if (provider === 'openai') {
+        sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
+      } else {
+        sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
+      }
+    }
   } else {
-    sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
+    // Legacy: tool-use loop
+    const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
+      dmSettings,
+      needsSystemEnabled,
+      characterNeeds,
+      sceneCount,
+    });
+    if (provider === 'openai') {
+      sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
+    } else {
+      sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
+    }
   }
 
   // 4b. Fill in enemy stats from bestiary (AI provides name, engine provides stats)
@@ -735,6 +1236,20 @@ export async function generateScene(campaignId, playerAction, {
   if (sceneResult.stateChanges) {
     processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
       console.error('Failed to process state changes:', err.message),
+    );
+  }
+
+  // 8. Memory compression (async, fire-and-forget)
+  compressSceneToSummary(campaignId, sceneResult.narrative, playerAction).catch((err) =>
+    console.error('Failed to compress scene to summary:', err.message),
+  );
+
+  // 9. Location summary on location change
+  const newLocation = sceneResult.stateChanges?.currentLocation;
+  const previousLocation = coreState.world?.currentLocation;
+  if (newLocation && previousLocation && newLocation !== previousLocation) {
+    generateLocationSummary(campaignId, newLocation, previousLocation).catch((err) =>
+      console.error('Failed to generate location summary:', err.message),
     );
   }
 

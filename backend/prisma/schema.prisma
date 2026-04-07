@@ -173,6 +173,22 @@ model CampaignQuest {
   @@unique([campaignId, questId])
 }
 
+model CampaignLocationSummary {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId      String   @db.ObjectId
+  locationName    String
+  summary         String
+  keyNpcs         String   @default("[]") // JSON array of NPC names
+  unresolvedHooks String   @default("[]") // JSON array of unresolved plot hooks
+  sceneCount      Int      @default(0)
+  lastVisitScene  Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([campaignId])
+  @@unique([campaignId, locationName])
+}
+
 model Character {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   userId          String   @db.ObjectId

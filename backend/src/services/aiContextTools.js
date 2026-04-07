@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { searchCampaignMemory, searchCodex, searchNPCs } from './vectorSearchService.js';
 import { embedText } from './embeddingService.js';
 import { formatWeaponCatalog, searchBestiary } from '../data/wfrpEquipment.js';
+import { getLocationSummary } from './memoryCompressor.js';
 
 /**
  * Tool definitions for OpenAI/Anthropic function calling.
@@ -395,4 +396,121 @@ function handleGetBestiary(query) {
   const result = searchBestiary(query);
   if (!result) return `No bestiary entries found matching "${query}". Try: bandit, skaven, undead, beastmen, chaos, wolf, bear, orc, goblin, or threat levels: trivial, low, medium, high, deadly.`;
   return result;
+}
+
+// ── EXPORTED HANDLERS (for 2-stage pipeline) ──
+
+export {
+  handleSearchMemory,
+  handleGetNPC,
+  handleGetQuest,
+  handleGetLocation,
+  handleGetCodex,
+  handleGetEquipmentCatalog,
+  handleGetBestiary,
+};
+
+// ── CONTEXT ASSEMBLY ──
+
+/**
+ * Assemble expanded context based on intent classifier selection result.
+ * All DB queries run in parallel via Promise.all.
+ *
+ * @param {string} campaignId
+ * @param {object} selectionResult - Output from classifyIntent()
+ * @param {string} currentLocation - Current location name (for expand_location)
+ * @returns {Promise<object>} Grouped context blocks: { npcs, quests, location, codex, memory }
+ */
+export async function assembleContext(campaignId, selectionResult, currentLocation) {
+  const fetches = [];
+
+  // Expand selected NPCs
+  for (const name of selectionResult.expand_npcs || []) {
+    fetches.push(
+      handleGetNPC(campaignId, name).then(r => ({ type: 'npc', key: name, data: r }))
+    );
+  }
+
+  // Expand selected quests
+  for (const name of selectionResult.expand_quests || []) {
+    if (name === '__all_active__') {
+      // Special: expand all active quests (for [CONTINUE] action)
+      fetches.push(
+        prisma.campaignQuest.findMany({
+          where: { campaignId, status: 'active' },
+        }).then(quests => ({
+          type: 'quest',
+          key: 'all_active',
+          data: quests.map(q => {
+            const objectives = JSON.parse(q.objectives || '[]');
+            return `${q.name} (${q.type}): ${q.description || 'N/A'}\nObjectives: ${objectives.map(o => `${o.completed ? '[X]' : '[ ]'} ${o.description}`).join(', ')}`;
+          }).join('\n\n'),
+        }))
+      );
+    } else {
+      fetches.push(
+        handleGetQuest(campaignId, name).then(r => ({ type: 'quest', key: name, data: r }))
+      );
+    }
+  }
+
+  // Expand location + include location summary from previous visits
+  if (selectionResult.expand_location && currentLocation) {
+    fetches.push(
+      Promise.all([
+        handleGetLocation(campaignId, currentLocation),
+        getLocationSummary(campaignId, currentLocation),
+      ]).then(([locationData, summary]) => ({
+        type: 'location',
+        data: summary ? `${locationData}\n\n${summary}` : locationData,
+      }))
+    );
+  }
+
+  // Expand codex entries
+  for (const topic of selectionResult.expand_codex || []) {
+    fetches.push(
+      handleGetCodex(campaignId, topic).then(r => ({ type: 'codex', key: topic, data: r }))
+    );
+  }
+
+  // Semantic search through campaign history
+  if (selectionResult.needs_memory_search && selectionResult.memory_query) {
+    fetches.push(
+      handleSearchMemory(campaignId, selectionResult.memory_query).then(r => ({ type: 'memory', data: r }))
+    );
+  }
+
+  if (fetches.length === 0) {
+    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null };
+  }
+
+  const results = await Promise.all(fetches);
+  return groupByType(results);
+}
+
+function groupByType(results) {
+  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null };
+
+  for (const r of results) {
+    switch (r.type) {
+      case 'npc':
+        grouped.npcs[r.key] = r.data;
+        break;
+      case 'quest':
+        grouped.quests[r.key || 'default'] = r.data;
+        break;
+      case 'location':
+        grouped.location = r.data;
+        break;
+      case 'codex':
+        grouped.codex[r.key] = r.data;
+        break;
+      case 'memory':
+        grouped.memory = r.data;
+        break;
+    }
+  }
+
+  return grouped;
 }

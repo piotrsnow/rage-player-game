@@ -697,7 +697,8 @@ export function useAI() {
 
         if (canUseBackend && backendCampaignId) {
           try {
-            const backendResult = await aiService.generateSceneViaBackend(backendCampaignId, playerAction, {
+            const useStreaming = settings.dmSettings?.useStreaming !== false;
+            const backendOpts = {
               provider: aiProvider,
               model: aiModel || null,
               language,
@@ -712,7 +713,21 @@ export function useAI() {
               fromAutoPlayer,
               sceneCount: state.scenes?.length || 0,
               gameState: state,
-            });
+            };
+
+            let backendResult;
+            if (useStreaming) {
+              backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
+                ...backendOpts,
+                onEvent: (event) => {
+                  if (event.type === 'intent') {
+                    console.log('[useAI] Stream intent:', event.data?.intent);
+                  }
+                },
+              });
+            } else {
+              backendResult = await aiService.generateSceneViaBackend(backendCampaignId, playerAction, backendOpts);
+            }
             result = backendResult.result;
             usage = backendResult.usage;
           } catch (backendErr) {

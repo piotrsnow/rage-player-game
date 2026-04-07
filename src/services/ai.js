@@ -779,6 +779,108 @@ export const aiService = {
     return { result: scene, usage: data.usage || null };
   },
 
+  /**
+   * Generate a scene via backend with SSE streaming.
+   * Returns { result, usage } like generateSceneViaBackend.
+   * Calls onEvent({ type, ... }) for progress updates.
+   */
+  async generateSceneViaBackendStream(campaignId, playerAction, {
+    provider = 'openai',
+    model = null,
+    language = 'pl',
+    dmSettings = {},
+    resolvedMechanics = null,
+    needsSystemEnabled = false,
+    characterNeeds = null,
+    dialogue = null,
+    dialogueCooldown = 0,
+    isFirstScene = false,
+    sceneCount = 0,
+    gameState = null,
+    onEvent = null,
+  } = {}) {
+    const baseUrl = apiClient.getBaseUrl();
+    const token = apiClient.getToken();
+
+    const response = await fetch(`${baseUrl}/ai/campaigns/${campaignId}/generate-scene-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        playerAction: playerAction || '',
+        provider,
+        model,
+        language,
+        dmSettings,
+        resolvedMechanics,
+        needsSystemEnabled,
+        characterNeeds,
+        dialogue,
+        dialogueCooldown,
+        isFirstScene,
+        sceneCount,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Stream error: ${response.status}`);
+    }
+
+    // Parse SSE stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let result = null;
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (onEvent) onEvent(event);
+
+          if (event.type === 'complete') {
+            result = event.data;
+          } else if (event.type === 'error') {
+            throw new Error(event.error || 'Stream generation failed');
+          }
+        } catch (e) {
+          if (e.message && !e.message.includes('JSON')) throw e;
+          // skip malformed SSE lines
+        }
+      }
+    }
+
+    if (!result) throw new Error('Stream ended without complete event');
+
+    const scene = result.scene || {};
+
+    // Post-process suggested actions
+    if (scene.suggestedActions && gameState) {
+      scene.suggestedActions = postProcessSuggestedActions({
+        suggestedActions: scene.suggestedActions,
+        language,
+        gameState,
+        narrative: scene.narrative,
+        stateChanges: scene.stateChanges,
+      });
+    }
+
+    scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendStreaming: true };
+
+    return { result: scene, usage: null, sceneIndex: result.sceneIndex, sceneId: result.sceneId };
+  },
+
   async generateRecap(
     gameState,
     dmSettings,
