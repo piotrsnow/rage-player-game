@@ -130,9 +130,9 @@ export const SKILL_NAMES = SKILLS.map((s) => s.name);
 // ── DIFFICULTY THRESHOLDS ──
 
 export const DIFFICULTY_THRESHOLDS = {
-  easy: 30,
-  medium: 40,
-  hard: 55,
+  easy: 20,
+  medium: 35,
+  hard: 50,
   veryHard: 65,
   extreme: 80,
 };
@@ -400,7 +400,7 @@ export function formatSystemRulesForPrompt() {
 
 TEST MECHANIKA:
 - Rzut d50 + cecha + umiejetnosc + momentum (max ±10) + bonus za kreatywnosc (max +10)
-- Progi trudnosci: Latwy=30, Sredni=40, Trudny=55, Bardzo trudny=65, Ekstremalny=80
+- Progi trudnosci: Latwy=20, Sredni=35, Trudny=50, Bardzo trudny=65, Ekstremalny=80
 - AI moze lekko modyfikowac prog w zaleznosci od sytuacji
 - Margines = wynik - prog (dodatni = sukces, ujemny = porazka)
 - Szczescie: przed kazdy rzutem X% szans na gwarantowany sukces (X = poziom Szczescia)

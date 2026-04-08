@@ -3,14 +3,15 @@
  *
  * Called after intent classification (nano model) determines which skill/difficulty
  * to use, and before the large model call so the AI can narrate the outcome.
+ * Also used to resolve model-initiated dice rolls post-hoc.
  */
 
 // ── CONSTANTS (mirrored from src/data/rpgSystem.js) ──
 
-const DIFFICULTY_THRESHOLDS = {
-  easy: 30,
-  medium: 40,
-  hard: 55,
+export const DIFFICULTY_THRESHOLDS = {
+  easy: 20,
+  medium: 35,
+  hard: 50,
   veryHard: 65,
   extreme: 80,
 };
@@ -49,7 +50,7 @@ const SKILLS = [
   { name: 'Przeczucie', attribute: 'szczescie' },
 ];
 
-const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
+export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
 
 // ── HELPERS ──
 
@@ -61,29 +62,24 @@ function rollPercentage() {
   return Math.floor(Math.random() * 100) + 1;
 }
 
-function clamp(value, min, max) {
+export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
 /**
- * Find the best skill for the given skill name from character's skills.
+ * Find the skill level for the given skill name from character's skills.
  */
-function getSkillLevel(character, skillName) {
+export function getSkillLevel(character, skillName) {
   const entry = character?.skills?.[skillName];
   if (!entry) return 0;
   return typeof entry === 'object' ? (entry.level || 0) : (entry || 0);
 }
 
 /**
- * Resolve a d50 skill check on the backend.
- *
- * @param {Object} character - character state with attributes, skills, momentumBonus
- * @param {string} skillName - skill to test (from nano model)
- * @param {string} difficulty - difficulty key (easy/medium/hard/veryHard/extreme)
- * @param {Object} [options] - { testsFrequency }
- * @returns {Object|null} dice roll result, or null if no roll needed
+ * Core dice resolution with explicit d50 and luckySuccess values.
+ * Used by both nano-resolved and model-resolved paths.
  */
-export function resolveBackendDiceRoll(character, skillName, difficulty, options = {}) {
+export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess) {
   if (!character?.attributes) return null;
 
   const skillDef = SKILL_BY_NAME[skillName];
@@ -94,27 +90,15 @@ export function resolveBackendDiceRoll(character, skillName, difficulty, options
   const skillLevel = getSkillLevel(character, skillName);
   const momentum = clamp(character.momentumBonus || 0, -10, 10);
 
-  // Luck check
-  const szczescie = character.attributes.szczescie || 0;
-  const luckRoll = rollPercentage();
-  const luckySuccess = luckRoll <= szczescie;
-
-  // Roll d50
-  const d50Roll = rollD50();
-
-  // Total
-  const total = d50Roll + attributeValue + skillLevel + momentum;
-
-  // Threshold
   const difficultyKey = difficulty || 'medium';
   const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
 
-  // Result
+  const total = preD50 + attributeValue + skillLevel + momentum;
   const margin = total - threshold;
   const success = luckySuccess || margin >= 0;
 
   return {
-    roll: d50Roll,
+    roll: preD50,
     attribute,
     attributeValue,
     skill: skillName,
@@ -129,8 +113,37 @@ export function resolveBackendDiceRoll(character, skillName, difficulty, options
     margin,
     success,
     luckySuccess,
-    luckRoll,
   };
+}
+
+/**
+ * Resolve a d50 skill check with fresh random values.
+ * Wrapper around resolveBackendDiceRollWithPreRoll.
+ */
+export function resolveBackendDiceRoll(character, skillName, difficulty, options = {}) {
+  const d50 = rollD50();
+  const szczescie = character?.attributes?.szczescie || 0;
+  const luckySuccess = rollPercentage() <= szczescie;
+  return resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, d50, luckySuccess);
+}
+
+/**
+ * Generate 3 pre-rolled dice sets for the large model fallback.
+ * Lucky success is pre-resolved using character's Szczescie attribute.
+ */
+export function generatePreRolls(character) {
+  const szczescie = character?.attributes?.szczescie || 0;
+  const momentum = clamp(character?.momentumBonus || 0, -10, 10);
+  return Array.from({ length: 3 }, () => {
+    const d50 = rollD50();
+    const luckyRoll = rollPercentage();
+    return {
+      d50,
+      momentum,
+      base: d50 + momentum,
+      luckySuccess: luckyRoll <= szczescie,
+    };
+  });
 }
 
 /**

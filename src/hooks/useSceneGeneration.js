@@ -442,29 +442,38 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         const incomingDialogueSegments = normalizeIncomingDialogueSegments(result.dialogueSegments || []);
 
-        // Use server dice roll (backend mode) or FE-resolved dice roll (proxy mode)
-        const effectiveDiceRoll = result.diceRoll || resolved.diceRoll || null;
-        result.diceRoll = effectiveDiceRoll;
+        // Use server dice rolls (backend mode) or FE-resolved dice roll (proxy mode)
+        // Backend now returns diceRolls (array) — normalize both formats
+        const serverDiceRolls = Array.isArray(result.diceRolls) ? result.diceRolls
+          : result.diceRoll ? [result.diceRoll] : [];
+        const effectiveDiceRolls = serverDiceRolls.length > 0 ? serverDiceRolls
+          : resolved.diceRoll ? [resolved.diceRoll] : [];
+        result.diceRolls = effectiveDiceRolls.length > 0 ? effectiveDiceRolls : undefined;
+        // Keep legacy diceRoll for backward compat
+        result.diceRoll = effectiveDiceRolls[0] || null;
 
-        // Show dice roll from server response (backend mode — wasn't shown earlier)
-        if (result.diceRoll && !resolved.diceRoll) {
-          setEarlyDiceRoll(result.diceRoll);
-          dispatch({
-            type: 'ADD_CHAT_MESSAGE',
-            payload: {
-              id: `msg_${Date.now()}_roll_server`,
-              role: 'system',
-              subtype: 'dice_roll',
-              content: `${result.diceRoll.skill || '?'}: d50=${result.diceRoll.roll} → ${result.diceRoll.success ? '✓' : '✗'} (margin ${result.diceRoll.margin})`,
-              diceData: result.diceRoll,
-              timestamp: Date.now(),
-            },
-          });
+        // Show dice rolls from server response (backend mode — wasn't shown earlier)
+        if (serverDiceRolls.length > 0 && !resolved.diceRoll) {
+          setEarlyDiceRoll(serverDiceRolls[0]);
+          for (const roll of serverDiceRolls) {
+            dispatch({
+              type: 'ADD_CHAT_MESSAGE',
+              payload: {
+                id: `msg_${Date.now()}_roll_server_${roll.skill}`,
+                role: 'system',
+                subtype: 'dice_roll',
+                content: `${roll.skill || '?'}: d50=${roll.roll} → ${roll.success ? '✓' : '✗'} (margin ${roll.margin})`,
+                diceData: roll,
+                timestamp: Date.now(),
+              },
+            });
+          }
         }
 
-        // Update momentum AFTER the roll for next scene
-        if (effectiveDiceRoll) {
-          const nextMomentum = calculateNextMomentum(state.momentumBonus || 0, effectiveDiceRoll.margin || effectiveDiceRoll.sl || 0);
+        // Update momentum AFTER the rolls for next scene (use last roll's margin)
+        if (effectiveDiceRolls.length > 0) {
+          const lastRoll = effectiveDiceRolls[effectiveDiceRolls.length - 1];
+          const nextMomentum = calculateNextMomentum(state.momentumBonus || 0, lastRoll.margin || lastRoll.sl || 0);
           dispatch({ type: 'SET_MOMENTUM', payload: nextMomentum });
         }
 
@@ -529,6 +538,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           questOffers,
           chosenAction: playerAction,
           diceRoll: result.diceRoll || null,
+          diceRolls: result.diceRolls || undefined,
           timestamp: Date.now(),
         };
 
@@ -680,11 +690,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           result.stateChanges = validated;
 
           // Inject dice roll skill XP (deterministic, based on resolved mechanics)
-          const diceForXp = effectiveDiceRoll || resolved.diceRoll;
-          if (diceForXp?.skill && diceForXp?.difficulty) {
-            const skillXp = calculateDiceRollSkillXP(diceForXp.difficulty, diceForXp.success);
-            if (!validated.skillProgress) validated.skillProgress = {};
-            validated.skillProgress[diceForXp.skill] = (validated.skillProgress[diceForXp.skill] || 0) + skillXp;
+          // Backend calculates this for backend mode, but proxy mode needs it here
+          const diceRollsForXp = effectiveDiceRolls.length > 0 ? effectiveDiceRolls : (resolved.diceRoll ? [resolved.diceRoll] : []);
+          for (const diceForXp of diceRollsForXp) {
+            if (diceForXp?.skill && diceForXp?.difficulty) {
+              const skillXp = calculateDiceRollSkillXP(diceForXp.difficulty, diceForXp.success);
+              if (!validated.skillProgress) validated.skillProgress = {};
+              validated.skillProgress[diceForXp.skill] = (validated.skillProgress[diceForXp.skill] || 0) + skillXp;
+            }
           }
 
           const previousFactions = { ...(state.world?.factions || {}) };

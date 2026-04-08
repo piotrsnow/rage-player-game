@@ -18,7 +18,15 @@ import {
 } from './embeddingService.js';
 import { writeEmbedding } from './vectorSearchService.js';
 import { findClosestBestiaryEntry } from '../data/wfrpEquipment.js';
-import { resolveBackendDiceRoll } from './diceResolver.js';
+import {
+  resolveBackendDiceRoll,
+  resolveBackendDiceRollWithPreRoll,
+  generatePreRolls,
+  SKILL_BY_NAME,
+  DIFFICULTY_THRESHOLDS,
+  getSkillLevel,
+  clamp,
+} from './diceResolver.js';
 
 const MAX_TOOL_ROUNDS = 3;
 
@@ -34,16 +42,36 @@ const DIFFICULTY_SKILL_XP = {
 /**
  * Convert AI's skillsUsed + actionDifficulty into deterministic skillProgress XP.
  * Called after scene generation, before returning result to frontend.
+ * diceRolls: resolved dice rolls array (nano + model), used for roll-based XP.
  */
-function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll) {
+function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll, diceRolls) {
   if (!stateChanges) return;
   const skillsUsed = stateChanges.skillsUsed;
   const difficulty = stateChanges.actionDifficulty;
 
-  // Only calculate for freeform actions (no external dice roll)
-  if (Array.isArray(skillsUsed) && skillsUsed.length > 0 && !hasExternalDiceRoll) {
+  // If we have resolved diceRolls → give XP per roll (success/failure aware)
+  if (Array.isArray(diceRolls) && diceRolls.length > 0) {
+    stateChanges.skillProgress = {};
+    const rolledSkills = new Set();
+    for (const roll of diceRolls) {
+      if (!roll?.skill) continue;
+      const entry = DIFFICULTY_SKILL_XP[roll.difficulty] || DIFFICULTY_SKILL_XP.medium;
+      stateChanges.skillProgress[roll.skill] = roll.success ? entry.success : entry.failure;
+      rolledSkills.add(roll.skill);
+    }
+    // skillsUsed XP only for non-rolled skills
+    if (Array.isArray(skillsUsed)) {
+      for (const skill of skillsUsed.slice(0, 3)) {
+        if (typeof skill === 'string' && skill.trim() && !rolledSkills.has(skill.trim())) {
+          const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
+          stateChanges.skillProgress[skill.trim()] = entry.success;
+        }
+      }
+    }
+  } else if (Array.isArray(skillsUsed) && skillsUsed.length > 0 && !hasExternalDiceRoll) {
+    // Freeform: no dice roll, give XP based on skillsUsed
     const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
-    const xp = entry.success; // freeform actions count as success
+    const xp = entry.success;
     stateChanges.skillProgress = {};
     for (const skill of skillsUsed.slice(0, 3)) {
       if (typeof skill === 'string' && skill.trim()) {
@@ -112,7 +140,7 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
 
   sections.push(
     `You are the Game Master for "${campaign.name || 'Unnamed'}", an RPGon custom RPG.
-System: d50 + attribute (1-25) + skill (0-25) + momentum (±10) + creativity (0-10) vs difficulty threshold (30/40/55/65/80). Szczescie gives X% auto-success. Mana for spells (1-5 cost). 9 spell trees with progression.
+System: d50 + attribute (1-25) + skill (0-25) + momentum (±10) vs difficulty threshold (20/35/50/65/80). Szczescie gives X% auto-success. Mana for spells (1-5 cost). 9 spell trees with progression.
 Genre: ${campaign.genre || 'Fantasy'} | Tone: ${campaign.tone || 'Dark'} | Style: ${campaign.style || 'Hybrid'}
 Difficulty: ${difficultyLabel(dmSettings.difficulty ?? 50)} | Narrative chaos: ${narrativeLabel(dmSettings.narrativeStyle ?? 50)}
 Response length: ${responseLengthLabel(dmSettings.responseLength ?? 50)}
@@ -273,7 +301,18 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
   // ── CORE GAME RULES (compressed) ──
   sections.push(
     `CORE RULES:
-- Dice/skill checks: resolved by game engine BEFORE your response. User prompt has the result (skill, margin, success/failure). Narrate accordingly. DO NOT include "diceRoll" in response.
+- Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
+- If engine-resolved: narrate the provided result. DO NOT recalculate.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill, find its level from PC Skills above, find its linked attribute value from PC Attributes above. Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success.
+- Skill→Attribute lookup: find the skill name in PC Skills (e.g. Skradanie:4 → skill_level=4). Linked attribute:
+  SIL: Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Zastraszanie, Atletyka
+  ZRC: Strzelectwo, Uniki, Akrobatyka, Jezdziectwo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy
+  CHA: Perswazja, Blef, Handel, Przywodztwo, Wystepy
+  INT: Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Spostrzegawczosc, Tropienie
+  WYT: Przetrwanie, Odpornosc
+  SZC: Fart, Hazard, Przeczucie
+  Read attribute value from PC Attributes (e.g. ZRC:13 → attr=13). If skill not in PC Skills → skill_level=0.
+- Include results in stateChanges.diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
@@ -338,6 +377,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
 - actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
+- diceRolls: [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
 ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}.' : ''}
 - campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
   );
@@ -405,7 +445,7 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...},
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", diceRolls:[{"skill":"","difficulty":"","success":true}], ...},
   "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
@@ -421,6 +461,79 @@ ${language === 'pl' ? 'Write ALL narrative, dialogue, suggestedActions, quest te
 
 // ── USER PROMPT BUILDER ──
 
+function buildPreRollInstructions() {
+  return `To resolve a non-lucky check:
+1. Pick skill name from PC Skills (e.g. Skradanie:4 → skill_level=4). If not in list → skill_level=0.
+2. Find linked attribute from PC Attributes (see mapping in CORE RULES, e.g. Skradanie→ZRC:13 → attr=13).
+3. total = base + attr + skill_level
+4. Compare vs threshold: easy=20, medium=35, hard=50, veryHard=65, extreme=80
+5. margin = total - threshold. success = margin >= 0.
+LUCKY SUCCESS rolls: skip all calculation, auto-success. Narrate fortunate twist.
+IMPORTANT: Calculate result FIRST, then narrate accordingly. Do not narrate success if the roll fails.
+Include in stateChanges.diceRolls: [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
+}
+
+/**
+ * Resolve model-initiated dice rolls using pre-rolled values.
+ * Model returns only {skill, difficulty, success} — backend calculates full result.
+ * If model's narrated outcome disagrees with mechanical result, nudge d50 to reconcile.
+ */
+function resolveModelDiceRolls(sceneResult, character, preRolls) {
+  const modelRolls = sceneResult.stateChanges?.diceRolls;
+  if (!Array.isArray(modelRolls) || modelRolls.length === 0) return;
+
+  const resolved = [];
+  for (let i = 0; i < Math.min(modelRolls.length, 3); i++) {
+    const { skill, difficulty, success: modelSaysSuccess } = modelRolls[i] || {};
+    const preRoll = preRolls[i];
+    if (!skill || !preRoll) continue;
+
+    const roll = resolveBackendDiceRollWithPreRoll(
+      character, skill, difficulty || 'medium',
+      preRoll.d50, preRoll.luckySuccess,
+    );
+    if (!roll) continue;
+
+    // Reconcile: if model's narrated outcome disagrees with mechanical result
+    if (typeof modelSaysSuccess === 'boolean' && modelSaysSuccess !== roll.success && !roll.luckySuccess) {
+      const skillDef = SKILL_BY_NAME[skill];
+      if (skillDef) {
+        const attr = character.attributes[skillDef.attribute] || 0;
+        const skillLvl = getSkillLevel(character, skill);
+        const momentum = clamp(character.momentumBonus || 0, -10, 10);
+        const threshold = DIFFICULTY_THRESHOLDS[difficulty] || DIFFICULTY_THRESHOLDS.medium;
+
+        if (modelSaysSuccess && !roll.success) {
+          // Model narrated success but roll failed → nudge to barely pass (margin 0 to +3)
+          const nudge = Math.floor(Math.random() * 4);
+          const neededD50 = threshold - attr - skillLvl - momentum + nudge;
+          roll.roll = clamp(neededD50, 1, 50);
+        } else if (!modelSaysSuccess && roll.success) {
+          // Model narrated failure but roll succeeded → nudge to barely fail (margin -1 to -4)
+          const nudge = -(Math.floor(Math.random() * 4) + 1);
+          const neededD50 = threshold - attr - skillLvl - momentum + nudge;
+          roll.roll = clamp(neededD50, 1, 50);
+        }
+        // Recalculate with nudged d50
+        roll.total = roll.roll + attr + skillLvl + momentum;
+        roll.margin = roll.total - threshold;
+        roll.success = roll.margin >= 0;
+      }
+    }
+
+    resolved.push(roll);
+  }
+
+  // Replace model's minimal rolls with fully resolved ones
+  if (resolved.length > 0) {
+    sceneResult.diceRolls = resolved;
+  }
+  // Clean up from stateChanges (moved to top-level)
+  if (sceneResult.stateChanges) {
+    delete sceneResult.stateChanges.diceRolls;
+  }
+}
+
 function detectCombatIntent(action) {
   if (!action || typeof action !== 'string') return false;
   return /\b(atak|walcz|bijat|zabij|uderzam|rzucam się|wyzywam|attack|fight|strike|kill|charge|challenge|initiate combat|hit him|hit her|stab|slash)\b/i.test(action);
@@ -434,6 +547,7 @@ function buildUserPrompt(playerAction, {
   needsSystemEnabled = false,
   characterNeeds = null,
   language = 'pl',
+  preRolls = null,
   sceneCount = 0,
 } = {}) {
   if (isFirstScene) {
@@ -525,15 +639,39 @@ Narrator SILENT — only NPCs speak. All dialogueSegments must be type "dialogue
     }
   }
 
-  // Resolved mechanics
+  // Resolved mechanics + pre-rolled dice
   if (resolvedMechanics?.diceRoll) {
     const r = resolvedMechanics.diceRoll;
     const outcomeLabel = r.luckySuccess ? 'LUCKY SUCCESS' : r.success ? (r.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS') : (r.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
     parts.push(`SKILL CHECK (engine-resolved, DO NOT recalculate):
 Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} + creativity=${r.creativityBonus || 0} = ${r.total || r.roll} vs ${r.threshold || r.target} | Margin: ${r.margin ?? r.sl ?? 0} | Result: ${outcomeLabel}
 Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}. Scale intensity with margin.`);
+
+    // Remaining pre-rolls for additional sub-actions
+    if (preRolls && preRolls.length > 1) {
+      const extraRolls = preRolls.slice(1);
+      const rollLines = extraRolls.map((pr, i) => {
+        if (pr.luckySuccess) return `  Roll ${i + 2}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
+        return `  Roll ${i + 2}: base=${pr.base} (d50=${pr.d50}+momentum=${pr.momentum}). Add attribute + skill_level, compare vs threshold.`;
+      });
+      parts.push(`If the action involves ADDITIONAL sub-actions needing separate checks (max ${extraRolls.length} more):
+${rollLines.join('\n')}
+${buildPreRollInstructions()}`);
+    }
   } else if (!isPostCombat && !isIdleWorldEvent) {
-    parts.push('No skill check for this action.');
+    // No engine-resolved roll — provide all pre-rolls for model to use
+    if (preRolls && preRolls.length > 0) {
+      const rollLines = preRolls.map((pr, i) => {
+        if (pr.luckySuccess) return `  Roll ${i + 1}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
+        return `  Roll ${i + 1}: base=${pr.base} (d50=${pr.d50}+momentum=${pr.momentum}). Add attribute + skill_level, compare vs threshold.`;
+      });
+      parts.push(`No skill check was pre-resolved.
+If you determine this action requires skill checks (genuine risk/uncertainty), use IN ORDER:
+${rollLines.join('\n')}
+${buildPreRollInstructions()}`);
+    } else {
+      parts.push('No skill check for this action.');
+    }
   }
 
   // Dilemma opportunity
@@ -869,15 +1007,20 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
 
-    // 2b. Server-side dice roll (if nano determined a skill check is needed)
+    // 2b. Pre-roll 3 dice sets + resolve nano-detected skill check
+    const characterForRoll = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };
+    const preRolls = generatePreRolls(characterForRoll);
     let serverDiceRoll = null;
+
     if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
       const testsFrequency = dmSettings?.testsFrequency ?? 50;
       if (Math.random() * 100 < testsFrequency) {
-        serverDiceRoll = resolveBackendDiceRoll(
-          { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 },
+        serverDiceRoll = resolveBackendDiceRollWithPreRoll(
+          characterForRoll,
           intentResult.roll_skill,
           intentResult.roll_difficulty || 'medium',
+          preRolls[0].d50,
+          preRolls[0].luckySuccess,
         );
         if (serverDiceRoll) {
           resolvedMechanics = { diceRoll: serverDiceRoll };
@@ -915,6 +1058,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       characterNeeds,
       language,
       sceneCount,
+      preRolls,
     });
 
     // 5. Streaming AI call
@@ -924,8 +1068,18 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       (text) => onEvent({ type: 'chunk', text }),
     );
 
-    // 6a. Calculate deterministic skill XP from freeform actions
-    calculateFreeformSkillXP(sceneResult.stateChanges, !!resolvedMechanics?.diceRoll);
+    // 6a. Resolve model-initiated dice rolls (if any)
+    resolveModelDiceRolls(sceneResult, characterForRoll, resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls);
+
+    // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array
+    const allDiceRolls = [];
+    if (resolvedMechanics?.diceRoll) allDiceRolls.push(resolvedMechanics.diceRoll);
+    if (sceneResult.diceRolls) allDiceRolls.push(...sceneResult.diceRolls);
+    sceneResult.diceRolls = allDiceRolls.length > 0 ? allDiceRolls : undefined;
+
+    // 6c. Calculate deterministic skill XP from freeform actions
+    const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
+    calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
 
     // 6. Fill enemy stats from bestiary
     if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
@@ -969,7 +1123,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
         imagePrompt: sceneResult.imagePrompt || null,
         soundEffect: sceneResult.soundEffect || null,
-        diceRoll: sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null,
+        diceRoll: sceneResult.diceRolls ? JSON.stringify(sceneResult.diceRolls) : (sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null),
         stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
         scenePacing: sceneResult.scenePacing || 'exploration',
       },
@@ -995,12 +1149,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       );
     }
 
-    // 9. Attach server-resolved dice roll to result (for frontend display)
-    if (serverDiceRoll) {
-      sceneResult.diceRoll = serverDiceRoll;
-    }
-
-    // 10. Complete
+    // 9. Complete (diceRolls already unified in step 6b)
     onEvent({
       type: 'complete',
       data: {
@@ -1187,7 +1336,11 @@ export async function generateScene(campaignId, playerAction, {
   });
   recentScenes.reverse(); // chronological order
 
-  // 3. Build prompts
+  // 3. Pre-roll dice + build prompts
+  const characterForRollNS = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };
+  const preRollsNS = generatePreRolls(characterForRollNS);
+
+  // userPrompt is built before pipeline, but preRolls are passed through
   const userPrompt = buildUserPrompt(playerAction, {
     resolvedMechanics,
     dialogue,
@@ -1197,6 +1350,7 @@ export async function generateScene(campaignId, playerAction, {
     characterNeeds,
     language,
     sceneCount,
+    preRolls: preRollsNS,
   });
 
   // 4. Run pipeline (2-stage or tool-use)
@@ -1212,18 +1366,33 @@ export async function generateScene(campaignId, playerAction, {
         provider,
       });
 
-      // Stage 1b: Server-side dice roll
+      // Stage 1b: Resolve nano-detected skill check using pre-rolled dice
       if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
         const testsFrequency = dmSettings?.testsFrequency ?? 50;
         if (Math.random() * 100 < testsFrequency) {
-          const roll = resolveBackendDiceRoll(
-            { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 },
+          const roll = resolveBackendDiceRollWithPreRoll(
+            characterForRollNS,
             intentResult.roll_skill,
             intentResult.roll_difficulty || 'medium',
+            preRollsNS[0].d50,
+            preRollsNS[0].luckySuccess,
           );
           if (roll) resolvedMechanics = { diceRoll: roll };
         }
       }
+
+      // Rebuild userPrompt with resolved mechanics (nano roll may have been added)
+      const updatedUserPrompt = buildUserPrompt(playerAction, {
+        resolvedMechanics,
+        dialogue,
+        dialogueCooldown,
+        isFirstScene,
+        needsSystemEnabled,
+        characterNeeds,
+        language,
+        sceneCount,
+        preRolls: preRollsNS,
+      });
 
       // Stage 2: Context assembly (parallel DB queries)
       const currentLocation = coreState.world?.currentLocation || '';
@@ -1239,7 +1408,7 @@ export async function generateScene(campaignId, playerAction, {
       });
 
       // Stage 3: Single AI call with pre-fetched context
-      sceneResult = await runTwoStagePipeline(systemPrompt, userPrompt, contextBlocks, {
+      sceneResult = await runTwoStagePipeline(systemPrompt, updatedUserPrompt, contextBlocks, {
         provider,
         model,
       });
@@ -1272,8 +1441,18 @@ export async function generateScene(campaignId, playerAction, {
     }
   }
 
-  // 4a. Calculate deterministic skill XP from freeform actions
-  calculateFreeformSkillXP(sceneResult.stateChanges, !!resolvedMechanics?.diceRoll);
+  // 4a. Resolve model-initiated dice rolls (if any)
+  resolveModelDiceRolls(sceneResult, characterForRollNS, resolvedMechanics?.diceRoll ? preRollsNS.slice(1) : preRollsNS);
+
+  // 4a2. Unify dice rolls: nano roll + model rolls → single diceRolls array
+  const allDiceRollsNS = [];
+  if (resolvedMechanics?.diceRoll) allDiceRollsNS.push(resolvedMechanics.diceRoll);
+  if (sceneResult.diceRolls) allDiceRollsNS.push(...sceneResult.diceRolls);
+  sceneResult.diceRolls = allDiceRollsNS.length > 0 ? allDiceRollsNS : undefined;
+
+  // 4a3. Calculate deterministic skill XP from freeform actions
+  const hasAnyDiceRollNS = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
+  calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRollNS, sceneResult.diceRolls);
 
   // 4b. Fill in enemy stats from bestiary (AI provides name, engine provides stats)
   if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
@@ -1316,7 +1495,7 @@ export async function generateScene(campaignId, playerAction, {
       dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
       imagePrompt: sceneResult.imagePrompt || null,
       soundEffect: sceneResult.soundEffect || null,
-      diceRoll: sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null,
+      diceRoll: sceneResult.diceRolls ? JSON.stringify(sceneResult.diceRolls) : (sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null),
       stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
       scenePacing: sceneResult.scenePacing || 'exploration',
     },
@@ -1348,10 +1527,7 @@ export async function generateScene(campaignId, playerAction, {
     );
   }
 
-  // Attach server-resolved dice roll to result
-  if (resolvedMechanics?.diceRoll && !sceneResult.diceRoll) {
-    sceneResult.diceRoll = resolvedMechanics.diceRoll;
-  }
+  // diceRolls already unified in step 4a2
 
   return {
     scene: sceneResult,
@@ -1469,7 +1645,8 @@ function parseAIResponse(text) {
       stateChanges: parsed.stateChanges || {},
       dialogueSegments: parsed.dialogueSegments || [],
       scenePacing: parsed.scenePacing || 'exploration',
-      diceRoll: parsed.diceRoll || null,
+      diceRoll: parsed.diceRoll || null,  // Legacy: single nano-resolved roll
+      // diceRolls from model come via stateChanges.diceRolls, resolved by resolveModelDiceRolls()
       atmosphere: parsed.atmosphere || { weather: 'clear', mood: 'peaceful', lighting: 'natural' },
       sceneGrid: parsed.sceneGrid || null,
       imagePrompt: parsed.imagePrompt || null,
