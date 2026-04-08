@@ -18,7 +18,7 @@ function getCreativityBonus(actionText, isCustomAction, fromAutoPlayer) {
 /**
  * Master orchestrator: resolve all deterministic mechanics before AI call.
  */
-export async function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t, inferSkillCheckFn = null }) {
+export async function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t, inferSkillCheckFn = null, skipDiceRoll: forceSkipDiceRoll = false }) {
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPassiveAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
   const isRest = isRestAction(playerAction, t);
@@ -26,7 +26,7 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
   // Dice roll decision
   const testsFrequency = settings?.dmSettings?.testsFrequency ?? 50;
   const shouldRollDice = !isPassiveAction && !isFirstScene && Math.random() * 100 < testsFrequency;
-  const skipDiceRoll = isPassiveAction || isFirstScene || !shouldRollDice;
+  const skipDiceRoll = forceSkipDiceRoll || isPassiveAction || isFirstScene || !shouldRollDice;
 
   let diceRoll = null;
 

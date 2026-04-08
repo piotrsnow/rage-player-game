@@ -77,77 +77,52 @@ export const SKILL_LEVEL_INTERPRETATIONS = [
   { min: 21, max: 25, label: 'Legendarny' },
 ];
 
-// Skills organized by parent attribute
+// Skills organized by parent attribute (31 consolidated skills)
 export const SKILLS = [
-  // Sila
-  { name: 'Atletyka', attribute: 'sila' },
-  { name: 'Bijatyka', attribute: 'sila' },
+  // Walka
+  { name: 'Walka wrecz', attribute: 'sila' },
   { name: 'Walka bronia jednoręczna', attribute: 'sila' },
   { name: 'Walka bronia dwureczna', attribute: 'sila' },
+  { name: 'Strzelectwo', attribute: 'zrecznosc' },
+  { name: 'Uniki', attribute: 'zrecznosc' },
   { name: 'Zastraszanie', attribute: 'sila' },
-  { name: 'Mocowanie', attribute: 'sila' },
-  { name: 'Wspinaczka', attribute: 'sila' },
-  { name: 'Dzwiganie', attribute: 'sila' },
 
-  // Inteligencja
-  { name: 'Alchemia', attribute: 'inteligencja' },
-  { name: 'Medycyna', attribute: 'inteligencja' },
-  { name: 'Rzemioslo', attribute: 'inteligencja' },
+  // Fizyczne
+  { name: 'Atletyka', attribute: 'sila' },
+  { name: 'Akrobatyka', attribute: 'zrecznosc' },
+  { name: 'Jezdziectwo', attribute: 'zrecznosc' },
+
+  // Spoleczne
+  { name: 'Perswazja', attribute: 'charyzma' },
+  { name: 'Blef', attribute: 'charyzma' },
+  { name: 'Handel', attribute: 'charyzma' },
+  { name: 'Przywodztwo', attribute: 'charyzma' },
+  { name: 'Wystepy', attribute: 'charyzma' },
+
+  // Wiedza
   { name: 'Wiedza ogolna', attribute: 'inteligencja' },
   { name: 'Wiedza o potworach', attribute: 'inteligencja' },
   { name: 'Wiedza o naturze', attribute: 'inteligencja' },
-  { name: 'Wiedza o religiach i wierzeniach', attribute: 'inteligencja' },
-  { name: 'Strategia', attribute: 'inteligencja' },
-  { name: 'Taktyka', attribute: 'inteligencja' },
-  { name: 'Tropienie', attribute: 'inteligencja' },
-  { name: 'Spostrzegawczosc', attribute: 'inteligencja' },
-  { name: 'Sledztwo', attribute: 'inteligencja' },
-  { name: 'Wydobywanie informacji', attribute: 'inteligencja' },
-  { name: 'Ocenianie wartosci', attribute: 'inteligencja' },
-  { name: 'Czytanie i pisanie', attribute: 'inteligencja' },
+  { name: 'Medycyna', attribute: 'inteligencja' },
+  { name: 'Alchemia', attribute: 'inteligencja' },
+  { name: 'Rzemioslo', attribute: 'inteligencja' },
 
-  // Charyzma
-  { name: 'Perswazja', attribute: 'charyzma' },
-  { name: 'Blef', attribute: 'charyzma' },
-  { name: 'Plotkowanie', attribute: 'charyzma' },
-  { name: 'Targowanie', attribute: 'charyzma' },
-  { name: 'Dowodzenie', attribute: 'charyzma' },
-  { name: 'Uwodzenie', attribute: 'charyzma' },
-  { name: 'Wystepy', attribute: 'charyzma' },
-  { name: 'Etykieta', attribute: 'charyzma' },
-  { name: 'Przekonywanie tlumu', attribute: 'charyzma' },
-  { name: 'Negocjacje', attribute: 'charyzma' },
-
-  // Zrecznosc
-  { name: 'Akrobatyka', attribute: 'zrecznosc' },
-  { name: 'Jezdziectwo', attribute: 'zrecznosc' },
-  { name: 'Skradanie sie', attribute: 'zrecznosc' },
+  // Skradanie i Precyzja
+  { name: 'Skradanie', attribute: 'zrecznosc' },
   { name: 'Otwieranie zamkow', attribute: 'zrecznosc' },
   { name: 'Kradziez kieszonkowa', attribute: 'zrecznosc' },
-  { name: 'Uniki', attribute: 'zrecznosc' },
-  { name: 'Refleks', attribute: 'zrecznosc' },
-  { name: 'Celnosc', attribute: 'zrecznosc' },
-  { name: 'Rzucanie', attribute: 'zrecznosc' },
   { name: 'Pulapki i mechanizmy', attribute: 'zrecznosc' },
-  { name: 'Zonglerka i sztuczki', attribute: 'zrecznosc' },
+  { name: 'Spostrzegawczosc', attribute: 'inteligencja' },
 
-  // Wytrzymalosc
-  { name: 'Odpornosc na bol', attribute: 'wytrzymalosc' },
-  { name: 'Odpornosc na trucizny', attribute: 'wytrzymalosc' },
-  { name: 'Wytrwalosc', attribute: 'wytrzymalosc' },
-  { name: 'Plywanie', attribute: 'wytrzymalosc' },
+  // Przetrwanie
   { name: 'Przetrwanie', attribute: 'wytrzymalosc' },
-  { name: 'Marsz dlugodystansowy', attribute: 'wytrzymalosc' },
-  { name: 'Odpornosc na glod i pragnienie', attribute: 'wytrzymalosc' },
-  { name: 'Hart ducha', attribute: 'wytrzymalosc' },
+  { name: 'Tropienie', attribute: 'inteligencja' },
+  { name: 'Odpornosc', attribute: 'wytrzymalosc' },
 
   // Szczescie
   { name: 'Fart', attribute: 'szczescie' },
-  { name: 'Przeczucie', attribute: 'szczescie' },
-  { name: 'Unik losu', attribute: 'szczescie' },
   { name: 'Hazard', attribute: 'szczescie' },
-  { name: 'Szukanie okazji', attribute: 'szczescie' },
-  { name: 'Wyczuc moment', attribute: 'szczescie' },
+  { name: 'Przeczucie', attribute: 'szczescie' },
 ];
 
 export const SKILL_NAMES = SKILLS.map((s) => s.name);
@@ -170,6 +145,95 @@ export const DIFFICULTY_LABELS = {
   extreme: 'Ekstremalny',
 };
 
+// ── SKILL XP SYSTEM (Learn by Doing) ──
+
+export const SKILL_XP_CONFIG = {
+  base: 20,         // XP needed for level 2
+  multiplier: 1.25, // each subsequent level costs ×1.25 more
+};
+
+/**
+ * XP required to reach a given skill level.
+ * Level 0→1 is free (starting), level 2 = 20, level 3 = 25, etc.
+ */
+export function xpForSkillLevel(level) {
+  if (level <= 1) return 0;
+  return Math.floor(SKILL_XP_CONFIG.base * Math.pow(SKILL_XP_CONFIG.multiplier, level - 2));
+}
+
+// ── DIFFICULTY-BASED SKILL XP (for dice rolls & freeform actions) ──
+
+export const DIFFICULTY_SKILL_XP = {
+  easy:     { success: 4,  failure: 2  },
+  medium:   { success: 8,  failure: 4  },
+  hard:     { success: 14, failure: 7  },
+  veryHard: { success: 20, failure: 10 },
+  extreme:  { success: 28, failure: 14 },
+};
+
+/**
+ * Calculate skill XP from a dice roll or freeform action.
+ */
+export function calculateDiceRollSkillXP(difficulty, success) {
+  const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
+  return success ? entry.success : entry.failure;
+}
+
+// ── COMBAT SKILL XP ──
+
+export const COMBAT_SKILL_XP = {
+  miss: 10,
+  hit: 20,
+  kill: {
+    weak: 50,
+    easy: 50,
+    medium: 100,
+    hard: 200,
+    boss: 500,
+    extreme: 500,
+  },
+};
+
+/**
+ * Calculate skill XP from a combat outcome.
+ * @param {'miss'|'hit'|'kill'} outcome
+ * @param {'weak'|'easy'|'medium'|'hard'|'boss'|'extreme'} enemyTier - only used for kills
+ */
+export function calculateCombatSkillXP(outcome, enemyTier = 'medium') {
+  if (outcome === 'kill') {
+    return COMBAT_SKILL_XP.kill[enemyTier] || COMBAT_SKILL_XP.kill.medium;
+  }
+  return COMBAT_SKILL_XP[outcome] || COMBAT_SKILL_XP.miss;
+}
+
+// ── COMBAT SKILL MAPPING (weapon type → skill name) ──
+
+export const WEAPON_SKILL_MAP = {
+  unarmed: 'Walka wrecz',
+  melee_1h: 'Walka bronia jednoręczna',
+  melee_2h: 'Walka bronia dwureczna',
+  ranged: 'Strzelectwo',
+};
+
+// ── CHARACTER LEVEL (Oblivion-style) ──
+
+/**
+ * Character XP gained when a skill levels up to newLevel.
+ * Higher skill levels give quadratically more char XP.
+ */
+export function charXpFromSkillLevelUp(newLevel) {
+  return newLevel * newLevel;
+}
+
+/**
+ * Character XP needed to reach a given character level.
+ * Cost = 5 × targetLevel² (equivalent to 5 skill level-ups at that tier).
+ */
+export function charLevelCost(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  return 5 * targetLevel * targetLevel;
+}
+
 // ── TEST RESOLUTION CONSTANTS ──
 
 export const MOMENTUM_RANGE = { min: -10, max: 10 };
@@ -183,51 +247,65 @@ export const SPECIES = {
   Human: {
     name: 'Czlowiek',
     nameEN: 'Human',
-    attributes: { sila: 0, inteligencja: 0, charyzma: 0, zrecznosc: 0, wytrzymalosc: 0, szczescie: 0 },
+    attributes: { sila: 1, inteligencja: 1, charyzma: 1, zrecznosc: 1, wytrzymalosc: 1, szczescie: 0 },
     startingMana: 0,
     movement: 4,
-    skills: ['Perswazja', 'Targowanie', 'Wiedza ogolna', 'Walka bronia jednoręczna'],
-    description: 'Wszechstronni i adaptacyjni. Brak modyfikatorow cech, ale dodatkowa elastycznosc.',
+    skills: ['Perswazja', 'Handel', 'Wiedza ogolna', 'Walka bronia jednoręczna'],
+    description: 'Wszechstronni i adaptacyjni. Bonus do wszystkich cech oprocz szczescia.',
   },
   Halfling: {
     name: 'Niziolek',
     nameEN: 'Halfling',
-    attributes: { sila: -2, inteligencja: 0, charyzma: 2, zrecznosc: 2, wytrzymalosc: 0, szczescie: 3 },
+    attributes: { sila: 0, inteligencja: 0, charyzma: 2, zrecznosc: 3, wytrzymalosc: 0, szczescie: 0 },
     startingMana: 0,
     movement: 3,
-    skills: ['Targowanie', 'Hazard', 'Skradanie sie', 'Plotkowanie'],
-    description: 'Mali ale sprytni. Wysokie szczescie i zrecznosc, niska sila.',
+    skills: ['Handel', 'Hazard', 'Skradanie', 'Wystepy'],
+    description: 'Mali ale sprytni. Wysoka charyzma i zrecznosc.',
   },
   Dwarf: {
     name: 'Krasnolud',
     nameEN: 'Dwarf',
-    attributes: { sila: 2, inteligencja: 0, charyzma: -2, zrecznosc: -1, wytrzymalosc: 3, szczescie: 0 },
+    attributes: { sila: 2, inteligencja: 0, charyzma: 0, zrecznosc: 0, wytrzymalosc: 3, szczescie: 0 },
     startingMana: 0,
     movement: 3,
-    skills: ['Rzemioslo', 'Odpornosc na trucizny', 'Walka bronia jednoręczna', 'Ocenianie wartosci'],
-    description: 'Twardziele. Wysoka wytrzymalosc i sila, niska charyzma.',
+    skills: ['Rzemioslo', 'Odpornosc', 'Walka bronia jednoręczna', 'Handel'],
+    description: 'Twardziele. Wysoka wytrzymalosc i sila.',
   },
   Elf: {
     name: 'Elf',
     nameEN: 'Elf',
-    attributes: { sila: -1, inteligencja: 2, charyzma: 1, zrecznosc: 2, wytrzymalosc: -2, szczescie: 0 },
+    attributes: { sila: 0, inteligencja: 2, charyzma: 1, zrecznosc: 2, wytrzymalosc: 0, szczescie: 0 },
     startingMana: 2,
     movement: 5,
-    skills: ['Spostrzegawczosc', 'Celnosc', 'Wiedza o naturze', 'Etykieta'],
-    description: 'Zwinni i inteligentni, z naturalna predyspozycja do magii. Niska wytrzymalosc.',
+    skills: ['Spostrzegawczosc', 'Strzelectwo', 'Wiedza o naturze', 'Wystepy'],
+    description: 'Zwinni i inteligentni, z naturalna predyspozycja do magii.',
   },
 };
 
 export const SPECIES_LIST = Object.keys(SPECIES);
 
+// ── SKILL CATEGORIES (UI grouping) ──
+
+export const SKILL_CATEGORIES = [
+  { key: 'walka', label: 'Walka', icon: 'swords', skills: ['Walka wrecz', 'Walka bronia jednoręczna', 'Walka bronia dwureczna', 'Strzelectwo', 'Uniki', 'Zastraszanie'] },
+  { key: 'fizyczne', label: 'Fizyczne', icon: 'fitness_center', skills: ['Atletyka', 'Akrobatyka', 'Jezdziectwo'] },
+  { key: 'spoleczne', label: 'Spoleczne', icon: 'groups', skills: ['Perswazja', 'Blef', 'Handel', 'Przywodztwo', 'Wystepy'] },
+  { key: 'wiedza', label: 'Wiedza', icon: 'school', skills: ['Wiedza ogolna', 'Wiedza o potworach', 'Wiedza o naturze', 'Medycyna', 'Alchemia', 'Rzemioslo'] },
+  { key: 'skradanie', label: 'Skradanie i Precyzja', icon: 'visibility_off', skills: ['Skradanie', 'Otwieranie zamkow', 'Kradziez kieszonkowa', 'Pulapki i mechanizmy', 'Spostrzegawczosc'] },
+  { key: 'przetrwanie', label: 'Przetrwanie', icon: 'forest', skills: ['Przetrwanie', 'Tropienie', 'Odpornosc'] },
+  { key: 'szczescie', label: 'Szczescie', icon: 'casino', skills: ['Fart', 'Hazard', 'Przeczucie'] },
+];
+
 // ── CREATION LIMITS ──
 
 export const CREATION_LIMITS = {
-  baseAttributePoints: 75, // total points distributed across 6 attributes
-  minAttribute: 3,
-  maxAttributeAtCreation: 18,
-  startingSkillPoints: 15, // points to distribute among starting skills
-  maxPerSkillAtCreation: 5,
+  baseAttribute: 1, // every attribute starts at 1
+  distributableAttributePoints: 10, // player distributes these freely
+  maxPerAttributeAtCreation: 5, // max points added to a single attribute (base 1 + 5 = 6 before species mod)
+  szczesciePointCost: 3, // each point of Szczescie costs 3 from the attribute pool
+  startingSkillPoints: 15, // points to distribute among ANY skills
+  racialSkillLevel: 5, // species skills start at this level (free, not from pool)
+  // No maxPerSkillAtCreation — SKILL_CAPS.basic (10) is the only limit
 };
 
 // ── HELPER FUNCTIONS ──
@@ -248,14 +326,14 @@ export function getSkillDefinition(skillName) {
 /**
  * Create a default skill entry for a character.
  */
-export function createSkillEntry(level = 0, progress = 0, cap = SKILL_CAPS.basic) {
-  return { level, progress, cap };
+export function createSkillEntry(level = 0, xp = 0, cap = SKILL_CAPS.basic) {
+  return { level, xp, cap };
 }
 
 /**
  * Generate initial skill map for a character with starting skills.
  */
-export function createStartingSkills(speciesKey, extraSkillPoints = 0) {
+export function createStartingSkills(speciesKey) {
   const species = SPECIES[speciesKey];
   const skillMap = {};
 
@@ -264,11 +342,11 @@ export function createStartingSkills(speciesKey, extraSkillPoints = 0) {
     skillMap[skill.name] = createSkillEntry(0);
   }
 
-  // Species starting skills get level 1
+  // Species starting skills get racialSkillLevel (5)
   if (species) {
     for (const skillName of species.skills) {
       if (skillMap[skillName]) {
-        skillMap[skillName].level = 1;
+        skillMap[skillName].level = CREATION_LIMITS.racialSkillLevel;
       }
     }
   }
@@ -316,9 +394,9 @@ export function formatSystemRulesForPrompt() {
   return `SYSTEM RPG:
 - 6 cech bazowych (skala 1-25): Sila, Inteligencja, Charyzma, Zrecznosc, Wytrzymalosc, Szczescie
 - Mana: zasob magiczny, rosnie tylko przez magiczne kamienie
-- ~60 umiejetnosci, kazda powiazana z jedną cechą, poziom 0-25
-- Umiejetnosci rosna przez uzywanie (progress), cap bazowy 10, max 25 (wymaga treningu)
-- Trening mozliwy raz na 20 scen
+- ~31 umiejetnosci, kazda powiazana z jedną cechą, poziom 0-25
+- Umiejetnosci rosna przez uzywanie (XP), cap bazowy 10, max 25 (wymaga treningu)
+- Levele postaci rosna w stylu Oblivion: level-up skilla daje XP postaci, level-up postaci daje +1 atrybut
 
 TEST MECHANIKA:
 - Rzut d50 + cecha + umiejetnosc + momentum (max ±10) + bonus za kreatywnosc (max +10)

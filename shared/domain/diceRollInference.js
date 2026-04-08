@@ -52,108 +52,172 @@ const ATTRIBUTE_ALIASES = new Map([
   ['i', 'inteligencja'],
 ]);
 
-// RPGon skill → parent attribute mapping
+// RPGon skill → parent attribute mapping (31 canonical skills + backward-compat aliases)
 const SKILL_ATTRIBUTE_BASE = new Map([
-  // Sila
-  ['atletyka', 'sila'],
-  ['bijatyka', 'sila'],
-  ['walkabronijednorecna', 'sila'],
+  // === Sila (5 skills) ===
+  ['walkawrecz', 'sila'],
   ['walkabroniajdednorecna', 'sila'],
-  ['walkabronia jednorecna', 'sila'],
-  ['walkabronia jednoręczna', 'sila'],
-  ['walkabroniadvurecna', 'sila'],
-  ['walkabronia dwureczna', 'sila'],
+  ['walkabronijednorecna', 'sila'],
   ['walkabroniadwurecna', 'sila'],
   ['zastraszanie', 'sila'],
-  ['mocowanie', 'sila'],
-  ['wspinaczka', 'sila'],
-  ['dzwiganie', 'sila'],
+  ['atletyka', 'sila'],
+  // Diacritical variants
+  ['walkabroniąjednoręczną', 'sila'],
+  ['walkabroniądwuręczną', 'sila'],
+  ['walkawręcz', 'sila'],
+  // English aliases
   ['melee', 'sila'],
+  ['unarmedcombat', 'sila'],
+  ['onehandedweapon', 'sila'],
+  ['twohandedweapon', 'sila'],
   ['intimidate', 'sila'],
-  ['climb', 'sila'],
   ['athletics', 'sila'],
-  // Inteligencja
-  ['alchemia', 'inteligencja'],
-  ['medycyna', 'inteligencja'],
-  ['rzemioslo', 'inteligencja'],
-  ['wiedzaogolna', 'inteligencja'],
-  ['wiedzaopotworach', 'inteligencja'],
-  ['wiedzaonaturze', 'inteligencja'],
-  ['wiedzaoreligiachiwierzeniach', 'inteligencja'],
-  ['strategia', 'inteligencja'],
-  ['taktyka', 'inteligencja'],
-  ['tropienie', 'inteligencja'],
-  ['spostrzegawczosc', 'inteligencja'],
-  ['sledztwo', 'inteligencja'],
-  ['wydobywanieinformacji', 'inteligencja'],
-  ['ocenianiewartosci', 'inteligencja'],
-  ['czytanieipisanie', 'inteligencja'],
-  ['heal', 'inteligencja'],
-  ['lore', 'inteligencja'],
-  ['research', 'inteligencja'],
-  ['perception', 'inteligencja'],
-  ['track', 'inteligencja'],
-  ['evaluate', 'inteligencja'],
-  // Charyzma
-  ['perswazja', 'charyzma'],
-  ['blef', 'charyzma'],
-  ['plotkowanie', 'charyzma'],
-  ['targowanie', 'charyzma'],
-  ['dowodzenie', 'charyzma'],
-  ['uwodzenie', 'charyzma'],
-  ['wystepy', 'charyzma'],
-  ['etykieta', 'charyzma'],
-  ['przekonywanietlumu', 'charyzma'],
-  ['negocjacje', 'charyzma'],
-  ['charm', 'charyzma'],
-  ['persuade', 'charyzma'],
-  ['haggle', 'charyzma'],
-  ['gossip', 'charyzma'],
-  ['leadership', 'charyzma'],
-  ['entertain', 'charyzma'],
-  ['bribery', 'charyzma'],
-  // Zrecznosc
+  ['climb', 'sila'],
+  // Backward-compat: old skills → new canonical skills
+  ['bijatyka', 'sila'],           // → Walka wrecz
+  ['mocowanie', 'sila'],          // → Walka wrecz
+  ['wspinaczka', 'sila'],         // → Atletyka
+  ['dzwiganie', 'sila'],          // → Atletyka
+  ['plywanie', 'sila'],           // → Atletyka (was wytrzymalosc, now merged into Atletyka/sila)
+  ['pływanie', 'sila'],           // diacritical variant of plywanie
+
+  // === Zrecznosc (8 skills) ===
+  ['strzelectwo', 'zrecznosc'],
+  ['uniki', 'zrecznosc'],
   ['akrobatyka', 'zrecznosc'],
   ['jezdziectwo', 'zrecznosc'],
-  ['skradaniesie', 'zrecznosc'],
-  ['otwieranie zamkow', 'zrecznosc'],
+  ['jeździectwo', 'zrecznosc'],
+  ['skradanie', 'zrecznosc'],
   ['otwieraniezamkow', 'zrecznosc'],
-  ['kradziez kieszonkowa', 'zrecznosc'],
-  ['kradziez kieszonkowa', 'zrecznosc'],
+  ['otwieranie zamkow', 'zrecznosc'],
+  ['otwieraniezamków', 'zrecznosc'],
   ['kradiezkieszonkowa', 'zrecznosc'],
-  ['uniki', 'zrecznosc'],
-  ['refleks', 'zrecznosc'],
-  ['celnosc', 'zrecznosc'],
-  ['rzucanie', 'zrecznosc'],
+  ['kradziez kieszonkowa', 'zrecznosc'],
+  ['kradzieżkieszonkowa', 'zrecznosc'],
   ['pulapkiimechanizmy', 'zrecznosc'],
-  ['zonglerkaisztuczki', 'zrecznosc'],
+  ['pułapkiimechanizmy', 'zrecznosc'],
+  // English aliases
+  ['ranged', 'zrecznosc'],
+  ['shooting', 'zrecznosc'],
   ['dodge', 'zrecznosc'],
+  ['acrobatics', 'zrecznosc'],
+  ['ride', 'zrecznosc'],
   ['stealth', 'zrecznosc'],
   ['picklock', 'zrecznosc'],
   ['sleightofhand', 'zrecznosc'],
-  ['ranged', 'zrecznosc'],
-  ['ride', 'zrecznosc'],
-  ['acrobatics', 'zrecznosc'],
-  // Wytrzymalosc
-  ['odpornoscnabol', 'wytrzymalosc'],
-  ['odpornoscnatrucizy', 'wytrzymalosc'],
-  ['wytrwalosc', 'wytrzymalosc'],
-  ['plywanie', 'wytrzymalosc'],
+  ['traps', 'zrecznosc'],
+  // Backward-compat: old skills → new canonical skills
+  ['celnosc', 'zrecznosc'],       // → Strzelectwo
+  ['celność', 'zrecznosc'],
+  ['rzucanie', 'zrecznosc'],      // → Strzelectwo
+  ['refleks', 'zrecznosc'],       // → Uniki
+  ['skradaniesie', 'zrecznosc'],  // → Skradanie
+  ['skradaniesię', 'zrecznosc'],
+  ['zonglerkaisztuczki', 'zrecznosc'], // → Akrobatyka (removed skill, closest match)
+  ['żonglerkaisztuczki', 'zrecznosc'],
+
+  // === Charyzma (5 skills) ===
+  ['perswazja', 'charyzma'],
+  ['blef', 'charyzma'],
+  ['handel', 'charyzma'],
+  ['przywodztwo', 'charyzma'],
+  ['przywództwo', 'charyzma'],
+  ['wystepy', 'charyzma'],
+  ['występy', 'charyzma'],
+  // English aliases
+  ['persuade', 'charyzma'],
+  ['persuasion', 'charyzma'],
+  ['charm', 'charyzma'],
+  ['bluff', 'charyzma'],
+  ['trade', 'charyzma'],
+  ['haggle', 'charyzma'],
+  ['leadership', 'charyzma'],
+  ['entertain', 'charyzma'],
+  ['perform', 'charyzma'],
+  ['bribery', 'charyzma'],
+  // Backward-compat: old skills → new canonical skills
+  ['targowanie', 'charyzma'],     // → Handel
+  ['ocenianiewartosci', 'charyzma'], // → Handel
+  ['ocenianiewartości', 'charyzma'],
+  ['plotkowanie', 'charyzma'],    // → Wystepy
+  ['etykieta', 'charyzma'],      // → Wystepy
+  ['dowodzenie', 'charyzma'],    // → Przywodztwo
+  ['uwodzenie', 'charyzma'],     // → Blef
+  ['negocjacje', 'charyzma'],    // → Perswazja
+  ['przekonywanietlumu', 'charyzma'], // → Perswazja
+  ['przekonywanietłumu', 'charyzma'],
+  ['gossip', 'charyzma'],
+
+  // === Inteligencja (8 skills) ===
+  ['wiedzaogolna', 'inteligencja'],
+  ['wiedzaogólna', 'inteligencja'],
+  ['wiedzaopotworach', 'inteligencja'],
+  ['wiedzaonaturze', 'inteligencja'],
+  ['medycyna', 'inteligencja'],
+  ['alchemia', 'inteligencja'],
+  ['rzemioslo', 'inteligencja'],
+  ['rzemiosło', 'inteligencja'],
+  ['spostrzegawczosc', 'inteligencja'],
+  ['spostrzegawczość', 'inteligencja'],
+  ['tropienie', 'inteligencja'],
+  // English aliases
+  ['lore', 'inteligencja'],
+  ['generalknowledge', 'inteligencja'],
+  ['monsterknowledge', 'inteligencja'],
+  ['natureknowledge', 'inteligencja'],
+  ['heal', 'inteligencja'],
+  ['medicine', 'inteligencja'],
+  ['alchemy', 'inteligencja'],
+  ['craft', 'inteligencja'],
+  ['perception', 'inteligencja'],
+  ['track', 'inteligencja'],
+  ['research', 'inteligencja'],
+  ['evaluate', 'inteligencja'],
+  // Backward-compat: old skills → new canonical skills
+  ['sledztwo', 'inteligencja'],           // → Spostrzegawczosc
+  ['śledztwo', 'inteligencja'],
+  ['wydobywanieinformacji', 'inteligencja'], // → Spostrzegawczosc
+  ['strategia', 'inteligencja'],          // → Wiedza ogolna
+  ['taktyka', 'inteligencja'],            // → Wiedza ogolna
+  ['czytanieipisanie', 'inteligencja'],   // → Wiedza ogolna
+  ['wiedzaoreligiachiwierzeniach', 'inteligencja'], // → Wiedza ogolna
+
+  // === Wytrzymalosc (2 skills) ===
   ['przetrwanie', 'wytrzymalosc'],
-  ['marszdlugodystansowy', 'wytrzymalosc'],
-  ['odpornoscnaglodipragnienie', 'wytrzymalosc'],
-  ['hartducha', 'wytrzymalosc'],
+  ['odpornosc', 'wytrzymalosc'],
+  ['odporność', 'wytrzymalosc'],
+  // English aliases
+  ['survival', 'wytrzymalosc'],
   ['endurance', 'wytrzymalosc'],
-  ['swim', 'wytrzymalosc'],
+  ['resilience', 'wytrzymalosc'],
   ['cool', 'wytrzymalosc'],
-  // Szczescie
+  ['swim', 'wytrzymalosc'],
+  // Backward-compat: old skills → new canonical skills
+  ['odpornoscnabol', 'wytrzymalosc'],             // → Odpornosc
+  ['odpornośćnaból', 'wytrzymalosc'],
+  ['odpornoscnatrucizy', 'wytrzymalosc'],         // → Odpornosc
+  ['odpornośćnatrucizy', 'wytrzymalosc'],
+  ['wytrwalosc', 'wytrzymalosc'],                 // → Przetrwanie
+  ['wytrwałość', 'wytrzymalosc'],
+  ['marszdlugodystansowy', 'wytrzymalosc'],       // → Przetrwanie
+  ['marszdługodystansowy', 'wytrzymalosc'],
+  ['odpornoscnaglodipragnienie', 'wytrzymalosc'], // → Przetrwanie
+  ['odpornośćnagłódipragnienie', 'wytrzymalosc'],
+  ['hartducha', 'wytrzymalosc'],                  // → Odpornosc (removed skill, closest match)
+
+  // === Szczescie (3 skills) ===
   ['fart', 'szczescie'],
-  ['przeczucie', 'szczescie'],
-  ['uniklosu', 'szczescie'],
   ['hazard', 'szczescie'],
-  ['szukanieokazji', 'szczescie'],
-  ['wyczucmoment', 'szczescie'],
+  ['przeczucie', 'szczescie'],
+  // English aliases
   ['gamble', 'szczescie'],
+  ['intuition', 'szczescie'],
+  ['hunch', 'szczescie'],
+  // Backward-compat: old skills → new canonical skills
+  ['uniklosu', 'szczescie'],         // → Przeczucie
+  ['szukanieokazji', 'szczescie'],   // → Przeczucie
+  ['wyczucmoment', 'szczescie'],     // → Przeczucie
+  ['wyczućmoment', 'szczescie'],
 ]);
 
 const SOCIAL_ACTION_RE = /["""„«»]|(?:\b(?:say|tell|ask|speak|talk|chat|greet|persuade|convince|negotiate|bargain|haggle|bluff|lie|question|request|plead|flirt|joke|taunt|boast|promise|explain|encourage|warn|command|order)\b)|(?:\b(?:mow(?:ie|ic)?|mówię|mówić|powiedz|powiem|powiadam|zapyt(?:am|ac)?|zapytuję|pytam|rozmawiam|zagaduj(?:e|ę|ac)?|gad(?:am|ac)|prosz(?:e|ę)|przekonuj(?:e|ę|ac)?|negocjuj(?:e|ę|ac)?|targuj(?:e|ę|ac)?|blefuj(?:e|ę|ac)?|klam(?:ie|ię)|kłamię|wyjasni(?:am|ac)?|wyjaśniam|ostrzegam|nakazuj(?:e|ę|ac)?|komplementuj(?:e|ę|ac)?)\b)/iu;

@@ -1,3 +1,5 @@
+import { xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost } from '../data/rpgSystem';
+
 function formatMoneyDelta(mc) {
   const parts = [];
   if (mc.gold) parts.push(`${Math.abs(mc.gold)} GC`);
@@ -56,6 +58,25 @@ export function generateStateChangeMessages(stateChanges, state, t) {
 
   if (stateChanges.xp != null && stateChanges.xp > 0) {
     msgs.push({ id: mkId(), role: 'system', subtype: 'xp', content: t('system.xpGained', { name: charName, amount: stateChanges.xp }), timestamp: ts });
+  }
+
+  // Skill XP notifications
+  if (stateChanges.skillProgress && typeof stateChanges.skillProgress === 'object') {
+    const charSkills = state.character?.skills || {};
+    for (const [skillName, xpGain] of Object.entries(stateChanges.skillProgress)) {
+      if (!xpGain || xpGain <= 0) continue;
+      const current = charSkills[skillName] || { level: 0, xp: 0 };
+      const currentXp = current.xp ?? current.progress ?? 0;
+      const newXp = currentXp + xpGain;
+      const needed = xpForSkillLevel(current.level + 1);
+
+      if (needed > 0 && newXp >= needed && current.level < (current.cap || 10)) {
+        const newLevel = current.level + 1;
+        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_levelup', content: `${skillName} +${xpGain} XP — Level Up! (${current.level} → ${newLevel})`, timestamp: ts });
+      } else {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_xp', content: `${skillName} +${xpGain} XP`, timestamp: ts });
+      }
+    }
   }
 
   if (stateChanges.newQuests?.length > 0) {

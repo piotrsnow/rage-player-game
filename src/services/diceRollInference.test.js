@@ -36,7 +36,7 @@ describe('diceRollInference', () => {
     expect(findSkillAttributeKey('Perswazja')).toBe('charyzma');
     expect(findSkillAttributeKey('Walka bronia jednoręczna')).toBe('sila');
     expect(findSkillAttributeKey('Atletyka')).toBe('sila');
-    expect(findSkillAttributeKey('Targowanie')).toBe('charyzma');
+    expect(findSkillAttributeKey('Handel')).toBe('charyzma');
   });
 
   it('infers charyzma from social dialogue actions', () => {
@@ -58,7 +58,7 @@ describe('diceRollInference', () => {
 
   it('falls back to skill mapping when no explicit attribute', () => {
     const resolved = resolveDiceRollAttribute(
-      { skill: 'Targowanie' },
+      { skill: 'Handel' },
       'Rozmawiam z handlarzem',
     );
     expect(resolved).toBe('charyzma');
@@ -85,9 +85,9 @@ describe('diceRollInference', () => {
 
 describe('pickBestSkill', () => {
   it('picks the skill with highest level', () => {
-    const skills = { Perswazja: 5, Targowanie: 15, Plotkowanie: 0 };
-    const result = pickBestSkill(['Perswazja', 'Targowanie', 'Plotkowanie'], skills);
-    expect(result).toEqual({ skill: 'Targowanie', level: 15, attribute: 'charyzma' });
+    const skills = { Perswazja: 5, Handel: 15, Wystepy: 0 };
+    const result = pickBestSkill(['Perswazja', 'Handel', 'Wystepy'], skills);
+    expect(result).toEqual({ skill: 'Handel', level: 15, attribute: 'charyzma' });
   });
 
   it('picks across different attributes based on level', () => {
@@ -112,8 +112,8 @@ describe('pickBestSkill', () => {
   });
 
   it('handles object-style skill entries with level property', () => {
-    const skills = { Perswazja: { level: 8 }, Targowanie: { level: 3 } };
-    const result = pickBestSkill(['Perswazja', 'Targowanie'], skills);
+    const skills = { Perswazja: { level: 8 }, Handel: { level: 3 } };
+    const result = pickBestSkill(['Perswazja', 'Handel'], skills);
     expect(result).toEqual({ skill: 'Perswazja', level: 8, attribute: 'charyzma' });
   });
 });

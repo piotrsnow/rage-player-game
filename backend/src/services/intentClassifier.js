@@ -29,6 +29,8 @@ function emptySelection() {
     expand_codex: [],
     needs_memory_search: false,
     memory_query: null,
+    roll_skill: null,
+    roll_difficulty: null,
   };
 }
 
@@ -185,8 +187,11 @@ export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], d
 
 // ── NANO MODEL CONTEXT SELECTOR ──
 
+const SKILL_NAMES_FOR_NANO = 'Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Strzelectwo, Uniki, Zastraszanie, Atletyka, Akrobatyka, Jezdziectwo, Perswazja, Blef, Handel, Przywodztwo, Wystepy, Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy, Spostrzegawczosc, Przetrwanie, Tropienie, Odpornosc, Fart, Hazard, Przeczucie';
+
 const NANO_SYSTEM_PROMPT = `You are a context selector for an RPG AI game master.
 Given a player action and available game data, decide which data needs to be expanded (fetched in full) for the main AI to generate a good scene response.
+Also determine if a skill check (dice roll) is needed and which skill to test.
 
 Only select items that are RELEVANT to the player's action. Do not select everything.
 Return ONLY valid JSON matching this schema:
@@ -196,8 +201,18 @@ Return ONLY valid JSON matching this schema:
   "expand_location": true/false,
   "expand_codex": ["codex topics from the list"],
   "needs_memory_search": true/false,
-  "memory_query": "search query for past events" or null
-}`;
+  "memory_query": "search query for past events" or null,
+  "roll_skill": "skill name for dice check" or null,
+  "roll_difficulty": "easy" or "medium" or "hard" or "veryHard" or "extreme" or null
+}
+Available skills: ${SKILL_NAMES_FOR_NANO}
+
+roll_skill rules — MOST actions do NOT need a dice roll. Set roll_skill to null unless the action has REAL risk or uncertainty:
+- null: walking, traveling, resting, eating, entering a building, reading, giving orders to allies, routine camp activities, greeting someone, buying at listed price
+- null: any action where failure would be boring or not advance the story
+- ROLL: persuading/intimidating/lying to someone (Perswazja/Blef/Zastraszanie), haggling for a better price (Handel), sneaking past guards (Skradanie), searching for hidden things (Spostrzegawczosc), picking a lock (Otwieranie zamkow), climbing a dangerous cliff (Atletyka), resisting poison (Odpornosc), tracking footprints (Tropienie)
+- The key question: is the outcome genuinely uncertain AND would failure create an interesting situation? If yes → roll. If no → null.
+When in doubt, use null.`;
 
 /**
  * Call nano model to select which context to expand for a freeform player action.
@@ -206,10 +221,13 @@ export async function selectContextWithNano(playerAction, availableSummary, { pr
   const userPrompt = `Player action: "${playerAction}"\n\nAvailable data:\n${availableSummary}`;
 
   try {
-    if (provider === 'openai') {
+    if (provider === 'anthropic' && config.apiKeys.anthropic) {
+      return await callNanoAnthropic(userPrompt);
+    }
+    if (config.apiKeys.openai) {
       return await callNanoOpenAI(userPrompt);
     }
-    // Fallback: return safe defaults for freeform actions
+    // No API keys available
     return fallbackSelection(playerAction);
   } catch (err) {
     console.warn('Nano context selector failed, using fallback:', err.message);
@@ -252,9 +270,49 @@ async function callNanoOpenAI(userPrompt) {
   return normalizeSelection(parsed);
 }
 
+async function callNanoAnthropic(userPrompt) {
+  const apiKey = config.apiKeys.anthropic;
+  if (!apiKey) throw new Error('No Anthropic API key for nano model');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      system: NANO_SYSTEM_PROMPT,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Anthropic nano model API error ${response.status}: ${text}`);
+  }
+
+  const data = await response.json();
+  const content = data.content?.[0]?.text;
+  if (!content) throw new Error('Empty Anthropic nano model response');
+
+  // Extract JSON from response (Haiku may wrap in markdown code blocks)
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in Anthropic nano response');
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  return normalizeSelection(parsed);
+}
+
 /**
  * Normalize and validate nano model output.
  */
+const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'veryHard', 'extreme'];
+
 function normalizeSelection(raw) {
   return {
     expand_npcs: Array.isArray(raw.expand_npcs) ? raw.expand_npcs.filter(n => typeof n === 'string') : [],
@@ -263,6 +321,8 @@ function normalizeSelection(raw) {
     expand_codex: Array.isArray(raw.expand_codex) ? raw.expand_codex.filter(n => typeof n === 'string') : [],
     needs_memory_search: raw.needs_memory_search === true,
     memory_query: typeof raw.memory_query === 'string' ? raw.memory_query : null,
+    roll_skill: typeof raw.roll_skill === 'string' ? raw.roll_skill : null,
+    roll_difficulty: VALID_DIFFICULTIES.includes(raw.roll_difficulty) ? raw.roll_difficulty : null,
   };
 }
 
@@ -278,6 +338,8 @@ function fallbackSelection(playerAction) {
     expand_codex: [],
     needs_memory_search: true,
     memory_query: playerAction,
+    roll_skill: null,
+    roll_difficulty: null,
   };
 }
 

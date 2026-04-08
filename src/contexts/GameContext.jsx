@@ -6,7 +6,7 @@ import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 import { reduceMultiplayerSlice } from './slices/multiplayerSlice';
-import { SKILL_CAPS, createStartingSkills } from '../data/rpgSystem';
+import { SKILL_CAPS, createStartingSkills, xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost } from '../data/rpgSystem';
 
 const GameContext = (import.meta.hot?.data?.GameContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.GameContext = GameContext;
@@ -441,6 +441,26 @@ function gameReducer(state, action) {
       };
     }
 
+    case 'SPEND_ATTRIBUTE_POINT': {
+      const { attribute } = action.payload;
+      const char = state.character;
+      if (!char || (char.attributePoints || 0) <= 0) return state;
+      const currentVal = char.attributes?.[attribute] ?? 1;
+      if (currentVal >= 25) return state; // attribute cap
+      const newAttrs = { ...char.attributes, [attribute]: currentVal + 1 };
+      const newMaxWounds = calculateMaxWounds(newAttrs.wytrzymalosc);
+      return {
+        ...state,
+        character: {
+          ...char,
+          attributePoints: (char.attributePoints || 0) - 1,
+          attributes: newAttrs,
+          maxWounds: newMaxWounds,
+          wounds: Math.min(char.wounds, newMaxWounds),
+        },
+      };
+    }
+
     case 'EQUIP_WEAPON':
       return {
         ...state,
@@ -578,17 +598,46 @@ function gameReducer(state, action) {
 
       if (changes.skillProgress && next.character) {
         const skills = { ...next.character.skills };
-        for (const [skillName, progress] of Object.entries(changes.skillProgress)) {
-          const current = skills[skillName] || { level: 0, progress: 0, cap: SKILL_CAPS.basic };
-          const newProgress = current.progress + progress;
-          const threshold = (current.level + 1) * 3; // progress needed to level up
-          if (newProgress >= threshold && current.level < current.cap) {
-            skills[skillName] = { ...current, level: current.level + 1, progress: 0 };
-          } else {
-            skills[skillName] = { ...current, progress: Math.min(newProgress, threshold - 1) };
+        let charXpGained = 0;
+
+        for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
+          const current = skills[skillName] || { level: 0, xp: 0, cap: SKILL_CAPS.basic };
+          let newXp = (current.xp ?? current.progress ?? 0) + xpGain;
+          let newLevel = current.level;
+
+          // Level-up loop (possibly multiple level-ups from large XP gains)
+          while (newLevel < current.cap) {
+            const needed = xpForSkillLevel(newLevel + 1);
+            if (needed <= 0 || newXp < needed) break;
+            newXp -= needed;
+            newLevel++;
+            charXpGained += charXpFromSkillLevelUp(newLevel);
           }
+
+          skills[skillName] = { ...current, level: newLevel, xp: newXp };
         }
+
         next.character = { ...next.character, skills };
+
+        // Oblivion-style: skill level-ups → character XP → character level-up → +1 attribute point
+        if (charXpGained > 0) {
+          let charXp = (next.character.characterXp || 0) + charXpGained;
+          let charLevel = next.character.characterLevel || 1;
+          let attrPoints = next.character.attributePoints || 0;
+
+          while (charXp >= charLevelCost(charLevel + 1)) {
+            charXp -= charLevelCost(charLevel + 1);
+            charLevel++;
+            attrPoints++;
+          }
+
+          next.character = {
+            ...next.character,
+            characterLevel: charLevel,
+            characterXp: charXp,
+            attributePoints: attrPoints,
+          };
+        }
       }
 
       if (changes.spellUsage && next.character) {

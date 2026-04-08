@@ -10,6 +10,7 @@ import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
 import { validateStateChanges } from '../services/stateValidator';
+import { calculateDiceRollSkillXP } from '../data/rpgSystem';
 import { processStateChanges as processAchievements } from '../services/achievementTracker';
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches } from '../services/worldConsistency';
@@ -17,6 +18,7 @@ import { detectCombatIntent, buildSpeculativeImageDescription } from '../service
 import { calculateTensionScore } from '../services/tensionTracker';
 import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
+import { parsePartialJson } from '../services/partialJsonParser';
 import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
 import { resolveMechanics } from '../services/mechanics/index';
 import { calculateNextMomentum } from '../services/mechanics/momentumTracker';
@@ -36,6 +38,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
   const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
+  const [streamingNarrative, setStreamingNarrative] = useState(null);
+  const [streamingSegments, setStreamingSegments] = useState(null);
   const [lastSceneGenMs, setLastSceneGenMs] = useState(() => {
     const history = loadSceneGenDurationHistory();
     sceneGenDurationHistoryRef.current = history;
@@ -115,7 +119,9 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
         const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
 
-        // Resolve all deterministic mechanics BEFORE AI call
+        // Resolve deterministic mechanics BEFORE AI call
+        // In backend mode: skip dice roll (backend resolves it after nano intent classification)
+        const willUseBackend = apiClient.isConnected() && !settings.localLLM?.enabled && state.campaign?.backendId;
         const resolved = await resolveMechanics({
           state,
           playerAction,
@@ -124,10 +130,11 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           isCustomAction,
           fromAutoPlayer,
           t,
-          inferSkillCheckFn,
+          inferSkillCheckFn: willUseBackend ? null : inferSkillCheckFn, // backend handles skill inference
+          skipDiceRoll: !!willUseBackend, // backend resolves dice after nano
         });
 
-        if (resolved.diceRoll) {
+        if (resolved.diceRoll && !willUseBackend) {
           setEarlyDiceRoll(resolved.diceRoll);
           if (!isFirstScene && playerAction && !Boolean(isIdleWorldEvent || playerAction === '[WAIT]')) {
             const playerChatContent = playerAction === '[CONTINUE]'
@@ -268,14 +275,29 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
             let backendResult;
             if (useStreaming) {
+              let rawAccumulated = '';
+              setStreamingNarrative('');
+              setStreamingSegments(null);
               backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
                 ...backendOpts,
                 onEvent: (event) => {
                   if (event.type === 'intent') {
                     console.log('[useAI] Stream intent:', event.data?.intent);
+                  } else if (event.type === 'chunk' && event.text) {
+                    rawAccumulated += event.text;
+                    // Parse partial JSON to extract narrative + dialogueSegments incrementally
+                    const parsed = parsePartialJson(rawAccumulated);
+                    if (!parsed) return;
+                    if (typeof parsed.narrative === 'string') {
+                      setStreamingNarrative(parsed.narrative);
+                    }
+                    if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
+                      setStreamingSegments(parsed.dialogueSegments);
+                    }
                   }
                 },
               });
+              // Don't clear streaming yet — let it stay until the final scene message replaces it
             } else {
               backendResult = await aiService.generateSceneViaBackend(backendCampaignId, playerAction, backendOpts);
             }
@@ -420,12 +442,29 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         const incomingDialogueSegments = normalizeIncomingDialogueSegments(result.dialogueSegments || []);
 
-        // Use FE-resolved dice roll instead of AI-generated one
-        result.diceRoll = resolved.diceRoll || null;
+        // Use server dice roll (backend mode) or FE-resolved dice roll (proxy mode)
+        const effectiveDiceRoll = result.diceRoll || resolved.diceRoll || null;
+        result.diceRoll = effectiveDiceRoll;
+
+        // Show dice roll from server response (backend mode — wasn't shown earlier)
+        if (result.diceRoll && !resolved.diceRoll) {
+          setEarlyDiceRoll(result.diceRoll);
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${Date.now()}_roll_server`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: `${result.diceRoll.skill || '?'}: d50=${result.diceRoll.roll} → ${result.diceRoll.success ? '✓' : '✗'} (margin ${result.diceRoll.margin})`,
+              diceData: result.diceRoll,
+              timestamp: Date.now(),
+            },
+          });
+        }
 
         // Update momentum AFTER the roll for next scene
-        if (resolved.diceRoll) {
-          const nextMomentum = calculateNextMomentum(state.momentumBonus || 0, resolved.diceRoll.sl);
+        if (effectiveDiceRoll) {
+          const nextMomentum = calculateNextMomentum(state.momentumBonus || 0, effectiveDiceRoll.margin || effectiveDiceRoll.sl || 0);
           dispatch({ type: 'SET_MOMENTUM', payload: nextMomentum });
         }
 
@@ -494,6 +533,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         };
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
+        setStreamingNarrative(null); // Clear streaming now that final scene is in chat
+        setStreamingSegments(null);
 
         if (earlyImagePromise) {
           const capturedSceneId = sceneId;
@@ -637,6 +678,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
           const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
           result.stateChanges = validated;
+
+          // Inject dice roll skill XP (deterministic, based on resolved mechanics)
+          const diceForXp = effectiveDiceRoll || resolved.diceRoll;
+          if (diceForXp?.skill && diceForXp?.difficulty) {
+            const skillXp = calculateDiceRollSkillXP(diceForXp.difficulty, diceForXp.success);
+            if (!validated.skillProgress) validated.skillProgress = {};
+            validated.skillProgress[diceForXp.skill] = (validated.skillProgress[diceForXp.skill] || 0) + skillXp;
+          }
 
           const previousFactions = { ...(state.world?.factions || {}) };
 
@@ -787,6 +836,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         recordCompletedSceneGenTiming();
         dispatch({ type: 'SET_ERROR', payload: err.message });
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
+        setStreamingNarrative(null);
         throw err;
       }
     },
@@ -847,5 +897,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
     lastSceneGenMs,
     earlyDiceRoll,
     clearEarlyDiceRoll,
+    streamingNarrative,
+    streamingSegments,
   };
 }

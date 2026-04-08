@@ -1061,15 +1061,11 @@
     "Human": "Human",
     "Halfling": "Halfling",
     "Dwarf": "Dwarf",
-    "High Elf": "High Elf",
-    "Wood Elf": "Wood Elf",
-    "HumanDesc": "Versatile and ambitious, the most common folk of the Old World",
-    "HalflingDesc": "Cheerful and resilient, with sharp eyes and sharper appetites",
-    "DwarfDesc": "Stubborn and proud, master craftsmen and fearsome warriors",
-    "High ElfDesc": "Ancient and graceful, wielders of powerful magic",
-    "HighElfDesc": "Ancient and graceful, wielders of powerful magic",
-    "Wood ElfDesc": "Wild and fierce, guardians of the deep forests",
-    "WoodElfDesc": "Wild and fierce, guardians of the deep forests"
+    "Elf": "Elf",
+    "HumanDesc": "Versatile and adaptive. Bonus to all attributes except luck.",
+    "HalflingDesc": "Small but clever. High charisma and dexterity.",
+    "DwarfDesc": "Tough as nails. High endurance and strength.",
+    "ElfDesc": "Agile and intelligent, with a natural affinity for magic."
   },
   "careerClasses": {
     "any": "Any (AI decides)",
@@ -1109,7 +1105,19 @@
     "met": "Met",
     "notMet": "Not met",
     "addSkill": "Add Skill",
-    "owned": "Owned"
+    "owned": "Owned",
+    "level": "Level",
+    "cap": "Cap",
+    "progress": "Progress",
+    "skill": "Skill",
+    "train": "Train",
+    "maxed": "MAX",
+    "spellTrees": "Spell Trees",
+    "characterLevel": "Level {{level}}",
+    "nextLevel": "Next level",
+    "attrPoints": "attr pts",
+    "attributePointsAvailable": "{{count}} attribute points to spend!",
+    "trainingCooldown": "Training available every {{scenes}} scenes"
   },
   "charCreator": {
     "title": "Create Character",
@@ -1161,7 +1169,10 @@
     "clearReferencePhoto": "Clear photo",
     "referencePhotoHintGemini": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will try to preserve facial resemblance.",
     "portraitDescGptImage": "AI will generate a fantasy portrait of your character. You can add a reference photo to preserve your facial likeness in the portrait.",
-    "referencePhotoHintGptImage": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will preserve your face and identity."
+    "referencePhotoHintGptImage": "Without a photo, AI will generate the portrait only from the character description. With a photo, it will preserve your face and identity.",
+    "attributePointsRemaining": "Remaining attribute points",
+    "speciesBonus": "Species bonus",
+    "racialSkill": "Racial"
   },
   "characterPicker": {
     "title": "Your Character",
@@ -1242,6 +1253,64 @@
     "progress": "Progress",
     "locked": "Locked",
     "noAchievements": "No achievements unlocked yet"
+  },
+  "rpgAttributes": {
+    "sila": "Strength",
+    "inteligencja": "Intelligence",
+    "charyzma": "Charisma",
+    "zrecznosc": "Dexterity",
+    "wytrzymalosc": "Endurance",
+    "szczescie": "Luck"
+  },
+  "rpgAttributeShort": {
+    "sila": "STR",
+    "inteligencja": "INT",
+    "charyzma": "CHA",
+    "zrecznosc": "DEX",
+    "wytrzymalosc": "END",
+    "szczescie": "LCK"
+  },
+  "rpgSkills": {
+    "Walka wrecz": "Unarmed Combat",
+    "Walka bronia jednoręczna": "One-Handed Weapons",
+    "Walka bronia dwureczna": "Two-Handed Weapons",
+    "Strzelectwo": "Marksmanship",
+    "Uniki": "Dodge",
+    "Zastraszanie": "Intimidation",
+    "Atletyka": "Athletics",
+    "Akrobatyka": "Acrobatics",
+    "Jezdziectwo": "Riding",
+    "Perswazja": "Persuasion",
+    "Blef": "Bluff",
+    "Handel": "Trade",
+    "Przywodztwo": "Leadership",
+    "Wystepy": "Performance",
+    "Wiedza ogolna": "General Knowledge",
+    "Wiedza o potworach": "Monster Lore",
+    "Wiedza o naturze": "Nature Lore",
+    "Medycyna": "Medicine",
+    "Alchemia": "Alchemy",
+    "Rzemioslo": "Craftsmanship",
+    "Skradanie": "Stealth",
+    "Otwieranie zamkow": "Lockpicking",
+    "Kradziez kieszonkowa": "Pickpocketing",
+    "Pulapki i mechanizmy": "Traps & Mechanisms",
+    "Spostrzegawczosc": "Perception",
+    "Przetrwanie": "Survival",
+    "Tropienie": "Tracking",
+    "Odpornosc": "Endurance",
+    "Fart": "Luck",
+    "Hazard": "Gambling",
+    "Przeczucie": "Intuition"
+  },
+  "rpgSkillCategories": {
+    "walka": "Combat",
+    "fizyczne": "Physical",
+    "spoleczne": "Social",
+    "wiedza": "Knowledge",
+    "skradanie": "Stealth & Precision",
+    "przetrwanie": "Survival",
+    "szczescie": "Luck"
   },
   "wfrpSkills": {
     "Art": "Art",

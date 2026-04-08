@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import Button from '../ui/Button';
 import FloatingVideoPanel from './FloatingVideoPanel';
-import { ATTRIBUTE_SHORT } from '../../data/rpgSystem';
+import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
 
 function CharacterSummaryBadge({ characterData, t }) {
   if (!characterData) return null;
@@ -19,9 +19,9 @@ function CharacterSummaryBadge({ characterData, t }) {
         <span className="text-on-surface-variant">{t(`species.${characterData.species}`, { defaultValue: characterData.species })}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-1">
-        {Object.entries(ATTRIBUTE_SHORT).map(([key, short]) => (
+        {ATTRIBUTE_KEYS.map((key) => (
           <span key={key} className="text-[9px] text-on-surface-variant">
-            {short}: <strong className="text-tertiary">{(characterData.attributes || characterData.characteristics)?.[key]}</strong>
+            {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(characterData.attributes || characterData.characteristics)?.[key]}</strong>
           </span>
         ))}
       </div>

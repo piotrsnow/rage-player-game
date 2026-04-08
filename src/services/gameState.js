@@ -1,5 +1,5 @@
 import {
-  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS, CREATION_LIMITS,
+  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS, CREATION_LIMITS, SKILL_CAPS,
   createStartingSkills, calculateMaxWounds as calcMaxWounds,
 } from '../data/rpgSystem';
 import { DEFAULT_CHARACTER_AGE } from './characterAge';
@@ -39,28 +39,19 @@ export function randomizeSpecies() {
  */
 export function randomizeSkills(speciesName) {
   const skills = createStartingSkills(speciesName);
-  const species = SPECIES[speciesName] || SPECIES.Human;
   let remaining = CREATION_LIMITS.startingSkillPoints;
+  const maxLevel = SKILL_CAPS.basic;
 
-  // Distribute points among species starting skills first
-  const startingSkillNames = species.skills || [];
-  for (const skillName of startingSkillNames) {
-    if (remaining <= 0) break;
-    if (skills[skillName]) {
-      const add = Math.min(CREATION_LIMITS.maxPerSkillAtCreation - skills[skillName].level, remaining, Math.floor(Math.random() * 4) + 1);
-      skills[skillName] = { ...skills[skillName], level: skills[skillName].level + add };
-      remaining -= add;
-    }
-  }
-
-  // Spread remaining points randomly among all skills
+  // Spread points randomly among all skills
   const allSkillNames = Object.keys(skills);
-  while (remaining > 0) {
+  let attempts = 0;
+  while (remaining > 0 && attempts < 500) {
     const name = allSkillNames[Math.floor(Math.random() * allSkillNames.length)];
-    if (skills[name].level < CREATION_LIMITS.maxPerSkillAtCreation) {
+    if (skills[name].level < maxLevel) {
       skills[name] = { ...skills[name], level: skills[name].level + 1 };
       remaining--;
     }
+    attempts++;
   }
 
   return skills;
@@ -73,24 +64,24 @@ export function generateAttributes(speciesName) {
   const species = SPECIES[speciesName] || SPECIES.Human;
   const attrs = {};
 
-  // Distribute baseAttributePoints across 6 attributes
-  const { baseAttributePoints, minAttribute, maxAttributeAtCreation } = CREATION_LIMITS;
-  let remaining = baseAttributePoints;
+  const { baseAttribute, distributableAttributePoints, maxPerAttributeAtCreation } = CREATION_LIMITS;
+  let remaining = distributableAttributePoints;
 
-  // First pass: assign minimum
+  // All attributes start at base (1)
   for (const key of ATTRIBUTE_KEYS) {
-    attrs[key] = minAttribute;
-    remaining -= minAttribute;
+    attrs[key] = baseAttribute;
   }
 
-  // Second pass: randomly distribute remaining points
-  const keys = [...ATTRIBUTE_KEYS];
-  while (remaining > 0) {
-    const key = keys[Math.floor(Math.random() * keys.length)];
-    if (attrs[key] < maxAttributeAtCreation) {
+  // Randomly distribute points — szczescie costs 3× more, skip it in random
+  const nonLuckKeys = ATTRIBUTE_KEYS.filter((k) => k !== 'szczescie');
+  let attempts = 0;
+  while (remaining > 0 && attempts < 200) {
+    const key = nonLuckKeys[Math.floor(Math.random() * nonLuckKeys.length)];
+    if (attrs[key] - baseAttribute < maxPerAttributeAtCreation) {
       attrs[key]++;
       remaining--;
     }
+    attempts++;
   }
 
   // Apply species modifiers

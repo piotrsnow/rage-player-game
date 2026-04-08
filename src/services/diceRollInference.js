@@ -23,6 +23,43 @@ for (const skill of SKILLS) {
   SKILL_ALIAS_MAP.set(canonicalizeKey(skill.name), skill.name);
 }
 
+// Legacy skill names from the old 60-skill list → new consolidated 31-skill names
+const LEGACY_SKILL_ALIASES = new Map([
+  ['bijatyka', 'Walka wrecz'],
+  ['mocowanie', 'Walka wrecz'],
+  ['celnosc', 'Strzelectwo'],
+  ['rzucanie', 'Strzelectwo'],
+  ['refleks', 'Uniki'],
+  ['wspinaczka', 'Atletyka'],
+  ['plywanie', 'Atletyka'],
+  ['dzwiganie', 'Atletyka'],
+  ['skradaniesie', 'Skradanie'],
+  ['targowanie', 'Handel'],
+  ['ocenianiewartosci', 'Handel'],
+  ['plotkowanie', 'Wystepy'],
+  ['dowodzenie', 'Przywodztwo'],
+  ['uwodzenie', 'Blef'],
+  ['etykieta', 'Wystepy'],
+  ['negocjacje', 'Perswazja'],
+  ['przekonywanietlumu', 'Perswazja'],
+  ['sledztwo', 'Spostrzegawczosc'],
+  ['wydobywanieinformacji', 'Spostrzegawczosc'],
+  ['strategia', 'Wiedza ogolna'],
+  ['taktyka', 'Wiedza ogolna'],
+  ['czytanieipisanie', 'Wiedza ogolna'],
+  ['wiedzaoreligiachiwierzeniach', 'Wiedza ogolna'],
+  ['odpornoscnabol', 'Odpornosc'],
+  ['odpornoscnatrucizny', 'Odpornosc'],
+  ['wytrwalosc', 'Przetrwanie'],
+  ['marszdlugodystansowy', 'Przetrwanie'],
+  ['odpornoscnaglodipragnienie', 'Przetrwanie'],
+  ['hartducha', 'Odpornosc'],
+  ['uniklosu', 'Przeczucie'],
+  ['szukanieokazji', 'Przeczucie'],
+  ['wyczucmoment', 'Przeczucie'],
+  ['zonglerkaistuczki', 'Akrobatyka'],
+].map(([oldKey, newName]) => [canonicalizeKey(oldKey), newName]));
+
 // Attribute aliases (PL + EN)
 const ATTRIBUTE_ALIASES = new Map([
   ...ATTRIBUTE_KEYS.map((key) => [canonicalizeKey(key), key]),
@@ -77,8 +114,11 @@ export function inferAttributeFromAction(actionText) {
 
 export function normalizeSkillName(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const canon = SKILL_ALIAS_MAP.get(canonicalizeKey(value));
-  return canon || null;
+  const key = canonicalizeKey(value);
+  const canon = SKILL_ALIAS_MAP.get(key);
+  if (canon) return canon;
+  // Fallback: check legacy skill names from the old 60-skill system
+  return LEGACY_SKILL_ALIASES.get(key) || null;
 }
 
 /**

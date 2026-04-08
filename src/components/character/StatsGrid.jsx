@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT } from '../../data/rpgSystem';
+import { ATTRIBUTE_KEYS, charLevelCost } from '../../data/rpgSystem';
 import Tooltip from '../ui/Tooltip';
 
 const ATTR_ICONS = {
@@ -11,18 +11,40 @@ const ATTR_ICONS = {
   szczescie: 'casino',
 };
 
-export default function StatsGrid({ attributes, mana }) {
+export default function StatsGrid({ attributes, mana, characterLevel, characterXp, attributePoints }) {
   const { t } = useTranslation();
 
   if (!attributes) return null;
 
+  const charLevel = characterLevel || 1;
+  const charXp = characterXp || 0;
+  const nextCost = charLevelCost(charLevel + 1);
+  const charPct = nextCost > 0 ? Math.min(100, (charXp / nextCost) * 100) : 0;
+
   return (
     <div className="space-y-3">
+      {/* Character Level */}
+      <div className="flex items-center gap-3 px-3 py-2 bg-tertiary-container/10 border border-tertiary/20 rounded-sm">
+        <span className="material-symbols-outlined text-tertiary text-lg">military_tech</span>
+        <span className="text-xs font-label uppercase tracking-widest text-on-surface-variant">
+          {t('stats.level', { defaultValue: 'Poziom' })} {charLevel}
+        </span>
+        <div className="flex-1 h-2 bg-surface-container-high/60 rounded-full overflow-hidden">
+          <div className="h-full bg-tertiary rounded-full transition-all duration-300" style={{ width: `${charPct}%` }} />
+        </div>
+        <span className="text-sm font-headline text-tertiary tabular-nums">{charXp}/{nextCost}</span>
+        {(attributePoints || 0) > 0 && (
+          <span className="px-2 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary animate-pulse">
+            +{attributePoints}
+          </span>
+        )}
+      </div>
+
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {ATTRIBUTE_KEYS.map((key) => {
           const value = attributes[key] || 0;
           const icon = ATTR_ICONS[key] || 'star';
-          const short = ATTRIBUTE_SHORT[key] || key;
+          const short = t(`rpgAttributeShort.${key}`, { defaultValue: key });
 
           return (
             <Tooltip key={key} content={t(`tooltips.stats.${key}`, { defaultValue: '' })}>

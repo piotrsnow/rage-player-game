@@ -16,7 +16,7 @@ import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
-import { ATTRIBUTE_SHORT } from '../../data/rpgSystem';
+
 import Tooltip from '../ui/Tooltip';
 
 function getTooltipKey(name) {
@@ -194,7 +194,13 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
         </div>
 
         <div className="lg:col-span-5 space-y-6 animate-fade-in">
-          <StatsGrid attributes={character.attributes || character.characteristics} mana={character.mana} />
+          <StatsGrid
+            attributes={character.attributes || character.characteristics}
+            mana={character.mana}
+            characterLevel={character.characterLevel}
+            characterXp={character.characterXp}
+            attributePoints={character.attributePoints}
+          />
 
           {character.skills && Object.keys(character.skills).length > 0 && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">

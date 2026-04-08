@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import {
-  ATTRIBUTE_KEYS, ATTRIBUTE_SHORT, SKILL_CAPS,
+  ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
   TRAINING_COOLDOWN_SCENES, getSkillAttribute,
+  xpForSkillLevel, charLevelCost,
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { getSpellProgressionStatus } from '../../services/magicEngine';
@@ -27,41 +28,62 @@ function TabButton({ active, label, onClick }) {
   );
 }
 
-function AttributesTab({ character, availableXp, dispatch }) {
+function AttributesTab({ character, dispatch }) {
   const { t } = useTranslation();
+  const attrPoints = character.attributePoints || 0;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      {ATTRIBUTE_KEYS.map((key) => {
-        const value = character.attributes?.[key] || 0;
-        const short = ATTRIBUTE_SHORT[key];
+    <div>
+      {attrPoints > 0 && (
+        <div className="mb-4 px-3 py-2 bg-primary/10 border border-primary/20 rounded-sm text-center">
+          <span className="text-xs text-primary font-bold">
+            {t('advancement.attributePointsAvailable', { count: attrPoints, defaultValue: `${attrPoints} punktów atrybutów do wydania!` })}
+          </span>
+        </div>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {ATTRIBUTE_KEYS.map((key) => {
+          const value = character.attributes?.[key] || 0;
+          const short = t(`rpgAttributeShort.${key}`);
+          const canSpend = attrPoints > 0 && value < ATTRIBUTE_SCALE.max;
 
-        return (
-          <div
-            key={key}
-            className="p-3 rounded-sm border bg-surface-container-high/40 border-outline-variant/10 text-center transition-all"
-          >
-            <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant">
-              {short}
-            </span>
-            <p className="text-tertiary font-headline text-2xl">{value}</p>
-            <span className="text-[10px] text-outline">{translateAttribute(key, t)}</span>
-          </div>
-        );
-      })}
+          return (
+            <div
+              key={key}
+              className={`p-3 rounded-sm border text-center transition-all ${
+                canSpend ? 'bg-primary/10 border-primary/20' : 'bg-surface-container-high/40 border-outline-variant/10'
+              }`}
+            >
+              <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant">
+                {short}
+              </span>
+              <p className="text-tertiary font-headline text-2xl">{value}</p>
+              <span className="text-[10px] text-outline">{translateAttribute(key, t)}</span>
+              {canSpend && (
+                <button
+                  onClick={() => dispatch({ type: 'SPEND_ATTRIBUTE_POINT', payload: { attribute: key } })}
+                  className="mt-1 px-3 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary hover:bg-primary/30 active:scale-95 transition-all"
+                >
+                  +1
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function SkillsTab({ character, availableXp, dispatch }) {
+function SkillsTab({ character, dispatch }) {
   const { t } = useTranslation();
   const skills = character.skills || {};
 
   const sortedSkills = useMemo(() => {
     return Object.entries(skills)
       .map(([name, data]) => {
-        const d = typeof data === 'object' ? data : { level: data || 0, progress: 0, cap: SKILL_CAPS.basic };
-        return { name, ...d, attribute: getSkillAttribute(name) };
+        const d = typeof data === 'object' ? data : { level: data || 0, xp: 0, cap: SKILL_CAPS.basic };
+        return { name, ...d, xp: d.xp ?? d.progress ?? 0, attribute: getSkillAttribute(name) };
       })
       .sort((a, b) => {
         if (b.level !== a.level) return b.level - a.level;
@@ -80,8 +102,9 @@ function SkillsTab({ character, availableXp, dispatch }) {
           <span className="w-16 text-center">{t('advancement.train', 'Trening')}</span>
         </div>
       </div>
-      {sortedSkills.map(({ name, level, progress, cap, attribute }) => {
-        const pct = cap > 0 ? Math.min(100, (level / cap) * 100) : 0;
+      {sortedSkills.map(({ name, level, xp, cap, attribute }) => {
+        const needed = xpForSkillLevel(level + 1);
+        const xpPct = needed > 0 && level < cap ? Math.min(100, (xp / needed) * 100) : (level >= cap ? 100 : 0);
         const atCap = level >= cap;
         const canTrain = atCap && cap < SKILL_CAPS.max;
 
@@ -95,17 +118,20 @@ function SkillsTab({ character, availableXp, dispatch }) {
             <div className="flex items-center gap-2 min-w-0">
               {level > 0 && <span className="w-1.5 h-1.5 bg-primary rounded-full shrink-0" />}
               <span className="text-on-surface-variant truncate">{translateSkill(name, t)}</span>
-              <span className="text-[9px] text-outline uppercase">({ATTRIBUTE_SHORT[attribute]})</span>
+              <span className="text-[9px] text-outline uppercase">({t(`rpgAttributeShort.${attribute}`)})</span>
             </div>
             <div className="flex items-center gap-6 shrink-0">
               <span className="text-tertiary font-headline text-sm w-10 text-center">{level}</span>
-              <div className="w-16 flex items-center gap-1">
-                <div className="flex-1 h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
+              <div className="w-20 flex flex-col items-center gap-0.5">
+                <div className="w-full h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${atCap ? 'bg-tertiary' : 'bg-primary'}`}
-                    style={{ width: `${pct}%` }}
+                    style={{ width: `${xpPct}%` }}
                   />
                 </div>
+                {!atCap && needed > 0 && (
+                  <span className="text-[8px] text-outline tabular-nums">{xp}/{needed}</span>
+                )}
               </div>
               <span className="text-[10px] text-outline w-10 text-center">{cap}</span>
               <div className="w-16 text-center">
@@ -291,6 +317,10 @@ export default function AdvancementPanel({ onClose }) {
   if (!character) return null;
 
   const availableXp = (character.xp || 0) - (character.xpSpent || 0);
+  const charLevel = character.characterLevel || 1;
+  const charXp = character.characterXp || 0;
+  const nextLevelCost = charLevelCost(charLevel + 1);
+  const charXpPct = nextLevelCost > 0 ? Math.min(100, (charXp / nextLevelCost) * 100) : 0;
 
   const tabLabels = {
     attributes: t('advancement.characteristics', 'Atrybuty'),
@@ -304,16 +334,24 @@ export default function AdvancementPanel({ onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/10">
           <div>
-            <h2 className="font-headline text-xl text-tertiary">{t('advancement.title')}</h2>
-            <p className="text-sm text-on-surface-variant mt-0.5">
-              {t('advancement.availableXp')}:{' '}
-              <span className={`font-bold ${availableXp > 0 ? 'text-primary' : 'text-outline'}`}>
-                {availableXp} {t('common.xp')}
+            <div className="flex items-center gap-3">
+              <h2 className="font-headline text-xl text-tertiary">{t('advancement.title')}</h2>
+              <span className="px-2 py-0.5 text-xs font-bold rounded-sm bg-tertiary/20 text-tertiary">
+                {t('advancement.characterLevel', { level: charLevel, defaultValue: `Poziom ${charLevel}` })}
               </span>
-              <span className="text-outline ml-2">
-                ({character.xpSpent || 0} / {character.xp || 0})
-              </span>
-            </p>
+              {(character.attributePoints || 0) > 0 && (
+                <span className="px-2 py-0.5 text-xs font-bold rounded-sm bg-primary/20 text-primary animate-pulse">
+                  +{character.attributePoints} {t('advancement.attrPoints', 'pkt atr.')}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-[10px] text-on-surface-variant">{t('advancement.nextLevel', 'Nast. poziom')}:</span>
+              <div className="w-32 h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
+                <div className="h-full bg-tertiary rounded-full transition-all" style={{ width: `${charXpPct}%` }} />
+              </div>
+              <span className="text-[10px] text-outline tabular-nums">{charXp}/{nextLevelCost}</span>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -339,10 +377,10 @@ export default function AdvancementPanel({ onClose }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {activeTab === 'attributes' && (
-            <AttributesTab character={character} availableXp={availableXp} dispatch={dispatch} />
+            <AttributesTab character={character} dispatch={dispatch} />
           )}
           {activeTab === 'skills' && (
-            <SkillsTab character={character} availableXp={availableXp} dispatch={dispatch} />
+            <SkillsTab character={character} dispatch={dispatch} />
           )}
           {activeTab === 'spellTrees' && (
             <SpellTreesTab character={character} />

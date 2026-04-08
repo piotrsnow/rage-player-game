@@ -2,11 +2,10 @@ import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import {
-  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS, ATTRIBUTE_SHORT,
-  CREATION_LIMITS, createStartingSkills, calculateMaxWounds,
+  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS,
+  CREATION_LIMITS, SKILL_CAPS, SKILL_CATEGORIES, createStartingSkills, calculateMaxWounds,
 } from '../../data/rpgSystem';
 import {
-  generateAttributes,
   pickRandomName, randomizeSpecies,
   randomizeSkills, randomizeFullCharacter,
   generateStartingMoney,
@@ -36,21 +35,46 @@ function SectionHeader({ icon, label, onRandomize }) {
   );
 }
 
-function StatBox({ label, shortLabel, value, onReroll }) {
+function PointBuyRow({ label, shortLabel, baseValue, added, speciesMod, finalValue, pointCost, onIncrement, onDecrement, canIncrement, canDecrement }) {
   return (
-    <div className="flex flex-col items-center gap-1 p-2 bg-surface-container-high/40 border border-outline-variant/10 rounded-sm min-w-[60px]">
-      <span className="text-[11px] text-on-surface-variant uppercase tracking-wider">{shortLabel}</span>
-      <span className="text-lg font-headline text-tertiary">{value}</span>
-      <span className="text-[10px] text-outline truncate max-w-full">{label}</span>
-      {onReroll && (
+    <div className="flex items-center gap-2 p-2 bg-surface-container-high/40 border border-outline-variant/10 rounded-sm">
+      <div className="flex flex-col min-w-[70px]">
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-label">{shortLabel}</span>
+          {pointCost > 1 && (
+            <span className="text-[9px] px-1 py-0.5 bg-amber-500/15 text-amber-400 rounded-sm font-label">×{pointCost}</span>
+          )}
+        </div>
+        <span className="text-[10px] text-outline truncate">{label}</span>
+      </div>
+      <div className="flex items-center gap-1 ml-auto">
         <button
           type="button"
-          onClick={onReroll}
-          className="material-symbols-outlined text-[12px] text-outline hover:text-primary transition-colors mt-0.5"
+          onClick={onDecrement}
+          disabled={!canDecrement}
+          className="w-6 h-6 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/30 disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-sm font-bold"
         >
-          casino
+          −
         </button>
-      )}
+        <div className="flex items-center gap-0.5 min-w-[80px] justify-center">
+          <span className="text-xs text-on-surface-variant tabular-nums">{baseValue + added}</span>
+          {speciesMod !== 0 && (
+            <span className={`text-[10px] tabular-nums ${speciesMod > 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {speciesMod > 0 ? '+' : ''}{speciesMod}
+            </span>
+          )}
+          <span className="text-xs text-outline mx-0.5">=</span>
+          <span className="text-lg font-headline text-tertiary tabular-nums">{finalValue}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onIncrement}
+          disabled={!canIncrement}
+          className="w-6 h-6 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/30 disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-sm font-bold"
+        >
+          +
+        </button>
+      </div>
     </div>
   );
 }
@@ -62,20 +86,43 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const [age, setAge] = useState(normalizeCharacterAge(initialCharacter?.age));
   const [gender, setGender] = useState(initialCharacter?.gender || 'male');
   const [species, setSpecies] = useState(initialCharacter?.species || 'Human');
-  const [attributes, setAttributes] = useState(
-    initialCharacter?.attributes || generateAttributes(initialCharacter?.species || 'Human'),
-  );
+  // Point-buy: track added points per attribute (0 to maxPerAttributeAtCreation)
+  const initBase = () => {
+    const base = {};
+    for (const key of ATTRIBUTE_KEYS) base[key] = 0;
+    return base;
+  };
+  const [attrAdded, setAttrAdded] = useState(initBase);
   const [skills, setSkills] = useState(initialCharacter?.skills || createStartingSkills(initialCharacter?.species || 'Human'));
   const [backstory, setBackstory] = useState(initialCharacter?.backstory || '');
   const [portraitUrl, setPortraitUrl] = useState(initialCharacter?.portraitUrl || null);
   const [portraitOpen, setPortraitOpen] = useState(false);
 
   const speciesData = SPECIES[species] || SPECIES.Human;
+
+  // Derive final attributes from base + added + species mod
+  const attributes = useMemo(() => {
+    const result = {};
+    for (const key of ATTRIBUTE_KEYS) {
+      const base = CREATION_LIMITS.baseAttribute + (attrAdded[key] || 0);
+      const mod = speciesData.attributes[key] || 0;
+      result[key] = Math.max(1, base + mod);
+    }
+    return result;
+  }, [attrAdded, speciesData]);
+
+  const szczCost = CREATION_LIMITS.szczesciePointCost;
+  const attrPointCost = useCallback((key) => key === 'szczescie' ? szczCost : 1, [szczCost]);
+  const attrPointsUsed = useMemo(() =>
+    ATTRIBUTE_KEYS.reduce((sum, key) => sum + (attrAdded[key] || 0) * (key === 'szczescie' ? szczCost : 1), 0),
+  [attrAdded, szczCost]);
+  const attrPointsRemaining = CREATION_LIMITS.distributableAttributePoints - attrPointsUsed;
+
   const maxWounds = useMemo(() => calculateMaxWounds(attributes?.wytrzymalosc ?? 10), [attributes]);
 
   const handleSpeciesChange = useCallback((sp) => {
     setSpecies(sp);
-    setAttributes(generateAttributes(sp));
+    setAttrAdded(initBase());
     setSkills(createStartingSkills(sp));
   }, []);
 
@@ -86,22 +133,48 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const handleRandomizeSpecies = useCallback(() => {
     const sp = randomizeSpecies();
     setSpecies(sp);
-    setAttributes(generateAttributes(sp));
+    setAttrAdded(initBase());
     setSkills(createStartingSkills(sp));
   }, []);
 
   const handleRandomizeStats = useCallback(() => {
-    setAttributes(generateAttributes(species));
-  }, [species]);
+    const { distributableAttributePoints, maxPerAttributeAtCreation, szczesciePointCost } = CREATION_LIMITS;
+    const added = {};
+    for (const key of ATTRIBUTE_KEYS) added[key] = 0;
+    let remaining = distributableAttributePoints;
+    // Exclude szczescie from random — too expensive to randomly land on
+    const nonLuckKeys = ATTRIBUTE_KEYS.filter((k) => k !== 'szczescie');
+    let attempts = 0;
+    while (remaining > 0 && attempts < 200) {
+      const key = nonLuckKeys[Math.floor(Math.random() * nonLuckKeys.length)];
+      if (added[key] < maxPerAttributeAtCreation) {
+        added[key]++;
+        remaining--;
+      }
+      attempts++;
+    }
+    setAttrAdded(added);
+  }, []);
 
-  const handleRerollStat = useCallback((key) => {
-    const specMod = speciesData.attributes?.[key] || 0;
-    const base = Math.floor(Math.random() * 15) + 5; // 5-19 range
-    setAttributes((prev) => ({ ...prev, [key]: Math.max(1, Math.min(25, base + specMod)) }));
-  }, [speciesData]);
+  const handleAttrIncrement = useCallback((key) => {
+    const cost = key === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1;
+    setAttrAdded((prev) => {
+      if ((prev[key] || 0) >= CREATION_LIMITS.maxPerAttributeAtCreation) return prev;
+      const used = ATTRIBUTE_KEYS.reduce((s, k) => s + (prev[k] || 0) * (k === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1), 0);
+      if (used + cost > CREATION_LIMITS.distributableAttributePoints) return prev;
+      return { ...prev, [key]: (prev[key] || 0) + 1 };
+    });
+  }, []);
+
+  const handleAttrDecrement = useCallback((key) => {
+    setAttrAdded((prev) => {
+      if ((prev[key] || 0) <= 0) return prev;
+      return { ...prev, [key]: (prev[key] || 0) - 1 };
+    });
+  }, []);
 
   const handleRandomizeSkills = useCallback(() => {
-    setSkills(randomizeSkills(null, species));
+    setSkills(randomizeSkills(species));
   }, [species]);
 
   const handleRandomizeAll = useCallback(() => {
@@ -110,7 +183,15 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     setAge(normalizeCharacterAge(char.age));
     setGender(char.gender);
     setSpecies(char.species);
-    setAttributes(char.attributes || char.characteristics);
+    // Reverse-engineer attrAdded from generated attributes (strip species mods)
+    const sp = SPECIES[char.species] || SPECIES.Human;
+    const added = {};
+    for (const key of ATTRIBUTE_KEYS) {
+      const finalVal = (char.attributes || char.characteristics)?.[key] || CREATION_LIMITS.baseAttribute;
+      const mod = sp.attributes[key] || 0;
+      added[key] = Math.max(0, finalVal - CREATION_LIMITS.baseAttribute - mod);
+    }
+    setAttrAdded(added);
     setSkills(char.skills || createStartingSkills(char.species));
   }, [genre]);
 
@@ -138,51 +219,58 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   }, [name, age, gender, species, attributes, maxWounds, speciesData, skills, backstory, portraitUrl, genre, onConfirm]);
 
   // Skill points system for creation
+  const racialSkillNames = useMemo(() => new Set(speciesData.skills || []), [speciesData]);
+  const racialBase = CREATION_LIMITS.racialSkillLevel;
+  const maxSkillLevel = SKILL_CAPS.basic;
+
   const skillPointsUsed = useMemo(() => {
-    return Object.values(skills).reduce((sum, v) => {
+    let used = 0;
+    for (const [name, v] of Object.entries(skills)) {
       const level = typeof v === 'object' ? v.level : (v || 0);
-      return sum + level;
-    }, 0);
-  }, [skills]);
+      const base = racialSkillNames.has(name) ? racialBase : 0;
+      used += Math.max(0, level - base);
+    }
+    return used;
+  }, [skills, racialSkillNames, racialBase]);
   const totalSkillPoints = CREATION_LIMITS.startingSkillPoints;
   const remainingSkillPoints = totalSkillPoints - skillPointsUsed;
   const skillPointsPct = Math.min(100, (skillPointsUsed / totalSkillPoints) * 100);
 
-  const handleSkillChange = useCallback((skillName, raw) => {
-    const value = Math.max(0, Math.min(CREATION_LIMITS.maxPerSkillAtCreation, parseInt(raw) || 0));
+  const handleSkillIncrement = useCallback((skillName) => {
     setSkills((prev) => {
       const old = prev[skillName];
       const oldLevel = typeof old === 'object' ? old.level : (old || 0);
-      const delta = value - oldLevel;
-      const currentUsed = Object.values(prev).reduce((s, v) => {
+      if (oldLevel >= maxSkillLevel) return prev;
+      // Check budget
+      const base = racialSkillNames.has(skillName) ? racialBase : 0;
+      let used = 0;
+      for (const [name, v] of Object.entries(prev)) {
         const l = typeof v === 'object' ? v.level : (v || 0);
-        return s + l;
-      }, 0);
-      if (delta > 0 && currentUsed + delta > totalSkillPoints) {
-        const clamped = oldLevel + (totalSkillPoints - currentUsed);
-        const newLevel = Math.max(0, clamped);
-        if (typeof old === 'object') {
-          return { ...prev, [skillName]: { ...old, level: newLevel } };
-        }
-        return { ...prev, [skillName]: newLevel };
+        const b = racialSkillNames.has(name) ? racialBase : 0;
+        used += Math.max(0, l - b);
       }
+      if (used >= totalSkillPoints) return prev;
+      const newLevel = oldLevel + 1;
       if (typeof old === 'object') {
-        return { ...prev, [skillName]: { ...old, level: value } };
+        return { ...prev, [skillName]: { ...old, level: newLevel } };
       }
-      return { ...prev, [skillName]: value };
+      return { ...prev, [skillName]: newLevel };
     });
-  }, [totalSkillPoints]);
+  }, [racialSkillNames, racialBase, totalSkillPoints, maxSkillLevel]);
 
-  // Species starting skills + all skills for display
-  const displaySkills = useMemo(() => {
-    const specSkills = speciesData.skills || [];
-    const owned = Object.keys(skills).filter((k) => {
-      const v = skills[k];
-      const level = typeof v === 'object' ? v.level : (v || 0);
-      return level > 0;
+  const handleSkillDecrement = useCallback((skillName) => {
+    setSkills((prev) => {
+      const old = prev[skillName];
+      const oldLevel = typeof old === 'object' ? old.level : (old || 0);
+      const minLevel = racialSkillNames.has(skillName) ? racialBase : 0;
+      if (oldLevel <= minLevel) return prev;
+      const newLevel = oldLevel - 1;
+      if (typeof old === 'object') {
+        return { ...prev, [skillName]: { ...old, level: newLevel } };
+      }
+      return { ...prev, [skillName]: newLevel };
     });
-    return [...new Set([...specSkills, ...owned])].sort();
-  }, [speciesData, skills]);
+  }, [racialSkillNames, racialBase]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -322,19 +410,51 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             </div>
           </section>
 
-          {/* Attributes */}
+          {/* Attributes — Point Buy */}
           <section>
             <SectionHeader icon="monitoring" label={t('charCreator.characteristicsLabel')} onRandomize={handleRandomizeStats} />
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {ATTRIBUTE_KEYS.map((key) => (
-                <StatBox
-                  key={key}
-                  label={t(`rpgAttributes.${key}`, { defaultValue: key })}
-                  shortLabel={ATTRIBUTE_SHORT[key]}
-                  value={attributes[key]}
-                  onReroll={() => handleRerollStat(key)}
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+                  {t('charCreator.attributePointsRemaining')}
+                </span>
+                <span className={`text-xs font-bold tabular-nums ${
+                  attrPointsRemaining <= 0 ? 'text-error' : attrPointsRemaining <= 3 ? 'text-tertiary' : 'text-primary'
+                }`}>
+                  {attrPointsRemaining} / {CREATION_LIMITS.distributableAttributePoints}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-surface-container-high/60 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    attrPointsRemaining <= 0 ? 'bg-error' : attrPointsRemaining <= 3 ? 'bg-tertiary' : 'bg-primary'
+                  }`}
+                  style={{ width: `${Math.min(100, (attrPointsUsed / CREATION_LIMITS.distributableAttributePoints) * 100)}%` }}
                 />
-              ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {ATTRIBUTE_KEYS.map((key) => {
+                const added = attrAdded[key] || 0;
+                const specMod = speciesData.attributes[key] || 0;
+                const cost = attrPointCost(key);
+                return (
+                  <PointBuyRow
+                    key={key}
+                    label={t(`rpgAttributes.${key}`)}
+                    shortLabel={t(`rpgAttributeShort.${key}`)}
+                    baseValue={CREATION_LIMITS.baseAttribute}
+                    added={added}
+                    speciesMod={specMod}
+                    finalValue={attributes[key]}
+                    pointCost={cost}
+                    onIncrement={() => handleAttrIncrement(key)}
+                    onDecrement={() => handleAttrDecrement(key)}
+                    canIncrement={added < CREATION_LIMITS.maxPerAttributeAtCreation && attrPointsRemaining >= cost}
+                    canDecrement={added > 0}
+                  />
+                );
+              })}
             </div>
             <div className="flex flex-wrap gap-4 mt-3 text-xs text-on-surface-variant">
               <span>{t('charCreator.derivedWounds')}: <strong className="text-tertiary">{maxWounds}</strong></span>
@@ -343,7 +463,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             </div>
           </section>
 
-          {/* Skills */}
+          {/* Skills — grouped by category */}
           <section>
             <SectionHeader icon="construction" label={t('charCreator.skillsLabel')} onRandomize={handleRandomizeSkills} />
             <div className="mb-3">
@@ -366,24 +486,56 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-              {displaySkills.map((skillName) => {
-                const val = skills[skillName];
-                const level = typeof val === 'object' ? val.level : (val || 0);
-                return (
-                  <div key={skillName} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
-                    <span className="text-xs text-on-surface truncate pr-2">{translateSkill(skillName, t)}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={CREATION_LIMITS.maxPerSkillAtCreation}
-                      value={level}
-                      onChange={(e) => handleSkillChange(skillName, e.target.value)}
-                      className="w-12 text-center bg-transparent border border-outline-variant/15 rounded-sm text-xs text-tertiary py-0.5 focus:border-primary/50 focus:ring-0"
-                    />
+            <div className="space-y-4">
+              {SKILL_CATEGORIES.map((cat) => (
+                <div key={cat.key}>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="material-symbols-outlined text-sm text-primary">{cat.icon}</span>
+                    <span className="text-[11px] font-label uppercase tracking-wider text-on-surface-variant">{t(`rpgSkillCategories.${cat.key}`, { defaultValue: cat.label })}</span>
                   </div>
-                );
-              })}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                    {cat.skills.map((skillName) => {
+                      const val = skills[skillName];
+                      const level = typeof val === 'object' ? val.level : (val || 0);
+                      const isRacial = racialSkillNames.has(skillName);
+                      const minLevel = isRacial ? racialBase : 0;
+                      return (
+                        <div key={skillName} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs text-on-surface truncate">{translateSkill(skillName, t)}</span>
+                            {isRacial && (
+                              <span className="shrink-0 text-[9px] px-1 py-0.5 bg-primary/15 text-primary rounded-sm font-label">
+                                {t('charCreator.racialSkill')}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleSkillDecrement(skillName)}
+                              disabled={level <= minLevel}
+                              className="w-5 h-5 flex items-center justify-center rounded-sm text-on-surface-variant hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs font-bold"
+                            >
+                              −
+                            </button>
+                            <span className={`w-6 text-center text-xs tabular-nums ${level > 0 ? 'text-tertiary font-bold' : 'text-outline'}`}>
+                              {level}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSkillIncrement(skillName)}
+                              disabled={level >= maxSkillLevel || remainingSkillPoints <= 0}
+                              className="w-5 h-5 flex items-center justify-center rounded-sm text-on-surface-variant hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs font-bold"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
 

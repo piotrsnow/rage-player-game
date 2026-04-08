@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { translateSkill } from '../../utils/rpgTranslate';
-import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT } from '../../data/rpgSystem';
-
-const ATTR_GRID = ATTRIBUTE_KEYS.map((key) => ({ key, label: ATTRIBUTE_SHORT[key] }));
+import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
 
 const BEHAVIORS = ['aggressive', 'defensive', 'supportive', 'passive'];
 const STANCES = ['attack', 'defend', 'support'];
@@ -61,7 +59,7 @@ function buildDefaultCompanion({ name, species, sila, zrecznosc, wytrzymalosc })
     maxWounds: 10,
     movement: 4,
     mana: { current: 0, max: 0 },
-    skills: { 'Walka bronia jednoręczna': { level: 2, progress: 0, cap: 10 }, 'Atletyka': { level: 1, progress: 0, cap: 10 } },
+    skills: { 'Walka bronia jednoręczna': { level: 5, progress: 0, cap: 10 }, 'Atletyka': { level: 3, progress: 0, cap: 10 } },
     spells: { known: [], usageCounts: {}, scrolls: [] },
     inventory: [],
     statuses: [],
@@ -167,7 +165,7 @@ export default function PartyPanel({
             />
             {['sila', 'zrecznosc', 'wytrzymalosc'].map((k) => (
               <label key={k} className="flex items-center gap-1 text-[9px] text-on-surface-variant">
-                <span className="uppercase w-8">{ATTRIBUTE_SHORT[k]}</span>
+                <span className="uppercase w-8">{t(`rpgAttributeShort.${k}`)}</span>
                 <input
                   type="number"
                   min={1}
@@ -269,12 +267,12 @@ export default function PartyPanel({
           </div>
 
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
-            {ATTR_GRID.map(({ key, label }) => (
+            {ATTRIBUTE_KEYS.map((key) => (
               <div
                 key={key}
                 className="text-center px-0.5 py-1 rounded-sm bg-surface-container/50 border border-outline-variant/5"
               >
-                <div className="text-[8px] text-on-surface-variant">{label}</div>
+                <div className="text-[8px] text-on-surface-variant">{t(`rpgAttributeShort.${key}`)}</div>
                 <div className="text-[10px] font-bold text-on-surface tabular-nums">
                   {(active.attributes || active.characteristics)?.[key] ?? '—'}
                 </div>

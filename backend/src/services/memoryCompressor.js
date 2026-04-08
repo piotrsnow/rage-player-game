@@ -9,17 +9,25 @@
 import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 
-// ── NANO MODEL CALLER ──
+// ── NANO MODEL CALLER (provider-aware) ──
 
 async function callNano(systemPrompt, userPrompt) {
-  const apiKey = config.apiKeys.openai;
-  if (!apiKey) return null;
+  // Prefer Anthropic Haiku if available, fall back to OpenAI nano
+  if (config.apiKeys.anthropic) {
+    return callNanoAnthropic(systemPrompt, userPrompt);
+  }
+  if (config.apiKeys.openai) {
+    return callNanoOpenAI(systemPrompt, userPrompt);
+  }
+  return null;
+}
 
+async function callNanoOpenAI(systemPrompt, userPrompt) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKeys.openai}`,
     },
     body: JSON.stringify({
       model: 'gpt-4.1-nano',
@@ -34,12 +42,37 @@ async function callNano(systemPrompt, userPrompt) {
   });
 
   if (!response.ok) return null;
-
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (!content) return null;
-
   return JSON.parse(content);
+}
+
+async function callNanoAnthropic(systemPrompt, userPrompt) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': config.apiKeys.anthropic,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userPrompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) return null;
+  const data = await response.json();
+  const content = data.content?.[0]?.text;
+  if (!content) return null;
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  return JSON.parse(jsonMatch[0]);
 }
 
 // ── RUNNING SUMMARY ──

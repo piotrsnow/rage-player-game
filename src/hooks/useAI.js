@@ -24,6 +24,8 @@ export function useAI() {
     lastSceneGenMs,
     earlyDiceRoll,
     clearEarlyDiceRoll,
+    streamingNarrative,
+    streamingSegments,
   } = useSceneGeneration({
     ensureMissingInventoryImages,
     imageGenEnabled,
@@ -59,5 +61,7 @@ export function useAI() {
     lastSceneGenMs,
     earlyDiceRoll,
     clearEarlyDiceRoll,
+    streamingNarrative,
+    streamingSegments,
   };
 }

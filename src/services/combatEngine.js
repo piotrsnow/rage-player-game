@@ -1,6 +1,6 @@
 import { rollD50, rollPercentage } from './gameState';
 import { gameData } from './gameDataService';
-import { DIFFICULTY_THRESHOLDS } from '../data/rpgSystem';
+import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
@@ -36,6 +36,29 @@ export function getDistance(a, b) {
 
 export function isInMeleeRange(a, b) {
   return getDistance(a, b) <= gameData.MELEE_RANGE;
+}
+
+function getWeaponSkillName(actor) {
+  const mainWeapon = getMainWeapon(actor);
+  const weaponInfo = getWeaponData(mainWeapon);
+  if (!weaponInfo) return WEAPON_SKILL_MAP.unarmed;
+  if (weaponInfo.group === 'Ranged' || weaponInfo.reach === 'ranged') return WEAPON_SKILL_MAP.ranged;
+  if (weaponInfo.twoHanded || weaponInfo.group === 'Two-Handed') return WEAPON_SKILL_MAP.melee_2h;
+  return WEAPON_SKILL_MAP.melee_1h;
+}
+
+function getEnemyTier(enemy) {
+  const maxW = enemy.maxWounds || 10;
+  if (maxW <= 8) return 'weak';
+  if (maxW <= 15) return 'medium';
+  if (maxW <= 30) return 'hard';
+  return 'boss';
+}
+
+function addCombatSkillXp(state, actorId, skillName, xp) {
+  if (!state.skillXpAccumulator) state.skillXpAccumulator = {};
+  if (!state.skillXpAccumulator[actorId]) state.skillXpAccumulator[actorId] = {};
+  state.skillXpAccumulator[actorId][skillName] = (state.skillXpAccumulator[actorId][skillName] || 0) + xp;
 }
 
 const COMBAT_CREATIVITY_KEYWORDS = [
@@ -281,9 +304,8 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     }
 
     const inteligencja = actor.attributes?.inteligencja || 10;
-    const magicSkillLevel = getCombatSkillLevel(actor, 'Magia');
-    const test = resolveCombatTest(actor, inteligencja, magicSkillLevel, 0, DIFFICULTY_THRESHOLDS.medium);
-    result.rolls.push({ skill: 'Magia', ...test, side: 'caster' });
+    const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
+    result.rolls.push({ skill: 'Inteligencja', ...test, side: 'caster' });
 
     if (test.success) {
       const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
@@ -310,7 +332,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     result.targetName = target.name;
     const isRanged = manoeuvre.skill?.startsWith('Ranged');
     const attackAttr = isRanged ? getDefenseAttribute(actor) : getAttackAttribute(actor);
-    const attackSkillName = isRanged ? 'Celnosc' : 'Walka bronia jednoręczna';
+    const attackSkillName = isRanged ? 'Strzelectwo' : 'Walka bronia jednoręczna';
     const attackSkillLevel = getCombatSkillLevel(actor, attackSkillName);
     const creativityBonus = getCombatCreativityBonus(customDescription);
 
@@ -372,6 +394,23 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     }
 
     target.conditions = target.conditions.filter((c) => c !== 'defending' && c !== 'dodging');
+
+    // Track combat skill XP for player attacks
+    if (actor.type === 'player') {
+      const weaponSkill = getWeaponSkillName(actor);
+      if (result.outcome === 'hit') {
+        const xp = result.targetDefeated
+          ? COMBAT_SKILL_XP.kill[getEnemyTier(target)] || COMBAT_SKILL_XP.kill.medium
+          : COMBAT_SKILL_XP.hit;
+        addCombatSkillXp(state, actor.id, weaponSkill, xp);
+      } else {
+        addCombatSkillXp(state, actor.id, weaponSkill, COMBAT_SKILL_XP.miss);
+      }
+    }
+    // Track Uniki XP when player dodges (enemy attacks player who is dodging)
+    if (target?.type === 'player' && target.conditions.includes('dodging') && result.outcome === 'miss') {
+      addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.miss);
+    }
   }
 
   state.log = [...state.log, ...log];
@@ -512,9 +551,15 @@ export function endCombat(combat, playerCharacter) {
   const enemiesDefeated = combat.combatants.filter((c) => c.type === 'enemy' && c.isDefeated).length;
   const totalEnemies = combat.combatants.filter((c) => c.type === 'enemy').length;
 
+  // Gather accumulated combat skill XP for the player
+  const playerSkillXp = playerCombatant && combat.skillXpAccumulator?.[playerCombatant.id]
+    ? { ...combat.skillXpAccumulator[playerCombatant.id] }
+    : null;
+
   return {
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
     xp: Math.max(10, enemiesDefeated * 15 + combat.round * 5),
+    skillProgress: playerSkillXp,
     enemiesDefeated,
     totalEnemies,
     rounds: combat.round,
@@ -531,10 +576,15 @@ export function surrenderCombat(combat, playerCharacter) {
     .filter((c) => c.type === 'enemy' && !c.isDefeated)
     .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
 
+  const playerSkillXp = playerCombatant && combat.skillXpAccumulator?.[playerCombatant.id]
+    ? { ...combat.skillXpAccumulator[playerCombatant.id] }
+    : null;
+
   return {
     outcome: 'surrender',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
     xp: Math.max(5, Math.floor((enemiesDefeated * 15 + combat.round * 3) * 0.5)),
+    skillProgress: playerSkillXp,
     enemiesDefeated, totalEnemies, remainingEnemies,
     rounds: combat.round, playerSurvived: true, reason: combat.reason || '',
   };
@@ -549,10 +599,15 @@ export function forceTruceCombat(combat, playerCharacter) {
     .filter((c) => c.type === 'enemy' && !c.isDefeated)
     .map((c) => ({ name: c.name, wounds: c.wounds, maxWounds: c.maxWounds }));
 
+  const playerSkillXp = playerCombatant && combat.skillXpAccumulator?.[playerCombatant.id]
+    ? { ...combat.skillXpAccumulator[playerCombatant.id] }
+    : null;
+
   return {
     outcome: 'truce',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
     xp: Math.max(8, Math.floor((enemiesDefeated * 15 + combat.round * 5) * 0.75)),
+    skillProgress: playerSkillXp,
     enemiesDefeated, totalEnemies, remainingEnemies,
     rounds: combat.round, playerSurvived: true, reason: combat.reason || '',
   };

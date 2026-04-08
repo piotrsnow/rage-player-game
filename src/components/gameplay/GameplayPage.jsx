@@ -86,7 +86,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll } = useAI();
+  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll, streamingNarrative, streamingSegments } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -1165,7 +1165,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const overlayTypingSpeedMultiplier = isPlayerActionOverlayActive
     ? (isGeneratingScene ? 3 : 1)
     : 1;
-  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
+  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene && !streamingNarrative;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
 
   const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
@@ -1946,7 +1946,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
-              showLoader={isPlayerActionOverlayActive && isGeneratingScene}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene && !streamingNarrative}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
             />
@@ -2013,8 +2013,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Loading State */}
-        {isGeneratingScene && !readOnly && (
+        {/* Loading State — hide once streaming narrative arrives */}
+        {isGeneratingScene && !readOnly && !streamingNarrative && (
           <SceneGenerationProgress
             startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
             estimatedMs={lastSceneGenMs}
@@ -2255,6 +2255,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       <aside className="w-full lg:w-96 bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0">
         <ChatPanel
           messages={chatHistory}
+          streamingNarrative={streamingNarrative}
+          streamingSegments={streamingSegments}
           narrator={settings.narratorEnabled ? narrator : null}
           autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText && !playerActionOverlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}

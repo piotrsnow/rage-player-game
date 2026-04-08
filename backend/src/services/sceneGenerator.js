@@ -18,8 +18,44 @@ import {
 } from './embeddingService.js';
 import { writeEmbedding } from './vectorSearchService.js';
 import { findClosestBestiaryEntry } from '../data/wfrpEquipment.js';
+import { resolveBackendDiceRoll } from './diceResolver.js';
 
 const MAX_TOOL_ROUNDS = 3;
+
+// ── Skill XP calculation (deterministic, mirrors shared/domain logic) ──
+const DIFFICULTY_SKILL_XP = {
+  easy:     { success: 4,  failure: 2  },
+  medium:   { success: 8,  failure: 4  },
+  hard:     { success: 14, failure: 7  },
+  veryHard: { success: 20, failure: 10 },
+  extreme:  { success: 28, failure: 14 },
+};
+
+/**
+ * Convert AI's skillsUsed + actionDifficulty into deterministic skillProgress XP.
+ * Called after scene generation, before returning result to frontend.
+ */
+function calculateFreeformSkillXP(stateChanges, hasExternalDiceRoll) {
+  if (!stateChanges) return;
+  const skillsUsed = stateChanges.skillsUsed;
+  const difficulty = stateChanges.actionDifficulty;
+
+  // Only calculate for freeform actions (no external dice roll)
+  if (Array.isArray(skillsUsed) && skillsUsed.length > 0 && !hasExternalDiceRoll) {
+    const entry = DIFFICULTY_SKILL_XP[difficulty] || DIFFICULTY_SKILL_XP.medium;
+    const xp = entry.success; // freeform actions count as success
+    stateChanges.skillProgress = {};
+    for (const skill of skillsUsed.slice(0, 3)) {
+      if (typeof skill === 'string' && skill.trim()) {
+        stateChanges.skillProgress[skill.trim()] = xp;
+      }
+    }
+  }
+
+  // Clean up AI metadata fields (not part of game state)
+  delete stateChanges.skillsUsed;
+  delete stateChanges.actionDifficulty;
+}
 
 // --- DM Settings label helpers ---
 
@@ -299,7 +335,9 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - factionChanges: {faction_id: delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk.
 - worldFacts: strings of new information for world state.
 - woundsChange: delta (negative=damage, positive=healing).
-- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}. skillProgress: {"skillName": 1-3}.
+- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
+- skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
 ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}.' : ''}
 - campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
   );
@@ -831,6 +869,22 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
 
+    // 2b. Server-side dice roll (if nano determined a skill check is needed)
+    let serverDiceRoll = null;
+    if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
+      const testsFrequency = dmSettings?.testsFrequency ?? 50;
+      if (Math.random() * 100 < testsFrequency) {
+        serverDiceRoll = resolveBackendDiceRoll(
+          { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 },
+          intentResult.roll_skill,
+          intentResult.roll_difficulty || 'medium',
+        );
+        if (serverDiceRoll) {
+          resolvedMechanics = { diceRoll: serverDiceRoll };
+        }
+      }
+    }
+
     // 3. Context assembly
     const currentLocation = coreState.world?.currentLocation || '';
     const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
@@ -869,6 +923,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       { provider, model },
       (text) => onEvent({ type: 'chunk', text }),
     );
+
+    // 6a. Calculate deterministic skill XP from freeform actions
+    calculateFreeformSkillXP(sceneResult.stateChanges, !!resolvedMechanics?.diceRoll);
 
     // 6. Fill enemy stats from bestiary
     if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
@@ -938,7 +995,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       );
     }
 
-    // 9. Complete
+    // 9. Attach server-resolved dice roll to result (for frontend display)
+    if (serverDiceRoll) {
+      sceneResult.diceRoll = serverDiceRoll;
+    }
+
+    // 10. Complete
     onEvent({
       type: 'complete',
       data: {
@@ -1150,6 +1212,19 @@ export async function generateScene(campaignId, playerAction, {
         provider,
       });
 
+      // Stage 1b: Server-side dice roll
+      if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
+        const testsFrequency = dmSettings?.testsFrequency ?? 50;
+        if (Math.random() * 100 < testsFrequency) {
+          const roll = resolveBackendDiceRoll(
+            { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 },
+            intentResult.roll_skill,
+            intentResult.roll_difficulty || 'medium',
+          );
+          if (roll) resolvedMechanics = { diceRoll: roll };
+        }
+      }
+
       // Stage 2: Context assembly (parallel DB queries)
       const currentLocation = coreState.world?.currentLocation || '';
       const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
@@ -1196,6 +1271,9 @@ export async function generateScene(campaignId, playerAction, {
       sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
     }
   }
+
+  // 4a. Calculate deterministic skill XP from freeform actions
+  calculateFreeformSkillXP(sceneResult.stateChanges, !!resolvedMechanics?.diceRoll);
 
   // 4b. Fill in enemy stats from bestiary (AI provides name, engine provides stats)
   if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
@@ -1268,6 +1346,11 @@ export async function generateScene(campaignId, playerAction, {
     generateLocationSummary(campaignId, newLocation, previousLocation).catch((err) =>
       console.error('Failed to generate location summary:', err.message),
     );
+  }
+
+  // Attach server-resolved dice roll to result
+  if (resolvedMechanics?.diceRoll && !sceneResult.diceRoll) {
+    sceneResult.diceRoll = resolvedMechanics.diceRoll;
   }
 
   return {

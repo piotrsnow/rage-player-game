@@ -260,6 +260,100 @@ function NarratorHeaderButtons({ message, narrator, activeAccentClass, idleHover
   );
 }
 
+/**
+ * Renders streaming content: structured dialogueSegments when available,
+ * otherwise falls back to narrative text with regex-based dialogue detection.
+ */
+function StreamingContent({ narrative, segments }) {
+  const { t } = useTranslation();
+  const hasSegments = Array.isArray(segments) && segments.length > 0;
+
+  if (hasSegments) {
+    // Render structured dialogue segments (parsed from partial JSON)
+    return (
+      <>
+        {segments.map((seg, i) => {
+          const isLast = i === segments.length - 1;
+          if (seg.type === 'dialogue') {
+            const speaker = (typeof seg.character === 'string' && seg.character.trim() && seg.character.trim().toLowerCase() !== 'npc')
+              ? seg.character.trim()
+              : (typeof seg.speaker === 'string' && seg.speaker.trim() && seg.speaker.trim().toLowerCase() !== 'npc')
+                ? seg.speaker.trim()
+                : t('common.npc');
+            return (
+              <div key={i} className="pl-3 border-l-2 border-tertiary-dim/40">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
+                    {speaker}
+                  </span>
+                </div>
+                <p className="text-xs text-on-surface leading-snug">
+                  &ldquo;{seg.text}{isLast && <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />}&rdquo;
+                </p>
+              </div>
+            );
+          }
+          // narration segment
+          return (
+            <div key={i}>
+              <p className="text-xs text-on-surface-variant leading-snug italic whitespace-pre-line">
+                {seg.text}{isLast && <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />}
+              </p>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  // Fallback: render raw narrative with regex-based dialogue detection
+  if (!narrative) return null;
+
+  const parts = [];
+  const dialogueRegex = /[„"«]([^"»"]*)[""»]|"([^"]*)"/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = dialogueRegex.exec(narrative)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'narrative', text: narrative.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'dialogue', text: match[0] });
+    lastIndex = match.index + match[0].length;
+  }
+
+  const remaining = narrative.slice(lastIndex);
+  const openQuoteMatch = remaining.match(/[„"«"]\s*([^"»""]*$)/);
+  if (openQuoteMatch) {
+    const beforeQuote = remaining.slice(0, openQuoteMatch.index);
+    if (beforeQuote) parts.push({ type: 'narrative', text: beforeQuote });
+    parts.push({ type: 'dialogue', text: openQuoteMatch[0] + '\u2026"' });
+  } else if (remaining) {
+    parts.push({ type: 'narrative', text: remaining });
+  }
+
+  if (parts.length === 0) {
+    parts.push({ type: 'narrative', text: narrative });
+  }
+
+  return (
+    <>
+      {parts.map((part, i) => (
+        part.type === 'dialogue' ? (
+          <p key={i} className="text-xs text-on-surface leading-snug font-medium whitespace-pre-line pl-2 border-l border-tertiary/40">
+            {part.text}
+          </p>
+        ) : (
+          <p key={i} className="text-xs text-on-surface-variant leading-snug italic whitespace-pre-line">
+            {part.text}
+          </p>
+        )
+      ))}
+      <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />
+    </>
+  );
+}
+
 function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
   const [showRawAiSpeech, setShowRawAiSpeech] = useState(false);
@@ -733,6 +827,8 @@ function formatDuration(totalSeconds) {
 
 export default function ChatPanel({
   messages = [],
+  streamingNarrative = null,
+  streamingSegments = null,
   narrator,
   autoPlay = false,
   myOdId = null,
@@ -776,6 +872,12 @@ export default function ChatPanel({
     if (!shouldStickToBottomRef.current) return;
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, scrollToMessageId]);
+
+  // Auto-scroll during streaming narrative
+  useEffect(() => {
+    if (!streamingNarrative || !shouldStickToBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [streamingNarrative]);
 
   useEffect(() => {
     if (!scrollToMessageId || !containerRef.current) return;
@@ -916,6 +1018,19 @@ export default function ChatPanel({
           if (msg.subtype === 'dice_roll') return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-3"><DiceRollMessage message={msg} /></div>;
           return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className="px-2"><SystemMessage message={msg} /></div>;
         })}
+        {/* Streaming narrative — shown while AI generates */}
+        {streamingNarrative && (
+          <div className="px-2 animate-fade-in">
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                {t('chat.dmAi', 'DM (AI)')} · ...
+              </span>
+              <div className="glass-panel p-3 border-l-2 border-primary-dim/60 rounded-r-lg space-y-2">
+                <StreamingContent narrative={streamingNarrative} segments={streamingSegments} />
+              </div>
+            </div>
+          </div>
+        )}
         <TypingIndicator typingPlayers={typingPlayers} />
         <div ref={bottomRef} />
       </div>

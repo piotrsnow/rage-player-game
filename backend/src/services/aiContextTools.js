@@ -172,9 +172,15 @@ export async function executeToolCall(campaignId, toolName, toolArgs) {
 }
 
 async function handleSearchMemory(campaignId, query) {
-  const results = await searchCampaignMemory(campaignId, query, { limit: 8 });
+  let results;
+  try {
+    results = await searchCampaignMemory(campaignId, query, { limit: 8 });
+  } catch (err) {
+    console.warn(`[assembleContext] Memory search skipped: ${err.message}`);
+    return 'Memory search unavailable.';
+  }
 
-  if (results.length === 0) {
+  if (!results || results.length === 0) {
     return 'No relevant memories found for this query.';
   }
 
@@ -199,14 +205,18 @@ async function handleGetNPC(campaignId, npcName) {
     return formatNPC(npc);
   }
 
-  // Fallback to vector search
+  // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
   if (config.apiKeys.openai) {
-    const queryEmbedding = await embedText(npcName);
-    if (queryEmbedding) {
-      const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
-      if (results.length > 0) {
-        return formatNPC(results[0]);
+    try {
+      const queryEmbedding = await embedText(npcName);
+      if (queryEmbedding) {
+        const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
+        if (results.length > 0) {
+          return formatNPC(results[0]);
+        }
       }
+    } catch (err) {
+      console.warn(`[assembleContext] NPC vector search skipped: ${err.message}`);
     }
   }
 
@@ -331,11 +341,14 @@ async function handleGetLocation(campaignId, locationName) {
     match.npcsHere?.length ? `NPCs here: ${match.npcsHere.join(', ')}` : null,
   ];
 
-  // Search for scenes that mention this location
+  // Search for scenes that mention this location (graceful — skip if embedding API unavailable)
   if (config.apiKeys.openai) {
-    const memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, {
-      limit: 3,
-    });
+    let memories = [];
+    try {
+      memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, { limit: 3 });
+    } catch (err) {
+      console.warn(`[assembleContext] Location memory search skipped: ${err.message}`);
+    }
     if (memories.length > 0) {
       lines.push('\nRecent events at this location:');
       for (const m of memories) {
@@ -360,14 +373,18 @@ async function handleGetCodex(campaignId, topic) {
     return formatCodex(codex);
   }
 
-  // Fallback to vector search
+  // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
   if (config.apiKeys.openai) {
-    const queryEmbedding = await embedText(topic);
-    if (queryEmbedding) {
-      const results = await searchCodex(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
-      if (results.length > 0) {
-        return formatCodex(results[0]);
+    try {
+      const queryEmbedding = await embedText(topic);
+      if (queryEmbedding) {
+        const results = await searchCodex(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
+        if (results.length > 0) {
+          return formatCodex(results[0]);
+        }
       }
+    } catch (err) {
+      console.warn(`[assembleContext] Codex vector search skipped: ${err.message}`);
     }
   }
 

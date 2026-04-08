@@ -97,9 +97,18 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   }
 
   if (validated.skillProgress && typeof validated.skillProgress === 'object') {
-    for (const skillName of Object.keys(validated.skillProgress)) {
+    const maxSkillXpPerScene = 500; // max for a single boss kill
+    for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
       if (!SKILL_NAMES.includes(skillName)) {
         warnings.push(`Unknown skill: "${skillName}"`);
+        delete validated.skillProgress[skillName];
+      } else if (typeof xpVal !== 'number' || xpVal <= 0) {
+        warnings.push(`Invalid skill XP for "${skillName}": ${xpVal}`);
+        delete validated.skillProgress[skillName];
+      } else if (xpVal > maxSkillXpPerScene) {
+        warnings.push(`Skill XP capped for "${skillName}": ${xpVal} -> ${maxSkillXpPerScene}`);
+        validated.skillProgress[skillName] = maxSkillXpPerScene;
+        corrections.push({ field: 'skillProgress', from: xpVal, to: maxSkillXpPerScene });
       }
     }
   }

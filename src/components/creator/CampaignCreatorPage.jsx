@@ -13,7 +13,7 @@ import CountdownProgress from '../ui/CountdownProgress';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
 import PortraitGenerator from '../character/PortraitGenerator';
-import { ATTRIBUTE_SHORT } from '../../data/rpgSystem';
+import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
 import { useModals } from '../../contexts/ModalContext';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 
@@ -527,9 +527,9 @@ export default function CampaignCreatorPage() {
                           {t(`species.${createdCharacter.species}`)}
                         </p>
                         <div className="flex flex-wrap gap-3 mt-2">
-                          {Object.entries(ATTRIBUTE_SHORT).slice(0, 5).map(([key, short]) => (
+                          {ATTRIBUTE_KEYS.slice(0, 5).map((key) => (
                             <span key={key} className="text-[10px] text-on-surface-variant">
-                              {short}: <strong className="text-tertiary">{(createdCharacter.attributes || createdCharacter.characteristics)?.[key]}</strong>
+                              {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(createdCharacter.attributes || createdCharacter.characteristics)?.[key]}</strong>
                             </span>
                           ))}
                         </div>
@@ -659,9 +659,9 @@ export default function CampaignCreatorPage() {
                           {t(`species.${selectedCharacter.species}`, { defaultValue: selectedCharacter.species })}
                         </p>
                         <div className="flex flex-wrap gap-3 mt-2">
-                          {Object.entries(ATTRIBUTE_SHORT).slice(0, 5).map(([key, short]) => (
+                          {ATTRIBUTE_KEYS.slice(0, 5).map((key) => (
                             <span key={key} className="text-[10px] text-on-surface-variant">
-                              {short}: <strong className="text-tertiary">{(selectedCharacter.attributes || selectedCharacter.characteristics)?.[key]}</strong>
+                              {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(selectedCharacter.attributes || selectedCharacter.characteristics)?.[key]}</strong>
                             </span>
                           ))}
                         </div>
