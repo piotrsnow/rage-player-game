@@ -188,10 +188,18 @@ function QuestsTab({ quests, npcs, navigateTo, t }) {
         <p className="text-[11px] text-on-surface-variant mb-2">{quest.description}</p>
       )}
 
-      {quest.objectives?.length > 0 && (
+      {quest.objectives?.length > 0 && (() => {
+        const visible = [];
+        let foundFirst = false;
+        for (const obj of quest.objectives) {
+          if (obj.completed) visible.push(obj);
+          else if (!foundFirst) { visible.push(obj); foundFirst = true; }
+        }
+        const hiddenCount = quest.objectives.length - visible.length;
+        return (
         <div className="mb-2">
           <div className="text-[10px] text-outline uppercase tracking-wider mb-1">{t('worldState.objectives')}</div>
-          {quest.objectives.map((obj) => (
+          {visible.map((obj) => (
             <div key={obj.id} className="flex items-start gap-1.5 text-[11px] text-on-surface-variant">
               <span className={`material-symbols-outlined text-[12px] mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline'}`}>
                 {obj.completed ? 'check_circle' : 'radio_button_unchecked'}
@@ -199,8 +207,15 @@ function QuestsTab({ quests, npcs, navigateTo, t }) {
               <span className={obj.completed ? 'line-through text-outline' : ''}>{obj.description}</span>
             </div>
           ))}
+          {hiddenCount > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] text-outline/40 italic mt-0.5">
+              <span className="material-symbols-outlined text-[12px]">lock</span>
+              {t('quests.hiddenObjectives', { count: hiddenCount })}
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       <div className="flex flex-wrap items-center gap-1.5 mt-2">
         {quest.questGiverId && (

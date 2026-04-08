@@ -327,52 +327,6 @@ export default function CampaignCreatorPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
-      <div className="mb-12 animate-fade-in">
-        <h1 className="font-headline text-4xl md:text-5xl text-tertiary mb-2 tracking-tight">
-          {t('creator.title')}
-        </h1>
-        <p className="text-on-surface-variant max-w-2xl font-body leading-relaxed">
-          {t('creator.subtitle')}
-        </p>
-      </div>
-
-      {/* Solo / Multiplayer Toggle */}
-      <div className="flex gap-3 mb-10 animate-fade-in">
-        <button
-          onClick={() => !inMpRoom && setMode('solo')}
-          disabled={inMpRoom}
-          className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
-            mode === 'solo'
-              ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-              : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-lg">person</span>
-            <span className="font-bold">{t('multiplayer.solo')}</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setMode('multiplayer')}
-          disabled={!isBackendConnected}
-          className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
-            mode === 'multiplayer'
-              ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
-              : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-lg">group</span>
-            <span className="font-bold">{t('multiplayer.multiplayer')}</span>
-          </div>
-        </button>
-        {!isBackendConnected && (
-          <span className="self-center text-[10px] text-on-surface-variant">
-            {t('multiplayer.backendRequired')}
-          </span>
-        )}
-      </div>
-
       {(state.isLoading || mp.state.isGenerating) ? (
         <div className="flex flex-col items-center justify-center py-32 animate-fade-in">
           <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
@@ -382,6 +336,52 @@ export default function CampaignCreatorPage() {
         </div>
       ) : (
         <div className="space-y-12 animate-fade-in">
+          <div className="mb-12">
+            <h1 className="font-headline text-4xl md:text-5xl text-tertiary mb-2 tracking-tight">
+              {t('creator.title')}
+            </h1>
+            <p className="text-on-surface-variant max-w-2xl font-body leading-relaxed">
+              {t('creator.subtitle')}
+            </p>
+          </div>
+
+          {/* Solo / Multiplayer Toggle */}
+          <div className="flex gap-3 mb-10">
+            <button
+              onClick={() => !inMpRoom && setMode('solo')}
+              disabled={inMpRoom}
+              className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
+                mode === 'solo'
+                  ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
+                  : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">person</span>
+                <span className="font-bold">{t('multiplayer.solo')}</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setMode('multiplayer')}
+              disabled={!isBackendConnected}
+              className={`px-5 py-3 rounded-sm font-label text-sm border transition-all duration-300 disabled:opacity-40 disabled:cursor-not-allowed ${
+                mode === 'multiplayer'
+                  ? 'bg-surface-tint text-on-primary border-primary shadow-[0_0_20px_rgba(197,154,255,0.3)]'
+                  : 'bg-surface-container-high/40 text-on-surface-variant border-outline-variant/15 hover:bg-surface-container-high'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">group</span>
+                <span className="font-bold">{t('multiplayer.multiplayer')}</span>
+              </div>
+            </button>
+            {!isBackendConnected && (
+              <span className="self-center text-[10px] text-on-surface-variant">
+                {t('multiplayer.backendRequired')}
+              </span>
+            )}
+          </div>
+
           {/* Guest notice */}
           {isGuest && (
             <div className="bg-surface-container-high/30 border border-outline-variant/15 p-4 rounded-sm flex items-center gap-3">

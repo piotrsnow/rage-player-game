@@ -18,6 +18,22 @@ function isReadyToTurnIn(quest) {
   return quest.objectives?.length > 0 && quest.objectives.every((o) => o.completed);
 }
 
+/** Show completed objectives + the first uncompleted one. Hide the rest. */
+function getVisibleObjectives(objectives) {
+  if (!objectives?.length) return { visible: [], hiddenCount: 0 };
+  const visible = [];
+  let foundFirstIncomplete = false;
+  for (const obj of objectives) {
+    if (obj.completed) {
+      visible.push(obj);
+    } else if (!foundFirstIncomplete) {
+      visible.push(obj);
+      foundFirstIncomplete = true;
+    }
+  }
+  return { visible, hiddenCount: objectives.length - visible.length };
+}
+
 function RewardBadge({ reward, compact = false, t }) {
   if (!reward) return null;
   const parts = [];
@@ -113,8 +129,9 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
         <div className="w-2/5 min-w-0 space-y-1 overflow-y-auto max-h-[380px] pr-1 scrollbar-thin">
           {sortedActive.map((quest) => {
             const isSelected = selectedId === quest.id;
-            const completedCount = quest.objectives?.filter((o) => o.completed).length || 0;
-            const totalCount = quest.objectives?.length || 0;
+            const { visible: visibleObjs } = getVisibleObjectives(quest.objectives);
+            const completedCount = visibleObjs.filter((o) => o.completed).length;
+            const totalCount = visibleObjs.length;
             const ready = isReadyToTurnIn(quest);
             const typeKey = quest.type || 'side';
 
@@ -299,12 +316,16 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
                 </div>
               )}
 
-              {selected.objectives?.length > 0 && (
+              {selected.objectives?.length > 0 && (() => {
+                const { visible: visibleObjs, hiddenCount } = selected._status === 'completed'
+                  ? { visible: selected.objectives, hiddenCount: 0 }
+                  : getVisibleObjectives(selected.objectives);
+                return (
                 <div className="space-y-1.5 ml-1">
                   <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-2">
                     {t('quests.objectives')}
                   </p>
-                  {selected.objectives.map((obj) => {
+                  {visibleObjs.map((obj) => {
                     const isVerifying = verifyingId === obj.id;
                     const result = verifyResult?.objectiveId === obj.id ? verifyResult : null;
                     return (
@@ -345,6 +366,12 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
                       </div>
                     );
                   })}
+                  {hiddenCount > 0 && (
+                    <div className="flex items-center gap-2 py-1 px-2 text-outline/40">
+                      <span className="material-symbols-outlined text-sm mt-0.5">lock</span>
+                      <p className="text-xs italic">{t('quests.hiddenObjectives', { count: hiddenCount })}</p>
+                    </div>
+                  )}
                   {verifyResult && (
                     <div className={`mt-2 px-3 py-2 rounded-sm text-xs leading-relaxed border ${
                       verifyResult.fulfilled
@@ -363,7 +390,8 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>

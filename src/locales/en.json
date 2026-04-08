@@ -535,7 +535,8 @@
     "returnToNpc": "Return to {{npc}} to complete this quest",
     "turnInNpc": "Turn in to",
     "questGiver": "Quest giver",
-    "completedQuests": "Completed"
+    "completedQuests": "Completed",
+    "hiddenObjectives": "More objectives will be revealed as you progress..."
   },
   "inventory": {
     "title": "Armory & Artifacts",

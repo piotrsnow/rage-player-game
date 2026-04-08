@@ -511,7 +511,8 @@
     "returnToNpc": "Wróć do {{npc}}, aby ukończyć to zadanie",
     "turnInNpc": "Zdaj u",
     "questGiver": "Zleceniodawca",
-    "completedQuests": "Ukończone"
+    "completedQuests": "Ukończone",
+    "hiddenObjectives": "Kolejne cele odkryjesz w trakcie przygody..."
   },
   "inventory": {
     "title": "Zbrojownia i Artefakty",
