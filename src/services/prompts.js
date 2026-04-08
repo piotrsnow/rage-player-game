@@ -3,6 +3,7 @@ import { formatResolvedCheck } from './mechanics/index';
 import { gameData } from './gameDataService';
 import { FACTION_DEFINITIONS, getReputationTier } from '../data/rpgFactions';
 import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT, formatAttributesForPrompt, formatSkillsForPrompt, formatSystemRulesForPrompt } from '../data/rpgSystem';
+import { normalizeNpcName } from './utils/npcMatcher.js';
 // formatMagicForPrompt available from rpgMagic if needed for spell tree overview
 import { formatMagicStatusForPrompt } from './magicEngine';
 import { formatWeatherForPrompt } from './weatherEngine';
@@ -226,7 +227,7 @@ function buildRelationshipGraphBlock(npcs, quests, factions) {
     }
     const questLinks = [];
     for (const q of [...(quests?.active || []), ...(quests?.completed || [])]) {
-      if (q.questGiverId && (q.questGiverId === npc.id || q.questGiverId.toLowerCase() === npc.name?.toLowerCase())) {
+      if (q.questGiverId && (q.questGiverId === npc.id || normalizeNpcName(q.questGiverId) === normalizeNpcName(npc.name))) {
         questLinks.push(`quest giver for "${q.name}"`);
       }
     }

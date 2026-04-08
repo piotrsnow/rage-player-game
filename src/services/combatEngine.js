@@ -2,6 +2,8 @@ import { rollD50, rollPercentage } from './gameState';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS } from '../data/rpgSystem';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
+import { resolveD50Test } from './mechanics/d50Test';
+import { castSpell } from './magicEngine.js';
 
 const getWeaponData = (name) => gameData.getWeaponData(name);
 const getArmourAP = (items, loc) => gameData.getArmourAP(items, loc);
@@ -84,23 +86,8 @@ function getLuck(actor) {
   return actor.attributes?.szczescie || 0;
 }
 
-/**
- * Resolve a combat d50 test.
- * Total = d50 + attribute + skill + creativity
- * vs threshold (default medium=40 for combat)
- */
 function resolveCombatTest(actor, attribute, skillLevel, creativityBonus = 0, threshold = DIFFICULTY_THRESHOLDS.medium) {
-  // Luck check
-  const luck = getLuck(actor);
-  const luckRoll = rollPercentage();
-  const luckySuccess = luckRoll <= luck;
-
-  const roll = rollD50();
-  const total = roll + attribute + skillLevel + creativityBonus;
-  const margin = total - threshold;
-  const success = luckySuccess || margin >= 0;
-
-  return { roll, total, threshold, margin, success, luckySuccess, attribute, skillLevel, creativityBonus };
+  return resolveD50Test({ attribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
 }
 
 function getWeaponDamage(weaponData, strength) {
@@ -270,14 +257,33 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     return { combat: state, result };
   }
 
-  // Magic
+  // Magic — delegate mana/usage to magicEngine, then resolve combat test
   if (manoeuvre.type === 'magic' && target) {
     result.targetName = target.name;
-    // Magic in combat: cast spell using mana, damage based on spell description
-    // Simplified: use intelligence for casting test
+    const spellName = manoeuvre.spellName;
+
+    // If a spell name is provided, use magicEngine for mana check + usage tracking
+    if (spellName) {
+      const castResult = castSpell(actor, spellName);
+      result.castResult = castResult;
+      if (!castResult.success) {
+        log.push(`${actor.name} tries to cast "${spellName}" but fails: ${castResult.error}`);
+        result.outcome = 'spell_failed';
+        state.log = [...state.log, ...log];
+        return { combat: state, result };
+      }
+      // Apply mana deduction + spell usage to actor
+      if (actor.mana) actor.mana.current = Math.max(0, actor.mana.current + castResult.manaChange);
+      if (!actor.spells) actor.spells = { known: [], usageCounts: {}, scrolls: [] };
+      const counts = actor.spells.usageCounts || {};
+      counts[spellName] = (counts[spellName] || 0) + 1;
+      actor.spells.usageCounts = counts;
+    }
+
     const inteligencja = actor.attributes?.inteligencja || 10;
-    const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
-    result.rolls.push({ skill: 'Magic', ...test, side: 'caster' });
+    const magicSkillLevel = getCombatSkillLevel(actor, 'Magia');
+    const test = resolveCombatTest(actor, inteligencja, magicSkillLevel, 0, DIFFICULTY_THRESHOLDS.medium);
+    result.rolls.push({ skill: 'Magia', ...test, side: 'caster' });
 
     if (test.success) {
       const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
@@ -286,7 +292,8 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
 
-      log.push(`${actor.name} casts a spell at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
+      const spellLabel = spellName ? `"${spellName}"` : 'a spell';
+      log.push(`${actor.name} casts ${spellLabel} at ${target.name}: ${test.total} vs ${test.threshold}. Damage: ${totalDamage}.${target.isDefeated ? ` ${target.name} is defeated!` : ''}`);
       result.outcome = 'hit';
       result.damage = totalDamage;
       result.targetDefeated = target.isDefeated;

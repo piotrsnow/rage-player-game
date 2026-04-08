@@ -3,6 +3,7 @@ import { resolveSkillCheck, inferActionContext } from './skillCheck.js';
 import { isRestAction, calculateRestRecovery } from './restRecovery.js';
 import { resolveActionDisposition } from './dispositionBonus.js';
 import { calculateCreativityBonus } from './creativityBonus.js';
+export { resolveD50Test } from './d50Test.js';
 
 const CREATIVITY_KEYWORDS = [
   'carefully', 'quietly', 'quickly', 'stealthily', 'cleverly', 'forcefully',

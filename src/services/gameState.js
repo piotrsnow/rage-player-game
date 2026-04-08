@@ -138,9 +138,7 @@ export function createSceneId() {
   return `scene_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
-export function createItemId() {
-  return `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-}
+export { createItemId } from '../../shared/domain/stateValidation.js';
 
 export function createQuestId() {
   return `quest_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;

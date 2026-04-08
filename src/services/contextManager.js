@@ -1,5 +1,6 @@
 import { aiService } from './ai';
 import { resolveContextDepthForProfile } from './promptGovernance';
+import { normalizeNpcName } from './utils/npcMatcher.js';
 
 const FULL_SCENE_COUNT = 3;
 const MEDIUM_SCENE_COUNT = 5;
@@ -93,16 +94,16 @@ function scoreCompressionQuality(summary = '', entitySnapshot = {}, existingHist
   let score = 0;
   if (text.length >= MIN_SUMMARY_LENGTH) score += 1;
 
-  const lower = text.toLowerCase();
+  const normalizedText = normalizeNpcName(text);
   const npcNames = (entitySnapshot?.npcs || []).map((n) => String(n?.name || '').trim()).filter(Boolean);
   const questNames = (entitySnapshot?.activeQuests || []).map((q) => String(q?.name || '').trim()).filter(Boolean);
   const location = String(entitySnapshot?.currentLocation || '').trim();
 
-  const hasNpcAnchor = npcNames.some((name) => lower.includes(name.toLowerCase()));
+  const hasNpcAnchor = npcNames.some((name) => normalizedText.includes(normalizeNpcName(name)));
   if (hasNpcAnchor) score += 1;
-  const hasQuestAnchor = questNames.some((name) => lower.includes(name.toLowerCase()));
+  const hasQuestAnchor = questNames.some((name) => normalizedText.includes(normalizeNpcName(name)));
   if (hasQuestAnchor) score += 1;
-  if (location && lower.includes(location.toLowerCase())) score += 1;
+  if (location && normalizedText.includes(normalizeNpcName(location))) score += 1;
 
   // Guard against replacing good history with a much shorter, low-signal summary.
   if (existingHistory && text.length >= Math.round(existingHistory.length * 0.6)) score += 1;
