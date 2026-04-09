@@ -36,6 +36,7 @@ function deserializeCharacter(c) {
     talents: safeJsonParse(c.talents, []),
     inventory: safeJsonParse(c.inventory, []),
     money: safeJsonParse(c.money, {}),
+    equipped: safeJsonParse(c.equipped, { mainHand: null, offHand: null, armour: null }),
   };
 }
 
@@ -88,7 +89,7 @@ export async function characterRoutes(fastify) {
         backstory: body.backstory || '',
         inventory: JSON.stringify(body.inventory || []),
         money: JSON.stringify(body.money || {}),
-        equippedWeapon: body.equippedWeapon || '',
+        equipped: JSON.stringify(body.equipped || {}),
         portraitUrl: body.portraitUrl || '',
         campaignCount: body.campaignCount ?? 0,
         voiceId: body.voiceId || '',
@@ -136,7 +137,7 @@ export async function characterRoutes(fastify) {
     if (body.money !== undefined) updateData.money = JSON.stringify(body.money);
     if (body.portraitUrl !== undefined) updateData.portraitUrl = body.portraitUrl;
     if (body.campaignCount !== undefined) updateData.campaignCount = body.campaignCount;
-    if (body.equippedWeapon !== undefined) updateData.equippedWeapon = body.equippedWeapon;
+    if (body.equipped !== undefined) updateData.equipped = JSON.stringify(body.equipped);
     if (body.voiceId !== undefined) updateData.voiceId = body.voiceId || '';
     if (body.voiceName !== undefined) updateData.voiceName = body.voiceName || '';
 

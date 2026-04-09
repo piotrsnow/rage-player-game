@@ -12,12 +12,13 @@ vi.mock('./gameDataService.js', () => ({
   gameData: {
     getWeaponData: (name) => {
       const weapons = {
-        'Hand Weapon': { damage: '+SB', qualities: [], group: 'Melee', twoHanded: false },
-        'Dagger': { damage: '+SB-1', qualities: [], group: 'Melee', twoHanded: false },
+        'Hand Weapon': { damageType: 'melee-1h', bonus: 3, qualities: [], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 1 },
+        'Dagger': { damageType: 'melee-1h', bonus: 2, qualities: ['Fast'], group: 'Melee (Basic)', twoHanded: false, enchantSlots: 0 },
       };
       return weapons[name] || weapons['Hand Weapon'];
     },
-    getArmourAP: () => 0,
+    armour: {},
+    shields: {},
     manoeuvres: {
       attack: { name: 'Attack', type: 'offensive', range: 'melee', modifiers: {}, closesDistance: false },
       defend: { name: 'Defend', type: 'defensive', range: 'self', modifiers: {} },
@@ -61,7 +62,7 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         skills: { 'Walka bronia jednoręczna': 5 },
         inventory: ['Hand Weapon'],
         weapons: ['Hand Weapon'],
-        equippedWeapon: 'Hand Weapon',
+        equipped: { mainHand: null, offHand: null, armour: null },
         armour: {},
         conditions: [],
         wounds: 12,
@@ -81,7 +82,7 @@ function makeCombatState({ actor = {}, target = {} } = {}) {
         skills: {},
         inventory: [],
         weapons: ['Hand Weapon'],
-        equippedWeapon: 'Hand Weapon',
+        equipped: { mainHand: null, offHand: null, armour: null },
         armour: {},
         conditions: [],
         wounds: 10,
@@ -131,20 +132,18 @@ describe('resolveManoeuvre — new combat system', () => {
   });
 
   it('resolves a hit when roll + attribute + skill exceeds threshold', () => {
-    // d50=30, attr=12, skill=5, creativity=0 => total=47 vs threshold(40 + defAttr(8) + defSkill(0)) = 48
-    // Actually threshold = medium(40) + defendBonus(0) + defenseAttr(8) + defenseSkillLevel(0) = 48
-    // total = 30 + 12 + 5 + 0 = 47 => margin = -1 => miss
-    // Let's use a higher roll
+    // d50=35, attr(sila)=12, skill=5 => total=52
+    // threshold = medium(35) + defendBonus(0) + defenseAttr(zrecznosc=8) + defenseSkillLevel(0) = 43
+    // margin = 52 - 43 = 9 => hit
     vi.mocked(rollD50).mockReturnValue(35);
 
     const combat = makeCombatState();
     const { result } = resolveManoeuvre(combat, 'player', 'attack', 'enemy_guard');
 
-    // total = 35 + 12 + 5 = 52 vs 48 => margin = 4 => hit
     expect(result.outcome).toBe('hit');
     expect(result.damage).toBeGreaterThanOrEqual(1);
     expect(result.rolls[0].success).toBe(true);
-    expect(result.rolls[0].margin).toBe(4);
+    expect(result.rolls[0].margin).toBe(9);
   });
 
   it('resolves a miss when roll + attribute + skill is below threshold', () => {
@@ -171,7 +170,7 @@ describe('resolveManoeuvre — new combat system', () => {
     expect(result.attackBreakdown.creativityBonus).toBeGreaterThan(0);
   });
 
-  it('applies damage = weapon + marginBonus - toughness - AP', () => {
+  it('applies damage = weapon + marginBonus - DR (shield block possible)', () => {
     vi.mocked(rollD50).mockReturnValue(40);
 
     const combat = makeCombatState();
@@ -180,8 +179,7 @@ describe('resolveManoeuvre — new combat system', () => {
     expect(result.outcome).toBe('hit');
     expect(result.damageBreakdown).toBeDefined();
     expect(result.damageBreakdown.weaponDmg).toBeDefined();
-    expect(result.damageBreakdown.toughness).toBeDefined();
-    expect(result.damageBreakdown.ap).toBeDefined();
+    expect(result.damageBreakdown.dr).toBeDefined();
     expect(result.damageBreakdown.totalDamage).toBeGreaterThanOrEqual(1);
   });
 

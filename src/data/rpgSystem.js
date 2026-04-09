@@ -85,6 +85,7 @@ export const SKILLS = [
   { name: 'Walka bronia dwureczna', attribute: 'sila' },
   { name: 'Strzelectwo', attribute: 'zrecznosc' },
   { name: 'Uniki', attribute: 'zrecznosc' },
+  { name: 'Walka dwiema brońmi', attribute: 'zrecznosc' },
   { name: 'Zastraszanie', attribute: 'sila' },
 
   // Fizyczne
@@ -287,7 +288,7 @@ export const SPECIES_LIST = Object.keys(SPECIES);
 // ── SKILL CATEGORIES (UI grouping) ──
 
 export const SKILL_CATEGORIES = [
-  { key: 'walka', label: 'Walka', icon: 'swords', skills: ['Walka wrecz', 'Walka bronia jednoręczna', 'Walka bronia dwureczna', 'Strzelectwo', 'Uniki', 'Zastraszanie'] },
+  { key: 'walka', label: 'Walka', icon: 'swords', skills: ['Walka wrecz', 'Walka bronia jednoręczna', 'Walka bronia dwureczna', 'Walka dwiema brońmi', 'Strzelectwo', 'Uniki', 'Zastraszanie'] },
   { key: 'fizyczne', label: 'Fizyczne', icon: 'fitness_center', skills: ['Atletyka', 'Akrobatyka', 'Jezdziectwo'] },
   { key: 'spoleczne', label: 'Spoleczne', icon: 'groups', skills: ['Perswazja', 'Blef', 'Handel', 'Przywodztwo', 'Wystepy'] },
   { key: 'wiedza', label: 'Wiedza', icon: 'school', skills: ['Wiedza ogolna', 'Wiedza o potworach', 'Wiedza o naturze', 'Medycyna', 'Alchemia', 'Rzemioslo'] },

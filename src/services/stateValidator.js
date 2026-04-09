@@ -1,4 +1,5 @@
 import { SKILL_NAMES, STATE_CHANGE_LIMITS } from '../data/rpgSystem';
+import { gameData } from './gameDataService';
 import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
 import {
   clamp,
@@ -63,6 +64,22 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
       corrections.push(`Items capped to ${limits.maxItemsPerScene}`);
     }
     validated.newItems = sanitizeInventoryItems(validated.newItems, corrections);
+    // Validate baseType references
+    for (const item of validated.newItems) {
+      if (item.baseType && typeof item.baseType === 'string') {
+        const resolved = gameData.resolveBaseType(item.baseType);
+        if (!resolved) {
+          warnings.push(`Unknown baseType "${item.baseType}" on item "${item.name}" — kept as-is`);
+        } else {
+          // Auto-fill type from resolved category if missing
+          if (!item.type && resolved.combatSource) {
+            if (resolved.combatSource === 'weapon') item.type = 'weapon';
+            else if (resolved.combatSource === 'armour') item.type = 'armor';
+            else if (resolved.combatSource === 'shield') item.type = 'shield';
+          }
+        }
+      }
+    }
   }
 
   if (validated.moneyChange) {

@@ -6,15 +6,29 @@ import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
 
 const getWeaponData = (name) => gameData.getWeaponData(name);
-const getArmourAP = (items, loc) => gameData.getArmourAP(items, loc);
+
+/** Resolve an inventory item's baseType to a WEAPONS combatKey */
+function resolveItemCombatKey(item) {
+  if (!item?.baseType) return null;
+  const resolved = gameData.resolveBaseType(item.baseType);
+  return resolved?.combatKey || null;
+}
 
 function getMainWeapon(actor) {
-  if (actor.equippedWeapon && getWeaponData(actor.equippedWeapon)) {
-    return actor.equippedWeapon;
+  // New system: equipped.mainHand → find in inventory → resolve baseType
+  if (actor.equipped?.mainHand) {
+    const item = (actor.inventory || []).find(i => i.id === actor.equipped.mainHand);
+    if (item) {
+      const combatKey = resolveItemCombatKey(item);
+      if (combatKey && getWeaponData(combatKey)) return combatKey;
+    }
   }
-  return (actor.weapons || actor.inventory || [])
-    .map((w) => (typeof w === 'string' ? w : w.name))
-    .find((w) => getWeaponData(w)) || 'Hand Weapon';
+  // NPC fallback: weapons array with direct WEAPONS keys
+  for (const w of (actor.weapons || [])) {
+    const name = typeof w === 'string' ? w : w.name;
+    if (getWeaponData(name)) return name;
+  }
+  return 'Hand Weapon';
 }
 
 function getMovementAllowance(combatant) {
@@ -83,10 +97,6 @@ function getDefenseAttribute(actor) {
   return actor.attributes?.zrecznosc || 10;
 }
 
-function getStrength(actor) {
-  return actor.attributes?.sila || 10;
-}
-
 function getToughness(actor) {
   return actor.attributes?.wytrzymalosc || 10;
 }
@@ -110,24 +120,91 @@ function resolveCombatTest(actor, attribute, skillLevel, creativityBonus = 0, th
   return resolveD50Test({ attribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
 }
 
-function getWeaponDamage(weaponData, strength) {
-  const dmgStr = weaponData?.damage || '+SB';
-  if (dmgStr.includes('SB')) {
-    const match = dmgStr.match(/\+SB([+-]\d+)?/);
-    const mod = match?.[1] ? parseInt(match[1], 10) : 0;
-    return strength + mod;
+function getWeaponDamage(weaponData, attacker) {
+  const str = attacker.attributes?.sila ?? 0;
+  const dex = attacker.attributes?.zrecznosc ?? 0;
+  switch (weaponData?.damageType) {
+    case 'melee-1h':       return str + (weaponData.bonus ?? 0);
+    case 'melee-2h':       return str * 2 + (weaponData.bonus ?? 0);
+    case 'ranged-dex':     return dex + (weaponData.bonus ?? 0);
+    case 'ranged-str-dex': return str + dex + (weaponData.bonus ?? 0);
+    case 'ranged-fixed':   return weaponData.fixedDamage ?? 0;
+    default:               return str + 3; // fallback for legacy/unknown
   }
-  const staticMod = parseInt(dmgStr.replace('+', ''), 10) || 0;
-  return staticMod;
 }
 
-function getCombatantAP(combatant) {
-  // Simple: sum all armour values, average across body
-  if (combatant.armour && typeof combatant.armour === 'object' && !Array.isArray(combatant.armour)) {
-    const values = Object.values(combatant.armour).filter((v) => typeof v === 'number');
-    if (values.length > 0) return Math.round(values.reduce((s, v) => s + v, 0) / values.length);
+function getCombatantDR(combatant) {
+  // NPC direct armourDR
+  if (combatant.armourDR != null) return combatant.armourDR;
+  // Player: equipped.armour → inventory → baseType → ARMOUR
+  if (combatant.equipped?.armour) {
+    const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.armour);
+    if (item) {
+      const armourData = gameData.getArmourDataByBaseType(item.baseType);
+      if (armourData) return armourData.damageReduction ?? 0;
+    }
+  }
+  // NPC fallback: direct equippedArmour string (ARMOUR key)
+  if (typeof combatant.equippedArmour === 'string') {
+    const armourData = gameData.armour?.[combatant.equippedArmour];
+    if (armourData) return armourData.damageReduction ?? 0;
   }
   return 0;
+}
+
+function getArmourDodgePenalty(combatant) {
+  if (combatant.equipped?.armour) {
+    const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.armour);
+    if (item) {
+      const armourData = gameData.getArmourDataByBaseType(item.baseType);
+      if (armourData) return armourData.dodgePenalty ?? 0;
+    }
+  }
+  if (typeof combatant.equippedArmour === 'string') {
+    const armourData = gameData.armour?.[combatant.equippedArmour];
+    if (armourData) return armourData.dodgePenalty ?? 0;
+  }
+  return 0;
+}
+
+function getShieldData(combatant) {
+  // Player: equipped.offHand → inventory → baseType → SHIELDS
+  if (combatant.equipped?.offHand) {
+    const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.offHand);
+    if (item) {
+      const shieldData = gameData.getShieldDataByBaseType(item.baseType);
+      if (shieldData) return shieldData;
+    }
+  }
+  // NPC fallback: direct equippedShield string
+  if (typeof combatant.equippedShield === 'string') {
+    const shieldData = gameData.shields?.[combatant.equippedShield];
+    if (shieldData) return shieldData;
+  }
+  return null;
+}
+
+function resolveShieldBlock(target, rawDamage, weaponData) {
+  const shield = getShieldData(target);
+  if (!shield) return { blocked: false, damage: rawDamage };
+
+  const blockRoll = rollD50();
+  if (blockRoll > shield.blockChance) return { blocked: false, damage: rawDamage, blockRoll };
+
+  let reduction = shield.blockReduction;
+  // Piercing weapons cap block reduction at 50%
+  if (weaponData?.qualities?.includes('Piercing')) {
+    reduction = Math.min(reduction, 0.5);
+  }
+  const reducedDamage = Math.ceil(rawDamage * (1 - reduction));
+  return { blocked: true, damage: reducedDamage, blockRoll, reduction };
+}
+
+function getDualWieldPenalties(skillLevel) {
+  const level = skillLevel ?? 0;
+  const mainPenalty = Math.min(0, -10 + level);
+  const offPenalty = Math.min(0, -15 + level);
+  return { mainPenalty, offPenalty };
 }
 
 // --- Combat state creation ---
@@ -144,10 +221,13 @@ function createCombatantFromCharacter(character, id, type) {
     mana: character.mana ? { ...character.mana } : null,
     spells: character.spells || null,
     inventory: [...(character.inventory || [])],
-    equippedWeapon: character.equippedWeapon || '',
+    equipped: character.equipped ? { ...character.equipped } : { mainHand: null, offHand: null, armour: null },
     weapons: character.weapons || [],
-    armour: character.armour || {},
     traits: character.traits || [],
+    // NPC direct fields (bestiary entries)
+    armourDR: character.armourDR ?? null,
+    equippedArmour: character.equippedArmour || null,
+    equippedShield: character.equippedShield || null,
     initiative: 0,
     conditions: [],
     isDefeated: false,
@@ -332,11 +412,12 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const attackSkillLevel = getCombatSkillLevel(actor, attackSkillName);
     const creativityBonus = getCombatCreativityBonus(customDescription);
 
-    // Defender raises threshold
+    // Defender raises threshold (dodge penalties from armour + shield)
     const defendBonus = target.conditions.includes('defending') ? 10 : 0;
     const dodging = target.conditions.includes('dodging');
     const defenseAttr = getDefenseAttribute(target);
-    const defenseSkillLevel = dodging ? getCombatSkillLevel(target, 'Uniki') : 0;
+    const dodgePenalty = getArmourDodgePenalty(target) + (getShieldData(target)?.dodgePenalty ?? 0);
+    const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
     const effectiveThreshold = DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel;
 
     const test = resolveCombatTest(actor, attackAttr, attackSkillLevel, creativityBonus, effectiveThreshold);
@@ -350,17 +431,21 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     result.defenseBreakdown = { attribute: defenseAttr, skillLevel: defenseSkillLevel, defendBonus };
 
     if (test.success) {
-      // Damage = Strength + weapon bonus - Toughness - AP
-      const strength = getStrength(actor);
+      // Damage: weapon formula + margin bonus → shield block → armour DR
       const mainWeapon = getMainWeapon(actor);
       const weaponData = getWeaponData(mainWeapon);
       result.weaponName = mainWeapon;
-      const weaponDmg = getWeaponDamage(weaponData, strength);
+      const weaponDmg = getWeaponDamage(weaponData, actor);
       const marginBonus = Math.max(0, Math.floor(test.margin / 5));
-      const rawDamage = weaponDmg + marginBonus;
-      const toughness = getToughness(target);
-      const ap = getCombatantAP(target);
-      const totalDamage = Math.max(1, rawDamage - toughness - ap);
+      let rawDamage = weaponDmg + marginBonus;
+
+      // Shield block
+      const blockResult = resolveShieldBlock(target, rawDamage, weaponData);
+      if (blockResult.blocked) rawDamage = blockResult.damage;
+
+      // Armour DR
+      const dr = getCombatantDR(target);
+      const totalDamage = Math.max(1, rawDamage - dr);
 
       target.wounds = Math.max(0, target.wounds - totalDamage);
       if (target.wounds <= 0) target.isDefeated = true;
@@ -369,16 +454,17 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         log.push(`${actor.name} feints ${target.name}! Next attack will be easier.`);
       }
 
+      const blockMsg = blockResult.blocked ? ` Blocked (${Math.round((blockResult.reduction ?? 0) * 100)}%)!` : '';
       log.push(
         `${actor.name} attacks ${target.name}: ${test.total} vs ${effectiveThreshold} (margin ${test.margin}). ` +
         `${test.luckySuccess ? 'LUCKY HIT! ' : ''}` +
-        `Damage: ${rawDamage} - ${toughness} tough - ${ap} AP = ${totalDamage}.` +
+        `Damage: ${weaponDmg}+${marginBonus}${blockMsg} - ${dr} DR = ${totalDamage}.` +
         `${target.isDefeated ? ` ${target.name} is defeated!` : ''}`
       );
 
       result.outcome = 'hit';
       result.damage = totalDamage;
-      result.damageBreakdown = { weaponDmg, marginBonus, rawDamage, toughness, ap, totalDamage };
+      result.damageBreakdown = { weaponDmg, marginBonus, rawDamage: weaponDmg + marginBonus, blocked: blockResult.blocked, dr, totalDamage };
       result.targetDefeated = target.isDefeated;
     } else {
       const mainWeapon = getMainWeapon(actor);

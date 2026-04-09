@@ -17,7 +17,7 @@ import {
   buildCodexEmbeddingText,
 } from './embeddingService.js';
 import { writeEmbedding } from './vectorSearchService.js';
-import { findClosestBestiaryEntry } from '../data/wfrpEquipment.js';
+import { findClosestBestiaryEntry } from '../data/equipment/index.js';
 import {
   resolveBackendDiceRoll,
   resolveBackendDiceRollWithPreRoll,

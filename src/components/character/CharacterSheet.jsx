@@ -251,8 +251,9 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
           <Inventory
             items={character.inventory}
             money={character.money}
-            equippedWeapon={character.equippedWeapon}
-            onEquipWeapon={(weaponName) => dispatch({ type: 'EQUIP_WEAPON', payload: weaponName })}
+            equipped={character.equipped}
+            onEquipItem={(itemId, slot) => dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } })}
+            onUnequipItem={(slot) => dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } })}
           />
 
           <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">

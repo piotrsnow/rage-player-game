@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { searchCampaignMemory, searchCodex, searchNPCs } from './vectorSearchService.js';
 import { embedText } from './embeddingService.js';
-import { formatWeaponCatalog, searchBestiary } from '../data/wfrpEquipment.js';
+import { formatWeaponCatalog, formatBaseTypeCatalog, searchBestiary } from '../data/equipment/index.js';
 import { getLocationSummary } from './memoryCompressor.js';
 
 /**
@@ -405,7 +405,9 @@ function formatCodex(codex) {
 }
 
 function handleGetEquipmentCatalog(category = 'all') {
-  return formatWeaponCatalog(category || 'all');
+  const catalog = formatWeaponCatalog(category || 'all');
+  const baseTypes = formatBaseTypeCatalog();
+  return `${catalog}\n\n${baseTypes}`;
 }
 
 function handleGetBestiary(query) {

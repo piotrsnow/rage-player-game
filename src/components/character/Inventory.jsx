@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
+import { gameData } from '../../services/gameDataService';
 import Tooltip from '../ui/Tooltip';
 
 const rarityColors = {
@@ -14,6 +15,7 @@ const rarityColors = {
 const typeIcons = {
   weapon: 'swords',
   armor: 'shield',
+  armour: 'shield',
   potion: 'local_bar',
   scroll: 'receipt_long',
   artifact: 'diamond',
@@ -28,6 +30,12 @@ const typeIcons = {
   currency: 'paid',
   shield: 'shield_with_heart',
   misc: 'category',
+};
+
+const SLOT_CONFIG = {
+  mainHand: { icon: 'swords', label: 'inventory.slotMainHand', fallback: 'Main Hand' },
+  offHand: { icon: 'shield_with_heart', label: 'inventory.slotOffHand', fallback: 'Off Hand' },
+  armour: { icon: 'shield', label: 'inventory.slotArmour', fallback: 'Armour' },
 };
 
 function CoinDisplay({ value, label, color }) {
@@ -125,15 +133,193 @@ function InventoryImage({
   );
 }
 
-function ItemDetailBox({ item, isEquipped, onEquip }) {
+/** Get which slot an item can be equipped to */
+function getEquippableSlots(item) {
+  const slotType = gameData.getEquipSlotType(item);
+  if (!slotType) return [];
+  if (slotType === 'weapon') {
+    const isTwoHanded = item.baseType ? gameData.isTwoHanded(item.baseType) : false;
+    // Two-handed weapons only go in mainHand
+    if (isTwoHanded) return ['mainHand'];
+    return ['mainHand', 'offHand'];
+  }
+  if (slotType === 'shield') return ['offHand'];
+  if (slotType === 'armour') return ['armour'];
+  return [];
+}
+
+/** Check if a given item is equipped in any slot */
+function getEquippedSlot(item, equipped) {
+  if (!equipped || !item) return null;
+  if (equipped.mainHand === item.id) return 'mainHand';
+  if (equipped.offHand === item.id) return 'offHand';
+  if (equipped.armour === item.id) return 'armour';
+  return null;
+}
+
+function EquipmentSlot({ slotKey, equipped, items, onEquipItem, onUnequipItem, disabled, disabledReason }) {
+  const { t } = useTranslation();
+  const [showPicker, setShowPicker] = useState(false);
+  const config = SLOT_CONFIG[slotKey];
+  const equippedItemId = equipped?.[slotKey];
+  const equippedItem = equippedItemId ? items.find(i => i.id === equippedItemId) : null;
+  const resolvedImage = equippedItem?.imageUrl ? apiClient.resolveMediaUrl(equippedItem.imageUrl) : null;
+
+  // Filter inventory items that can go in this slot and aren't equipped elsewhere
+  const availableItems = items.filter(item => {
+    if (getEquippedSlot(item, equipped)) return false;
+    return getEquippableSlots(item).includes(slotKey);
+  });
+
+  const handleSlotClick = () => {
+    if (disabled) return;
+    if (equippedItem) {
+      onUnequipItem(slotKey);
+    } else if (availableItems.length > 0) {
+      setShowPicker(!showPicker);
+    }
+  };
+
+  const handlePickItem = (itemId) => {
+    onEquipItem(itemId, slotKey);
+    setShowPicker(false);
+  };
+
+  return (
+    <div className="relative">
+      <Tooltip content={disabled ? disabledReason : equippedItem?.name || t(config.label, config.fallback)}>
+        <button
+          onClick={handleSlotClick}
+          disabled={disabled && !equippedItem}
+          className={`
+            w-full aspect-square bg-surface-container-highest border rounded-sm flex flex-col items-center justify-center gap-1
+            transition-all cursor-pointer relative
+            ${equippedItem
+              ? 'border-primary/40 ring-1 ring-primary/30 hover:ring-primary/50'
+              : disabled
+                ? 'border-outline-variant/10 opacity-40 cursor-not-allowed'
+                : 'border-outline-variant/20 hover:border-primary/30 hover:bg-surface-container/50'
+            }
+          `}
+        >
+          {equippedItem ? (
+            <>
+              <InventoryImage
+                imageUrl={resolvedImage}
+                alt={equippedItem.name}
+                sizeClass="w-8 h-8"
+                fallbackIcon={typeIcons[equippedItem.type] || config.icon}
+                fallbackIconClass="text-base"
+                wrapperClassName="flex items-center justify-center"
+              />
+              <span className="text-[7px] font-label leading-tight max-w-[calc(100%-4px)] truncate text-on-surface">
+                {equippedItem.name}
+              </span>
+              <div className="absolute -top-1 -right-1 w-4 h-4 bg-error/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity">
+                <span className="material-symbols-outlined text-[10px] text-on-error">close</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <span
+                className="material-symbols-outlined text-lg text-on-surface-variant/30"
+                style={{ fontVariationSettings: "'FILL' 0, 'wght' 200" }}
+              >
+                {config.icon}
+              </span>
+              <span className="text-[7px] font-label text-on-surface-variant/30 uppercase tracking-wider">
+                {t(config.label, config.fallback)}
+              </span>
+            </>
+          )}
+        </button>
+      </Tooltip>
+
+      {showPicker && availableItems.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-surface-container border border-outline-variant/20 rounded-sm shadow-xl max-h-48 overflow-y-auto">
+          {availableItems.map(item => {
+            const imgUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handlePickItem(item.id)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-primary/10 transition-colors text-left"
+              >
+                <InventoryImage
+                  imageUrl={imgUrl}
+                  alt={item.name}
+                  sizeClass="w-6 h-6"
+                  fallbackIcon={typeIcons[item.type] || 'category'}
+                  fallbackIconClass="text-sm"
+                  wrapperClassName="flex items-center justify-center flex-shrink-0"
+                />
+                <span className="text-[10px] text-on-surface truncate">{item.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EquipmentSlotsBar({ equipped, items, onEquipItem, onUnequipItem }) {
   const { t } = useTranslation();
 
-  const rarity = item.rarity || 'common';
+  // Check if mainHand weapon is two-handed → disable offHand
+  const mainHandItem = equipped?.mainHand ? items.find(i => i.id === equipped.mainHand) : null;
+  const mainIsTwoHanded = mainHandItem?.baseType ? gameData.isTwoHanded(mainHandItem.baseType) : false;
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="material-symbols-outlined text-sm text-on-surface-variant/50">person</span>
+        <span className="text-[10px] font-label text-on-surface-variant/50 uppercase tracking-widest">
+          {t('inventory.equipment', 'Equipment')}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <EquipmentSlot
+          slotKey="mainHand"
+          equipped={equipped}
+          items={items}
+          onEquipItem={onEquipItem}
+          onUnequipItem={onUnequipItem}
+        />
+        <EquipmentSlot
+          slotKey="offHand"
+          equipped={equipped}
+          items={items}
+          onEquipItem={onEquipItem}
+          onUnequipItem={onUnequipItem}
+          disabled={mainIsTwoHanded}
+          disabledReason={t('inventory.twoHandedBlocked', 'Two-handed weapon equipped')}
+        />
+        <EquipmentSlot
+          slotKey="armour"
+          equipped={equipped}
+          items={items}
+          onEquipItem={onEquipItem}
+          onUnequipItem={onUnequipItem}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ItemDetailBox({ item, equippedSlot, equippableSlots, onEquipItem, onUnequipItem }) {
+  const { t } = useTranslation();
+
+  const rarity = item.rarity || item.availability || 'common';
   const rarityColor = rarityColors[rarity] || rarityColors.common;
   const badgeColor = rarityBadgeColors[rarity] || rarityBadgeColors.common;
   const icon = typeIcons[item.type] || typeIcons.misc;
   const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
-  const isWeapon = item.type === 'weapon';
+
+  // Resolve baseType info
+  const resolved = item.baseType ? gameData.resolveBaseType(item.baseType) : null;
+  const properties = resolved?.properties || [];
+  const price = resolved?.price;
 
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
@@ -162,7 +348,10 @@ function ItemDetailBox({ item, isEquipped, onEquip }) {
             <span className={`inline-block text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${badgeColor}`}>
               {t(rarityLabels[rarity] || rarityLabels.common)}
             </span>
-            {item.type && (
+            {item.baseType && (
+              <span className="text-[10px] font-label text-on-surface-variant/60">{resolved?.name || item.baseType}</span>
+            )}
+            {!item.baseType && item.type && (
               <span className="text-[10px] font-label text-on-surface-variant/60 capitalize">{t(`inventory.types.${item.type}`, item.type)}</span>
             )}
           </div>
@@ -175,29 +364,54 @@ function ItemDetailBox({ item, isEquipped, onEquip }) {
         </p>
       )}
 
-      {isWeapon && onEquip && (
-        <div className="border-t border-outline-variant/10 pt-3 mt-3">
-          {isEquipped ? (
-            <div className="flex items-center gap-1.5 text-[11px] text-primary font-bold">
-              <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-              {t('inventory.equipped', 'Equipped')}
-            </div>
-          ) : (
-            <button
-              onClick={() => onEquip(item.name)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">swords</span>
-              {t('inventory.equip', 'Equip')}
-            </button>
-          )}
+      {properties.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {properties.map(prop => (
+            <span key={prop} className="text-[9px] px-1.5 py-0.5 bg-surface-container-highest/50 border border-outline-variant/10 rounded-sm text-on-surface-variant/70">
+              {prop}
+            </span>
+          ))}
         </div>
       )}
+
+      {price && (
+        <div className="flex items-center gap-2 mt-2 text-[10px] text-on-surface-variant/60">
+          <span className="material-symbols-outlined text-xs">paid</span>
+          {price.gold > 0 && <span>{price.gold} GC</span>}
+          {price.silver > 0 && <span>{price.silver} SS</span>}
+          {price.copper > 0 && <span>{price.copper} CP</span>}
+        </div>
+      )}
+
+      <div className="border-t border-outline-variant/10 pt-3 mt-3">
+        {equippedSlot ? (
+          <button
+            onClick={() => onUnequipItem(equippedSlot)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20 rounded-sm hover:bg-error/20 transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+            {t('inventory.unequip', 'Unequip')}
+          </button>
+        ) : equippableSlots.length > 0 ? (
+          <div className="flex gap-2 flex-wrap">
+            {equippableSlots.map(slot => (
+              <button
+                key={slot}
+                onClick={() => onEquipItem(item.id, slot)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">{SLOT_CONFIG[slot].icon}</span>
+                {t(SLOT_CONFIG[slot].label, SLOT_CONFIG[slot].fallback)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-export default function Inventory({ items = [], money, equippedWeapon = '', onEquipWeapon }) {
+export default function Inventory({ items = [], money, equipped = {}, onEquipItem, onUnequipItem }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
   const maxSlots = 40;
@@ -213,6 +427,7 @@ export default function Inventory({ items = [], money, equippedWeapon = '', onEq
           {t('inventory.slots', { current: items.length, max: maxSlots })}
         </span>
       </div>
+
       <div className="flex items-center gap-1.5 mb-5 px-3 py-2.5 bg-surface-container-highest/50 border border-outline-variant/10 rounded-sm">
         <span className="material-symbols-outlined text-base text-on-surface-variant mr-1">account_balance_wallet</span>
         <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mr-3">{t('currency.purse')}</span>
@@ -222,18 +437,25 @@ export default function Inventory({ items = [], money, equippedWeapon = '', onEq
           <CoinDisplay value={purse.copper} label={t('currency.copperShort')} color="bg-orange-600/80 text-orange-100" />
         </div>
       </div>
-      {selectedItem && <ItemDetailBox item={selectedItem} />}
+
+      <EquipmentSlotsBar
+        equipped={equipped}
+        items={items}
+        onEquipItem={onEquipItem}
+        onUnequipItem={onUnequipItem}
+      />
+
       <div className="grid grid-cols-4 gap-3">
         {items.map((item) => {
-          const rarity = rarityColors[item.rarity] || rarityColors.common;
+          const rarity = rarityColors[item.rarity || item.availability] || rarityColors.common;
           const icon = typeIcons[item.type] || typeIcons.misc;
           const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
-          const isEquipped = item.type === 'weapon' && item.name === equippedWeapon;
+          const eqSlot = getEquippedSlot(item, equipped);
           return (
             <div
               key={item.id}
-              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${isEquipped ? 'ring-1 ring-primary/40' : ''}`}
+              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
               onClick={() => setSelectedItemId(isSelected ? null : item.id)}
             >
               <InventoryImage
@@ -249,15 +471,17 @@ export default function Inventory({ items = [], money, equippedWeapon = '', onEq
               <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
                 {item.name}
               </span>
-              {isEquipped && (
+              {eqSlot && (
                 <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
-                  <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>swords</span>
+                  <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                    {SLOT_CONFIG[eqSlot].icon}
+                  </span>
                 </div>
               )}
-              {item.rarity === 'legendary' && (
+              {(item.rarity === 'legendary' || item.availability === 'exotic') && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
               )}
-              {item.rarity === 'epic' && (
+              {(item.rarity === 'epic' || item.rarity === 'rare') && (
                 <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
               )}
             </div>
@@ -270,11 +494,14 @@ export default function Inventory({ items = [], money, equippedWeapon = '', onEq
           />
         ))}
       </div>
+
       {selectedItem && (
         <ItemDetailBox
           item={selectedItem}
-          isEquipped={selectedItem.type === 'weapon' && selectedItem.name === equippedWeapon}
-          onEquip={onEquipWeapon}
+          equippedSlot={getEquippedSlot(selectedItem, equipped)}
+          equippableSlots={getEquippableSlots(selectedItem)}
+          onEquipItem={onEquipItem}
+          onUnequipItem={onUnequipItem}
         />
       )}
     </div>

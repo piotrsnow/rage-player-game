@@ -189,6 +189,7 @@ const ItemImageUrlSchema = z.string()
 const InventoryItemSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  baseType: z.string().optional(),
   type: z.string().optional(),
   description: z.string().optional(),
   rarity: z.string().optional(),

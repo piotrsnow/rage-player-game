@@ -48,7 +48,7 @@ function createDefaultCharacter() {
     statuses: [],
     backstory: '',
     customAttackPresets: [],
-    equippedWeapon: '',
+    equipped: { mainHand: null, offHand: null, armour: null },
     needs: createDefaultNeeds(),
     xp: 0,
     xpSpent: 0,
@@ -65,6 +65,7 @@ function normalizeCharacter(character) {
     attributes: character.attributes || { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
     mana: character.mana || { current: 0, max: 0 },
     spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
+    equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
   };
 }
 
@@ -468,14 +469,35 @@ function gameReducer(state, action) {
       };
     }
 
-    case 'EQUIP_WEAPON':
+    case 'EQUIP_ITEM': {
+      const { itemId, slot } = action.payload || {};
+      if (!itemId || !slot) return state;
+      const equipped = { ...(state.character.equipped || { mainHand: null, offHand: null, armour: null }) };
+      equipped[slot] = itemId;
+      // If equipping a two-handed weapon to mainHand, clear offHand
+      if (slot === 'mainHand') {
+        const item = (state.character.inventory || []).find(i => i.id === itemId);
+        if (item?.baseType) {
+          // Lazy import avoided — check twoHanded via resolved combat data at component level
+          // The UI should clear offHand before dispatching if weapon is twoHanded
+        }
+      }
       return {
         ...state,
-        character: {
-          ...state.character,
-          equippedWeapon: action.payload || '',
-        },
+        character: { ...state.character, equipped },
       };
+    }
+
+    case 'UNEQUIP_ITEM': {
+      const { slot: unequipSlot } = action.payload || {};
+      if (!unequipSlot) return state;
+      const newEquipped = { ...(state.character.equipped || { mainHand: null, offHand: null, armour: null }) };
+      newEquipped[unequipSlot] = null;
+      return {
+        ...state,
+        character: { ...state.character, equipped: newEquipped },
+      };
+    }
 
     case 'UPDATE_INVENTORY_ITEM_IMAGE': {
       const { itemId, imageUrl } = action.payload || {};

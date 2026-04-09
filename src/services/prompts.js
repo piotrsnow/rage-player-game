@@ -7,7 +7,6 @@ import { normalizeNpcName } from './utils/npcMatcher.js';
 // formatMagicForPrompt available from rpgMagic if needed for spell tree overview
 import { formatMagicStatusForPrompt } from './magicEngine';
 import { formatWeatherForPrompt } from './weatherEngine';
-import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
 import { calculateTensionScore, getTensionGuidance } from './tensionTracker';
 import {
@@ -313,7 +312,20 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const journal = (world?.eventHistory || []).length > 0
     ? world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')
     : 'No entries yet.';
-  const inventory = character?.inventory?.map((i) => `${i.name} (${i.type})`).join(', ') || 'Empty';
+  const eq = character?.equipped || {};
+  const invItems = character?.inventory || [];
+  const equippedIds = new Set([eq.mainHand, eq.offHand, eq.armour].filter(Boolean));
+  const findItem = (id) => invItems.find(i => i.id === id);
+  const formatEqItem = (id) => {
+    const item = findItem(id);
+    if (!item) return 'none';
+    return item.baseType ? `${item.name} [${item.baseType}]` : item.name;
+  };
+  const equippedLine = `Main hand: ${formatEqItem(eq.mainHand)}, Off-hand: ${formatEqItem(eq.offHand)}, Armour: ${formatEqItem(eq.armour)}`;
+  const unequippedItems = invItems.filter(i => !equippedIds.has(i.id));
+  const inventory = unequippedItems.length > 0
+    ? unequippedItems.map((i) => `${i.name}${i.baseType ? ` [${i.baseType}]` : ''} (${i.type || 'misc'})`).join(', ')
+    : 'Empty';
   const moneyDisplay = character?.money ? formatMoney(character.money) : '0 CP';
   const statuses = character?.statuses?.join(', ') || 'None';
   const contextDepth = dmSettings.contextDepth ?? 100;
@@ -493,6 +505,7 @@ CHARACTER STATE (RPGon):
 - Wounds: ${character?.wounds ?? 0}/${character?.maxWounds ?? 0}, Movement: ${character?.movement ?? 4}
 - Skills: ${skillList}
 - Magic: ${magicStatus}
+- Equipped: ${equippedLine}
 - Inventory: ${inventory}
 - Money: ${moneyDisplay}
 - Statuses: ${statuses}
@@ -719,7 +732,7 @@ Factor weather conditions into outdoor scenes — visibility, movement, NPC beha
   const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
   const tradeLikely = inSettlement || /\b(buy|sell|trade|shop|merchant|vendor|barter|purchase|haggle)\b/.test(recentNarrative);
   if (!tradeLikely) return '';
-  return `EQUIPMENT & TRADE REFERENCE:\n${formatEquipmentForPrompt('weapons')}\n${formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
+  return `EQUIPMENT & TRADE REFERENCE:\n${gameData.formatEquipmentForPrompt('weapons')}\n${gameData.formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
 })()}
 
 ${(() => {
@@ -1279,15 +1292,15 @@ Respond with ONLY valid JSON in this exact format:
 
 For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
 
-For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). manaChange is a DELTA (negative when casting spells). skillsUsed is an array of skill names the PC used (max 3). actionDifficulty is "easy"|"medium"|"hard"|"veryHard"|"extreme" for the action difficulty (XP calculated by engine). spellUsage maps spell names to use count (usually 1). learnSpell is a spell name when learned from scroll. consumeScroll is a scroll name when consumed. addScroll is a scroll name when found. newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
+For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). manaChange is a DELTA (negative when casting spells). skillsUsed is an array of skill names the PC used (max 3). actionDifficulty is "easy"|"medium"|"hard"|"veryHard"|"extreme" for the action difficulty (XP calculated by engine). spellUsage maps spell names to use count (usually 1). learnSpell is a spell name when learned from scroll. consumeScroll is a scroll name when consumed. addScroll is a scroll name when found. newItems should be objects with {id, name, baseType, type, description}. If the item is standard equipment (weapon, armor, shield, gear), set "baseType" to the equipment catalog ID (e.g. "dagger", "hand_weapon", "leather_jack", "buckler"). The baseType resolves server-side stats (price, weight, combat data). Use a creative "name" for flavor (e.g. "Krwawy Sztylet Nocy" for baseType "dagger"). For unique items without a catalog equivalent (potions, quest items, artifacts), omit baseType and set type manually. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
 QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
 QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "locationId": "Primary quest location name", "offeredBy": "NPC name or source", "reward": {"xp": 50, "money": {"gold": 1, "silver": 0, "copper": 0}, "items": [], "description": "50 XP and 1 Gold Crown"}, "type": "main|side|personal"}. "locationId" is MANDATORY for every quest offer and must point to a concrete place in the current world (existing location or a newly introduced one). Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
 ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
 ITEM/MONEY ACQUISITION (CRITICAL — NEVER FORGET): If the narrative describes the character OBTAINING anything (picking up, finding, looting, receiving, buying, stealing, crafting), you MUST mechanically add it: physical items → stateChanges.newItems, money/coins → stateChanges.moneyChange. A narrated acquisition without the matching stateChanges entry is a BUG. After writing the narrative, cross-check: did the character gain any object or money? If yes, verify the corresponding stateChanges field is populated.
-LOOT RARITY GATING (enforced by campaign progression):
-- Scenes 1-15 (Act 1): Only "common" and "uncommon" items as loot or purchases. "rare" items only as major quest rewards.
-- Scenes 16-30 (Act 2): "rare" items available through merchants, loot, and quests. "exotic" items only through major quest lines with narrative buildup.
-- Scenes 31+ (Act 3+): "exotic" items possible but ALWAYS with narrative cost — they attract thieves, faction interest, rumors, political consequences, or obligations. Powerful items are never free.
+LOOT TIER GATING (enforced by campaign progression — based on equipment availability):
+- Scenes 1-15 (Act 1): Only "common" and "uncommon" equipment as loot or purchases. "rare" items only as major quest rewards.
+- Scenes 16-30 (Act 2): "rare" equipment available through merchants, loot, and quests. "exotic" items only through major quest lines with narrative buildup.
+- Scenes 31+ (Act 3+): "exotic" equipment possible but ALWAYS with narrative cost — they attract thieves, faction interest, rumors, political consequences, or obligations. Powerful items are never free.
 - COST OF OWNERSHIP: Rare and exotic items draw attention. NPCs comment on them, thieves target the character, factions want them, and rumors spread about whoever carries them. Include these consequences in worldFacts and NPC reactions.
 - Always set the "rarity" field on new items: "common", "uncommon", "rare", or "exotic".
 For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.

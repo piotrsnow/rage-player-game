@@ -210,7 +210,7 @@ model Character {
   backstory       String   @default("")
   inventory       String   @default("[]") // JSON array
   money           String   @default("{}") // JSON: { gold, silver, copper }
-  equippedWeapon  String   @default("")
+  equipped        String   @default("{}") // JSON: { mainHand, offHand, armour }
   portraitUrl     String   @default("")
   campaignCount   Int      @default(0)
   voiceId         String   @default("")

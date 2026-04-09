@@ -1,8 +1,11 @@
-// WFRP 4th Edition — equipment, pricing, crafting, availability helpers
-// Currency: 1 Gold Crown (GC) = 10 Silver Shillings (SS) = 100 Copper Pennies (CP)
+/**
+ * RPGon equipment catalog — shop items with pricing and availability.
+ * Currency: 1 Gold Crown (GC) = 10 Silver Shillings (SS) = 100 Copper Pennies (CP)
+ */
 
 export const EQUIPMENT_CATEGORIES = {
   weapons: 'Weapons',
+  shields: 'Shields',
   armour: 'Armour',
   adventuring_gear: 'Adventuring Gear',
   food_drink: 'Food & Drink',
@@ -33,6 +36,7 @@ export const EQUIPMENT = {
     availability: 'common',
     description: 'Short blade for utility, parrying, or a quiet kill.',
     properties: ['Fast', 'Small', 'Melee (Basic)'],
+    combatKey: 'Dagger',
   },
   knife: {
     name: 'Knife',
@@ -43,6 +47,26 @@ export const EQUIPMENT = {
     description: 'Kitchen or belt knife; poor as a weapon but ubiquitous.',
     properties: ['Small'],
   },
+  club: {
+    name: 'Club',
+    category: 'weapons',
+    price: { gold: 0, silver: 2, copper: 0 },
+    weight: 1,
+    availability: 'common',
+    description: 'Heavy wooden club; crude but effective.',
+    properties: ['Melee (Two-Handed)'],
+    combatKey: 'Pałka',
+  },
+  quarterstaff: {
+    name: 'Quarterstaff',
+    category: 'weapons',
+    price: { gold: 0, silver: 3, copper: 0 },
+    weight: 1,
+    availability: 'common',
+    description: 'Long wooden staff; versatile and common among travellers.',
+    properties: ['Melee (Two-Handed)'],
+    combatKey: 'Kij Bojowy',
+  },
   hand_weapon: {
     name: 'Hand Weapon (sword, axe, mace)',
     category: 'weapons',
@@ -51,15 +75,17 @@ export const EQUIPMENT = {
     availability: 'common',
     description: 'Standard one-handed military or civilian weapon.',
     properties: ['Melee (Basic)', 'Versatile'],
+    combatKey: 'Hand Weapon',
   },
   rapier: {
     name: 'Rapier',
     category: 'weapons',
-    price: { gold: 2, silver: 0, copper: 0 },
+    price: { gold: 1, silver: 5, copper: 0 },
     weight: 1,
     availability: 'uncommon',
     description: 'Long thrusting blade favoured by duelists and nobles.',
     properties: ['Fast', 'Melee (Fencing)'],
+    combatKey: 'Rapier',
   },
   flail: {
     name: 'Flail',
@@ -69,97 +95,139 @@ export const EQUIPMENT = {
     availability: 'uncommon',
     description: 'Spiked ball on a chain; brutal against shields.',
     properties: ['Melee (Flail)', 'Penetrating'],
+    combatKey: 'Flail',
   },
-  morning_star: {
-    name: 'Morning Star',
+  battle_axe: {
+    name: 'Battle Axe',
     category: 'weapons',
     price: { gold: 1, silver: 5, copper: 0 },
-    weight: 1,
+    weight: 2,
     availability: 'uncommon',
-    description: 'Heavy spiked head on a haft.',
-    properties: ['Melee (Two-Handed)', 'Penetrating'],
+    description: 'Heavy two-handed axe for hacking through armour and shields.',
+    properties: ['Melee (Two-Handed)', 'Hack'],
+    combatKey: 'Topór Bojowy',
+  },
+  war_hammer: {
+    name: 'War Hammer',
+    category: 'weapons',
+    price: { gold: 6, silver: 0, copper: 0 },
+    weight: 1,
+    availability: 'rare',
+    description: 'Heavy one-handed hammer that crushes armour and bone.',
+    properties: ['Melee (Basic)', 'Crush'],
+    combatKey: 'Młot Wojenny',
   },
   spear: {
     name: 'Spear',
     category: 'weapons',
-    price: { gold: 0, silver: 8, copper: 0 },
+    price: { gold: 0, silver: 4, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Reach weapon for hunting, militia, and battle line.',
     properties: ['Reach', 'Melee (Basic)', 'Thrown'],
+    combatKey: 'Spear',
   },
   halberd: {
     name: 'Halberd',
     category: 'weapons',
-    price: { gold: 1, silver: 5, copper: 0 },
+    price: { gold: 2, silver: 5, copper: 0 },
     weight: 2,
     availability: 'common',
     description: 'Axe, spike, and hook on a long pole.',
     properties: ['Reach', 'Melee (Two-Handed)', 'Penetrating'],
+    combatKey: 'Halberd',
   },
   great_weapon: {
     name: 'Great Weapon',
     category: 'weapons',
-    price: { gold: 2, silver: 0, copper: 0 },
+    price: { gold: 7, silver: 0, copper: 0 },
     weight: 2,
-    availability: 'common',
+    availability: 'uncommon',
     description: 'Two-handed sword, greataxe, or zweihander.',
     properties: ['Melee (Two-Handed)', 'Impact', 'Slow'],
+    combatKey: 'Great Weapon',
   },
+  // --- Shields ---
   buckler: {
     name: 'Buckler',
-    category: 'weapons',
-    price: { gold: 0, silver: 5, copper: 0 },
+    category: 'shields',
+    price: { gold: 0, silver: 3, copper: 0 },
     weight: 0,
     availability: 'common',
     description: 'Small metal shield strapped to the forearm.',
-    properties: ['Shield 1', 'Off-hand'],
+    properties: ['Shield', 'Off-hand'],
+    combatKey: 'Buckler',
   },
   shield: {
     name: 'Shield',
-    category: 'weapons',
+    category: 'shields',
     price: { gold: 1, silver: 0, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Round or kite shield of wood and iron.',
-    properties: ['Shield 2'],
+    properties: ['Shield'],
+    combatKey: 'Shield',
+  },
+  tower_shield: {
+    name: 'Tower Shield',
+    category: 'shields',
+    price: { gold: 5, silver: 0, copper: 0 },
+    weight: 3,
+    availability: 'rare',
+    description: 'Massive body-length shield; near-total cover at the cost of mobility.',
+    properties: ['Shield', 'Heavy'],
+    combatKey: 'Tower Shield',
   },
   // --- Weapons (ranged) ---
   sling: {
     name: 'Sling',
     category: 'weapons',
-    price: { gold: 0, silver: 0, copper: 5 },
+    price: { gold: 0, silver: 1, copper: 0 },
     weight: 0,
     availability: 'common',
     description: 'Leather cup and cords; ammunition is stones or lead bullets.',
     properties: ['Ranged (Sling)', 'Small'],
+    combatKey: 'Proca',
   },
   short_bow: {
     name: 'Short Bow',
     category: 'weapons',
-    price: { gold: 1, silver: 0, copper: 0 },
+    price: { gold: 0, silver: 5, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Hunting bow; easier in woods and skirmishes.',
-    properties: ['Ranged (Bow)', 'Blackpowder/Reload N/A'],
+    properties: ['Ranged (Bow)'],
+    combatKey: 'Shortbow',
   },
   longbow: {
     name: 'Longbow',
     category: 'weapons',
-    price: { gold: 1, silver: 5, copper: 0 },
+    price: { gold: 2, silver: 0, copper: 0 },
     weight: 2,
     availability: 'uncommon',
     description: 'War bow with tremendous draw; requires strength and training.',
     properties: ['Ranged (Bow)', 'Powerful'],
+    combatKey: 'Longbow',
+  },
+  light_crossbow: {
+    name: 'Light Crossbow',
+    category: 'weapons',
+    price: { gold: 2, silver: 0, copper: 0 },
+    weight: 1,
+    availability: 'uncommon',
+    description: 'Lighter crossbow; easier to wield but less powerful.',
+    properties: ['Ranged (Crossbow)', 'Piercing', 'Slow'],
+    combatKey: 'Lekka Kusza',
   },
   crossbow: {
     name: 'Crossbow',
     category: 'weapons',
-    price: { gold: 2, silver: 5, copper: 0 },
+    price: { gold: 10, silver: 0, copper: 0 },
     weight: 1,
     availability: 'uncommon',
     description: 'Mechanical bow; slow to reload but armour-piercing.',
-    properties: ['Ranged (Crossbow)', 'Penetrating', 'Reload'],
+    properties: ['Ranged (Crossbow)', 'Piercing', 'Reload'],
+    combatKey: 'Crossbow',
   },
   crossbow_quarrel_10: {
     name: 'Crossbow Quarrels (10)',
@@ -182,11 +250,12 @@ export const EQUIPMENT = {
   blackpowder_pistol: {
     name: 'Pistol',
     category: 'weapons',
-    price: { gold: 8, silver: 0, copper: 0 },
+    price: { gold: 15, silver: 0, copper: 0 },
     weight: 0,
     availability: 'rare',
     description: 'Nuln or dwarf-made handgun; smoke, noise, and terror.',
-    properties: ['Ranged (Blackpowder)', 'Blackpowder', 'Reload'],
+    properties: ['Ranged (Blackpowder)', 'Piercing', 'Reload'],
+    combatKey: 'Pistol',
   },
   blackpowder_musket: {
     name: 'Musket',
@@ -195,7 +264,7 @@ export const EQUIPMENT = {
     weight: 2,
     availability: 'rare',
     description: 'Long gun for volley fire; cumbersome without rest.',
-    properties: ['Ranged (Blackpowder)', 'Blackpowder', 'Reload', 'Two-handed'],
+    properties: ['Ranged (Blackpowder)', 'Piercing', 'Reload', 'Two-handed'],
   },
   powder_and_shot: {
     name: 'Powder and Shot (10 shots)',
@@ -210,110 +279,72 @@ export const EQUIPMENT = {
   leather_jack: {
     name: 'Leather Jack',
     category: 'armour',
-    price: { gold: 0, silver: 8, copper: 0 },
+    price: { gold: 0, silver: 3, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Hardened leather torso; militia and travellers.',
-    properties: ['AP 1 body', 'Flexible'],
+    properties: ['Light', 'DR 2'],
+    combatKey: 'Leather Jack',
   },
   leather_jerkin: {
     name: 'Leather Jerkin',
     category: 'armour',
-    price: { gold: 1, silver: 2, copper: 0 },
+    price: { gold: 1, silver: 0, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Heavier leather coat; better coverage than a jack.',
-    properties: ['AP 1 body', 'AP 1 arms', 'Flexible'],
+    properties: ['Light', 'DR 3'],
+    combatKey: 'Leather Jerkin',
   },
-  gambeson_heavy: {
-    name: 'Gambeson (heavy)',
+  gambeson: {
+    name: 'Gambeson',
     category: 'armour',
-    price: { gold: 0, silver: 10, copper: 0 },
+    price: { gold: 0, silver: 5, copper: 0 },
     weight: 1,
     availability: 'common',
     description: 'Quilted aketon worn under mail or as light protection.',
-    properties: ['AP 1 body', 'Flexible'],
-  },
-  mail_coif: {
-    name: 'Mail Coif',
-    category: 'armour',
-    price: { gold: 1, silver: 5, copper: 0 },
-    weight: 1,
-    availability: 'uncommon',
-    description: 'Chain hood; often worn under helm.',
-    properties: ['AP 1 head', 'Flexible', 'Noisy'],
+    properties: ['Light', 'DR 3'],
+    combatKey: 'Gambeson',
   },
   mail_shirt: {
     name: 'Mail Shirt',
     category: 'armour',
-    price: { gold: 6, silver: 0, copper: 0 },
+    price: { gold: 3, silver: 0, copper: 0 },
     weight: 3,
     availability: 'uncommon',
     description: 'Sleeved hauberk; standard for professional soldiers.',
-    properties: ['AP 2 body', 'AP 1 arms', 'Flexible', 'Noisy'],
+    properties: ['Medium', 'DR 5', 'Noisy'],
+    combatKey: 'Mail Shirt',
   },
   mail_coat: {
     name: 'Mail Coat',
     category: 'armour',
-    price: { gold: 8, silver: 0, copper: 0 },
+    price: { gold: 5, silver: 0, copper: 0 },
     weight: 4,
     availability: 'uncommon',
     description: 'Long mail reaching thighs; more encumbering.',
-    properties: ['AP 2 body', 'AP 1 legs', 'AP 1 arms', 'Noisy'],
+    properties: ['Medium', 'DR 6', 'Noisy'],
+    combatKey: 'Mail Coat',
   },
   breastplate: {
     name: 'Breastplate',
     category: 'armour',
-    price: { gold: 5, silver: 0, copper: 0 },
+    price: { gold: 8, silver: 0, copper: 0 },
     weight: 2,
     availability: 'uncommon',
     description: 'Steel cuirass over padding.',
-    properties: ['AP 2 body', 'Partial plate'],
-  },
-  plate_helm: {
-    name: 'Plate Helm',
-    category: 'armour',
-    price: { gold: 3, silver: 0, copper: 0 },
-    weight: 1,
-    availability: 'uncommon',
-    description: 'Full or sallet-style helmet.',
-    properties: ['AP 2 head', 'Partial plate'],
-  },
-  plate_bracers: {
-    name: 'Plate Bracers',
-    category: 'armour',
-    price: { gold: 2, silver: 0, copper: 0 },
-    weight: 1,
-    availability: 'uncommon',
-    description: 'Vambraces and couters.',
-    properties: ['AP 1 arms', 'Partial plate'],
-  },
-  plate_greaves: {
-    name: 'Plate Greaves',
-    category: 'armour',
-    price: { gold: 3, silver: 0, copper: 0 },
-    weight: 1,
-    availability: 'uncommon',
-    description: 'Leg harness from thigh to foot.',
-    properties: ['AP 2 legs', 'Partial plate'],
+    properties: ['Medium', 'DR 7'],
+    combatKey: 'Breastplate',
   },
   plate_suit: {
     name: 'Full Plate Harness',
     category: 'armour',
-    price: { gold: 35, silver: 0, copper: 0 },
+    price: { gold: 25, silver: 0, copper: 0 },
     weight: 5,
     availability: 'rare',
-    description: 'Complete knight’s harness; custom-fitted.',
-    properties: ['AP 3+ full coverage', 'Full plate', 'Heavy'],
-  },
-  plate_piece: {
-    name: 'Plate Piece (custom)',
-    category: 'armour',
-    price: { gold: 15, silver: 0, copper: 0 },
-    weight: 1,
-    availability: 'rare',
-    description: 'Single fitted plate element (replacement or upgrade).',
-    properties: ['Partial plate', 'Custom work'],
+    description: 'Complete knight\'s harness; custom-fitted.',
+    properties: ['Heavy', 'DR 10'],
+    combatKey: 'Full Plate',
   },
   // --- Adventuring gear ---
   travel_chest: {
@@ -763,7 +794,7 @@ export const EQUIPMENT = {
     properties: ['Trade (Smith)'],
   },
   forge_tools: {
-    name: 'Smith’s Tools',
+    name: 'Smith\'s Tools',
     category: 'tools',
     price: { gold: 2, silver: 0, copper: 0 },
     weight: 1,
@@ -772,7 +803,7 @@ export const EQUIPMENT = {
     properties: ['Trade (Smith)'],
   },
   woodcarver_tools: {
-    name: 'Woodcarver’s Tools',
+    name: 'Woodcarver\'s Tools',
     category: 'tools',
     price: { gold: 0, silver: 8, copper: 0 },
     weight: 1,
@@ -882,243 +913,3 @@ export const EQUIPMENT = {
     properties: ['Heal', 'Graphic'],
   },
 };
-
-export const CRAFTING_RECIPES = [
-  {
-    name: 'Forge Hand Weapon',
-    requiredSkill: 'Trade (Smith)',
-    requiredMaterials: [
-      { name: 'Iron ingot', quantity: 2 },
-      { name: 'Charcoal', quantity: 3 },
-      { name: 'Leather wrap', quantity: 1 },
-    ],
-    resultItem: 'Hand Weapon (sword, axe, mace)',
-    difficulty: -10,
-    time: 16,
-    description: 'Heat, hammer, and temper a serviceable blade or head on a haft.',
-  },
-  {
-    name: 'Forge Mail Shirt',
-    requiredSkill: 'Trade (Smith)',
-    requiredMaterials: [
-      { name: 'Iron wire rings (bulk)', quantity: 1 },
-      { name: 'Rivets', quantity: 1 },
-      { name: 'Leather edging', quantity: 1 },
-    ],
-    resultItem: 'Mail Shirt',
-    difficulty: -20,
-    time: 120,
-    description: 'Thousands of riveted rings; weeks of labour for a skilled armourer.',
-  },
-  {
-    name: 'Forge Breastplate',
-    requiredSkill: 'Trade (Smith)',
-    requiredMaterials: [
-      { name: 'Steel plate blank', quantity: 1 },
-      { name: 'Padding and straps', quantity: 1 },
-    ],
-    resultItem: 'Breastplate',
-    difficulty: -10,
-    time: 40,
-    description: 'Dishing and planishing steel to fit the torso.',
-  },
-  {
-    name: 'Fletch Arrow Bundle',
-    requiredSkill: 'Trade (Bowyer)',
-    requiredMaterials: [
-      { name: 'Arrow shafts', quantity: 10 },
-      { name: 'Feather fletchings', quantity: 30 },
-      { name: 'Arrowheads', quantity: 10 },
-      { name: 'Glue and thread', quantity: 1 },
-    ],
-    resultItem: 'Arrows (10)',
-    difficulty: 0,
-    time: 4,
-    description: 'Straighten shafts, bind heads, fletch and seal.',
-  },
-  {
-    name: 'Build Short Bow',
-    requiredSkill: 'Trade (Bowyer)',
-    requiredMaterials: [
-      { name: 'Seasoned yew stave', quantity: 1 },
-      { name: 'Hemp bowstring', quantity: 1 },
-      { name: 'Beeswax', quantity: 1 },
-    ],
-    resultItem: 'Short Bow',
-    difficulty: -10,
-    time: 24,
-    description: 'Tiller the stave till the draw is even and safe.',
-  },
-  {
-    name: 'Assemble Crossbow',
-    requiredSkill: 'Trade (Bowyer)',
-    requiredMaterials: [
-      { name: 'Steel prod', quantity: 1 },
-      { name: 'Walnut stock', quantity: 1 },
-      { name: 'Brass trigger mechanism', quantity: 1 },
-      { name: 'Cord and spaniel', quantity: 1 },
-    ],
-    resultItem: 'Crossbow',
-    difficulty: -20,
-    time: 48,
-    description: 'Fit prod to stock; tune the nut and sear.',
-  },
-  {
-    name: 'Brew Healing Draught',
-    requiredSkill: 'Trade (Apothecary)',
-    requiredMaterials: [
-      { name: 'Moonwort', quantity: 2 },
-      { name: 'Spirit base', quantity: 1 },
-      { name: 'Honey', quantity: 1 },
-    ],
-    resultItem: 'Healing Draught',
-    difficulty: -10,
-    time: 6,
-    description: 'Decoction and fortification; must be kept sealed.',
-  },
-  {
-    name: 'Compound Antidote',
-    requiredSkill: 'Trade (Apothecary)',
-    requiredMaterials: [
-      { name: 'Activated charcoal', quantity: 1 },
-      { name: 'Milk thistle', quantity: 2 },
-      { name: 'Vinegar tincture', quantity: 1 },
-    ],
-    resultItem: 'Antidote (common poisons)',
-    difficulty: -20,
-    time: 8,
-    description: 'For common venoms and bad food; weak against exotic toxins.',
-  },
-  {
-    name: 'Tailor Leather Jerkin',
-    requiredSkill: 'Trade (Tailor)',
-    requiredMaterials: [
-      { name: 'Cured leather hides', quantity: 2 },
-      { name: 'Wax thread', quantity: 1 },
-      { name: 'Brass buckles', quantity: 1 },
-    ],
-    resultItem: 'Leather Jerkin',
-    difficulty: 0,
-    time: 20,
-    description: 'Cut, oil, and stitch overlapping plates for mobility.',
-  },
-  {
-    name: 'Sew Mail Liner',
-    requiredSkill: 'Trade (Tailor)',
-    requiredMaterials: [
-      { name: 'Quilted linen layers', quantity: 3 },
-      { name: 'Wool padding', quantity: 2 },
-    ],
-    resultItem: 'Gambeson (heavy)',
-    difficulty: 0,
-    time: 16,
-    description: 'Thick aketon to wear beneath mail or alone.',
-  },
-  {
-    name: 'Carpenter Travel Chest',
-    requiredSkill: 'Trade (Carpenter)',
-    requiredMaterials: [
-      { name: 'Oak planks', quantity: 4 },
-      { name: 'Iron hinges and hasp', quantity: 1 },
-    ],
-    resultItem: 'Travel chest (reinforced)',
-    difficulty: 0,
-    time: 12,
-    description: 'Dovetail corners; iron-bound for travel.',
-  },
-  {
-    name: 'Chandler Lantern',
-    requiredSkill: 'Trade (Chandler)',
-    requiredMaterials: [
-      { name: 'Tin sheets', quantity: 1 },
-      { name: 'Glass pane', quantity: 1 },
-      { name: 'Wire guard', quantity: 1 },
-    ],
-    resultItem: 'Lantern',
-    difficulty: 0,
-    time: 6,
-    description: 'Hooded reflector and shutter for directed light.',
-  },
-  {
-    name: 'Tanner Waterskin',
-    requiredSkill: 'Trade (Tanner)',
-    requiredMaterials: [
-      { name: 'Cured goat hide', quantity: 1 },
-      { name: 'Beeswax seal', quantity: 1 },
-    ],
-    resultItem: 'Waterskin',
-    difficulty: 0,
-    time: 4,
-    description: 'Seamed bladder, waxed against leakage.',
-  },
-  {
-    name: 'Jeweller Signet Ring',
-    requiredSkill: 'Trade (Goldsmith)',
-    requiredMaterials: [
-      { name: 'Silver blank', quantity: 1 },
-      { name: 'Engraving tools (use)', quantity: 1 },
-    ],
-    resultItem: 'Signet ring',
-    difficulty: -10,
-    time: 8,
-    description: 'Cut intaglio for sealing wax.',
-  },
-];
-
-function normalizeCoins(copperTotal) {
-  let cp = Math.max(0, Math.round(copperTotal));
-  let ss = Math.floor(cp / 100);
-  cp %= 100;
-  let gc = Math.floor(ss / 10);
-  ss %= 10;
-  return { gold: gc, silver: ss, copper: cp };
-}
-
-/** @param {{ gold?: number, silver?: number, copper?: number }} price */
-export function priceToCopper(price) {
-  const g = price.gold ?? 0;
-  const s = price.silver ?? 0;
-  const c = price.copper ?? 0;
-  return g * 100 + s * 10 + c;
-}
-
-/**
- * @param {typeof EQUIPMENT[string]} item
- * @param {number} [reputationModifier] Percent change to list price (+10 = 10% dearer, -10 = 10% cheaper), e.g. from faction standing or Haggle.
- * @param {number} [locationModifier] Value from AVAILABILITY_MODIFIERS (city 0, town -10, …). Smaller settlements tend to charge more for finished goods when available: factor = 1 - locationModifier/100.
- */
-export function calculatePrice(item, reputationModifier = 0, locationModifier = 0) {
-  const base = priceToCopper(item.price);
-  const repFactor = 1 + reputationModifier / 100;
-  const locFactor = 1 - locationModifier / 100;
-  return normalizeCoins(base * repFactor * locFactor);
-}
-
-export function getEquipmentByCategory(category) {
-  return Object.entries(EQUIPMENT)
-    .filter(([, def]) => def.category === category)
-    .map(([id, def]) => ({ id, ...def }));
-}
-
-function formatCoinPrice(price) {
-  const parts = [];
-  if (price.gold) parts.push(`${price.gold} GC`);
-  if (price.silver) parts.push(`${price.silver} SS`);
-  if (price.copper) parts.push(`${price.copper} CP`);
-  return parts.length ? parts.join(' ') : '0 CP';
-}
-
-/**
- * @param {string} category - key from EQUIPMENT_CATEGORIES
- * @returns {string} Compact lines for LLM / prompt injection
- */
-export function formatEquipmentForPrompt(category) {
-  const label = EQUIPMENT_CATEGORIES[category] ?? category;
-  const rows = getEquipmentByCategory(category);
-  if (!rows.length) return `${label}: (no entries)`;
-  const lines = rows.map((e) => {
-    const props = e.properties?.length ? ` [${e.properties.join('; ')}]` : '';
-    return `- ${e.name} — ${formatCoinPrice(e.price)}; Enc ${e.weight}; ${e.availability}${props}. ${e.description}`;
-  });
-  return `${label}:\n${lines.join('\n')}`;
-}
