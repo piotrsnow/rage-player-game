@@ -150,6 +150,9 @@ const initialState = {
   combat: null,
   dialogue: null,
   dialogueCooldown: 0,
+  trade: null,
+  crafting: null,
+  alchemy: null,
   achievements: createDefaultAchievementState(),
   magic: { activeSpells: [] },
   narrationTime: 0,
@@ -714,6 +717,31 @@ function gameReducer(state, action) {
         };
       }
 
+      // Remove items by name + quantity (used by crafting/alchemy engines)
+      if (changes.removeItemsByName) {
+        let inv = [...(next.character.inventory || [])];
+        for (const { name, quantity } of changes.removeItemsByName) {
+          let toRemove = quantity;
+          const lower = name.toLowerCase();
+          inv = inv.reduce((acc, item) => {
+            if (toRemove <= 0 || (item.name || '').toLowerCase() !== lower) {
+              acc.push(item);
+              return acc;
+            }
+            const qty = item.quantity || 1;
+            if (qty <= toRemove) {
+              toRemove -= qty;
+              // item fully consumed — skip it
+            } else {
+              acc.push({ ...item, quantity: qty - toRemove });
+              toRemove = 0;
+            }
+            return acc;
+          }, []);
+        }
+        next.character = { ...next.character, inventory: inv };
+      }
+
       if (changes.moneyChange) {
         const cur = next.character.money || { gold: 0, silver: 0, copper: 0 };
         next.character = {
@@ -1198,6 +1226,29 @@ function gameReducer(state, action) {
         next.dialogue = null;
       }
 
+      // Trade panel activation from AI stateChanges (path 2: trade + other intents)
+      if (changes.startTrade && changes.startTrade.npcName) {
+        // Store trade hint — actual shop building is done by the panel/hook
+        next.trade = {
+          active: true,
+          npcName: changes.startTrade.npcName,
+          pendingSetup: true, // signals that shopItems need to be built by the panel
+          shopItems: [],
+          haggleAttempts: 0,
+          maxHaggle: 3,
+          haggleLog: [],
+          haggleDiscounts: {},
+        };
+        // Resolve NPC data from world.npcs
+        const npc = (next.world?.npcs || []).find(
+          (n) => n.name?.toLowerCase() === changes.startTrade.npcName.toLowerCase()
+        );
+        if (npc) {
+          next.trade.npcRole = npc.role || 'merchant';
+          next.trade.disposition = npc.disposition || 0;
+        }
+      }
+
       if (changes.weatherUpdate) {
         next.world = { ...next.world, weather: changes.weatherUpdate };
       }
@@ -1384,6 +1435,34 @@ function gameReducer(state, action) {
     case 'END_DIALOGUE': {
       const cooldown = state.dialogue?.round || 0;
       return { ...state, dialogue: null, dialogueCooldown: cooldown };
+    }
+
+    // ── Trade ──
+    case 'START_TRADE': {
+      return { ...state, trade: action.payload };
+    }
+    case 'UPDATE_TRADE': {
+      if (!state.trade) return state;
+      return { ...state, trade: { ...state.trade, ...action.payload } };
+    }
+    case 'END_TRADE': {
+      return { ...state, trade: null };
+    }
+
+    // ── Crafting ──
+    case 'START_CRAFTING': {
+      return { ...state, crafting: { active: true, log: [], ...action.payload } };
+    }
+    case 'END_CRAFTING': {
+      return { ...state, crafting: null };
+    }
+
+    // ── Alchemy ──
+    case 'START_ALCHEMY': {
+      return { ...state, alchemy: { active: true, log: [], ...action.payload } };
+    }
+    case 'END_ALCHEMY': {
+      return { ...state, alchemy: null };
     }
 
     case 'ADD_PARTY_COMPANION': {

@@ -98,6 +98,18 @@ export const gameData = {
     return _equipmentData?.crafting || [];
   },
 
+  get alchemyRecipes() {
+    return _equipmentData?.alchemy || [];
+  },
+
+  get materials() {
+    return _equipmentData?.materials || [];
+  },
+
+  get materialArchetypes() {
+    return _equipmentData?.materialArchetypes || {};
+  },
+
   get availabilityModifiers() {
     return _equipmentData?.availability || {};
   },

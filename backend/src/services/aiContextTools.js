@@ -116,13 +116,13 @@ export const CONTEXT_TOOLS_OPENAI = [
     function: {
       name: 'get_bestiary',
       description:
-        'Get stat block templates for common enemies (Skaven, Beastmen, Greenskins, Undead, Chaos, Animals, Humans). Use when creating combatUpdate enemies — the engine auto-converts these to RPGon attributes.',
+        'Get stat block templates for common enemies. Races: ludzie, orkowie, gobliny, nieumarli, zwierzeta, demony, trolle, pajaki, krasnoludy, elfy, niziolki. Difficulty tiers: trivial, low, medium, high, deadly. Use to review available enemies before creating combatUpdate.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Enemy type or name to search for (e.g. "bandit", "skaven", "undead", "low threat")',
+            description: 'Enemy race, name, or difficulty to search for (e.g. "bandyta", "orkowie", "nieumarli", "high")',
           },
         },
         required: ['query'],
@@ -413,7 +413,7 @@ function handleGetEquipmentCatalog(category = 'all') {
 function handleGetBestiary(query) {
   if (!query) return 'Please provide a search query (enemy name, type, or threat level).';
   const result = searchBestiary(query);
-  if (!result) return `No bestiary entries found matching "${query}". Try: bandit, skaven, undead, beastmen, chaos, wolf, bear, orc, goblin, or threat levels: trivial, low, medium, high, deadly.`;
+  if (!result) return `No bestiary entries found matching "${query}". Try: bandyta, orkowie, gobliny, nieumarli, zwierzeta, demony, trolle, pajaki, krasnoludy, elfy, niziolki, or difficulty: trivial, low, medium, high, deadly.`;
   return result;
 }
 

@@ -23,6 +23,9 @@ import AdvancementPanel from '../character/AdvancementPanel';
 import CombatPanel from './CombatPanel';
 import DialoguePanel from './DialoguePanel';
 import MagicPanel from './MagicPanel';
+import TradePanel from './TradePanel';
+import CraftingPanel from './CraftingPanel';
+import AlchemyPanel from './AlchemyPanel';
 import PartyPanel from './PartyPanel';
 import SummaryModal from './SummaryModal';
 import AchievementsPanel from '../character/AchievementsPanel';
@@ -2178,6 +2181,41 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
+        {/* Trade Panel */}
+        {state.trade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <TradePanel
+              trade={state.trade}
+              character={character}
+              world={state.world}
+              dispatch={dispatch}
+              disabled={isGenerating}
+            />
+          </div>
+        )}
+
+        {/* Crafting Panel */}
+        {state.crafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <CraftingPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGenerating}
+            />
+          </div>
+        )}
+
+        {/* Alchemy Panel */}
+        {state.alchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <AlchemyPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGenerating}
+            />
+          </div>
+        )}
+
         {/* Main Quest Complete Modal */}
         {state.mainQuestJustCompleted && campaign?.status === 'active' && (
           <MainQuestCompleteModal state={state} dispatch={dispatch} navigate={navigate} />
@@ -2271,6 +2309,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               lastChosenAction={lastChosenAction}
               multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
               typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
+              dispatch={dispatch}
+              gameState={state}
             />
           </div>
         )}

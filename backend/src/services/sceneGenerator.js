@@ -17,7 +17,14 @@ import {
   buildCodexEmbeddingText,
 } from './embeddingService.js';
 import { writeEmbedding } from './vectorSearchService.js';
-import { findClosestBestiaryEntry } from '../data/equipment/index.js';
+import {
+  findClosestBestiaryEntry, selectBestiaryEncounter,
+  applyAttributeVariance, DIFFICULTY_VARIANCE,
+  BESTIARY_RACES, BESTIARY_LOCATIONS, getBestiaryLocationSummary,
+} from '../data/equipment/index.js';
+
+const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
+const BESTIARY_LOCATIONS_STR = BESTIARY_LOCATIONS.join(', ');
 import {
   resolveBackendDiceRoll,
   resolveBackendDiceRollWithPreRoll,
@@ -29,6 +36,104 @@ import {
 } from './diceResolver.js';
 
 const MAX_TOOL_ROUNDS = 3;
+
+// ── Fill enemy stats from bestiary (shared helper, used in both pipeline paths) ──
+
+function fillEnemiesFromBestiary(stateChanges) {
+  if (!stateChanges) return;
+  const cu = stateChanges.combatUpdate;
+  if (!cu) return;
+
+  // Path A: enemyHints → backend selects from bestiary pool
+  if (cu.enemyHints && (!cu.enemies || cu.enemies.length === 0)) {
+    cu.enemies = selectBestiaryEncounter(cu.enemyHints);
+  }
+
+  // Path B: enemies with names → name matching + stat fill
+  if (cu.enemies?.length) {
+    cu.enemies = cu.enemies.map((enemy) => {
+      if (enemy.attributes && enemy.maxWounds) return enemy; // already filled (e.g. from selectBestiaryEncounter)
+      const match = findClosestBestiaryEntry(enemy.name);
+      if (!match) return enemy;
+      const variance = match.variance ?? DIFFICULTY_VARIANCE[match.difficulty] ?? 1;
+      const attrs = applyAttributeVariance(match.attributes, variance);
+      return {
+        name: enemy.name,
+        attributes: attrs,
+        wounds: match.maxWounds,
+        maxWounds: match.maxWounds,
+        skills: match.skills,
+        traits: match.traits,
+        armourDR: match.armourDR,
+        weapons: match.weapons,
+      };
+    });
+  }
+}
+
+// ── Combat fast-path helpers ──
+
+/**
+ * Try to find which NPC the player is attacking (for disposition guard).
+ * Simple name extraction from action text.
+ */
+async function findCombatTargetNpc(playerAction, dbNpcs) {
+  if (!playerAction || !dbNpcs?.length) return null;
+  const actionLower = playerAction.toLowerCase();
+  // Check each alive NPC — if their name appears in the action text
+  for (const npc of dbNpcs) {
+    if (npc.alive === false) continue;
+    if (actionLower.includes(npc.name.toLowerCase())) return npc;
+  }
+  return null;
+}
+
+/**
+ * Generate a short narrative (2-3 sentences) using a standard/nano model.
+ * Used for combat fast-path and disposition warnings.
+ */
+async function generateShortNarrative(instruction, playerAction, provider = 'openai') {
+  let apiKey;
+  try {
+    apiKey = requireServerApiKey(provider === 'anthropic' ? 'anthropic' : 'openai');
+  } catch { return instruction; }
+
+  try {
+    if (provider === 'anthropic') {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 200,
+          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.content?.[0]?.text || instruction;
+      }
+    } else {
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'gpt-4.1-mini',
+          messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
+          max_tokens: 200,
+          temperature: 0.8,
+        }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        return data.choices?.[0]?.message?.content || instruction;
+      }
+    }
+  } catch (e) {
+    console.warn('generateShortNarrative failed:', e.message);
+  }
+  return instruction;
+}
 
 // ── Skill XP calculation (deterministic, mirrors shared/domain logic) ──
 const DIFFICULTY_SKILL_XP = {
@@ -365,7 +470,8 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - removeItems: only items in character's inventory.
 - moneyChange: {gold,silver,copper} deltas for purchases (negative) and income (positive). Engine validates.
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
-- combatUpdate: {active:true, enemies:[{name}], reason}. Include ONLY when combat starts. The game engine automatically assigns balanced stat blocks based on enemy names — you only need to provide the name.
+- combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. PREFERRED: use enemyHints and let the engine select enemies from the bestiary. budget=threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). maxDifficulty=cap on individual enemy tier. race=optional filter (${BESTIARY_RACES_STR}). Fallback: {active:true, enemies:[{name}], reason} with exact bestiary names.
+- pendingThreat: {race,budget,maxDifficulty,count,description}. Use when building tension ("something approaches") without starting combat yet. Backend stores this and uses it when combat actually triggers.
 - dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
 - codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
 - knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
@@ -409,7 +515,7 @@ ${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/
     sections.push(
       `MANDATORY TOOL PROTOCOL:
 MUST call before generating narrative:
-1. Combat start → get_bestiary() + get_equipment_catalog()
+1. Combat start → prefer enemyHints in combatUpdate (engine selects from bestiary). Use get_bestiary() only if you need to review available enemies.
 2. First visit at new location → get_location_history()
 3. Player references past events (not in Recent History) → search_campaign_memory()
 4. Player asks about lore/artifacts → get_codex_entry()
@@ -431,7 +537,7 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
 - Am I at a new location? → call get_location_history()
 - Is an NPC speaking that I have no details for? → call get_npc_details()
 - Does the player reference old events not in Recent History? → call search_campaign_memory()
-- Is combat starting? → call get_bestiary() + get_equipment_catalog()
+- Is combat starting? → use enemyHints in combatUpdate (preferred) or get_bestiary() to review
 - Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
     );
   }
@@ -631,11 +737,11 @@ Narrator SILENT — only NPCs speak. All dialogueSegments must be type "dialogue
   // Combat intent
   if (!isPostCombat && !isIdleWorldEvent && !isWait) {
     if (isGeneralCombatInitiation) {
-      parts.push(`COMBAT INITIATED. Analyze NPCs present — hostile ones become enemies. MUST include combatUpdate with full stat blocks. Use get_npc_details tool for NPC stats if needed.`);
+      parts.push(`COMBAT INITIATED. MUST include combatUpdate. PREFERRED: use enemyHints {location, budget, maxDifficulty, count, race} — engine selects from bestiary. Available races: ${BESTIARY_RACES_STR}. Available locations: ${BESTIARY_LOCATIONS_STR}.`);
     } else if (attackNpcMatch) {
-      parts.push(`PLAYER ATTACKS "${attackNpcMatch[1]}". This NPC MUST be in combatUpdate.enemies regardless of attitude. Check for allies who join. MUST include combatUpdate.`);
+      parts.push(`PLAYER ATTACKS "${attackNpcMatch[1]}". MUST include combatUpdate. Use enemyHints with appropriate budget/maxDifficulty/count. If tension should build first, use pendingThreat instead.`);
     } else if (detectCombatIntent(playerAction)) {
-      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate in stateChanges with enemies and stat blocks.`);
+      parts.push(`COMBAT INTENT DETECTED. MUST include combatUpdate with enemyHints {location, budget, maxDifficulty, count}. Available races: ${BESTIARY_RACES_STR}.`);
     }
   }
 
@@ -1007,6 +1113,98 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
 
+    // 2a. Trade shortcut — skip scene generation for pure trade intent
+    if (intentResult._tradeOnly) {
+      const npcHint = intentResult._npcHint;
+      // Find best matching NPC from the scene
+      let matchedNpc = null;
+      if (npcHint) {
+        const hintLower = npcHint.toLowerCase();
+        matchedNpc = dbNpcs.find(n =>
+          n.alive !== false && n.name?.toLowerCase().includes(hintLower)
+        );
+      }
+      // Fallback: first alive NPC at current location
+      if (!matchedNpc) {
+        const currentLoc = coreState.world?.currentLocation;
+        matchedNpc = dbNpcs.find(n =>
+          n.alive !== false && (!currentLoc || n.lastLocation === currentLoc)
+        ) || dbNpcs.find(n => n.alive !== false);
+      }
+
+      if (matchedNpc) {
+        return {
+          narrative: '',
+          stateChanges: {
+            startTrade: { npcName: matchedNpc.name },
+          },
+          actions: [],
+          _tradeShortcut: true,
+        };
+      }
+      // If no NPC found, fall through to normal pipeline
+    }
+
+    // 2a2. Combat fast-path — skip large model for clear combat intent
+    if (intentResult.clear_combat && intentResult.combat_enemies) {
+      // Disposition guard: check if target is a friendly NPC
+      const targetNpc = await findCombatTargetNpc(playerAction, dbNpcs);
+      if (targetNpc && targetNpc.disposition > 0) {
+        // Don't start combat — lower disposition instead
+        const newDisposition = Math.max(-100, targetNpc.disposition - 30);
+        await prisma.campaignNPC.update({
+          where: { id: targetNpc.id },
+          data: { disposition: newDisposition },
+        });
+        onEvent({ type: 'intent', data: { intent: 'disposition_warning' } });
+        const warningNarrative = await generateShortNarrative(
+          `NPC "${targetNpc.name}" (${targetNpc.role || 'osoba'}) jest zaskoczony/a agresją gracza. Disposition spadło. NPC reaguje z niedowierzaniem i ostrzega gracza.`,
+          playerAction, provider,
+        );
+        return {
+          narrative: warningNarrative,
+          stateChanges: {
+            npcs: [{ action: 'update', name: targetNpc.name, dispositionChange: -30 }],
+          },
+          actions: [],
+          scenePacing: 'tension',
+          _combatDispositionGuard: true,
+        };
+      }
+
+      // Select enemies from bestiary
+      const enemies = selectBestiaryEncounter(intentResult.combat_enemies);
+      const filledEnemies = enemies.map(e => ({
+        name: e.name,
+        attributes: e.attributes, // already has variance applied from selectBestiaryEncounter
+        wounds: e.maxWounds,
+        maxWounds: e.maxWounds,
+        skills: e.skills,
+        traits: e.traits,
+        armourDR: e.armourDR,
+        weapons: e.weapons,
+      }));
+
+      if (filledEnemies.length > 0) {
+        const enemyNames = filledEnemies.map(e => e.name).join(', ');
+        const combatNarrative = await generateShortNarrative(
+          `Gracz rozpoczyna walkę. Przeciwnicy: ${enemyNames}. Napisz krótki opis rozpoczęcia walki (2-3 zdania, po polsku, styl RPG).`,
+          playerAction, provider,
+        );
+        onEvent({ type: 'intent', data: { intent: 'clear_combat' } });
+        return {
+          narrative: combatNarrative,
+          stateChanges: {
+            combatUpdate: { active: true, enemies: filledEnemies, reason: playerAction },
+          },
+          actions: [],
+          scenePacing: 'combat',
+          _combatFastPath: true,
+        };
+      }
+      // If no enemies found in bestiary, fall through to normal pipeline
+    }
+
     // 2b. Pre-roll 3 dice sets + resolve nano-detected skill check
     const characterForRoll = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };
     const preRolls = generatePreRolls(characterForRoll);
@@ -1082,32 +1280,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
 
     // 6. Fill enemy stats from bestiary
-    if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
-      sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
-        const match = findClosestBestiaryEntry(enemy.name);
-        if (!match) return enemy;
-        // Convert WFRP bestiary stats to RPGon attributes (1-25 scale)
-        const wc = match.characteristics || {};
-        const toAttr = (val) => Math.max(1, Math.min(25, Math.round((val || 30) / 4)));
-        return {
-          name: enemy.name,
-          attributes: {
-            sila: toAttr(wc.s || wc.ws),
-            inteligencja: toAttr(wc.int),
-            charyzma: toAttr(wc.fel),
-            zrecznosc: toAttr(wc.ag || wc.i),
-            wytrzymalosc: toAttr(wc.t),
-            szczescie: Math.max(1, Math.round((wc.int || 20) / 10)),
-          },
-          wounds: match.maxWounds,
-          maxWounds: match.maxWounds,
-          skills: match.skills,
-          traits: match.traits,
-          armour: match.armour,
-          weapons: match.weapons,
-        };
-      });
-    }
+    fillEnemiesFromBestiary(sceneResult.stateChanges);
 
     // 7. Save scene
     const lastScene = recentScenes[recentScenes.length - 1];
@@ -1473,32 +1646,8 @@ export async function generateScene(campaignId, playerAction, {
   const hasAnyDiceRollNS = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
   calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRollNS, sceneResult.diceRolls);
 
-  // 4b. Fill in enemy stats from bestiary (AI provides name, engine provides stats)
-  if (sceneResult.stateChanges?.combatUpdate?.enemies?.length) {
-    sceneResult.stateChanges.combatUpdate.enemies = sceneResult.stateChanges.combatUpdate.enemies.map((enemy) => {
-      const match = findClosestBestiaryEntry(enemy.name);
-      if (!match) return enemy;
-      const wc = match.characteristics || {};
-      const toAttr = (val) => Math.max(1, Math.min(25, Math.round((val || 30) / 4)));
-      return {
-        name: enemy.name,
-        attributes: {
-          sila: toAttr(wc.s || wc.ws),
-          inteligencja: toAttr(wc.int),
-          charyzma: toAttr(wc.fel),
-          zrecznosc: toAttr(wc.ag || wc.i),
-          wytrzymalosc: toAttr(wc.t),
-          szczescie: Math.max(1, Math.round((wc.int || 20) / 10)),
-        },
-        wounds: match.maxWounds,
-        maxWounds: match.maxWounds,
-        skills: match.skills,
-        traits: match.traits,
-        armour: match.armour,
-        weapons: match.weapons,
-      };
-    });
-  }
+  // 4b. Fill in enemy stats from bestiary (AI provides name or hints, engine provides stats)
+  fillEnemiesFromBestiary(sceneResult.stateChanges);
 
   // 5. Save scene to database
   const lastScene = recentScenes[recentScenes.length - 1];

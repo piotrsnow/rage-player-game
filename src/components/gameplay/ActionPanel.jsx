@@ -81,11 +81,14 @@ export default function ActionPanel({
   lastChosenAction = null,
   multiplayerPlayers = [],
   typingPlayers = {},
+  dispatch = null,
+  gameState = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [dialoguePickerOpen, setDialoguePickerOpen] = useState(false);
   const [selectedDialogueNpcs, setSelectedDialogueNpcs] = useState([]);
+  const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -583,6 +586,58 @@ export default function ActionPanel({
             </div>
           )}
 
+          {/* Trade NPC picker dropdown */}
+          {tradePickerOpen && dispatch && (
+            <div className="p-3 bg-surface-container-high border border-outline-variant/20 rounded-sm space-y-2 animate-fade-in">
+              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
+                {t('trade.tradeWith')}
+              </label>
+              {npcs.length > 0 ? (
+                <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+                  {npcs.map((npc) => (
+                    <button
+                      key={npc.id || npc.name}
+                      onClick={() => {
+                        dispatch({
+                          type: 'START_TRADE',
+                          payload: {
+                            active: true,
+                            npcName: npc.name,
+                            npcRole: npc.role || 'general',
+                            disposition: npc.disposition || 0,
+                            pendingSetup: true,
+                            shopItems: [],
+                            haggleAttempts: 0,
+                            maxHaggle: 3,
+                            haggleLog: [],
+                            haggleDiscounts: {},
+                          },
+                        });
+                        setTradePickerOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-surface-container/60 border border-outline-variant/10 hover:border-tertiary/20 rounded-sm transition-all"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-xs text-tertiary">person</span>
+                        <span className="text-sm text-on-surface truncate">{npc.name}</span>
+                        {npc.role && <span className="text-[9px] text-on-surface-variant">({npc.role})</span>}
+                      </div>
+                      <span className="material-symbols-outlined text-xs text-tertiary">storefront</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-on-surface-variant/60 italic px-1">{t('gameplay.noNpcsNearby')}</p>
+              )}
+              <button
+                onClick={() => setTradePickerOpen(false)}
+                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-label uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          )}
+
           {/* Dialogue picker dropdown */}
           {dialoguePickerOpen && (
             <div className="p-3 bg-surface-container-high border border-outline-variant/20 rounded-sm space-y-2 animate-fade-in">
@@ -740,6 +795,36 @@ export default function ActionPanel({
               disabled: disabled || hasPendingAction || !canDialogue,
               tone: 'tertiary',
             })}
+            {/* Trade button — visible when NPCs are in scene */}
+            {npcs.length > 0 && dispatch && !gameState?.trade?.active && renderQuickActionButton({
+              id: 'trade',
+              icon: 'storefront',
+              label: t('trade.tradeWith'),
+              description: t('trade.tradeWith'),
+              onClick: () => setTradePickerOpen((v) => !v),
+              disabled: disabled || hasPendingAction,
+              tone: 'tertiary',
+            })}
+            {/* Crafting button — visible when character has Rzemioslo skill */}
+            {dispatch && !gameState?.crafting?.active && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && renderQuickActionButton({
+              id: 'crafting',
+              icon: 'construction',
+              label: t('crafting.title'),
+              description: t('crafting.recipes'),
+              onClick: () => dispatch({ type: 'START_CRAFTING' }),
+              disabled: disabled || hasPendingAction,
+              tone: 'primary',
+            })}
+            {/* Alchemy button — visible when character has Alchemia skill */}
+            {dispatch && !gameState?.alchemy?.active && getSkillLevel(character?.skills, 'Alchemia') > 0 && renderQuickActionButton({
+              id: 'alchemy',
+              icon: 'science',
+              label: t('alchemy.title'),
+              description: t('alchemy.recipes'),
+              onClick: () => dispatch({ type: 'START_ALCHEMY' }),
+              disabled: disabled || hasPendingAction,
+              tone: 'primary',
+            })}
             {settings.needsSystemEnabled && renderQuickActionButton({
               id: 'rest',
               icon: 'bedtime',
@@ -872,4 +957,10 @@ export default function ActionPanel({
       )}
     </div>
   );
+}
+
+function getSkillLevel(skills, name) {
+  const e = skills?.[name];
+  if (!e) return 0;
+  return typeof e === 'object' ? (e.level || 0) : e;
 }

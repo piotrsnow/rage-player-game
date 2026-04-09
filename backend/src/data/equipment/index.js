@@ -7,9 +7,16 @@
 export { MELEE_RANGE, BATTLEFIELD_MAX, DEFAULT_MOVEMENT, MANOEUVRES, HIT_LOCATIONS } from './combatConstants.js';
 export { WEAPONS } from './weapons.js';
 export { ARMOUR, SHIELDS } from './armour.js';
-export { BESTIARY, findClosestBestiaryEntry, searchBestiary } from './bestiary.js';
+export {
+  BESTIARY, BESTIARY_LOCATIONS, BESTIARY_DIFFICULTIES, BESTIARY_RACES,
+  DIFFICULTY_VARIANCE, THREAT_COSTS,
+  findClosestBestiaryEntry, searchBestiary, selectBestiaryEncounter,
+  applyAttributeVariance, getBestiaryLocationSummary,
+} from './bestiary.js';
 export { EQUIPMENT, EQUIPMENT_CATEGORIES, AVAILABILITY_MODIFIERS } from './equipment.js';
 export { CRAFTING_RECIPES } from './crafting.js';
+export { ALCHEMY_RECIPES } from './alchemy.js';
+export { MATERIALS, MATERIAL_CATEGORIES_BY_ARCHETYPE } from './materials.js';
 export { normalizeCoins, priceToCopper, calculatePrice, formatCoinPrice } from './pricing.js';
 export { formatWeaponCatalog, getEquipmentByCategory, formatEquipmentForPrompt, formatBaseTypeCatalog } from './formatters.js';
 

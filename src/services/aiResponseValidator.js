@@ -265,15 +265,31 @@ const StateChangesSchema = z.object({
     enemies: z.array(z.object({
       name: z.string(),
       characteristics: z.object({}).passthrough().optional().default({}),
+      attributes: z.object({}).passthrough().optional(),
       wounds: z.number().optional(),
       maxWounds: z.number().optional(),
       skills: z.object({}).passthrough().optional().default({}),
       traits: z.array(z.string()).optional().default([]),
       armour: z.any().optional().default({}),
+      armourDR: z.number().optional(),
       weapons: z.array(z.string()).optional().default(['Hand Weapon']),
     }).passthrough()).optional().default([]),
+    enemyHints: z.object({
+      location: z.string().optional(),
+      budget: z.number().optional(),
+      maxDifficulty: z.string().optional(),
+      count: z.number().optional(),
+      race: z.string().optional(),
+    }).nullable().optional(),
     reason: z.string().optional(),
   }).passthrough().nullable().optional(),
+  pendingThreat: z.object({
+    race: z.string().optional(),
+    budget: z.number().optional(),
+    maxDifficulty: z.string().optional(),
+    count: z.number().optional(),
+    description: z.string().optional(),
+  }).nullable().optional(),
   dialogueUpdate: z.object({
     active: z.boolean(),
     npcs: z.array(z.object({
@@ -283,6 +299,9 @@ const StateChangesSchema = z.object({
     }).passthrough()).optional().default([]),
     reason: z.string().optional(),
   }).passthrough().nullable().optional(),
+  startTrade: z.object({
+    npcName: z.string(),
+  }).nullable().optional(),
   needsChanges: z.any().nullable().optional(),
   knowledgeUpdates: z.any().nullable().optional(),
   codexUpdates: z.array(CodexUpdateSchema).optional().default([]),
