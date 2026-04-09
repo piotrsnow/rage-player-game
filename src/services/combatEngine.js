@@ -75,23 +75,20 @@ function getCombatCreativityBonus(description) {
   return calculateCreativityBonus(description, COMBAT_CREATIVITY_KEYWORDS);
 }
 
-// --- New RPG system: attribute-based combat ---
-
 function getAttackAttribute(actor) {
-  // Melee uses Sila, ranged uses Zrecznosc
-  return actor.attributes?.sila || actor.characteristics?.ws || 10;
+  return actor.attributes?.sila || 10;
 }
 
 function getDefenseAttribute(actor) {
-  return actor.attributes?.zrecznosc || actor.characteristics?.ag || 10;
+  return actor.attributes?.zrecznosc || 10;
 }
 
 function getStrength(actor) {
-  return actor.attributes?.sila || Math.floor((actor.characteristics?.s || 30) / 5);
+  return actor.attributes?.sila || 10;
 }
 
 function getToughness(actor) {
-  return actor.attributes?.wytrzymalosc || Math.floor((actor.characteristics?.t || 30) / 5);
+  return actor.attributes?.wytrzymalosc || 10;
 }
 
 function getCombatSkillLevel(actor, skillName) {
@@ -101,7 +98,7 @@ function getCombatSkillLevel(actor, skillName) {
 }
 
 function rollInitiative(combatant) {
-  const zrecznosc = combatant.attributes?.zrecznosc || Math.floor((combatant.characteristics?.ag || combatant.characteristics?.i || 30) / 3);
+  const zrecznosc = combatant.attributes?.zrecznosc || 10;
   return rollD50() + zrecznosc;
 }
 
@@ -140,8 +137,7 @@ function createCombatantFromCharacter(character, id, type) {
     id,
     name: character.name,
     type,
-    attributes: character.attributes ? { ...character.attributes } : null,
-    characteristics: character.characteristics ? { ...character.characteristics } : null,
+    attributes: character.attributes ? { ...character.attributes } : {},
     wounds: character.wounds ?? character.maxWounds ?? 10,
     maxWounds: character.maxWounds ?? 10,
     skills: character.skills ? { ...character.skills } : {},
