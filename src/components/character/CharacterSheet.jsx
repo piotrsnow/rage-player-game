@@ -16,6 +16,7 @@ import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
 
 import Tooltip from '../ui/Tooltip';
 
@@ -471,7 +472,11 @@ export default function CharacterSheet({ onClose }) {
                     <span className="material-symbols-outlined text-6xl text-outline/20 mb-4">person_off</span>
                     <p className="text-on-surface-variant text-sm mb-8">{t('character.noSavedCharacters')}</p>
                     <button
-                      onClick={() => { onClose(); navigate('/'); }}
+                      onClick={() => {
+                        const guard = canLeaveCampaign(state);
+                        if (!guard.allowed) { window.alert(getLeaveBlockedMessage(guard.reason)); return; }
+                        onClose(); navigate('/');
+                      }}
                       className="px-8 py-3 bg-surface-tint text-on-primary font-bold text-xs uppercase tracking-widest rounded-sm"
                     >
                       {t('character.goToLobby')}
@@ -535,7 +540,11 @@ export default function CharacterSheet({ onClose }) {
                     </div>
                     <div className="text-center">
                       <button
-                        onClick={() => { onClose(); navigate('/'); }}
+                        onClick={() => {
+                          const guard = canLeaveCampaign(state);
+                          if (!guard.allowed) { window.alert(getLeaveBlockedMessage(guard.reason)); return; }
+                          onClose(); navigate('/');
+                        }}
                         className="inline-flex items-center gap-2 px-6 py-2.5 text-on-surface-variant text-xs font-label uppercase tracking-widest hover:text-primary transition-colors"
                       >
                         <span className="material-symbols-outlined text-sm">add</span>

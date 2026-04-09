@@ -153,6 +153,7 @@ const initialState = {
   magic: { activeSpells: [] },
   narrationTime: 0,
   totalPlayTime: 0,
+  mainQuestJustCompleted: false,
 };
 
 function gameReducer(state, action) {
@@ -301,6 +302,12 @@ function gameReducer(state, action) {
 
     case 'RESET':
       return initialState;
+
+    case 'SET_FREEROAM':
+      return { ...state, campaign: { ...state.campaign, freeroam: true }, mainQuestJustCompleted: false };
+
+    case 'DISMISS_MAIN_QUEST_MODAL':
+      return { ...state, mainQuestJustCompleted: false };
 
     case 'ADD_SCENE': {
       const nextCooldown = (!state.dialogue?.active && state.dialogueCooldown > 0)
@@ -766,6 +773,10 @@ function gameReducer(state, action) {
             active: next.quests.active.filter((q) => !validIds.includes(q.id)),
             completed: [...next.quests.completed, ...completed.map((q) => ({ ...q, completedAt: Date.now(), rewardGranted: true }))],
           };
+
+          if (completed.some((q) => q.type === 'main')) {
+            next.mainQuestJustCompleted = true;
+          }
         }
       }
 

@@ -41,6 +41,8 @@ import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
+import MainQuestCompleteModal from './MainQuestCompleteModal';
 
 function hashSummaryCacheKey(input) {
   const text = String(input || '');
@@ -2176,6 +2178,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
+        {/* Main Quest Complete Modal */}
+        {state.mainQuestJustCompleted && campaign?.status === 'active' && (
+          <MainQuestCompleteModal state={state} dispatch={dispatch} navigate={navigate} />
+        )}
+
         {/* Campaign End Screen */}
         {campaign?.status && campaign.status !== 'active' && (
           <div className="px-2 animate-fade-in">
@@ -2204,7 +2211,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                   {t('gameplay.exportLog')}
                 </button>
                 <button
-                  onClick={() => { dispatch({ type: 'RESET' }); navigate('/'); }}
+                  onClick={() => {
+                    const guard = canLeaveCampaign(state);
+                    if (!guard.allowed) { window.alert(getLeaveBlockedMessage(guard.reason)); return; }
+                    dispatch({ type: 'RESET' }); navigate('/');
+                  }}
                   className="flex items-center gap-2 px-6 py-2 bg-primary/15 border border-primary/30 rounded-sm text-xs font-label uppercase tracking-widest text-primary hover:bg-primary/25 transition-all"
                 >
                   <span className="material-symbols-outlined text-sm">add</span>
