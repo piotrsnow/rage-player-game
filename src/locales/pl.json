@@ -1144,6 +1144,7 @@
     "questCompleted": "Zadanie ukończone: {{quest}}",
     "questReward": "Nagroda za zadanie: {{reward}}",
     "questObjectiveCompleted": "Cel ukończony: {{quest}} — {{objective}}",
+    "questObjectiveProgress": "{{quest}} — postęp: {{progress}}",
     "questObjectiveVerified": "Cel zweryfikowany: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",
     "moneyGained": "{{name}} otrzymał/a {{amount}}"

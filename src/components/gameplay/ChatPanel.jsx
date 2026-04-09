@@ -923,10 +923,12 @@ export default function ChatPanel({
     }
 
     if (messages.length > prevMessageCountForNarration.current) {
+      // Skip if narrator is already playing (e.g. streaming narration already reading this scene)
+      const alreadyActive = narrator.playbackState === narrator.STATES?.PLAYING || narrator.playbackState === narrator.STATES?.LOADING;
       const newMessages = messages.slice(prevMessageCountForNarration.current);
       const spokenMessages = newMessages.filter((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
       const latestSpokenMessage = spokenMessages.at(-1);
-      if (latestSpokenMessage && latestSpokenMessage.id !== lastNarratedMessageIdRef.current) {
+      if (latestSpokenMessage && latestSpokenMessage.id !== lastNarratedMessageIdRef.current && !alreadyActive) {
         // Auto-play should always follow the newest action/scene and cut old narration.
         speakSingle(latestSpokenMessage, latestSpokenMessage.id);
         lastNarratedMessageIdRef.current = latestSpokenMessage.id;

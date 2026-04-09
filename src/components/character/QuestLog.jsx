@@ -333,9 +333,14 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
                         <span className={`material-symbols-outlined text-sm mt-0.5 ${obj.completed ? 'text-primary' : 'text-outline/30'}`}>
                           {obj.completed ? 'check_box' : 'check_box_outline_blank'}
                         </span>
-                        <p className={`text-xs leading-relaxed flex-1 ${obj.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                          {obj.description}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs leading-relaxed ${obj.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                            {obj.description}
+                          </p>
+                          {obj.progress && !obj.completed && (
+                            <p className="text-[10px] text-primary-dim/70 italic mt-0.5">{obj.progress}</p>
+                          )}
+                        </div>
                         {!obj.completed && selected._status === 'active' && (
                           isVerifying ? (
                             <span className="material-symbols-outlined text-sm text-primary animate-spin shrink-0 mt-0.5">progress_activity</span>

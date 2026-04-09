@@ -36,6 +36,7 @@ const HIGHLIGHT_SCALE_MAX = 1.2;
 const MAX_NATURAL_PLAYBACK_RATE = 2;
 const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
 const CHARS_PER_SECOND_ESTIMATE = 14;
+const STREAMING_POLL_MS = 120;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -655,6 +656,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     generationRef.current++;
     abortRef.current = true;
     queueRef.current = [];
+    // Also kill any streaming session
+    if (streamingRef.current) {
+      streamingRef.current.finished = true;
+      streamingRef.current.segments = [];
+      streamingRef.current = null;
+    }
     cleanup();
     remainingTextCharsRef.current = 0;
     setNarrationSecondsRemaining(0);
@@ -665,6 +672,193 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setHighlightInfo(null);
     setCurrentChunk(null);
   }, [cleanup]);
+
+  // --------------- Streaming narration ---------------
+  // Allows feeding segments incrementally during AI streaming.
+  // startStreaming(messageId, scenePacing) → pushStreamingSegments(segments) → finishStreaming()
+  const streamingRef = useRef(null);
+  const processStreamingQueueRef = useRef(null);
+
+  const startStreaming = useCallback((messageId, scenePacing) => {
+    stop();
+    setTimeout(() => {
+      streamingRef.current = {
+        messageId,
+        scenePacing: scenePacing || null,
+        segments: [],       // buffer of segments not yet consumed
+        sentCount: 0,       // how many segments have been pushed total
+        finished: false,    // set to true when stream ends
+      };
+      abortRef.current = false;
+      processStreamingQueueRef.current?.();
+    }, 50);
+  }, [stop]);
+
+  const pushStreamingSegments = useCallback((segments) => {
+    const s = streamingRef.current;
+    if (!s) return;
+    // Only push segments we haven't seen yet
+    const newSegments = segments.slice(s.sentCount);
+    if (newSegments.length === 0) return;
+    // Buffer all except the last one (it may still be incomplete)
+    // Unless the stream is finished, in which case push everything
+    const safe = s.finished ? newSegments : newSegments.slice(0, -1);
+    if (safe.length > 0) {
+      s.segments.push(...safe);
+      s.sentCount += safe.length;
+    }
+  }, []);
+
+  const finishStreaming = useCallback((finalSegments) => {
+    const s = streamingRef.current;
+    if (!s) return;
+    s.finished = true;
+    // Push any remaining segments we haven't sent yet
+    if (finalSegments) {
+      const remaining = finalSegments.slice(s.sentCount);
+      if (remaining.length > 0) {
+        s.segments.push(...remaining);
+        s.sentCount += remaining.length;
+      }
+    }
+  }, []);
+
+  const processStreamingQueue = useCallback(async () => {
+    const s = streamingRef.current;
+    if (!s) return;
+
+    const myGeneration = generationRef.current;
+
+    const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
+    const defaultVoiceId = viewerMode
+      ? (state.narratorVoiceId || elevenlabsVoiceId)
+      : (elevenlabsVoiceId || state.narratorVoiceId);
+
+    if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
+      reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
+      streamingRef.current = null;
+      return;
+    }
+
+    const campaignId = state.campaign?.backendId || null;
+    const localVoiceMap = new Map();
+    const playerCharNames = viewerMode ? [] : (state.party || [state.character])
+      .map(c => c?.name?.toLowerCase())
+      .filter(Boolean);
+
+    const shouldSkipSeg = (seg) => (
+      !viewerMode
+      && seg?.type === 'dialogue'
+      && hasNamedSpeaker(seg.character)
+      && playerCharNames.includes(seg.character.toLowerCase())
+    );
+
+    const resolveSegVoice = (seg) => {
+      if (seg?.voiceId) return seg.voiceId;
+      if (seg?.type === 'dialogue' && hasNamedSpeaker(seg.character)) {
+        const existing = state.characterVoiceMap?.[seg.character];
+        if (existing?.voiceId) return existing.voiceId;
+        if (!viewerMode && characterVoices?.length > 0) {
+          const mapped = resolveVoiceForCharacter(
+            seg.character, seg.gender, state.characterVoiceMap,
+            localVoiceMap, characterVoices, dispatch
+          );
+          if (mapped) return mapped;
+        }
+      }
+      return defaultVoiceId;
+    };
+
+    setCurrentMessageId(s.messageId);
+    let globalWordOffset = 0;
+
+    // Main loop: consume segments from the growing buffer
+    while (true) {
+      if (abortRef.current || generationRef.current !== myGeneration) break;
+
+      // Grab next segment from buffer
+      const seg = s.segments.shift();
+      if (!seg) {
+        // Buffer empty — are we done?
+        if (s.finished) break;
+        // Wait for more data
+        setPlaybackState(s.sentCount === 0 ? STATES.LOADING : STATES.PLAYING);
+        await new Promise(r => setTimeout(r, STREAMING_POLL_MS));
+        continue;
+      }
+
+      const text = seg.text?.trim();
+      if (!text || shouldSkipSeg(seg)) continue;
+
+      setPlaybackState(STATES.LOADING);
+      setCurrentSegmentIndex(seg.logicalSegmentIndex ?? 0);
+      setCurrentCharacter(seg.type === 'dialogue' && hasNamedSpeaker(seg.character) ? seg.character : null);
+
+      const voiceId = resolveSegVoice(seg);
+      const utterances = splitTextIntoUtterances(text);
+
+      for (let u = 0; u < utterances.length; u++) {
+        if (abortRef.current || generationRef.current !== myGeneration) break;
+
+        const chunk = utterances[u];
+        // Prefetch next utterance
+        let nextPrefetch = null;
+        const nextChunk = utterances[u + 1];
+        if (nextChunk) {
+          nextPrefetch = fetchTts(voiceId, nextChunk, campaignId, s.scenePacing).catch(() => null);
+        }
+
+        const result = await fetchTts(voiceId, chunk, campaignId, s.scenePacing);
+        if (!result || abortRef.current || generationRef.current !== myGeneration) break;
+
+        if (!viewerMode) {
+          dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
+        }
+        objectUrlsRef.current.push(result.audioUrl);
+        const audio = new Audio(result.audioUrl);
+        const baseRate = (dialogueSpeed || 100) / 100;
+        const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
+        const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
+        naturalPlaybackRateRef.current = natural;
+        audio.playbackRate = clampRate(natural * (narrationFastForwardRateRef.current || 1), 0.5, MAX_FAST_FORWARD_PLAYBACK_RATE);
+        audioRef.current = audio;
+        setPlaybackState(STATES.PLAYING);
+        setCurrentChunk(chunk);
+
+        startHighlightLoop(audio, result.words || [], seg.logicalSegmentIndex ?? 0, s.messageId, globalWordOffset, 0, text, chunk);
+
+        const playStart = performance.now();
+        await new Promise((resolve) => {
+          audio.onended = resolve;
+          audio.onerror = resolve;
+          audio.play().catch(resolve);
+        });
+        if (abortRef.current || generationRef.current !== myGeneration) break;
+
+        const wallSeconds = (performance.now() - playStart) / 1000;
+        if (wallSeconds > 0.1) {
+          dispatch({ type: 'ADD_NARRATION_TIME', payload: wallSeconds });
+        }
+        stopHighlightLoop();
+        audioRef.current = null;
+        globalWordOffset += (result.words || []).length;
+      }
+    }
+
+    // Cleanup streaming session
+    streamingRef.current = null;
+    if (generationRef.current === myGeneration) {
+      cleanup();
+      setPlaybackState(STATES.IDLE);
+      setCurrentMessageId(null);
+      setCurrentSegmentIndex(-1);
+      setCurrentCharacter(null);
+      setHighlightInfo(null);
+      setCurrentChunk(null);
+    }
+  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, startHighlightLoop, stopHighlightLoop, fetchTts, hasApiKey, reportNarratorError]);
+
+  processStreamingQueueRef.current = processStreamingQueue;
 
   const skipSegment = useCallback(() => {
     if (playbackState !== STATES.PLAYING && playbackState !== STATES.LOADING) return;
@@ -721,6 +915,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     resume,
     stop,
     skipSegment,
+    startStreaming,
+    pushStreamingSegments,
+    finishStreaming,
+    isStreaming: !!streamingRef.current,
     startNarrationFastForwardHold,
     stopNarrationFastForwardHold,
     narrationFastForwardRate,

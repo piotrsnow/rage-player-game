@@ -220,6 +220,7 @@ const QuestUpdateSchema = z.object({
   questId: z.string(),
   objectiveId: z.string(),
   completed: z.boolean(),
+  addProgress: z.string().optional(),
 }).passthrough();
 
 const CombatCrySchema = z.object({

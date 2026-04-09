@@ -1201,6 +1201,7 @@
     "questCompleted": "Quest completed: {{quest}}",
     "questReward": "Quest reward: {{reward}}",
     "questObjectiveCompleted": "Objective completed: {{quest}} — {{objective}}",
+    "questObjectiveProgress": "{{quest}} — progress: {{progress}}",
     "questObjectiveVerified": "Objective verified: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",
     "moneyGained": "{{name}} received {{amount}}"

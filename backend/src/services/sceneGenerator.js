@@ -8,7 +8,7 @@ import {
   assembleContext,
 } from './aiContextTools.js';
 import { classifyIntent } from './intentClassifier.js';
-import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
+import { compressSceneToSummary, generateLocationSummary, checkQuestObjectives } from './memoryCompressor.js';
 import {
   embedText,
   buildSceneEmbeddingText,
@@ -1129,7 +1129,26 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       },
     });
 
-    // 8. Async: embedding + state changes + memory compression
+    // 8. Tag large model quest updates + nano safety net
+    if (sceneResult.stateChanges?.questUpdates?.length) {
+      for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
+    }
+    const nanoQuestUpdates = await checkQuestObjectives(
+      sceneResult.narrative,
+      playerAction,
+      coreState.quests?.active || [],
+      sceneResult.stateChanges?.questUpdates || []
+    ).catch(err => {
+      console.error('Quest objective check failed:', err.message);
+      return [];
+    });
+    if (nanoQuestUpdates.length > 0) {
+      if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
+      if (!sceneResult.stateChanges.questUpdates) sceneResult.stateChanges.questUpdates = [];
+      sceneResult.stateChanges.questUpdates.push(...nanoQuestUpdates);
+    }
+
+    // 9. Async: embedding + state changes + memory compression
     generateSceneEmbedding(savedScene).catch(err =>
       console.error('Failed to generate scene embedding:', err.message)
     );
@@ -1149,7 +1168,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       );
     }
 
-    // 9. Complete (diceRolls already unified in step 6b)
+    // 10. Complete (diceRolls already unified in step 6b)
     onEvent({
       type: 'complete',
       data: {
@@ -1501,24 +1520,43 @@ export async function generateScene(campaignId, playerAction, {
     },
   });
 
-  // 6. Generate embedding async (fire and forget)
+  // 6. Tag large model quest updates + nano safety net
+  if (sceneResult.stateChanges?.questUpdates?.length) {
+    for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
+  }
+  const nanoQuestUpdates = await checkQuestObjectives(
+    sceneResult.narrative,
+    playerAction,
+    coreState.quests?.active || [],
+    sceneResult.stateChanges?.questUpdates || []
+  ).catch((err) => {
+    console.error('Quest objective check failed:', err.message);
+    return [];
+  });
+  if (nanoQuestUpdates.length > 0) {
+    if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
+    if (!sceneResult.stateChanges.questUpdates) sceneResult.stateChanges.questUpdates = [];
+    sceneResult.stateChanges.questUpdates.push(...nanoQuestUpdates);
+  }
+
+  // 7. Generate embedding async (fire and forget)
   generateSceneEmbedding(savedScene).catch((err) =>
     console.error('Failed to generate scene embedding:', err.message),
   );
 
-  // 7. Process stateChanges - update normalized collections
+  // 8. Process stateChanges - update normalized collections
   if (sceneResult.stateChanges) {
     processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
       console.error('Failed to process state changes:', err.message),
     );
   }
 
-  // 8. Memory compression (async, fire-and-forget)
+  // 9. Memory compression (async, fire-and-forget)
   compressSceneToSummary(campaignId, sceneResult.narrative, playerAction).catch((err) =>
     console.error('Failed to compress scene to summary:', err.message),
   );
 
-  // 9. Location summary on location change
+  // 10. Location summary on location change
   const newLocation = sceneResult.stateChanges?.currentLocation;
   const previousLocation = coreState.world?.currentLocation;
   if (newLocation && previousLocation && newLocation !== previousLocation) {
@@ -1810,6 +1848,36 @@ async function processStateChanges(campaignId, stateChanges) {
         }
       } catch (err) {
         console.error(`Failed to process codex update for ${cu.id}:`, err.message);
+      }
+    }
+  }
+
+  // Update quest objectives (progress + completion)
+  if (stateChanges.questUpdates?.length) {
+    for (const update of stateChanges.questUpdates) {
+      try {
+        const quest = await prisma.campaignQuest.findFirst({
+          where: { campaignId, questId: update.questId },
+        });
+        if (quest) {
+          const objectives = JSON.parse(quest.objectives || '[]');
+          const updated = objectives.map(obj => {
+            if (obj.id !== update.objectiveId) return obj;
+            const next = { ...obj };
+            if (update.completed) next.completed = true;
+            if (update.addProgress) {
+              const prev = obj.progress || '';
+              next.progress = prev ? `${prev}; ${update.addProgress}` : update.addProgress;
+            }
+            return next;
+          });
+          await prisma.campaignQuest.update({
+            where: { id: quest.id },
+            data: { objectives: JSON.stringify(updated) },
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to update quest objective ${update.questId}/${update.objectiveId}:`, err.message);
       }
     }
   }

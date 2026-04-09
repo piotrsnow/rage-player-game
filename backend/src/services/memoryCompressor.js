@@ -1,9 +1,10 @@
 /**
  * Memory Compressor — nano model extracts facts from scenes.
  *
- * Two levels of compression:
+ * Three levels of compression:
  * 1. Running summary — after each scene, extract key facts → gameStateSummary
  * 2. Location summary — when player leaves a location, summarize all events there
+ * 3. Quest objective check — after each scene, track progress + detect completion
  */
 
 import { prisma } from '../lib/prisma.js';
@@ -265,4 +266,94 @@ export async function getLocationSummary(campaignId, locationName) {
   if (hooks.length > 0) lines.push(`Unresolved: ${hooks.join('; ')}`);
 
   return lines.join('\n');
+}
+
+// ── QUEST OBJECTIVE PROGRESS CHECK ──
+
+const QUEST_CHECK_SYSTEM = `You track quest objective progress in an RPG scene.
+Given the narrative and unchecked objectives (with their current progress), return JSON:
+{
+  "updates": [
+    {"questId": "id", "objectiveId": "id", "addProgress": "what was accomplished in this scene", "completed": true/false}
+  ]
+}
+Rules:
+- Only include objectives where something relevant happened in the narrative.
+- "addProgress": short sentence describing what was accomplished toward this objective in THIS scene. Write in the same language as the narrative.
+- "completed": true ONLY if the ENTIRE objective description is fully satisfied (all parts done, not just some). Check against both the description AND accumulated progress.
+- If the objective has multiple parts (e.g. "find X and deliver to Y"), it is completed only when ALL parts are done.
+- If nothing relevant happened, return {"updates": []}.`;
+
+/**
+ * Check quest objectives against scene narrative.
+ * Returns additional questUpdates that the large model may have missed.
+ * Called semi-blocking before the complete event (awaited, ~200-500ms).
+ *
+ * @param {string} narrative - Scene narrative text
+ * @param {string} playerAction - Player's action text
+ * @param {Array} activeQuests - Active quests with objectives
+ * @param {Array} existingQuestUpdates - questUpdates already produced by the large model
+ * @returns {Array} Additional quest updates [{questId, objectiveId, addProgress, completed}]
+ */
+export async function checkQuestObjectives(narrative, playerAction, activeQuests, existingQuestUpdates = []) {
+  if (!narrative || !activeQuests?.length) return [];
+
+  // Build set of objectives already marked completed by the large model
+  const alreadyCompleted = new Set(
+    existingQuestUpdates
+      .filter(u => u.completed)
+      .map(u => `${u.questId}/${u.objectiveId}`)
+  );
+
+  // Collect unchecked objectives across all active quests
+  const unchecked = [];
+  for (const quest of activeQuests) {
+    if (!quest.objectives?.length) continue;
+    for (const obj of quest.objectives) {
+      if (obj.completed) continue;
+      if (alreadyCompleted.has(`${quest.id}/${obj.id}`)) continue;
+      unchecked.push({
+        questId: quest.id,
+        objectiveId: obj.id,
+        description: obj.description,
+        progress: obj.progress || '',
+      });
+    }
+  }
+
+  // Short-circuit: no unchecked objectives → no API call
+  if (unchecked.length === 0) return [];
+
+  const objectiveLines = unchecked.map(o => {
+    const progressLine = o.progress ? `\n  Progress so far: "${o.progress}"` : '\n  Progress so far: (none)';
+    return `- [${o.questId}/${o.objectiveId}] "${o.description}"${progressLine}`;
+  }).join('\n');
+
+  const userPrompt = `Player action: "${playerAction || 'N/A'}"
+
+Narrative:
+${(narrative || '').slice(0, 800)}
+
+Unchecked objectives:
+${objectiveLines}`;
+
+  try {
+    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt);
+    if (!result?.updates?.length) return [];
+
+    // Validate and normalize updates — only return valid ones matching known objectives
+    const knownIds = new Set(unchecked.map(o => `${o.questId}/${o.objectiveId}`));
+    return result.updates
+      .filter(u => u.questId && u.objectiveId && knownIds.has(`${u.questId}/${u.objectiveId}`))
+      .map(u => ({
+        questId: u.questId,
+        objectiveId: u.objectiveId,
+        addProgress: typeof u.addProgress === 'string' ? u.addProgress.slice(0, 200) : '',
+        completed: !!u.completed,
+        source: 'nano',
+      }));
+  } catch (err) {
+    console.error('Quest objective check failed:', err.message);
+    return [];
+  }
 }

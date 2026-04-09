@@ -774,14 +774,19 @@ function gameReducer(state, action) {
         for (const update of changes.questUpdates) {
           const qIdx = activeQuests.findIndex((q) => q.id === update.questId);
           if (qIdx >= 0 && activeQuests[qIdx].objectives) {
-            const objectives = activeQuests[qIdx].objectives.map((obj) =>
-              obj.id === update.objectiveId ? { ...obj, completed: !!update.completed } : obj
-            );
+            const objectives = activeQuests[qIdx].objectives.map((obj) => {
+              if (obj.id !== update.objectiveId) return obj;
+              const updated = { ...obj, completed: !!update.completed };
+              if (update.addProgress) {
+                const prev = obj.progress || '';
+                updated.progress = prev ? `${prev}; ${update.addProgress}` : update.addProgress;
+              }
+              return updated;
+            });
             activeQuests[qIdx] = { ...activeQuests[qIdx], objectives };
           }
         }
         next.quests = { ...next.quests, active: activeQuests };
-
       }
 
       if (changes.worldFacts) {

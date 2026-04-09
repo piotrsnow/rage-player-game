@@ -108,6 +108,41 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
 
+  // --- Streaming narrator: feed segments to narrator as they arrive from AI streaming ---
+  const streamingNarrationActiveRef = useRef(false);
+  const streamingNarrationMsgIdRef = useRef(null);
+
+  // Start streaming narration when first segments appear
+  useEffect(() => {
+    if (!streamingSegments || streamingSegments.length === 0) return;
+    if (streamingNarrationActiveRef.current) return;
+    if (!settings.narratorEnabled || !settings.narratorAutoPlay || !narrator.isNarratorReady) return;
+    if (readOnly) return;
+
+    const messageId = `streaming_${Date.now()}`;
+    streamingNarrationMsgIdRef.current = messageId;
+    streamingNarrationActiveRef.current = true;
+    narrator.startStreaming(messageId);
+  }, [streamingSegments, settings.narratorEnabled, settings.narratorAutoPlay, narrator.isNarratorReady, readOnly]);
+
+  // Push new segments as they stream in
+  useEffect(() => {
+    if (!streamingNarrationActiveRef.current) return;
+    if (!streamingSegments || streamingSegments.length === 0) return;
+    narrator.pushStreamingSegments(streamingSegments);
+  }, [streamingSegments]);
+
+  // Finish streaming when streamingNarrative is cleared (scene complete)
+  useEffect(() => {
+    if (streamingNarrative !== null) return;
+    if (!streamingNarrationActiveRef.current) return;
+    streamingNarrationActiveRef.current = false;
+    // Final segments come from the last chatHistory DM message
+    const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
+    narrator.finishStreaming(latestDm?.dialogueSegments || null);
+    streamingNarrationMsgIdRef.current = null;
+  }, [streamingNarrative, chatHistory]);
+
   const [sessionStartTime] = useState(() => Date.now());
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const initialTotalPlayTimeRef = useRef(state.totalPlayTime || 0);
@@ -803,6 +838,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
     if (!sceneGenSucceededRef.current) return;
+    // Skip if streaming narration already started reading this scene
+    if (streamingNarrationActiveRef.current || narrator.playbackState !== narrator.STATES.IDLE) return;
     if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
       const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
       if (latestDm) {
@@ -1165,7 +1202,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const overlayTypingSpeedMultiplier = isPlayerActionOverlayActive
     ? (isGeneratingScene ? 3 : 1)
     : 1;
-  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene && !streamingNarrative;
+  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
 
   const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
@@ -1946,7 +1983,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
-              showLoader={isPlayerActionOverlayActive && isGeneratingScene && !streamingNarrative}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
             />
@@ -2013,11 +2050,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Loading State — hide once streaming narrative arrives */}
-        {isGeneratingScene && !readOnly && !streamingNarrative && (
+        {/* Loading State — fill bar to 100% + fade out once streaming starts */}
+        {isGeneratingScene && !readOnly && (
           <SceneGenerationProgress
             startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
             estimatedMs={lastSceneGenMs}
+            completing={streamingNarrative !== null}
           />
         )}
 
