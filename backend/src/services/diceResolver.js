@@ -16,6 +16,8 @@ export const DIFFICULTY_THRESHOLDS = {
   extreme: 80,
 };
 
+export const CREATIVITY_BONUS_MAX = 10;
+
 const SKILLS = [
   { name: 'Walka wrecz', attribute: 'sila' },
   { name: 'Walka bronia jednoręczna', attribute: 'sila' },
@@ -79,7 +81,7 @@ export function getSkillLevel(character, skillName) {
  * Core dice resolution with explicit d50 and luckySuccess values.
  * Used by both nano-resolved and model-resolved paths.
  */
-export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess) {
+export function resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, preD50, luckySuccess, creativityBonus = 0) {
   if (!character?.attributes) return null;
 
   const skillDef = SKILL_BY_NAME[skillName];
@@ -89,11 +91,12 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
   const attributeValue = character.attributes[attribute] || 0;
   const skillLevel = getSkillLevel(character, skillName);
   const momentum = clamp(character.momentumBonus || 0, -10, 10);
+  const clampedCreativity = clamp(Number(creativityBonus) || 0, 0, CREATIVITY_BONUS_MAX);
 
   const difficultyKey = difficulty || 'medium';
   const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
 
-  const total = preD50 + attributeValue + skillLevel + momentum;
+  const total = preD50 + attributeValue + skillLevel + momentum + clampedCreativity;
   const margin = total - threshold;
   const success = luckySuccess || margin >= 0;
 
@@ -105,7 +108,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
     skillLevel,
     difficulty: difficultyKey,
     threshold,
-    creativityBonus: 0,
+    creativityBonus: clampedCreativity,
     momentumBonus: momentum,
     dispositionBonus: 0,
     dispositionNpc: null,

@@ -64,6 +64,17 @@ const _sceneIndexCache = {
     this._loadFromStorage();
     return this._mem.has(backendId);
   },
+
+  // Bump cache only if newIndex is higher than current.
+  bump(backendId, newIndex) {
+    if (!Number.isInteger(newIndex)) return;
+    this._loadFromStorage();
+    const current = this._mem.get(backendId) ?? -1;
+    if (newIndex > current) {
+      this._mem.set(backendId, newIndex);
+      this._persist();
+    }
+  },
 };
 
 function sanitizeSettings(settings) {
@@ -79,18 +90,41 @@ function _parseBackendCampaign(full) {
   let state = typeof full.coreState === 'string'
     ? JSON.parse(full.coreState) : (full.coreState || {});
 
+  // Character data lives in its own collection now and is populated on the
+  // campaign GET response under `full.characters`. Single-player uses the
+  // first entry; multiplayer reads the array (slice handled by MP code).
+  if (Array.isArray(full.characters) && full.characters.length > 0) {
+    state.character = full.characters[0];
+    state.characters = full.characters;
+  } else {
+    state.character = null;
+  }
+
+  if (Array.isArray(full.characterIds)) {
+    if (!state.campaign) state.campaign = {};
+    state.campaign.characterIds = full.characterIds;
+  }
+
   if (full.scenes?.length) {
-    state.scenes = full.scenes.map((s) => ({
-      ...s,
-      suggestedActions: typeof s.suggestedActions === 'string'
-        ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
-      dialogueSegments: typeof s.dialogueSegments === 'string'
-        ? JSON.parse(s.dialogueSegments) : s.dialogueSegments || [],
-      diceRoll: typeof s.diceRoll === 'string'
-        ? JSON.parse(s.diceRoll) : s.diceRoll,
-      stateChanges: typeof s.stateChanges === 'string'
-        ? JSON.parse(s.stateChanges) : s.stateChanges,
-    }));
+    state.scenes = full.scenes.map((s) => {
+      const parsedDice = typeof s.diceRoll === 'string'
+        ? JSON.parse(s.diceRoll) : s.diceRoll;
+      // Backend writes the diceRolls array into the legacy `diceRoll` column.
+      // Normalize on read: array → diceRolls + diceRoll (first), object → diceRoll.
+      const diceRolls = Array.isArray(parsedDice) ? parsedDice : undefined;
+      const diceRoll = Array.isArray(parsedDice) ? (parsedDice[0] || null) : parsedDice;
+      return {
+        ...s,
+        suggestedActions: typeof s.suggestedActions === 'string'
+          ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
+        dialogueSegments: typeof s.dialogueSegments === 'string'
+          ? JSON.parse(s.dialogueSegments) : s.dialogueSegments || [],
+        diceRoll,
+        diceRolls,
+        stateChanges: typeof s.stateChanges === 'string'
+          ? JSON.parse(s.stateChanges) : s.stateChanges,
+      };
+    });
   }
 
   if (!state.campaign) state.campaign = {};
@@ -136,6 +170,16 @@ export const storage = {
     return campaigns;
   },
 
+  // Mark a scene index as already persisted server-side. Called by
+  // useSceneGeneration after the backend's `complete` event, since the
+  // backend already creates the scene row inside its SSE handler — there's
+  // no need for the bulk save to re-upload it (which used to create
+  // duplicate rows when sceneIndex alignment drifted).
+  markSceneSavedRemotely(backendId, sceneIndex) {
+    if (!backendId) return;
+    _sceneIndexCache.bump(backendId, sceneIndex);
+  },
+
   async saveCampaign(gameState) {
     const campaignId = gameState.campaign?.id;
     if (!campaignId) return { saved: false };
@@ -171,15 +215,27 @@ export const storage = {
     const { scenes, isLoading, isGeneratingScene, isGeneratingImage, error, ...rest } = gameState;
     const coreState = { ...rest };
 
-    const characterState = coreState.character || {};
+    // Character data lives in the Character collection — never include it in
+    // the coreState payload sent to the campaign endpoint. Backend will reject
+    // any request that contains a `character` or `characterState` field.
     delete coreState.character;
+    delete coreState.characters;
+
+    // Resolve characterIds: prefer the explicit array on campaign, fall back
+    // to the live state.character.backendId for single-player legacy paths.
+    let characterIds = Array.isArray(gameState.campaign?.characterIds)
+      ? gameState.campaign.characterIds.filter((id) => typeof id === 'string' && id)
+      : [];
+    if (characterIds.length === 0 && gameState.character?.backendId) {
+      characterIds = [gameState.character.backendId];
+    }
 
     const payload = {
       name: gameState.campaign?.name || '',
       genre: gameState.campaign?.genre || '',
       tone: gameState.campaign?.tone || '',
       coreState,
-      characterState,
+      characterIds,
     };
 
     const backendId = gameState.campaign?.backendId;
@@ -190,6 +246,9 @@ export const storage = {
       const created = await apiClient.post('/campaigns', payload);
       if (gameState.campaign) {
         gameState.campaign.backendId = created.id;
+        if (Array.isArray(created.characterIds)) {
+          gameState.campaign.characterIds = created.characterIds;
+        }
       }
       if (scenes?.length) {
         await this._saveNewScenes(created.id, scenes, true);
@@ -480,26 +539,40 @@ export const storage = {
         const payload = {
           name: character.name,
           age: normalizeCharacterAge(character.age),
+          gender: character.gender || '',
           species: character.species,
-          careerData: character.career || character.careerData,
-          characteristics: character.characteristics,
-          advances: character.advances,
-          skills: character.skills,
-          wounds: character.wounds,
-          maxWounds: character.maxWounds,
-          movement: character.movement,
+          // RPGon stats
+          attributes: character.attributes || {},
+          skills: character.skills || {},
+          wounds: character.wounds ?? 0,
+          maxWounds: character.maxWounds ?? 0,
+          movement: character.movement ?? 4,
           characterLevel: character.characterLevel || 1,
           characterXp: character.characterXp || 0,
           attributePoints: character.attributePoints || 0,
-          backstory: character.backstory,
-          inventory: character.inventory,
-          customAttackPresets: character.customAttackPresets || [],
+          // Magic
+          mana: character.mana || { current: 0, max: 0 },
+          spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
+          // Inventory & equipment
+          inventory: character.inventory || [],
+          materialBag: character.materialBag || [],
           money: character.money || { gold: 0, silver: 0, copper: 0 },
           equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
+          // Status & needs
+          statuses: character.statuses || [],
+          needs: character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
+          // Narrative
+          backstory: character.backstory || '',
+          customAttackPresets: character.customAttackPresets || [],
+          // Presentation
           portraitUrl: character.portraitUrl || '',
           campaignCount: character.campaignCount || 0,
-          voiceId: character.voiceId || null,
-          voiceName: character.voiceName || null,
+          voiceId: character.voiceId || '',
+          voiceName: character.voiceName || '',
+          // Legacy WFRP fields kept for the CharacterCreationModal back-compat
+          careerData: character.career || character.careerData || {},
+          characteristics: character.characteristics || {},
+          advances: character.advances || {},
         };
 
         let saved;
@@ -516,9 +589,9 @@ export const storage = {
 
         return {
           ...character,
+          ...saved,
           age: normalizeCharacterAge(saved.age ?? character.age),
           backendId: saved.id,
-          career: saved.careerData || character.career,
           updatedAt: saved.updatedAt ? new Date(saved.updatedAt).getTime() : Date.now(),
         };
       } catch (err) {
@@ -580,29 +653,18 @@ export const storage = {
     return characters.find((c) => c.localId === id || c.backendId === id) || null;
   },
 
-  async syncCharacterFromGame(character) {
-    if (!character?.backendId || !apiClient.isConnected()) return;
+  /**
+   * Apply an AI/manual state-change delta directly to a Character record.
+   * Backend-authoritative — returns the updated, deserialized Character snapshot.
+   * Used for manual mutations (equip, advancement) that bypass the AI scene flow.
+   */
+  async patchCharacterStateChanges(characterId, changes) {
+    if (!characterId || !apiClient.isConnected()) return null;
     try {
-      await apiClient.put(`/characters/${character.backendId}`, {
-        age: normalizeCharacterAge(character.age),
-        careerData: character.career,
-        characteristics: character.characteristics,
-        advances: character.advances,
-        skills: character.skills,
-        wounds: character.wounds,
-        maxWounds: character.maxWounds,
-        characterLevel: character.characterLevel || 1,
-        characterXp: character.characterXp || 0,
-        attributePoints: character.attributePoints || 0,
-        inventory: character.inventory,
-        customAttackPresets: character.customAttackPresets || [],
-        money: character.money || { gold: 0, silver: 0, copper: 0 },
-        backstory: character.backstory,
-        voiceId: character.voiceId || null,
-        voiceName: character.voiceName || null,
-      });
+      return await apiClient.patch(`/characters/${characterId}/state-changes`, changes);
     } catch (err) {
-      console.warn('[storage] Character sync failed:', err.message);
+      console.warn('[storage] Character state-change PATCH failed:', err.message);
+      return null;
     }
   },
 

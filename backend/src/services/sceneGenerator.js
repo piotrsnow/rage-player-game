@@ -26,12 +26,18 @@ import {
   resolveBackendDiceRoll,
   resolveBackendDiceRollWithPreRoll,
   generatePreRolls,
+  CREATIVITY_BONUS_MAX,
   SKILL_BY_NAME,
   DIFFICULTY_THRESHOLDS,
   getSkillLevel,
   clamp,
 } from './diceResolver.js';
 import { resolveAndApplyRewards } from './rewardResolver.js';
+import {
+  applyCharacterStateChanges,
+  characterToPrismaUpdate,
+  deserializeCharacterRow,
+} from './characterMutations.js';
 
 // ── Fill enemy stats from bestiary (shared helper, used in both pipeline paths) ──
 
@@ -216,6 +222,43 @@ function formatMoney(money) {
 }
 
 /**
+ * Encje, które `buildLeanSystemPrompt` umieści w "Key NPCs", "Active Quests"
+ * i "ALREADY DISCOVERED" w dynamicSuffix. Używane przez `assembleContext`,
+ * żeby pominąć je w EXPANDED CONTEXT i nie dublować tych samych danych.
+ *
+ * MUSI być zsynchronizowane z slice'ami w buildLeanSystemPrompt poniżej:
+ * NPCs: alive ≠ false, sort po |disposition|, slice(0, 8)
+ * Quests: quests.active.slice(0, 5)
+ * Codex: world.codexSummary.slice(0, 10)
+ */
+function getInlineEntityKeys(coreState) {
+  const world = coreState?.world || {};
+  const quests = coreState?.quests || {};
+
+  const allNpcs = Array.isArray(world.npcs) ? world.npcs : [];
+  const npcs = allNpcs
+    .filter(n => n && n.alive !== false)
+    .sort((a, b) => Math.abs(b.disposition || 0) - Math.abs(a.disposition || 0))
+    .slice(0, 8)
+    .map(n => n.name)
+    .filter(Boolean);
+
+  const activeQuests = Array.isArray(quests.active) ? quests.active : [];
+  const questNames = activeQuests
+    .slice(0, 5)
+    .map(q => q.name)
+    .filter(Boolean);
+
+  const codexSummary = Array.isArray(world.codexSummary) ? world.codexSummary : [];
+  const codexNames = codexSummary
+    .slice(0, 10)
+    .map(c => c.name)
+    .filter(Boolean);
+
+  return { npcs, quests: questNames, codex: codexNames };
+}
+
+/**
  * Build a lean system prompt from the campaign's core state and recent scenes.
  * Includes compressed game rules — AI dynamically fetches additional context via tools.
  */
@@ -253,13 +296,14 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   WYT: Przetrwanie, Odpornosc
   SZC: Fart, Hazard, Przeczucie
   Read attribute value from PC Attributes (e.g. ZRC:13 → attr=13). If skill not in PC Skills → skill_level=0.
-- Include results in stateChanges.diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details.
+- Include results in TOP-LEVEL diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details. diceRolls is NOT nested in stateChanges.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
 - Award 20-50 XP/scene via stateChanges.xp.
-- The world is grim and perilous. Death is real. Consequences are lasting.`,
+- The world is grim and perilous. Death is real. Consequences are lasting.
+- creativityBonus (TOP-LEVEL, integer 0-10): nagroda za KREATYWNOŚĆ gracza w opisie własnej akcji. Stosuje się WYŁĄCZNIE gdy gracz wpisał własną akcję (player_input_kind=custom). Dla wybranych z listy (suggested) lub auto-graczy (auto) ZAWSZE 0. Skala: 0=brak/banalna, 1-3=lekka inwencja (konkretny szczegół, użycie środowiska), 4-6=sprytne podejście (sprytna taktyka, nieoczywiste rozwiązanie), 7-9=wybitna pomysłowość (zaskakujące połączenie, błyskotliwy plan), 10=mistrzostwo (genialne, niespodziewane rozegranie). Nie nagradzaj długich opisów bez treści — liczy się jakość pomysłu, nie ilość słów. Bonus dodaje się DO wyniku skill checka (zwiększa total, może zmienić failure→success). Jeśli scena nie ma skill checka, pole i tak emituj ale nie zmieni nic mechanicznie.`,
   );
 
   // ── SCENE PACING ──
@@ -287,7 +331,7 @@ Max 2 consecutive exploration/travel/rest without a complication. Travel without
   staticSections.push(
     `DIALOGUE FORMAT:
 dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
-Narration segments = VERBATIM full narrative text (not summarized). Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment needs "gender" field. Use consistent NPC names.`,
+dialogueSegments is the SOLE source of scene prose. Narration segments hold all descriptive text; dialogue segments hold spoken lines. Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment needs "gender" field. Use consistent NPC names.`,
   );
 
   // ── SUGGESTED ACTIONS ──
@@ -301,7 +345,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
   staticSections.push(
     `MANDATORY stateChanges RULES:
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing narrative, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
+- questUpdates: after writing dialogueSegments, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
 - Quest completion: ONLY add to completedQuests when ALL objectives done AND player talked to turn-in NPC in this scene. Never auto-complete.
 - rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare' (optional — engine picks if omitted). category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'quest_reward'|'found'|'gift'. Engine resolves into concrete items. Do NOT specify item names — just type and tier. Examples: [{type:'weapon',rarity:'uncommon',context:'loot'}], [{type:'material',category:'herb',quantity:'few',context:'found'}], [{type:'money',context:'quest_reward'}].
 - newItems: ONLY for unique quest/story items not in catalogs (quest MacGuffins, keys, letters, named artifacts). Include {id,name,type,description,rarity}. For weapons/armor quest rewards: name MUST match get_equipment_catalog.
@@ -321,7 +365,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
 - actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
-- diceRolls: [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
+- diceRolls (TOP-LEVEL field, not nested here): [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
 - needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}. Only apply if needs system is active (see dynamic state below).
 - campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
   );
@@ -333,7 +377,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - Routine (eating, resting, looking): auto-success, apply needsChanges if needs system active.
 - Uncertain: engine resolves checks. Narrate the result from user prompt.
 - Item validation: character can ONLY use items in their Inventory. Fail if item not possessed.
-- Item/money acquisition: if narrative says character gains anything, stateChanges MUST match. No exceptions.`,
+- Item/money acquisition: if dialogueSegments say character gains anything, stateChanges MUST match. No exceptions.`,
   );
 
   // ── CODEX RULES ──
@@ -352,7 +396,7 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
   if (!skipToolProtocol) {
     staticSections.push(
       `MANDATORY TOOL PROTOCOL:
-MUST call before generating narrative:
+MUST call before generating the scene:
 1. Combat start → prefer enemyHints in combatUpdate (engine selects from bestiary). Use get_bestiary() only if you need to review available enemies.
 2. First visit at new location → get_location_history()
 3. Player references past events (not in Recent History) → search_campaign_memory()
@@ -381,15 +425,22 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   }
 
   // ── RESPONSE FORMAT ──
+  // FIELD ORDER MATTERS for streaming: diceRolls first lets the frontend
+  // detect rolls early and start animations. stateChanges comes before
+  // dialogueSegments to force the model to commit to mechanics before writing
+  // prose — improves consistency between "what happened" and "what is narrated"
+  // (purchases, loot, wounds). dialogueSegments still streams before the
+  // tail fields so TTS / typewriter can start before the response is finished.
   staticSections.push(
-    `RESPONSE: Return ONLY valid JSON:
+    `RESPONSE: Return ONLY valid JSON. EMIT FIELDS IN THIS EXACT ORDER:
 {
-  "narrative": "string (required)",
-  "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
+  "creativityBonus": 0,
+  "diceRolls": [{"skill":"","difficulty":"","success":true}],
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...},
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
+  "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", diceRolls:[{"skill":"","difficulty":"","success":true}], ...},
   "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
@@ -397,7 +448,9 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "cutscene": null,
   "dilemma": null
 }
-${language === 'pl' ? 'Write ALL narrative, dialogue, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
+diceRolls is a TOP-LEVEL field, NOT nested inside stateChanges. Emit it FIRST.
+There is NO separate "narrative" field — all scene prose lives in dialogueSegments. Do not emit narrative.
+${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
   );
 
   // ═══════════════════════════════════════════════════════════════
@@ -603,7 +656,7 @@ function buildPreRollInstructions() {
 5. margin = total - threshold. success = margin >= 0.
 LUCKY SUCCESS rolls: skip all calculation, auto-success. Narrate fortunate twist.
 IMPORTANT: Calculate result FIRST, then narrate accordingly. Do not narrate success if the roll fails.
-Include in stateChanges.diceRolls: [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
+Include in TOP-LEVEL diceRolls field (NOT nested in stateChanges): [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
 }
 
 /**
@@ -611,8 +664,47 @@ Include in stateChanges.diceRolls: [{skill, difficulty, success}]. Use only as m
  * Model returns only {skill, difficulty, success} — backend calculates full result.
  * If model's narrated outcome disagrees with mechanical result, nudge d50 to reconcile.
  */
+/**
+ * Aplikuje creativity bonus przyznany przez large model do dice rolla in-place.
+ * Modyfikuje total/margin/success/creativityBonus tak, żeby bonus nie został
+ * "podwójnie naliczony" — jeśli roll już ma jakiś bonus, zastępujemy go nową
+ * wartością i przeliczamy total od podstaw.
+ */
+function applyCreativityToRoll(roll, bonus) {
+  if (!roll || typeof roll !== 'object') return;
+  const clamped = Math.max(0, Math.min(CREATIVITY_BONUS_MAX, Math.floor(Number(bonus) || 0)));
+  if (clamped === 0 && (roll.creativityBonus || 0) === 0) return;
+
+  const previous = roll.creativityBonus || 0;
+  roll.creativityBonus = clamped;
+  roll.total = (roll.total || 0) - previous + clamped;
+  if (typeof roll.threshold === 'number') {
+    roll.margin = roll.total - roll.threshold;
+    roll.success = roll.luckySuccess === true || roll.margin >= 0;
+  }
+}
+
+/**
+ * Decyduje, czy gracz w ogóle kwalifikuje się do creativity bonus.
+ * Bonus tylko dla własnoręcznie wpisanych akcji — nigdy dla clicked
+ * suggestedActions ani trybów automatycznych ([CONTINUE], [WAIT], itp).
+ */
+function isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer } = {}) {
+  if (!isCustomAction) return false;
+  if (fromAutoPlayer) return false;
+  if (typeof playerAction !== 'string') return false;
+  // Wszystkie tagi systemowe ([CONTINUE], [WAIT], [INITIATE DIALOGUE: ...],
+  // [Combat resolved: ...], itp.) traktujemy jako nie-kreatywne.
+  if (playerAction.startsWith('[')) return false;
+  return true;
+}
+
 function resolveModelDiceRolls(sceneResult, character, preRolls) {
-  const modelRolls = sceneResult.stateChanges?.diceRolls;
+  // Schema reorder: diceRolls is TOP-LEVEL. Fall back to legacy stateChanges.diceRolls
+  // for any in-flight responses where the model still nests it (best-effort).
+  const modelRolls = Array.isArray(sceneResult.diceRolls) && sceneResult.diceRolls.length > 0
+    ? sceneResult.diceRolls
+    : sceneResult.stateChanges?.diceRolls;
   if (!Array.isArray(modelRolls) || modelRolls.length === 0) return;
 
   const resolved = [];
@@ -660,9 +752,11 @@ function resolveModelDiceRolls(sceneResult, character, preRolls) {
   // Replace model's minimal rolls with fully resolved ones
   if (resolved.length > 0) {
     sceneResult.diceRolls = resolved;
+  } else {
+    sceneResult.diceRolls = undefined;
   }
-  // Clean up from stateChanges (moved to top-level)
-  if (sceneResult.stateChanges) {
+  // Clean up legacy nested location if model still emitted it there
+  if (sceneResult.stateChanges?.diceRolls) {
     delete sceneResult.stateChanges.diceRolls;
   }
 }
@@ -682,6 +776,7 @@ function buildUserPrompt(playerAction, {
   language = 'pl',
   preRolls = null,
   sceneCount = 0,
+  creativityEligible = false,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -689,6 +784,13 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   }
 
   const parts = [];
+
+  // Creativity bonus eligibility — backend wymusza creativityBonus=0 dla
+  // not-eligible akcji niezależnie od tego co model zwróci, ale informujemy
+  // też model żeby nie marnował tokenów na bonus który zostanie wyzerowany.
+  parts.push(creativityEligible
+    ? 'player_input_kind=custom — gracz wpisał WŁASNĄ akcję. Oceń kreatywność i zwróć creativityBonus 0-10 zgodnie z regułami w CORE RULES.'
+    : 'player_input_kind=suggested_or_auto — gracz NIE wpisał własnej akcji (clicked suggested / autoplayer / akcja systemowa). creativityBonus MUSI być 0.');
 
   // Needs crisis reminder
   if (needsSystemEnabled && characterNeeds) {
@@ -789,6 +891,7 @@ Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}.
       });
       parts.push(`If the action involves ADDITIONAL sub-actions needing separate checks (max ${extraRolls.length} more):
 ${rollLines.join('\n')}
+Each ADDITIONAL roll MUST be on a DIFFERENT skill than the engine-resolved one (${r.skill}). Never roll twice for the same skill in one scene — collapse multiple uses of ${r.skill} into the resolved check above.
 ${buildPreRollInstructions()}`);
     }
   } else if (!isPostCombat && !isIdleWorldEvent) {
@@ -1037,15 +1140,18 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     dialogueCooldown = 0,
     isFirstScene = false,
     sceneCount = 0,
+    isCustomAction = false,
+    fromAutoPlayer = false,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
+  const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
 
   try {
     // 1. Load campaign data (same as generateScene)
     const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
       prisma.campaign.findUnique({
         where: { id: campaignId },
-        select: { coreState: true, characterState: true },
+        select: { coreState: true, characterIds: true },
       }),
       prisma.campaignNPC.findMany({ where: { campaignId } }),
       prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
@@ -1066,8 +1172,20 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     if (!campaign) throw new Error('Campaign not found');
     const coreState = JSON.parse(campaign.coreState);
 
-    const charState = JSON.parse(campaign.characterState || '{}');
-    if (Object.keys(charState).length > 0) coreState.character = charState;
+    // Load the active player character from the Character collection.
+    // Single-player → characterIds[0]. Multiplayer is currently routed through
+    // a different flow (multiplayerAI), so for the SP scene generator we always
+    // use the first character ID.
+    const characterIds = Array.isArray(campaign.characterIds) ? campaign.characterIds : [];
+    const activeCharacterId = characterIds[0] || null;
+    let activeCharacter = null;
+    if (activeCharacterId) {
+      const row = await prisma.character.findUnique({ where: { id: activeCharacterId } });
+      if (row) {
+        activeCharacter = deserializeCharacterRow(row);
+        coreState.character = activeCharacter;
+      }
+    }
 
     if (dbNpcs.length > 0) {
       if (!coreState.world) coreState.world = {};
@@ -1240,9 +1358,19 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
 
+    // 2c. Emit nano-resolved dice roll EARLY so the frontend can start the
+    // animation in parallel with narrative streaming, instead of waiting for
+    // the `complete` event at the end.
+    if (resolvedMechanics?.diceRoll) {
+      onEvent({ type: 'dice_early', data: { diceRoll: resolvedMechanics.diceRoll } });
+    }
+
     // 3. Context assembly
+    // Pomijamy w EXPANDED CONTEXT te NPC/questy/codex, które i tak trafią
+    // do dynamicSuffix przez "Key NPCs" / "Active Quests" / "ALREADY DISCOVERED".
     const currentLocation = coreState.world?.currentLocation || '';
-    const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
+    const inlineKeys = getInlineEntityKeys(coreState);
+    const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation, inlineKeys);
     onEvent({ type: 'context_ready' });
 
     // 4. Build prompts
@@ -1271,6 +1399,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       language,
       sceneCount,
       preRolls,
+      creativityEligible,
     });
 
     // 5. Streaming AI call
@@ -1280,13 +1409,57 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       (text) => onEvent({ type: 'chunk', text }),
     );
 
+    // 5b. Walidacja creativity bonus przyznanego przez model.
+    // Anti-cheat: tylko własnoręcznie wpisane akcje gracza dostają jakikolwiek
+    // bonus, dla suggestedActions / autoplayer / akcji systemowych zerujemy.
+    const modelCreativityRaw = Number(sceneResult.creativityBonus) || 0;
+    const effectiveCreativity = creativityEligible
+      ? Math.max(0, Math.min(CREATIVITY_BONUS_MAX, Math.floor(modelCreativityRaw)))
+      : 0;
+    sceneResult.creativityBonus = effectiveCreativity;
+
+    // 5c. Aplikuj creativity do nano-rolla (resolvedMechanics.diceRoll), jeśli istnieje.
+    // Dla nano-rolli backend rozliczył dice w sekcji 2b PRZED wywołaniem modelu,
+    // więc creativity bonus dochodzi tu post-hoc i zmienia total/margin/success.
+    if (effectiveCreativity > 0 && resolvedMechanics?.diceRoll) {
+      applyCreativityToRoll(resolvedMechanics.diceRoll, effectiveCreativity);
+    }
+
     // 6a. Resolve model-initiated dice rolls (if any)
     resolveModelDiceRolls(sceneResult, characterForRoll, resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls);
 
-    // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array
+    // 6a2. Aplikuj creativity także do self-resolved rolli z modelu — wszystkie
+    // dice w jednej scenie korzystają z tego samego top-level bonusu.
+    if (effectiveCreativity > 0 && Array.isArray(sceneResult.diceRolls)) {
+      for (const roll of sceneResult.diceRolls) {
+        applyCreativityToRoll(roll, effectiveCreativity);
+      }
+    }
+
+    // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array.
+    // Dedupe by skill name: if nano already resolved a skill, drop any model
+    // roll on the same skill (the model sometimes ignores the prompt rule
+    // forbidding duplicate rolls). Nano takes priority because it already
+    // fired the dice_early animation on the frontend.
     const allDiceRolls = [];
-    if (resolvedMechanics?.diceRoll) allDiceRolls.push(resolvedMechanics.diceRoll);
-    if (sceneResult.diceRolls) allDiceRolls.push(...sceneResult.diceRolls);
+    const usedSkills = new Set();
+    const skillKey = (s) => (s ? String(s).toLowerCase().trim() : null);
+    if (resolvedMechanics?.diceRoll) {
+      allDiceRolls.push(resolvedMechanics.diceRoll);
+      const k = skillKey(resolvedMechanics.diceRoll.skill);
+      if (k) usedSkills.add(k);
+    }
+    if (sceneResult.diceRolls) {
+      for (const r of sceneResult.diceRolls) {
+        const k = skillKey(r?.skill);
+        if (k && usedSkills.has(k)) {
+          console.log('[sceneGenerator] Dropped duplicate model dice roll for skill:', r.skill);
+          continue;
+        }
+        if (k) usedSkills.add(k);
+        allDiceRolls.push(r);
+      }
+    }
     sceneResult.diceRolls = allDiceRolls.length > 0 ? allDiceRolls : undefined;
 
     // 6c. Calculate deterministic skill XP from freeform actions
@@ -1357,7 +1530,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneResult.stateChanges.questUpdates = deduped;
     }
 
-    // 9. Async: embedding + state changes + memory compression
+    // 9a. Synchronously apply character state changes BEFORE the SSE complete
+    // event so the frontend gets an authoritative snapshot. Only the character
+    // branch is sync; the other normalized writes (NPCs/codex/quests) keep
+    // running async behind the scenes.
+    let updatedCharacter = activeCharacter;
+    if (activeCharacterId && activeCharacter && sceneResult.stateChanges) {
+      try {
+        updatedCharacter = applyCharacterStateChanges(activeCharacter, sceneResult.stateChanges);
+        await prisma.character.update({
+          where: { id: activeCharacterId },
+          data: characterToPrismaUpdate(updatedCharacter),
+        });
+      } catch (err) {
+        console.error('[sceneGenerator] Failed to persist character state changes:', err.message);
+        // Fall through — frontend will reconcile to whatever is in DB on next load.
+      }
+    }
+
+    // 9b. Async: embedding + remaining state changes + memory compression
     generateSceneEmbedding(savedScene).catch(err =>
       console.error('Failed to generate scene embedding:', err.message)
     );
@@ -1384,6 +1575,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         scene: sceneResult,
         sceneIndex: newSceneIndex,
         sceneId: savedScene.id,
+        // Authoritative character snapshot after applying all state changes.
+        // Frontend reconciles state.character to this rather than mutating
+        // its local copy from sceneResult.stateChanges.
+        character: updatedCharacter,
       },
     });
   } catch (err) {
@@ -1407,15 +1602,31 @@ function parseAIResponse(text) {
   try {
     const parsed = JSON.parse(jsonStr.trim());
 
+    // Derive narrative from dialogueSegments narration text — the model no
+    // longer emits a separate narrative field. Falls back to legacy
+    // parsed.narrative for any old/cached responses.
+    const derivedNarrative = Array.isArray(parsed.dialogueSegments)
+      ? parsed.dialogueSegments
+        .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
+        .map(s => s.text.trim())
+        .filter(Boolean)
+        .join(' ')
+      : '';
+
     // Ensure required fields have defaults
     return {
-      narrative: parsed.narrative || '',
+      narrative: derivedNarrative || parsed.narrative || '',
       suggestedActions: parsed.suggestedActions || ['Look around', 'Move forward', 'Wait'],
       stateChanges: parsed.stateChanges || {},
       dialogueSegments: parsed.dialogueSegments || [],
       scenePacing: parsed.scenePacing || 'exploration',
       diceRoll: parsed.diceRoll || null,  // Legacy: single nano-resolved roll
-      // diceRolls from model come via stateChanges.diceRolls, resolved by resolveModelDiceRolls()
+      // diceRolls is a TOP-LEVEL field — model emits it first per schema order.
+      // resolveModelDiceRolls() reads from sceneResult.diceRolls and reconciles values.
+      diceRolls: Array.isArray(parsed.diceRolls) ? parsed.diceRolls : undefined,
+      // creativityBonus: top-level integer 0-10. Reconciliated post-hoc with
+      // any nano-resolved diceRoll, and propagated into self-resolved rolls.
+      creativityBonus: Number.isFinite(parsed.creativityBonus) ? parsed.creativityBonus : 0,
       atmosphere: parsed.atmosphere || { weather: 'clear', mood: 'peaceful', lighting: 'natural' },
       sceneGrid: parsed.sceneGrid || null,
       imagePrompt: parsed.imagePrompt || null,

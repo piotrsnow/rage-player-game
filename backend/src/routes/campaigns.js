@@ -4,33 +4,29 @@ import { generateKey } from '../services/hashService.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { sanitizeVoiceSettings, parseVoiceSettings, MAX_VOICE_SETTINGS_SIZE } from '../services/voiceSettings.js';
+import { deserializeCharacterRow } from '../services/characterMutations.js';
 
 const store = createMediaStore(config);
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
 const SUMMARY_CACHE_MAX_ITEMS = 40;
 
-function extractSummaryFields(coreState, characterState) {
-  if (!coreState && !characterState) return {};
-  const obj = typeof coreState === 'string' ? JSON.parse(coreState) : (coreState || {});
-  let charObj = obj.character;
-  if (!charObj || Object.keys(charObj).length === 0) {
-    const cs = typeof characterState === 'string' ? JSON.parse(characterState || '{}') : (characterState || {});
-    if (cs && Object.keys(cs).length > 0) charObj = cs;
-  }
-  return {
-    characterName: charObj?.name || '',
-    characterCareer: charObj?.career?.name || '',
-    characterTier: charObj?.career?.tier || 1,
-    totalCost: obj.aiCosts?.total || 0,
-  };
+function extractTotalCost(coreState) {
+  if (!coreState) return 0;
+  const obj = typeof coreState === 'string' ? JSON.parse(coreState) : coreState;
+  return obj?.aiCosts?.total || 0;
 }
 
+/**
+ * Strip normalized branches out of coreState before saving.
+ * Character data is NOT touched here — characters live in their own collection
+ * and are referenced via Campaign.characterIds.
+ */
 function stripNormalizedFromCoreState(coreStateObj) {
   const slim = { ...coreStateObj };
 
-  const characterState = slim.character || {};
-  delete slim.character;
+  // Defensive: drop any leftover embedded character from old client payloads.
+  if ('character' in slim) delete slim.character;
 
   const npcs = slim.world?.npcs || [];
   if (slim.world && 'npcs' in slim.world) {
@@ -48,7 +44,21 @@ function stripNormalizedFromCoreState(coreStateObj) {
   const quests = slim.quests || { active: [], completed: [] };
   delete slim.quests;
 
-  return { slim, characterState, npcs, knowledgeEvents, knowledgeDecisions, quests };
+  return { slim, npcs, knowledgeEvents, knowledgeDecisions, quests };
+}
+
+/**
+ * Fetch and deserialize all Character records for a campaign by IDs.
+ * Returns an array in the same order as characterIds (missing IDs filtered out).
+ */
+async function fetchCampaignCharacters(characterIds) {
+  if (!Array.isArray(characterIds) || characterIds.length === 0) return [];
+  const rows = await prisma.character.findMany({
+    where: { id: { in: characterIds } },
+  });
+  // Preserve characterIds order
+  const byId = new Map(rows.map((r) => [r.id, deserializeCharacterRow(r)]));
+  return characterIds.map((id) => byId.get(id)).filter(Boolean);
 }
 
 async function syncNPCsToNormalized(campaignId, npcs) {
@@ -168,16 +178,7 @@ async function syncQuestsToNormalized(campaignId, quests) {
   }
 }
 
-async function reconstructFromNormalized(campaignId, coreState, rawCharacterState) {
-  let charState = {};
-  try {
-    charState = typeof rawCharacterState === 'string'
-      ? JSON.parse(rawCharacterState) : (rawCharacterState || {});
-  } catch { /* empty */ }
-  if (Object.keys(charState).length > 0) {
-    coreState.character = charState;
-  }
-
+async function reconstructFromNormalized(campaignId, coreState) {
   if (!coreState.world) coreState.world = {};
 
   const dbNpcs = await prisma.campaignNPC.findMany({ where: { campaignId } });
@@ -338,7 +339,7 @@ export async function campaignRoutes(fastify) {
         select: {
           id: true, name: true, genre: true, tone: true,
           rating: true, playCount: true,
-          coreState: true, characterState: true, createdAt: true,
+          coreState: true, characterIds: true, createdAt: true,
           user: { select: { email: true } },
         },
         orderBy,
@@ -356,14 +357,24 @@ export async function campaignRoutes(fastify) {
     });
     const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
+    // Bulk-fetch first character per campaign for the gallery card label.
+    const firstCharIds = campaigns
+      .map((c) => (Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null))
+      .filter(Boolean);
+    const firstChars = firstCharIds.length > 0
+      ? await prisma.character.findMany({
+          where: { id: { in: firstCharIds } },
+          select: { id: true, name: true, species: true, characterLevel: true, portraitUrl: true },
+        })
+      : [];
+    const charById = new Map(firstChars.map((c) => [c.id, c]));
+
     return {
       campaigns: campaigns.map((c) => {
         let parsed = {};
         try { parsed = JSON.parse(c.coreState); } catch { /* empty */ }
-        let charParsed = parsed.character;
-        if (!charParsed || Object.keys(charParsed).length === 0) {
-          try { charParsed = JSON.parse(c.characterState || '{}'); } catch { /* empty */ }
-        }
+        const firstId = Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null;
+        const firstChar = firstId ? charById.get(firstId) : null;
         return {
           id: c.id,
           name: c.name,
@@ -376,8 +387,10 @@ export async function campaignRoutes(fastify) {
           sceneCount: sceneCountMap[c.id] || 0,
           worldDescription: parsed.campaign?.worldDescription?.substring(0, 300) || '',
           hook: parsed.campaign?.hook?.substring(0, 200) || '',
-          characterName: charParsed?.name || '',
-          characterCareer: charParsed?.career?.name || '',
+          characterName: firstChar?.name || '',
+          characterSpecies: firstChar?.species || '',
+          characterLevel: firstChar?.characterLevel || 1,
+          characterPortraitUrl: firstChar?.portraitUrl || '',
         };
       }),
       total,
@@ -390,7 +403,7 @@ export async function campaignRoutes(fastify) {
       select: {
         id: true, name: true, genre: true, tone: true,
         rating: true, playCount: true,
-        coreState: true, characterState: true, isPublic: true, createdAt: true,
+        coreState: true, characterIds: true, isPublic: true, createdAt: true,
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
@@ -405,17 +418,19 @@ export async function campaignRoutes(fastify) {
     let coreState = {};
     try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
-    await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
+    await reconstructFromNormalized(campaign.id, coreState);
 
-    const scenes = await prisma.campaignScene.findMany({
-      where: { campaignId: campaign.id },
-      orderBy: { sceneIndex: 'asc' },
-      select: SCENE_CLIENT_SELECT,
-    });
+    const [scenes, characters] = await Promise.all([
+      prisma.campaignScene.findMany({
+        where: { campaignId: campaign.id },
+        orderBy: { sceneIndex: 'asc' },
+        select: SCENE_CLIENT_SELECT,
+      }),
+      fetchCampaignCharacters(campaign.characterIds || []),
+    ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-    const { characterState: _cs, ...campaignRest } = campaign;
-    return { ...campaignRest, coreState, scenes: dedupedScenes };
+    return { ...campaign, coreState, scenes: dedupedScenes, characters };
   });
 
   fastify.get('/share/:token', async (request, reply) => {
@@ -423,7 +438,7 @@ export async function campaignRoutes(fastify) {
       where: { shareToken: request.params.token },
       select: {
         id: true, name: true, genre: true, tone: true,
-        coreState: true, characterState: true, createdAt: true,
+        coreState: true, characterIds: true, createdAt: true,
         user: { select: { email: true } },
       },
     });
@@ -432,17 +447,20 @@ export async function campaignRoutes(fastify) {
     let coreState = {};
     try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
-    await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
+    await reconstructFromNormalized(campaign.id, coreState);
 
     if (!coreState.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
       coreState.narratorVoiceId = config.elevenlabsDefaultVoiceId;
     }
 
-    const scenes = await prisma.campaignScene.findMany({
-      where: { campaignId: campaign.id },
-      orderBy: { sceneIndex: 'asc' },
-      select: SCENE_CLIENT_SELECT,
-    });
+    const [scenes, characters] = await Promise.all([
+      prisma.campaignScene.findMany({
+        where: { campaignId: campaign.id },
+        orderBy: { sceneIndex: 'asc' },
+        select: SCENE_CLIENT_SELECT,
+      }),
+      fetchCampaignCharacters(campaign.characterIds || []),
+    ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
     return {
@@ -454,6 +472,7 @@ export async function campaignRoutes(fastify) {
       author: campaign.user?.email ? campaign.user.email.slice(0, 2) + '***' : 'Anonymous',
       coreState,
       scenes: dedupedScenes,
+      characters,
     };
   });
 
@@ -533,7 +552,7 @@ export async function campaignRoutes(fastify) {
         where: { userId: request.user.id },
         select: {
           id: true, name: true, genre: true, tone: true,
-          characterName: true, characterCareer: true, characterTier: true, totalCost: true,
+          characterIds: true, totalCost: true,
           lastSaved: true, createdAt: true,
         },
         orderBy: { lastSaved: 'desc' },
@@ -546,19 +565,36 @@ export async function campaignRoutes(fastify) {
       });
       const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
-      return campaigns.map((c) => ({
-        id: c.id,
-        name: c.name,
-        genre: c.genre,
-        tone: c.tone,
-        lastSaved: c.lastSaved,
-        createdAt: c.createdAt,
-        characterName: c.characterName || '',
-        characterCareer: c.characterCareer || '',
-        characterTier: c.characterTier || 1,
-        sceneCount: sceneCountMap[c.id] || 0,
-        totalCost: c.totalCost || 0,
-      }));
+      // Bulk-fetch first character per campaign for the lobby card label.
+      const allFirstIds = campaigns
+        .map((c) => (Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null))
+        .filter(Boolean);
+      const firstChars = allFirstIds.length > 0
+        ? await prisma.character.findMany({
+            where: { id: { in: allFirstIds } },
+            select: { id: true, name: true, species: true, characterLevel: true },
+          })
+        : [];
+      const charById = new Map(firstChars.map((c) => [c.id, c]));
+
+      return campaigns.map((c) => {
+        const firstId = Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null;
+        const firstChar = firstId ? charById.get(firstId) : null;
+        return {
+          id: c.id,
+          name: c.name,
+          genre: c.genre,
+          tone: c.tone,
+          lastSaved: c.lastSaved,
+          createdAt: c.createdAt,
+          characterIds: c.characterIds || [],
+          characterName: firstChar?.name || '',
+          characterSpecies: firstChar?.species || '',
+          characterLevel: firstChar?.characterLevel || 1,
+          sceneCount: sceneCountMap[c.id] || 0,
+          totalCost: c.totalCost || 0,
+        };
+      });
     });
 
     app.get('/:id', async (request, reply) => {
@@ -570,20 +606,24 @@ export async function campaignRoutes(fastify) {
       let coreState = {};
       try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
 
-      await reconstructFromNormalized(campaign.id, coreState, campaign.characterState);
+      await reconstructFromNormalized(campaign.id, coreState);
 
-      const scenes = await prisma.campaignScene.findMany({
-        where: { campaignId: campaign.id },
-        orderBy: { sceneIndex: 'asc' },
-        select: SCENE_CLIENT_SELECT,
-      });
+      const [scenes, characters] = await Promise.all([
+        prisma.campaignScene.findMany({
+          where: { campaignId: campaign.id },
+          orderBy: { sceneIndex: 'asc' },
+          select: SCENE_CLIENT_SELECT,
+        }),
+        fetchCampaignCharacters(campaign.characterIds || []),
+      ]);
       const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-      const { characterState: _cs, voiceSettings: rawVoices, ...campaignRest } = campaign;
+      const { voiceSettings: rawVoices, ...campaignRest } = campaign;
       return {
         ...campaignRest,
         coreState,
         scenes: dedupedScenes,
+        characters,
         voiceSettings: parseVoiceSettings(rawVoices),
       };
     });
@@ -621,15 +661,26 @@ export async function campaignRoutes(fastify) {
     });
 
     app.post('/', async (request) => {
-      const { name, genre, tone, coreState: rawCoreState, characterState: rawCharState } = request.body;
+      const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
-      const { slim, characterState: extractedChar, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
         stripNormalizedFromCoreState(parsed);
 
-      const charToStore = rawCharState || extractedChar;
-      let summary = {};
-      try { summary = extractSummaryFields(slim, charToStore); } catch { /* ignore */ }
+      // Validate characterIds: must be a non-empty array of strings owned by user.
+      const characterIds = Array.isArray(rawCharIds) ? rawCharIds.filter((id) => typeof id === 'string' && id) : [];
+      if (characterIds.length > 0) {
+        const owned = await prisma.character.findMany({
+          where: { id: { in: characterIds }, userId: request.user.id },
+          select: { id: true },
+        });
+        const ownedSet = new Set(owned.map((c) => c.id));
+        for (const id of characterIds) {
+          if (!ownedSet.has(id)) {
+            return { error: `Character ${id} not found or not owned by user` };
+          }
+        }
+      }
 
       const campaign = await prisma.campaign.create({
         data: {
@@ -638,8 +689,8 @@ export async function campaignRoutes(fastify) {
           genre: genre || '',
           tone: tone || '',
           coreState: JSON.stringify(slim),
-          characterState: JSON.stringify(charToStore || {}),
-          ...summary,
+          characterIds,
+          totalCost: extractTotalCost(slim),
           lastSaved: new Date(),
           shareToken: crypto.randomUUID(),
         },
@@ -649,10 +700,12 @@ export async function campaignRoutes(fastify) {
       await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
       await syncQuestsToNormalized(campaign.id, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
 
-      const fullState = { ...slim, character: charToStore };
+      const fullState = { ...slim };
       if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
       if (quests.active?.length || quests.completed?.length) fullState.quests = quests;
-      return { ...campaign, coreState: fullState, scenes: [] };
+
+      const characters = await fetchCampaignCharacters(characterIds);
+      return { ...campaign, coreState: fullState, scenes: [], characters };
     });
 
     app.put('/:id', async (request, reply) => {
@@ -661,26 +714,49 @@ export async function campaignRoutes(fastify) {
       });
       if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-      const { name, genre, tone, coreState: rawCoreState, characterState: rawCharState } = request.body;
+      const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
+
+      // Reject any attempt to write character data through the campaign endpoint.
+      if ('character' in (request.body || {}) || 'characterState' in (request.body || {})) {
+        return reply.code(400).send({
+          error: 'Character data must be saved via /characters endpoints, not /campaigns. Use PATCH /characters/:id/state-changes for AI deltas or PUT /characters/:id for full snapshots.',
+        });
+      }
+
       const updateData = { lastSaved: new Date() };
 
       if (name !== undefined) updateData.name = name;
       if (genre !== undefined) updateData.genre = genre;
       if (tone !== undefined) updateData.tone = tone;
 
+      // Allow updating characterIds (e.g. adding a player on a multiplayer host
+      // promotion, or removing a character that left the campaign).
+      if (Array.isArray(rawCharIds)) {
+        const ids = rawCharIds.filter((id) => typeof id === 'string' && id);
+        if (ids.length > 0) {
+          const owned = await prisma.character.findMany({
+            where: { id: { in: ids }, userId: request.user.id },
+            select: { id: true },
+          });
+          const ownedSet = new Set(owned.map((c) => c.id));
+          for (const id of ids) {
+            if (!ownedSet.has(id)) {
+              return reply.code(400).send({ error: `Character ${id} not found or not owned by user` });
+            }
+          }
+        }
+        updateData.characterIds = ids;
+      }
+
       let pendingSync = null;
 
       if (rawCoreState !== undefined) {
         const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
-        const { slim, characterState: extractedChar, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+        const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
           stripNormalizedFromCoreState(parsed);
 
-        const charToStore = rawCharState || extractedChar;
         updateData.coreState = JSON.stringify(slim);
-        updateData.characterState = JSON.stringify(charToStore || {});
-        try {
-          Object.assign(updateData, extractSummaryFields(slim, charToStore));
-        } catch { /* ignore */ }
+        updateData.totalCost = extractTotalCost(slim);
 
         pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
       }
@@ -720,24 +796,6 @@ export async function campaignRoutes(fastify) {
       ]);
       await prisma.campaign.delete({ where: { id: request.params.id } });
       return { success: true };
-    });
-
-    app.post('/backfill-summaries', async (request) => {
-      const campaigns = await prisma.campaign.findMany({
-        where: { userId: request.user.id, characterName: '' },
-        select: { id: true, coreState: true, characterState: true },
-      });
-      let updated = 0;
-      for (const c of campaigns) {
-        try {
-          const summary = extractSummaryFields(c.coreState, c.characterState);
-          if (summary.characterName || summary.totalCost) {
-            await prisma.campaign.update({ where: { id: c.id }, data: summary });
-            updated++;
-          }
-        } catch { /* skip broken entries */ }
-      }
-      return { updated, total: campaigns.length };
     });
 
     app.post('/:id/share', async (request, reply) => {

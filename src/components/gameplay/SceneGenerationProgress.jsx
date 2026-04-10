@@ -31,13 +31,13 @@ export default function SceneGenerationProgress({ startTime, estimatedMs, comple
     };
   }, [startTime]);
 
-  // When completing: snap bar to 100%, then fade out after bar transition
+  // When completing: snap bar to 100%, then fade out after bar transition.
+  // Aggressive timings (~360ms total) so the loader doesn't linger after the
+  // streamed narrative is already visible in chat.
   useEffect(() => {
     if (!completing) return;
-    // Wait for bar to fill (300ms transition) then start fade
-    const fillTimer = setTimeout(() => setFadingOut(true), 350);
-    // After fade (500ms) mark as hidden
-    const hideTimer = setTimeout(() => setHidden(true), 850);
+    const fillTimer = setTimeout(() => setFadingOut(true), 160);
+    const hideTimer = setTimeout(() => setHidden(true), 360);
     return () => { clearTimeout(fillTimer); clearTimeout(hideTimer); };
   }, [completing]);
 
@@ -62,7 +62,7 @@ export default function SceneGenerationProgress({ startTime, estimatedMs, comple
       className="flex flex-col items-center gap-3 py-8 animate-fade-in w-full max-w-xs mx-auto"
       style={{
         opacity: fadingOut ? 0 : 1,
-        transition: 'opacity 500ms ease-out',
+        transition: 'opacity 200ms ease-out',
       }}
     >
       <div className="flex items-center gap-2">
@@ -84,7 +84,7 @@ export default function SceneGenerationProgress({ startTime, estimatedMs, comple
               className="h-full bg-gradient-to-r from-primary-dim to-primary rounded-full relative overflow-hidden"
               style={{
                 width: `${percent}%`,
-                transition: 'width 300ms ease-out',
+                transition: 'width 150ms ease-out',
                 boxShadow: '0 0 8px rgba(197, 154, 255, 0.5)',
               }}
             >

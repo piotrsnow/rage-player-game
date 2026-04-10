@@ -2,23 +2,17 @@ import { rollD50 } from '../gameState.js';
 import { resolveSkillCheck, inferActionContext } from './skillCheck.js';
 import { isRestAction, calculateRestRecovery } from './restRecovery.js';
 import { resolveActionDisposition } from './dispositionBonus.js';
-import { calculateCreativityBonus } from './creativityBonus.js';
 export { resolveD50Test } from './d50Test.js';
-
-const CREATIVITY_KEYWORDS = [
-  'carefully', 'quietly', 'quickly', 'stealthily', 'cleverly', 'forcefully',
-  'ostrożnie', 'cicho', 'szybko', 'sprytnie', 'siłą', 'podstępem',
-];
-
-function getCreativityBonus(actionText, isCustomAction, fromAutoPlayer) {
-  if (!isCustomAction && !fromAutoPlayer) return 0;
-  return calculateCreativityBonus(actionText, CREATIVITY_KEYWORDS);
-}
 
 /**
  * Master orchestrator: resolve all deterministic mechanics before AI call.
+ *
+ * Creativity bonus is intentionally NOT computed here — it is awarded
+ * exclusively by the large model in the backend pipeline (see
+ * sceneGenerator.js → applyCreativityToRoll). Any frontend dice roll
+ * resolved here will have creativityBonus=0 until backend reconciles it.
  */
-export async function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t, inferSkillCheckFn = null, skipDiceRoll: forceSkipDiceRoll = false }) {
+export async function resolveMechanics({ state, playerAction, settings, isFirstScene, t, inferSkillCheckFn = null, skipDiceRoll: forceSkipDiceRoll = false }) {
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPassiveAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
   const isRest = isRestAction(playerAction, t);
@@ -33,7 +27,6 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
   if (!skipDiceRoll) {
     const roll = rollD50();
     const currentMomentum = state.momentumBonus || 0;
-    const creativityBonus = getCreativityBonus(playerAction, isCustomAction, fromAutoPlayer);
 
     let actionContext = null;
     if (inferSkillCheckFn) {
@@ -62,7 +55,6 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
         currentMomentum,
         worldNpcs: state.world?.npcs || [],
         resolveDisposition: resolveActionDisposition,
-        creativityBonus,
         actionContext,
       });
     }

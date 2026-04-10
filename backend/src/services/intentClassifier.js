@@ -119,11 +119,11 @@ export function classifyIntentHeuristic(playerAction, { dialogue = null, isFirst
     };
   }
 
-  // [CONTINUE]
+  // [CONTINUE] — aktywne questy są już w "Active Quests" w dynamicSuffix,
+  // więc nie ma potrzeby ekspansji ich osobno do contextSection.
   if (playerAction === '[CONTINUE]') {
     return {
       ...emptySelection(),
-      expand_quests: ['__all_active__'],
       _intent: 'continue',
     };
   }

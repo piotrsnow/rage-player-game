@@ -45,11 +45,8 @@ model Campaign {
   genre          String   @default("")
   tone           String   @default("")
   coreState      String   @default("{}") // Lean state: combat, dialogue, world basics (minus npcs/knowledge/quests/character)
-  characterState String   @default("{}") // JSON: in-campaign character snapshot (evolves independently from Character library)
+  characterIds   String[] @db.ObjectId   // Character record IDs participating in this campaign (1 in single-player, N in MP)
   voiceSettings  String   @default("{}") // JSON: { elevenlabsVoiceId, elevenlabsVoiceName, characterVoices[] } — set by campaign owner, read by all players
-  characterName  String   @default("")
-  characterCareer String  @default("")
-  characterTier  Int      @default(1)
   totalCost      Float    @default(0)
   isPublic       Boolean  @default(false)
   shareToken     String?  @unique
@@ -186,24 +183,43 @@ model Character {
   userId          String   @db.ObjectId
   name            String
   age             Int      @default(23)
+  gender          String   @default("")
   species         String
-  careerData      String   @default("{}") // JSON: { class, name, tier, tierName, status }
-  characteristics String   @default("{}") // JSON: { ws, bs, s, t, i, ag, dex, int, wp, fel }
-  advances        String   @default("{}") // JSON: { ws:0, bs:0, ... }
-  skills          String   @default("{}") // JSON: { "Melee (Basic)": 5, ... }
+  // RPGon stats
+  attributes      String   @default("{}") // JSON: { sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie }
+  skills          String   @default("{}") // JSON: { "SkillName": { level: N, xp: N }, ... }
   wounds          Int      @default(0)
   maxWounds       Int      @default(0)
   movement        Int      @default(4)
-  xp              Int      @default(0)
-  xpSpent         Int      @default(0)
+  characterLevel  Int      @default(1)
+  characterXp     Int      @default(0)
+  attributePoints Int      @default(0)
+  // Magic
+  mana            String   @default("{\"current\":0,\"max\":0}") // JSON: { current, max }
+  spells          String   @default("{\"known\":[],\"usageCounts\":{},\"scrolls\":[]}") // JSON: { known, usageCounts, scrolls }
+  // Inventory & equipment
+  inventory       String   @default("[]") // JSON array of items (each with optional baseType)
+  materialBag     String   @default("[]") // JSON array of crafting materials
+  money           String   @default("{\"gold\":0,\"silver\":0,\"copper\":0}") // JSON: { gold, silver, copper }
+  equipped        String   @default("{\"mainHand\":null,\"offHand\":null,\"armour\":null}") // JSON: { mainHand, offHand, armour }
+  // Status & needs
+  statuses        String   @default("[]") // JSON array of active statuses
+  needs           String   @default("{\"hunger\":100,\"thirst\":100,\"bladder\":100,\"hygiene\":100,\"rest\":100}") // JSON
+  // Narrative
   backstory       String   @default("")
-  inventory       String   @default("[]") // JSON array
-  money           String   @default("{}") // JSON: { gold, silver, copper }
-  equipped        String   @default("{}") // JSON: { mainHand, offHand, armour }
+  customAttackPresets String @default("[]") // JSON array of custom attack preset strings
+  // Presentation
   portraitUrl     String   @default("")
-  campaignCount   Int      @default(0)
   voiceId         String   @default("")
   voiceName       String   @default("")
+  // Library metadata
+  campaignCount   Int      @default(0)
+  // Legacy WFRP fields kept for now (CharacterCreationModal still references some)
+  careerData      String   @default("{}")
+  characteristics String   @default("{}")
+  advances        String   @default("{}")
+  xp              Int      @default(0)
+  xpSpent         Int      @default(0)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -213,15 +229,16 @@ model Character {
 }
 
 model MultiplayerSession {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  roomCode  String   @unique
-  hostId    String   @db.ObjectId
-  phase     String
-  players   String   // JSON array of player data (without ws)
-  gameState String   // JSON full game state
-  settings  String   // JSON room settings
-  updatedAt DateTime @updatedAt
-  createdAt DateTime @default(now())
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  roomCode     String   @unique
+  hostId       String   @db.ObjectId
+  phase        String
+  players      String   // JSON array of player data (without ws). Each entry: { odId, name, characterId, ... }
+  characterIds String[] @db.ObjectId   // All Character record IDs participating in this room (parallel to players)
+  gameState    String   // JSON: world / scenes / dialogue / combat — character data is NOT embedded, fetched via characterIds
+  settings     String   // JSON room settings
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
 
   host User @relation(fields: [hostId], references: [id])
 }

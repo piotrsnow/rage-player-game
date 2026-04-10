@@ -6,6 +6,7 @@ import { aiService } from '../services/ai';
 import { imageService } from '../services/imageGen';
 import { apiClient } from '../services/apiClient';
 import { createSceneId } from '../services/gameState';
+import { storage } from '../services/storage';
 import { contextManager } from '../services/contextManager';
 import { calculateCost } from '../services/costTracker';
 import { generateStateChangeMessages } from '../services/stateChangeMessages';
@@ -34,6 +35,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
+  const earlyDiceRollEmittedRef = useRef(false);
+  const streamedDiceRollCountRef = useRef(0);
+  const dispatchedRollSkillsRef = useRef(new Set());
+  const rollMessageCounterRef = useRef(0);
   const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
   const [streamingNarrative, setStreamingNarrative] = useState(null);
   const [streamingSegments, setStreamingSegments] = useState(null);
@@ -64,6 +69,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       setEarlyDiceRoll(null);
+      earlyDiceRollEmittedRef.current = false;
+      streamedDiceRollCountRef.current = 0;
+      dispatchedRollSkillsRef.current = new Set();
+      rollMessageCounterRef.current = 0;
       sceneGenStartRef.current = Date.now();
       setSceneGenStartTime(Date.now());
 
@@ -80,8 +89,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           playerAction,
           settings,
           isFirstScene,
-          isCustomAction,
-          fromAutoPlayer,
           t,
           inferSkillCheckFn: null, // backend handles skill inference
           skipDiceRoll: true, // backend resolves dice after nano
@@ -127,20 +134,34 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         // Auto-sync campaign to backend if not yet synced
         if (canUseBackend && !backendCampaignId) {
           try {
+            // Save character to /characters first if it isn't already, so we
+            // can reference it via characterIds on the new campaign.
+            let characterBackendId = state.character?.backendId;
+            if (!characterBackendId && state.character) {
+              const savedChar = await storage.saveCharacter(state.character);
+              characterBackendId = savedChar?.backendId || null;
+              if (characterBackendId) state.character.backendId = characterBackendId;
+            }
+
             const { scenes: allScenes, isLoading, isGeneratingScene, isGeneratingImage, error: _err, ...rest } = state;
             const coreState = { ...rest };
             if (coreState.chatHistory?.length > 10) coreState.chatHistory = coreState.chatHistory.slice(-10);
-            const characterState = coreState.character || {};
+            // Character lives in /characters now — never include it in coreState.
             delete coreState.character;
+            delete coreState.characters;
+
             const created = await apiClient.post('/campaigns', {
               name: state.campaign?.name || '',
               genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '',
               coreState,
-              characterState,
+              characterIds: characterBackendId ? [characterBackendId] : [],
             });
             backendCampaignId = created.id;
             state.campaign.backendId = created.id;
+            if (Array.isArray(created.characterIds)) {
+              state.campaign.characterIds = created.characterIds;
+            }
             console.log('[useAI] Auto-synced campaign to backend:', created.id);
           } catch (syncErr) {
             console.warn('[useAI] Failed to auto-sync campaign:', syncErr.message);
@@ -152,8 +173,37 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         }
 
         let rawAccumulated = '';
-        setStreamingNarrative('');
+        // Don't pre-set streamingNarrative to '' here. With diceRolls/stateChanges
+        // emitted before narrative in the schema, an empty placeholder would
+        // flip fastFinish on immediately and dismiss the loader ~500ms before
+        // actual narrative text starts streaming. Let the chunk handler set it
+        // only once narrative chunks actually arrive.
         setStreamingSegments(null);
+
+        // Dispatches a dice_roll chat message ONCE per skill per scene.
+        // Defends against duplicate Perswazja-like cases when nano + model
+        // both produce a roll on the same skill but backend dedup fails or
+        // when dice_early and the post-complete loop run in the same ms.
+        const dispatchDiceRollMessage = (roll) => {
+          if (!roll) return;
+          const skillKey = roll.skill ? String(roll.skill).toLowerCase().trim() : '';
+          if (skillKey && dispatchedRollSkillsRef.current.has(skillKey)) return;
+          if (skillKey) dispatchedRollSkillsRef.current.add(skillKey);
+          rollMessageCounterRef.current += 1;
+          const uid = `${Date.now()}_${rollMessageCounterRef.current}`;
+          dispatch({
+            type: 'ADD_CHAT_MESSAGE',
+            payload: {
+              id: `msg_${uid}_roll_server_${roll.skill || 'unknown'}`,
+              role: 'system',
+              subtype: 'dice_roll',
+              content: `${roll.skill || '?'}: d50=${roll.roll} → ${roll.success ? '✓' : '✗'} (margin ${roll.margin})`,
+              diceData: roll,
+              timestamp: Date.now(),
+            },
+          });
+        };
+
         const backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
           provider: aiProvider,
           model: aiModel || null,
@@ -172,15 +222,50 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           onEvent: (event) => {
             if (event.type === 'intent') {
               console.log('[useAI] Stream intent:', event.data?.intent);
+            } else if (event.type === 'dice_early' && event.data?.diceRoll) {
+              // Backend resolved a nano dice roll BEFORE streaming started.
+              // Show animation in parallel with narrative streaming.
+              const roll = event.data.diceRoll;
+              setEarlyDiceRoll(roll);
+              earlyDiceRollEmittedRef.current = true;
+              dispatchDiceRollMessage(roll);
             } else if (event.type === 'chunk' && event.text) {
               rawAccumulated += event.text;
               const parsed = parsePartialJson(rawAccumulated);
               if (!parsed) return;
-              if (typeof parsed.narrative === 'string') {
-                setStreamingNarrative(parsed.narrative);
+              // Detect new model dice rolls progressively from streamed JSON.
+              // Schema puts diceRolls FIRST, so this fires before narrative streams.
+              // Values are placeholder until `complete` reconciles them.
+              if (Array.isArray(parsed.diceRolls)) {
+                const newCount = parsed.diceRolls.length;
+                if (newCount > streamedDiceRollCountRef.current && !earlyDiceRollEmittedRef.current) {
+                  const latestRoll = parsed.diceRolls[newCount - 1];
+                  if (latestRoll?.skill) {
+                    setEarlyDiceRoll({
+                      skill: latestRoll.skill,
+                      difficulty: latestRoll.difficulty || 'medium',
+                      _streaming: true,
+                    });
+                  }
+                }
+                streamedDiceRollCountRef.current = newCount;
               }
               if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
                 setStreamingSegments(parsed.dialogueSegments);
+                // Derive streamingNarrative from narration segments. Many UI
+                // gates use `streamingNarrative !== null` to know that scene
+                // prose has started arriving — keep that signal alive even
+                // though the model no longer emits a separate narrative field.
+                const derived = parsed.dialogueSegments
+                  .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
+                  .map(s => s.text)
+                  .join(' ');
+                if (derived.length > 0) {
+                  setStreamingNarrative(derived);
+                }
+              } else if (typeof parsed.narrative === 'string' && parsed.narrative.length > 0) {
+                // Legacy fallback: proxy mode / cached responses still emit narrative.
+                setStreamingNarrative(parsed.narrative);
               }
             }
           },
@@ -188,6 +273,22 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         result = backendResult.result;
         usage = backendResult.usage;
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+        // Backend authoritative character snapshot — applied below after the
+        // main APPLY_STATE_CHANGES dispatch so it overrides any local mutations.
+        const authoritativeCharacterSnapshot = backendResult.character || null;
+
+        // Backend already persisted the scene row inside the SSE handler.
+        // Capture its DB id and sceneIndex so the frontend uses the SAME id
+        // (avoiding duplicate DM messages on reload, where chat-history
+        // sceneIds would otherwise mismatch the loaded scene.id) and so the
+        // bulk save skips re-uploading this scene.
+        const serverSceneId = backendResult.sceneId || null;
+        const serverSceneIndex = Number.isInteger(backendResult.sceneIndex)
+          ? backendResult.sceneIndex
+          : null;
+        if (serverSceneId && backendCampaignId && serverSceneIndex !== null) {
+          storage.markSceneSavedRemotely(backendCampaignId, serverSceneIndex);
+        }
 
         // Trade shortcut: backend detected pure trade intent and returned a
         // synthetic empty scene. Just open the TradePanel; keep the current
@@ -315,21 +416,16 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         // Keep legacy diceRoll for backward compat
         result.diceRoll = effectiveDiceRolls[0] || null;
 
-        // Show dice rolls from server response (backend mode — wasn't shown earlier)
+        // Show dice rolls from server response. dispatchDiceRollMessage()
+        // dedupes by skill name, so if dice_early already emitted the nano
+        // roll, the post-complete loop won't dispatch it again. Also upgrades
+        // a streaming placeholder to fully-resolved server values.
         if (serverDiceRolls.length > 0 && !resolved.diceRoll) {
-          setEarlyDiceRoll(serverDiceRolls[0]);
+          if (!earlyDiceRollEmittedRef.current) {
+            setEarlyDiceRoll(serverDiceRolls[0]);
+          }
           for (const roll of serverDiceRolls) {
-            dispatch({
-              type: 'ADD_CHAT_MESSAGE',
-              payload: {
-                id: `msg_${Date.now()}_roll_server_${roll.skill}`,
-                role: 'system',
-                subtype: 'dice_roll',
-                content: `${roll.skill || '?'}: d50=${roll.roll} → ${roll.success ? '✓' : '✗'} (margin ${roll.margin})`,
-                diceData: roll,
-                timestamp: Date.now(),
-              },
-            });
+            dispatchDiceRollMessage(roll);
           }
         }
 
@@ -380,7 +476,10 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         finalSegments = voiceEnriched.segments;
         result.stateChanges = voiceEnriched.stateChanges;
 
-        const sceneId = createSceneId();
+        // Prefer backend's DB id so frontend scene.id matches what the
+        // /campaigns GET endpoint returns on reload — keeps existingDmSceneIds
+        // (chat-history sceneIds) consistent with state.scenes ids.
+        const sceneId = serverSceneId || createSceneId();
         const questOffers = (result.questOffers || []).map((offer) => ({
           ...offer,
           objectives: (offer.objectives || []).map((obj) => ({ ...obj, completed: false })),
@@ -406,7 +505,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         };
 
         dispatch({ type: 'ADD_SCENE', payload: scene });
-        setStreamingNarrative(null); // Clear streaming now that final scene is in chat
+        setStreamingNarrative(null);
         setStreamingSegments(null);
 
         if (earlyImagePromise) {
@@ -563,6 +662,17 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           const previousFactions = { ...(state.world?.factions || {}) };
 
           dispatch({ type: 'APPLY_STATE_CHANGES', payload: validated });
+          // Override the locally-computed character snapshot with the
+          // authoritative one the backend just persisted to the Character
+          // record. This is the source of truth for AI-driven mutations —
+          // local APPLY_STATE_CHANGES character branches were a transitional
+          // double-write and are now superseded by this reconcile.
+          if (authoritativeCharacterSnapshot) {
+            dispatch({
+              type: 'RECONCILE_CHARACTER_FROM_BACKEND',
+              payload: authoritativeCharacterSnapshot,
+            });
+          }
           if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
             void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
           }

@@ -221,12 +221,16 @@ function gameReducer(state, action) {
       loaded.isGeneratingImage = false;
       loaded.error = null;
       loaded.aiCosts = { ...defaultCosts, ...loaded.aiCosts };
+      // Character now lives in the Character collection. storage._parseBackendCampaign
+      // already pulls it from full.characters[0] and stamps it onto loaded.character.
+      // The legacy coreState.character path is dead — we never read from it here.
       if (loaded.character && !loaded.character.needs) {
         loaded.character = { ...loaded.character, needs: createDefaultNeeds() };
       }
       if (loaded.character) {
         loaded.character = normalizeCharacter({
           ...loaded.character,
+          backendId: loaded.character.backendId || loaded.character.id,
           customAttackPresets: normalizeCustomAttackPresets(loaded.character.customAttackPresets),
         });
       }
@@ -271,16 +275,57 @@ function gameReducer(state, action) {
         }
       }
 
+      // Cleanup of legacy persisted duplicates in chat history:
+      // 1) Strict dedupe by message id — older sessions emitted dice_roll
+      //    entries via `Date.now()`-only ids that could collide across
+      //    paths (dice_early + post-complete loop in same ms), and React
+      //    warns about duplicate keys when those land in the same array.
+      // 2) Dedupe DM messages by content — historical id mismatch between
+      //    frontend createSceneId and backend DB id caused reconstruction
+      //    to add a duplicate DM message for every scene on reload.
+      if (loaded.chatHistory?.length) {
+        const seenIds = new Set();
+        const seenDmContent = new Set();
+        loaded.chatHistory = loaded.chatHistory.filter((m) => {
+          if (m.id) {
+            if (seenIds.has(m.id)) return false;
+            seenIds.add(m.id);
+          }
+          if (m.role === 'dm') {
+            const key = (m.content || '').trim();
+            if (key) {
+              if (seenDmContent.has(key)) return false;
+              seenDmContent.add(key);
+            }
+          }
+          return true;
+        });
+      }
+
       if (loaded.scenes?.length) {
-        const existingDmSceneIds = new Set(
-          (loaded.chatHistory || [])
-            .filter((m) => m.role === 'dm' && m.sceneId)
-            .map((m) => m.sceneId),
-        );
+        // Count-based matching instead of id-based: scene.id used to be a
+        // frontend-generated value (createSceneId) and is now the backend DB
+        // id. Old chat history entries still carry stale frontend ids, so
+        // a Set lookup misses and reconstruction would duplicate every DM
+        // message. Since scenes are always appended in order, the i-th DM
+        // message corresponds to the i-th scene — only reconstruct trailing
+        // scenes that don't have a DM message yet.
+        const existingDmCount = (loaded.chatHistory || [])
+          .filter((m) => m.role === 'dm').length;
         const reconstructed = [];
+        // Per-scene timestamps must be strictly monotonic across the loop,
+        // otherwise the post-loop sort by timestamp interleaves player/dice/dm
+        // entries from different scenes (e.g. all player rows bunch up at the
+        // top, then all dice rolls, then all DM messages). Backend scenes
+        // include `createdAt`; fall back to a synthetic ordering anchored on
+        // sceneIndex when missing, so reload always preserves chronology.
+        const reloadBaseTs = Date.now() - loaded.scenes.length * 1000;
         loaded.scenes.forEach((scene, idx) => {
-          if (!scene.id || existingDmSceneIds.has(scene.id)) return;
-          const ts = scene.timestamp || Date.now();
+          if (!scene.id || idx < existingDmCount) return;
+          const createdMs = scene.createdAt ? new Date(scene.createdAt).getTime() : NaN;
+          const ts = Number.isFinite(createdMs)
+            ? createdMs
+            : (scene.timestamp || (reloadBaseTs + idx * 1000));
           if (idx > 0 && scene.chosenAction) {
             reconstructed.push({
               id: `msg_reconstructed_${scene.id}_player`,
@@ -289,20 +334,28 @@ function gameReducer(state, action) {
               timestamp: ts - 2,
             });
           }
-          if (scene.diceRoll) {
-            const dr = scene.diceRoll;
+          // Scenes can carry multiple dice rolls (scene.diceRolls). Fall back
+          // to the legacy single roll. Each roll becomes its own system message
+          // so the labels render with real skill/margin instead of "?".
+          const rollList = Array.isArray(scene.diceRolls) && scene.diceRolls.length > 0
+            ? scene.diceRolls
+            : (scene.diceRoll ? [scene.diceRoll] : []);
+          rollList.forEach((dr, rollIdx) => {
+            if (!dr || typeof dr !== 'object') return;
             const label = dr.margin !== undefined
               ? `${dr.skill || '?'}: ${dr.total ?? dr.roll} vs ${dr.threshold ?? dr.target ?? dr.dc} (margines ${dr.margin ?? 0})`
               : `${dr.skill || '?'}: ${dr.roll} / ${dr.target || dr.dc} (SL ${dr.sl ?? 0})`;
             reconstructed.push({
-              id: `msg_reconstructed_${scene.id}_roll`,
+              id: `msg_reconstructed_${scene.id}_roll_${rollIdx}`,
               role: 'system',
               subtype: 'dice_roll',
               content: label,
-              diceData: scene.diceRoll,
-              timestamp: ts - 1,
+              diceData: dr,
+              // Spread roll timestamps so multiple rolls keep stable order
+              // and never collide with the player/dm timestamps for this scene.
+              timestamp: ts - 1 + rollIdx * 0.001,
             });
-          }
+          });
           reconstructed.push({
             id: `msg_reconstructed_${scene.id}_dm`,
             role: 'dm',
@@ -390,6 +443,35 @@ function gameReducer(state, action) {
           ),
         },
       };
+
+    /**
+     * Reconcile state.character to an authoritative snapshot returned by the
+     * backend (SSE complete event after a scene applied state changes, or the
+     * /characters/:id PUT/PATCH response). Replaces the local snapshot wholesale
+     * — used instead of computing the same deltas locally via APPLY_STATE_CHANGES,
+     * which would race with the backend's authoritative writes.
+     */
+    case 'RECONCILE_CHARACTER_FROM_BACKEND': {
+      if (!action.payload) return state;
+      const merged = normalizeCharacter({
+        ...action.payload,
+        backendId: action.payload.backendId || action.payload.id || state.character?.backendId,
+        customAttackPresets: normalizeCustomAttackPresets(
+          action.payload.customAttackPresets ?? state.character?.customAttackPresets
+        ),
+      });
+      // Preserve any per-session FE-only fields the backend doesn't track.
+      const preserved = state.character ? {
+        lastTrainingScene: state.character.lastTrainingScene,
+        materialBag: action.payload.materialBag !== undefined
+          ? action.payload.materialBag
+          : state.character.materialBag,
+      } : {};
+      return {
+        ...state,
+        character: { ...merged, ...preserved },
+      };
+    }
 
     case 'SAVE_CUSTOM_ATTACK': {
       const description = typeof action.payload === 'string' ? action.payload.trim() : '';

@@ -598,6 +598,8 @@ export const aiService = {
     dialogueCooldown = 0,
     isFirstScene = false,
     sceneCount = 0,
+    isCustomAction = false,
+    fromAutoPlayer = false,
     gameState = null,
     onEvent = null,
   } = {}) {
@@ -623,6 +625,8 @@ export const aiService = {
         dialogueCooldown,
         isFirstScene,
         sceneCount,
+        isCustomAction,
+        fromAutoPlayer,
       }),
     });
 
@@ -680,7 +684,16 @@ export const aiService = {
 
     scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendStreaming: true };
 
-    return { result: scene, usage: null, sceneIndex: result.sceneIndex, sceneId: result.sceneId };
+    return {
+      result: scene,
+      usage: null,
+      sceneIndex: result.sceneIndex,
+      sceneId: result.sceneId,
+      // Authoritative character snapshot — backend already applied all state
+      // changes to the Character record before emitting `complete`. Frontend
+      // reconciles state.character to this rather than mutating locally.
+      character: result.character || null,
+    };
   },
 
   async generateRecap(

@@ -5,6 +5,7 @@ import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
 import { SPECIES, createStartingSkills } from '../data/rpgSystem';
+import { gameData } from '../services/gameDataService';
 
 function buildCharacter(aiResult, campaignSettings) {
   // If a fully pre-built character was created via the CharacterCreationModal, use it directly
@@ -43,7 +44,7 @@ function buildCharacter(aiResult, campaignSettings) {
     mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
     spells: { known: [], usageCounts: {}, scrolls: [] },
     skills,
-    inventory: aiChar.inventory || [],
+    inventory: gameData.mapStartingInventoryToCatalog(aiChar.inventory || []),
     money: aiChar.money || generateStartingMoney(),
     statuses: [],
     backstory: aiChar.backstory || '',
@@ -57,6 +58,13 @@ export function useGameState() {
 
   const startNewCampaign = useCallback(
     async (aiResult, campaignSettings) => {
+      // Equipment catalog is needed by buildCharacter() to resolve AI starting
+      // inventory items into real catalog baseTypes. Cached after first load.
+      try {
+        await gameData.loadEquipment();
+      } catch (err) {
+        console.warn('[useGameState] Failed to load equipment catalog before campaign start:', err.message);
+      }
       const campaignId = createCampaignId();
       const campaign = {
         id: campaignId,
@@ -68,9 +76,10 @@ export function useGameState() {
         length: campaignSettings.length,
         worldDescription: aiResult.worldDescription,
         hook: aiResult.hook,
+        characterIds: [], // populated after the character is saved below
       };
 
-      const character = campaignSettings.existingCharacter
+      const initialCharacter = campaignSettings.existingCharacter
         ? {
             attributes: generateAttributes(campaignSettings.existingCharacter.species || 'Human'),
             skills: createStartingSkills(campaignSettings.existingCharacter.species || 'Human'),
@@ -86,6 +95,11 @@ export function useGameState() {
             needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
           }
         : buildCharacter(aiResult, campaignSettings);
+
+      // Persist character to its own collection FIRST so we get a backendId
+      // to reference from the new campaign. Falls back to a local-only character
+      // (no backendId) if backend is offline — campaign save will use that path.
+      const character = await storage.saveCharacter(initialCharacter);
 
       const firstScene = {
         id: createSceneId(),
@@ -154,6 +168,13 @@ export function useGameState() {
         facts: aiResult.initialWorldFacts || [],
         eventHistory: aiResult.firstScene?.journalEntries || [],
       };
+
+      // The character now lives in /characters and is referenced from the
+      // campaign by ID. backendId is only present if the backend was online
+      // during saveCharacter; offline runs fall back to local-only persistence.
+      if (character.backendId) {
+        campaign.characterIds = [character.backendId];
+      }
 
       dispatch({
         type: 'START_CAMPAIGN',

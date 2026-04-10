@@ -675,7 +675,8 @@ function DiceRollMessage({ message }) {
       : success
         ? t('common.success')
         : t('common.failure');
-  const rollTarget = d.target ?? d.dc ?? '?';
+  const rollTarget = d.threshold ?? d.target ?? d.dc ?? '?';
+  const rollMargin = d.margin ?? d.sl ?? 0;
 
   if (!expanded) {
     return (
@@ -727,7 +728,7 @@ function DiceRollMessage({ message }) {
               {rollTarget}
             </span>
           </div>
-          <RollEdgeBadge value={d.sl ?? 0} t={t} />
+          <RollEdgeBadge value={rollMargin} t={t} />
           <div className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${
             d.criticalSuccess
               ? 'bg-amber-400/15 text-amber-400 border-amber-400/20'

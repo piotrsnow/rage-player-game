@@ -1991,6 +1991,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               showLoader={isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
+              fastFinish={streamingNarrative !== null}
             />
           )}
           {earlyDiceRoll && diceAfterTypewriter && (

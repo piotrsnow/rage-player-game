@@ -252,6 +252,120 @@ export const gameData = {
       .map(([id, def]) => ({ id, ...def }));
   },
 
+  /**
+   * Map AI-generated starting inventory items to real catalog baseTypes.
+   * The AI invents flavor names like "Miecz Akademicki" — we keep that name
+   * but resolve a baseType from EQUIPMENT so combat/equip slots/stats work.
+   * Matching: type → category, then keyword scan over Polish + English names.
+   * Falls back to the cheapest entry in the category.
+   */
+  mapStartingInventoryToCatalog(aiInventory) {
+    if (!Array.isArray(aiInventory) || aiInventory.length === 0) return [];
+    const equipment = this.equipment;
+    if (!equipment || Object.keys(equipment).length === 0) return aiInventory;
+
+    const TYPE_TO_CATEGORY = {
+      weapon: 'weapons',
+      weapons: 'weapons',
+      armour: 'armour',
+      armor: 'armour',
+      shield: 'shields',
+      shields: 'shields',
+      gear: 'adventuring_gear',
+      tool: 'tools',
+      tools: 'tools',
+      medical: 'medical',
+      clothing: 'clothing',
+    };
+
+    // [regex, baseTypeId] — first match wins. Polish + English keywords.
+    const KEYWORD_HINTS = {
+      weapons: [
+        [/sztylet|dagger|n[oó]ż|knife/i, 'dagger'],
+        [/rapier|szpad/i, 'rapier'],
+        [/ha?lab?ard|halberd/i, 'halberd'],
+        [/(top[oó]r|axe)\s*(boj|battle|wojen)|battle\s*axe|topór\s*bojowy/i, 'battle_axe'],
+        [/(m[lł]ot|hammer)\s*(boj|war|wojen)|war\s*hammer/i, 'war_hammer'],
+        [/great\s*weapon|dwur[eę]czn|two[-\s]?hand|zwei|claymore|bastard/i, 'great_weapon'],
+        [/(m[ie]cz|sword|szabl|sabre|saber|scimitar|topór|topor|axe|maczug|bu[lł]aw|mace)/i, 'hand_weapon'],
+        [/w[lł][oó]czn|spear|pike|javelin|oszczep/i, 'spear'],
+        [/quarterstaff|kij\s*boj|kostur|staff/i, 'quarterstaff'],
+        [/pa[lł]k|club|cudgel/i, 'club'],
+        [/longbow|d[lł]ugi\s*[lł]uk/i, 'longbow'],
+        [/short\s*bow|kr[oó]tki\s*[lł]uk|[lł]uk\s*kr[oó]t/i, 'short_bow'],
+        [/[lł]uk|bow/i, 'short_bow'],
+        [/light\s*crossbow|lekka\s*kusza/i, 'light_crossbow'],
+        [/kusza|crossbow|arbalest/i, 'crossbow'],
+        [/proca|sling/i, 'sling'],
+        [/pistolet|pistol|handgun/i, 'blackpowder_pistol'],
+        [/muszkiet|musket|arquebus/i, 'blackpowder_musket'],
+      ],
+      armour: [
+        [/full\s*plate|pe[lł]n[ay]\s*p[lł]yt|harness/i, 'plate_suit'],
+        [/breast\s*plate|napier[sś]nik|kira[sś]/i, 'breastplate'],
+        [/mail\s*coat|d[lł]ug[ai]\s*kolcz/i, 'mail_coat'],
+        [/mail|kolcz|chain/i, 'mail_shirt'],
+        [/gambeson|przeszywanic|aketon/i, 'gambeson'],
+        [/leather\s*jerkin|kub?rak\s*sk[oó]r/i, 'leather_jerkin'],
+        [/leather|sk[oó]rz/i, 'leather_jack'],
+        [/p[lł]yt|plate/i, 'plate_suit'],
+      ],
+      shields: [
+        [/buckler|puklerz/i, 'buckler'],
+        [/tower|wie[zż]|pavise|pawęż/i, 'tower_shield'],
+        [/shield|tarcz/i, 'shield'],
+      ],
+    };
+
+    const priceCp = (p) => ((p?.gold || 0) * 100) + ((p?.silver || 0) * 10) + (p?.copper || 0);
+
+    const candidatesByCategory = (category) =>
+      Object.entries(equipment)
+        .filter(([, def]) => def.category === category)
+        .map(([id, def]) => ({ id, ...def }));
+
+    return aiInventory.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      if (item.baseType && equipment[item.baseType]) return item; // already valid
+
+      const typeKey = String(item.type || '').toLowerCase();
+      const targetCategory = TYPE_TO_CATEGORY[typeKey];
+      if (!targetCategory) return item; // unknown type — keep as flavor
+
+      const candidates = candidatesByCategory(targetCategory);
+      if (candidates.length === 0) return item;
+
+      const haystack = `${item.name || ''} ${item.description || ''}`.toLowerCase();
+      const hints = KEYWORD_HINTS[targetCategory] || [];
+
+      let matchId = null;
+      for (const [pattern, baseTypeId] of hints) {
+        if (pattern.test(haystack) && equipment[baseTypeId]) {
+          matchId = baseTypeId;
+          break;
+        }
+      }
+
+      if (!matchId) {
+        // Fallback: cheapest non-ammunition entry in the category.
+        const sorted = candidates
+          .filter(c => !(c.properties || []).includes('Ammunition'))
+          .sort((a, b) => priceCp(a.price) - priceCp(b.price));
+        matchId = sorted[0]?.id || candidates[0].id;
+      }
+
+      const catalogEntry = equipment[matchId];
+      return {
+        ...item,
+        baseType: matchId,
+        rarity: item.rarity || 'common',
+        // Surface combat-relevant properties so UI can show stats immediately.
+        properties: catalogEntry?.properties || item.properties || [],
+        weight: catalogEntry?.weight ?? item.weight ?? 0,
+      };
+    });
+  },
+
   formatEquipmentForPrompt(category) {
     const label = this.equipmentCategories[category] ?? category;
     const rows = this.getEquipmentByCategory(category);

@@ -440,11 +440,18 @@ export {
  * @param {string} currentLocation - Current location name (for expand_location)
  * @returns {Promise<object>} Grouped context blocks: { npcs, quests, location, codex, memory }
  */
-export async function assembleContext(campaignId, selectionResult, currentLocation) {
+export async function assembleContext(campaignId, selectionResult, currentLocation, skipKeys = {}) {
   const fetches = [];
+
+  // Encje już obecne w dynamicSuffix promptu (Key NPCs / Active Quests / ALREADY DISCOVERED).
+  // Pomijamy je w EXPANDED CONTEXT, żeby nie dublować tych samych danych dwa razy.
+  const skipNpcs = new Set((skipKeys.npcs || []).map(s => String(s).toLowerCase()));
+  const skipQuests = new Set((skipKeys.quests || []).map(s => String(s).toLowerCase()));
+  const skipCodex = new Set((skipKeys.codex || []).map(s => String(s).toLowerCase()));
 
   // Expand selected NPCs
   for (const name of selectionResult.expand_npcs || []) {
+    if (skipNpcs.has(name.toLowerCase())) continue;
     fetches.push(
       handleGetNPC(campaignId, name).then(r => ({ type: 'npc', key: name, data: r }))
     );
@@ -452,25 +459,10 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
 
   // Expand selected quests
   for (const name of selectionResult.expand_quests || []) {
-    if (name === '__all_active__') {
-      // Special: expand all active quests (for [CONTINUE] action)
-      fetches.push(
-        prisma.campaignQuest.findMany({
-          where: { campaignId, status: 'active' },
-        }).then(quests => ({
-          type: 'quest',
-          key: 'all_active',
-          data: quests.map(q => {
-            const objectives = JSON.parse(q.objectives || '[]');
-            return `${q.name} (${q.type}): ${q.description || 'N/A'}\nObjectives: ${objectives.map(o => `${o.completed ? '[X]' : '[ ]'} ${o.description}`).join(', ')}`;
-          }).join('\n\n'),
-        }))
-      );
-    } else {
-      fetches.push(
-        handleGetQuest(campaignId, name).then(r => ({ type: 'quest', key: name, data: r }))
-      );
-    }
+    if (skipQuests.has(name.toLowerCase())) continue;
+    fetches.push(
+      handleGetQuest(campaignId, name).then(r => ({ type: 'quest', key: name, data: r }))
+    );
   }
 
   // Expand location + include location summary from previous visits
@@ -488,6 +480,7 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
 
   // Expand codex entries
   for (const topic of selectionResult.expand_codex || []) {
+    if (skipCodex.has(topic.toLowerCase())) continue;
     fetches.push(
       handleGetCodex(campaignId, topic).then(r => ({ type: 'codex', key: topic, data: r }))
     );
