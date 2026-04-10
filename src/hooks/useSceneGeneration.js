@@ -15,11 +15,8 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches } from '../services/worldConsistency';
 import { detectCombatIntent, buildSpeculativeImageDescription } from '../services/prompts';
-import { calculateTensionScore } from '../services/tensionTracker';
-import { checkPendingCallbacks, checkNpcAgendas, checkSeedResolution, checkQuestDeadlines, shouldGenerateDilemma } from '../services/narrativeEngine';
 import { advanceDialogueRound } from '../services/dialogueEngine';
 import { parsePartialJson } from '../services/partialJsonParser';
-import { getSceneAIGovernance, resolvePromptProfile } from '../services/promptGovernance';
 import { resolveMechanics } from '../services/mechanics/index';
 import { calculateNextMomentum } from '../services/mechanics/momentumTracker';
 import { gameData } from '../services/gameDataService';
@@ -47,22 +44,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, language, needsSystemEnabled, localLLMEnabled, localLLMEndpoint, localLLMModel, localLLMReducedPrompt, aiModelTier = 'premium', aiModel = '' } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, language, needsSystemEnabled, aiModelTier = 'premium', aiModel = '' } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
-  const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
-  const localLLMConfig = localLLMEnabled ? { enabled: true, endpoint: localLLMEndpoint, model: localLLMModel, reducedPrompt: localLLMReducedPrompt } : null;
-
-  const inferSkillCheckFn = useCallback(
-    async (actionText, characterSkills) => {
-      if (localLLMConfig?.enabled) return null;
-      const { result, usage } = await aiService.inferSkillCheck(
-        actionText, characterSkills, aiProvider, apiKey, { alternateApiKey }
-      );
-      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
-      return result;
-    },
-    [aiProvider, apiKey, alternateApiKey, localLLMConfig?.enabled, dispatch]
-  );
 
   const recordCompletedSceneGenTiming = useCallback(() => {
     if (!sceneGenStartRef.current) return;
@@ -87,41 +70,11 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
       let earlyImagePromise = null;
 
       try {
-        const promptProfile = resolvePromptProfile(settings.dmSettings, aiModelTier, Boolean(localLLMConfig?.enabled));
-        const governance = getSceneAIGovernance({
-          profileId: promptProfile,
-          modelTier: aiModelTier,
-          isFirstScene,
-          localLLMEnabled: Boolean(localLLMConfig?.enabled),
-          sceneCount: state.scenes?.length || 0,
-        });
-        const requestedContextDepth = settings.dmSettings?.contextDepth ?? 100;
-        const contextDepth = contextManager.resolveContextDepth(requestedContextDepth, governance.profile.id, aiModelTier);
-        let enhancedContext = !isFirstScene ? contextManager.buildEnhancedContext(state, contextDepth) : null;
-        if (enhancedContext && contextDepth >= governance.knowledgeMinContextDepth && state.world?.knowledgeBase) {
-          const lastScene = state.scenes?.[state.scenes.length - 1];
-          const relevantMemories = contextManager.retrieveRelevantKnowledge(
-            state.world.knowledgeBase, lastScene?.narrative, playerAction, state
-          );
-          if (relevantMemories) {
-            enhancedContext = { ...enhancedContext, relevantMemories };
-          }
-        }
-        if (enhancedContext && contextDepth >= governance.knowledgeMinContextDepth && state.world?.codex) {
-          const lastScene = state.scenes?.[state.scenes.length - 1];
-          const relevantCodex = contextManager.retrieveRelevantCodex(
-            state.world.codex, lastScene?.narrative, playerAction
-          );
-          if (relevantCodex) {
-            enhancedContext = { ...enhancedContext, relevantCodex };
-          }
-        }
         const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
         const isPassiveSceneAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
 
         // Resolve deterministic mechanics BEFORE AI call
-        // In backend mode: skip dice roll (backend resolves it after nano intent classification)
-        const willUseBackend = apiClient.isConnected() && !settings.localLLM?.enabled && state.campaign?.backendId;
+        // Backend resolves dice after nano intent classification
         const resolved = await resolveMechanics({
           state,
           playerAction,
@@ -130,48 +83,9 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           isCustomAction,
           fromAutoPlayer,
           t,
-          inferSkillCheckFn: willUseBackend ? null : inferSkillCheckFn, // backend handles skill inference
-          skipDiceRoll: !!willUseBackend, // backend resolves dice after nano
+          inferSkillCheckFn: null, // backend handles skill inference
+          skipDiceRoll: true, // backend resolves dice after nano
         });
-
-        if (resolved.diceRoll && !willUseBackend) {
-          setEarlyDiceRoll(resolved.diceRoll);
-          if (!isFirstScene && playerAction && !Boolean(isIdleWorldEvent || playerAction === '[WAIT]')) {
-            const playerChatContent = playerAction === '[CONTINUE]'
-              ? t('gameplay.continueChatMessage')
-              : playerAction;
-            dispatch({
-              type: 'ADD_CHAT_MESSAGE',
-              payload: {
-                id: `msg_${Date.now()}_player_early`,
-                role: 'player',
-                content: playerChatContent,
-                timestamp: Date.now(),
-              },
-            });
-          }
-          dispatch({
-            type: 'ADD_CHAT_MESSAGE',
-            payload: {
-              id: `msg_${Date.now()}_roll`,
-              role: 'system',
-              subtype: 'dice_roll',
-              content: t('system.diceRollMessage', {
-                skill: resolved.diceRoll.skill,
-                roll: resolved.diceRoll.roll,
-                target: resolved.diceRoll.target || resolved.diceRoll.dc,
-                sl: resolved.diceRoll.sl ?? 0,
-                result: resolved.diceRoll.criticalSuccess
-                  ? t('common.criticalSuccess')
-                  : resolved.diceRoll.criticalFailure
-                    ? t('common.criticalFailure')
-                    : resolved.diceRoll.success ? t('common.success') : t('common.failure'),
-              }),
-              diceData: resolved.diceRoll,
-              timestamp: Date.now(),
-            },
-          });
-        }
 
         const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
         if (imageGenEnabled && hasImageKey && !isFirstScene) {
@@ -205,29 +119,9 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           }
         }
 
-        const triggeredCallbacks = !isFirstScene ? checkPendingCallbacks(state.world?.knowledgeBase?.decisions, state) : [];
-        const triggeredAgendas = !isFirstScene ? checkNpcAgendas(state.world?.npcAgendas, state) : [];
-        const readySeeds = !isFirstScene ? checkSeedResolution(state.world?.narrativeSeeds, state) : [];
-        const { expired: expiredQuests, warning: warningQuests } = !isFirstScene ? checkQuestDeadlines(state.quests?.active, state.world?.timeState) : { expired: [], warning: [] };
-        const tensionScore = !isFirstScene ? calculateTensionScore(state.scenes, state.combat, state.dialogue) : 50;
-        const dilemmaScheduled = !isFirstScene ? shouldGenerateDilemma(state.scenes) : false;
-
-        if (enhancedContext && !isFirstScene) {
-          enhancedContext = {
-            ...enhancedContext,
-            triggeredCallbacks,
-            triggeredAgendas,
-            readySeeds,
-            expiredQuests,
-            warningQuests,
-            tensionScore,
-            dilemmaScheduled,
-          };
-        }
-
-        // Backend flow is primary when connected; proxy is fallback for local LLM or no backend
+        // Backend streaming is the only scene generation path
         let backendCampaignId = state.campaign?.backendId;
-        const canUseBackend = apiClient.isConnected() && !localLLMConfig?.enabled;
+        const canUseBackend = apiClient.isConnected();
         let result, usage;
 
         // Auto-sync campaign to backend if not yet synced
@@ -253,89 +147,46 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           }
         }
 
-        if (canUseBackend && backendCampaignId) {
-          try {
-            const useStreaming = settings.dmSettings?.useStreaming !== false;
-            const backendOpts = {
-              provider: aiProvider,
-              model: aiModel || null,
-              language,
-              dmSettings: settings.dmSettings,
-              resolvedMechanics: resolved,
-              needsSystemEnabled,
-              characterNeeds: state.character?.needs || null,
-              dialogue: state.dialogue || null,
-              dialogueCooldown: state.dialogueCooldown || 0,
-              isFirstScene,
-              isCustomAction,
-              fromAutoPlayer,
-              sceneCount: state.scenes?.length || 0,
-              gameState: state,
-            };
-
-            let backendResult;
-            if (useStreaming) {
-              let rawAccumulated = '';
-              setStreamingNarrative('');
-              setStreamingSegments(null);
-              backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
-                ...backendOpts,
-                onEvent: (event) => {
-                  if (event.type === 'intent') {
-                    console.log('[useAI] Stream intent:', event.data?.intent);
-                  } else if (event.type === 'chunk' && event.text) {
-                    rawAccumulated += event.text;
-                    // Parse partial JSON to extract narrative + dialogueSegments incrementally
-                    const parsed = parsePartialJson(rawAccumulated);
-                    if (!parsed) return;
-                    if (typeof parsed.narrative === 'string') {
-                      setStreamingNarrative(parsed.narrative);
-                    }
-                    if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
-                      setStreamingSegments(parsed.dialogueSegments);
-                    }
-                  }
-                },
-              });
-              // Don't clear streaming yet — let it stay until the final scene message replaces it
-            } else {
-              backendResult = await aiService.generateSceneViaBackend(backendCampaignId, playerAction, backendOpts);
-            }
-            result = backendResult.result;
-            usage = backendResult.usage;
-          } catch (backendErr) {
-            console.warn('[useAI] Backend generate-scene failed, falling back to proxy:', backendErr.message);
-          }
+        if (!canUseBackend || !backendCampaignId) {
+          throw new Error('Backend connection required for scene generation');
         }
 
-        // Proxy fallback (local LLM or backend unavailable)
-        if (!result) {
-          const proxyResult = await aiService.generateScene(
-            state,
-            settings.dmSettings,
-            playerAction,
-            isFirstScene,
-            aiProvider,
-            apiKey,
-            language,
-            enhancedContext,
-            {
-              needsSystemEnabled,
-              isCustomAction,
-              fromAutoPlayer,
-              resolvedMechanics: resolved,
-              localLLMConfig,
-              modelTier: aiModelTier,
-              alternateApiKey,
-              explicitModel: aiModel || null,
-              promptProfile: governance.profile.id,
-              sceneTokenBudget: governance.sceneTokenBudget,
-              promptTokenBudget: governance.promptTokenBudget,
+        let rawAccumulated = '';
+        setStreamingNarrative('');
+        setStreamingSegments(null);
+        const backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
+          provider: aiProvider,
+          model: aiModel || null,
+          language,
+          dmSettings: settings.dmSettings,
+          resolvedMechanics: resolved,
+          needsSystemEnabled,
+          characterNeeds: state.character?.needs || null,
+          dialogue: state.dialogue || null,
+          dialogueCooldown: state.dialogueCooldown || 0,
+          isFirstScene,
+          isCustomAction,
+          fromAutoPlayer,
+          sceneCount: state.scenes?.length || 0,
+          gameState: state,
+          onEvent: (event) => {
+            if (event.type === 'intent') {
+              console.log('[useAI] Stream intent:', event.data?.intent);
+            } else if (event.type === 'chunk' && event.text) {
+              rawAccumulated += event.text;
+              const parsed = parsePartialJson(rawAccumulated);
+              if (!parsed) return;
+              if (typeof parsed.narrative === 'string') {
+                setStreamingNarrative(parsed.narrative);
+              }
+              if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
+                setStreamingSegments(parsed.dialogueSegments);
+              }
             }
-          );
-          result = proxyResult.result;
-          usage = proxyResult.usage;
-        }
+          },
+        });
+        result = backendResult.result;
+        usage = backendResult.usage;
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         if (result?.meta?.degraded) {
           degradeStatsRef.current.total += 1;
@@ -853,7 +704,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         throw err;
       }
     },
-    [state, settings, aiProvider, apiKey, alternateApiKey, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, imageSeriousness, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, imgKeyProvider, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages, inferSkillCheckFn, localLLMConfig]
+    [state, settings, aiProvider, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, imageSeriousness, language, needsSystemEnabled, aiModelTier, aiModel, hasApiKey, imgKeyProvider, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages]
   );
 
   const acceptQuestOffer = useCallback(

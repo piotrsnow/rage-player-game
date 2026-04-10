@@ -22,7 +22,7 @@ export function useActiveGameState() {
   const error = isMultiplayer ? mp.state.error : state.error;
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
-  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
+  const attrPoints = character?.attributePoints || 0;
 
   return {
     isMultiplayer,
@@ -38,7 +38,7 @@ export function useActiveGameState() {
     error,
     aiCosts,
     currentScene,
-    availableXp,
+    attrPoints,
     state,
     dispatch,
     mp,

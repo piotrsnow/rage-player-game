@@ -37,6 +37,24 @@ export const DIFFICULTY_VARIANCE = { trivial: 1, low: 1, medium: 2, high: 2, dea
 /** Point cost per difficulty tier for encounter budget system. */
 export const THREAT_COSTS = { trivial: 1, low: 2, medium: 4, high: 8, deadly: 16 };
 
+/** Equipment rarity odds per difficulty: [common%, uncommon%, rare%]. */
+const ENEMY_RARITY_ODDS = {
+  trivial: [100, 0, 0],
+  low:     [100, 0, 0],
+  medium:  [80, 20, 0],
+  high:    [60, 40, 0],
+  deadly:  [30, 50, 20],
+};
+
+/** Roll a random rarity for enemy equipment based on difficulty tier. */
+export function rollEnemyRarity(difficulty) {
+  const odds = ENEMY_RARITY_ODDS[difficulty] || ENEMY_RARITY_ODDS.trivial;
+  const roll = Math.random() * 100;
+  if (roll < odds[0]) return 'common';
+  if (roll < odds[0] + odds[1]) return 'uncommon';
+  return 'rare';
+}
+
 // ── Bestiary Data ──
 
 export const BESTIARY = {
@@ -435,6 +453,8 @@ export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, c
       name,
       attributes: applyAttributeVariance(entry.attributes, variance),
       wounds: entry.maxWounds,
+      weaponRarity: rollEnemyRarity(entry.difficulty),
+      armourRarity: rollEnemyRarity(entry.difficulty),
     });
     remainingBudget -= THREAT_COSTS[entry.difficulty] || 1;
   }
@@ -448,6 +468,8 @@ export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, c
       name,
       attributes: applyAttributeVariance(entry.attributes, variance),
       wounds: entry.maxWounds,
+      weaponRarity: rollEnemyRarity(entry.difficulty),
+      armourRarity: rollEnemyRarity(entry.difficulty),
     });
   }
 

@@ -18,8 +18,8 @@ export default function CraftingPanel({ character, dispatch, disabled }) {
 
   const recipes = useMemo(() => {
     const allRecipes = gameData.craftingRecipes || [];
-    return getAvailableRecipes(character?.inventory || [], character?.skills || {}, allRecipes);
-  }, [character?.inventory, character?.skills]);
+    return getAvailableRecipes(character?.materialBag || [], character?.skills || {}, allRecipes);
+  }, [character?.materialBag, character?.skills]);
 
   const rzemiosloLevel = getSkillLevel(character?.skills, 'Rzemioslo');
   const inteligencja = character?.attributes?.inteligencja || 0;

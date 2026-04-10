@@ -213,8 +213,9 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
       statuses: [],
       backstory,
       portraitUrl: portraitUrl || '',
-      xp: 0,
-      xpSpent: 0,
+      characterLevel: 1,
+      characterXp: 0,
+      attributePoints: 0,
     });
   }, [name, age, gender, species, attributes, maxWounds, speciesData, skills, backstory, portraitUrl, genre, onConfirm]);
 

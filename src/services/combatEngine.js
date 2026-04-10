@@ -7,6 +7,24 @@ import { castSpell } from './magicEngine.js';
 
 const getWeaponData = (name) => gameData.getWeaponData(name);
 
+// ── Rarity combat modifiers ──
+const RARITY_BONUS_SCALE = { common: 1, uncommon: 1.25, rare: 1.5, exotic: 2 };
+const RARITY_DR_SCALE = { common: 1, uncommon: 1.25, rare: 1.5, exotic: 2 };
+
+function getEquippedItemRarity(actor, slot) {
+  if (!actor.equipped?.[slot]) return 'common';
+  const item = (actor.inventory || []).find(i => i.id === actor.equipped[slot]);
+  return item?.rarity || 'common';
+}
+
+function getEnemyWeaponRarity(combatant) {
+  return combatant.weaponRarity || 'common';
+}
+
+function getEnemyArmourRarity(combatant) {
+  return combatant.armourRarity || 'common';
+}
+
 /** Resolve an inventory item's baseType to a WEAPONS combatKey */
 function resolveItemCombatKey(item) {
   if (!item?.baseType) return null;
@@ -120,34 +138,44 @@ function resolveCombatTest(actor, attribute, skillLevel, creativityBonus = 0, th
   return resolveD50Test({ attribute, skillLevel, creativityBonus, threshold, luck: getLuck(actor) });
 }
 
-function getWeaponDamage(weaponData, attacker) {
+function getWeaponDamage(weaponData, attacker, rarity = 'common') {
   const str = attacker.attributes?.sila ?? 0;
   const dex = attacker.attributes?.zrecznosc ?? 0;
+  const scale = RARITY_BONUS_SCALE[rarity] || 1;
   switch (weaponData?.damageType) {
-    case 'melee-1h':       return str + (weaponData.bonus ?? 0);
-    case 'melee-2h':       return str * 2 + (weaponData.bonus ?? 0);
-    case 'ranged-dex':     return dex + (weaponData.bonus ?? 0);
-    case 'ranged-str-dex': return str + dex + (weaponData.bonus ?? 0);
-    case 'ranged-fixed':   return weaponData.fixedDamage ?? 0;
-    default:               return str + 3; // fallback for legacy/unknown
+    case 'melee-1h':       return str + Math.round((weaponData.bonus ?? 0) * scale);
+    case 'melee-2h':       return str * 2 + Math.round((weaponData.bonus ?? 0) * scale);
+    case 'ranged-dex':     return dex + Math.round((weaponData.bonus ?? 0) * scale);
+    case 'ranged-str-dex': return str + dex + Math.round((weaponData.bonus ?? 0) * scale);
+    case 'ranged-fixed':   return Math.round((weaponData.fixedDamage ?? 0) * scale);
+    default:               return str + 3;
   }
 }
 
 function getCombatantDR(combatant) {
-  // NPC direct armourDR
-  if (combatant.armourDR != null) return combatant.armourDR;
-  // Player: equipped.armour → inventory → baseType → ARMOUR
+  // NPC direct armourDR — apply enemy rarity scaling
+  if (combatant.armourDR != null) {
+    const scale = RARITY_DR_SCALE[getEnemyArmourRarity(combatant)] || 1;
+    return Math.round(combatant.armourDR * scale);
+  }
+  // Player: equipped.armour → inventory → baseType → ARMOUR + rarity
   if (combatant.equipped?.armour) {
     const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.armour);
     if (item) {
       const armourData = gameData.getArmourDataByBaseType(item.baseType);
-      if (armourData) return armourData.damageReduction ?? 0;
+      if (armourData) {
+        const scale = RARITY_DR_SCALE[item.rarity || 'common'] || 1;
+        return Math.round((armourData.damageReduction ?? 0) * scale);
+      }
     }
   }
   // NPC fallback: direct equippedArmour string (ARMOUR key)
   if (typeof combatant.equippedArmour === 'string') {
     const armourData = gameData.armour?.[combatant.equippedArmour];
-    if (armourData) return armourData.damageReduction ?? 0;
+    if (armourData) {
+      const scale = RARITY_DR_SCALE[getEnemyArmourRarity(combatant)] || 1;
+      return Math.round((armourData.damageReduction ?? 0) * scale);
+    }
   }
   return 0;
 }
@@ -167,31 +195,36 @@ function getArmourDodgePenalty(combatant) {
   return 0;
 }
 
-function getShieldData(combatant) {
-  // Player: equipped.offHand → inventory → baseType → SHIELDS
+function getShieldDataWithRarity(combatant) {
+  // Player: equipped.offHand → inventory → baseType → SHIELDS + rarity
   if (combatant.equipped?.offHand) {
     const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.offHand);
     if (item) {
       const shieldData = gameData.getShieldDataByBaseType(item.baseType);
-      if (shieldData) return shieldData;
+      if (shieldData) return { shield: shieldData, rarity: item.rarity || 'common' };
     }
   }
   // NPC fallback: direct equippedShield string
   if (typeof combatant.equippedShield === 'string') {
     const shieldData = gameData.shields?.[combatant.equippedShield];
-    if (shieldData) return shieldData;
+    if (shieldData) return { shield: shieldData, rarity: combatant.armourRarity || 'common' };
   }
   return null;
 }
 
 function resolveShieldBlock(target, rawDamage, weaponData) {
-  const shield = getShieldData(target);
-  if (!shield) return { blocked: false, damage: rawDamage };
+  const result = getShieldDataWithRarity(target);
+  if (!result) return { blocked: false, damage: rawDamage };
+
+  const { shield, rarity } = result;
+  const scale = RARITY_BONUS_SCALE[rarity] || 1;
+  const effectiveBlockChance = Math.min(95, Math.round(shield.blockChance * scale));
+  const effectiveBlockReduction = Math.min(0.95, shield.blockReduction * scale);
 
   const blockRoll = rollD50();
-  if (blockRoll > shield.blockChance) return { blocked: false, damage: rawDamage, blockRoll };
+  if (blockRoll > effectiveBlockChance) return { blocked: false, damage: rawDamage, blockRoll };
 
-  let reduction = shield.blockReduction;
+  let reduction = effectiveBlockReduction;
   // Piercing weapons cap block reduction at 50%
   if (weaponData?.qualities?.includes('Piercing')) {
     reduction = Math.min(reduction, 0.5);
@@ -416,7 +449,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const defendBonus = target.conditions.includes('defending') ? 10 : 0;
     const dodging = target.conditions.includes('dodging');
     const defenseAttr = getDefenseAttribute(target);
-    const dodgePenalty = getArmourDodgePenalty(target) + (getShieldData(target)?.dodgePenalty ?? 0);
+    const dodgePenalty = getArmourDodgePenalty(target) + (getShieldDataWithRarity(target)?.shield?.dodgePenalty ?? 0);
     const defenseSkillLevel = dodging ? Math.max(0, getCombatSkillLevel(target, 'Uniki') + dodgePenalty) : 0;
     const effectiveThreshold = DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel;
 
@@ -435,7 +468,10 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
       const mainWeapon = getMainWeapon(actor);
       const weaponData = getWeaponData(mainWeapon);
       result.weaponName = mainWeapon;
-      const weaponDmg = getWeaponDamage(weaponData, actor);
+      const weaponRarity = actor.equipped?.mainHand
+        ? getEquippedItemRarity(actor, 'mainHand')
+        : getEnemyWeaponRarity(actor);
+      const weaponDmg = getWeaponDamage(weaponData, actor, weaponRarity);
       const marginBonus = Math.max(0, Math.floor(test.margin / 5));
       let rawDamage = weaponDmg + marginBonus;
 

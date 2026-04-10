@@ -108,6 +108,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
+  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
 
   useEffect(() => {
     setNarratorState(narrator.playbackState);
@@ -245,10 +246,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const displayCharacter = viewedMember || character;
 
   const hasMagic = character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some((t) => t?.includes?.('Arcane Magic'));
-  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
+  const attrPoints = character?.attributePoints || 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
-  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
   const wasGeneratingSceneRef = useRef(false);
   const prevChatHistoryLenRef = useRef(chatHistory.length);
   const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
@@ -1748,13 +1748,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               {!readOnly && aiCosts?.total > 0 && (
                 <CostBadge costs={aiCosts} />
               )}
-              {!readOnly && availableXp > 0 && (
+              {!readOnly && attrPoints > 0 && (
                 <button
                   onClick={handleAdvancementOpen}
                   className="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
                 >
                   <span className="material-symbols-outlined text-xs">upgrade</span>
-                  {availableXp} {t('common.xp')}
+                  +{attrPoints} pkt
                 </button>
               )}
               {isMultiplayer && allCharacters.length > 0 ? (
@@ -2181,40 +2181,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           </div>
         )}
 
-        {/* Trade Panel */}
-        {state.trade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <TradePanel
-              trade={state.trade}
-              character={character}
-              world={state.world}
-              dispatch={dispatch}
-              disabled={isGenerating}
-            />
-          </div>
-        )}
-
-        {/* Crafting Panel */}
-        {state.crafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <CraftingPanel
-              character={character}
-              dispatch={dispatch}
-              disabled={isGenerating}
-            />
-          </div>
-        )}
-
-        {/* Alchemy Panel */}
-        {state.alchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <AlchemyPanel
-              character={character}
-              dispatch={dispatch}
-              disabled={isGenerating}
-            />
-          </div>
-        )}
+        {/* Trade/Crafting/Alchemy panels moved to bottom fixed area */}
 
         {/* Main Quest Complete Modal */}
         {state.mainQuestJustCompleted && campaign?.status === 'active' && (
@@ -2311,6 +2278,41 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
               dispatch={dispatch}
               gameState={state}
+            />
+          </div>
+        )}
+
+        {/* Trade Panel */}
+        {state.trade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <TradePanel
+              trade={state.trade}
+              character={character}
+              world={state.world}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Crafting Panel */}
+        {state.crafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <CraftingPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Alchemy Panel */}
+        {state.alchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <AlchemyPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
             />
           </div>
         )}

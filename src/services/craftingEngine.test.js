@@ -31,7 +31,7 @@ function makeCharacter(inteligencja = 12, rzemiosloLevel = 5) {
   return {
     attributes: { sila: 10, inteligencja, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 },
     skills: { Rzemioslo: { level: rzemiosloLevel, xp: 0, cap: 10 } },
-    inventory: [
+    materialBag: [
       { name: 'Iron ingot', quantity: 5 },
       { name: 'Charcoal', quantity: 10 },
       { name: 'Leather wrap', quantity: 2 },
@@ -44,7 +44,7 @@ function makeCharacter(inteligencja = 12, rzemiosloLevel = 5) {
 describe('getAvailableRecipes', () => {
   it('marks recipe as craftable when materials are available', () => {
     const char = makeCharacter();
-    const recipes = getAvailableRecipes(char.inventory, char.skills, [mockRecipe]);
+    const recipes = getAvailableRecipes(char.materialBag, char.skills, [mockRecipe]);
 
     expect(recipes).toHaveLength(1);
     expect(recipes[0].canCraft).toBe(true);
@@ -53,8 +53,8 @@ describe('getAvailableRecipes', () => {
 
   it('marks recipe as not craftable when materials are missing', () => {
     const char = makeCharacter();
-    char.inventory = [{ name: 'Iron ingot', quantity: 1 }]; // only 1 of 2 needed
-    const recipes = getAvailableRecipes(char.inventory, char.skills, [mockRecipe]);
+    char.materialBag = [{ name: 'Iron ingot', quantity: 1 }]; // only 1 of 2 needed
+    const recipes = getAvailableRecipes(char.materialBag, char.skills, [mockRecipe]);
 
     expect(recipes[0].canCraft).toBe(false);
     expect(recipes[0].missingMaterials.length).toBeGreaterThan(0);
@@ -62,13 +62,13 @@ describe('getAvailableRecipes', () => {
 
   it('marks recipe as not craftable when skill is 0', () => {
     const char = makeCharacter(12, 0);
-    const recipes = getAvailableRecipes(char.inventory, char.skills, [mockRecipe]);
+    const recipes = getAvailableRecipes(char.materialBag, char.skills, [mockRecipe]);
     expect(recipes[0].canCraft).toBe(false);
   });
 
   it('shows material status for each ingredient', () => {
     const char = makeCharacter();
-    const recipes = getAvailableRecipes(char.inventory, char.skills, [mockRecipe]);
+    const recipes = getAvailableRecipes(char.materialBag, char.skills, [mockRecipe]);
     const ironStatus = recipes[0].materialStatus.find((m) => m.name === 'Iron ingot');
 
     expect(ironStatus.need).toBe(2);

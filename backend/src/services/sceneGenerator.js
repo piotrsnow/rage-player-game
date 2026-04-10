@@ -2,9 +2,6 @@ import { prisma } from '../lib/prisma.js';
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError, toClientAiError, AIServiceError } from './aiErrors.js';
 import {
-  CONTEXT_TOOLS_OPENAI,
-  CONTEXT_TOOLS_ANTHROPIC,
-  executeToolCall,
   assembleContext,
 } from './aiContextTools.js';
 import { classifyIntent } from './intentClassifier.js';
@@ -19,7 +16,7 @@ import {
 import { writeEmbedding } from './vectorSearchService.js';
 import {
   findClosestBestiaryEntry, selectBestiaryEncounter,
-  applyAttributeVariance, DIFFICULTY_VARIANCE,
+  applyAttributeVariance, DIFFICULTY_VARIANCE, rollEnemyRarity,
   BESTIARY_RACES, BESTIARY_LOCATIONS, getBestiaryLocationSummary,
 } from '../data/equipment/index.js';
 
@@ -34,8 +31,7 @@ import {
   getSkillLevel,
   clamp,
 } from './diceResolver.js';
-
-const MAX_TOOL_ROUNDS = 3;
+import { resolveAndApplyRewards } from './rewardResolver.js';
 
 // ── Fill enemy stats from bestiary (shared helper, used in both pipeline paths) ──
 
@@ -66,6 +62,8 @@ function fillEnemiesFromBestiary(stateChanges) {
         traits: match.traits,
         armourDR: match.armourDR,
         weapons: match.weapons,
+        weaponRarity: rollEnemyRarity(match.difficulty),
+        armourRarity: rollEnemyRarity(match.difficulty),
       };
     });
   }
@@ -234,7 +232,179 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   const world = cs.world || {};
   const quests = cs.quests || {};
 
-  const sections = [];
+  // ═══════════════════════════════════════════════════════════════
+  // STATIC SECTIONS — identical across scenes within a session.
+  // Placed FIRST so both Anthropic (explicit cache_control) and
+  // OpenAI (automatic prefix caching) can cache this prefix.
+  // ═══════════════════════════════════════════════════════════════
+  const staticSections = [];
+
+  // ── CORE GAME RULES (compressed) ──
+  staticSections.push(
+    `CORE RULES:
+- Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
+- If engine-resolved: narrate the provided result. DO NOT recalculate.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill, find its level from PC Skills above, find its linked attribute value from PC Attributes above. Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success.
+- Skill→Attribute lookup: find the skill name in PC Skills (e.g. Skradanie:4 → skill_level=4). Linked attribute:
+  SIL: Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Zastraszanie, Atletyka
+  ZRC: Strzelectwo, Uniki, Akrobatyka, Jezdziectwo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy
+  CHA: Perswazja, Blef, Handel, Przywodztwo, Wystepy
+  INT: Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Spostrzegawczosc, Tropienie
+  WYT: Przetrwanie, Odpornosc
+  SZC: Fart, Hazard, Przeczucie
+  Read attribute value from PC Attributes (e.g. ZRC:13 → attr=13). If skill not in PC Skills → skill_level=0.
+- Include results in stateChanges.diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details.
+- Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
+- Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
+- NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
+- Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
+- Award 20-50 XP/scene via stateChanges.xp.
+- The Old World is grim and perilous. Death is real. Consequences are lasting.`,
+  );
+
+  // ── SCENE PACING ──
+  staticSections.push(
+    `SCENE PACING — return "scenePacing" in every response. Match prose to type:
+combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, tense
+exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
+travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
+celebration: lively, sensory | dramatic: theatrical, tension | dream: surreal, symbolic
+Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.`,
+  );
+
+  // ── NARRATIVE RULES ──
+  staticSections.push(
+    `NARRATIVE RULES:
+- Vary density by scene type. Action=short/punchy. Exploration=concrete senses. Dialogue=character voice.
+- Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
+- Each NPC has a unique speech pattern (phrases, vocabulary, rhythm). Identify speaker from dialogue alone.
+- NPCs present MUST speak in direct dialogue segments, never just described indirectly.
+- Humor never deflates real stakes. Even at high humor: failures hurt mechanically.
+- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.`,
+  );
+
+  // ── DIALOGUE FORMAT ──
+  staticSections.push(
+    `DIALOGUE FORMAT:
+dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
+Narration segments = VERBATIM full narrative text (not summarized). Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment needs "gender" field. Use consistent NPC names.`,
+  );
+
+  // ── SUGGESTED ACTIONS ──
+  staticSections.push(
+    `SUGGESTED ACTIONS:
+Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === 'pl' ? '"Oglądam drzwi"' : '"I examine the door"'}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\"."'}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${language === 'pl' ? ' CRITICAL: All suggestedActions must be in Polish. NEVER use English "I say:", "I ask", "I tell". Use "Mówię:", "Pytam:", "Krzyczę:". Do NOT prefix with "I".' : ''}`,
+  );
+
+  // ── STATE CHANGES RULES ──
+  // Always include needsChanges line for stable cache key (~20 extra tokens when disabled)
+  staticSections.push(
+    `MANDATORY stateChanges RULES:
+- timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
+- questUpdates: after writing narrative, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
+- Quest completion: ONLY add to completedQuests when ALL objectives done AND player talked to turn-in NPC in this scene. Never auto-complete.
+- rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare' (optional — engine picks if omitted). category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'quest_reward'|'found'|'gift'. Engine resolves into concrete items. Do NOT specify item names — just type and tier. Examples: [{type:'weapon',rarity:'uncommon',context:'loot'}], [{type:'material',category:'herb',quantity:'few',context:'found'}], [{type:'money',context:'quest_reward'}].
+- newItems: ONLY for unique quest/story items not in catalogs (quest MacGuffins, keys, letters, named artifacts). Include {id,name,type,description,rarity}. For weapons/armor quest rewards: name MUST match get_equipment_catalog.
+- removeItems: only items in character's inventory.
+- moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. Engine validates affordability. For income/loot use rewards with type:'money'.
+- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
+- combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. PREFERRED: use enemyHints and let the engine select enemies from the bestiary. budget=threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). maxDifficulty=cap on individual enemy tier. race=optional filter (${BESTIARY_RACES_STR}). Fallback: {active:true, enemies:[{name}], reason} with exact bestiary names.
+- pendingThreat: {race,budget,maxDifficulty,count,description}. Use when building tension ("something approaches") without starting combat yet. Backend stores this and uses it when combat actually triggers.
+- dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
+- codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
+- knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
+- journalEntries: 1-3 concise summaries of important events only.
+- currentLocation: update when player moves.
+- factionChanges: {faction_id: delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk.
+- worldFacts: strings of new information for world state.
+- woundsChange: delta (negative=damage, positive=healing).
+- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
+- skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
+- diceRolls: [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
+- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}. Only apply if needs system is active (see dynamic state below).
+- campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
+  );
+
+  // ── ACTION FEASIBILITY ──
+  staticSections.push(
+    `ACTION RULES:
+- Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
+- Routine (eating, resting, looking): auto-success, apply needsChanges if needs system active.
+- Uncertain: engine resolves checks. Narrate the result from user prompt.
+- Item validation: character can ONLY use items in their Inventory. Fail if item not possessed.
+- Item/money acquisition: if narrative says character gains anything, stateChanges MUST match. No exceptions.`,
+  );
+
+  // ── CODEX RULES ──
+  staticSections.push(
+    `CODEX RULES:
+- Each NPC reveals ONE fragment per interaction. Never dump lore — drip-feed it.
+- Aspect depends on NPC role: scholars/wizards→history/technical/political, peasants→rumor (may be inaccurate), soldiers/guards→location/weakness, merchants→technical/description, nobles→political/history.
+- Some knowledge (especially weaknesses) requires the RIGHT source NPC — not everyone knows everything.
+- The "ALREADY DISCOVERED" section below lists what the player has previously uncovered. Do NOT repeat known aspects — reveal NEW information only.
+- Call get_codex_entry() to check full fragment details before adding codexUpdates to existing entries.
+- Use relatedEntries to link connected codex items (weapon→creator, place→faction, etc.).
+- Max 10 fragments per entry.`,
+  );
+
+  // ── MANDATORY TOOL PROTOCOL (skipped in 2-stage pipeline) ──
+  if (!skipToolProtocol) {
+    staticSections.push(
+      `MANDATORY TOOL PROTOCOL:
+MUST call before generating narrative:
+1. Combat start → prefer enemyHints in combatUpdate (engine selects from bestiary). Use get_bestiary() only if you need to review available enemies.
+2. First visit at new location → get_location_history()
+3. Player references past events (not in Recent History) → search_campaign_memory()
+4. Player asks about lore/artifacts → get_codex_entry()
+5. Adding codexUpdates to existing entry → get_codex_entry() to check existing fragments
+6. Item reward or loot with weapons/armor → get_equipment_catalog()
+SHOULD call when beneficial:
+7. Extended NPC dialogue (3+ rounds) → get_npc_details() for personality/speech patterns
+8. Quest-related scenes → get_quest_details() for full objective details
+DO NOT call tools for:
+- Basic narration without NPC interaction
+- Actions in current location (use inline discoveries above)
+- NPCs already listed in "Key NPCs" section below
+IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems (quest items only) MUST exactly match names from get_equipment_catalog. For standard loot use stateChanges.rewards instead.`,
+    );
+
+    // ── PRE-FLIGHT CHECKLIST ──
+    staticSections.push(
+      `BEFORE GENERATING RESPONSE, check:
+- Am I at a new location? → call get_location_history()
+- Is an NPC speaking that I have no details for? → call get_npc_details()
+- Does the player reference old events not in Recent History? → call search_campaign_memory()
+- Is combat starting? → use enemyHints in combatUpdate (preferred) or get_bestiary() to review
+- Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
+    );
+  }
+
+  // ── RESPONSE FORMAT ──
+  staticSections.push(
+    `RESPONSE: Return ONLY valid JSON:
+{
+  "narrative": "string (required)",
+  "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
+  "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
+  "suggestedActions": ["exactly 3 actions"],
+  "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", diceRolls:[{"skill":"","difficulty":"","success":true}], ...},
+  "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
+  "soundEffect": "short English sound description or null",
+  "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
+  "questOffers": [],
+  "cutscene": null,
+  "dilemma": null
+}
+${language === 'pl' ? 'Write ALL narrative, dialogue, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
+  );
+
+  // ═══════════════════════════════════════════════════════════════
+  // DYNAMIC SECTIONS — change per scene (character, world, quests).
+  // Placed AFTER static prefix so caching works.
+  // ═══════════════════════════════════════════════════════════════
+  const dynamicSections = [];
 
   // ── CAMPAIGN & DM SETTINGS ──
   const poeticism = sliderLabel(dmSettings.narratorPoeticism ?? 50, ['dry', 'moderate', 'poetic', 'lyrical']);
@@ -243,7 +413,7 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
   const humor = sliderLabel(dmSettings.narratorHumor ?? 20, ['serious', 'dry wit', 'frequent humor', 'comedic']);
   const drama = sliderLabel(dmSettings.narratorDrama ?? 50, ['understated', 'measured', 'heightened', 'theatrical']);
 
-  sections.push(
+  dynamicSections.push(
     `You are the Game Master for "${campaign.name || 'Unnamed'}", an RPGon custom RPG.
 System: d50 + attribute (1-25) + skill (0-25) + momentum (±10) vs difficulty threshold (20/35/50/65/80). Szczescie gives X% auto-success. Mana for spells (1-5 cost). 9 spell trees with progression.
 Genre: ${campaign.genre || 'Fantasy'} | Tone: ${campaign.tone || 'Dark'} | Style: ${campaign.style || 'Hybrid'}
@@ -263,7 +433,7 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
   }
   const mana = character.mana || { current: 0, max: 0 };
   charLines.push(`Wounds: ${character.wounds ?? 0}/${character.maxWounds ?? 0} | Mana: ${mana.current}/${mana.max}`);
-  charLines.push(`XP: ${character.xp || 0} total, ${(character.xp || 0) - (character.xpSpent || 0)} available`);
+  charLines.push(`Level: ${character.characterLevel || 1}`);
   if (character.skills && Object.keys(character.skills).length > 0) {
     const skillEntries = Object.entries(character.skills)
       .filter(([, v]) => (typeof v === 'object' ? v.level : v) > 0)
@@ -278,7 +448,7 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
   }
   charLines.push(`Money: ${formatMoney(character.money)}`);
   if (character.statuses?.length) charLines.push(`Statuses: ${character.statuses.join(', ')}`);
-  sections.push(charLines.join('\n'));
+  dynamicSections.push(charLines.join('\n'));
 
   // ── WORLD STATE ──
   const worldLines = [];
@@ -302,7 +472,7 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
   if (npcsHere.length > 0) {
     worldLines.push(`NPCs here: ${npcsHere.map(n => `${n.name} (${n.role || '?'}, ${n.attitude || 'neutral'}, dsp:${n.disposition || 0})`).join(', ')}`);
   }
-  if (worldLines.length) sections.push(worldLines.join('\n'));
+  if (worldLines.length) dynamicSections.push(worldLines.join('\n'));
 
   // ── KNOWN NPC SUMMARY (top NPCs by disposition magnitude) ──
   if (npcs.length > 0) {
@@ -315,14 +485,14 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
       for (const n of knownNpcs) {
         npcLines.push(`- ${n.name} (${n.attitude || 'neutral'}, dsp:${n.disposition || 0}) — ${n.role || '?'}${n.lastLocation ? ', ' + n.lastLocation : ''}`);
       }
-      sections.push(npcLines.join('\n'));
+      dynamicSections.push(npcLines.join('\n'));
     }
   }
 
   // ── KEY PLOT FACTS ──
   const keyPlotFacts = world.keyPlotFacts || [];
   if (keyPlotFacts.length > 0) {
-    sections.push(`Key plot facts:\n${keyPlotFacts.map(f => `- ${f}`).join('\n')}`);
+    dynamicSections.push(`Key plot facts:\n${keyPlotFacts.map(f => `- ${f}`).join('\n')}`);
   }
 
   // ── CODEX SUMMARY (already discovered by player) ──
@@ -339,7 +509,7 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
       }
       codexLines.push(line);
     }
-    sections.push(codexLines.join('\n'));
+    dynamicSections.push(codexLines.join('\n'));
   }
 
   // ── NEEDS SYSTEM ──
@@ -348,10 +518,10 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
     const critNeeds = needNames.filter(k => (characterNeeds[k] ?? 100) < 10);
     if (critNeeds.length > 0) {
       const critLines = critNeeds.map(k => `${k}: ${characterNeeds[k] ?? 0}/100 CRITICAL`);
-      sections.push(`NEEDS CRISIS: ${critLines.join(', ')}
+      dynamicSections.push(`NEEDS CRISIS: ${critLines.join(', ')}
 Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to related tests. At least 1 suggestedAction must address the most urgent need.`);
     } else {
-      sections.push('Needs system active. All needs OK (>=10). Use stateChanges.needsChanges DELTAS when character eats/drinks/rests/bathes/toilets. Typical: meal +50-70 hunger, drink +40-60 thirst, sleep at inn→all 100.');
+      dynamicSections.push('Needs system active. All needs OK (>=10). Use stateChanges.needsChanges DELTAS when character eats/drinks/rests/bathes/toilets. Typical: meal +50-70 hunger, drink +40-60 thirst, sleep at inn→all 100.');
     }
   }
 
@@ -373,14 +543,14 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
       }
       questLines.push(line);
     }
-    sections.push(questLines.join('\n'));
+    dynamicSections.push(questLines.join('\n'));
   }
 
   // ── RECENT CONTEXT ──
   // Prefer compressed gameStateSummary (nano-generated facts) over full scenes
   const gameStateSummary = cs.gameStateSummary;
   if (gameStateSummary?.length > 0) {
-    sections.push(`Recent Story Facts:\n${gameStateSummary.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
+    dynamicSections.push(`Recent Story Facts:\n${gameStateSummary.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
     // Still include last scene for immediate context
     if (recentScenes.length > 0) {
       const last = recentScenes[recentScenes.length - 1];
@@ -388,7 +558,7 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
       const narrative = (last.narrative || '').length > 300
         ? last.narrative.slice(0, 300) + '...'
         : last.narrative;
-      sections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
+      dynamicSections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
     }
   } else if (recentScenes.length > 0) {
     // Fallback: full recent scenes (before compression is populated)
@@ -400,169 +570,26 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
         : scene.narrative;
       sceneLines.push(`[Scene ${scene.sceneIndex}] ${action}${narrative}`);
     }
-    sections.push(sceneLines.join('\n\n'));
+    dynamicSections.push(sceneLines.join('\n\n'));
   }
 
-  // ── CORE GAME RULES (compressed) ──
-  sections.push(
-    `CORE RULES:
-- Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
-- If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill, find its level from PC Skills above, find its linked attribute value from PC Attributes above. Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success.
-- Skill→Attribute lookup: find the skill name in PC Skills (e.g. Skradanie:4 → skill_level=4). Linked attribute:
-  SIL: Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Zastraszanie, Atletyka
-  ZRC: Strzelectwo, Uniki, Akrobatyka, Jezdziectwo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy
-  CHA: Perswazja, Blef, Handel, Przywodztwo, Wystepy
-  INT: Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Spostrzegawczosc, Tropienie
-  WYT: Przetrwanie, Odpornosc
-  SZC: Fart, Hazard, Przeczucie
-  Read attribute value from PC Attributes (e.g. ZRC:13 → attr=13). If skill not in PC Skills → skill_level=0.
-- Include results in stateChanges.diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details.
-- Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
-- Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
-- NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
-- Currency: 1GC=10SS=100CP. stateChanges.moneyChange for deltas. Engine validates affordability. Check character Money before purchases.
-- Award 20-50 XP/scene via stateChanges.xp.
-- The Old World is grim and perilous. Death is real. Consequences are lasting.`,
-  );
-
-  // ── SCENE PACING ──
-  sections.push(
-    `SCENE PACING — return "scenePacing" in every response. Match prose to type:
-combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, tense
-exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
-travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
-celebration: lively, sensory | dramatic: theatrical, tension | dream: surreal, symbolic
-Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.`,
-  );
-
-  // ── NARRATIVE RULES ──
-  sections.push(
-    `NARRATIVE RULES:
-- Vary density by scene type. Action=short/punchy. Exploration=concrete senses. Dialogue=character voice.
-- Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
-- Each NPC has a unique speech pattern (phrases, vocabulary, rhythm). Identify speaker from dialogue alone.
-- NPCs present MUST speak in direct dialogue segments, never just described indirectly.
-- Humor never deflates real stakes. Even at high humor: failures hurt mechanically.
-- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.`,
-  );
-
-  // ── DIALOGUE FORMAT ──
-  sections.push(
-    `DIALOGUE FORMAT:
-dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
-Narration segments = VERBATIM full narrative text (not summarized). Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment needs "gender" field. Use consistent NPC names.`,
-  );
-
-  // ── SUGGESTED ACTIONS ──
-  sections.push(
-    `SUGGESTED ACTIONS:
-Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === 'pl' ? '"Oglądam drzwi"' : '"I examine the door"'}). At least 2 grounded + up to 1 chaotic/humorous. Exactly 1 must be direct speech (${language === 'pl' ? '"Mówię: \\"...\\""' : '"I say: \\"...\\"."'}). Reference concrete scene NPCs/objects/locations by name. Never use vague filler. Never repeat recent actions.${language === 'pl' ? ' CRITICAL: All suggestedActions must be in Polish. NEVER use English "I say:", "I ask", "I tell". Use "Mówię:", "Pytam:", "Krzyczę:". Do NOT prefix with "I".' : ''}`,
-  );
-
-  // ── STATE CHANGES RULES ──
-  sections.push(
-    `MANDATORY stateChanges RULES:
-- timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing narrative, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
-- Quest completion: ONLY add to completedQuests when ALL objectives done AND player talked to turn-in NPC in this scene. Never auto-complete.
-- newItems: for ANY item acquired in narrative — never narrate pickup without {id,name,type,description,rarity} in newItems. Rarity: common/uncommon (early), rare (mid), exotic (late+consequences). For weapons/armor: name MUST match get_equipment_catalog exactly.
-- removeItems: only items in character's inventory.
-- moneyChange: {gold,silver,copper} deltas for purchases (negative) and income (positive). Engine validates.
-- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
-- combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. PREFERRED: use enemyHints and let the engine select enemies from the bestiary. budget=threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). maxDifficulty=cap on individual enemy tier. race=optional filter (${BESTIARY_RACES_STR}). Fallback: {active:true, enemies:[{name}], reason} with exact bestiary names.
-- pendingThreat: {race,budget,maxDifficulty,count,description}. Use when building tension ("something approaches") without starting combat yet. Backend stores this and uses it when combat actually triggers.
-- dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
-- codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
-- knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
-- journalEntries: 1-3 concise summaries of important events only.
-- currentLocation: update when player moves.
-- factionChanges: {faction_id: delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk.
-- worldFacts: strings of new information for world state.
-- woundsChange: delta (negative=damage, positive=healing).
-- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
-- skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
-- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
-- diceRolls: [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
-${needsSystemEnabled ? '- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}.' : ''}
-- campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
-  );
-
-  // ── ACTION FEASIBILITY ──
-  sections.push(
-    `ACTION RULES:
-- Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
-- Routine (eating, resting, looking): auto-success${needsSystemEnabled ? ', apply needsChanges' : ''}.
-- Uncertain: engine resolves checks. Narrate the result from user prompt.
-- Item validation: character can ONLY use items in their Inventory. Fail if item not possessed.
-- Item/money acquisition: if narrative says character gains anything, stateChanges MUST match. No exceptions.`,
-  );
-
-  // ── CODEX RULES ──
-  sections.push(
-    `CODEX RULES:
-- Each NPC reveals ONE fragment per interaction. Never dump lore — drip-feed it.
-- Aspect depends on NPC role: scholars/wizards→history/technical/political, peasants→rumor (may be inaccurate), soldiers/guards→location/weakness, merchants→technical/description, nobles→political/history.
-- Some knowledge (especially weaknesses) requires the RIGHT source NPC — not everyone knows everything.
-- The "ALREADY DISCOVERED" section above lists what the player has previously uncovered. Do NOT repeat known aspects — reveal NEW information only.
-- Call get_codex_entry() to check full fragment details before adding codexUpdates to existing entries.
-- Use relatedEntries to link connected codex items (weapon→creator, place→faction, etc.).
-- Max 10 fragments per entry.`,
-  );
-
-  // ── MANDATORY TOOL PROTOCOL (skipped in 2-stage pipeline) ──
-  if (!skipToolProtocol) {
-    sections.push(
-      `MANDATORY TOOL PROTOCOL:
-MUST call before generating narrative:
-1. Combat start → prefer enemyHints in combatUpdate (engine selects from bestiary). Use get_bestiary() only if you need to review available enemies.
-2. First visit at new location → get_location_history()
-3. Player references past events (not in Recent History) → search_campaign_memory()
-4. Player asks about lore/artifacts → get_codex_entry()
-5. Adding codexUpdates to existing entry → get_codex_entry() to check existing fragments
-6. Item reward or loot with weapons/armor → get_equipment_catalog()
-SHOULD call when beneficial:
-7. Extended NPC dialogue (3+ rounds) → get_npc_details() for personality/speech patterns
-8. Quest-related scenes → get_quest_details() for full objective details
-DO NOT call tools for:
-- Basic narration without NPC interaction
-- Actions in current location (use inline discoveries above)
-- NPCs already listed in "Key NPCs" section above
-IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems MUST exactly match names from get_equipment_catalog.`,
-    );
-
-    // ── PRE-FLIGHT CHECKLIST ──
-    sections.push(
-      `BEFORE GENERATING RESPONSE, check:
-- Am I at a new location? → call get_location_history()
-- Is an NPC speaking that I have no details for? → call get_npc_details()
-- Does the player reference old events not in Recent History? → call search_campaign_memory()
-- Is combat starting? → use enemyHints in combatUpdate (preferred) or get_bestiary() to review
-- Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
-    );
-  }
-
-  // ── RESPONSE FORMAT ──
-  sections.push(
-    `RESPONSE: Return ONLY valid JSON:
-{
-  "narrative": "string (required)",
-  "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
-  "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
-  "suggestedActions": ["exactly 3 actions"],
-  "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", diceRolls:[{"skill":"","difficulty":"","success":true}], ...},
-  "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
-  "soundEffect": "short English sound description or null",
-  "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
-  "questOffers": [],
-  "cutscene": null,
-  "dilemma": null
+  const staticPrefix = staticSections.join('\n\n');
+  const dynamicSuffix = dynamicSections.join('\n\n');
+  return { staticPrefix, dynamicSuffix, combined: staticPrefix + '\n\n' + dynamicSuffix };
 }
-${language === 'pl' ? 'Write ALL narrative, dialogue, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
-  );
 
-  return sections.join('\n\n');
+/**
+ * Convert split prompt parts into Anthropic system blocks with cache_control.
+ * Static prefix gets cached (ephemeral, 5-min TTL); dynamic suffix is fresh per request.
+ */
+function buildAnthropicSystemBlocks(staticPrefix, dynamicSuffix) {
+  const blocks = [
+    { type: 'text', text: staticPrefix, cache_control: { type: 'ephemeral' } },
+  ];
+  if (dynamicSuffix) {
+    blocks.push({ type: 'text', text: dynamicSuffix });
+  }
+  return blocks;
 }
 
 // ── USER PROMPT BUILDER ──
@@ -834,37 +861,8 @@ function buildContextSection(contextBlocks) {
 }
 
 /**
- * Run the 2-stage pipeline: intent classification → context assembly → single AI call.
+ * Run the 2-stage pipeline with streaming.
  */
-async function runTwoStagePipeline(systemPrompt, userPrompt, contextBlocks, { provider = 'openai', model } = {}) {
-  // Build the full prompt with pre-fetched context injected
-  const contextSection = buildContextSection(contextBlocks);
-  const enrichedSystemPrompt = contextSection
-    ? systemPrompt + contextSection
-    : systemPrompt;
-
-  if (provider === 'openai') {
-    const response = await callOpenAI(
-      [
-        { role: 'system', content: enrichedSystemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      { tools: [], model },
-    );
-    const choice = response.choices?.[0];
-    if (!choice) throw new Error('No response from OpenAI (2-stage)');
-    return parseAIResponse(choice.message.content);
-  } else {
-    const response = await callAnthropic(
-      [{ role: 'user', content: userPrompt }],
-      { tools: [], system: enrichedSystemPrompt, model },
-    );
-    const textBlock = response.content?.find((c) => c.type === 'text');
-    if (!textBlock) throw new Error('No text response from Anthropic (2-stage)');
-    return parseAIResponse(textBlock.text);
-  }
-}
-
 // ── STREAMING AI CALLERS ──
 
 /**
@@ -974,6 +972,13 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
           accumulated += parsed.delta.text;
           if (onChunk) onChunk(parsed.delta.text);
         }
+        // Log cache metrics from the final message_delta event
+        if (parsed.type === 'message_delta' && parsed.usage) {
+          const u = parsed.usage;
+          if (u.cache_read_input_tokens > 0 || u.cache_creation_input_tokens > 0) {
+            console.log(`[anthropic-stream] Cache: read=${u.cache_read_input_tokens || 0} created=${u.cache_creation_input_tokens || 0}`);
+          }
+        }
       } catch {
         // skip malformed SSE lines
       }
@@ -986,26 +991,28 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
 /**
  * Run the 2-stage pipeline with streaming. Returns parsed scene via callback events.
  */
-async function runTwoStagePipelineStreaming(systemPrompt, userPrompt, contextBlocks, { provider = 'openai', model } = {}, onChunk) {
+async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model } = {}, onChunk) {
   const contextSection = buildContextSection(contextBlocks);
-  const enrichedSystemPrompt = contextSection
-    ? systemPrompt + contextSection
-    : systemPrompt;
+  const dynamicFull = (systemPromptParts.dynamicSuffix || '') + (contextSection || '');
 
   let fullText;
   if (provider === 'openai') {
+    // OpenAI: flat string — automatic prefix caching kicks in when static prefix is stable
+    const combinedPrompt = systemPromptParts.staticPrefix + '\n\n' + dynamicFull;
     fullText = await callOpenAIStreaming(
       [
-        { role: 'system', content: enrichedSystemPrompt },
+        { role: 'system', content: combinedPrompt },
         { role: 'user', content: userPrompt },
       ],
       { model },
       onChunk,
     );
   } else {
+    // Anthropic: array of system blocks with cache_control on static prefix
+    const systemBlocks = buildAnthropicSystemBlocks(systemPromptParts.staticPrefix, dynamicFull);
     fullText = await callAnthropicStreaming(
       [{ role: 'user', content: userPrompt }],
-      { system: enrichedSystemPrompt, model },
+      { system: systemBlocks, model },
       onChunk,
     );
   }
@@ -1023,7 +1030,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     model,
     language = 'pl',
     dmSettings = {},
-    resolvedMechanics = null,
+    resolvedMechanics: resolvedMechanicsOpt = null,
     needsSystemEnabled = false,
     characterNeeds = null,
     dialogue = null,
@@ -1031,6 +1038,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     isFirstScene = false,
     sceneCount = 0,
   } = options;
+  let resolvedMechanics = resolvedMechanicsOpt;
 
   try {
     // 1. Load campaign data (same as generateScene)
@@ -1133,7 +1141,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
 
       if (matchedNpc) {
-        return {
+        const tradeResult = {
           narrative: '',
           stateChanges: {
             startTrade: { npcName: matchedNpc.name },
@@ -1141,6 +1149,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           actions: [],
           _tradeShortcut: true,
         };
+        onEvent({ type: 'complete', data: { scene: tradeResult, sceneIndex: -1 } });
+        return;
       }
       // If no NPC found, fall through to normal pipeline
     }
@@ -1161,7 +1171,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           `NPC "${targetNpc.name}" (${targetNpc.role || 'osoba'}) jest zaskoczony/a agresją gracza. Disposition spadło. NPC reaguje z niedowierzaniem i ostrzega gracza.`,
           playerAction, provider,
         );
-        return {
+        const dispositionResult = {
           narrative: warningNarrative,
           stateChanges: {
             npcs: [{ action: 'update', name: targetNpc.name, dispositionChange: -30 }],
@@ -1170,6 +1180,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           scenePacing: 'tension',
           _combatDispositionGuard: true,
         };
+        onEvent({ type: 'complete', data: { scene: dispositionResult, sceneIndex: -1 } });
+        return;
       }
 
       // Select enemies from bestiary
@@ -1192,7 +1204,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           playerAction, provider,
         );
         onEvent({ type: 'intent', data: { intent: 'clear_combat' } });
-        return {
+        const combatResult = {
           narrative: combatNarrative,
           stateChanges: {
             combatUpdate: { active: true, enemies: filledEnemies, reason: playerAction },
@@ -1201,6 +1213,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           scenePacing: 'combat',
           _combatFastPath: true,
         };
+        onEvent({ type: 'complete', data: { scene: combatResult, sceneIndex: -1 } });
+        return;
       }
       // If no enemies found in bestiary, fall through to normal pipeline
     }
@@ -1239,7 +1253,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
     recentScenes.reverse();
 
-    const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
+    const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
       dmSettings,
       needsSystemEnabled,
       characterNeeds,
@@ -1261,7 +1275,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 5. Streaming AI call
     const sceneResult = await runTwoStagePipelineStreaming(
-      systemPrompt, userPrompt, contextBlocks,
+      systemPromptParts, userPrompt, contextBlocks,
       { provider, model },
       (text) => onEvent({ type: 'chunk', text }),
     );
@@ -1281,6 +1295,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 6. Fill enemy stats from bestiary
     fillEnemiesFromBestiary(sceneResult.stateChanges);
+
+    // 6d. Resolve abstract rewards into concrete items/materials/money
+    resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
 
     // 7. Save scene
     const lastScene = recentScenes[recentScenes.length - 1];
@@ -1353,460 +1370,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
   } catch (err) {
     onEvent({ type: 'error', error: err.message || 'Stream generation failed', code: err.code || 'STREAM_ERROR' });
   }
-}
-
-/**
- * Call OpenAI API with tools support.
- */
-async function callOpenAI(messages, { tools = [], model, temperature = 0.8, maxTokens = 4096 } = {}) {
-  const apiKey = requireServerApiKey('openai', 'OpenAI');
-
-  const body = {
-    model: model || 'gpt-5.4',
-    messages,
-    temperature,
-    max_completion_tokens: maxTokens,
-  };
-
-  if (tools.length > 0) {
-    body.tools = tools;
-    body.tool_choice = 'auto';
-  } else {
-    body.response_format = { type: 'json_object' };
-  }
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    await parseProviderError(response, 'openai');
-  }
-
-  return await response.json();
-}
-
-/**
- * Call Anthropic API with tools support.
- */
-async function callAnthropic(messages, { tools = [], model, temperature = 0.8, maxTokens = 4096, system = null } = {}) {
-  const apiKey = requireServerApiKey('anthropic', 'Anthropic');
-
-  const body = {
-    model: model || 'claude-sonnet-4-20250514',
-    max_tokens: maxTokens,
-    messages,
-    temperature,
-  };
-
-  if (system) body.system = system;
-  if (tools.length > 0) body.tools = tools;
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    await parseProviderError(response, 'anthropic');
-  }
-
-  return await response.json();
-}
-
-/**
- * Generate a scene using AI with tool-use loop.
- * AI gets a lean base context and can dynamically fetch more via tools.
- */
-export async function generateScene(campaignId, playerAction, {
-  provider = 'openai',
-  model,
-  language = 'pl',
-  dmSettings = {},
-  resolvedMechanics = null,
-  needsSystemEnabled = false,
-  characterNeeds = null,
-  dialogue = null,
-  dialogueCooldown = 0,
-  isFirstScene = false,
-  isCustomAction = false,
-  fromAutoPlayer = false,
-  sceneCount = 0,
-} = {}) {
-  // 1. Load campaign core state + normalized data + codex + knowledge
-  const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
-    prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { coreState: true, characterState: true },
-    }),
-    prisma.campaignNPC.findMany({ where: { campaignId } }),
-    prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
-    prisma.campaignCodex.findMany({
-      where: { campaignId },
-      select: { codexKey: true, name: true, category: true, fragments: true },
-      orderBy: { updatedAt: 'desc' },
-      take: 15,
-    }),
-    prisma.campaignKnowledge.findMany({
-      where: { campaignId, importance: { in: ['high', 'critical'] } },
-      select: { summary: true, importance: true },
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    }),
-  ]);
-
-  if (!campaign) throw new Error('Campaign not found');
-  const coreState = JSON.parse(campaign.coreState);
-
-  // Inject characterState
-  const charState = JSON.parse(campaign.characterState || '{}');
-  if (Object.keys(charState).length > 0) coreState.character = charState;
-
-  // Inject normalized NPCs
-  if (dbNpcs.length > 0) {
-    if (!coreState.world) coreState.world = {};
-    coreState.world.npcs = dbNpcs.map((n) => ({
-      name: n.name, gender: n.gender, role: n.role,
-      personality: n.personality, attitude: n.attitude, disposition: n.disposition,
-      alive: n.alive, lastLocation: n.lastLocation, factionId: n.factionId,
-      notes: n.notes, relationships: JSON.parse(n.relationships || '[]'),
-    }));
-  }
-
-  // Inject normalized quests
-  if (dbQuests.length > 0) {
-    const active = [];
-    const completed = [];
-    for (const q of dbQuests) {
-      const quest = {
-        id: q.questId, name: q.name, type: q.type, description: q.description,
-        completionCondition: q.completionCondition, questGiverId: q.questGiverId,
-        turnInNpcId: q.turnInNpcId, locationId: q.locationId,
-        prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
-        objectives: JSON.parse(q.objectives || '[]'),
-        reward: q.reward ? JSON.parse(q.reward) : null,
-      };
-      if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });
-      else active.push(quest);
-    }
-    coreState.quests = { active, completed };
-  }
-
-  // Inject codex summary for inline context
-  if (dbCodex.length > 0) {
-    if (!coreState.world) coreState.world = {};
-    const ASPECT_TYPES = ['history', 'description', 'location', 'weakness', 'rumor', 'technical', 'political'];
-    coreState.world.codexSummary = dbCodex.map((c) => {
-      const fragments = JSON.parse(c.fragments || '[]');
-      const knownAspects = [...new Set(fragments.map(f => f.aspect).filter(Boolean))];
-      const canReveal = ASPECT_TYPES.filter(a => !knownAspects.includes(a));
-      return { name: c.name, category: c.category, knownAspects, canReveal };
-    });
-  }
-
-  // Inject key plot facts for inline context
-  if (dbKnowledge.length > 0) {
-    if (!coreState.world) coreState.world = {};
-    coreState.world.keyPlotFacts = dbKnowledge.map(k => k.summary);
-  }
-
-  // 2. Load recent scenes
-  const recentScenes = await prisma.campaignScene.findMany({
-    where: { campaignId },
-    orderBy: { sceneIndex: 'desc' },
-    take: 5,
-  });
-  recentScenes.reverse(); // chronological order
-
-  // 3. Pre-roll dice + build prompts
-  const characterForRollNS = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };
-  const preRollsNS = generatePreRolls(characterForRollNS);
-
-  // userPrompt is built before pipeline, but preRolls are passed through
-  const userPrompt = buildUserPrompt(playerAction, {
-    resolvedMechanics,
-    dialogue,
-    dialogueCooldown,
-    isFirstScene,
-    needsSystemEnabled,
-    characterNeeds,
-    language,
-    sceneCount,
-    preRolls: preRollsNS,
-  });
-
-  // 4. Run pipeline (2-stage or tool-use)
-  const useTwoStage = dmSettings.useTwoStagePipeline !== false; // default: enabled
-  let sceneResult;
-
-  if (useTwoStage) {
-    try {
-      // Stage 1: Intent classification
-      const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
-        dialogue,
-        isFirstScene,
-        provider,
-      });
-
-      // Stage 1b: Resolve nano-detected skill check using pre-rolled dice
-      if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
-        const testsFrequency = dmSettings?.testsFrequency ?? 50;
-        if (Math.random() * 100 < testsFrequency) {
-          const roll = resolveBackendDiceRollWithPreRoll(
-            characterForRollNS,
-            intentResult.roll_skill,
-            intentResult.roll_difficulty || 'medium',
-            preRollsNS[0].d50,
-            preRollsNS[0].luckySuccess,
-          );
-          if (roll) resolvedMechanics = { diceRoll: roll };
-        }
-      }
-
-      // Rebuild userPrompt with resolved mechanics (nano roll may have been added)
-      const updatedUserPrompt = buildUserPrompt(playerAction, {
-        resolvedMechanics,
-        dialogue,
-        dialogueCooldown,
-        isFirstScene,
-        needsSystemEnabled,
-        characterNeeds,
-        language,
-        sceneCount,
-        preRolls: preRollsNS,
-      });
-
-      // Stage 2: Context assembly (parallel DB queries)
-      const currentLocation = coreState.world?.currentLocation || '';
-      const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation);
-
-      // Build system prompt WITHOUT tool protocol sections
-      const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
-        dmSettings,
-        needsSystemEnabled,
-        characterNeeds,
-        sceneCount,
-        skipToolProtocol: true,
-      });
-
-      // Stage 3: Single AI call with pre-fetched context
-      sceneResult = await runTwoStagePipeline(systemPrompt, updatedUserPrompt, contextBlocks, {
-        provider,
-        model,
-      });
-    } catch (err) {
-      console.warn('Two-stage pipeline failed, falling back to tool-use:', err.message);
-      const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
-        dmSettings,
-        needsSystemEnabled,
-        characterNeeds,
-        sceneCount,
-      });
-      if (provider === 'openai') {
-        sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
-      } else {
-        sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
-      }
-    }
-  } else {
-    // Legacy: tool-use loop
-    const systemPrompt = buildLeanSystemPrompt(coreState, recentScenes, language, {
-      dmSettings,
-      needsSystemEnabled,
-      characterNeeds,
-      sceneCount,
-    });
-    if (provider === 'openai') {
-      sceneResult = await runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model);
-    } else {
-      sceneResult = await runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model);
-    }
-  }
-
-  // 4a. Resolve model-initiated dice rolls (if any)
-  resolveModelDiceRolls(sceneResult, characterForRollNS, resolvedMechanics?.diceRoll ? preRollsNS.slice(1) : preRollsNS);
-
-  // 4a2. Unify dice rolls: nano roll + model rolls → single diceRolls array
-  const allDiceRollsNS = [];
-  if (resolvedMechanics?.diceRoll) allDiceRollsNS.push(resolvedMechanics.diceRoll);
-  if (sceneResult.diceRolls) allDiceRollsNS.push(...sceneResult.diceRolls);
-  sceneResult.diceRolls = allDiceRollsNS.length > 0 ? allDiceRollsNS : undefined;
-
-  // 4a3. Calculate deterministic skill XP from freeform actions
-  const hasAnyDiceRollNS = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
-  calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRollNS, sceneResult.diceRolls);
-
-  // 4b. Fill in enemy stats from bestiary (AI provides name or hints, engine provides stats)
-  fillEnemiesFromBestiary(sceneResult.stateChanges);
-
-  // 5. Save scene to database
-  const lastScene = recentScenes[recentScenes.length - 1];
-  const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
-
-  const savedScene = await prisma.campaignScene.create({
-    data: {
-      campaignId,
-      sceneIndex: newSceneIndex,
-      narrative: sceneResult.narrative || '',
-      chosenAction: playerAction,
-      suggestedActions: JSON.stringify(sceneResult.suggestedActions || []),
-      dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
-      imagePrompt: sceneResult.imagePrompt || null,
-      soundEffect: sceneResult.soundEffect || null,
-      diceRoll: sceneResult.diceRolls ? JSON.stringify(sceneResult.diceRolls) : (sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null),
-      stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
-      scenePacing: sceneResult.scenePacing || 'exploration',
-    },
-  });
-
-  // 6. Tag large model quest updates + nano safety net
-  if (sceneResult.stateChanges?.questUpdates?.length) {
-    for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
-  }
-  const nanoQuestUpdates = await checkQuestObjectives(
-    sceneResult.narrative,
-    playerAction,
-    coreState.quests?.active || [],
-    sceneResult.stateChanges?.questUpdates || []
-  ).catch((err) => {
-    console.error('Quest objective check failed:', err.message);
-    return [];
-  });
-  if (nanoQuestUpdates.length > 0) {
-    if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
-    if (!sceneResult.stateChanges.questUpdates) sceneResult.stateChanges.questUpdates = [];
-    sceneResult.stateChanges.questUpdates.push(...nanoQuestUpdates);
-  }
-
-  // 7. Generate embedding async (fire and forget)
-  generateSceneEmbedding(savedScene).catch((err) =>
-    console.error('Failed to generate scene embedding:', err.message),
-  );
-
-  // 8. Process stateChanges - update normalized collections
-  if (sceneResult.stateChanges) {
-    processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
-      console.error('Failed to process state changes:', err.message),
-    );
-  }
-
-  // 9. Memory compression (async, fire-and-forget)
-  compressSceneToSummary(campaignId, sceneResult.narrative, playerAction).catch((err) =>
-    console.error('Failed to compress scene to summary:', err.message),
-  );
-
-  // 10. Location summary on location change
-  const newLocation = sceneResult.stateChanges?.currentLocation;
-  const previousLocation = coreState.world?.currentLocation;
-  if (newLocation && previousLocation && newLocation !== previousLocation) {
-    generateLocationSummary(campaignId, newLocation, previousLocation).catch((err) =>
-      console.error('Failed to generate location summary:', err.message),
-    );
-  }
-
-  // diceRolls already unified in step 4a2
-
-  return {
-    scene: sceneResult,
-    sceneIndex: newSceneIndex,
-    sceneId: savedScene.id,
-  };
-}
-
-/**
- * OpenAI tool-use loop.
- */
-async function runOpenAIToolLoop(campaignId, systemPrompt, userPrompt, model) {
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt },
-  ];
-
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
-    const tools = isLastRound ? [] : CONTEXT_TOOLS_OPENAI;
-
-    const response = await callOpenAI(messages, { tools, model });
-    const choice = response.choices?.[0];
-
-    if (!choice) throw new Error('No response from OpenAI');
-
-    // If AI finished (no tool calls), parse JSON
-    if (choice.finish_reason === 'stop' || !choice.message.tool_calls?.length) {
-      return parseAIResponse(choice.message.content);
-    }
-
-    // Process tool calls
-    messages.push(choice.message);
-
-    for (const tc of choice.message.tool_calls) {
-      const args = JSON.parse(tc.function.arguments);
-      const result = await executeToolCall(campaignId, tc.function.name, args);
-      messages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: result,
-      });
-    }
-  }
-
-  // Fallback: force response without tools
-  const response = await callOpenAI(messages, { tools: [] });
-  return parseAIResponse(response.choices[0].message.content);
-}
-
-/**
- * Anthropic tool-use loop.
- */
-async function runAnthropicToolLoop(campaignId, systemPrompt, userPrompt, model) {
-  const messages = [{ role: 'user', content: userPrompt }];
-
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const isLastRound = round === MAX_TOOL_ROUNDS - 1;
-    const tools = isLastRound ? [] : CONTEXT_TOOLS_ANTHROPIC;
-
-    const response = await callAnthropic(messages, { tools, system: systemPrompt, model });
-
-    if (response.stop_reason === 'end_turn' || !response.content?.some((c) => c.type === 'tool_use')) {
-      // Extract text content
-      const textBlock = response.content?.find((c) => c.type === 'text');
-      if (textBlock) return parseAIResponse(textBlock.text);
-      throw new Error('No text response from Anthropic');
-    }
-
-    // Process tool calls
-    messages.push({ role: 'assistant', content: response.content });
-
-    const toolResults = [];
-    for (const block of response.content) {
-      if (block.type === 'tool_use') {
-        const result = await executeToolCall(campaignId, block.name, block.input);
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: result,
-        });
-      }
-    }
-
-    messages.push({ role: 'user', content: toolResults });
-  }
-
-  // Fallback
-  const response = await callAnthropic(messages, { tools: [], system: systemPrompt });
-  const textBlock = response.content?.find((c) => c.type === 'text');
-  if (textBlock) return parseAIResponse(textBlock.text);
-  throw new Error('No response from Anthropic after tool loop');
 }
 
 /**

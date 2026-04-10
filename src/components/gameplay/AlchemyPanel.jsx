@@ -18,8 +18,8 @@ export default function AlchemyPanel({ character, dispatch, disabled }) {
 
   const recipes = useMemo(() => {
     const allRecipes = gameData.alchemyRecipes || [];
-    return getAvailableRecipes(character?.inventory || [], character?.skills || {}, allRecipes);
-  }, [character?.inventory, character?.skills]);
+    return getAvailableRecipes(character?.materialBag || [], character?.skills || {}, allRecipes);
+  }, [character?.materialBag, character?.skills]);
 
   const alchemiaLevel = getSkillLevel(character?.skills, 'Alchemia');
   const inteligencja = character?.attributes?.inteligencja || 0;

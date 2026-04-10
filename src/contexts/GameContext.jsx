@@ -6,7 +6,7 @@ import { createCombatState } from '../services/combatEngine';
 import { createDialogueState } from '../services/dialogueEngine';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 import { reduceMultiplayerSlice } from './slices/multiplayerSlice';
-import { SKILL_CAPS, createStartingSkills, xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost } from '../data/rpgSystem';
+import { SKILL_CAPS, createStartingSkills, xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost, CREATION_LIMITS } from '../data/rpgSystem';
 
 const GameContext = (import.meta.hot?.data?.GameContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.GameContext = GameContext;
@@ -31,6 +31,24 @@ function normalizeCustomAttackPresets(presets) {
 
 const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 
+/** Merge new materials into the bag, stacking by name (case-insensitive). */
+function stackMaterials(bag, newItems) {
+  const result = bag.map((m) => ({ ...m }));
+  for (const item of newItems) {
+    const lower = (item.name || '').toLowerCase();
+    const existing = result.find((m) => (m.name || '').toLowerCase() === lower);
+    if (existing) {
+      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
+    } else {
+      result.push({
+        name: item.name,
+        quantity: item.quantity || 1,
+      });
+    }
+  }
+  return result;
+}
+
 function createDefaultCharacter() {
   const attributes = { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 };
   return {
@@ -45,13 +63,15 @@ function createDefaultCharacter() {
     skills: createStartingSkills('Human'),
     spells: { known: [], usageCounts: {}, scrolls: [] },
     inventory: [],
+    materialBag: [],
     statuses: [],
     backstory: '',
     customAttackPresets: [],
     equipped: { mainHand: null, offHand: null, armour: null },
     needs: createDefaultNeeds(),
-    xp: 0,
-    xpSpent: 0,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
     lastTrainingScene: -SKILL_CAPS.basic, // allow training immediately
   };
 }
@@ -66,6 +86,7 @@ function normalizeCharacter(character) {
     mana: character.mana || { current: 0, max: 0 },
     spells: character.spells || { known: [], usageCounts: {}, scrolls: [] },
     equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
+    materialBag: character.materialBag || [],
   };
 }
 
@@ -124,7 +145,6 @@ const initialState = {
     compressedHistory: '',
     factions: {},
     exploredLocations: [],
-    weather: null,
     knowledgeBase: {
       characters: {},
       locations: {},
@@ -218,7 +238,6 @@ function gameReducer(state, action) {
       if (loaded.dialogueCooldown == null) loaded.dialogueCooldown = 0;
       if (!loaded.party) loaded.party = [];
       if (loaded.world && !loaded.world.exploredLocations) loaded.world.exploredLocations = [];
-      if (loaded.world && !loaded.world.weather) loaded.world.weather = null;
       if (loaded.world && !loaded.world.knowledgeBase) {
         loaded.world.knowledgeBase = { characters: {}, locations: {}, events: [], decisions: [], plotThreads: [] };
       }
@@ -455,7 +474,8 @@ function gameReducer(state, action) {
     case 'SPEND_ATTRIBUTE_POINT': {
       const { attribute } = action.payload;
       const char = state.character;
-      if (!char || (char.attributePoints || 0) <= 0) return state;
+      const cost = attribute === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1;
+      if (!char || (char.attributePoints || 0) < cost) return state;
       const currentVal = char.attributes?.[attribute] ?? 1;
       if (currentVal >= 25) return state; // attribute cap
       const newAttrs = { ...char.attributes, [attribute]: currentVal + 1 };
@@ -464,7 +484,7 @@ function gameReducer(state, action) {
         ...state,
         character: {
           ...char,
-          attributePoints: (char.attributePoints || 0) - 1,
+          attributePoints: (char.attributePoints || 0) - cost,
           attributes: newAttrs,
           maxWounds: newMaxWounds,
           wounds: Math.min(char.wounds, newMaxWounds),
@@ -702,9 +722,33 @@ function gameReducer(state, action) {
       }
 
       if (changes.newItems) {
+        const regularItems = [];
+        const materialItems = [];
+        for (const item of changes.newItems) {
+          if (item.type === 'material') {
+            materialItems.push(item);
+          } else {
+            regularItems.push(item);
+          }
+        }
+        if (regularItems.length > 0) {
+          next.character = {
+            ...next.character,
+            inventory: [...(next.character.inventory || []), ...regularItems],
+          };
+        }
+        if (materialItems.length > 0) {
+          next.character = {
+            ...next.character,
+            materialBag: stackMaterials(next.character.materialBag || [], materialItems),
+          };
+        }
+      }
+
+      if (changes.newMaterials) {
         next.character = {
           ...next.character,
-          inventory: [...(next.character.inventory || []), ...changes.newItems],
+          materialBag: stackMaterials(next.character.materialBag || [], changes.newMaterials),
         };
       }
 
@@ -718,12 +762,16 @@ function gameReducer(state, action) {
       }
 
       // Remove items by name + quantity (used by crafting/alchemy engines)
+      // Checks materialBag first, then inventory
       if (changes.removeItemsByName) {
+        let bag = [...(next.character.materialBag || [])];
         let inv = [...(next.character.inventory || [])];
         for (const { name, quantity } of changes.removeItemsByName) {
           let toRemove = quantity;
           const lower = name.toLowerCase();
-          inv = inv.reduce((acc, item) => {
+
+          // Try materialBag first
+          bag = bag.reduce((acc, item) => {
             if (toRemove <= 0 || (item.name || '').toLowerCase() !== lower) {
               acc.push(item);
               return acc;
@@ -731,15 +779,32 @@ function gameReducer(state, action) {
             const qty = item.quantity || 1;
             if (qty <= toRemove) {
               toRemove -= qty;
-              // item fully consumed — skip it
             } else {
               acc.push({ ...item, quantity: qty - toRemove });
               toRemove = 0;
             }
             return acc;
           }, []);
+
+          // If still need to remove, check inventory
+          if (toRemove > 0) {
+            inv = inv.reduce((acc, item) => {
+              if (toRemove <= 0 || (item.name || '').toLowerCase() !== lower) {
+                acc.push(item);
+                return acc;
+              }
+              const qty = item.quantity || 1;
+              if (qty <= toRemove) {
+                toRemove -= qty;
+              } else {
+                acc.push({ ...item, quantity: qty - toRemove });
+                toRemove = 0;
+              }
+              return acc;
+            }, []);
+          }
         }
-        next.character = { ...next.character, inventory: inv };
+        next.character = { ...next.character, materialBag: bag, inventory: inv };
       }
 
       if (changes.moneyChange) {
@@ -1247,10 +1312,6 @@ function gameReducer(state, action) {
           next.trade.npcRole = npc.role || 'merchant';
           next.trade.disposition = npc.disposition || 0;
         }
-      }
-
-      if (changes.weatherUpdate) {
-        next.world = { ...next.world, weather: changes.weatherUpdate };
       }
 
       // --- Act progression ---

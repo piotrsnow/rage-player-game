@@ -252,6 +252,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
             items={character.inventory}
             money={character.money}
             equipped={character.equipped}
+            materialBag={character.materialBag}
             onEquipItem={(itemId, slot) => dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } })}
             onUnequipItem={(slot) => dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } })}
           />
@@ -363,7 +364,7 @@ export default function CharacterSheet({ onClose }) {
     ? allCharacters[selectedIdx] || allCharacters[0]
     : myCharacter;
 
-  const availableXp = (displayCharacter?.xp || 0) - (displayCharacter?.xpSpent || 0);
+  const attrPoints = displayCharacter?.attributePoints || 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('nav.characterSheet')} onClick={onClose}>
@@ -599,15 +600,15 @@ export default function CharacterSheet({ onClose }) {
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{t('character.age')}: {displayCharacter.age ?? 23}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
-                  <span>{displayCharacter.xp} {t('common.xp')}</span>
+                  <span>{t('stats.level', { defaultValue: 'Poziom' })} {displayCharacter.characterLevel || 1}</span>
                 </div>
-                {availableXp > 0 && (
+                {attrPoints > 0 && (
                   <button
                     onClick={() => setShowAdvancement(true)}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-primary/15 text-primary text-xs font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
                   >
                     <span className="material-symbols-outlined text-sm">upgrade</span>
-                    {availableXp} {t('common.xp')} — {t('advancement.title')}
+                    +{attrPoints} {t('advancement.attributePoints', { defaultValue: 'pkt atrybutów' })} — {t('advancement.title')}
                   </button>
                 )}
               </div>

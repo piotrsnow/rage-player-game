@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { gameData } from '../../services/gameDataService';
 import Tooltip from '../ui/Tooltip';
+import MaterialBagPanel from './MaterialBagPanel';
 
 const rarityColors = {
   common: 'border-outline-variant/20 text-on-surface-variant',
@@ -411,21 +412,41 @@ function ItemDetailBox({ item, equippedSlot, equippableSlots, onEquipItem, onUne
   );
 }
 
-export default function Inventory({ items = [], money, equipped = {}, onEquipItem, onUnequipItem }) {
+export default function Inventory({ items = [], money, equipped = {}, onEquipItem, onUnequipItem, materialBag = [] }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [showMaterialBag, setShowMaterialBag] = useState(false);
   const maxSlots = 40;
   const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
   const selectedItem = items.find(i => i.id === selectedItemId) || null;
+  const totalMaterials = materialBag.reduce((sum, m) => sum + (m.quantity || 1), 0);
+
+  if (showMaterialBag) {
+    return <MaterialBagPanel materials={materialBag} onClose={() => setShowMaterialBag(false)} />;
+  }
 
   return (
     <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 shadow-xl">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-tertiary font-headline text-xl">{t('inventory.title')}</h3>
-        <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-          {t('inventory.slots', { current: items.length, max: maxSlots })}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowMaterialBag(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[9px] font-label font-bold uppercase tracking-wider rounded-sm bg-surface-container-highest/50 border border-outline-variant/15 text-on-surface-variant hover:bg-primary/10 hover:border-primary/20 hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-[12px]">inventory_2</span>
+            {t('materialBag.title', 'Materials')}
+            {totalMaterials > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[8px] font-bold bg-primary/20 text-primary rounded-full">
+                {totalMaterials}
+              </span>
+            )}
+          </button>
+          <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+            {t('inventory.slots', { current: items.length, max: maxSlots })}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5 mb-5 px-3 py-2.5 bg-surface-container-highest/50 border border-outline-variant/10 rounded-sm">

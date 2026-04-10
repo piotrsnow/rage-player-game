@@ -24,14 +24,14 @@ const MARGIN_THRESHOLDS = {
 // ── Recipe Availability ──
 
 /**
- * Check which recipes the character can craft given their inventory and skills.
- * @param {Array} inventory - character.inventory
+ * Check which recipes the character can craft given their material bag and skills.
+ * @param {Array} materialBag - character.materialBag (stacked materials)
  * @param {object} skills - character.skills
  * @param {Array} allRecipes - CRAFTING_RECIPES array
  * @returns {Array} enriched recipes with canCraft flag and material status
  */
-export function getAvailableRecipes(inventory, skills, allRecipes) {
-  const inventoryCounts = countInventoryItems(inventory);
+export function getAvailableRecipes(materialBag, skills, allRecipes) {
+  const inventoryCounts = countInventoryItems(materialBag);
   const rzemiosloLevel = getSkillLevel(skills, 'Rzemioslo');
 
   return allRecipes.map((recipe) => {

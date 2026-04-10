@@ -317,12 +317,6 @@ function mpReducer(state, action) {
           newGameState = { ...newGameState, world };
         }
 
-        if (stateChanges.weatherUpdate) {
-          const world = { ...(newGameState.world || {}) };
-          world.weather = stateChanges.weatherUpdate;
-          newGameState = { ...newGameState, world };
-        }
-
         if (stateChanges.campaignEnd && newGameState.campaign) {
           newGameState = {
             ...newGameState,

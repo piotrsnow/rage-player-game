@@ -11,7 +11,7 @@ export {
   BESTIARY, BESTIARY_LOCATIONS, BESTIARY_DIFFICULTIES, BESTIARY_RACES,
   DIFFICULTY_VARIANCE, THREAT_COSTS,
   findClosestBestiaryEntry, searchBestiary, selectBestiaryEncounter,
-  applyAttributeVariance, getBestiaryLocationSummary,
+  applyAttributeVariance, getBestiaryLocationSummary, rollEnemyRarity,
 } from './bestiary.js';
 export { EQUIPMENT, EQUIPMENT_CATEGORIES, AVAILABILITY_MODIFIERS } from './equipment.js';
 export { CRAFTING_RECIPES } from './crafting.js';

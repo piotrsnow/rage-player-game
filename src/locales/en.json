@@ -566,6 +566,18 @@
       "misc": "Miscellaneous"
     }
   },
+  "materialBag": {
+    "title": "Materials",
+    "count": "{{count}} items",
+    "all": "All",
+    "empty": "No materials collected yet.",
+    "catMetal": "Metal",
+    "catWood": "Wood",
+    "catFabric": "Fabric",
+    "catHerb": "Herbs",
+    "catLiquid": "Liquids",
+    "catMisc": "Misc"
+  },
   "stats": {
     "ws": "WS",
     "bs": "BS",
@@ -1204,7 +1216,8 @@
     "questObjectiveProgress": "{{quest}} — progress: {{progress}}",
     "questObjectiveVerified": "Objective verified: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} spent {{amount}}",
-    "moneyGained": "{{name}} received {{amount}}"
+    "moneyGained": "{{name}} received {{amount}}",
+    "characterLevelUp": "Character Level {{old}} → {{new}}! +{{points}} attribute point(s)"
   },
   "currency": {
     "purse": "Purse",

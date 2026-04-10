@@ -115,8 +115,9 @@ export function randomizeFullCharacter(genre) {
     money: generateStartingMoney(),
     statuses: [],
     backstory: '',
-    xp: 0,
-    xpSpent: 0,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
     lastTrainingScene: -10,
   };
 }

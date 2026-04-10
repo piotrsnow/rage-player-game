@@ -45,8 +45,9 @@ function buildDefaultCompanion({ name, species, sila, zrecznosc, wytrzymalosc })
     type: 'companion',
     name: name?.trim() || 'Companion',
     species: species?.trim() || 'Human',
-    xp: 0,
-    xpSpent: 0,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
     attributes: {
       sila: Number(sila) || 10,
       inteligencja: 10,

@@ -25,13 +25,13 @@ const MARGIN_THRESHOLDS = {
 
 /**
  * Check which alchemy recipes the character can brew.
- * @param {Array} inventory - character.inventory
+ * @param {Array} materialBag - character.materialBag (stacked materials)
  * @param {object} skills - character.skills
  * @param {Array} allRecipes - ALCHEMY_RECIPES array
  * @returns {Array} enriched recipes with canCraft flag and ingredient status
  */
-export function getAvailableRecipes(inventory, skills, allRecipes) {
-  const inventoryCounts = countInventoryItems(inventory);
+export function getAvailableRecipes(materialBag, skills, allRecipes) {
+  const inventoryCounts = countInventoryItems(materialBag);
   const alchemiaLevel = getSkillLevel(skills, 'Alchemia');
 
   return allRecipes.map((recipe) => {

@@ -5,7 +5,7 @@ import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
   TRAINING_COOLDOWN_SCENES, getSkillAttribute,
-  xpForSkillLevel, charLevelCost,
+  xpForSkillLevel, charLevelCost, CREATION_LIMITS,
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { getSpellProgressionStatus } from '../../services/magicEngine';
@@ -45,7 +45,8 @@ function AttributesTab({ character, dispatch }) {
         {ATTRIBUTE_KEYS.map((key) => {
           const value = character.attributes?.[key] || 0;
           const short = t(`rpgAttributeShort.${key}`);
-          const canSpend = attrPoints > 0 && value < ATTRIBUTE_SCALE.max;
+          const cost = key === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1;
+          const canSpend = attrPoints >= cost && value < ATTRIBUTE_SCALE.max;
 
           return (
             <div
@@ -64,7 +65,7 @@ function AttributesTab({ character, dispatch }) {
                   onClick={() => dispatch({ type: 'SPEND_ATTRIBUTE_POINT', payload: { attribute: key } })}
                   className="mt-1 px-3 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary hover:bg-primary/30 active:scale-95 transition-all"
                 >
-                  +1
+                  +1 {cost > 1 ? `(${cost} pkt)` : ''}
                 </button>
               )}
             </div>
@@ -316,7 +317,6 @@ export default function AdvancementPanel({ onClose }) {
 
   if (!character) return null;
 
-  const availableXp = (character.xp || 0) - (character.xpSpent || 0);
   const charLevel = character.characterLevel || 1;
   const charXp = character.characterXp || 0;
   const nextLevelCost = charLevelCost(charLevel + 1);

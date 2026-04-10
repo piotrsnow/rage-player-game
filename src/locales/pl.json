@@ -542,6 +542,18 @@
       "misc": "Różne"
     }
   },
+  "materialBag": {
+    "title": "Materiały",
+    "count": "{{count}} szt.",
+    "all": "Wszystkie",
+    "empty": "Brak zebranych materiałów.",
+    "catMetal": "Metal",
+    "catWood": "Drewno",
+    "catFabric": "Tkaniny",
+    "catHerb": "Zioła",
+    "catLiquid": "Płyny",
+    "catMisc": "Inne"
+  },
   "stats": {
     "ws": "WW",
     "bs": "US",
@@ -1147,7 +1159,8 @@
     "questObjectiveProgress": "{{quest}} — postęp: {{progress}}",
     "questObjectiveVerified": "Cel zweryfikowany: {{quest}} — {{objective}}",
     "moneySpent": "{{name}} wydał/a {{amount}}",
-    "moneyGained": "{{name}} otrzymał/a {{amount}}"
+    "moneyGained": "{{name}} otrzymał/a {{amount}}",
+    "characterLevelUp": "Poziom postaci {{old}} → {{new}}! +{{points}} punkt atrybutu"
   },
   "currency": {
     "purse": "Sakiewka",

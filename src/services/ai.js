@@ -1,13 +1,12 @@
-import { buildSystemPrompt, buildSceneGenerationPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildRecapMergePrompt, buildObjectiveVerificationPrompt, buildCombatCommentaryPrompts } from './prompts';
+import { buildSystemPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildRecapMergePrompt, buildObjectiveVerificationPrompt, buildCombatCommentaryPrompts } from './prompts';
 import { apiClient } from './apiClient';
-import { callLocalLLM, buildReducedSystemPrompt, buildReducedScenePrompt } from './localAI';
+import { callLocalLLM } from './localAI';
 import {
   safeParseJSON, safeParseAIResponse, withRetry,
   SceneResponseSchema, CampaignResponseSchema, CompressionResponseSchema,
   RecapResponseSchema, StoryPromptResponseSchema, ObjectiveVerificationSchema, CombatCommentaryResponseSchema,
   SkillCheckInferenceSchema,
 } from './aiResponseValidator';
-import { enforcePromptTokenBudget, getSceneAIGovernance, resolvePromptProfile } from './promptGovernance';
 
 export const AI_MODELS = [
   { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$2.50 / $15 per 1M tokens', tier: 'premium' },
@@ -383,48 +382,6 @@ function postProcessSuggestedActions({
   return contextualFallback.slice(0, 3);
 }
 
-function buildDegradedSceneResponse({ language = 'en', reason = 'validation_failed', rawResult = null, gameState = null, degradeType = 'schema_validation' } = {}) {
-  const narrative = typeof rawResult?.narrative === 'string' && rawResult.narrative.trim()
-    ? rawResult.narrative.trim()
-    : buildFallbackNarrative(language);
-  const stateChanges = rawResult?.stateChanges && typeof rawResult.stateChanges === 'object'
-    ? rawResult.stateChanges
-    : { journalEntries: [], worldFacts: [], timeAdvance: { hoursElapsed: 0.5, newDay: false } };
-  const suggestedActions = postProcessSuggestedActions({
-    suggestedActions: Array.isArray(rawResult?.suggestedActions) && rawResult.suggestedActions.length > 0
-      ? rawResult.suggestedActions
-      : buildFallbackActions(language, {
-          narrative,
-          currentLocation: stateChanges?.currentLocation || gameState?.world?.currentLocation || '',
-          npcs: [...(stateChanges?.npcs || []), ...(gameState?.world?.npcs || [])],
-        }),
-    language,
-    gameState,
-    narrative,
-    stateChanges,
-  });
-  const dialogueSegments = Array.isArray(rawResult?.dialogueSegments) && rawResult.dialogueSegments.length > 0
-    ? rawResult.dialogueSegments
-    : [{ type: 'narration', text: narrative }];
-
-  return {
-    narrative,
-    scenePacing: rawResult?.scenePacing || 'exploration',
-    dialogueSegments,
-    soundEffect: rawResult?.soundEffect ?? null,
-    musicPrompt: rawResult?.musicPrompt ?? null,
-    imagePrompt: rawResult?.imagePrompt ?? null,
-    atmosphere: rawResult?.atmosphere || {},
-    suggestedActions,
-    questOffers: Array.isArray(rawResult?.questOffers) ? rawResult.questOffers : [],
-    stateChanges,
-    diceRoll: rawResult?.diceRoll ?? null,
-    cutscene: rawResult?.cutscene ?? null,
-    dilemma: rawResult?.dilemma ?? null,
-    meta: { degraded: true, reason, contextQuality: 'degraded', degradeType },
-  };
-}
-
 async function callOpenAI(apiKey, systemPrompt, userPrompt, maxTokens = 2000, model = 'gpt-5.4') {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -624,164 +581,9 @@ export const aiService = {
     };
   },
 
-  async generateScene(gameState, dmSettings, playerAction, isFirstScene, provider, apiKey, language = 'en', enhancedContext = null, {
-    needsSystemEnabled = false,
-    isCustomAction = false,
-    fromAutoPlayer = false,
-    resolvedMechanics = null,
-    localLLMConfig = null,
-    modelTier = 'premium',
-    alternateApiKey = null,
-    explicitModel = null,
-    promptProfile = null,
-    sceneTokenBudget = null,
-    promptTokenBudget = null,
-  } = {}) {
-    const model = explicitModel || selectModel(provider, modelTier, 'generateScene');
-    const resolvedPromptProfile = resolvePromptProfile(dmSettings, modelTier, Boolean(localLLMConfig?.enabled) || false);
-    const governance = getSceneAIGovernance({
-      profileId: promptProfile || resolvedPromptProfile,
-      modelTier,
-      isFirstScene,
-      localLLMEnabled: Boolean(localLLMConfig?.enabled),
-      sceneCount: gameState?.scenes?.length || 0,
-    });
-    const completionBudget = Number.isFinite(sceneTokenBudget) ? sceneTokenBudget : governance.sceneTokenBudget;
-    const promptBudget = Number.isFinite(promptTokenBudget) ? promptTokenBudget : governance.promptTokenBudget;
-    const promptOpts = { needsSystemEnabled, characterNeeds: gameState.character?.needs || null, isCustomAction, fromAutoPlayer, resolvedMechanics, dialogue: gameState.dialogue || null, dialogueCooldown: gameState.dialogueCooldown || 0, scenes: gameState.scenes || null };
-
-    let systemPrompt, userPrompt;
-    if (localLLMConfig?.enabled && localLLMConfig?.reducedPrompt) {
-      systemPrompt = buildReducedSystemPrompt(gameState, dmSettings, language, enhancedContext, promptOpts);
-      userPrompt = buildReducedScenePrompt(playerAction, isFirstScene, language, promptOpts, dmSettings);
-    } else {
-      systemPrompt = buildSystemPrompt(gameState, dmSettings, language, enhancedContext, {
-        ...promptOpts,
-        promptProfile: governance.profile.id,
-        sceneTokenBudget: completionBudget,
-        promptTokenBudget: promptBudget,
-      });
-      userPrompt = buildSceneGenerationPrompt(
-        playerAction,
-        isFirstScene,
-        language,
-        {
-          ...promptOpts,
-          promptProfile: governance.profile.id,
-          sceneTokenBudget: completionBudget,
-          promptTokenBudget: promptBudget,
-        },
-        dmSettings
-      );
-    }
-
-    const budgetedPrompts = enforcePromptTokenBudget(systemPrompt, userPrompt, promptBudget);
-    const { result, usage } = await callAI(
-      provider,
-      apiKey,
-      budgetedPrompts.systemPrompt,
-      budgetedPrompts.userPrompt,
-      completionBudget,
-      { localLLMConfig, model, modelTier, taskType: 'generateScene', alternateApiKey }
-    );
-    const validated = safeParseAIResponse(result, SceneResponseSchema, { language });
-    if (validated.ok) {
-      validated.data.suggestedActions = postProcessSuggestedActions({
-        suggestedActions: validated.data.suggestedActions,
-        language,
-        gameState,
-        narrative: validated.data.narrative,
-        stateChanges: validated.data.stateChanges,
-      });
-      validated.data.meta = {
-        ...(validated.data.meta || {}),
-        contextQuality: budgetedPrompts.truncated ? 'reduced' : 'full',
-      };
-      if (budgetedPrompts.truncated) {
-        validated.data.meta = {
-          ...(validated.data.meta || {}),
-          promptTruncated: true,
-          degradeType: 'context_truncate',
-          diagnostics: {
-            message: 'Prompt was truncated to fit token budget; optional sections were reduced first.',
-          },
-        };
-      }
-      return { result: validated.data, usage };
-    }
-
-    return {
-      result: buildDegradedSceneResponse({
-        language,
-        reason: budgetedPrompts.truncated
-          ? `context_truncate_schema_validation_failed: ${validated.error || 'scene_schema_validation_failed'}`
-          : (validated.error || 'scene_schema_validation_failed'),
-        degradeType: budgetedPrompts.truncated ? 'context_truncate' : 'schema_validation',
-        rawResult: validated.data || result,
-        gameState,
-      }),
-      usage,
-    };
-  },
-
-  /**
-   * Generate a scene via backend tool-use endpoint.
-   * Backend builds lean prompts and AI can dynamically fetch context via tools.
-   */
-  async generateSceneViaBackend(campaignId, playerAction, {
-    provider = 'openai',
-    model = null,
-    language = 'pl',
-    dmSettings = {},
-    resolvedMechanics = null,
-    needsSystemEnabled = false,
-    characterNeeds = null,
-    dialogue = null,
-    dialogueCooldown = 0,
-    isFirstScene = false,
-    isCustomAction = false,
-    fromAutoPlayer = false,
-    sceneCount = 0,
-    gameState = null,
-  } = {}) {
-    const data = await apiClient.post(`/ai/campaigns/${campaignId}/generate-scene`, {
-      playerAction: playerAction || '',
-      provider,
-      model,
-      language,
-      dmSettings,
-      resolvedMechanics,
-      needsSystemEnabled,
-      characterNeeds,
-      dialogue,
-      dialogueCooldown,
-      isFirstScene,
-      isCustomAction,
-      fromAutoPlayer,
-      sceneCount,
-    });
-
-    const scene = data.scene || {};
-
-    // Post-process suggested actions (same as frontend flow)
-    if (scene.suggestedActions && gameState) {
-      scene.suggestedActions = postProcessSuggestedActions({
-        suggestedActions: scene.suggestedActions,
-        language,
-        gameState,
-        narrative: scene.narrative,
-        stateChanges: scene.stateChanges,
-      });
-    }
-
-    scene.meta = { ...(scene.meta || {}), contextQuality: 'full', backendToolUse: true };
-
-    return { result: scene, usage: data.usage || null };
-  },
-
   /**
    * Generate a scene via backend with SSE streaming.
-   * Returns { result, usage } like generateSceneViaBackend.
+   * Returns { result, usage }.
    * Calls onEvent({ type, ... }) for progress updates.
    */
   async generateSceneViaBackendStream(campaignId, playerAction, {

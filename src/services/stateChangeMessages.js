@@ -63,18 +63,42 @@ export function generateStateChangeMessages(stateChanges, state, t) {
   // Skill XP notifications
   if (stateChanges.skillProgress && typeof stateChanges.skillProgress === 'object') {
     const charSkills = state.character?.skills || {};
+    let totalCharXpGained = 0;
     for (const [skillName, xpGain] of Object.entries(stateChanges.skillProgress)) {
       if (!xpGain || xpGain <= 0) continue;
       const current = charSkills[skillName] || { level: 0, xp: 0 };
       const currentXp = current.xp ?? current.progress ?? 0;
-      const newXp = currentXp + xpGain;
-      const needed = xpForSkillLevel(current.level + 1);
 
-      if (needed > 0 && newXp >= needed && current.level < (current.cap || 10)) {
-        const newLevel = current.level + 1;
-        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_levelup', content: `${skillName} +${xpGain} XP — Level Up! (${current.level} → ${newLevel})`, timestamp: ts });
+      // Simulate full level-up loop (mirrors GameContext) to count char XP
+      let simXp = currentXp + xpGain;
+      let simLevel = current.level;
+      while (simLevel < (current.cap || 10)) {
+        const req = xpForSkillLevel(simLevel + 1);
+        if (req <= 0 || simXp < req) break;
+        simXp -= req;
+        simLevel++;
+        totalCharXpGained += charXpFromSkillLevelUp(simLevel);
+      }
+
+      if (simLevel > current.level) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_levelup', content: `${skillName} +${xpGain} XP — Level Up! (${current.level} → ${simLevel})`, timestamp: ts });
       } else {
         msgs.push({ id: mkId(), role: 'system', subtype: 'skill_xp', content: `${skillName} +${xpGain} XP`, timestamp: ts });
+      }
+    }
+
+    // Character level-up notification
+    if (totalCharXpGained > 0) {
+      let charXp = (character?.characterXp || 0) + totalCharXpGained;
+      let charLevel = character?.characterLevel || 1;
+      const oldLevel = charLevel;
+      while (charXp >= charLevelCost(charLevel + 1)) {
+        charXp -= charLevelCost(charLevel + 1);
+        charLevel++;
+      }
+      if (charLevel > oldLevel) {
+        const points = charLevel - oldLevel;
+        msgs.push({ id: mkId(), role: 'system', subtype: 'character_levelup', content: t('system.characterLevelUp', { old: oldLevel, new: charLevel, points, defaultValue: `Poziom postaci ${oldLevel} → ${charLevel}! +${points} punkt atrybutu` }), timestamp: ts });
       }
     }
   }

@@ -57,7 +57,7 @@ export function exportAsMarkdown(campaignState) {
     lines.push(`- **Name:** ${character.name}`);
     lines.push(`- **Species:** ${character.species || 'Human'}`);
     lines.push(`- **Career:** ${character.career?.name || 'Unknown'} (${character.career?.tierName || 'Tier 1'}), ${character.career?.status || ''}`);
-    lines.push(`- **XP:** ${character.xp || 0} total, ${character.xpSpent || 0} spent`);
+    lines.push(`- **Level:** ${character.characterLevel || 1}`);
     lines.push(`- **Wounds:** ${character.wounds}/${character.maxWounds}`);
     lines.push(`- **Fate/Fortune:** ${character.fate}/${character.fortune}, **Resilience/Resolve:** ${character.resilience}/${character.resolve}`);
     if (character.characteristics) {

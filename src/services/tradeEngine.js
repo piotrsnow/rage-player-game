@@ -232,6 +232,11 @@ export function executeBuy(item, finalPrice) {
     copper: -(finalPrice.copper || 0),
   };
 
+  // Materials go to materialBag (stacked), equipment goes to inventory
+  if (item.source === 'material') {
+    return { moneyChange, newMaterials: [{ name: item.name, quantity: 1 }] };
+  }
+
   const newItem = {
     id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     name: item.name,
