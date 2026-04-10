@@ -12,14 +12,23 @@ import { config } from '../config.js';
 
 // ── NANO MODEL CALLER (provider-aware) ──
 
-async function callNano(systemPrompt, userPrompt) {
-  // Prefer Anthropic Haiku if available, fall back to OpenAI nano
-  if (config.apiKeys.anthropic) {
-    return callNanoAnthropic(systemPrompt, userPrompt);
+async function callNano(systemPrompt, userPrompt, provider) {
+  // Match nano provider to the main scene provider so that choosing Chat (OpenAI)
+  // never triggers Claude Haiku calls and vice versa. If the preferred provider
+  // has no key configured, fall back to whichever key is available.
+  if (provider === 'anthropic') {
+    if (config.apiKeys.anthropic) return callNanoAnthropic(systemPrompt, userPrompt);
+    if (config.apiKeys.openai) return callNanoOpenAI(systemPrompt, userPrompt);
+    return null;
   }
-  if (config.apiKeys.openai) {
-    return callNanoOpenAI(systemPrompt, userPrompt);
+  if (provider === 'openai') {
+    if (config.apiKeys.openai) return callNanoOpenAI(systemPrompt, userPrompt);
+    if (config.apiKeys.anthropic) return callNanoAnthropic(systemPrompt, userPrompt);
+    return null;
   }
+  // No explicit preference — keep legacy behavior (Anthropic first)
+  if (config.apiKeys.anthropic) return callNanoAnthropic(systemPrompt, userPrompt);
+  if (config.apiKeys.openai) return callNanoOpenAI(systemPrompt, userPrompt);
   return null;
 }
 
@@ -97,7 +106,7 @@ Rules:
  * Compress a scene narrative into running summary facts.
  * Called async after each scene generation.
  */
-export async function compressSceneToSummary(campaignId, narrative, playerAction) {
+export async function compressSceneToSummary(campaignId, narrative, playerAction, provider) {
   try {
     // Load current summary
     const campaign = await prisma.campaign.findUnique({
@@ -117,7 +126,7 @@ ${(narrative || '').slice(0, 1000)}
 Current summary (${currentSummary.length} facts):
 ${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}`;
 
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt);
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider);
     if (!result) return;
 
     if (result.dominated) {
@@ -175,7 +184,7 @@ Be concise. Focus on plot-relevant events, NPC interactions, and unresolved thre
  * Generate/update a location summary when the player leaves a location.
  * Called async when stateChanges.currentLocation changes.
  */
-export async function generateLocationSummary(campaignId, locationName, previousLocation) {
+export async function generateLocationSummary(campaignId, locationName, previousLocation, provider) {
   if (!previousLocation || previousLocation === locationName) return;
 
   try {
@@ -213,7 +222,7 @@ ${existing ? `Previous summary: "${existing.summary}"\n` : ''}
 Scenes at this location (${scenesAtLocation.length}):
 ${scenesAtLocation.join('\n\n')}`;
 
-    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt);
+    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider);
     if (!result?.summary) return;
 
     const data = {
@@ -295,7 +304,7 @@ Rules:
  * @param {Array} existingQuestUpdates - questUpdates already produced by the large model
  * @returns {Array} Additional quest updates [{questId, objectiveId, addProgress, completed}]
  */
-export async function checkQuestObjectives(narrative, playerAction, activeQuests, existingQuestUpdates = []) {
+export async function checkQuestObjectives(narrative, playerAction, activeQuests, existingQuestUpdates = [], provider) {
   if (!narrative || !activeQuests?.length) return [];
 
   // Build set of objectives already marked completed by the large model
@@ -338,7 +347,7 @@ Unchecked objectives:
 ${objectiveLines}`;
 
   try {
-    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt);
+    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider);
     if (!result?.updates?.length) return [];
 
     // Validate and normalize updates — only return valid ones matching known objectives

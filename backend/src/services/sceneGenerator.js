@@ -1556,7 +1556,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneResult.narrative,
       playerAction,
       coreState.quests?.active || [],
-      sceneResult.stateChanges?.questUpdates || []
+      sceneResult.stateChanges?.questUpdates || [],
+      provider
     ).catch(err => {
       console.error('Quest objective check failed:', err.message);
       return [];
@@ -1613,13 +1614,13 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         console.error('Failed to process state changes:', err.message)
       );
     }
-    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction).catch(err =>
+    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider).catch(err =>
       console.error('Failed to compress scene to summary:', err.message)
     );
     const newLoc = sceneResult.stateChanges?.currentLocation;
     const prevLoc = coreState.world?.currentLocation;
     if (newLoc && prevLoc && newLoc !== prevLoc) {
-      generateLocationSummary(campaignId, newLoc, prevLoc).catch(err =>
+      generateLocationSummary(campaignId, newLoc, prevLoc, provider).catch(err =>
         console.error('Failed to generate location summary:', err.message)
       );
     }
