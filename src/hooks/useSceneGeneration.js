@@ -252,12 +252,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               }
               if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
                 setStreamingSegments(parsed.dialogueSegments);
-                // Derive streamingNarrative from narration segments. Many UI
-                // gates use `streamingNarrative !== null` to know that scene
-                // prose has started arriving — keep that signal alive even
-                // though the model no longer emits a separate narrative field.
+                // Derive streamingNarrative from ANY segment text (narration or
+                // dialogue). Many UI gates use `streamingNarrative !== null` to
+                // know that scene prose has started arriving and to dismiss the
+                // loader overlay. If we only derive from narration segments, a
+                // scene that opens with a dialogue line keeps the loader visible
+                // for the entire stream — even though segments are arriving.
                 const derived = parsed.dialogueSegments
-                  .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
+                  .filter(s => s && typeof s.text === 'string')
                   .map(s => s.text)
                   .join(' ');
                 if (derived.length > 0) {

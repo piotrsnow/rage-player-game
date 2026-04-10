@@ -37,6 +37,10 @@ const MAX_NATURAL_PLAYBACK_RATE = 2;
 const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
 const CHARS_PER_SECOND_ESTIMATE = 14;
 const STREAMING_POLL_MS = 120;
+// Used by pushStreamingSegments to decide whether the LAST streamed segment is
+// complete enough to release into the playback buffer. Sentence-closing punct,
+// optional closing quote/bracket, optional trailing whitespace.
+const STREAMING_SENTENCE_END_RE = /[.!?…][")\]»”’]*\s*$/;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -359,9 +363,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setPlaybackState(STATES.LOADING);
 
       const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
+      const fallbackVoiceId = Array.isArray(characterVoices) && characterVoices[0]?.voiceId
+        ? characterVoices[0].voiceId
+        : '';
       const defaultVoiceId = viewerMode
-        ? (state.narratorVoiceId || elevenlabsVoiceId)
-        : (elevenlabsVoiceId || state.narratorVoiceId);
+        ? (state.narratorVoiceId || elevenlabsVoiceId || fallbackVoiceId)
+        : (elevenlabsVoiceId || state.narratorVoiceId || fallbackVoiceId);
 
       if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
         reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
@@ -681,17 +688,19 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
   const startStreaming = useCallback((messageId, scenePacing) => {
     stop();
-    setTimeout(() => {
-      streamingRef.current = {
-        messageId,
-        scenePacing: scenePacing || null,
-        segments: [],       // buffer of segments not yet consumed
-        sentCount: 0,       // how many segments have been pushed total
-        finished: false,    // set to true when stream ends
-      };
-      abortRef.current = false;
-      processStreamingQueueRef.current?.();
-    }, 50);
+    // Set up streamingRef SYNCHRONOUSLY so that pushStreamingSegments calls
+    // landing in the same React commit phase (effect 2 in GameplayPage runs
+    // right after effect 1 which calls this) can find the buffer immediately.
+    // Defer only the queue start by a microtask so React can finish the commit.
+    streamingRef.current = {
+      messageId,
+      scenePacing: scenePacing || null,
+      segments: [],       // buffer of segments not yet consumed
+      sentCount: 0,       // how many segments have been pushed total
+      finished: false,    // set to true when stream ends
+    };
+    abortRef.current = false;
+    Promise.resolve().then(() => processStreamingQueueRef.current?.());
   }, [stop]);
 
   const pushStreamingSegments = useCallback((segments) => {
@@ -700,12 +709,19 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     // Only push segments we haven't seen yet
     const newSegments = segments.slice(s.sentCount);
     if (newSegments.length === 0) return;
-    // Buffer all except the last one (it may still be incomplete)
-    // Unless the stream is finished, in which case push everything
-    const safe = s.finished ? newSegments : newSegments.slice(0, -1);
-    if (safe.length > 0) {
-      s.segments.push(...safe);
-      s.sentCount += safe.length;
+    // Earlier segments are guaranteed complete — the model only moves on to a
+    // new segment after closing the previous one. The LAST segment may still
+    // be mid-stream, so only release it if it ends with sentence-closing
+    // punctuation (or the stream is already finished).
+    let safeCount = newSegments.length;
+    if (!s.finished) {
+      const last = newSegments[newSegments.length - 1];
+      const lastText = (last?.text || '').trim();
+      if (!STREAMING_SENTENCE_END_RE.test(lastText)) safeCount -= 1;
+    }
+    if (safeCount > 0) {
+      s.segments.push(...newSegments.slice(0, safeCount));
+      s.sentCount += safeCount;
     }
   }, []);
 
@@ -730,9 +746,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     const myGeneration = generationRef.current;
 
     const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
+    const fallbackVoiceId = Array.isArray(characterVoices) && characterVoices[0]?.voiceId
+      ? characterVoices[0].voiceId
+      : '';
     const defaultVoiceId = viewerMode
-      ? (state.narratorVoiceId || elevenlabsVoiceId)
-      : (elevenlabsVoiceId || state.narratorVoiceId);
+      ? (state.narratorVoiceId || elevenlabsVoiceId || fallbackVoiceId)
+      : (elevenlabsVoiceId || state.narratorVoiceId || fallbackVoiceId);
 
     if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
       reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
@@ -906,8 +925,16 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     highlightInfo,
     currentChunk,
     isNarratorReady: viewerMode
-      ? !!((state.narratorVoiceId || settings.elevenlabsVoiceId) && backendUrl && shareToken)
-      : !!(settings.narratorEnabled && hasApiKey('elevenlabs') && settings.elevenlabsVoiceId),
+      ? !!(
+          (state.narratorVoiceId || settings.elevenlabsVoiceId || settings.characterVoices?.[0]?.voiceId)
+          && backendUrl
+          && shareToken
+        )
+      : !!(
+          settings.narratorEnabled
+          && hasApiKey('elevenlabs')
+          && (settings.elevenlabsVoiceId || settings.characterVoices?.[0]?.voiceId)
+        ),
     speak,
     speakScene,
     speakSingle,

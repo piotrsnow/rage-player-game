@@ -262,7 +262,21 @@ export function SettingsProvider({ children }) {
     try {
       const voiceSettings = sanitizeVoiceSettings(await apiClient.get(`/campaigns/${campaignId}/voices`));
       syncingFromBackendRef.current = true;
-      setSettings((prev) => ({ ...prev, ...voiceSettings }));
+      // Only overlay non-empty fields. Campaigns created before per-campaign
+      // voices were introduced have empty server-side settings, and we must
+      // not wipe the user's existing voice picks (which would hide the
+      // narrator button and silently disable streaming TTS).
+      setSettings((prev) => {
+        const next = { ...prev };
+        if (voiceSettings.elevenlabsVoiceId) {
+          next.elevenlabsVoiceId = voiceSettings.elevenlabsVoiceId;
+          next.elevenlabsVoiceName = voiceSettings.elevenlabsVoiceName || prev.elevenlabsVoiceName;
+        }
+        if (Array.isArray(voiceSettings.characterVoices) && voiceSettings.characterVoices.length > 0) {
+          next.characterVoices = voiceSettings.characterVoices;
+        }
+        return next;
+      });
       setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
       return voiceSettings;
     } catch (err) {

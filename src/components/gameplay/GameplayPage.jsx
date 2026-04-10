@@ -1220,7 +1220,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       diceTypewriterTimerRef.current = null;
     }
 
-    if (overlayText && earlyDiceRoll) {
+    // Decoupled from overlayText on purpose: the typewriter overlay fast-fades
+    // as soon as scene streaming starts (`fastFinish={streamingNarrative !== null}`),
+    // but the dice animation (z-80, pointer-events-none) renders over the chat
+    // independently. If we gate on overlayText, the dice overlay disappears the
+    // moment the typewriter closes, cutting off the roll mid-animation.
+    if (earlyDiceRoll) {
       diceTypewriterTimerRef.current = setTimeout(
         () => setDiceAfterTypewriter(true),
         DICE_AFTER_TYPEWRITER_DELAY_MS
@@ -1234,7 +1239,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
 
     setDiceAfterTypewriter(false);
-  }, [overlayText, earlyDiceRoll]);
+  }, [earlyDiceRoll]);
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 

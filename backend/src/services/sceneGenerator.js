@@ -425,18 +425,22 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   }
 
   // ── RESPONSE FORMAT ──
-  // FIELD ORDER MATTERS for streaming: diceRolls first lets the frontend
-  // detect rolls early and start animations. stateChanges comes before
-  // dialogueSegments to force the model to commit to mechanics before writing
-  // prose — improves consistency between "what happened" and "what is narrated"
-  // (purchases, loot, wounds). dialogueSegments still streams before the
-  // tail fields so TTS / typewriter can start before the response is finished.
+  // FIELD ORDER MATTERS for streaming UX:
+  // 1. diceRolls first — frontend detects rolls early and starts dice animation
+  //    in parallel with the rest of the response.
+  // 2. dialogueSegments next — scene prose starts streaming immediately, so the
+  //    typewriter / TTS can begin before the model finishes the rest of the JSON.
+  // 3. stateChanges LAST — the backend applies state changes only after the
+  //    `complete` event (parseAIResponse → resolveAndApplyRewards →
+  //    applyCharacterStateChanges → Prisma write), so nothing downstream benefits
+  //    from having them mid-stream. Emitting them last also improves quality:
+  //    the model rolls mechanics AFTER it has written the prose, so rewards /
+  //    journal / questUpdates stay consistent with what was actually narrated.
   staticSections.push(
     `RESPONSE: Return ONLY valid JSON. EMIT FIELDS IN THIS EXACT ORDER:
 {
   "creativityBonus": 0,
   "diceRolls": [{"skill":"","difficulty":"","success":true}],
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...},
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
@@ -446,9 +450,12 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],
   "cutscene": null,
-  "dilemma": null
+  "dilemma": null,
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...}
 }
-diceRolls is a TOP-LEVEL field, NOT nested inside stateChanges. Emit it FIRST.
+diceRolls is a TOP-LEVEL field, NOT nested inside stateChanges. Emit it FIRST so the frontend can start the dice animation in parallel.
+dialogueSegments comes SECOND so scene prose streams to the player immediately — write it BEFORE stateChanges, not after.
+stateChanges MUST be the LAST field. Fill it out AFTER you have written the full dialogueSegments, cross-checking rewards / journalEntries / questUpdates / newItems / moneyChange against what actually happens in the prose. Never emit stateChanges before the narrative prose is complete.
 There is NO separate "narrative" field — all scene prose lives in dialogueSegments. Do not emit narrative.
 ${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
   );
