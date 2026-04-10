@@ -96,6 +96,7 @@ export default function CampaignCreatorPage() {
   const [showCharModal, setShowCharModal] = useState(false);
   const [createdCharacter, setCreatedCharacter] = useState(null);
   const [editingSelectedPortrait, setEditingSelectedPortrait] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const hasCharacter = charMode === 'new' ? !!createdCharacter : !!selectedCharacter;
 
@@ -292,6 +293,7 @@ export default function CampaignCreatorPage() {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const formWithChar = selectedCharacter
         ? {
@@ -311,7 +313,7 @@ export default function CampaignCreatorPage() {
       const newCampaignId = await startNewCampaign(result, formWithChar);
       navigate(`/play/${newCampaignId}`);
     } catch {
-      // Error is handled via context
+      setIsSubmitting(false);
     }
   };
 
@@ -327,7 +329,7 @@ export default function CampaignCreatorPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
-      {(state.isLoading || mp.state.isGenerating) ? (
+      {(state.isLoading || mp.state.isGenerating || isSubmitting) ? (
         <div className="flex flex-col items-center justify-center py-32 animate-fade-in">
           <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
           <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">

@@ -261,8 +261,9 @@ export async function meshyProxyRoutes(fastify) {
     const storagePath = cacheKey;
     const storeResult = await store.put(storagePath, buffer, 'model/gltf-binary');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -278,6 +279,7 @@ export async function meshyProxyRoutes(fastify) {
           cacheVersion: cacheVersion || 'legacy',
         }),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };

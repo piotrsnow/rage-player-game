@@ -378,9 +378,9 @@ function ItemDetailBox({ item, equippedSlot, equippableSlots, onEquipItem, onUne
       {price && (
         <div className="flex items-center gap-2 mt-2 text-[10px] text-on-surface-variant/60">
           <span className="material-symbols-outlined text-xs">paid</span>
-          {price.gold > 0 && <span>{price.gold} GC</span>}
-          {price.silver > 0 && <span>{price.silver} SS</span>}
-          {price.copper > 0 && <span>{price.copper} CP</span>}
+          {price.gold > 0 && <span>{price.gold} {t('currency.goldShort', 'ZK')}</span>}
+          {price.silver > 0 && <span>{price.silver} {t('currency.silverShort', 'SK')}</span>}
+          {price.copper > 0 && <span>{price.copper} {t('currency.copperShort', 'MK')}</span>}
         </div>
       )}
 

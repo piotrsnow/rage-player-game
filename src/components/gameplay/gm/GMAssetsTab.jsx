@@ -22,16 +22,15 @@ export default function GMAssetsTab({ gameState }) {
   const money = character.money || {};
   const inventory = character.inventory || [];
   const needs = character.needs || {};
-  const criticalWounds = character.criticalWounds || [];
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar p-4 space-y-6">
       {/* Money */}
       <Section title={t('gmModal.money')} icon="payments">
         <div className="flex items-center gap-4">
-          <MoneyBadge label="GC" value={money.gold || 0} color="text-yellow-400" />
-          <MoneyBadge label="SS" value={money.silver || 0} color="text-gray-300" />
-          <MoneyBadge label="CP" value={money.copper || 0} color="text-orange-400" />
+          <MoneyBadge label={t('currency.goldShort', 'ZK')} value={money.gold || 0} color="text-yellow-400" />
+          <MoneyBadge label={t('currency.silverShort', 'SK')} value={money.silver || 0} color="text-gray-300" />
+          <MoneyBadge label={t('currency.copperShort', 'MK')} value={money.copper || 0} color="text-orange-400" />
         </div>
       </Section>
 
@@ -69,24 +68,6 @@ export default function GMAssetsTab({ gameState }) {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Object.entries(needs).map(([key, value]) => (
               <NeedBar key={key} label={key} value={value} icon={NEED_ICONS[key]} t={t} />
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {/* Critical wounds */}
-      {criticalWounds.length > 0 && (
-        <Section title={t('gmModal.criticalWounds')} icon="personal_injury" count={criticalWounds.length}>
-          <div className="space-y-2">
-            {criticalWounds.map((wound, i) => (
-              <div key={i} className="p-2 rounded-sm bg-error-container/10 border border-error/15 text-[11px]">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="material-symbols-outlined text-xs text-error">local_hospital</span>
-                  <span className="font-bold text-error">{wound.location || wound.name || `Wound #${i + 1}`}</span>
-                </div>
-                {wound.description && <p className="text-on-surface-variant">{wound.description}</p>}
-                {wound.effect && <p className="text-[10px] text-outline italic">{wound.effect}</p>}
-              </div>
             ))}
           </div>
         </Section>

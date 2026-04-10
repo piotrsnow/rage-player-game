@@ -52,7 +52,7 @@ describe('resolveShopArchetype', () => {
   it('matches archetype within longer role string', () => {
     expect(resolveShopArchetype('town blacksmith')).toBe('blacksmith');
     expect(resolveShopArchetype('traveling merchant')).toBe('merchant');
-    expect(resolveShopArchetype('Master Smith of Altdorf')).toBe('smith');
+    expect(resolveShopArchetype('Master Smith of Krynsk')).toBe('smith');
   });
 
   it('falls back to general for unknown roles', () => {

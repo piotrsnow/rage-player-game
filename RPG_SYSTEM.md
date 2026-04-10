@@ -370,3 +370,23 @@ Jest to dokument roboczy i będzie rozszerzany o kolejne ustalenia.
 | Test | Nie wymaga osobnego testu — jeśli postać ma wystarczającą manę, zaklęcie jest rzucone |
 | Efekt | Zdefiniowany przez konkretne zaklęcie w drzewku |
 | Progresja | Użycie zaklęcia daje biegłość; po `5 × koszt many` użyć odblokowuje się kolejny poziom |
+
+## 10. Waluta
+
+| Denominacja | Skrót | Opis |
+| --- | --- | --- |
+| `Złota Korona` | `ZK` | Najwyższa denominacja, używana w transakcjach handlowych większego kalibru |
+| `Srebrna Korona` | `SK` | Średnia denominacja, codzienne wydatki rzemieślnicze i karczemne |
+| `Miedziana Korona` | `MK` | Najniższa denominacja, drobne zakupy i napiwki |
+
+| Kursy wymiany | Wartość |
+| --- | --- |
+| `1 ZK` | `20 SK` |
+| `1 SK` | `12 MK` |
+| `1 ZK` | `240 MK` |
+
+| Reguła | Ustalenie |
+| --- | --- |
+| Wewnętrzne kody techniczne | `gold`, `silver`, `copper` (bez zmian w danych istniejących kampanii) |
+| Etykiety w UI | Zawsze przez locale (`currency.goldShort` itd.) |
+| Status nazewnictwa | Wszystkie trzy denominacje używają wspólnego mianownika `Korona` aby ujednolicić ekonomię świata gry |

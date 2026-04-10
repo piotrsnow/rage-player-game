@@ -254,9 +254,9 @@ function QuestsTab({ quests, npcs, navigateTo, t }) {
           {quest.reward.money && (quest.reward.money.gold > 0 || quest.reward.money.silver > 0 || quest.reward.money.copper > 0) && (
             <span>
               {quest.reward.xp > 0 && ', '}
-              {quest.reward.money.gold > 0 && `${quest.reward.money.gold} GC `}
-              {quest.reward.money.silver > 0 && `${quest.reward.money.silver} SS `}
-              {quest.reward.money.copper > 0 && `${quest.reward.money.copper} CP`}
+              {quest.reward.money.gold > 0 && `${quest.reward.money.gold} ZK `}
+              {quest.reward.money.silver > 0 && `${quest.reward.money.silver} SK `}
+              {quest.reward.money.copper > 0 && `${quest.reward.money.copper} MK`}
             </span>
           )}
           {quest.reward.description && <span> — {quest.reward.description}</span>}

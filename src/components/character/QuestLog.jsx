@@ -40,9 +40,9 @@ function RewardBadge({ reward, compact = false, t }) {
   if (reward.xp) parts.push(`${reward.xp} ${t('quests.xpShort')}`);
   if (reward.money) {
     const m = reward.money;
-    if (m.gold) parts.push(`${m.gold} GC`);
-    if (m.silver) parts.push(`${m.silver} SS`);
-    if (m.copper) parts.push(`${m.copper} CP`);
+    if (m.gold) parts.push(`${m.gold} ${t('currency.goldShort', 'ZK')}`);
+    if (m.silver) parts.push(`${m.silver} ${t('currency.silverShort', 'SK')}`);
+    if (m.copper) parts.push(`${m.copper} ${t('currency.copperShort', 'MK')}`);
   }
   if (reward.items?.length > 0) {
     parts.push(...reward.items.map((i) => i.name || i));

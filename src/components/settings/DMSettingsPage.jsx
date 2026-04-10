@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useGame } from '../../contexts/GameContext';
 import { elevenlabsService } from '../../services/elevenlabs';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
@@ -14,7 +15,7 @@ export default function DMSettingsPage({ onClose }) {
   const {
     settings,
     updateSettings,
-    updateSharedVoiceSettings,
+    updateCampaignVoiceSettings,
     updateDMSettings,
     resetSettings,
     importSettings,
@@ -24,6 +25,25 @@ export default function DMSettingsPage({ onClose }) {
     backendAuthChecking,
     backendLogout,
   } = useSettings();
+  const { state: gameState } = useGame();
+
+  const activeCampaignBackendId = gameState.campaign?.backendId || null;
+  const activeCampaignOwnerId = gameState.campaign?.userId || null;
+  const canEditVoices = Boolean(
+    activeCampaignBackendId
+    && backendUser?.id
+    && (!activeCampaignOwnerId || activeCampaignOwnerId === backendUser.id),
+  );
+  const voiceGatingMessage = !activeCampaignBackendId
+    ? t('settings.voicesNoCampaign', 'Load a campaign to configure its voices.')
+    : !canEditVoices
+      ? t('settings.voicesOwnerOnly', 'Only the campaign creator can change voice settings.')
+      : null;
+
+  const applyVoiceUpdate = useCallback((updates) => {
+    if (!canEditVoices) return;
+    updateCampaignVoiceSettings(updates, activeCampaignBackendId);
+  }, [canEditVoices, activeCampaignBackendId, updateCampaignVoiceSettings]);
 
   const [voices, setVoices] = useState([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -97,7 +117,7 @@ export default function DMSettingsPage({ onClose }) {
   };
 
   const handleSelectVoice = (voice) => {
-    updateSharedVoiceSettings({
+    applyVoiceUpdate({
       elevenlabsVoiceId: voice.voiceId,
       elevenlabsVoiceName: voice.name,
     });
@@ -107,15 +127,15 @@ export default function DMSettingsPage({ onClose }) {
     const current = settings.characterVoices || [];
     const exists = current.some((v) => v.voiceId === voice.voiceId);
     if (exists) {
-      updateSharedVoiceSettings({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
+      applyVoiceUpdate({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
     } else {
-      updateSharedVoiceSettings({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
+      applyVoiceUpdate({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
     }
   };
 
   const handleToggleVoiceGender = (voiceId) => {
     const current = settings.characterVoices || [];
-    updateSharedVoiceSettings({
+    applyVoiceUpdate({
       characterVoices: current.map((v) =>
         v.voiceId === voiceId
           ? { ...v, gender: v.gender === 'female' ? 'male' : 'female' }
@@ -678,11 +698,17 @@ export default function DMSettingsPage({ onClose }) {
                     displayValue={`${((settings.dialogueSpeed ?? 100) / 100).toFixed(1)}x`}
                   />
 
+                  {voiceGatingMessage && (
+                    <div className="mb-4 p-3 rounded-sm border border-tertiary/30 bg-tertiary/5 text-tertiary text-xs">
+                      {voiceGatingMessage}
+                    </div>
+                  )}
+
                   {/* Load Voices */}
-                  <div className="mb-6">
+                  <div className={`mb-6 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
                     <button
                       onClick={handleLoadVoices}
-                      disabled={!hasApiKey('elevenlabs') || loadingVoices}
+                      disabled={!hasApiKey('elevenlabs') || loadingVoices || !canEditVoices}
                       className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
                     >
                       {loadingVoices ? t('settings.loadingVoices') : t('settings.loadVoices')}
@@ -697,7 +723,7 @@ export default function DMSettingsPage({ onClose }) {
 
                   {/* Voice Picker */}
                   {voices.length > 0 && (
-                    <div className="mb-6">
+                    <div className={`mb-6 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
                       <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
                         {t('settings.voiceSelect')}
                       </label>
@@ -788,7 +814,7 @@ export default function DMSettingsPage({ onClose }) {
 
                   {/* NPC Voice Pool Summary */}
                   {(settings.characterVoices || []).length > 0 && (
-                    <div className="p-4 bg-surface-container-high/40 rounded-sm border border-tertiary/10">
+                    <div className={`p-4 bg-surface-container-high/40 rounded-sm border border-tertiary/10 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
                       <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
                         {t('settings.npcVoicePool')} ({settings.characterVoices.length})
                       </p>

@@ -8,8 +8,6 @@
     "species": "Rasa",
     "wounds": "Żywotność",
     "scene": "Scena",
-    "health": "Żywotność",
-    "mana": "Mana",
     "cancel": "Anuluj",
     "save": "Zapisz",
     "apply": "Zastosuj",
@@ -356,7 +354,7 @@
     "campaignFailed": "Kampania Przegrana",
     "newCampaign": "Nowa Kampania",
     "characterDead": "Twoja postać poległa",
-    "characterDeadDesc": "Bez punktów Przeznaczenia śmierć jest ostateczna.",
+    "characterDeadDesc": "Śmierć jest ostateczna.",
     "share": "Udostępnij link do kampanii",
     "shareCopied": "Link skopiowany do schowka!",
     "refresh": "Odśwież",
@@ -442,10 +440,12 @@
     "readOnly": "Podgląd",
     "vitals": "Parametry Życiowe",
     "healthPoints": "Żywotność",
-    "manaPool": "Mana",
     "wounds": "Żywotność",
     "skills": "Umiejętności",
     "inspiration": "Inspiracja",
+    "activeTitle": "Aktywny tytuł",
+    "noTitle": "— brak —",
+    "titles": "Tytuły",
     "updatePortrait": "Zmień portret",
     "origins": "Pochodzenie",
     "originsEmpty": "Początki tego poszukiwacza przygód wciąż spowija tajemnica...",
@@ -553,28 +553,6 @@
     "catHerb": "Zioła",
     "catLiquid": "Płyny",
     "catMisc": "Inne"
-  },
-  "stats": {
-    "ws": "WW",
-    "bs": "US",
-    "s": "S",
-    "t": "Wt",
-    "i": "I",
-    "ag": "Zw",
-    "dex": "Zr",
-    "int": "Int",
-    "wp": "SW",
-    "fel": "Ogd",
-    "wsLong": "Walka Wręcz",
-    "bsLong": "Umiejętności Strzeleckie",
-    "sLong": "Siła",
-    "tLong": "Wytrzymałość",
-    "iLong": "Inicjatywa",
-    "agLong": "Zwinność",
-    "dexLong": "Zręczność",
-    "intLong": "Inteligencja",
-    "wpLong": "Siła Woli",
-    "felLong": "Ogłada"
   },
   "settings": {
     "localLLM": "Lokalny LLM",
@@ -1165,11 +1143,11 @@
   "currency": {
     "purse": "Sakiewka",
     "gold": "Złote Korony",
-    "silver": "Srebrne Szylingi",
-    "copper": "Miedziane Pensy",
+    "silver": "Srebrne Korony",
+    "copper": "Miedziane Korony",
     "goldShort": "ZK",
-    "silverShort": "SS",
-    "copperShort": "MP"
+    "silverShort": "SK",
+    "copperShort": "MK"
   },
   "idle": {
     "rollResult": "k100: {{roll}} (< {{threshold}})",
@@ -1397,10 +1375,6 @@
     "playerTyping": "{{name}} pisze...",
     "playersTyping": "{{names}} piszą..."
   },
-
-
-
-
   "gallery": {
     "title": "Galeria Kampanii",
     "subtitle": "Przeglądaj kampanie społeczności — jak biblioteka warsztatowa dla twojej kolejnej przygody RPG.",

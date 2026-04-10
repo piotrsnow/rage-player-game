@@ -9,7 +9,7 @@ export const STATE_CHANGE_LIMITS = {
   maxWoundsDelta: 20,
   needsDeltaMin: -30,
   needsDeltaMax: 100,
-  maxMoneyGainCopper: 500, // 5 GC equivalent
+  maxMoneyGainCopper: 500, // 5 ZK equivalent
   maxDispositionDelta: 10,
   maxCodexPerScene: 3,
   maxCodexFragmentLength: 1000,

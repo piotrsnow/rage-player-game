@@ -82,6 +82,7 @@ function achievementToUnlockPayload(id, def) {
     icon: def.icon,
     rarity: def.rarity,
     ...(def.xpReward !== undefined ? { xpReward: def.xpReward } : {}),
+    ...(def.grantsTitle ? { grantsTitle: def.grantsTitle } : {}),
   };
 }
 

@@ -1,10 +1,14 @@
 /**
- * WFRP achievement definitions and condition helpers.
+ * Achievement definitions for RPGon.
+ *
+ * Achievement may optionally grant a title (`grantsTitle: { id, label, rarity }`).
+ * When unlocked, the title is added to `character.titles` and AI prompts can
+ * surface the top-N rarest titles for use in narration.
  *
  * Callers may maintain optional gameState.achievementStats for counters, e.g.:
- *   combatWins, enemiesDefeated, hagglesSucceeded, spellsCast, miscasts,
+ *   combatWins, enemiesDefeated, hagglesSucceeded, spellsCast,
  *   spellsByLore: { [loreName]: count }, visitedLocationIds: string[],
- *   damageTakenThisCombat (reset when combat starts)
+ *   itemsForged, potionsBrewed, dragonsKilled
  *
  * Events passed to checkAchievementCondition should use string `type` and a `payload` object.
  */
@@ -12,8 +16,8 @@
 export const ACHIEVEMENTS = {
   // --- Milestone ---
   first_campaign: {
-    name: 'Into the Old World',
-    description: 'Started your first campaign.',
+    name: 'Pierwsze kroki',
+    description: 'Rozpocząłeś pierwszą kampanię.',
     icon: 'flag',
     category: 'milestone',
     condition: { type: 'campaign_active' },
@@ -21,8 +25,8 @@ export const ACHIEVEMENTS = {
     xpReward: 10,
   },
   first_scene: {
-    name: 'First Steps',
-    description: 'Completed your first narrative scene.',
+    name: 'Pierwsza scena',
+    description: 'Ukończyłeś pierwszą scenę narracyjną.',
     icon: 'footprint',
     category: 'milestone',
     condition: { type: 'scene_count', min: 1 },
@@ -30,8 +34,8 @@ export const ACHIEVEMENTS = {
     xpReward: 15,
   },
   scenes_10: {
-    name: 'Seasoned Traveller',
-    description: 'Survived 10 scenes.',
+    name: 'Wytrwały podróżnik',
+    description: 'Przetrwałeś 10 scen.',
     icon: 'history',
     category: 'milestone',
     condition: { type: 'scene_count', min: 10 },
@@ -39,26 +43,28 @@ export const ACHIEVEMENTS = {
     xpReward: 25,
   },
   scenes_50: {
-    name: 'Road-Worn',
-    description: 'Survived 50 scenes.',
+    name: 'Doświadczony bohater',
+    description: 'Przetrwałeś 50 scen.',
     icon: 'route',
     category: 'milestone',
     condition: { type: 'scene_count', min: 50 },
     rarity: 'uncommon',
     xpReward: 50,
+    grantsTitle: { id: 'wedrowiec', label: 'Wędrowiec', rarity: 'uncommon' },
   },
   scenes_100: {
-    name: 'Legend of the Reik',
-    description: 'Survived 100 scenes.',
+    name: 'Legenda',
+    description: 'Przetrwałeś 100 scen.',
     icon: 'emoji_events',
     category: 'milestone',
     condition: { type: 'scene_count', min: 100 },
     rarity: 'rare',
     xpReward: 100,
+    grantsTitle: { id: 'legenda', label: 'Legenda', rarity: 'rare' },
   },
   first_death: {
-    name: 'Morr Calls',
-    description: 'Your character reached zero wounds.',
+    name: 'Otarcie się o śmierć',
+    description: 'Twoja postać spadła do zera ran.',
     icon: 'skull',
     category: 'milestone',
     condition: { type: 'wounds_depleted' },
@@ -67,8 +73,8 @@ export const ACHIEVEMENTS = {
 
   // --- Combat ---
   first_combat_win: {
-    name: 'Blooded',
-    description: 'Won your first combat.',
+    name: 'Krew na ostrzu',
+    description: 'Wygrałeś pierwszą walkę.',
     icon: 'swords',
     category: 'combat',
     condition: { type: 'combat_wins', min: 1 },
@@ -76,26 +82,17 @@ export const ACHIEVEMENTS = {
     xpReward: 20,
   },
   critical_hit: {
-    name: 'Between the Ribs',
-    description: 'Scored a critical hit in combat.',
+    name: 'Mistrzowski cios',
+    description: 'Zadałeś krytyczne trafienie w walce.',
     icon: 'crisis_alert',
     category: 'combat',
     condition: { type: 'event', eventType: 'critical_hit' },
     rarity: 'common',
     xpReward: 15,
   },
-  survived_critical_wound: {
-    name: 'Still Standing',
-    description: 'Suffered a critical wound and lived to tell the tale.',
-    icon: 'healing',
-    category: 'combat',
-    condition: { type: 'event', eventType: 'survived_critical_wound' },
-    rarity: 'uncommon',
-    xpReward: 30,
-  },
   defeated_10_enemies: {
-    name: 'Reaper',
-    description: 'Defeated 10 enemies in combat.',
+    name: 'Żniwiarz',
+    description: 'Pokonałeś 10 wrogów w walce.',
     icon: 'swords',
     category: 'combat',
     condition: { type: 'enemies_defeated', min: 10 },
@@ -103,28 +100,39 @@ export const ACHIEVEMENTS = {
     xpReward: 40,
   },
   defeated_50_enemies: {
-    name: 'Veteran Slayer',
-    description: 'Defeated 50 enemies in combat.',
+    name: 'Weteran wielu bitew',
+    description: 'Pokonałeś 50 wrogów w walce.',
     icon: 'shield',
     category: 'combat',
     condition: { type: 'enemies_defeated', min: 50 },
     rarity: 'rare',
     xpReward: 75,
+    grantsTitle: { id: 'weteran', label: 'Weteran', rarity: 'rare' },
   },
   flawless_victory: {
-    name: 'Untouched',
-    description: 'Won a combat without taking any damage.',
+    name: 'Bez zadrapania',
+    description: 'Wygrałeś walkę bez otrzymania obrażeń.',
     icon: 'shield_person',
     category: 'combat',
     condition: { type: 'combat_victory_flawless' },
     rarity: 'rare',
     xpReward: 50,
   },
+  killed_dragon: {
+    name: 'Smokobójca',
+    description: 'Pokonałeś smoka w walce.',
+    icon: 'pets',
+    category: 'combat',
+    condition: { type: 'event', eventType: 'dragon_killed' },
+    rarity: 'legendary',
+    xpReward: 200,
+    grantsTitle: { id: 'smokobojca', label: 'Smokobójca', rarity: 'legendary' },
+  },
 
   // --- Exploration ---
   visited_5_locations: {
-    name: 'Wanderer',
-    description: 'Visited 5 distinct locations.',
+    name: 'Włóczęga',
+    description: 'Odwiedziłeś 5 różnych lokacji.',
     icon: 'map',
     category: 'exploration',
     condition: { type: 'unique_locations_visited', min: 5 },
@@ -132,26 +140,18 @@ export const ACHIEVEMENTS = {
     xpReward: 20,
   },
   visited_15_locations: {
-    name: 'Cartographer',
-    description: 'Visited 15 distinct locations.',
+    name: 'Kartograf',
+    description: 'Odwiedziłeś 15 różnych lokacji.',
     icon: 'explore',
     category: 'exploration',
     condition: { type: 'unique_locations_visited', min: 15 },
     rarity: 'uncommon',
     xpReward: 35,
-  },
-  visited_altdorf: {
-    name: 'Crown of the Empire',
-    description: 'Set foot in Altdorf.',
-    icon: 'location_city',
-    category: 'exploration',
-    condition: { type: 'location_matches', patterns: ['altdorf'] },
-    rarity: 'uncommon',
-    xpReward: 25,
+    grantsTitle: { id: 'kartograf', label: 'Kartograf', rarity: 'uncommon' },
   },
   discovered_secret: {
-    name: 'Hidden Truth',
-    description: 'Uncovered a secret or hidden area.',
+    name: 'Ukryta prawda',
+    description: 'Odkryłeś sekret lub ukryte miejsce.',
     icon: 'visibility_off',
     category: 'exploration',
     condition: { type: 'event', eventType: 'secret_discovered' },
@@ -161,8 +161,8 @@ export const ACHIEVEMENTS = {
 
   // --- Social ---
   befriended_npc: {
-    name: 'Fast Friends',
-    description: 'An NPC’s disposition rose above 20.',
+    name: 'Bliska więź',
+    description: 'Nastawienie BN-a wzrosło powyżej 20.',
     icon: 'diversity_3',
     category: 'social',
     condition: { type: 'npc_disposition', op: 'gt', value: 20 },
@@ -170,16 +170,16 @@ export const ACHIEVEMENTS = {
     xpReward: 20,
   },
   made_enemy: {
-    name: 'Bad Blood',
-    description: 'An NPC’s disposition fell below -20.',
+    name: 'Wróg na zawsze',
+    description: 'Nastawienie BN-a spadło poniżej -20.',
     icon: 'sentiment_very_dissatisfied',
     category: 'social',
     condition: { type: 'npc_disposition', op: 'lt', value: -20 },
     rarity: 'common',
   },
   joined_faction: {
-    name: 'Banner Sworn',
-    description: 'Earned over 50 reputation with a faction.',
+    name: 'Pod sztandarem',
+    description: 'Zdobyłeś ponad 50 reputacji u frakcji.',
     icon: 'flag_circle',
     category: 'social',
     condition: { type: 'faction_reputation', min: 51 },
@@ -187,19 +187,20 @@ export const ACHIEVEMENTS = {
     xpReward: 35,
   },
   haggle_master: {
-    name: 'Haggle Master',
-    description: 'Succeeded at five haggle tests.',
+    name: 'Mistrz targowania',
+    description: 'Wygrałeś pięć testów targowania.',
     icon: 'payments',
     category: 'social',
     condition: { type: 'haggles_succeeded', min: 5 },
     rarity: 'uncommon',
     xpReward: 30,
+    grantsTitle: { id: 'kupiec', label: 'Kupiec', rarity: 'uncommon' },
   },
 
   // --- Survival ---
   survived_low_health: {
-    name: 'By a Thread',
-    description: 'Survived a scene with 2 or fewer wounds remaining.',
+    name: 'O włos',
+    description: 'Przetrwałeś scenę z 2 lub mniej ranami.',
     icon: 'favorite',
     category: 'survival',
     condition: { type: 'wounds_lte', max: 2 },
@@ -207,8 +208,8 @@ export const ACHIEVEMENTS = {
     xpReward: 25,
   },
   all_needs_critical: {
-    name: 'Rock Bottom',
-    description: 'All survival needs dropped to critical at once.',
+    name: 'Na dnie',
+    description: 'Wszystkie potrzeby spadły jednocześnie do poziomu krytycznego.',
     icon: 'warning',
     category: 'survival',
     condition: { type: 'all_needs_lte', threshold: 14 },
@@ -216,8 +217,8 @@ export const ACHIEVEMENTS = {
     xpReward: 20,
   },
   night_survived: {
-    name: 'Dawn Breaks',
-    description: 'Recovered rest from a critically low level after a dangerous night.',
+    name: 'Przebudzenie',
+    description: 'Odzyskałeś siły z krytycznego poziomu po niebezpiecznej nocy.',
     icon: 'nights_stay',
     category: 'survival',
     condition: { type: 'event', eventType: 'rest_recovered_from_critical' },
@@ -225,124 +226,157 @@ export const ACHIEVEMENTS = {
     xpReward: 25,
   },
 
-  // --- Career ---
-  advanced_tier_2: {
-    name: 'Journeyman',
-    description: 'Advanced to career tier 2.',
-    icon: 'trending_up',
-    category: 'career',
-    condition: { type: 'career_tier', min: 2 },
-    rarity: 'uncommon',
-    xpReward: 40,
-  },
-  advanced_tier_3: {
-    name: 'Master of the Trade',
-    description: 'Advanced to career tier 3.',
-    icon: 'workspace_premium',
-    category: 'career',
-    condition: { type: 'career_tier', min: 3 },
+  // --- Mistrzostwo (skills, magia, rzemiosło) ---
+  master_combat_skill: {
+    name: 'Mistrz miecza',
+    description: 'Osiągnąłeś poziom mistrzowski (16+) w walce bronią.',
+    icon: 'military_tech',
+    category: 'mastery',
+    condition: { type: 'skill_at_level', skills: ['Walka bronią jednoręczną', 'Walka bronią dwuręczną'], min: 16 },
     rarity: 'rare',
     xpReward: 60,
+    grantsTitle: { id: 'mistrz_miecza', label: 'Mistrz Miecza', rarity: 'rare' },
   },
-  advanced_tier_4: {
-    name: 'Peak of the Profession',
-    description: 'Advanced to career tier 4.',
-    icon: 'military_tech',
-    category: 'career',
-    condition: { type: 'career_tier', min: 4 },
-    rarity: 'legendary',
-    xpReward: 100,
+  master_stealth: {
+    name: 'Cień',
+    description: 'Osiągnąłeś poziom mistrzowski (16+) w skradaniu.',
+    icon: 'visibility_off',
+    category: 'mastery',
+    condition: { type: 'skill_at_level', skills: ['Skradanie się'], min: 16 },
+    rarity: 'rare',
+    xpReward: 60,
+    grantsTitle: { id: 'cien', label: 'Cień', rarity: 'rare' },
   },
-  changed_career: {
-    name: 'New Path',
-    description: 'Changed to a different career.',
-    icon: 'swap_horiz',
-    category: 'career',
-    condition: { type: 'event', eventType: 'career_changed' },
-    rarity: 'uncommon',
-    xpReward: 50,
+  forged_50_items: {
+    name: 'Kowal',
+    description: 'Wykułeś 50 przedmiotów.',
+    icon: 'construction',
+    category: 'mastery',
+    condition: { type: 'event', eventType: 'item_forged_count', min: 50 },
+    rarity: 'rare',
+    xpReward: 60,
+    grantsTitle: { id: 'kowal', label: 'Kowal', rarity: 'rare' },
+  },
+  brewed_30_potions: {
+    name: 'Alchemik',
+    description: 'Uwarzyłeś 30 mikstur.',
+    icon: 'science',
+    category: 'mastery',
+    condition: { type: 'event', eventType: 'potion_brewed_count', min: 30 },
+    rarity: 'rare',
+    xpReward: 60,
+    grantsTitle: { id: 'alchemik', label: 'Alchemik', rarity: 'rare' },
   },
   learned_10_skills: {
-    name: 'Polymath',
-    description: 'Advanced or learned 10 different skills.',
+    name: 'Erudyta',
+    description: 'Wyszkoliłeś lub nauczyłeś się 10 różnych umiejętności.',
     icon: 'school',
-    category: 'career',
+    category: 'mastery',
     condition: { type: 'distinct_skills_trained', min: 10 },
     rarity: 'uncommon',
     xpReward: 35,
   },
   learned_magic: {
-    name: 'Touch of Azyr',
-    description: 'Learned your first spell or magical talent.',
+    name: 'Tknięty magią',
+    description: 'Nauczyłeś się pierwszego zaklęcia.',
     icon: 'auto_fix_high',
-    category: 'career',
+    category: 'mastery',
     condition: { type: 'any', conditions: [{ type: 'event', eventType: 'magic_learned' }, { type: 'has_magic_training' }] },
     rarity: 'rare',
     xpReward: 45,
   },
-
-  // --- Magic (grouped under career per schema) ---
   first_spell_cast: {
-    name: 'Words of Power',
-    description: 'Cast your first spell.',
+    name: 'Słowa mocy',
+    description: 'Rzuciłeś pierwsze zaklęcie.',
     icon: 'bolt',
-    category: 'career',
+    category: 'mastery',
     condition: { type: 'any', conditions: [{ type: 'event', eventType: 'spell_cast' }, { type: 'spells_cast', min: 1 }] },
     rarity: 'uncommon',
     xpReward: 25,
   },
-  first_miscast: {
-    name: 'Winds Unchained',
-    description: 'Suffered your first miscast.',
-    icon: 'error',
-    category: 'career',
-    condition: { type: 'any', conditions: [{ type: 'event', eventType: 'miscast' }, { type: 'miscasts', min: 1 }] },
-    rarity: 'uncommon',
-    xpReward: 15,
-  },
-  mastered_lore: {
-    name: 'Loremaster',
-    description: 'Learned five or more spells from a single lore.',
+  mastered_spell_tree: {
+    name: 'Mistrz drzewka zaklęć',
+    description: 'Opanowałeś pięć lub więcej zaklęć z jednego drzewka.',
     icon: 'menu_book',
-    category: 'career',
+    category: 'mastery',
     condition: { type: 'spell_lore_depth', min: 5 },
     rarity: 'legendary',
     xpReward: 80,
+    grantsTitle: { id: 'mag', label: 'Mag', rarity: 'legendary' },
+  },
+
+  // --- Główny wątek fabularny ---
+  completed_main_quest: {
+    name: 'Bohater',
+    description: 'Ukończyłeś główny wątek kampanii.',
+    icon: 'workspace_premium',
+    category: 'milestone',
+    condition: { type: 'event', eventType: 'main_quest_completed' },
+    rarity: 'legendary',
+    xpReward: 200,
+    grantsTitle: { id: 'bohater', label: 'Bohater', rarity: 'legendary' },
   },
 };
 
 export const ACHIEVEMENT_CATEGORIES = {
   milestone: {
-    name: 'Milestones',
+    name: 'Kamienie milowe',
     icon: 'stars',
     color: '#c9a227',
   },
   combat: {
-    name: 'Combat',
+    name: 'Walka',
     icon: 'swords',
     color: '#b91c1c',
   },
   exploration: {
-    name: 'Exploration',
+    name: 'Eksploracja',
     icon: 'map',
     color: '#15803d',
   },
   social: {
-    name: 'Social',
+    name: 'Społeczne',
     icon: 'groups',
     color: '#7c3aed',
   },
   survival: {
-    name: 'Survival',
+    name: 'Przetrwanie',
     icon: 'water_drop',
     color: '#0ea5e9',
   },
-  career: {
-    name: 'Career & Magic',
-    icon: 'work',
+  mastery: {
+    name: 'Mistrzostwo',
+    icon: 'workspace_premium',
     color: '#ca8a04',
   },
 };
+
+const TITLE_RARITY_RANK = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
+
+export function compareTitleRarity(a, b) {
+  const ra = TITLE_RARITY_RANK[a?.rarity] || 0;
+  const rb = TITLE_RARITY_RANK[b?.rarity] || 0;
+  if (ra !== rb) return rb - ra;
+  const ta = a?.unlockedAt || 0;
+  const tb = b?.unlockedAt || 0;
+  return tb - ta;
+}
+
+/** Returns top-N titles for a character, ordered by rarity desc, then recency. */
+export function getTopTitles(character, n = 3) {
+  const titles = Array.isArray(character?.titles) ? character.titles : [];
+  return [...titles].sort(compareTitleRarity).slice(0, n);
+}
+
+export function getActiveTitle(character) {
+  const titles = Array.isArray(character?.titles) ? character.titles : [];
+  if (!titles.length) return null;
+  if (character?.activeTitleId) {
+    const found = titles.find((t) => t.id === character.activeTitleId);
+    if (found) return found;
+  }
+  return getTopTitles(character, 1)[0] || null;
+}
 
 function sceneCount(gameState) {
   const scenes = gameState?.scenes;
@@ -396,16 +430,7 @@ function countDistinctTrainedSkills(character) {
 
 function hasMagicTraining(character) {
   if (!character) return false;
-  const talents = character.talents;
-  if (Array.isArray(talents)) {
-    const magicish = talents.some((t) => {
-      const s = String(typeof t === 'string' ? t : t?.name ?? '').toLowerCase();
-      return s.includes('spell') || s.includes('lore') || s.includes('channel') || s.includes('witch') || s.includes('wizard');
-    });
-    if (magicish) return true;
-  }
-  if (Array.isArray(character.spells) && character.spells.length > 0) return true;
-  if (character.arcane?.spells && Object.keys(character.arcane.spells).length > 0) return true;
+  if ((character.magic?.knownSpells?.length || 0) > 0) return true;
   return false;
 }
 
@@ -510,9 +535,15 @@ function evaluateCondition(condition, gameState, event) {
       const keys = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
       return keys.every((k) => typeof needs[k] === 'number' && needs[k] <= t);
     }
-    case 'career_tier': {
-      const tier = getCharacter(gameState)?.career?.tier;
-      return typeof tier === 'number' && tier >= (condition.min ?? 1);
+    case 'skill_at_level': {
+      const character = getCharacter(gameState);
+      const skills = character?.skills || {};
+      const watched = Array.isArray(condition.skills) ? condition.skills : [];
+      const min = condition.min ?? 16;
+      return watched.some((name) => {
+        const v = skills[name];
+        return typeof v === 'number' && v >= min;
+      });
     }
     case 'distinct_skills_trained': {
       return countDistinctTrainedSkills(getCharacter(gameState)) >= (condition.min ?? 10);

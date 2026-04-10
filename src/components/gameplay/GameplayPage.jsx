@@ -245,7 +245,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     : null;
   const displayCharacter = viewedMember || character;
 
-  const hasMagic = character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some((t) => t?.includes?.('Arcane Magic'));
+  const hasMagic = (character?.magic?.knownSpells?.length || 0) > 0;
   const attrPoints = character?.attributePoints || 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
@@ -2323,7 +2323,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-error">skull</span>
               <p className="text-error font-headline text-lg">{t('gameplay.characterDead', 'Your character has fallen')}</p>
-              <p className="text-on-surface-variant text-xs">{t('gameplay.characterDeadDesc', 'With no Fate points remaining, death is final.')}</p>
+              <p className="text-on-surface-variant text-xs">{t('gameplay.characterDeadDesc', 'Death is final.')}</p>
             </div>
           </div>
         )}

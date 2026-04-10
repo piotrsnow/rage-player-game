@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -30,8 +31,14 @@ function ModalLayer() {
   } = useModals();
   const { state, dispatch, autoSave } = useGame();
   const mp = useMultiplayer();
-  const { settings } = useSettings();
+  const { settings, loadCampaignVoiceSettings } = useSettings();
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+
+  const activeCampaignBackendId = state.campaign?.backendId || null;
+  useEffect(() => {
+    if (!activeCampaignBackendId) return;
+    loadCampaignVoiceSettings(activeCampaignBackendId).catch(() => { /* non-fatal */ });
+  }, [activeCampaignBackendId, loadCampaignVoiceSettings]);
 
   return (
     <>

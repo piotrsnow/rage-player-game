@@ -86,7 +86,7 @@ export function buildCombatCommentaryPrompts(gameState, combatSnapshot, language
     : '- No recent combat log lines.';
 
   return {
-    system: `You are a battle commentator for the tabletop RPG campaign "${campaignName}" using Warhammer Fantasy Roleplay 4th Edition tone and texture.
+    system: `You are a battle commentator for the tabletop RPG campaign "${campaignName}" with a grim, dark-fantasy tone.
 
 Your job is to add a short mid-combat narration to an already active fight.
 
@@ -397,7 +397,7 @@ NARRATIVE TONE RULES (anti-purple-prose guardrails):
 - AVOID: Excessive metaphors in every paragraph. Overly flowery descriptions of mundane events. A uniform "literary" tone across all NPCs. Multiple adjectives stacked before every noun. Starting every paragraph with a weather or atmosphere description.
 - Avoid repetitive joke templates and recurring clichés. Specifically, do NOT repeatedly use tax collectors/taxes/fiscal bureaucracy as a metaphor unless it is directly relevant to the current in-world situation.
 - NPC DIALOGUE VARIATION: Each NPC speaks differently. A peasant does not sound like a scholar. A soldier does not sound like a merchant. Dialogue should reveal character, not showcase vocabulary.
-- The Old World is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
+- The world is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
 - HUMOR COUNTERWEIGHT: Even at high humor settings, maintain real stakes. Funny failures should still hurt mechanically (wounds, lost items, reputation). Comedic NPCs can still be dangerous. Never let humor deflate genuine tension in life-or-death situations.
 
 SCENE PACING & PROSE STYLE (MANDATORY — return "scenePacing" in EVERY response):
@@ -415,7 +415,7 @@ ANTI-MONOTONY RULE: Never produce more than 2 consecutive exploration/travel/res
 TRAVEL ACCELERATION: When the player's action is simply traveling/walking with no specific interaction, default to "travel_montage" — skip the boring parts, arrive somewhere interesting.
 
 WORLD DESCRIPTION:
-${campaign?.worldDescription || 'The Old World awaits — a grim and perilous realm of dark fantasy.'}
+${campaign?.worldDescription || 'A grim and perilous realm of dark fantasy awaits.'}
 
 STORY HOOK:
 ${campaign?.hook || 'An adventure begins...'}
@@ -489,7 +489,7 @@ GRADED SUCCESS & FAILURE (use margin to determine outcome severity — never pur
 
 CONSEQUENCE SYSTEM (MANDATORY for risky actions, especially failures):
 Every risky action should generate at least one consequence from this list: reputation change (factionChanges), NPC disposition shift, time loss, resource loss, wound, rumor spread (worldFacts), price changes, quest complication, new enemy, or environmental change.
-- HEAT MECHANIC: Criminal, chaotic, or violent actions accumulate "heat" — track via journalEntries and worldFacts. Escalating heat triggers: guards patrol more, NPCs become wary and suspicious, prices rise, bounties appear, witch hunters investigate, factions send agents. Use factionChanges to mechanically represent this (negative deltas to lawful factions like military, temple_sigmar, witch_hunters).
+- HEAT MECHANIC: Criminal, chaotic, or violent actions accumulate "heat" — track via journalEntries and worldFacts. Escalating heat triggers: guards patrol more, NPCs become wary and suspicious, prices rise, bounties appear, investigators look into the matter, factions send agents. Use factionChanges to mechanically represent this (negative deltas to lawful factions).
 - RUMOR PROPAGATION: Notable actions (especially failures and crimes) become worldFacts that NPCs reference in future scenes. Major events should spread — "I heard a stranger was asking about..." or "Word is someone tried to..."
 - ECONOMIC CONSEQUENCES: Faction standing should visibly affect prices mentioned in narration. Hostile faction territory = 20-50% markup. Allied = 10-20% discount. Reference this in merchant dialogue.
 
@@ -565,7 +565,7 @@ INSTRUCTIONS:
 2. Maintain narrative consistency with established world facts and events.
 3. In hybrid mode, skill tests are handled by the game engine (d50 system). The prompt provides resolved outcomes — narrate accordingly.
 4. Track consequences of player decisions across scenes.
-5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The Old World is grim and perilous.
+5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The world is grim and perilous.
 6. Always respond with valid JSON matching the requested format.
 7. Make the story feel like decisions matter—actions have consequences.
 8. Balance challenge with fun based on the difficulty setting.
@@ -723,7 +723,7 @@ CODEX UPDATE FORMAT in stateChanges:
     "category": "artifact|person|place|event|faction|creature|concept",
     "fragment": {
       "content": "2-4 sentences of specific, detailed information about this subject...",
-      "source": "Who or what revealed this information (e.g. 'Elven scholar in Altdorf', 'Ancient tome', 'Local innkeeper')",
+      "source": "Who or what revealed this information (e.g. 'Wandering scholar', 'Ancient tome', 'Local innkeeper')",
       "aspect": "history|description|location|weakness|rumor|technical|political"
     },
     "tags": ["relevant", "search", "tags"],

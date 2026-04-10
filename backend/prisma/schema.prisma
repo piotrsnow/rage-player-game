@@ -24,15 +24,6 @@ model User {
   wanted3dEntries       Wanted3D[]
 }
 
-model SharedConfig {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  scope           String   @unique
-  value           String   @default("{}") // JSON blob for shared/global settings
-  updatedByUserId String?  @db.ObjectId
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
 model Achievement {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   userId         String   @db.ObjectId
@@ -55,6 +46,7 @@ model Campaign {
   tone           String   @default("")
   coreState      String   @default("{}") // Lean state: combat, dialogue, world basics (minus npcs/knowledge/quests/character)
   characterState String   @default("{}") // JSON: in-campaign character snapshot (evolves independently from Character library)
+  voiceSettings  String   @default("{}") // JSON: { elevenlabsVoiceId, elevenlabsVoiceName, characterVoices[] } — set by campaign owner, read by all players
   characterName  String   @default("")
   characterCareer String  @default("")
   characterTier  Int      @default(1)
@@ -199,12 +191,9 @@ model Character {
   characteristics String   @default("{}") // JSON: { ws, bs, s, t, i, ag, dex, int, wp, fel }
   advances        String   @default("{}") // JSON: { ws:0, bs:0, ... }
   skills          String   @default("{}") // JSON: { "Melee (Basic)": 5, ... }
-  talents         String   @default("[]") // JSON array
   wounds          Int      @default(0)
   maxWounds       Int      @default(0)
   movement        Int      @default(4)
-  fate            Int      @default(0)
-  resilience      Int      @default(0)
   xp              Int      @default(0)
   xpSpent         Int      @default(0)
   backstory       String   @default("")

@@ -612,8 +612,18 @@ function gameReducer(state, action) {
             next.character.status = 'dead';
           }
         }
-        if (changes.xp !== undefined) {
-          next.character.xp = (next.character.xp || 0) + changes.xp;
+        if (changes.xp !== undefined && changes.xp > 0) {
+          let charXp = (next.character.characterXp || 0) + changes.xp;
+          let charLevel = next.character.characterLevel || 1;
+          let attrPoints = next.character.attributePoints || 0;
+          while (charXp >= charLevelCost(charLevel + 1)) {
+            charXp -= charLevelCost(charLevel + 1);
+            charLevel++;
+            attrPoints++;
+          }
+          next.character.characterXp = charXp;
+          next.character.characterLevel = charLevel;
+          next.character.attributePoints = attrPoints;
         }
       }
 
@@ -864,7 +874,20 @@ function gameReducer(state, action) {
           }
 
           if (totalRewardXp > 0) {
-            next.character = { ...next.character, xp: (next.character.xp || 0) + totalRewardXp };
+            let charXp = (next.character.characterXp || 0) + totalRewardXp;
+            let charLevel = next.character.characterLevel || 1;
+            let attrPoints = next.character.attributePoints || 0;
+            while (charXp >= charLevelCost(charLevel + 1)) {
+              charXp -= charLevelCost(charLevel + 1);
+              charLevel++;
+              attrPoints++;
+            }
+            next.character = {
+              ...next.character,
+              characterXp: charXp,
+              characterLevel: charLevel,
+              attributePoints: attrPoints,
+            };
           }
           if (rewardMoney.gold || rewardMoney.silver || rewardMoney.copper) {
             const cur = next.character.money || { gold: 0, silver: 0, copper: 0 };
@@ -1547,6 +1570,35 @@ function gameReducer(state, action) {
 
     case 'UPDATE_ACHIEVEMENTS': {
       return { ...state, achievements: { ...state.achievements, ...action.payload } };
+    }
+
+    case 'ADD_TITLE': {
+      if (!state.character || !action.payload?.id) return state;
+      const existing = Array.isArray(state.character.titles) ? state.character.titles : [];
+      if (existing.some((t) => t.id === action.payload.id)) return state;
+      const newTitle = {
+        id: action.payload.id,
+        label: action.payload.label,
+        rarity: action.payload.rarity || 'common',
+        unlockedAt: Date.now(),
+        sourceAchievementId: action.payload.sourceAchievementId || null,
+      };
+      return {
+        ...state,
+        character: {
+          ...state.character,
+          titles: [...existing, newTitle],
+          activeTitleId: state.character.activeTitleId || newTitle.id,
+        },
+      };
+    }
+
+    case 'SET_ACTIVE_TITLE': {
+      if (!state.character) return state;
+      return {
+        ...state,
+        character: { ...state.character, activeTitleId: action.payload || null },
+      };
     }
 
     case 'ADD_NARRATION_TIME': {

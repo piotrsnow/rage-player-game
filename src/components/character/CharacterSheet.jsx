@@ -16,6 +16,7 @@ import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
 import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
+import { getActiveTitle, getTopTitles } from '../../data/achievements';
 import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
 
 import Tooltip from '../ui/Tooltip';
@@ -593,6 +594,11 @@ export default function CharacterSheet({ onClose }) {
                 <h1 className="text-4xl md:text-5xl font-headline text-tertiary mb-2 drop-shadow-[0_2px_4px_rgba(197,154,255,0.1)]">
                   {displayCharacter.name}
                 </h1>
+                {getActiveTitle(displayCharacter) && (
+                  <div className="text-primary font-headline text-sm italic mb-2 tracking-wide">
+                    {getActiveTitle(displayCharacter).label}
+                  </div>
+                )}
                 <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm uppercase tracking-[0.2em] flex-wrap">
                   <span>{t(`species.${displayCharacter.species}`, { defaultValue: displayCharacter.species })}</span>
                   <span className="w-1 h-1 bg-primary rounded-full" />
@@ -602,6 +608,25 @@ export default function CharacterSheet({ onClose }) {
                   <span className="w-1 h-1 bg-primary rounded-full" />
                   <span>{t('stats.level', { defaultValue: 'Poziom' })} {displayCharacter.characterLevel || 1}</span>
                 </div>
+                {dispatch && Array.isArray(displayCharacter.titles) && displayCharacter.titles.length > 1 && (
+                  <div className="mt-3">
+                    <label className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant block mb-1">
+                      {t('character.activeTitle', { defaultValue: 'Aktywny tytuł' })}
+                    </label>
+                    <select
+                      value={displayCharacter.activeTitleId || ''}
+                      onChange={(e) => dispatch({ type: 'SET_ACTIVE_TITLE', payload: e.target.value || null })}
+                      className="bg-surface-container text-on-surface text-xs px-2 py-1 rounded-sm border border-outline-variant/30 focus:border-primary focus:outline-none"
+                    >
+                      <option value="">{t('character.noTitle', { defaultValue: '— brak —' })}</option>
+                      {getTopTitles(displayCharacter, 20).map((title) => (
+                        <option key={title.id} value={title.id}>
+                          {title.label} ({title.rarity})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {attrPoints > 0 && (
                   <button
                     onClick={() => setShowAdvancement(true)}

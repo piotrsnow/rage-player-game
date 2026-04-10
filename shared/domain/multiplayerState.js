@@ -58,15 +58,8 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           const currentCritCount = updated.criticalWoundCount || 0;
           updated.criticalWoundCount = currentCritCount + 1;
           if (updated.criticalWoundCount >= 3) {
-            if (updated.fate > 0) {
-              updated.fate = updated.fate - 1;
-              updated.fortune = Math.min(updated.fortune, updated.fate);
-              updated.criticalWoundCount = 2;
-              updated.wounds = 1;
-            } else {
-              updated.status = 'dead';
-              updated.wounds = 0;
-            }
+            updated.status = 'dead';
+            updated.wounds = 0;
           } else {
             updated.wounds = newWounds;
           }
@@ -77,16 +70,6 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
       if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
       if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
       if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
-      if (delta.fortuneChange != null) updated.fortune = Math.max(0, Math.min(updated.fate ?? 2, (updated.fortune ?? 0) + delta.fortuneChange));
-      if (delta.resolveChange != null) updated.resolve = Math.max(0, Math.min(updated.resilience ?? 1, (updated.resolve ?? 0) + delta.resolveChange));
-      if (delta.fateChange != null) {
-        updated.fate = Math.max(0, (updated.fate ?? 0) + delta.fateChange);
-        updated.fortune = Math.min(updated.fortune ?? 0, updated.fate);
-      }
-      if (delta.resilienceChange != null) {
-        updated.resilience = Math.max(0, (updated.resilience ?? 0) + delta.resilienceChange);
-        updated.resolve = Math.min(updated.resolve ?? 0, updated.resilience);
-      }
       if (Array.isArray(delta.newItems)) updated.inventory = [...(updated.inventory || []), ...delta.newItems];
       if (Array.isArray(delta.removeItems)) {
         const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
@@ -114,10 +97,6 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         updated.needs = needs;
       }
       if (delta.statuses) updated.statuses = delta.statuses;
-      if (Array.isArray(delta.criticalWounds)) updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
-      if (delta.healCriticalWound) {
-        updated.criticalWounds = (updated.criticalWounds || []).filter((cw) => cw.name !== delta.healCriticalWound);
-      }
       return updated;
     });
   }

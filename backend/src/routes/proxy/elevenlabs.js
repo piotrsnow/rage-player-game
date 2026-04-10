@@ -95,8 +95,9 @@ export async function elevenlabsProxyRoutes(fastify) {
     await store.put(cacheKey, audioBytes, 'audio/mpeg');
     const responseUrl = await store.getUrl(cacheKey);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -107,6 +108,7 @@ export async function elevenlabsProxyRoutes(fastify) {
         path: cacheKey,
         metadata: JSON.stringify({ ...cacheParams, alignment: data.alignment }),
       },
+      update: {},
     });
 
     return {
@@ -167,8 +169,9 @@ export async function elevenlabsProxyRoutes(fastify) {
     await store.put(cacheKey, buffer, 'audio/mpeg');
     const responseUrl = await store.getUrl(cacheKey);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(streamCampaignId),
         key: cacheKey,
@@ -179,6 +182,7 @@ export async function elevenlabsProxyRoutes(fastify) {
         path: cacheKey,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: responseUrl, key: cacheKey };
@@ -228,8 +232,9 @@ export async function elevenlabsProxyRoutes(fastify) {
     await store.put(cacheKey, buffer, 'audio/mpeg');
     const responseUrl = await store.getUrl(cacheKey);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(sfxCampaignId),
         key: cacheKey,
@@ -240,6 +245,7 @@ export async function elevenlabsProxyRoutes(fastify) {
         path: cacheKey,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: responseUrl, key: cacheKey };

@@ -81,9 +81,9 @@ function formatReward(reward) {
   if (reward.xp) parts.push(`${reward.xp} XP`);
   if (reward.money) {
     const m = reward.money;
-    if (m.gold) parts.push(`${m.gold} GC`);
-    if (m.silver) parts.push(`${m.silver} SS`);
-    if (m.copper) parts.push(`${m.copper} CP`);
+    if (m.gold) parts.push(`${m.gold} ZK`);
+    if (m.silver) parts.push(`${m.silver} SK`);
+    if (m.copper) parts.push(`${m.copper} MK`);
   }
   if (reward.items?.length > 0) parts.push(reward.items.map((i) => i.name || i).join(', '));
   return parts.length > 0 ? parts.join(', ') : reward.description || null;

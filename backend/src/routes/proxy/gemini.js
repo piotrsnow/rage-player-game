@@ -81,8 +81,9 @@ export async function geminiProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', ext);
     const storeResult = await store.put(storagePath, buffer, contentType);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -93,6 +94,7 @@ export async function geminiProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };
@@ -174,8 +176,9 @@ export async function geminiProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', ext);
     const storeResult = await store.put(storagePath, resultBuffer, resultContentType);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         key: cacheKey,
         type: 'image',
@@ -185,6 +188,7 @@ export async function geminiProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { url: storeResult.url, key: cacheKey };

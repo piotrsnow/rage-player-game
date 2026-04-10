@@ -259,7 +259,7 @@ function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', {
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
 - Award 20-50 XP/scene via stateChanges.xp.
-- The Old World is grim and perilous. Death is real. Consequences are lasting.`,
+- The world is grim and perilous. Death is real. Consequences are lasting.`,
   );
 
   // ── SCENE PACING ──
@@ -1296,12 +1296,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 6. Fill enemy stats from bestiary
     fillEnemiesFromBestiary(sceneResult.stateChanges);
 
-    // 6d. Resolve abstract rewards into concrete items/materials/money
-    resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
-
     // 7. Save scene
     const lastScene = recentScenes[recentScenes.length - 1];
     const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
+
+    // 6d. Resolve abstract rewards into concrete items/materials/money
+    resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
 
     const savedScene = await prisma.campaignScene.create({
       data: {
@@ -1336,6 +1336,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
       if (!sceneResult.stateChanges.questUpdates) sceneResult.stateChanges.questUpdates = [];
       sceneResult.stateChanges.questUpdates.push(...nanoQuestUpdates);
+    }
+    // Dedupe quest updates: collapse duplicate completions for the same
+    // questId/objectiveId (large model can repeat entries, nano can echo large).
+    // Prefer the large-model entry when both sources mark the same completion.
+    if (sceneResult.stateChanges?.questUpdates?.length > 1) {
+      const seenCompleted = new Map();
+      const deduped = [];
+      for (const u of sceneResult.stateChanges.questUpdates) {
+        if (!u?.completed) { deduped.push(u); continue; }
+        const key = `${u.questId}/${u.objectiveId}`;
+        const existingIdx = seenCompleted.get(key);
+        if (existingIdx === undefined) {
+          seenCompleted.set(key, deduped.length);
+          deduped.push(u);
+        } else if (u.source === 'large' && deduped[existingIdx].source !== 'large') {
+          deduped[existingIdx] = u;
+        }
+      }
+      sceneResult.stateChanges.questUpdates = deduped;
     }
 
     // 9. Async: embedding + state changes + memory compression

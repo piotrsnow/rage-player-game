@@ -182,9 +182,6 @@ function inferWeapon(character) {
   if (names.some((n) => n.includes('staff') || n.includes('laska') || n.includes('kostur'))) return 'staff';
   if (names.some((n) => n.includes('bow') || n.includes('łuk'))) return 'bow';
   if (names.some((n) => n.includes('sword') || n.includes('miecz') || n.includes('axe') || n.includes('topor'))) return 'sword';
-  const hasArcane = (character.talents || []).some((t) =>
-    (typeof t === 'string' ? t : t.name || '').toLowerCase().includes('arcane')
-  );
-  if (hasArcane) return 'staff';
+  if ((character.magic?.knownSpells?.length || 0) > 0) return 'staff';
   return null;
 }

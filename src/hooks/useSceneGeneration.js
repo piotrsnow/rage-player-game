@@ -188,6 +188,18 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         result = backendResult.result;
         usage = backendResult.usage;
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+
+        // Trade shortcut: backend detected pure trade intent and returned a
+        // synthetic empty scene. Just open the TradePanel; keep the current
+        // scene (and its suggestedActions) intact.
+        if (result?._tradeShortcut && result.stateChanges?.startTrade) {
+          dispatch({ type: 'APPLY_STATE_CHANGES', payload: { startTrade: result.stateChanges.startTrade } });
+          setStreamingNarrative(null);
+          setStreamingSegments(null);
+          recordCompletedSceneGenTiming();
+          dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
+          return;
+        }
         if (result?.meta?.degraded) {
           degradeStatsRef.current.total += 1;
           if (result?.meta?.degradeType === 'context_truncate' || String(result?.meta?.reason || '').includes('context_truncate')) {
@@ -501,9 +513,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             ...(resolved.restRecovery.woundsChange !== undefined
               ? { woundsChange: resolved.restRecovery.woundsChange }
               : {}),
-            ...(resolved.restRecovery.fortuneChange !== undefined
-              ? { fortuneChange: resolved.restRecovery.fortuneChange }
-              : {}),
             ...(Object.keys(mergedNeedsChanges).length > 0 ? { needsChanges: mergedNeedsChanges } : {}),
           };
         }
@@ -602,21 +611,12 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             if (ach.xpReward && state.character) {
               dispatch({ type: 'APPLY_STATE_CHANGES', payload: { xp: ach.xpReward } });
             }
-          }
-        }
-
-        if (!isFirstScene && expiredQuests.length > 0) {
-          for (const q of expiredQuests) {
-            dispatch({
-              type: 'ADD_CHAT_MESSAGE',
-              payload: {
-                id: `msg_${Date.now()}_deadline_${q.id}`,
-                role: 'system',
-                subtype: 'quest_deadline',
-                content: `⏰ ${t('gameplay.questDeadlineExpired', 'Quest deadline expired')}: ${q.name} — ${q.deadline?.consequence || ''}`,
-                timestamp: Date.now(),
-              },
-            });
+            if (ach.grantsTitle && state.character) {
+              dispatch({
+                type: 'ADD_TITLE',
+                payload: { ...ach.grantsTitle, sourceAchievementId: ach.id },
+              });
+            }
           }
         }
 

@@ -95,6 +95,7 @@ function _parseBackendCampaign(full) {
 
   if (!state.campaign) state.campaign = {};
   state.campaign.backendId = full.id;
+  if (full.userId) state.campaign.userId = full.userId;
   state.lastSaved = new Date(full.lastSaved || full.updatedAt || full.createdAt).getTime();
 
   return state;
@@ -484,12 +485,9 @@ export const storage = {
           characteristics: character.characteristics,
           advances: character.advances,
           skills: character.skills,
-          talents: character.talents,
           wounds: character.wounds,
           maxWounds: character.maxWounds,
           movement: character.movement,
-          fate: character.fate,
-          resilience: character.resilience,
           characterLevel: character.characterLevel || 1,
           characterXp: character.characterXp || 0,
           attributePoints: character.attributePoints || 0,
@@ -591,11 +589,8 @@ export const storage = {
         characteristics: character.characteristics,
         advances: character.advances,
         skills: character.skills,
-        talents: character.talents,
         wounds: character.wounds,
         maxWounds: character.maxWounds,
-        fate: character.fate,
-        resilience: character.resilience,
         characterLevel: character.characterLevel || 1,
         characterXp: character.characterXp || 0,
         attributePoints: character.attributePoints || 0,
@@ -667,12 +662,9 @@ export const storage = {
               characteristics: char.characteristics,
               advances: char.advances,
               skills: char.skills,
-              talents: char.talents,
               wounds: char.wounds ?? 0,
               maxWounds: char.maxWounds ?? 0,
               movement: char.movement ?? 4,
-              fate: char.fate ?? 0,
-              resilience: char.resilience ?? 0,
               characterLevel: char.characterLevel ?? 1,
               characterXp: char.characterXp ?? 0,
               attributePoints: char.attributePoints ?? 0,

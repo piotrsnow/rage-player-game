@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useGame, createDefaultNeeds } from '../contexts/GameContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
@@ -52,6 +53,7 @@ function buildCharacter(aiResult, campaignSettings) {
 
 export function useGameState() {
   const { state, dispatch, autoSave } = useGame();
+  const { loadCampaignVoiceSettings } = useSettings();
 
   const startNewCampaign = useCallback(
     async (aiResult, campaignSettings) => {
@@ -183,6 +185,10 @@ export function useGameState() {
         const data = await storage.loadCampaign(campaignId);
         if (data) {
           dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
+          const backendId = data.campaign?.backendId || data.campaign?.id;
+          if (backendId) {
+            loadCampaignVoiceSettings(backendId).catch(() => { /* non-fatal */ });
+          }
           return true;
         }
       } catch (err) {
@@ -190,7 +196,7 @@ export function useGameState() {
       }
       return false;
     },
-    [dispatch]
+    [dispatch, loadCampaignVoiceSettings]
   );
 
   const resetGame = useCallback(() => {

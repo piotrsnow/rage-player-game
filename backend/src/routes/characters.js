@@ -33,7 +33,6 @@ function deserializeCharacter(c) {
     characteristics: safeJsonParse(c.characteristics, {}),
     advances: safeJsonParse(c.advances, {}),
     skills: safeJsonParse(c.skills, {}),
-    talents: safeJsonParse(c.talents, []),
     inventory: safeJsonParse(c.inventory, []),
     money: safeJsonParse(c.money, {}),
     equipped: safeJsonParse(c.equipped, { mainHand: null, offHand: null, armour: null }),
@@ -78,12 +77,9 @@ export async function characterRoutes(fastify) {
         characteristics: JSON.stringify(body.characteristics || {}),
         advances: JSON.stringify(body.advances || {}),
         skills: JSON.stringify(body.skills || {}),
-        talents: JSON.stringify(body.talents || []),
         wounds: body.wounds ?? 0,
         maxWounds: body.maxWounds ?? 0,
         movement: body.movement ?? 4,
-        fate: body.fate ?? 0,
-        resilience: body.resilience ?? 0,
         xp: body.xp ?? 0,
         xpSpent: body.xpSpent ?? 0,
         backstory: body.backstory || '',
@@ -124,12 +120,9 @@ export async function characterRoutes(fastify) {
     if (body.characteristics !== undefined) updateData.characteristics = JSON.stringify(body.characteristics);
     if (body.advances !== undefined) updateData.advances = JSON.stringify(body.advances);
     if (body.skills !== undefined) updateData.skills = JSON.stringify(body.skills);
-    if (body.talents !== undefined) updateData.talents = JSON.stringify(body.talents);
     if (body.wounds !== undefined) updateData.wounds = body.wounds;
     if (body.maxWounds !== undefined) updateData.maxWounds = body.maxWounds;
     if (body.movement !== undefined) updateData.movement = body.movement;
-    if (body.fate !== undefined) updateData.fate = body.fate;
-    if (body.resilience !== undefined) updateData.resilience = body.resilience;
     if (body.xp !== undefined) updateData.xp = body.xp;
     if (body.xpSpent !== undefined) updateData.xpSpent = body.xpSpent;
     if (body.backstory !== undefined) updateData.backstory = body.backstory;

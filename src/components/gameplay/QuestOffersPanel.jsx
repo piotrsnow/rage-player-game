@@ -124,9 +124,9 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
                                   if (offer.reward.xp) parts.push(`${offer.reward.xp} XP`);
                                   if (offer.reward.money) {
                                     const m = offer.reward.money;
-                                    if (m.gold) parts.push(`${m.gold} GC`);
-                                    if (m.silver) parts.push(`${m.silver} SS`);
-                                    if (m.copper) parts.push(`${m.copper} CP`);
+                                    if (m.gold) parts.push(`${m.gold} ZK`);
+                                    if (m.silver) parts.push(`${m.silver} SK`);
+                                    if (m.copper) parts.push(`${m.copper} MK`);
                                   }
                                   if (offer.reward.items?.length > 0) parts.push(offer.reward.items.map((i) => i.name || i).join(', '));
                                   return parts.length > 0 ? parts.join(', ') : offer.reward.description || '';

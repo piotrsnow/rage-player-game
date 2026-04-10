@@ -185,8 +185,6 @@ function mpReducer(state, action) {
             if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
             if (delta.hp != null && u.hp != null) u.hp = Math.max(0, Math.min(u.maxHp || 100, u.hp + delta.hp));
             if (delta.mana != null && u.mana != null) u.mana = Math.max(0, Math.min(u.maxMana || 50, u.mana + delta.mana));
-            if (delta.fortuneChange != null) u.fortune = Math.max(0, Math.min(u.fate ?? 2, (u.fortune ?? 0) + delta.fortuneChange));
-            if (delta.resolveChange != null) u.resolve = Math.max(0, Math.min(u.resilience ?? 1, (u.resolve ?? 0) + delta.resolveChange));
             if (Array.isArray(delta.newItems)) u.inventory = [...(u.inventory || []), ...delta.newItems];
             if (Array.isArray(delta.removeItems)) {
               const rmById = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.id || i.name)));
@@ -208,12 +206,6 @@ function mpReducer(state, action) {
               u.needs = needs;
             }
             if (delta.statuses) u.statuses = delta.statuses;
-            if (Array.isArray(delta.criticalWounds)) {
-              u.criticalWounds = [...(u.criticalWounds || []), ...delta.criticalWounds];
-            }
-            if (delta.healCriticalWound) {
-              u.criticalWounds = (u.criticalWounds || []).filter((cw) => cw.name !== delta.healCriticalWound);
-            }
             return u;
           });
           newGameState = { ...newGameState, characters: updatedChars };
@@ -370,21 +362,11 @@ function mpReducer(state, action) {
         const u = { ...c };
         if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
         if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
-        if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
-          u.criticalWounds = [...(u.criticalWounds || []), ...delta.criticalWounds];
-        }
         if (u.wounds === 0 && delta.wounds < 0) {
           const critCount = (u.criticalWoundCount || 0) + 1;
           u.criticalWoundCount = critCount;
           if (critCount >= 3) {
-            if ((u.fate || 0) > 0) {
-              u.fate = u.fate - 1;
-              u.fortune = Math.min(u.fortune || 0, u.fate);
-              u.criticalWoundCount = 2;
-              u.wounds = 1;
-            } else {
-              u.status = 'dead';
-            }
+            u.status = 'dead';
           }
         }
         return u;

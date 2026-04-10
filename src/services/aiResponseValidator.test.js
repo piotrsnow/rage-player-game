@@ -184,18 +184,18 @@ describe('repairDialogueSegments', () => {
 
   it('keeps quotes preceded by "jako" as narration', () => {
     const segments = [
-      { type: 'narration', text: 'Był znany jako „Rzeźnik z Altdorfu" w całym mieście.' },
+      { type: 'narration', text: 'Był znany jako „Rzeźnik z Krynska" w całym mieście.' },
     ];
     const result = repairDialogueSegments('...', segments);
 
     expect(result).toHaveLength(1);
     expect(result[0].type).toBe('narration');
-    expect(result[0].text).toContain('Rzeźnik z Altdorfu');
+    expect(result[0].text).toContain('Rzeźnik z Krynska');
   });
 
   it('keeps quotes preceded by "na" as narration', () => {
     const segments = [
-      { type: 'narration', text: 'Na pergaminie widniał napis na „Kronikę Imperium" i datę sprzed wieków.' },
+      { type: 'narration', text: 'Na pergaminie widniał napis na „Kronikę Krolestwo" i datę sprzed wieków.' },
     ];
     const result = repairDialogueSegments('...', segments);
 
@@ -459,11 +459,11 @@ describe('repairDialogueSegments', () => {
     expect(hildaDialogues.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not attribute dialogue to excluded faction/location names like Imperium', () => {
+  it('does not attribute dialogue to excluded faction/location names like Krolestwo', () => {
     const segments = [
-      { type: 'narration', text: 'Tragarze bronili granic Imperium. Jeden z nich mruknął: „Rada chce to dziś zakopać."' },
+      { type: 'narration', text: 'Tragarze bronili granic Krolestwo. Jeden z nich mruknął: „Rada chce to dziś zakopać."' },
     ];
-    const result = repairDialogueSegments('...', segments, [], ['Imperium', 'Altdorf']);
+    const result = repairDialogueSegments('...', segments, [], ['Krolestwo', 'Krynsk']);
 
     const dialogues = result.filter(s => s.type === 'dialogue');
     expect(dialogues).toHaveLength(0);
@@ -472,12 +472,12 @@ describe('repairDialogueSegments', () => {
 
   it('filters out excluded names from AI-returned dialogue segments when building known names', () => {
     const segments = [
-      { type: 'dialogue', character: 'Imperium', text: 'Rada chce to dziś zakopać.' },
+      { type: 'dialogue', character: 'Krolestwo', text: 'Rada chce to dziś zakopać.' },
       { type: 'narration', text: 'Tragarz splunął i mruknął: „Przenieśmy to niżej."' },
     ];
-    const result = repairDialogueSegments('...', segments, [], ['Imperium']);
+    const result = repairDialogueSegments('...', segments, [], ['Krolestwo']);
 
-    const imperiumDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Imperium');
+    const imperiumDialogues = result.filter(s => s.type === 'dialogue' && s.character === 'Krolestwo');
     expect(imperiumDialogues).toHaveLength(1);
     const uncertainSpeech = result.filter(s => s.type === 'narration' && s.text === 'Przenieśmy to niżej.');
     expect(uncertainSpeech).toHaveLength(1);
@@ -707,7 +707,7 @@ describe('safeParseAIResponse suggestedActions normalization', () => {
 
   it('rewrites generic suggestedActions into scene-grounded actions', () => {
     const raw = {
-      narrative: 'W ruinach kaplicy pod Ubersreik znaleziono świeże ślady krwi i wyrwany medalik Sigmara.',
+      narrative: 'W ruinach kaplicy pod Wronograd znaleziono świeże ślady krwi i wyrwany medalik Bielowita.',
       suggestedActions: [
         'Rozglądam się',
         'Idę dalej',
