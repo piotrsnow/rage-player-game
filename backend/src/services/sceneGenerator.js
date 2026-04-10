@@ -1005,29 +1005,65 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
   let accumulated = '';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
+  const debug = process.env.OPENAI_STREAM_DEBUG === '1';
+
+  const handleDataLine = (data) => {
+    if (!data || data === '[DONE]') return;
+    let parsed;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      if (debug) console.log('[openai-stream] UNPARSEABLE:', JSON.stringify(data));
+      return;
+    }
+    const choice = parsed.choices?.[0];
+    if (!choice) return;
+    const delta = choice.delta;
+    if (!delta) return;
+    if (debug) console.log('[openai-stream] delta:', JSON.stringify(delta));
+    // `content` can be a plain string OR (on some models / via Responses-style
+    // chunking) an array of content parts like [{type:'text', text:'...'}].
+    // Our old code only handled the string form, which silently dropped the
+    // array-form chunks and produced corrupted JSON.
+    let text = '';
+    if (typeof delta.content === 'string') {
+      text = delta.content;
+    } else if (Array.isArray(delta.content)) {
+      for (const part of delta.content) {
+        if (typeof part === 'string') text += part;
+        else if (part && typeof part.text === 'string') text += part.text;
+        else if (part && typeof part.content === 'string') text += part.content;
+      }
+    } else if (delta.content && typeof delta.content === 'object') {
+      if (typeof delta.content.text === 'string') text = delta.content.text;
+    }
+    if (text) {
+      accumulated += text;
+      if (onChunk) onChunk(text);
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+    buffer += decoder.decode(value, { stream: true });
 
-    for (const line of lines) {
-      const data = line.slice(6);
-      if (data === '[DONE]') continue;
+    // Split on newline but keep the trailing partial line in the buffer.
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
 
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          accumulated += delta;
-          if (onChunk) onChunk(delta);
-        }
-      } catch {
-        // skip malformed SSE lines
-      }
+    for (const rawLine of lines) {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+      if (!line.startsWith('data: ')) continue;
+      handleDataLine(line.slice(6));
     }
+  }
+
+  // Flush any trailing complete event left in the buffer.
+  if (buffer.startsWith('data: ')) {
+    handleDataLine(buffer.slice(6));
   }
 
   return accumulated;
@@ -1066,33 +1102,46 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
   let accumulated = '';
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
+
+  const handleDataLine = (data) => {
+    if (!data) return;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+        accumulated += parsed.delta.text;
+        if (onChunk) onChunk(parsed.delta.text);
+      }
+      // Log cache metrics from the final message_delta event
+      if (parsed.type === 'message_delta' && parsed.usage) {
+        const u = parsed.usage;
+        if (u.cache_read_input_tokens > 0 || u.cache_creation_input_tokens > 0) {
+          console.log(`[anthropic-stream] Cache: read=${u.cache_read_input_tokens || 0} created=${u.cache_creation_input_tokens || 0}`);
+        }
+      }
+    } catch {
+      // skip malformed SSE lines
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+    buffer += decoder.decode(value, { stream: true });
 
-    for (const line of lines) {
-      const data = line.slice(6);
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
-          accumulated += parsed.delta.text;
-          if (onChunk) onChunk(parsed.delta.text);
-        }
-        // Log cache metrics from the final message_delta event
-        if (parsed.type === 'message_delta' && parsed.usage) {
-          const u = parsed.usage;
-          if (u.cache_read_input_tokens > 0 || u.cache_creation_input_tokens > 0) {
-            console.log(`[anthropic-stream] Cache: read=${u.cache_read_input_tokens || 0} created=${u.cache_creation_input_tokens || 0}`);
-          }
-        }
-      } catch {
-        // skip malformed SSE lines
-      }
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+      if (!line.startsWith('data: ')) continue;
+      handleDataLine(line.slice(6));
     }
+  }
+
+  if (buffer.startsWith('data: ')) {
+    handleDataLine(buffer.slice(6));
   }
 
   return accumulated;

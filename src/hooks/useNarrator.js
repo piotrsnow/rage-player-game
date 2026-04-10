@@ -37,10 +37,13 @@ const MAX_NATURAL_PLAYBACK_RATE = 2;
 const MAX_FAST_FORWARD_PLAYBACK_RATE = 5;
 const CHARS_PER_SECOND_ESTIMATE = 14;
 const STREAMING_POLL_MS = 120;
-// Used by pushStreamingSegments to decide whether the LAST streamed segment is
-// complete enough to release into the playback buffer. Sentence-closing punct,
-// optional closing quote/bracket, optional trailing whitespace.
-const STREAMING_SENTENCE_END_RE = /[.!?…][")\]»”’]*\s*$/;
+// (removed) STREAMING_SENTENCE_END_RE: previously used to release the last
+// in-flight segment early when its text ended on a sentence. That was unsafe
+// because a segment can contain multiple sentences — the stream often went
+// past the first period while the segment kept growing, and any further text
+// added to that segment was lost (sentCount had already moved past it).
+// Now we only release segments that are PROVEN complete (a later segment has
+// appeared after them in the parsed JSON, or finishStreaming has been called).
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
@@ -709,16 +712,13 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     // Only push segments we haven't seen yet
     const newSegments = segments.slice(s.sentCount);
     if (newSegments.length === 0) return;
-    // Earlier segments are guaranteed complete — the model only moves on to a
-    // new segment after closing the previous one. The LAST segment may still
-    // be mid-stream, so only release it if it ends with sentence-closing
-    // punctuation (or the stream is already finished).
+    // A segment is PROVEN complete only when a later segment has appeared
+    // after it in the parsed JSON (meaning the model closed it and moved on).
+    // While streaming, always withhold the last segment — its text can still
+    // grow, and once pushed we can't retroactively extend it in the playback
+    // queue. finishStreaming() flushes the tail at the end.
     let safeCount = newSegments.length;
-    if (!s.finished) {
-      const last = newSegments[newSegments.length - 1];
-      const lastText = (last?.text || '').trim();
-      if (!STREAMING_SENTENCE_END_RE.test(lastText)) safeCount -= 1;
-    }
+    if (!s.finished) safeCount -= 1;
     if (safeCount > 0) {
       s.segments.push(...newSegments.slice(0, safeCount));
       s.sentCount += safeCount;
