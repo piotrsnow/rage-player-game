@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import {
   SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS,
-  CREATION_LIMITS, SKILL_CAPS, SKILL_CATEGORIES, createStartingSkills, calculateMaxWounds,
+  CREATION_LIMITS, SKILL_CAPS, createStartingSkills, calculateMaxWounds,
 } from '../../data/rpgSystem';
 import {
   pickRandomName, randomizeSpecies,
@@ -11,73 +11,10 @@ import {
   generateStartingMoney,
 } from '../../services/gameState';
 import { normalizeCharacterAge } from '../../services/characterAge';
-import { translateSkill } from '../../utils/rpgTranslate';
 import PortraitGenerator from './PortraitGenerator';
-
-function SectionHeader({ icon, label, onRandomize }) {
-  return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary text-lg">{icon}</span>
-        <h3 className="text-xs text-on-surface-variant font-label uppercase tracking-widest">{label}</h3>
-      </div>
-      {onRandomize && (
-        <button
-          type="button"
-          onClick={onRandomize}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-label text-tertiary hover:text-primary transition-colors rounded-sm hover:bg-surface-tint/10"
-          title={label}
-        >
-          <span className="material-symbols-outlined text-sm">casino</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-function PointBuyRow({ label, shortLabel, baseValue, added, speciesMod, finalValue, pointCost, onIncrement, onDecrement, canIncrement, canDecrement }) {
-  return (
-    <div className="flex items-center gap-2 p-2 bg-surface-container-high/40 border border-outline-variant/10 rounded-sm">
-      <div className="flex flex-col min-w-[70px]">
-        <div className="flex items-center gap-1">
-          <span className="text-[11px] text-on-surface-variant uppercase tracking-wider font-label">{shortLabel}</span>
-          {pointCost > 1 && (
-            <span className="text-[9px] px-1 py-0.5 bg-amber-500/15 text-amber-400 rounded-sm font-label">×{pointCost}</span>
-          )}
-        </div>
-        <span className="text-[10px] text-outline truncate">{label}</span>
-      </div>
-      <div className="flex items-center gap-1 ml-auto">
-        <button
-          type="button"
-          onClick={onDecrement}
-          disabled={!canDecrement}
-          className="w-6 h-6 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/30 disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-sm font-bold"
-        >
-          −
-        </button>
-        <div className="flex items-center gap-0.5 min-w-[80px] justify-center">
-          <span className="text-xs text-on-surface-variant tabular-nums">{baseValue + added}</span>
-          {speciesMod !== 0 && (
-            <span className={`text-[10px] tabular-nums ${speciesMod > 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {speciesMod > 0 ? '+' : ''}{speciesMod}
-            </span>
-          )}
-          <span className="text-xs text-outline mx-0.5">=</span>
-          <span className="text-lg font-headline text-tertiary tabular-nums">{finalValue}</span>
-        </div>
-        <button
-          type="button"
-          onClick={onIncrement}
-          disabled={!canIncrement}
-          className="w-6 h-6 flex items-center justify-center rounded-sm border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/30 disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-sm font-bold"
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
+import { SectionHeader } from './creation/Primitives';
+import AttributesSection from './creation/AttributesSection';
+import SkillsSection from './creation/SkillsSection';
 
 export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fantasy', initialCharacter }) {
   const { t } = useTranslation();
@@ -411,134 +348,31 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             </div>
           </section>
 
-          {/* Attributes — Point Buy */}
-          <section>
-            <SectionHeader icon="monitoring" label={t('charCreator.characteristicsLabel')} onRandomize={handleRandomizeStats} />
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
-                  {t('charCreator.attributePointsRemaining')}
-                </span>
-                <span className={`text-xs font-bold tabular-nums ${
-                  attrPointsRemaining <= 0 ? 'text-error' : attrPointsRemaining <= 3 ? 'text-tertiary' : 'text-primary'
-                }`}>
-                  {attrPointsRemaining} / {CREATION_LIMITS.distributableAttributePoints}
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-surface-container-high/60 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    attrPointsRemaining <= 0 ? 'bg-error' : attrPointsRemaining <= 3 ? 'bg-tertiary' : 'bg-primary'
-                  }`}
-                  style={{ width: `${Math.min(100, (attrPointsUsed / CREATION_LIMITS.distributableAttributePoints) * 100)}%` }}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {ATTRIBUTE_KEYS.map((key) => {
-                const added = attrAdded[key] || 0;
-                const specMod = speciesData.attributes[key] || 0;
-                const cost = attrPointCost(key);
-                return (
-                  <PointBuyRow
-                    key={key}
-                    label={t(`rpgAttributes.${key}`)}
-                    shortLabel={t(`rpgAttributeShort.${key}`)}
-                    baseValue={CREATION_LIMITS.baseAttribute}
-                    added={added}
-                    speciesMod={specMod}
-                    finalValue={attributes[key]}
-                    pointCost={cost}
-                    onIncrement={() => handleAttrIncrement(key)}
-                    onDecrement={() => handleAttrDecrement(key)}
-                    canIncrement={added < CREATION_LIMITS.maxPerAttributeAtCreation && attrPointsRemaining >= cost}
-                    canDecrement={added > 0}
-                  />
-                );
-              })}
-            </div>
-            <div className="flex flex-wrap gap-4 mt-3 text-xs text-on-surface-variant">
-              <span>{t('charCreator.derivedWounds')}: <strong className="text-tertiary">{maxWounds}</strong></span>
-              <span>{t('charCreator.derivedMovement')}: <strong className="text-tertiary">{speciesData.movement}</strong></span>
-              <span>Mana: <strong className="text-tertiary">{speciesData.startingMana || 0}</strong></span>
-            </div>
-          </section>
+          <AttributesSection
+            attrAdded={attrAdded}
+            attributes={attributes}
+            speciesData={speciesData}
+            attrPointsUsed={attrPointsUsed}
+            attrPointsRemaining={attrPointsRemaining}
+            attrPointCost={attrPointCost}
+            maxWounds={maxWounds}
+            onIncrement={handleAttrIncrement}
+            onDecrement={handleAttrDecrement}
+            onRandomize={handleRandomizeStats}
+          />
 
-          {/* Skills — grouped by category */}
-          <section>
-            <SectionHeader icon="construction" label={t('charCreator.skillsLabel')} onRandomize={handleRandomizeSkills} />
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
-                  {t('charCreator.skillPointsRemaining')}
-                </span>
-                <span className={`text-xs font-bold tabular-nums ${
-                  remainingSkillPoints <= 0 ? 'text-error' : remainingSkillPoints <= 5 ? 'text-tertiary' : 'text-primary'
-                }`}>
-                  {remainingSkillPoints} / {totalSkillPoints}
-                </span>
-              </div>
-              <div className="h-1.5 rounded-full bg-surface-container-high/60 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    remainingSkillPoints <= 0 ? 'bg-error' : remainingSkillPoints <= 5 ? 'bg-tertiary' : 'bg-primary'
-                  }`}
-                  style={{ width: `${skillPointsPct}%` }}
-                />
-              </div>
-            </div>
-            <div className="space-y-4">
-              {SKILL_CATEGORIES.map((cat) => (
-                <div key={cat.key}>
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="material-symbols-outlined text-sm text-primary">{cat.icon}</span>
-                    <span className="text-[11px] font-label uppercase tracking-wider text-on-surface-variant">{t(`rpgSkillCategories.${cat.key}`, { defaultValue: cat.label })}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                    {cat.skills.map((skillName) => {
-                      const val = skills[skillName];
-                      const level = typeof val === 'object' ? val.level : (val || 0);
-                      const isRacial = racialSkillNames.has(skillName);
-                      const minLevel = isRacial ? racialBase : 0;
-                      return (
-                        <div key={skillName} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-xs text-on-surface truncate">{translateSkill(skillName, t)}</span>
-                            {isRacial && (
-                              <span className="shrink-0 text-[9px] px-1 py-0.5 bg-primary/15 text-primary rounded-sm font-label">
-                                {t('charCreator.racialSkill')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleSkillDecrement(skillName)}
-                              disabled={level <= minLevel}
-                              className="w-5 h-5 flex items-center justify-center rounded-sm text-on-surface-variant hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs font-bold"
-                            >
-                              −
-                            </button>
-                            <span className={`w-6 text-center text-xs tabular-nums ${level > 0 ? 'text-tertiary font-bold' : 'text-outline'}`}>
-                              {level}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleSkillIncrement(skillName)}
-                              disabled={level >= maxSkillLevel || remainingSkillPoints <= 0}
-                              className="w-5 h-5 flex items-center justify-center rounded-sm text-on-surface-variant hover:text-primary disabled:opacity-20 disabled:cursor-not-allowed transition-colors text-xs font-bold"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          <SkillsSection
+            skills={skills}
+            racialSkillNames={racialSkillNames}
+            racialBase={racialBase}
+            totalSkillPoints={totalSkillPoints}
+            skillPointsUsed={skillPointsUsed}
+            remainingSkillPoints={remainingSkillPoints}
+            skillPointsPct={skillPointsPct}
+            onIncrement={handleSkillIncrement}
+            onDecrement={handleSkillDecrement}
+            onRandomize={handleRandomizeSkills}
+          />
 
           {/* Backstory */}
           <section>

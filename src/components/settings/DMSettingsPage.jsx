@@ -1,15 +1,19 @@
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { useElevenlabsVoices } from '../../hooks/useElevenlabsVoices';
 import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
 import { useConfigImportExport } from '../../hooks/useConfigImportExport';
-import Slider from '../ui/Slider';
 import Button from '../ui/Button';
 import LanguageSection from './sections/LanguageSection';
 import BackendServerSection from './sections/BackendServerSection';
 import ConfigBackupSection from './sections/ConfigBackupSection';
+import NarrativeAnchorsSection from './sections/NarrativeAnchorsSection';
+import NarratorStyleSection from './sections/NarratorStyleSection';
+import SceneVisualizationSection from './sections/SceneVisualizationSection';
+import EffectIntensitySection from './sections/EffectIntensitySection';
+import NarratorVoicesSection from './sections/NarratorVoicesSection';
+import { SfxSection, MusicSection } from './sections/AudioSections';
 
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
@@ -26,9 +30,6 @@ export default function DMSettingsPage({ onClose }) {
     backendAuthChecking,
     backendLogout,
   } = useSettings();
-  const applyVoiceUpdate = useCallback((updates) => {
-    updateSettings(updates);
-  }, [updateSettings]);
 
   const {
     voices,
@@ -60,7 +61,7 @@ export default function DMSettingsPage({ onClose }) {
   };
 
   const handleSelectNarratorVoice = (voice) => {
-    applyVoiceUpdate({
+    updateSettings({
       narratorVoiceId: voice.voiceId,
       narratorVoiceName: voice.name,
     });
@@ -71,18 +72,11 @@ export default function DMSettingsPage({ onClose }) {
     const current = settings[key] || [];
     const exists = current.some((v) => v.voiceId === voice.voiceId);
     if (exists) {
-      applyVoiceUpdate({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
+      updateSettings({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
     } else {
-      applyVoiceUpdate({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
+      updateSettings({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
     }
   };
-
-  const isInPool = (voiceId, gender) => {
-    const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
-    return (settings[key] || []).some((v) => v.voiceId === voiceId);
-  };
-
-  const isNarratorVoice = (voiceId) => settings.narratorVoiceId === voiceId;
 
   const handleTestVoice = (voiceIdOverride) => {
     const voiceId = voiceIdOverride || settings.narratorVoiceId;
@@ -90,23 +84,14 @@ export default function DMSettingsPage({ onClose }) {
     testVoice(voiceId);
   };
 
-  const difficultyLabel = settings.dmSettings.difficulty < 25 ? t('settings.difficultyLabels.easy') : settings.dmSettings.difficulty < 50 ? t('settings.difficultyLabels.normal') : settings.dmSettings.difficulty < 75 ? t('settings.difficultyLabels.hard') : t('settings.difficultyLabels.expert');
-  const chaosLabel = settings.dmSettings.narrativeStyle < 25 ? t('settings.chaosLabels.stable') : settings.dmSettings.narrativeStyle < 50 ? t('settings.chaosLabels.balanced') : settings.dmSettings.narrativeStyle < 75 ? t('settings.chaosLabels.chaotic') : t('settings.chaosLabels.wild');
-  const lengthLabel = settings.dmSettings.responseLength < 33 ? t('settings.lengthLabels.short') : settings.dmSettings.responseLength < 66 ? t('settings.lengthLabels.medium') : t('settings.lengthLabels.long');
-  const combatCommentaryFrequency = settings.dmSettings.combatCommentaryFrequency ?? 3;
-  const combatCommentaryLabel = combatCommentaryFrequency === 0
-    ? t('settings.combatCommentaryDisabled')
-    : t('settings.combatCommentaryEveryRounds', { count: combatCommentaryFrequency });
-
-  const poeticismLabel = (settings.dmSettings.narratorPoeticism ?? 50) < 25 ? t('settings.poeticismLabels.prosaic') : (settings.dmSettings.narratorPoeticism ?? 50) < 50 ? t('settings.poeticismLabels.literary') : (settings.dmSettings.narratorPoeticism ?? 50) < 75 ? t('settings.poeticismLabels.poetic') : t('settings.poeticismLabels.lyrical');
-  const grittinessLabel = (settings.dmSettings.narratorGrittiness ?? 30) < 25 ? t('settings.grittinessLabels.light') : (settings.dmSettings.narratorGrittiness ?? 30) < 50 ? t('settings.grittinessLabels.grounded') : (settings.dmSettings.narratorGrittiness ?? 30) < 75 ? t('settings.grittinessLabels.gritty') : t('settings.grittinessLabels.brutal');
-  const detailLevelLabel = (settings.dmSettings.narratorDetail ?? 50) < 25 ? t('settings.detailLabels.minimal') : (settings.dmSettings.narratorDetail ?? 50) < 50 ? t('settings.detailLabels.balanced') : (settings.dmSettings.narratorDetail ?? 50) < 75 ? t('settings.detailLabels.rich') : t('settings.detailLabels.lavish');
-  const humorLabel = (settings.dmSettings.narratorHumor ?? 20) < 25 ? t('settings.humorLabels.serious') : (settings.dmSettings.narratorHumor ?? 20) < 50 ? t('settings.humorLabels.dry') : (settings.dmSettings.narratorHumor ?? 20) < 75 ? t('settings.humorLabels.witty') : t('settings.humorLabels.absurd');
-  const dramaLabel = (settings.dmSettings.narratorDrama ?? 50) < 25 ? t('settings.dramaLabels.subtle') : (settings.dmSettings.narratorDrama ?? 50) < 50 ? t('settings.dramaLabels.measured') : (settings.dmSettings.narratorDrama ?? 50) < 75 ? t('settings.dramaLabels.heightened') : t('settings.dramaLabels.theatrical');
-  const seriousnessLabel = (settings.dmSettings.narratorSeriousness ?? 50) < 25 ? t('settings.seriousnessLabels.silly') : (settings.dmSettings.narratorSeriousness ?? 50) < 50 ? t('settings.seriousnessLabels.lighthearted') : (settings.dmSettings.narratorSeriousness ?? 50) < 75 ? t('settings.seriousnessLabels.serious') : t('settings.seriousnessLabels.grave');
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('settings.title')} onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('settings.title')}
+      onClick={onClose}
+    >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
@@ -143,639 +128,48 @@ export default function DMSettingsPage({ onClose }) {
                   onChange={(language) => updateSettings({ language })}
                 />
 
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-primary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-8 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">vital_signs</span>
-                    {t('settings.narrativeAnchors')}
-                  </h2>
+                <NarrativeAnchorsSection
+                  dmSettings={settings.dmSettings}
+                  updateDMSettings={updateDMSettings}
+                />
 
-                  <Slider
-                    label={t('settings.storyChaos')}
-                    description={t('settings.storyChaosDesc')}
-                    value={settings.dmSettings.narrativeStyle}
-                    onChange={(v) => updateDMSettings({ narrativeStyle: v })}
-                    displayValue={`${settings.dmSettings.narrativeStyle}% — ${chaosLabel}`}
-                  />
+                <NarratorStyleSection
+                  dmSettings={settings.dmSettings}
+                  updateDMSettings={updateDMSettings}
+                />
 
-                  <Slider
-                    label={t('settings.responseLength')}
-                    description={t('settings.responseLengthDesc')}
-                    value={settings.dmSettings.responseLength}
-                    onChange={(v) => updateDMSettings({ responseLength: v })}
-                    displayValue={lengthLabel}
-                  />
+                <SceneVisualizationSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                  updateDMSettings={updateDMSettings}
+                />
 
-                  <Slider
-                    label={t('settings.difficulty')}
-                    description={t('settings.difficultyDesc')}
-                    value={settings.dmSettings.difficulty}
-                    onChange={(v) => updateDMSettings({ difficulty: v })}
-                    displayValue={difficultyLabel}
-                  />
-
-                  <Slider
-                    label={t('settings.skillChecks')}
-                    description={t('settings.skillChecksDesc')}
-                    value={settings.dmSettings.testsFrequency}
-                    onChange={(v) => updateDMSettings({ testsFrequency: v })}
-                    displayValue={`${settings.dmSettings.testsFrequency}%`}
-                  />
-
-                  <Slider
-                    label={t('settings.combatCommentaryFrequency')}
-                    description={t('settings.combatCommentaryFrequencyDesc')}
-                    min={0}
-                    max={5}
-                    value={combatCommentaryFrequency}
-                    onChange={(v) => updateDMSettings({ combatCommentaryFrequency: v })}
-                    displayValue={combatCommentaryLabel}
-                  />
-
-                  <Slider
-                    label={t('settings.playerFreedom')}
-                    description={t('settings.playerFreedomDesc')}
-                    value={settings.dmSettings.freedom}
-                    onChange={(v) => updateDMSettings({ freedom: v })}
-                    displayValue={`${settings.dmSettings.freedom}%`}
-                  />
-                </div>
-
-                {/* Narrator Style */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">stylus_note</span>
-                    {t('settings.narratorStyle')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-8">{t('settings.narratorStyleDesc')}</p>
-
-                  <Slider
-                    label={t('settings.poeticism')}
-                    description={t('settings.poeticismDesc')}
-                    value={settings.dmSettings.narratorPoeticism ?? 50}
-                    onChange={(v) => updateDMSettings({ narratorPoeticism: v })}
-                    displayValue={`${settings.dmSettings.narratorPoeticism ?? 50}% — ${poeticismLabel}`}
-                  />
-
-                  <Slider
-                    label={t('settings.grittiness')}
-                    description={t('settings.grittinessDesc')}
-                    value={settings.dmSettings.narratorGrittiness ?? 30}
-                    onChange={(v) => updateDMSettings({ narratorGrittiness: v })}
-                    displayValue={`${settings.dmSettings.narratorGrittiness ?? 30}% — ${grittinessLabel}`}
-                  />
-
-                  <Slider
-                    label={t('settings.narratorDetail')}
-                    description={t('settings.narratorDetailDesc')}
-                    value={settings.dmSettings.narratorDetail ?? 50}
-                    onChange={(v) => updateDMSettings({ narratorDetail: v })}
-                    displayValue={`${settings.dmSettings.narratorDetail ?? 50}% — ${detailLevelLabel}`}
-                  />
-
-                  <Slider
-                    label={t('settings.narratorHumor')}
-                    description={t('settings.narratorHumorDesc')}
-                    value={settings.dmSettings.narratorHumor ?? 20}
-                    onChange={(v) => updateDMSettings({ narratorHumor: v })}
-                    displayValue={`${settings.dmSettings.narratorHumor ?? 20}% — ${humorLabel}`}
-                  />
-
-                  <Slider
-                    label={t('settings.narratorDrama')}
-                    description={t('settings.narratorDramaDesc')}
-                    value={settings.dmSettings.narratorDrama ?? 50}
-                    onChange={(v) => updateDMSettings({ narratorDrama: v })}
-                    displayValue={`${settings.dmSettings.narratorDrama ?? 50}% — ${dramaLabel}`}
-                  />
-
-                  <div className="mt-6">
-                    <label className="block font-headline text-sm text-tertiary mb-2">
-                      {t('settings.narratorCustomInstructions')}
-                    </label>
-                    <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                      {t('settings.narratorCustomInstructionsDesc')}
-                    </p>
-                    <textarea
-                      value={settings.dmSettings.narratorCustomInstructions || ''}
-                      onChange={(e) => updateDMSettings({ narratorCustomInstructions: e.target.value })}
-                      placeholder={t('settings.narratorCustomInstructionsPlaceholder')}
-                      rows={4}
-                      className="w-full bg-surface-container-highest/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/40 resize-y"
-                    />
-                  </div>
-                </div>
-
-                {/* Toggles */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
-                    <div className="mb-3">
-                      <p className="font-headline text-tertiary">{t('settings.sceneVisualization')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.sceneVisualizationDesc')}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                      {[
-                        { id: 'image', icon: 'image', label: t('settings.sceneVisImage') },
-                        { id: 'map', icon: 'grid_on', label: t('settings.sceneVisMap') },
-                        { id: '3d', icon: 'view_in_ar', label: t('settings.sceneVis3D') },
-                        { id: 'canvas', icon: 'brush', label: t('settings.sceneVisCanvas') },
-                        { id: 'none', icon: 'visibility_off', label: t('settings.sceneVisNone') },
-                      ].map((opt) => (
-                        <button
-                          key={opt.id}
-                          onClick={() => updateSettings({ sceneVisualization: opt.id })}
-                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border text-center transition-all ${
-                            (settings.sceneVisualization || 'image') === opt.id
-                              ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                              : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-sm">{opt.icon}</span>
-                          <span className="font-headline text-xs">{opt.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Meshy 3D generation settings — hidden, using local models for now
-                  {(settings.sceneVisualization || 'image') === '3d' && (
-                    <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
-                      <div className="mb-3">
-                        <p className="font-headline text-tertiary">{t('settings.meshySettings')}</p>
-                        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                          {t('settings.meshySettingsDesc')}
-                        </p>
-                      </div>
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm text-on-surface">{t('settings.meshyEnabled')}</p>
-                            <p className="text-[10px] text-on-surface-variant">{t('settings.meshyEnabledDesc')}</p>
-                          </div>
-                          <button
-                            onClick={() => updateSettings({ meshyEnabled: !settings.meshyEnabled })}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.meshyEnabled ? 'bg-primary' : 'bg-outline-variant/30'}`}
-                          >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.meshyEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                          </button>
-                        </div>
-                        {settings.meshyEnabled && (
-                          <div>
-                            <label className="text-sm text-on-surface block mb-1">{t('settings.meshyApiKey')}</label>
-                            <input
-                              type="password"
-                              value={settings.meshyApiKey || ''}
-                              onChange={(e) => updateSettings({ meshyApiKey: e.target.value })}
-                              placeholder={t('settings.meshyApiKeyPlaceholder')}
-                              className="w-full bg-surface-container-highest/60 border border-outline-variant/15 rounded-sm px-3 py-2 text-sm text-on-surface placeholder-on-surface-variant/40 focus:outline-none focus:border-primary/40"
-                            />
-                          </div>
-                        )}
-                        <button
-                          onClick={async () => {
-                            const { clearCache } = await import('../../services/assetCache');
-                            await clearCache();
-                            alert(t('settings.assetCacheCleared'));
-                          }}
-                          className="text-xs text-on-surface-variant hover:text-primary transition-colors underline"
-                        >
-                          {t('settings.clearAssetCache')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  */}
-
-                  {(settings.sceneVisualization || 'image') === 'image' && (
-                    <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
-                      <div className="mb-3">
-                        <p className="font-headline text-tertiary">{t('settings.imageStyle')}</p>
-                        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                          {t('settings.imageStyleDesc')}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                        {[
-                          { id: 'illustration', icon: 'palette' },
-                          { id: 'pencil', icon: 'edit' },
-                          { id: 'noir', icon: 'contrast' },
-                          { id: 'anime', icon: 'animated_images' },
-                          { id: 'painting', icon: 'brush' },
-                          { id: 'watercolor', icon: 'water_drop' },
-                          { id: 'comic', icon: 'auto_stories' },
-                          { id: 'darkFantasy', icon: 'skull' },
-                          { id: 'vanGogh', icon: 'texture' },
-                          { id: 'photoreal', icon: 'photo_camera' },
-                          { id: 'retro', icon: 'grid_on' },
-                          { id: 'gothic', icon: 'castle' },
-                          { id: 'hiphop', icon: 'mic' },
-                          { id: 'crayon', icon: 'draw' },
-                        ].map((style) => (
-                          <button
-                            key={style.id}
-                            onClick={() => updateDMSettings({ imageStyle: style.id })}
-                            className={`flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-sm border text-center transition-all ${
-                              (settings.dmSettings.imageStyle || 'painting') === style.id
-                                ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                                : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                            }`}
-                          >
-                            <span className="material-symbols-outlined text-sm">{style.icon}</span>
-                            <span className="font-headline text-[11px]">{t(`settings.imageStyles.${style.id}`)}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex items-center justify-between mt-4 p-3 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
-                        <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-sm text-primary-dim">dark_mode</span>
-                          <div>
-                            <p className="font-headline text-tertiary text-sm">{t('settings.darkPalette')}</p>
-                            <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-0.5">
-                              {t('settings.darkPaletteDesc')}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => updateDMSettings({ darkPalette: !settings.dmSettings.darkPalette })}
-                          className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                            settings.dmSettings.darkPalette
-                              ? 'bg-primary-dim/20 border-primary/30'
-                              : 'bg-surface-container-highest border-outline-variant/30'
-                          }`}
-                        >
-                          <div
-                            className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                              settings.dmSettings.darkPalette
-                                ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                                : 'left-1 bg-on-surface-variant'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 group hover:bg-surface-container-high transition-colors col-span-1 md:col-span-2">
-                    <Slider
-                      label={t('settings.narratorSeriousness')}
-                      description={t('settings.narratorSeriousnessDesc')}
-                      value={settings.dmSettings.narratorSeriousness ?? 50}
-                      onChange={(v) => updateDMSettings({ narratorSeriousness: v })}
-                      displayValue={`${settings.dmSettings.narratorSeriousness ?? 50}% — ${seriousnessLabel}`}
-                    />
-                  </div>
-
-                  <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
-                    <div>
-                      <p className="font-headline text-tertiary">{t('settings.canvasEffects')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.canvasEffectsDesc')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ canvasEffectsEnabled: !settings.canvasEffectsEnabled })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.canvasEffectsEnabled !== false
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.canvasEffectsEnabled !== false
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
-                    <div>
-                      <p className="font-headline text-tertiary">{t('settings.needsSystem')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.needsSystemDesc')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ needsSystemEnabled: !settings.needsSystemEnabled })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.needsSystemEnabled
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.needsSystemEnabled
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Effect Intensity */}
-                {settings.canvasEffectsEnabled !== false && (
-                  <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-primary/20">
-                    <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-primary-dim">auto_awesome</span>
-                      {t('settings.effectIntensityTitle')}
-                    </h2>
-                    <p className="text-xs text-on-surface-variant mb-6">{t('settings.effectIntensityDesc')}</p>
-                    <div className="flex gap-3">
-                      {['low', 'medium', 'high'].map((level) => (
-                        <button
-                          key={level}
-                          onClick={() => updateSettings({ effectIntensity: level })}
-                          className={`flex-1 px-4 py-3 rounded-sm border text-center transition-all ${
-                            (settings.effectIntensity || 'medium') === level
-                              ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                              : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                          }`}
-                        >
-                          <span className="font-headline text-sm">{t(`settings.effectLevels.${level}`)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <EffectIntensitySection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                />
               </section>
 
               {/* Right Column: Media & Backend Settings */}
               <section className="space-y-6 animate-fade-in">
-                {/* Narrator Section */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">record_voice_over</span>
-                    {t('settings.narrator')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-6">{t('settings.narratorDesc')}</p>
-                  {backendUser && (
-                    <div className="mb-6 rounded-sm border border-tertiary/20 bg-tertiary/5 px-4 py-3 text-xs text-tertiary">
-                      {t('settings.sharedVoiceSettingsHint')}
-                    </div>
-                  )}
+                <NarratorVoicesSection
+                  settings={settings}
+                  updateSettings={updateSettings}
+                  backendUser={backendUser}
+                  hasApiKey={hasApiKey}
+                  voices={voices}
+                  loadingVoices={loadingVoices}
+                  voiceError={voiceError}
+                  testingVoice={testingVoice}
+                  onLoadVoices={handleLoadVoices}
+                  onSelectNarratorVoice={handleSelectNarratorVoice}
+                  onToggleGenderPool={handleToggleGenderPool}
+                  onTestVoice={handleTestVoice}
+                />
 
-                  {/* Enable Narrator Toggle */}
-                  <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
-                    <div>
-                      <p className="font-headline text-tertiary text-sm">{t('settings.narratorEnabled')}</p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ narratorEnabled: !settings.narratorEnabled })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.narratorEnabled
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.narratorEnabled
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
+                <SfxSection settings={settings} updateSettings={updateSettings} />
 
-                  {/* Auto-play Toggle */}
-                  <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
-                    <div>
-                      <p className="font-headline text-tertiary text-sm">{t('settings.narratorAutoPlay')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.narratorAutoPlayDesc')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ narratorAutoPlay: !settings.narratorAutoPlay })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.narratorAutoPlay
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.narratorAutoPlay
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Dialogue Speed Slider */}
-                  <Slider
-                    label={t('settings.dialogueSpeed')}
-                    description={t('settings.dialogueSpeedDesc')}
-                    min={50}
-                    max={200}
-                    value={settings.dialogueSpeed ?? 100}
-                    onChange={(v) => updateSettings({ dialogueSpeed: v })}
-                    displayValue={`${((settings.dialogueSpeed ?? 100) / 100).toFixed(1)}x`}
-                  />
-
-                  {/* Load Voices */}
-                  <div className="mb-6">
-                    <button
-                      onClick={handleLoadVoices}
-                      disabled={!hasApiKey('elevenlabs') || loadingVoices}
-                      className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
-                    >
-                      {loadingVoices ? t('settings.loadingVoices') : t('settings.loadVoices')}
-                    </button>
-                    {!hasApiKey('elevenlabs') && (
-                      <p className="text-[10px] text-on-surface-variant mt-2">{t('keys.configureElevenlabs')}</p>
-                    )}
-                    {voiceError && (
-                      <p className="text-error text-xs mt-2">{voiceError}</p>
-                    )}
-                  </div>
-
-                  {voices.length > 0 && (
-                    <div className="space-y-6">
-                      {/* Narrator */}
-                      <div>
-                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                          {t('settings.narratorVoice', 'Narrator')}
-                        </label>
-                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
-                          {voices.map((voice) => {
-                            const isNarrator = isNarratorVoice(voice.voiceId);
-                            return (
-                              <button
-                                key={voice.voiceId}
-                                onClick={() => handleSelectNarratorVoice(voice)}
-                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
-                                  isNarrator
-                                    ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                                }`}
-                              >
-                                <span className="font-headline text-sm">{voice.name}</span>
-                                {isNarrator && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); handleTestVoice(voice.voiceId); }}
-                                    disabled={testingVoice}
-                                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:text-tertiary disabled:opacity-50"
-                                  >
-                                    <span className="material-symbols-outlined text-sm">play_arrow</span>
-                                    {t('settings.testVoice')}
-                                  </button>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Male pool */}
-                      <div>
-                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                          {t('settings.maleVoices', 'Male NPC voices')} ({(settings.maleVoices || []).length})
-                        </label>
-                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
-                          {voices.map((voice) => {
-                            const checked = isInPool(voice.voiceId, 'male');
-                            return (
-                              <button
-                                key={voice.voiceId}
-                                onClick={() => handleToggleGenderPool(voice, 'male')}
-                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
-                                  checked
-                                    ? 'bg-blue-500/10 border-blue-400/40 text-blue-200'
-                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-blue-400/30'
-                                }`}
-                              >
-                                <span className="font-headline text-sm">♂ {voice.name}</span>
-                                {checked && <span className="material-symbols-outlined text-sm">check</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Female pool */}
-                      <div>
-                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                          {t('settings.femaleVoices', 'Female NPC voices')} ({(settings.femaleVoices || []).length})
-                        </label>
-                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
-                          {voices.map((voice) => {
-                            const checked = isInPool(voice.voiceId, 'female');
-                            return (
-                              <button
-                                key={voice.voiceId}
-                                onClick={() => handleToggleGenderPool(voice, 'female')}
-                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
-                                  checked
-                                    ? 'bg-pink-500/10 border-pink-400/40 text-pink-200'
-                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-pink-400/30'
-                                }`}
-                              >
-                                <span className="font-headline text-sm">♀ {voice.name}</span>
-                                {checked && <span className="material-symbols-outlined text-sm">check</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sound Effects Section */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">surround_sound</span>
-                    {t('settings.sfxTitle')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-6">{t('settings.sfxDesc')}</p>
-
-                  <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
-                    <div>
-                      <p className="font-headline text-tertiary text-sm">{t('settings.sfxEnabled')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.sfxEnabledDesc')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ sfxEnabled: !settings.sfxEnabled })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.sfxEnabled
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.sfxEnabled
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {settings.sfxEnabled && (
-                    <Slider
-                      label={t('settings.sfxVolume')}
-                      description={t('settings.sfxVolumeDesc')}
-                      value={settings.sfxVolume ?? 70}
-                      onChange={(v) => updateSettings({ sfxVolume: v })}
-                      displayValue={`${settings.sfxVolume ?? 70}%`}
-                    />
-                  )}
-                </div>
-
-                {/* Background Music Section (Local MP3) */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">music_note</span>
-                    {t('settings.musicTitle')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-6">{t('settings.localMusicDesc')}</p>
-
-                  <div className="flex items-center justify-between mb-6 p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
-                    <div>
-                      <p className="font-headline text-tertiary text-sm">{t('settings.localMusicEnabled')}</p>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
-                        {t('settings.localMusicEnabledDesc')}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => updateSettings({ localMusicEnabled: !settings.localMusicEnabled })}
-                      className={`w-12 h-6 rounded-full relative cursor-pointer border transition-all ${
-                        settings.localMusicEnabled
-                          ? 'bg-primary-dim/20 border-primary/30'
-                          : 'bg-surface-container-highest border-outline-variant/30'
-                      }`}
-                    >
-                      <div
-                        className={`absolute top-1 w-4 h-4 rounded-full transition-all ${
-                          settings.localMusicEnabled
-                            ? 'right-1 bg-primary shadow-[0_0_8px_rgba(197,154,255,0.8)]'
-                            : 'left-1 bg-on-surface-variant'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {settings.localMusicEnabled && (
-                    <Slider
-                      label={t('settings.musicVolume')}
-                      description={t('settings.musicVolumeDesc')}
-                      value={settings.musicVolume ?? 40}
-                      onChange={(v) => updateSettings({ musicVolume: v })}
-                      displayValue={`${settings.musicVolume ?? 40}%`}
-                    />
-                  )}
-                </div>
+                <MusicSection settings={settings} updateSettings={updateSettings} />
 
                 <BackendServerSection
                   backendAuthChecking={backendAuthChecking}

@@ -4,70 +4,17 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
+import { useActionTyping } from '../../hooks/useActionTyping';
 import PendingActions from '../multiplayer/PendingActions';
-import Tooltip from '../ui/Tooltip';
 import { parseActionSegments } from '../../services/actionParser';
 import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
+import AnimatedTypingDraft from './action/AnimatedTypingDraft';
+import QuickActionButton from './action/QuickActionButton';
+import CombatTargetPicker from './action/CombatTargetPicker';
+import TradeNpcPicker from './action/TradeNpcPicker';
 
 const normalizeQuotes = (text) =>
   text.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u2039\u203A\uFF02`\u0060\u00B4]/g, '"');
-
-const ATTITUDE_STYLES = {
-  hostile: 'bg-error/20 text-error border-error/30',
-  neutral: 'bg-warning/20 text-warning border-warning/30',
-  friendly: 'bg-success/20 text-success border-success/30',
-};
-
-const QUICK_BUTTON_STYLES = {
-  primary: 'text-primary/90 hover:text-primary bg-primary/8 hover:bg-primary/14 border-primary/20 hover:border-primary/40',
-  neutral: 'text-on-surface-variant/90 hover:text-on-surface bg-surface-container-high/45 hover:bg-surface-container-high border-outline-variant/20 hover:border-outline-variant/35',
-  tertiary: 'text-tertiary/85 hover:text-tertiary bg-tertiary/8 hover:bg-tertiary/14 border-tertiary/20 hover:border-tertiary/35',
-  danger: 'text-error/85 hover:text-error bg-error/8 hover:bg-error/14 border-error/20 hover:border-error/35',
-  indigo: 'text-indigo-300/90 hover:text-indigo-200 bg-indigo-500/8 hover:bg-indigo-500/14 border-indigo-400/20 hover:border-indigo-300/35',
-};
-
-function AnimatedTypingDraft({ text }) {
-  const prevTextRef = useRef('');
-  const [animateFromIndex, setAnimateFromIndex] = useState(0);
-
-  useEffect(() => {
-    const prev = prevTextRef.current;
-    if (typeof text !== 'string') {
-      prevTextRef.current = '';
-      setAnimateFromIndex(0);
-      return;
-    }
-
-    if (text.startsWith(prev) && text.length > prev.length) {
-      setAnimateFromIndex(prev.length);
-    } else {
-      setAnimateFromIndex(0);
-    }
-    prevTextRef.current = text;
-  }, [text]);
-
-  if (!text) {
-    return <span className="text-[11px] text-on-surface-variant/55 italic">...</span>;
-  }
-
-  return (
-    <>
-      <style>
-        {`@keyframes mpTypingZoomOut{0%{opacity:0;transform:scale(1.35)}100%{opacity:1;transform:scale(1)}}`}
-      </style>
-      <span className="whitespace-pre-wrap break-words">
-        {text.split('').map((char, index) => (
-          <span
-            key={`${char}_${index}`}
-            style={index >= animateFromIndex ? { display: 'inline-block', animation: 'mpTypingZoomOut 220ms ease-out' } : undefined}
-          >
-            {char}
-          </span>
-        ))}
-      </span>
-    </>
-  );
-}
 
 export default function ActionPanel({
   actions = [],
@@ -110,87 +57,22 @@ export default function ActionPanel({
     onResult: onVoiceResult,
   });
 
-  const typingTimerRef = useRef(null);
-  const typingBroadcastTimerRef = useRef(null);
-  const typingKeepAliveRef = useRef(null);
-  const queuedDraftRef = useRef('');
-  const isTypingRef = useRef(false);
-
-  const sendTypingState = useCallback((isTyping, draft = '') => {
-    mp.sendTyping(isTyping, String(draft || '').slice(0, TYPING_DRAFT_MAX_LENGTH));
-  }, [mp]);
-
-  const emitTypingStop = useCallback((preserveDraft = false) => {
-    if (isTypingRef.current) {
-      isTypingRef.current = false;
-      const finalDraft = preserveDraft
-        ? String(queuedDraftRef.current || '').slice(0, TYPING_DRAFT_MAX_LENGTH)
-        : '';
-      sendTypingState(false, finalDraft);
-    }
-    clearInterval(typingKeepAliveRef.current);
-    typingKeepAliveRef.current = null;
-  }, [sendTypingState]);
-
-  const scheduleTypingBroadcast = useCallback((draft) => {
-    queuedDraftRef.current = String(draft || '').slice(0, TYPING_DRAFT_MAX_LENGTH);
-    if (typingBroadcastTimerRef.current) return;
-    typingBroadcastTimerRef.current = setTimeout(() => {
-      typingBroadcastTimerRef.current = null;
-      if (isTypingRef.current) {
-        sendTypingState(true, queuedDraftRef.current);
-      }
-    }, 120);
-  }, [sendTypingState]);
-
-  const handleTypingChange = useCallback((value) => {
-    setCustomAction(value);
-    if (!isMultiplayer) return;
-
-    if (value.trim()) {
-      const draft = value.trim().slice(0, TYPING_DRAFT_MAX_LENGTH);
-      queuedDraftRef.current = draft;
-      if (!isTypingRef.current) {
-        isTypingRef.current = true;
-        sendTypingState(true, draft);
-      } else {
-        scheduleTypingBroadcast(draft);
-      }
-      if (!typingKeepAliveRef.current) {
-        typingKeepAliveRef.current = setInterval(() => {
-          if (!isTypingRef.current) return;
-          sendTypingState(true, queuedDraftRef.current);
-        }, 900);
-      }
-      clearTimeout(typingTimerRef.current);
-      typingTimerRef.current = setTimeout(() => emitTypingStop(true), 2000);
-    } else {
-      clearTimeout(typingTimerRef.current);
-      clearTimeout(typingBroadcastTimerRef.current);
-      typingBroadcastTimerRef.current = null;
-      emitTypingStop(false);
-    }
-  }, [isMultiplayer, emitTypingStop, scheduleTypingBroadcast, sendTypingState]);
+  const { handleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
+    mp,
+    isMultiplayer,
+    setCustomAction,
+  });
 
   useEffect(() => {
-    return () => {
-      clearTimeout(typingTimerRef.current);
-      clearTimeout(typingBroadcastTimerRef.current);
-      clearInterval(typingKeepAliveRef.current);
-      clearTimeout(longPressTimerRef.current);
-      typingKeepAliveRef.current = null;
-      if (isTypingRef.current) {
-        sendTypingState(false, '');
-      }
-    };
-  }, [sendTypingState]);
+    return () => clearTimeout(longPressTimerRef.current);
+  }, []);
 
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     const action = normalizeQuotes(customAction.trim());
     if (action && !disabled) {
       if (listening) toggle();
-      clearTimeout(typingTimerRef.current);
+      cancelPendingBroadcasts();
       emitTypingStop(false);
       if (isMultiplayer) {
         mp.submitAction(action, true);
@@ -235,9 +117,7 @@ export default function ActionPanel({
   };
 
   const handleSoloSuggestedAction = (action) => {
-    clearTimeout(typingTimerRef.current);
-    clearTimeout(typingBroadcastTimerRef.current);
-    typingBroadcastTimerRef.current = null;
+    cancelPendingBroadcasts();
     emitTypingStop(false);
     mp.soloAction(action, false, settings.language || 'en', settings.dmSettings);
   };
@@ -246,9 +126,7 @@ export default function ActionPanel({
     const action = normalizeQuotes(customAction.trim());
     if (action) {
       if (listening) toggle();
-      clearTimeout(typingTimerRef.current);
-      clearTimeout(typingBroadcastTimerRef.current);
-      typingBroadcastTimerRef.current = null;
+      cancelPendingBroadcasts();
       emitTypingStop(false);
       mp.soloAction(action, true, settings.language || 'en', settings.dmSettings);
       setCustomAction('');
@@ -326,42 +204,6 @@ export default function ActionPanel({
       };
     }),
     [teamPlayers, typingByPlayer, mp.state.myOdId, customAction, t]
-  );
-
-  const renderQuickActionButton = ({
-    id,
-    icon,
-    label,
-    description,
-    onClick,
-    disabled: isDisabled = false,
-    tone = 'neutral',
-  }) => (
-    <Tooltip
-      key={id}
-      className="inline-flex"
-      tooltipClassName="border-primary/30 bg-[linear-gradient(150deg,rgba(24,22,36,0.97),rgba(40,30,58,0.93))] shadow-[0_20px_50px_rgba(8,8,14,0.5)]"
-      content={
-        <div className="space-y-1.5">
-          <div className="text-[11px] font-label uppercase tracking-[0.14em] text-primary/80">{label}</div>
-          {description ? (
-            <div className="text-xs leading-relaxed text-on-surface/90 max-w-[240px]">
-              {description}
-            </div>
-          ) : null}
-        </div>
-      }
-    >
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onClick}
-        disabled={isDisabled}
-        className={`shrink-0 inline-flex items-center justify-center w-9 h-9 border rounded-sm transition-all duration-200 hover:-translate-y-px hover:shadow-[0_10px_24px_rgba(0,0,0,0.3)] disabled:opacity-30 disabled:cursor-not-allowed ${QUICK_BUTTON_STYLES[tone] || QUICK_BUTTON_STYLES.neutral}`}
-      >
-        <span className="material-symbols-outlined text-[18px] leading-none">{icon}</span>
-      </button>
-    </Tooltip>
   );
 
   useEffect(() => {
@@ -503,116 +345,22 @@ export default function ActionPanel({
             ))}
           </div>
 
-          {/* Combat picker dropdown (absolute positioned) */}
           {combatPickerOpen && (
-            <div className="p-3 bg-surface-container-high border border-outline-variant/20 rounded-sm space-y-2 animate-fade-in">
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                {t('gameplay.selectTarget')}
-              </label>
-
-              <button
-                onClick={handleInitiateCombat}
-                disabled={disabled}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-xs font-label text-on-surface bg-error/10 hover:bg-error/20 border border-error/20 hover:border-error/40 rounded-sm transition-all disabled:opacity-30"
-              >
-                <span className="material-symbols-outlined text-sm text-error">target</span>
-                {t('gameplay.generalCombat')}
-              </button>
-
-              {npcs.length > 0 ? (
-                <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                  {npcs.map((npc) => {
-                    const attitudeKey = npc.attitude === 'hostile' ? 'attitudeHostile'
-                      : npc.attitude === 'friendly' ? 'attitudeFriendly' : 'attitudeNeutral';
-                    const attitudeStyle = ATTITUDE_STYLES[npc.attitude] || ATTITUDE_STYLES.neutral;
-                    return (
-                      <div
-                        key={npc.id || npc.name}
-                        className="flex items-center justify-between gap-2 px-3 py-2 bg-surface-container/60 border border-outline-variant/10 rounded-sm"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-sm text-on-surface truncate">{npc.name}</span>
-                          <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm border font-label uppercase tracking-wider ${attitudeStyle}`}>
-                            {t(`gameplay.${attitudeKey}`)}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleAttackNpc(npc.name)}
-                          disabled={disabled}
-                          className="shrink-0 flex items-center gap-1 px-2 py-1 text-[10px] font-label uppercase tracking-widest text-error hover:text-on-surface bg-error/10 hover:bg-error/20 border border-error/20 hover:border-error/40 rounded-sm transition-all disabled:opacity-30"
-                        >
-                          <span className="material-symbols-outlined text-xs">swords</span>
-                          {t('gameplay.attackNpc')}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[10px] text-on-surface-variant/60 italic px-1">
-                  {t('gameplay.noNpcsNearby')}
-                </p>
-              )}
-
-              <button
-                onClick={() => setCombatPickerOpen(false)}
-                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-label uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors"
-              >
-                {t('gameplay.cancelCombat')}
-              </button>
-            </div>
+            <CombatTargetPicker
+              npcs={npcs}
+              disabled={disabled}
+              onInitiateCombat={handleInitiateCombat}
+              onAttackNpc={handleAttackNpc}
+              onCancel={() => setCombatPickerOpen(false)}
+            />
           )}
 
-          {/* Trade NPC picker dropdown */}
           {tradePickerOpen && dispatch && (
-            <div className="p-3 bg-surface-container-high border border-outline-variant/20 rounded-sm space-y-2 animate-fade-in">
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                {t('trade.tradeWith')}
-              </label>
-              {npcs.length > 0 ? (
-                <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                  {npcs.map((npc) => (
-                    <button
-                      key={npc.id || npc.name}
-                      onClick={() => {
-                        dispatch({
-                          type: 'START_TRADE',
-                          payload: {
-                            active: true,
-                            npcName: npc.name,
-                            npcRole: npc.role || 'general',
-                            disposition: npc.disposition || 0,
-                            pendingSetup: true,
-                            shopItems: [],
-                            haggleAttempts: 0,
-                            maxHaggle: 3,
-                            haggleLog: [],
-                            haggleDiscounts: {},
-                          },
-                        });
-                        setTradePickerOpen(false);
-                      }}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-surface-container/60 border border-outline-variant/10 hover:border-tertiary/20 rounded-sm transition-all"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="material-symbols-outlined text-xs text-tertiary">person</span>
-                        <span className="text-sm text-on-surface truncate">{npc.name}</span>
-                        {npc.role && <span className="text-[9px] text-on-surface-variant">({npc.role})</span>}
-                      </div>
-                      <span className="material-symbols-outlined text-xs text-tertiary">storefront</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-[10px] text-on-surface-variant/60 italic px-1">{t('gameplay.noNpcsNearby')}</p>
-              )}
-              <button
-                onClick={() => setTradePickerOpen(false)}
-                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-label uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
+            <TradeNpcPicker
+              npcs={npcs}
+              dispatch={dispatch}
+              onCancel={() => setTradePickerOpen(false)}
+            />
           )}
 
         </div>
@@ -657,85 +405,81 @@ export default function ActionPanel({
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-2">
-          {/* Quick action buttons */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {renderQuickActionButton({
-              id: 'continue',
-              icon: 'skip_next',
-              label: t('gameplay.continueButton'),
-              description: lastChosenAction === '[CONTINUE]'
+            <QuickActionButton
+              icon="skip_next"
+              label={t('gameplay.continueButton')}
+              description={lastChosenAction === '[CONTINUE]'
                 ? t('gameplay.continueDisabledTooltip')
-                : t('gameplay.continueChatMessage'),
-              onClick: () => handleSuggestedAction('[CONTINUE]'),
-              disabled: disabled || hasPendingAction || lastChosenAction === '[CONTINUE]',
-              tone: 'primary',
-            })}
-            {renderQuickActionButton({
-              id: 'wait',
-              icon: 'hourglass_empty',
-              label: t('gameplay.waitButton'),
-              description: t('gameplay.waitSystemMessage'),
-              onClick: () => handleSuggestedAction('[WAIT]'),
-              disabled: disabled || hasPendingAction,
-              tone: 'neutral',
-            })}
-            {renderQuickActionButton({
-              id: 'quests',
-              icon: 'assignment',
-              label: t('gameplay.searchForQuests'),
-              description: t('gameplay.searchForQuestsAction'),
-              onClick: () => handleSuggestedAction(t('gameplay.searchForQuestsAction')),
-              disabled: disabled || hasPendingAction,
-              tone: 'tertiary',
-            })}
-            {renderQuickActionButton({
-              id: 'combat',
-              icon: 'swords',
-              label: t('gameplay.initiateCombat'),
-              description: t('gameplay.generalCombat'),
-              onClick: () => setCombatPickerOpen((v) => !v),
-              disabled: disabled || hasPendingAction,
-              tone: 'danger',
-            })}
-            {/* Trade button — visible when NPCs are in scene */}
-            {npcs.length > 0 && dispatch && !gameState?.trade?.active && renderQuickActionButton({
-              id: 'trade',
-              icon: 'storefront',
-              label: t('trade.tradeWith'),
-              description: t('trade.tradeWith'),
-              onClick: () => setTradePickerOpen((v) => !v),
-              disabled: disabled || hasPendingAction,
-              tone: 'tertiary',
-            })}
-            {/* Crafting button — visible when character has Rzemioslo skill */}
-            {dispatch && !gameState?.crafting?.active && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && renderQuickActionButton({
-              id: 'crafting',
-              icon: 'construction',
-              label: t('crafting.title'),
-              description: t('crafting.recipes'),
-              onClick: () => dispatch({ type: 'START_CRAFTING' }),
-              disabled: disabled || hasPendingAction,
-              tone: 'primary',
-            })}
-            {/* Alchemy button — visible when character has Alchemia skill */}
-            {dispatch && !gameState?.alchemy?.active && getSkillLevel(character?.skills, 'Alchemia') > 0 && renderQuickActionButton({
-              id: 'alchemy',
-              icon: 'science',
-              label: t('alchemy.title'),
-              description: t('alchemy.recipes'),
-              onClick: () => dispatch({ type: 'START_ALCHEMY' }),
-              disabled: disabled || hasPendingAction,
-              tone: 'primary',
-            })}
-            {settings.needsSystemEnabled && renderQuickActionButton({
-              id: 'rest',
-              icon: 'bedtime',
-              label: t('gameplay.restButton'),
-              description: t('gameplay.restAction'),
-              onClick: () => handleSuggestedAction(t('gameplay.restAction')),
-              disabled: disabled || hasPendingAction,
-              tone: 'indigo',
-            })}
+                : t('gameplay.continueChatMessage')}
+              onClick={() => handleSuggestedAction('[CONTINUE]')}
+              disabled={disabled || hasPendingAction || lastChosenAction === '[CONTINUE]'}
+              tone="primary"
+            />
+            <QuickActionButton
+              icon="hourglass_empty"
+              label={t('gameplay.waitButton')}
+              description={t('gameplay.waitSystemMessage')}
+              onClick={() => handleSuggestedAction('[WAIT]')}
+              disabled={disabled || hasPendingAction}
+              tone="neutral"
+            />
+            <QuickActionButton
+              icon="assignment"
+              label={t('gameplay.searchForQuests')}
+              description={t('gameplay.searchForQuestsAction')}
+              onClick={() => handleSuggestedAction(t('gameplay.searchForQuestsAction'))}
+              disabled={disabled || hasPendingAction}
+              tone="tertiary"
+            />
+            <QuickActionButton
+              icon="swords"
+              label={t('gameplay.initiateCombat')}
+              description={t('gameplay.generalCombat')}
+              onClick={() => setCombatPickerOpen((v) => !v)}
+              disabled={disabled || hasPendingAction}
+              tone="danger"
+            />
+            {npcs.length > 0 && dispatch && !gameState?.trade?.active && (
+              <QuickActionButton
+                icon="storefront"
+                label={t('trade.tradeWith')}
+                description={t('trade.tradeWith')}
+                onClick={() => setTradePickerOpen((v) => !v)}
+                disabled={disabled || hasPendingAction}
+                tone="tertiary"
+              />
+            )}
+            {dispatch && !gameState?.crafting?.active && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && (
+              <QuickActionButton
+                icon="construction"
+                label={t('crafting.title')}
+                description={t('crafting.recipes')}
+                onClick={() => dispatch({ type: 'START_CRAFTING' })}
+                disabled={disabled || hasPendingAction}
+                tone="primary"
+              />
+            )}
+            {dispatch && !gameState?.alchemy?.active && getSkillLevel(character?.skills, 'Alchemia') > 0 && (
+              <QuickActionButton
+                icon="science"
+                label={t('alchemy.title')}
+                description={t('alchemy.recipes')}
+                onClick={() => dispatch({ type: 'START_ALCHEMY' })}
+                disabled={disabled || hasPendingAction}
+                tone="primary"
+              />
+            )}
+            {settings.needsSystemEnabled && (
+              <QuickActionButton
+                icon="bedtime"
+                label={t('gameplay.restButton')}
+                description={t('gameplay.restAction')}
+                onClick={() => handleSuggestedAction(t('gameplay.restAction'))}
+                disabled={disabled || hasPendingAction}
+                tone="indigo"
+              />
+            )}
           </div>
           {/* Custom action input */}
           <form onSubmit={handleCustomSubmit} className="flex-1 min-w-0">
