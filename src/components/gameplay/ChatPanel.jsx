@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimestamp } from '../../services/gameState';
 import { translateSkill } from '../../utils/rpgTranslate';
 import { parseActionSegments } from '../../services/actionParser';
 import { splitTextForHighlight } from '../../services/elevenlabs';
+import { useChatScrollSync } from '../../hooks/useChatScrollSync';
+import { useChatAutoNarration } from '../../hooks/useChatAutoNarration';
 import Tooltip from '../ui/Tooltip';
 
 function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
@@ -842,101 +844,13 @@ export default function ChatPanel({
   narrationTime = 0,
 }) {
   const { t } = useTranslation();
-  const bottomRef = useRef(null);
-  const containerRef = useRef(null);
-  const prevMessageCountForScroll = useRef(messages.length);
-  const prevMessageCountForNarration = useRef(messages.length);
-  const lastNarratedMessageIdRef = useRef(null);
-  const shouldStickToBottomRef = useRef(true);
-  const explicitScrollInProgressRef = useRef(false);
-
-  const isNearBottom = useCallback((el, threshold = 48) => {
-    if (!el) return true;
-    return (el.scrollHeight - el.scrollTop - el.clientHeight) <= threshold;
-  }, []);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    shouldStickToBottomRef.current = isNearBottom(el);
-    const onScroll = () => {
-      shouldStickToBottomRef.current = isNearBottom(el);
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [isNearBottom]);
-
-  useEffect(() => {
-    const hasNewMessages = messages.length > prevMessageCountForScroll.current;
-    prevMessageCountForScroll.current = messages.length;
-    if (!hasNewMessages || explicitScrollInProgressRef.current || scrollToMessageId) return;
-    if (!shouldStickToBottomRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, scrollToMessageId]);
-
-  // Auto-scroll during streaming narrative
-  useEffect(() => {
-    if (!streamingNarrative || !shouldStickToBottomRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [streamingNarrative]);
-
-  useEffect(() => {
-    if (!scrollToMessageId || !containerRef.current) return;
-    explicitScrollInProgressRef.current = true;
-    let frame = null;
-    let tries = 0;
-    const maxTries = 4;
-
-    const tryScroll = () => {
-      const targetEl = containerRef.current?.querySelector(`[data-message-id="${scrollToMessageId}"]`);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        shouldStickToBottomRef.current = false;
-        explicitScrollInProgressRef.current = false;
-        onScrollTargetHandled?.(scrollToMessageId);
-        return;
-      }
-      tries += 1;
-      if (tries >= maxTries) {
-        explicitScrollInProgressRef.current = false;
-        onScrollTargetHandled?.(scrollToMessageId);
-        return;
-      }
-      frame = requestAnimationFrame(tryScroll);
-    };
-
-    frame = requestAnimationFrame(tryScroll);
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      explicitScrollInProgressRef.current = false;
-    };
-  }, [scrollToMessageId, onScrollTargetHandled]);
-
-  useEffect(() => {
-    if (!narrator || !autoPlay) {
-      prevMessageCountForNarration.current = messages.length;
-      return;
-    }
-    const { isNarratorReady, speakSingle } = narrator;
-    if (!isNarratorReady) {
-      prevMessageCountForNarration.current = messages.length;
-      return;
-    }
-
-    if (messages.length > prevMessageCountForNarration.current) {
-      // Skip if narrator is already playing (e.g. streaming narration already reading this scene)
-      const alreadyActive = narrator.playbackState === narrator.STATES?.PLAYING || narrator.playbackState === narrator.STATES?.LOADING;
-      const newMessages = messages.slice(prevMessageCountForNarration.current);
-      const spokenMessages = newMessages.filter((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
-      const latestSpokenMessage = spokenMessages.at(-1);
-      if (latestSpokenMessage && latestSpokenMessage.id !== lastNarratedMessageIdRef.current && !alreadyActive) {
-        // Auto-play should always follow the newest action/scene and cut old narration.
-        speakSingle(latestSpokenMessage, latestSpokenMessage.id);
-        lastNarratedMessageIdRef.current = latestSpokenMessage.id;
-      }
-    }
-    prevMessageCountForNarration.current = messages.length;
-  }, [messages, narrator, autoPlay]);
+  const { bottomRef, containerRef } = useChatScrollSync({
+    messageCount: messages.length,
+    streamingNarrative,
+    scrollToMessageId,
+    onScrollTargetHandled,
+  });
+  useChatAutoNarration({ messages, narrator, autoPlay });
 
   return (
     <div className="flex flex-col h-full">

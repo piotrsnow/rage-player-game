@@ -43,6 +43,10 @@ import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { usePlayTimeTracker } from '../../hooks/usePlayTimeTracker';
+import { useStreamingNarrator } from '../../hooks/useStreamingNarrator';
+import { useMultiplayerSceneGenTimer } from '../../hooks/useMultiplayerSceneGenTimer';
+import { useSceneScrollSync } from '../../hooks/useSceneScrollSync';
 import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 
@@ -113,65 +117,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
 
-  // --- Streaming narrator: feed segments to narrator as they arrive from AI streaming ---
-  const streamingNarrationActiveRef = useRef(false);
-  const streamingNarrationMsgIdRef = useRef(null);
+  const { streamingNarrationActiveRef } = useStreamingNarrator({
+    narrator,
+    streamingSegments,
+    streamingNarrative,
+    chatHistory,
+    enabled: settings.narratorEnabled,
+    autoPlay: settings.narratorAutoPlay,
+    readOnly,
+  });
 
-  // Start streaming narration when first segments appear
-  useEffect(() => {
-    if (!streamingSegments || streamingSegments.length === 0) return;
-    if (streamingNarrationActiveRef.current) return;
-    if (!settings.narratorEnabled || !settings.narratorAutoPlay || !narrator.isNarratorReady) return;
-    if (readOnly) return;
-
-    const messageId = `streaming_${Date.now()}`;
-    streamingNarrationMsgIdRef.current = messageId;
-    streamingNarrationActiveRef.current = true;
-    narrator.startStreaming(messageId);
-  }, [streamingSegments, settings.narratorEnabled, settings.narratorAutoPlay, narrator.isNarratorReady, readOnly]);
-
-  // Push new segments as they stream in
-  useEffect(() => {
-    if (!streamingNarrationActiveRef.current) return;
-    if (!streamingSegments || streamingSegments.length === 0) return;
-    narrator.pushStreamingSegments(streamingSegments);
-  }, [streamingSegments]);
-
-  // Finish streaming when streamingNarrative is cleared (scene complete)
-  useEffect(() => {
-    if (streamingNarrative !== null) return;
-    if (!streamingNarrationActiveRef.current) return;
-    streamingNarrationActiveRef.current = false;
-    // Final segments come from the last chatHistory DM message
-    const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
-    narrator.finishStreaming(latestDm?.dialogueSegments || null);
-    streamingNarrationMsgIdRef.current = null;
-  }, [streamingNarrative, chatHistory]);
-
-  const [sessionStartTime] = useState(() => Date.now());
-  const [sessionSeconds, setSessionSeconds] = useState(0);
-  const initialTotalPlayTimeRef = useRef(state.totalPlayTime || 0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSessionSeconds(Math.floor((Date.now() - sessionStartTime) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionStartTime]);
-
-  useEffect(() => {
-    const flush = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
-    }, 30000);
-    return () => {
-      clearInterval(flush);
-      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
-    };
-  }, [sessionStartTime, dispatch]);
-
-  const totalPlayTime = initialTotalPlayTimeRef.current + sessionSeconds;
+  const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
@@ -207,25 +163,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const summaryCopyTimeoutRef = useRef(null);
   const summaryRequestIdRef = useRef(0);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
-  const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
-  const [mpSceneGenStartTime, setMpSceneGenStartTime] = useState(null);
-  const prevScenesLenRef = useRef(0);
   const initialViewerChatAlignDoneRef = useRef(false);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
-
-  const requestChatScrollToMessage = useCallback((messageId) => {
-    if (!messageId) return;
-    setScrollTargetMessageId((prev) => (prev === messageId ? null : prev));
-    requestAnimationFrame(() => {
-      setScrollTargetMessageId(messageId);
-    });
-  }, []);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   useDocumentTitle(campaign?.name);
@@ -248,8 +193,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const attrPoints = character?.attributePoints || 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
-  const wasGeneratingSceneRef = useRef(false);
-  const prevChatHistoryLenRef = useRef(chatHistory.length);
   const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
   const isGeneratingImage = state.isGeneratingImage;
   const error = isMultiplayer ? mp.state.error : state.error;
@@ -260,17 +203,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
 
-  useEffect(() => {
-    if (!isMultiplayer) {
-      setMpSceneGenStartTime(null);
-      return;
-    }
-    if (mp.state.isGenerating) {
-      setMpSceneGenStartTime((prev) => prev || Date.now());
-      return;
-    }
-    setMpSceneGenStartTime(null);
-  }, [isMultiplayer, mp.state.isGenerating]);
+  const mpSceneGenStartTime = useMultiplayerSceneGenTimer({
+    isMultiplayer,
+    isGenerating: mp.state.isGenerating,
+  });
+
+  const { scrollTargetMessageId, requestChatScrollToMessage, clearScrollTargetIfMatches } = useSceneScrollSync({
+    scenes,
+    chatHistory,
+    isGeneratingScene,
+    setViewingSceneIndex,
+  });
+
   const lastChosenAction = (() => {
     if (!currentScene) return null;
     if (currentScene.chosenAction != null && currentScene.chosenAction !== '') return currentScene.chosenAction;
@@ -281,55 +225,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
     return null;
   })();
-
-  useEffect(() => {
-    if (scenes.length > prevScenesLenRef.current) {
-      setViewingSceneIndex(null);
-
-      const newestScene = scenes[scenes.length - 1];
-      const newestSceneMessage = newestScene?.id
-        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
-        : null;
-      const newestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
-
-      if (newestSceneMessage?.id) {
-        requestChatScrollToMessage(newestSceneMessage.id);
-      } else if (newestDmMessage?.id) {
-        requestChatScrollToMessage(newestDmMessage.id);
-      }
-    }
-    prevScenesLenRef.current = scenes.length;
-  }, [scenes.length, scenes, chatHistory, requestChatScrollToMessage]);
-
-  useEffect(() => {
-    if (isGeneratingScene) {
-      wasGeneratingSceneRef.current = true;
-      prevChatHistoryLenRef.current = chatHistory.length;
-      return;
-    }
-    if (!wasGeneratingSceneRef.current) {
-      prevChatHistoryLenRef.current = chatHistory.length;
-      return;
-    }
-
-    const hasNewMessages = chatHistory.length > prevChatHistoryLenRef.current;
-    if (hasNewMessages) {
-      const newestScene = scenes[scenes.length - 1];
-      const latestSceneMessage = newestScene?.id
-        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
-        : null;
-      const latestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
-      const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
-
-      const preferredMessageId = latestSceneMessage?.id || latestDmMessage?.id || latestDiceRollMessage?.id;
-      if (preferredMessageId) {
-        requestChatScrollToMessage(preferredMessageId);
-      }
-    }
-
-    wasGeneratingSceneRef.current = false;
-    prevChatHistoryLenRef.current = chatHistory.length;
-  }, [isGeneratingScene, chatHistory, scenes, requestChatScrollToMessage]);
 
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
@@ -2315,9 +2210,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
             : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
-          onScrollTargetHandled={(handledId) => {
-            setScrollTargetMessageId((current) => (current === handledId ? null : current));
-          }}
+          onScrollTargetHandled={clearScrollTargetIfMatches}
           typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
           sessionSeconds={sessionSeconds}
           totalPlayTime={totalPlayTime}

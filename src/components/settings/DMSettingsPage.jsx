@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { elevenlabsService } from '../../services/elevenlabs';
-import { apiClient } from '../../services/apiClient';
-import { storage } from '../../services/storage';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { useElevenlabsVoices } from '../../hooks/useElevenlabsVoices';
+import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
+import { useConfigImportExport } from '../../hooks/useConfigImportExport';
 import Slider from '../ui/Slider';
 import Button from '../ui/Button';
 
@@ -27,29 +27,24 @@ export default function DMSettingsPage({ onClose }) {
     updateSettings(updates);
   }, [updateSettings]);
 
-  const [voices, setVoices] = useState([]);
-  const [loadingVoices, setLoadingVoices] = useState(false);
-  const [voiceError, setVoiceError] = useState(null);
-  const [testingVoice, setTestingVoice] = useState(false);
-  const [importStatus, setImportStatus] = useState(null);
-  const fileInputRef = useRef(null);
-  const [cacheStats, setCacheStats] = useState(null);
+  const {
+    voices,
+    loadingVoices,
+    voiceError,
+    testingVoice,
+    loadVoices,
+    clearVoices,
+    testVoice,
+  } = useElevenlabsVoices({ language: settings.language });
 
-  const loadCacheStats = useCallback(async () => {
-    if (!apiClient.isConnected()) return;
-    try {
-      const stats = await apiClient.get('/media/stats/summary');
-      setCacheStats(stats);
-    } catch {
-      setCacheStats(null);
-    }
-  }, []);
+  const { cacheStats } = useMediaCacheStats({
+    useBackend: settings.useBackend,
+    backendUrl: settings.backendUrl,
+  });
 
-  useEffect(() => {
-    if (settings.useBackend && settings.backendUrl && apiClient.isConnected()) {
-      loadCacheStats();
-    }
-  }, [settings.useBackend, settings.backendUrl, loadCacheStats]);
+  const { fileInputRef, importStatus, exportConfig, importConfig } = useConfigImportExport({
+    importSettings,
+  });
 
   const formatBytes = (bytes) => {
     if (!bytes) return '0 B';
@@ -59,43 +54,14 @@ export default function DMSettingsPage({ onClose }) {
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
   };
 
-  const handleExportConfig = async () => {
-    await storage.exportConfig();
-  };
-
-  const handleImportConfig = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const imported = await storage.importConfig(file);
-      if (imported) {
-        importSettings(imported);
-      }
-      setImportStatus('success');
-    } catch {
-      setImportStatus('error');
-    }
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    setTimeout(() => setImportStatus(null), 3000);
-  };
-
   const handleReset = () => {
     resetSettings();
-    setVoices([]);
+    clearVoices();
   };
 
-  const handleLoadVoices = async () => {
+  const handleLoadVoices = () => {
     if (!hasApiKey('elevenlabs')) return;
-    setLoadingVoices(true);
-    setVoiceError(null);
-    try {
-      const voiceList = await elevenlabsService.getVoices();
-      setVoices(voiceList);
-    } catch (err) {
-      setVoiceError(err.message);
-    } finally {
-      setLoadingVoices(false);
-    }
+    return loadVoices();
   };
 
   const handleSelectNarratorVoice = (voice) => {
@@ -123,31 +89,10 @@ export default function DMSettingsPage({ onClose }) {
 
   const isNarratorVoice = (voiceId) => settings.narratorVoiceId === voiceId;
 
-  const handleTestVoice = async (voiceIdOverride) => {
+  const handleTestVoice = (voiceIdOverride) => {
     const voiceId = voiceIdOverride || settings.narratorVoiceId;
     if (!voiceId || !hasApiKey('elevenlabs')) return;
-    setTestingVoice(true);
-    try {
-      const audioUrl = await elevenlabsService.textToSpeechStream(
-        undefined,
-        voiceId,
-        settings.language === 'pl'
-          ? 'Witaj, poszukiwaczu przygód. Jestem twoim Mistrzem Gry.'
-          : 'Greetings, adventurer. I am your Dungeon Master.'
-      );
-      const audio = new Audio(audioUrl);
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        setTestingVoice(false);
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl);
-        setTestingVoice(false);
-      };
-      await audio.play();
-    } catch {
-      setTestingVoice(false);
-    }
+    testVoice(voiceId);
   };
 
   const difficultyLabel = settings.dmSettings.difficulty < 25 ? t('settings.difficultyLabels.easy') : settings.dmSettings.difficulty < 50 ? t('settings.difficultyLabels.normal') : settings.dmSettings.difficulty < 75 ? t('settings.difficultyLabels.hard') : t('settings.difficultyLabels.expert');
@@ -957,7 +902,7 @@ export default function DMSettingsPage({ onClose }) {
 
                   <div className="space-y-3">
                     <button
-                      onClick={handleExportConfig}
+                      onClick={exportConfig}
                       className="w-full p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary text-left flex items-center gap-3 transition-all"
                     >
                       <span className="material-symbols-outlined">download</span>
@@ -981,7 +926,7 @@ export default function DMSettingsPage({ onClose }) {
                       ref={fileInputRef}
                       type="file"
                       accept=".json"
-                      onChange={handleImportConfig}
+                      onChange={importConfig}
                       className="hidden"
                     />
 

@@ -22,6 +22,7 @@ import {
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
 import Tooltip from '../ui/Tooltip';
+import { useCombatCommentary } from '../../hooks/useCombatCommentary';
 
 const MANOEUVRE_ICONS = {
   attack: 'swords',
@@ -387,17 +388,6 @@ export default function CombatPanel({
   const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
   const logEndRef = useRef(null);
   const lastProcessedTsRef = useRef(null);
-  const commentaryCombatKeyRef = useRef('');
-  const lastCommentaryRoundRef = useRef(null);
-  const commentaryInFlightRef = useRef(false);
-  const commentaryRequestSeqRef = useRef(0);
-  const activeCommentaryRequestIdRef = useRef(0);
-  const latestCombatMetaRef = useRef({
-    active: combat.active,
-    combatOver: isCombatOver(combat),
-    round: combat.round,
-    combatInstanceKey: `${combat.reason || ''}::${combat.combatants.map((combatant) => combatant.id).join('|')}`,
-  });
   const combatAudio = useCombatAudio(combat);
 
   const currentTurn = getCurrentTurnCombatant(combat);
@@ -446,11 +436,6 @@ export default function CombatPanel({
     setCombatLog((prev) => [...prev.slice(-49), entry]);
   };
 
-  const invalidateCommentaryRequests = useCallback(() => {
-    activeCommentaryRequestIdRef.current = ++commentaryRequestSeqRef.current;
-    commentaryInFlightRef.current = false;
-  }, []);
-
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [combatLog]);
@@ -473,104 +458,27 @@ export default function CombatPanel({
     }
   }, [combat.round, t]);
 
-  useEffect(() => {
-    if (commentaryCombatKeyRef.current !== combatInstanceKey) {
-      commentaryCombatKeyRef.current = combatInstanceKey;
-      lastCommentaryRoundRef.current = null;
-      invalidateCommentaryRequests();
+  const handleCommentaryMessage = useCallback((message) => {
+    if (isMultiplayer) {
+      onHostResolve?.(combat, { chatMessages: [message] });
+    } else {
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: message });
     }
-  }, [combatInstanceKey, invalidateCommentaryRequests]);
+  }, [isMultiplayer, onHostResolve, combat, dispatch]);
 
-  useEffect(() => {
-    latestCombatMetaRef.current = {
-      active: combat.active,
-      combatOver,
-      round: combat.round,
-      combatInstanceKey,
-    };
-    if (!combat.active || combatOver) {
-      invalidateCommentaryRequests();
-    }
-  }, [combat.active, combat.round, combatOver, combatInstanceKey, invalidateCommentaryRequests]);
-
-  useEffect(() => {
-    return () => {
-      invalidateCommentaryRequests();
-    };
-  }, [invalidateCommentaryRequests]);
-
-  useEffect(() => {
-    if (!combat.active || combatOver) return;
-    if (isMultiplayer && !isHost) return;
-    if (combatCommentaryFrequency <= 0) return;
-    if (combat.round <= 0 || combat.round % combatCommentaryFrequency !== 0) return;
-    if (lastCommentaryRoundRef.current === combat.round || commentaryInFlightRef.current) return;
-
-    lastCommentaryRoundRef.current = combat.round;
-    commentaryInFlightRef.current = true;
-    const requestId = ++commentaryRequestSeqRef.current;
-    activeCommentaryRequestIdRef.current = requestId;
-    const requestedRound = combat.round;
-    const requestedCombatInstanceKey = combatInstanceKey;
-
-    const recentLogEntries = combatLog
-      .map(summarizeLogEntry)
-      .filter(Boolean)
-      .slice(-4);
-
-    generateCombatCommentary(combat, {
-      gameState,
-      recentResults: combat.lastResults || [],
-      recentLogEntries,
-    }).then((commentary) => {
-      const latestCombatMeta = latestCombatMetaRef.current;
-      const isLatestRequest = activeCommentaryRequestIdRef.current === requestId;
-      const combatStillActive = latestCombatMeta.active && !latestCombatMeta.combatOver;
-      const sameCombatInstance = latestCombatMeta.combatInstanceKey === requestedCombatInstanceKey;
-      const sameRound = latestCombatMeta.round === requestedRound;
-      if (!isLatestRequest || !combatStillActive || !sameCombatInstance || !sameRound) return;
-      if (!commentary?.content) return;
-
-      const ts = Date.now();
-      const message = {
-        id: `msg_${ts}_combat_commentary_${requestedRound}`,
-        role: 'system',
-        subtype: 'combat_commentary',
-        content: commentary.content,
-        dialogueSegments: commentary.dialogueSegments || [],
-        round: requestedRound,
-        timestamp: ts,
-      };
-
-      if (isMultiplayer) {
-        onHostResolve?.(combat, { chatMessages: [message] });
-      } else {
-        dispatch({
-          type: 'ADD_CHAT_MESSAGE',
-          payload: message,
-        });
-      }
-    }).catch((err) => {
-      console.warn('[CombatPanel] Combat commentary failed:', err.message);
-    }).finally(() => {
-      if (activeCommentaryRequestIdRef.current === requestId) {
-        commentaryInFlightRef.current = false;
-      }
-    });
-  }, [
+  useCombatCommentary({
     combat,
-    combat.active,
-    combat.lastResults,
-    combat.round,
-    combatCommentaryFrequency,
-    combatLog,
     combatOver,
-    dispatch,
-    generateCombatCommentary,
-    isHost,
+    combatInstanceKey,
+    combatLog,
+    frequency: combatCommentaryFrequency,
     isMultiplayer,
-    onHostResolve,
-  ]);
+    isHost,
+    gameState,
+    generateCombatCommentary,
+    summarizeLogEntry,
+    onEmitMessage: handleCommentaryMessage,
+  });
 
   // Auto-resolve enemy turns when the current combatant is not a player.
   // Fixes deadlock when enemies win initiative or are first in a new round.
