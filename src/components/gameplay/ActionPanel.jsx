@@ -6,12 +6,13 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import { useActionTyping } from '../../hooks/useActionTyping';
 import PendingActions from '../multiplayer/PendingActions';
-import { parseActionSegments } from '../../services/actionParser';
 import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
-import AnimatedTypingDraft from './action/AnimatedTypingDraft';
-import QuickActionButton from './action/QuickActionButton';
 import CombatTargetPicker from './action/CombatTargetPicker';
 import TradeNpcPicker from './action/TradeNpcPicker';
+import DilemmaPanel from './action/DilemmaPanel';
+import TeammateTypingPanels from './action/TeammateTypingPanels';
+import QuickActionsBar from './action/QuickActionsBar';
+import CustomActionForm from './action/CustomActionForm';
 
 const normalizeQuotes = (text) =>
   text.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u2039\u203A\uFF02`\u0060\u00B4]/g, '"');
@@ -36,6 +37,7 @@ export default function ActionPanel({
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
+  const textareaRef = useRef(null);
   const { t } = useTranslation();
   const { settings } = useSettings();
   const mp = useMultiplayer();
@@ -157,21 +159,6 @@ export default function ActionPanel({
     }
   };
 
-  const textareaRef = useRef(null);
-
-  const autoResize = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  }, []);
-
-  const isAutoTyping = !!autoPlayerTypingText;
-  const displayValue = isAutoTyping
-    ? autoPlayerTypingText
-    : customAction + (interim ? (customAction ? ' ' : '') + interim : '');
-  const displaySegments = useMemo(() => parseActionSegments(displayValue), [displayValue]);
-  const hasDialogueText = displaySegments.some((s) => s.type === 'dialogue');
   const teamPlayers = useMemo(
     () => (multiplayerPlayers?.length ? multiplayerPlayers : (mp.state.players || [])),
     [multiplayerPlayers, mp.state.players]
@@ -203,12 +190,8 @@ export default function ActionPanel({
         status,
       };
     }),
-    [teamPlayers, typingByPlayer, mp.state.myOdId, customAction, t]
+    [teamPlayers, typingByPlayer, mp.state.myOdId, customAction, t, isTypingRef]
   );
-
-  useEffect(() => {
-    autoResize();
-  }, [displayValue, autoResize]);
 
   return (
     <div className="space-y-2 min-h-[130px]">
@@ -230,78 +213,21 @@ export default function ActionPanel({
         </div>
       )}
 
-      {/* Multiplayer: Pending Actions */}
       {isMultiplayer && <PendingActions />}
 
-      {isMultiplayer && teammateTypingPanels.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 pt-0.5">
-          {teammateTypingPanels.map((member) => (
-            <div
-              key={member.odId}
-              className={`rounded-sm border px-2.5 py-2 min-h-[54px] transition-all ${
-                member.isTyping
-                  ? 'border-primary/35 bg-primary/8 shadow-[0_0_12px_rgba(197,154,255,0.15)]'
-                  : 'border-outline-variant/20 bg-surface-container-high/35'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant/85 truncate">
-                  {member.name}
-                </span>
-                <span className={`text-[9px] font-label uppercase tracking-widest ${
-                  member.status === 'typing'
-                    ? 'text-primary'
-                    : member.status === 'ready'
-                      ? 'text-tertiary'
-                      : 'text-on-surface-variant/45'
-                }`}>
-                  {member.status}
-                </span>
-              </div>
-              <div className={`text-[11px] leading-snug ${member.isTyping ? 'text-on-surface' : 'text-on-surface-variant/60'}`}>
-                <AnimatedTypingDraft text={member.draft} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {isMultiplayer && <TeammateTypingPanels panels={teammateTypingPanels} />}
 
-      {/* Moral Dilemma */}
       {dilemma && !hasPendingAction && (
-        <div className="p-3 bg-gradient-to-b from-amber-950/30 to-surface-container-low/40 border border-amber-500/25 rounded-sm space-y-2 animate-fade-in">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-amber-400 text-sm">balance</span>
-            <span className="text-xs font-title text-amber-300">{dilemma.title}</span>
-          </div>
-          {dilemma.stakes && (
-            <p className="text-[11px] text-on-surface-variant/70 italic mb-2">{dilemma.stakes}</p>
-          )}
-          <div className="grid grid-cols-1 gap-1.5">
-            {(dilemma.options || []).map((opt, i) => (
-              <button
-                key={i}
-                onClick={() => handleSuggestedAction(opt.action)}
-                disabled={disabled}
-                className="w-full text-left px-3 py-2.5 bg-amber-500/5 hover:bg-amber-500/15 border border-amber-500/20 hover:border-amber-500/40 rounded-sm transition-all group disabled:opacity-50"
-              >
-                <div className="text-xs font-medium text-amber-200 group-hover:text-amber-100">
-                  {opt.label}
-                </div>
-                {opt.consequence && (
-                  <div className="text-[10px] text-on-surface-variant/50 mt-0.5 italic">
-                    {opt.consequence}
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
+        <DilemmaPanel
+          dilemma={dilemma}
+          disabled={disabled}
+          onChoose={handleSuggestedAction}
+        />
       )}
 
       {/* Suggested Actions */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="space-y-2">
-          {/* Row 1: suggested action buttons */}
           <div className="grid grid-cols-3 gap-2">
             {actions.slice(0, 3).map((action, i) => (
               <div key={`${action.substring(0, 30)}_${i}`} className="flex gap-1">
@@ -362,7 +288,6 @@ export default function ActionPanel({
               onCancel={() => setTradePickerOpen(false)}
             />
           )}
-
         </div>
       )}
 
@@ -405,208 +330,38 @@ export default function ActionPanel({
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <QuickActionButton
-              icon="skip_next"
-              label={t('gameplay.continueButton')}
-              description={lastChosenAction === '[CONTINUE]'
-                ? t('gameplay.continueDisabledTooltip')
-                : t('gameplay.continueChatMessage')}
-              onClick={() => handleSuggestedAction('[CONTINUE]')}
-              disabled={disabled || hasPendingAction || lastChosenAction === '[CONTINUE]'}
-              tone="primary"
-            />
-            <QuickActionButton
-              icon="hourglass_empty"
-              label={t('gameplay.waitButton')}
-              description={t('gameplay.waitSystemMessage')}
-              onClick={() => handleSuggestedAction('[WAIT]')}
-              disabled={disabled || hasPendingAction}
-              tone="neutral"
-            />
-            <QuickActionButton
-              icon="assignment"
-              label={t('gameplay.searchForQuests')}
-              description={t('gameplay.searchForQuestsAction')}
-              onClick={() => handleSuggestedAction(t('gameplay.searchForQuestsAction'))}
-              disabled={disabled || hasPendingAction}
-              tone="tertiary"
-            />
-            <QuickActionButton
-              icon="swords"
-              label={t('gameplay.initiateCombat')}
-              description={t('gameplay.generalCombat')}
-              onClick={() => setCombatPickerOpen((v) => !v)}
-              disabled={disabled || hasPendingAction}
-              tone="danger"
-            />
-            {npcs.length > 0 && dispatch && !gameState?.trade?.active && (
-              <QuickActionButton
-                icon="storefront"
-                label={t('trade.tradeWith')}
-                description={t('trade.tradeWith')}
-                onClick={() => setTradePickerOpen((v) => !v)}
-                disabled={disabled || hasPendingAction}
-                tone="tertiary"
-              />
-            )}
-            {dispatch && !gameState?.crafting?.active && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && (
-              <QuickActionButton
-                icon="construction"
-                label={t('crafting.title')}
-                description={t('crafting.recipes')}
-                onClick={() => dispatch({ type: 'START_CRAFTING' })}
-                disabled={disabled || hasPendingAction}
-                tone="primary"
-              />
-            )}
-            {dispatch && !gameState?.alchemy?.active && getSkillLevel(character?.skills, 'Alchemia') > 0 && (
-              <QuickActionButton
-                icon="science"
-                label={t('alchemy.title')}
-                description={t('alchemy.recipes')}
-                onClick={() => dispatch({ type: 'START_ALCHEMY' })}
-                disabled={disabled || hasPendingAction}
-                tone="primary"
-              />
-            )}
-            {settings.needsSystemEnabled && (
-              <QuickActionButton
-                icon="bedtime"
-                label={t('gameplay.restButton')}
-                description={t('gameplay.restAction')}
-                onClick={() => handleSuggestedAction(t('gameplay.restAction'))}
-                disabled={disabled || hasPendingAction}
-                tone="indigo"
-              />
-            )}
-          </div>
-          {/* Custom action input */}
-          <form onSubmit={handleCustomSubmit} className="flex-1 min-w-0">
-            {/* Dialogue tag */}
-            <div
-              className={`flex items-center gap-2 overflow-hidden transition-all duration-300 ${
-                hasDialogueText ? 'max-h-10 opacity-100 mb-1' : 'max-h-0 opacity-0 mb-0'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-amber-400/15 border border-amber-400/30">
-                <span className="material-symbols-outlined text-amber-300 text-xs">chat_bubble</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
-                  {t('gameplay.dialogueTag')}
-                </span>
-              </span>
-              <span className="text-[10px] text-amber-300/50 italic">
-                {t('gameplay.dialogueHint')}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {supported && !isAutoTyping && (
-                <button
-                  type="button"
-                  onClick={toggle}
-                  disabled={disabled}
-                  title={listening ? t('gameplay.voiceStop') : t('gameplay.voiceStart')}
-                  className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full transition-all duration-300 disabled:opacity-30 ${
-                    listening
-                      ? 'text-error-light bg-error/15 mic-pulse'
-                      : 'text-primary/70 hover:text-primary hover:bg-primary/10'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-base">
-                    {listening ? 'mic' : 'mic_none'}
-                  </span>
-                </button>
-              )}
-              {isAutoTyping && (
-                <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary animate-pulse">
-                  <span className="material-symbols-outlined text-sm">smart_toy</span>
-                </span>
-              )}
-              <div className="relative flex-1 min-w-0">
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-0 w-full text-sm py-1.5 px-1 pointer-events-none whitespace-pre-wrap break-words overflow-hidden leading-[1.5]"
-                >
-                  {displaySegments.map((seg, i) =>
-                    seg.type === 'dialogue' ? (
-                      <span
-                        key={i}
-                        className="bg-amber-400/15 rounded-sm text-amber-300 border-b border-amber-400/40 transition-colors"
-                      >{seg.text}</span>
-                    ) : (
-                      <span key={i} className="text-on-surface">{seg.text}</span>
-                    )
-                  )}
-                </div>
-                <textarea
-                  data-testid="action-input"
-                  ref={textareaRef}
-                  value={displayValue}
-                  onChange={(e) => !isAutoTyping && handleTypingChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleCustomSubmit(e);
-                    }
-                  }}
-                  placeholder={
-                    listening
-                      ? t('gameplay.voiceListening')
-                      : supported
-                        ? t('gameplay.customActionPlaceholderVoice')
-                        : t('gameplay.customActionPlaceholder')
-                  }
-                  rows={1}
-                  disabled={disabled && !isAutoTyping}
-                  readOnly={listening || isAutoTyping}
-                  style={hasDialogueText && !isAutoTyping ? { color: 'transparent', caretColor: '#fffbfe' } : undefined}
-                  className={`relative w-full bg-transparent border-0 border-b-2 focus:ring-0 text-sm py-1.5 px-1 resize-none placeholder:text-outline/40 overflow-hidden disabled:opacity-50 transition-all duration-300 leading-[1.5] ${
-                    hasDialogueText ? 'selection:bg-amber-400/30' : ''
-                  } ${
-                    isAutoTyping
-                      ? 'border-primary/60 text-primary shadow-[0_2px_8px_rgba(197,154,255,0.2)]'
-                      : listening
-                        ? `border-primary/60 shadow-[0_2px_8px_rgba(197,154,255,0.15)]${!hasDialogueText ? ' text-on-surface' : ''}`
-                        : hasDialogueText
-                          ? 'border-amber-400/40 shadow-[0_2px_8px_rgba(251,191,36,0.08)]'
-                          : 'border-outline-variant/20 focus:border-primary/50 focus:shadow-[0_2px_8px_rgba(197,154,255,0.1)]'
-                  }`}
-                />
-              </div>
-              {isMultiplayer && (
-                <button
-                  type="button"
-                  onClick={handleSoloCustomSubmit}
-                  disabled={!customAction.trim() || disabled || !soloAvailable || mp.state.isGenerating}
-                  title={soloAvailable ? t('multiplayer.soloActionTooltip') : t('multiplayer.soloActionCooldown', { time: soloCooldownTime })}
-                  className="shrink-0 flex items-center gap-1 px-2 py-1.5 text-tertiary hover:text-on-surface bg-tertiary/10 hover:bg-tertiary/20 border border-tertiary/20 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <span className="material-symbols-outlined text-sm">bolt</span>
-                </button>
-              )}
-              <button
-                data-testid="submit-action"
-                type="submit"
-                disabled={!customAction.trim() || disabled}
-                className="shrink-0 text-primary hover:text-on-surface transition-all flex items-center justify-center w-8 h-8 rounded-sm hover:bg-primary/10 disabled:opacity-30"
-              >
-                <span className="material-symbols-outlined text-lg">send</span>
-              </button>
-            </div>
-            {listening && (
-              <span className="text-[10px] font-bold uppercase tracking-widest text-primary/70 animate-pulse mt-1 block">
-                {t('gameplay.voiceListening')}
-              </span>
-            )}
-          </form>
+          <QuickActionsBar
+            disabled={disabled}
+            hasPendingAction={hasPendingAction}
+            lastChosenAction={lastChosenAction}
+            npcs={npcs}
+            dispatch={dispatch}
+            gameState={gameState}
+            character={character}
+            needsSystemEnabled={settings.needsSystemEnabled}
+            onSuggestedAction={handleSuggestedAction}
+            onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
+            onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
+          />
+          <CustomActionForm
+            textareaRef={textareaRef}
+            customAction={customAction}
+            onTypingChange={handleTypingChange}
+            onSubmit={handleCustomSubmit}
+            onSoloSubmit={handleSoloCustomSubmit}
+            disabled={disabled}
+            autoPlayerTypingText={autoPlayerTypingText}
+            listening={listening}
+            supported={supported}
+            interim={interim}
+            onToggleVoice={toggle}
+            isMultiplayer={isMultiplayer}
+            soloAvailable={soloAvailable}
+            soloCooldownTime={soloCooldownTime}
+            isGenerating={mp.state.isGenerating}
+          />
         </div>
       )}
     </div>
   );
-}
-
-function getSkillLevel(skills, name) {
-  const e = skills?.[name];
-  if (!e) return 0;
-  return typeof e === 'object' ? (e.level || 0) : e;
 }

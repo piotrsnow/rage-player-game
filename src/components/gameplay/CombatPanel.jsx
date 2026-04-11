@@ -20,11 +20,14 @@ import {
   getDistance,
 } from '../../services/combatEngine';
 import CombatCanvas from './CombatCanvas';
-import Tooltip from '../ui/Tooltip';
 import { useCombatCommentary } from '../../hooks/useCombatCommentary';
-import CombatLogEntry, { buildCombatLogDetails } from './CombatLogEntry';
+import CombatLogEntry from './CombatLogEntry';
 import CombatantsList from './combat/CombatantsList';
 import ManeuverPicker from './combat/ManeuverPicker';
+import CombatHeader from './combat/CombatHeader';
+import { TruceConfirmDialog, SurrenderConfirmDialog } from './combat/CombatConfirmDialogs';
+import CombatTurnStatus from './combat/CombatTurnStatus';
+import { buildResultLogEntries, buildResultChatMessages } from './combat/combatLogBuilders';
 import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
 
@@ -42,7 +45,6 @@ function summarizeLogEntry(entry) {
   if (entry.critName) extras.push(entry.critName);
   return [core, extras.join(', ')].filter(Boolean).join(' — ');
 }
-
 
 export default function CombatPanel({
   combat, dispatch, onEndCombat, onSurrender, onForceTruce, character,
@@ -103,13 +105,14 @@ export default function CombatPanel({
     [character?.customAttackPresets]
   );
 
-  const isActorFriendly = (actorName) => {
-    return friendlies.some((c) => c.name === actorName);
-  };
+  const isActorFriendly = useCallback(
+    (actorName) => friendlies.some((c) => c.name === actorName),
+    [friendlies],
+  );
 
-  const addLogEntry = (entry) => {
+  const addLogEntry = useCallback((entry) => {
     setCombatLog((prev) => [...prev.slice(-49), entry]);
-  };
+  }, []);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,7 +134,22 @@ export default function CombatPanel({
       });
       prevRoundRef.current = combat.round;
     }
-  }, [combat.round, t]);
+  }, [combat.round, t, addLogEntry]);
+
+  const addResultToLog = useCallback((result) => {
+    if (!result) return;
+    combatAudio.playForResult(result);
+    const entries = buildResultLogEntries(result, { isActorFriendly, t });
+    for (const entry of entries) addLogEntry(entry);
+  }, [combatAudio, isActorFriendly, t, addLogEntry]);
+
+  const dispatchCombatChatMessage = useCallback((result) => {
+    if (!result || isMultiplayer) return;
+    const messages = buildResultChatMessages(result, { t });
+    for (const message of messages) {
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: message });
+    }
+  }, [isMultiplayer, dispatch, t]);
 
   const handleCommentaryMessage = useCallback((message) => {
     if (isMultiplayer) {
@@ -204,157 +222,6 @@ export default function CombatPanel({
       setCustomDescription('');
     }
     onPersistState?.();
-  };
-
-  const addResultToLog = (result) => {
-    if (!result) return;
-    combatAudio.playForResult(result);
-    const friendly = isActorFriendly(result.actor);
-    const actorColor = friendly ? '#c59aff' : '#ff6e84';
-    const targetColor = friendly ? '#ff6e84' : '#c59aff';
-    const uid = Math.random().toString(36).slice(2, 6);
-
-    if (result.outcome === 'hit' && result.damage != null) {
-      addLogEntry({
-        type: 'hit',
-        actor: result.actor,
-        action: '→',
-        target: result.targetName || '?',
-        criticalHit: Boolean(result.criticalHit),
-        criticalLabel: t('combat.criticalHit', 'Critical Hit'),
-        damage: result.damage,
-        location: result.hitLocation || '',
-        actorColor,
-        targetColor,
-        details: buildCombatLogDetails(result, t),
-        id: `hit_${uid}`,
-      });
-      if (result.targetDefeated) {
-        addLogEntry({
-          type: 'defeat',
-          actor: result.targetName || '?',
-          action: '☠',
-          target: '',
-          actorColor: targetColor,
-          id: `ko_${uid}`,
-        });
-      }
-    } else if (result.outcome === 'miss') {
-      addLogEntry({
-        type: 'miss',
-        actor: result.actor,
-        action: `→ ${t('combat.miss', 'Miss!')}`,
-        target: result.targetName || '?',
-        highlightText: t('combat.missShort', 'PUDŁO'),
-        highlightTone: 'miss',
-        actorColor,
-        targetColor,
-        details: buildCombatLogDetails(result, t),
-        id: `miss_${uid}`,
-      });
-    } else if (result.outcome === 'fled') {
-      addLogEntry({
-        type: 'fled',
-        actor: result.actor,
-        action: t('combat.fled', 'Fled!'),
-        target: '',
-        actorColor,
-        details: buildCombatLogDetails(result, t),
-        id: `fled_${uid}`,
-      });
-    } else if (result.outcome === 'failed_flee') {
-      addLogEntry({
-        type: 'miss',
-        actor: result.actor,
-        action: t('combat.failedFlee', 'failed to flee'),
-        target: '',
-        actorColor,
-        details: buildCombatLogDetails(result, t),
-        id: `failed_flee_${uid}`,
-      });
-    } else if (result.outcome === 'defensive') {
-      addLogEntry({
-        type: 'info',
-        actor: result.actor,
-        action: t(`combat.manoeuvres.${result.manoeuvreKey}`, result.manoeuvre),
-        target: '',
-        actorColor,
-        details: buildCombatLogDetails(result, t),
-        id: `defensive_${uid}`,
-      });
-    }
-  };
-
-  const dispatchCombatChatMessage = (result) => {
-    if (!result || isMultiplayer) return;
-    const ts = Date.now();
-    const uid = () => Math.random().toString(36).slice(2, 6);
-
-    if (result.outcome === 'hit' && result.damage != null) {
-      dispatch({
-        type: 'ADD_CHAT_MESSAGE',
-        payload: {
-          id: `msg_${ts}_hit_${uid()}`,
-          role: 'system',
-          subtype: 'combat_hit',
-          content: result.criticalHit
-            ? t('combat.chatCriticalHit', {
-              actor: result.actor,
-              target: result.targetName || '?',
-              damage: result.damage,
-              location: result.hitLocation || '',
-            })
-            : t('combat.chatHit', {
-              actor: result.actor,
-              target: result.targetName || '?',
-              damage: result.damage,
-              location: result.hitLocation || '',
-            }),
-          combatBadgeText: `-${result.damage}`,
-          combatBadgeTone: 'hit',
-          timestamp: ts,
-        },
-      });
-      if (result.targetDefeated) {
-        dispatch({
-          type: 'ADD_CHAT_MESSAGE',
-          payload: {
-            id: `msg_${ts}_ko_${uid()}`,
-            role: 'system',
-            subtype: 'combat_defeat',
-            content: t('combat.chatDefeated', { target: result.targetName || '?' }),
-            timestamp: ts,
-          },
-        });
-      }
-    } else if (result.outcome === 'miss') {
-      dispatch({
-        type: 'ADD_CHAT_MESSAGE',
-        payload: {
-          id: `msg_${ts}_miss_${uid()}`,
-          role: 'system',
-          subtype: 'combat_miss',
-          content: t('combat.chatMiss', {
-            actor: result.actor,
-            target: result.targetName || '?',
-          }),
-          combatBadgeText: t('combat.missShort', 'PUDŁO'),
-          combatBadgeTone: 'miss',
-          timestamp: ts,
-        },
-      });
-    } else if (result.outcome === 'fled') {
-      dispatch({
-        type: 'ADD_CHAT_MESSAGE',
-        payload: {
-          id: `msg_${ts}_fled_${uid()}`,
-          role: 'system',
-          subtype: 'combat_fled',
-          content: t('combat.chatFled', { actor: result.actor }),
-          timestamp: ts,
-        },
-      });
-    }
   };
 
   const handleExecute = () => {
@@ -478,7 +345,7 @@ export default function CombatPanel({
     } else {
       dispatch({ type: 'UPDATE_COMBAT', payload: updated });
     }
-  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t]);
+  }, [combat, isMyTurn, combatOver, isMultiplayer, myPlayerId, dispatch, onHostResolve, t, addLogEntry]);
 
   const selectedTargetOutOfMeleeRange = useMemo(() => {
     if (!selectedManoeuvre || !selectedTarget) return false;
@@ -491,97 +358,31 @@ export default function CombatPanel({
 
   return (
     <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="material-symbols-outlined text-error text-lg">swords</span>
-          <h3 className="text-sm font-bold text-error uppercase tracking-widest">
-            {t('combat.title', 'Combat')}
-          </h3>
-          <span className="text-[11px] text-on-surface-variant px-2 py-0.5 bg-surface-container rounded-sm">
-            {t('combat.round', 'Round')} {combat.round}
-          </span>
-          {isMultiplayer && (
-            <span className="text-[10px] text-tertiary px-2 py-0.5 bg-tertiary/10 rounded-sm uppercase tracking-widest">
-              {t('combat.multiplayer', 'MP')}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {!combatOver && canControl && playerWinning && (
-            <button
-              onClick={() => setShowTruceConfirm(true)}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-outline/10 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-tertiary/15 hover:text-tertiary hover:border-tertiary/20 transition-colors"
-            >
-              {t('combat.forceTruce', 'Force Truce')}
-            </button>
-          )}
-          {!combatOver && canControl && (
-            <button
-              onClick={() => setShowSurrenderConfirm(true)}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-outline/10 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-error/15 hover:text-error hover:border-error/20 transition-colors"
-            >
-              {t('combat.surrender', 'Surrender')}
-            </button>
-          )}
-          {combatOver && canControl && (
-            <button
-              onClick={handleEndCombat}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-primary/15 text-primary border border-primary/20 rounded-sm hover:bg-primary/25 transition-colors"
-            >
-              {t('combat.endCombat', 'End Combat')}
-            </button>
-          )}
-        </div>
-      </div>
+      <CombatHeader
+        round={combat.round}
+        combatOver={combatOver}
+        canControl={canControl}
+        playerWinning={playerWinning}
+        isMultiplayer={isMultiplayer}
+        onRequestTruce={() => setShowTruceConfirm(true)}
+        onRequestSurrender={() => setShowSurrenderConfirm(true)}
+        onEndCombat={handleEndCombat}
+      />
 
-      {/* Truce Confirmation */}
       {showTruceConfirm && (
-        <div className="p-3 bg-tertiary/5 border border-tertiary/30 rounded-sm space-y-2">
-          <p className="text-[12px] text-on-surface">
-            {t('combat.forceTruceConfirm', 'You have the upper hand. Force a truce? Remaining enemies will back down.')}
-          </p>
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => setShowTruceConfirm(false)}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-surface-container/50 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
-            >
-              {t('combat.cancel', 'Cancel')}
-            </button>
-            <button
-              onClick={handleForceTruce}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-tertiary/15 text-tertiary border border-tertiary/30 rounded-sm hover:bg-tertiary/25 transition-colors"
-            >
-              {t('combat.forceTruce', 'Force Truce')}
-            </button>
-          </div>
-        </div>
+        <TruceConfirmDialog
+          onCancel={() => setShowTruceConfirm(false)}
+          onConfirm={handleForceTruce}
+        />
       )}
 
-      {/* Surrender Confirmation */}
       {showSurrenderConfirm && (
-        <div className="p-3 bg-error-container/10 border border-error/30 rounded-sm space-y-2">
-          <p className="text-[12px] text-on-surface">
-            {t('combat.surrenderConfirm', 'Are you sure? You will be at the mercy of your enemies.')}
-          </p>
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => setShowSurrenderConfirm(false)}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-surface-container/50 text-on-surface-variant border border-outline-variant/20 rounded-sm hover:bg-surface-container transition-colors"
-            >
-              {t('combat.cancel', 'Cancel')}
-            </button>
-            <button
-              onClick={handleSurrender}
-              className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest bg-error/15 text-error border border-error/30 rounded-sm hover:bg-error/25 transition-colors"
-            >
-              {t('combat.surrender', 'Surrender')}
-            </button>
-          </div>
-        </div>
+        <SurrenderConfirmDialog
+          onCancel={() => setShowSurrenderConfirm(false)}
+          onConfirm={handleSurrender}
+        />
       )}
 
-      {/* Canvas Battlefield */}
       <CombatCanvas
         combat={combat}
         myPlayerId={myPlayerId}
@@ -595,7 +396,6 @@ export default function CombatPanel({
         myCombatantId={myCombatant?.id}
       />
 
-      {/* Movement indicator */}
       {isMyTurn && !combatOver && myCombatant && (
         <div className="flex items-center gap-3 text-[11px]">
           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container/30 border border-outline-variant/10 rounded-sm">
@@ -611,7 +411,6 @@ export default function CombatPanel({
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,400px)_240px_minmax(0,1fr)] gap-3 items-start">
-        {/* Column 1: Player Actions */}
         <div className="space-y-3">
           <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
             {t('combat.yourTurn', 'Your Turn')} — {t('combat.chooseManoeuvre', 'Choose Manoeuvre')}
@@ -638,38 +437,16 @@ export default function CombatPanel({
             />
           )}
 
-          {isMultiplayer && !isMyTurn && !combatOver && currentTurn?.type === 'player' && (
-            <div className="text-center py-3 text-[12px] text-on-surface-variant rounded-sm border border-outline-variant/10 bg-surface-container/20">
-              <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
-              {t('combat.waitingFor', 'Waiting for {{name}}...', { name: currentTurn?.name })}
-            </div>
-          )}
-
-          {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && isAwaitingAiTurn && (
-            <div className="text-center py-3 text-[12px] text-on-surface-variant rounded-sm border border-outline-variant/10 bg-surface-container/20">
-              <span className="material-symbols-outlined text-sm mr-1 animate-pulse">hourglass_top</span>
-              {t('combat.nextTurnSoon', 'Next turn in a moment: {{name}}', { name: currentTurn?.name })}
-            </div>
-          )}
-          {!isMyTurn && !combatOver && currentTurn?.type !== 'player' && !isAwaitingAiTurn && (
-            <div className="text-center py-3 text-[12px] text-on-surface-variant rounded-sm border border-outline-variant/10 bg-surface-container/20">
-              <span className="material-symbols-outlined text-sm mr-1 animate-spin">sync</span>
-              {currentTurn?.name} {t('combat.isActing', 'is acting...')}
-            </div>
-          )}
-
-          {combatOver && (
-            <div className="text-center py-3 rounded-sm border border-outline-variant/10 bg-surface-container/20">
-              <div className="text-[11px] text-on-surface-variant">
-                {combat.round} {t('combat.roundsPlural', 'rounds')} — {enemies.filter((e) => e.isDefeated).length}/{enemies.length} {t('combat.enemiesDefeated', 'enemies defeated')}
-              </div>
-              {isMultiplayer && !isHost && (
-                <div className="text-[10px] text-outline mt-2">
-                  {t('combat.hostWillEnd', 'The host will end combat...')}
-                </div>
-              )}
-            </div>
-          )}
+          <CombatTurnStatus
+            isMyTurn={isMyTurn}
+            combatOver={combatOver}
+            isMultiplayer={isMultiplayer}
+            isHost={isHost}
+            currentTurn={currentTurn}
+            isAwaitingAiTurn={isAwaitingAiTurn}
+            combat={combat}
+            enemies={enemies}
+          />
         </div>
 
         <CombatantsList
@@ -679,7 +456,6 @@ export default function CombatPanel({
           t={t}
         />
 
-        {/* Column 3: Combat Log */}
         <div className="min-w-0 space-y-3">
           <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant px-1 pb-1">
             {t('combat.battleProgress', 'Battle Progress')}

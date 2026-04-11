@@ -1,0 +1,485 @@
+import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
+import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+
+export const initialState = {
+  isMultiplayer: false,
+  isHost: false,
+  roomCode: null,
+  phase: null,
+  players: [],
+  myOdId: null,
+  connected: false,
+  gameState: null,
+  roomSettings: null,
+  isGenerating: false,
+  error: null,
+  errorCode: null,
+  pendingCombatManoeuvre: null,
+  isDead: false,
+  typingPlayers: {},
+  reconnectState: { status: 'disconnected', attempt: 0, delayMs: 0, maxAttempts: 10 },
+};
+
+export function mpReducer(state, action) {
+  switch (action.type) {
+    case 'SET_CONNECTED':
+      return { ...state, connected: action.payload };
+
+    case 'SET_RECONNECT_STATE':
+      return { ...state, reconnectState: action.payload };
+
+    case 'ROOM_CREATED':
+      return {
+        ...state,
+        isMultiplayer: true,
+        isHost: true,
+        roomCode: action.payload.roomCode,
+        myOdId: action.payload.odId,
+        phase: action.payload.room.phase,
+        players: action.payload.room.players,
+        roomSettings: action.payload.room.settings,
+        error: null,
+      };
+
+    case 'ROOM_JOINED': {
+      const joinedOdId = action.payload.odId;
+      const joinedIsHost = action.payload.room.players.find((p) => p.odId === joinedOdId)?.isHost || false;
+      return {
+        ...state,
+        isMultiplayer: true,
+        isHost: joinedIsHost,
+        roomCode: action.payload.roomCode,
+        myOdId: joinedOdId,
+        phase: action.payload.room.phase,
+        players: action.payload.room.players,
+        gameState: action.payload.room.gameState,
+        roomSettings: action.payload.room.settings,
+        error: null,
+      };
+    }
+
+    case 'ROOM_STATE':
+      return {
+        ...state,
+        phase: action.payload.room.phase,
+        players: action.payload.room.players,
+        gameState: action.payload.room.gameState,
+        roomSettings: action.payload.room.settings ?? state.roomSettings,
+        typingPlayers: Object.fromEntries(
+          Object.entries(state.typingPlayers).filter(([id]) =>
+            action.payload.room.players.some((player) => player.odId === id)
+          )
+        ),
+      };
+
+    case 'ROOM_CONVERTED':
+      return {
+        ...state,
+        isMultiplayer: true,
+        isHost: true,
+        roomCode: action.payload.roomCode,
+        myOdId: action.payload.odId,
+        phase: action.payload.room.phase,
+        players: action.payload.room.players,
+        gameState: action.payload.room.gameState,
+        roomSettings: action.payload.room.settings,
+        error: null,
+      };
+
+    case 'PLAYER_JOINED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+        roomSettings: action.payload.room.settings ?? state.roomSettings,
+      };
+
+    case 'PLAYER_JOINED_MIDGAME': {
+      const updatedGameState = action.payload.room.gameState || state.gameState;
+      return {
+        ...state,
+        players: action.payload.room.players,
+        gameState: updatedGameState,
+        roomSettings: action.payload.room.settings ?? state.roomSettings,
+      };
+    }
+
+    case 'PLAYER_LEFT':
+      return {
+        ...state,
+        players: action.payload.room.players,
+        gameState: action.payload.room.gameState ?? state.gameState,
+        isHost: action.payload.room.players.find((p) => p.odId === state.myOdId)?.isHost || state.isHost,
+        roomSettings: action.payload.room.settings ?? state.roomSettings,
+        typingPlayers: Object.fromEntries(
+          Object.entries(state.typingPlayers).filter(([id]) =>
+            action.payload.room.players.some((player) => player.odId === id)
+          )
+        ),
+      };
+
+    case 'PLAYER_DISCONNECTED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+        isHost: action.payload.room.players.find((p) => p.odId === state.myOdId)?.isHost || state.isHost,
+      };
+
+    case 'PLAYER_RECONNECTED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+      };
+
+    case 'GAME_STARTING':
+      return { ...state, isGenerating: true };
+
+    case 'GAME_STARTED':
+      return {
+        ...state,
+        phase: 'playing',
+        gameState: action.payload.gameState,
+        players: action.payload.room.players,
+        isGenerating: false,
+      };
+
+    case 'ACTIONS_UPDATED':
+      return {
+        ...state,
+        players: action.payload.room.players,
+      };
+
+    case 'SCENE_GENERATING':
+      return { ...state, isGenerating: true };
+
+    case 'GENERATION_FAILED':
+      return {
+        ...state,
+        isGenerating: false,
+        players: action.payload.room?.players || state.players,
+        error: action.payload.message || 'Generation failed',
+        errorCode: action.payload.code || null,
+      };
+
+    case 'SCENE_UPDATE': {
+      let newGameState = action.payload.room?.gameState || state.gameState;
+      const stateChanges = normalizeMultiplayerStateChanges(action.payload.stateChanges || {});
+
+      if (!action.payload.room?.gameState && newGameState) {
+        const perChar = stateChanges.perCharacter;
+        if (perChar && newGameState.characters) {
+          const updatedChars = newGameState.characters.map((c) => {
+            const delta = perChar[c.name] || perChar[c.playerName];
+            if (!delta) return c;
+            const u = { ...c };
+            if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
+            if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
+            if (delta.hp != null && u.hp != null) u.hp = Math.max(0, Math.min(u.maxHp || 100, u.hp + delta.hp));
+            if (delta.mana != null && u.mana != null) u.mana = Math.max(0, Math.min(u.maxMana || 50, u.mana + delta.mana));
+            if (Array.isArray(delta.newItems)) u.inventory = [...(u.inventory || []), ...delta.newItems];
+            if (Array.isArray(delta.removeItems)) {
+              const rmById = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.id || i.name)));
+              u.inventory = (u.inventory || []).filter((i) => !rmById.has(typeof i === 'string' ? i : i.id || i.name));
+            }
+            if (delta.moneyChange) {
+              const cur = u.money || { gold: 0, silver: 0, copper: 0 };
+              let total = ((cur.gold || 0) + (delta.moneyChange.gold || 0)) * 100
+                + ((cur.silver || 0) + (delta.moneyChange.silver || 0)) * 10
+                + ((cur.copper || 0) + (delta.moneyChange.copper || 0));
+              if (total < 0) total = 0;
+              u.money = { gold: Math.floor(total / 100), silver: Math.floor((total % 100) / 10), copper: total % 10 };
+            }
+            if (delta.needsChanges && u.needs) {
+              const needs = { ...u.needs };
+              for (const [key, val] of Object.entries(delta.needsChanges)) {
+                if (key in needs) needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 100) + val));
+              }
+              u.needs = needs;
+            }
+            if (delta.statuses) u.statuses = delta.statuses;
+            return u;
+          });
+          newGameState = { ...newGameState, characters: updatedChars };
+        }
+
+        if (stateChanges.timeAdvance) {
+          const world = { ...(newGameState.world || {}) };
+          const ts = world.timeState || { day: 1, timeOfDay: 'morning', hour: 6, season: 'unknown' };
+          const hoursElapsed = stateChanges.timeAdvance.hoursElapsed || 0.5;
+          let newHour = (ts.hour ?? 6) + hoursElapsed;
+          let dayInc = 0;
+          while (newHour >= 24) { newHour -= 24; dayInc++; }
+          if (stateChanges.timeAdvance.newDay && dayInc === 0) dayInc = 1;
+          world.timeState = {
+            ...ts,
+            hour: Math.round(newHour * 10) / 10,
+            timeOfDay: hourToPeriod(newHour),
+            day: ts.day + dayInc,
+            ...(stateChanges.timeAdvance.season && { season: stateChanges.timeAdvance.season }),
+          };
+
+          if (newGameState.characters) {
+            newGameState = {
+              ...newGameState,
+              characters: newGameState.characters.map((c) =>
+                c.needs ? { ...c, needs: decayNeeds(c.needs, hoursElapsed) } : c
+              ),
+            };
+          }
+
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.currentLocation) {
+          const world = { ...(newGameState.world || {}) };
+          const prevLoc = world.currentLocation;
+          const newLoc = stateChanges.currentLocation;
+          let mapConns = [...(world.mapConnections || [])];
+          let mapSt = [...(world.mapState || [])];
+
+          if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
+            const already = mapConns.some(
+              (c) =>
+                (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase()) ||
+                (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase())
+            );
+            if (!already) {
+              mapConns.push({ from: prevLoc, to: newLoc });
+            }
+            for (const locName of [prevLoc, newLoc]) {
+              if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
+                mapSt.push({
+                  id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                  name: locName,
+                  description: '',
+                  modifications: [],
+                });
+              }
+            }
+          }
+
+          world.currentLocation = newLoc;
+          world.mapConnections = mapConns;
+          world.mapState = mapSt;
+          const explored = new Set(world.exploredLocations || []);
+          explored.add(newLoc);
+          world.exploredLocations = [...explored];
+          newGameState = { ...newGameState, world };
+        }
+
+        if (Array.isArray(stateChanges.mapChanges) && stateChanges.mapChanges.length > 0) {
+          const world = { ...(newGameState.world || {}) };
+          const mapState = [...(world.mapState || [])];
+          for (const change of stateChanges.mapChanges) {
+            const idx = mapState.findIndex((m) => m.name?.toLowerCase() === change.location?.toLowerCase());
+            if (idx >= 0) {
+              mapState[idx] = {
+                ...mapState[idx],
+                modifications: [...(mapState[idx].modifications || []), { description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+              };
+            } else {
+              mapState.push({
+                id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                name: change.location,
+                description: '',
+                modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],
+              });
+            }
+          }
+          world.mapState = mapState;
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.factionChanges && typeof stateChanges.factionChanges === 'object') {
+          const world = { ...(newGameState.world || {}) };
+          const factions = { ...(world.factions || {}) };
+          for (const [factionId, delta] of Object.entries(stateChanges.factionChanges)) {
+            factions[factionId] = Math.max(-100, Math.min(100, (factions[factionId] || 0) + delta));
+          }
+          world.factions = factions;
+          newGameState = { ...newGameState, world };
+        }
+
+        if (stateChanges.campaignEnd && newGameState.campaign) {
+          newGameState = {
+            ...newGameState,
+            campaign: {
+              ...newGameState.campaign,
+              status: stateChanges.campaignEnd.status || 'completed',
+              epilogue: stateChanges.campaignEnd.epilogue || '',
+            },
+          };
+        }
+      }
+
+      return {
+        ...state,
+        isGenerating: false,
+        gameState: newGameState,
+        players: action.payload.room?.players || state.players,
+      };
+    }
+
+    case 'COMBAT_SYNC': {
+      if (!state.gameState) return state;
+      const chatMessages = action.payload.chatMessages || [];
+      return {
+        ...state,
+        gameState: {
+          ...state.gameState,
+          combat: action.payload.combat,
+          chatHistory: chatMessages.length > 0
+            ? [...(state.gameState.chatHistory || []), ...chatMessages]
+            : state.gameState.chatHistory,
+        },
+      };
+    }
+
+    case 'COMBAT_MANOEUVRE': {
+      return {
+        ...state,
+        pendingCombatManoeuvre: action.payload,
+      };
+    }
+
+    case 'COMBAT_ENDED': {
+      if (!state.gameState) return state;
+      let updatedChars = state.gameState.characters || [];
+      const perChar = normalizeMultiplayerStateChanges({ perCharacter: action.payload.perCharacter || {} }).perCharacter || {};
+      const deadList = action.payload.deadPlayers || [];
+      updatedChars = updatedChars.map((c) => {
+        const delta = perChar[c.name];
+        if (!delta) return c;
+        const u = { ...c };
+        if (delta.wounds != null) u.wounds = Math.max(0, Math.min(u.maxWounds || 12, (u.wounds ?? u.maxWounds ?? 12) + delta.wounds));
+        if (delta.xp != null) u.xp = (u.xp || 0) + delta.xp;
+        if (u.wounds === 0 && delta.wounds < 0) {
+          const critCount = (u.criticalWoundCount || 0) + 1;
+          u.criticalWoundCount = critCount;
+          if (critCount >= 3) {
+            u.status = 'dead';
+          }
+        }
+        return u;
+      });
+      const myChar = updatedChars.find((c) => c.odId === state.myOdId);
+      const isDead = myChar?.status === 'dead';
+      return {
+        ...state,
+        isDead: isDead || state.isDead,
+        gameState: {
+          ...state.gameState,
+          characters: updatedChars,
+          combat: null,
+        },
+      };
+    }
+
+    case 'PLAYER_DIED': {
+      const { playerOdId } = action.payload;
+      return {
+        ...state,
+        isDead: state.isDead || (playerOdId === state.myOdId),
+      };
+    }
+
+    case 'UPDATE_SCENE_IMAGE': {
+      if (!state.gameState?.scenes) return state;
+      const scenes = state.gameState.scenes.map((s) =>
+        s.id === action.payload.sceneId ? { ...s, image: action.payload.image } : s
+      );
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes },
+      };
+    }
+
+    case 'UPDATE_SCENE_GRID': {
+      if (!state.gameState?.scenes) return state;
+      const scenes = state.gameState.scenes.map((s) =>
+        s.id === action.payload.sceneId
+          ? { ...s, sceneGrid: action.payload.sceneGrid || s.sceneGrid || null }
+          : s
+      );
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes },
+      };
+    }
+
+    case 'QUEST_OFFER_UPDATE': {
+      if (!state.gameState) return state;
+      const { sceneId, offerId, status, quest, chatMessage } = action.payload;
+      const updatedScenes = (state.gameState.scenes || []).map((s) =>
+        s.id === sceneId
+          ? { ...s, questOffers: (s.questOffers || []).map((o) => o.id === offerId ? { ...o, status } : o) }
+          : s
+      );
+      let updatedQuests = state.gameState.quests || { active: [], completed: [] };
+      if (status === 'accepted' && quest) {
+        updatedQuests = { ...updatedQuests, active: [...updatedQuests.active, quest] };
+      }
+      const updatedChat = chatMessage
+        ? [...(state.gameState.chatHistory || []), chatMessage]
+        : state.gameState.chatHistory;
+      return {
+        ...state,
+        gameState: { ...state.gameState, scenes: updatedScenes, quests: updatedQuests, chatHistory: updatedChat },
+        players: action.payload.room?.players || state.players,
+      };
+    }
+
+    case 'CHARACTER_SYNCED':
+      return {
+        ...state,
+        gameState: action.payload.room?.gameState || state.gameState,
+        players: action.payload.room?.players || state.players,
+      };
+
+    case 'TYPING_UPDATE': {
+      const {
+        odId: typingOdId,
+        playerName,
+        isTyping,
+        draft = '',
+      } = action.payload;
+      const normalizedDraft = typeof draft === 'string' ? draft : '';
+      const typingPlayers = { ...state.typingPlayers };
+      if (isTyping) {
+        typingPlayers[typingOdId] = {
+          name: playerName,
+          draft: normalizedDraft,
+          isTyping: true,
+        };
+      } else {
+        if (normalizedDraft) {
+          typingPlayers[typingOdId] = {
+            name: playerName,
+            draft: normalizedDraft,
+            isTyping: false,
+          };
+        } else {
+          delete typingPlayers[typingOdId];
+        }
+      }
+      return { ...state, typingPlayers };
+    }
+
+    case 'CLEAR_TYPING':
+      return { ...state, typingPlayers: {} };
+
+    case 'LEFT_ROOM':
+    case 'RESET':
+      return initialState;
+
+    case 'SET_ERROR':
+      return {
+        ...state,
+        error: typeof action.payload === 'string' ? action.payload : (action.payload?.message || 'Multiplayer error'),
+        errorCode: typeof action.payload === 'object' ? (action.payload.code || null) : null,
+        isGenerating: false,
+      };
+
+    default:
+      return state;
+  }
+}

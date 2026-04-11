@@ -1,8 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
-import { useGame } from '../../contexts/GameContext';
+import {
+  useGameCampaign,
+  useGameCharacter,
+  useGameParty,
+  useGameWorld,
+  useGameQuests,
+  useGameScenes,
+  useGameChatHistory,
+  useGameCombat,
+  useGameMagic,
+  useGameAchievements,
+  useGameAiCosts,
+  useGameIsLoading,
+  useGameIsGeneratingScene,
+  useGameIsGeneratingImage,
+  useGameError,
+  useGameSlice,
+  useGameDispatch,
+  useGameAutoSave,
+} from '../../stores/gameSelectors';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
@@ -66,7 +85,65 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const location = useLocation();
   const { campaignId: urlCampaignId } = useParams();
   const { t } = useTranslation();
-  const { state, dispatch, autoSave } = useGame();
+  const dispatch = useGameDispatch();
+  const autoSave = useGameAutoSave();
+  // Granular per-slice subscriptions — each field only triggers a re-render when
+  // that specific slice changes. The `state` memo keeps the rest of this file
+  // + all state-receiving children stable when unrelated slices change.
+  const sCampaign = useGameCampaign();
+  const sCharacter = useGameCharacter();
+  const sParty = useGameParty();
+  const sWorld = useGameWorld();
+  const sQuests = useGameQuests();
+  const sScenes = useGameScenes();
+  const sChatHistory = useGameChatHistory();
+  const sCombat = useGameCombat();
+  const sMagic = useGameMagic();
+  const sAchievements = useGameAchievements();
+  const sAiCosts = useGameAiCosts();
+  const sIsLoading = useGameIsLoading();
+  const sIsGeneratingScene = useGameIsGeneratingScene();
+  const sIsGeneratingImage = useGameIsGeneratingImage();
+  const sError = useGameError();
+  const sActiveCharacterId = useGameSlice((s) => s.activeCharacterId);
+  const sCharacterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+  const sMainQuestJustCompleted = useGameSlice((s) => s.mainQuestJustCompleted);
+  const sTrade = useGameSlice((s) => s.trade);
+  const sCrafting = useGameSlice((s) => s.crafting);
+  const sAlchemy = useGameSlice((s) => s.alchemy);
+  const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
+  const sNarrationTime = useGameSlice((s) => s.narrationTime);
+  const state = useMemo(() => ({
+    campaign: sCampaign,
+    character: sCharacter,
+    party: sParty,
+    world: sWorld,
+    quests: sQuests,
+    scenes: sScenes,
+    chatHistory: sChatHistory,
+    combat: sCombat,
+    magic: sMagic,
+    achievements: sAchievements,
+    aiCosts: sAiCosts,
+    isLoading: sIsLoading,
+    isGeneratingScene: sIsGeneratingScene,
+    isGeneratingImage: sIsGeneratingImage,
+    error: sError,
+    activeCharacterId: sActiveCharacterId,
+    characterVoiceMap: sCharacterVoiceMap,
+    mainQuestJustCompleted: sMainQuestJustCompleted,
+    trade: sTrade,
+    crafting: sCrafting,
+    alchemy: sAlchemy,
+    momentumBonus: sMomentumBonus,
+    narrationTime: sNarrationTime,
+  }), [
+    sCampaign, sCharacter, sParty, sWorld, sQuests, sScenes, sChatHistory,
+    sCombat, sMagic, sAchievements, sAiCosts, sIsLoading, sIsGeneratingScene,
+    sIsGeneratingImage, sError, sActiveCharacterId, sCharacterVoiceMap,
+    sMainQuestJustCompleted, sTrade, sCrafting, sAlchemy, sMomentumBonus,
+    sNarrationTime,
+  ]);
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
