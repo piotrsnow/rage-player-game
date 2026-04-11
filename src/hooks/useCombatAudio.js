@@ -24,7 +24,6 @@ export function useCombatAudio(combat) {
   const pendingUrlsRef = useRef([]);
   const nextIndexByCategoryRef = useRef(new Map());
   const preloadedUrlsRef = useRef(new Set());
-  const localVoiceMapRef = useRef(new Map());
   const battleCryCacheRef = useRef(new Map());
   const battleCryCooldownRef = useRef(new Map());
   const battleCryIndexRef = useRef(new Map());
@@ -153,7 +152,7 @@ export function useCombatAudio(combat) {
   }, [state.character, state.characterVoiceMap, state.party, state.world?.npcs]);
 
   const resolveCombatantVoiceId = useCallback((combatant) => {
-    if (!combatant?.name) return settings.elevenlabsVoiceId || null;
+    if (!combatant?.name) return settings.narratorVoiceId || null;
 
     const mappedVoice = state.characterVoiceMap?.[combatant.name]?.voiceId;
     if (mappedVoice) return mappedVoice;
@@ -163,17 +162,21 @@ export function useCombatAudio(combat) {
       combatant.name,
       gender,
       state.characterVoiceMap || {},
-      localVoiceMapRef.current,
-      settings.characterVoices || [],
+      {
+        maleVoices: settings.maleVoices || [],
+        femaleVoices: settings.femaleVoices || [],
+        narratorVoiceId: settings.narratorVoiceId || null,
+      },
       dispatch
     );
 
-    return resolved || settings.elevenlabsVoiceId || null;
+    return resolved || settings.narratorVoiceId || null;
   }, [
     dispatch,
     getCombatantGender,
-    settings.characterVoices,
-    settings.elevenlabsVoiceId,
+    settings.maleVoices,
+    settings.femaleVoices,
+    settings.narratorVoiceId,
     state.characterVoiceMap,
   ]);
 
@@ -279,7 +282,6 @@ export function useCombatAudio(combat) {
     pendingUrlsRef.current = [];
     nextIndexByCategoryRef.current.clear();
     preloadedUrlsRef.current.clear();
-    localVoiceMapRef.current.clear();
     battleCryCacheRef.current.clear();
     battleCryCooldownRef.current.clear();
     battleCryIndexRef.current.clear();

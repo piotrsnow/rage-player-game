@@ -290,15 +290,6 @@ const StateChangesSchema = z.object({
     count: z.number().optional(),
     description: z.string().optional(),
   }).nullable().optional(),
-  dialogueUpdate: z.object({
-    active: z.boolean(),
-    npcs: z.array(z.object({
-      name: z.string(),
-      attitude: z.string().optional(),
-      goal: z.string().optional(),
-    }).passthrough()).optional().default([]),
-    reason: z.string().optional(),
-  }).passthrough().nullable().optional(),
   startTrade: z.object({
     npcName: z.string(),
   }).nullable().optional(),
@@ -321,9 +312,16 @@ export const SCENE_PACING_TYPES = [
   'dream', 'cutscene',
 ];
 
+export const NpcIntroducedSchema = z.object({
+  name: z.string().min(1),
+  gender: z.enum(['male', 'female', 'unknown']).optional().default('unknown'),
+  speechStyle: z.string().optional().default(''),
+}).passthrough();
+
 export const SceneResponseSchema = z.object({
   narrative: z.string().min(1),
   scenePacing: z.enum(SCENE_PACING_TYPES).optional().default('exploration'),
+  npcsIntroduced: z.array(NpcIntroducedSchema).optional().default([]),
   dialogueSegments: z.array(DialogueSegmentSchema).optional().default([]),
   soundEffect: z.string().nullable().optional(),
   musicPrompt: z.string().nullable().optional(),

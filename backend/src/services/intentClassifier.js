@@ -49,7 +49,7 @@ function emptySelection() {
  * Classify intent from structured action markers.
  * Returns a selection result, or null if action is freeform and needs nano model.
  */
-export function classifyIntentHeuristic(playerAction, { dialogue = null, isFirstScene = false } = {}) {
+export function classifyIntentHeuristic(playerAction, { isFirstScene = false } = {}) {
   if (isFirstScene) {
     return { ...emptySelection(), _intent: 'first_scene' };
   }
@@ -79,34 +79,13 @@ export function classifyIntentHeuristic(playerAction, { dialogue = null, isFirst
     return {
       ...emptySelection(),
       expand_npcs: [talkMatch[1]],
-      _intent: 'dialogue',
+      _intent: 'talk',
     };
-  }
-
-  // [INITIATE DIALOGUE: NpcName, ...]
-  const dialogueInitMatch = playerAction.match(/^\[INITIATE DIALOGUE:\s*(.+?)\]$/);
-  if (dialogueInitMatch) {
-    const names = dialogueInitMatch[1].split(',').map(n => n.trim()).filter(Boolean);
-    return {
-      ...emptySelection(),
-      expand_npcs: names,
-      _intent: 'dialogue',
-    };
-  }
-
-  // Active dialogue round — NPC context already loaded
-  if (dialogue?.active) {
-    return { ...emptySelection(), _intent: 'dialogue_round' };
   }
 
   // [Combat resolved:...]
   if (playerAction.startsWith('[Combat resolved:')) {
     return { ...emptySelection(), _intent: 'post_combat' };
-  }
-
-  // [Dialogue ended:...]
-  if (playerAction.startsWith('[Dialogue ended:')) {
-    return { ...emptySelection(), _intent: 'post_dialogue' };
   }
 
   // [WAIT]
@@ -423,7 +402,7 @@ function fallbackSelection(playerAction) {
  * @param {string} playerAction - The player's action text
  * @param {object} coreState - Campaign core state
  * @param {object} availableData - { dbNpcs, dbQuests, dbCodex }
- * @param {object} options - { dialogue, isFirstScene, provider }
+ * @param {object} options - { isFirstScene, provider }
  * @returns {Promise<object>} Selection result for assembleContext()
  */
 export async function classifyIntent(playerAction, coreState, availableData, options = {}) {

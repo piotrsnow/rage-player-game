@@ -16,7 +16,6 @@ import { processStateChanges as processAchievements } from '../services/achievem
 import { repairDialogueSegments, ensurePlayerDialogue } from '../services/aiResponseValidator';
 import { checkWorldConsistency, applyConsistencyPatches } from '../services/worldConsistency';
 import { detectCombatIntent, buildSpeculativeImageDescription } from '../services/prompts';
-import { advanceDialogueRound } from '../services/dialogueEngine';
 import { parsePartialJson } from '../services/partialJsonParser';
 import { resolveMechanics } from '../services/mechanics/index';
 import { calculateNextMomentum } from '../services/mechanics/momentumTracker';
@@ -24,6 +23,7 @@ import { gameData } from '../services/gameDataService';
 import { loadSceneGenDurationHistory, appendSceneGenDuration, historyToSceneGenEstimateMs, persistSceneGenDurationHistory } from '../services/performanceTracker';
 import { downgradeLowConfidenceDialogueSegments, hardRemoveNarrationDialogueRepeats } from '../services/textSanitizer';
 import { demoteAnonymousDialogueSegments, normalizeIncomingDialogueSegments, enrichDialogueSpeakers, mergeNpcHintsFromDialogue } from '../services/dialogueProcessor';
+import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 
 export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
@@ -37,6 +37,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   const sceneGenDurationHistoryRef = useRef(null);
   const earlyDiceRollEmittedRef = useRef(false);
   const streamedDiceRollCountRef = useRef(0);
+  const streamedNpcsIntroducedCountRef = useRef(0);
   const dispatchedRollSkillsRef = useRef(new Set());
   const rollMessageCounterRef = useRef(0);
   const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
@@ -71,6 +72,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
       setEarlyDiceRoll(null);
       earlyDiceRollEmittedRef.current = false;
       streamedDiceRollCountRef.current = 0;
+      streamedNpcsIntroducedCountRef.current = 0;
       dispatchedRollSkillsRef.current = new Set();
       rollMessageCounterRef.current = 0;
       sceneGenStartRef.current = Date.now();
@@ -212,8 +214,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           resolvedMechanics: resolved,
           needsSystemEnabled,
           characterNeeds: state.character?.needs || null,
-          dialogue: state.dialogue || null,
-          dialogueCooldown: state.dialogueCooldown || 0,
           isFirstScene,
           isCustomAction,
           fromAutoPlayer,
@@ -249,6 +249,32 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
                   }
                 }
                 streamedDiceRollCountRef.current = newCount;
+              }
+              // Prime the voice map for brand-new NPCs so streaming TTS can
+              // assign a voice from the correct gender pool before that NPC's
+              // first dialogue segment arrives. Only processes new entries
+              // beyond what we've already seen in this stream.
+              if (Array.isArray(parsed.npcsIntroduced)) {
+                const newNpcCount = parsed.npcsIntroduced.length;
+                if (newNpcCount > streamedNpcsIntroducedCountRef.current) {
+                  for (let i = streamedNpcsIntroducedCountRef.current; i < newNpcCount; i++) {
+                    const npc = parsed.npcsIntroduced[i];
+                    if (!npc?.name) continue;
+                    if (state.characterVoiceMap?.[npc.name]?.voiceId) continue;
+                    resolveVoiceForCharacter(
+                      npc.name,
+                      npc.gender === 'male' || npc.gender === 'female' ? npc.gender : null,
+                      state.characterVoiceMap || {},
+                      {
+                        maleVoices: settings.maleVoices || [],
+                        femaleVoices: settings.femaleVoices || [],
+                        narratorVoiceId: settings.narratorVoiceId || null,
+                      },
+                      dispatch
+                    );
+                  }
+                  streamedNpcsIntroducedCountRef.current = newNpcCount;
+                }
               }
               if (Array.isArray(parsed.dialogueSegments) && parsed.dialogueSegments.length > 0) {
                 setStreamingSegments(parsed.dialogueSegments);
@@ -470,7 +496,11 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           stateChanges: result.stateChanges,
           worldNpcs: state.world?.npcs || [],
           characterVoiceMap: state.characterVoiceMap || {},
-          characterVoices: settings.characterVoices || [],
+          voicePools: {
+            maleVoices: settings.maleVoices || [],
+            femaleVoices: settings.femaleVoices || [],
+            narratorVoiceId: settings.narratorVoiceId || null,
+          },
           playerNames,
           currentLocation: result.stateChanges?.currentLocation || state.world?.currentLocation || '',
           dispatch,
@@ -729,15 +759,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
                 payload: { ...ach.grantsTitle, sourceAchievementId: ach.id },
               });
             }
-          }
-        }
-
-        if (state.dialogue?.active && result.stateChanges?.dialogueUpdate?.active !== false) {
-          const advanced = advanceDialogueRound(state.dialogue);
-          if (!advanced.active) {
-            dispatch({ type: 'END_DIALOGUE' });
-          } else {
-            dispatch({ type: 'UPDATE_DIALOGUE', payload: { round: advanced.round } });
           }
         }
 

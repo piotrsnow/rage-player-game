@@ -44,9 +44,8 @@ model Campaign {
   name           String   @default("")
   genre          String   @default("")
   tone           String   @default("")
-  coreState      String   @default("{}") // Lean state: combat, dialogue, world basics (minus npcs/knowledge/quests/character)
+  coreState      String   @default("{}") // Lean state: combat, world basics (minus npcs/knowledge/quests/character)
   characterIds   String[] @db.ObjectId   // Character record IDs participating in this campaign (1 in single-player, N in MP)
-  voiceSettings  String   @default("{}") // JSON: { elevenlabsVoiceId, elevenlabsVoiceName, characterVoices[] } — set by campaign owner, read by all players
   totalCost      Float    @default(0)
   isPublic       Boolean  @default(false)
   shareToken     String?  @unique
@@ -235,7 +234,7 @@ model MultiplayerSession {
   phase        String
   players      String   // JSON array of player data (without ws). Each entry: { odId, name, characterId, ... }
   characterIds String[] @db.ObjectId   // All Character record IDs participating in this room (parallel to players)
-  gameState    String   // JSON: world / scenes / dialogue / combat — character data is NOT embedded, fetched via characterIds
+  gameState    String   // JSON: world / scenes / combat — character data is NOT embedded, fetched via characterIds
   settings     String   // JSON room settings
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())

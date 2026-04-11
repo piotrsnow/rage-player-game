@@ -75,7 +75,6 @@ export default function ActionPanel({
   disabled,
   npcs = [],
   autoPlayerTypingText = '',
-  dialogueCooldown = 0,
   character = null,
   dilemma = null,
   lastChosenAction = null,
@@ -86,8 +85,6 @@ export default function ActionPanel({
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
-  const [dialoguePickerOpen, setDialoguePickerOpen] = useState(false);
-  const [selectedDialogueNpcs, setSelectedDialogueNpcs] = useState([]);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
@@ -281,26 +278,6 @@ export default function ActionPanel({
       onAction(`[ATTACK: ${npcName}]`, true);
     }
   };
-
-  const handleToggleDialogueNpc = (npcName) => {
-    setSelectedDialogueNpcs((prev) =>
-      prev.includes(npcName) ? prev.filter((n) => n !== npcName) : [...prev, npcName]
-    );
-  };
-
-  const handleInitiateDialogue = () => {
-    if (selectedDialogueNpcs.length < 1) return;
-    setDialoguePickerOpen(false);
-    const npcList = selectedDialogueNpcs.join(', ');
-    if (isMultiplayer) {
-      mp.soloAction(`[INITIATE DIALOGUE: ${npcList}]`, true, settings.language || 'en', settings.dmSettings);
-    } else {
-      onAction(`[INITIATE DIALOGUE: ${npcList}]`, true);
-    }
-    setSelectedDialogueNpcs([]);
-  };
-
-  const canDialogue = npcs.length >= 1 && dialogueCooldown <= 0;
 
   const textareaRef = useRef(null);
 
@@ -638,66 +615,6 @@ export default function ActionPanel({
             </div>
           )}
 
-          {/* Dialogue picker dropdown */}
-          {dialoguePickerOpen && (
-            <div className="p-3 bg-surface-container-high border border-outline-variant/20 rounded-sm space-y-2 animate-fade-in">
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                {t('dialogue.selectNpcs')}
-              </label>
-
-              {npcs.length >= 1 ? (
-                <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
-                  {npcs.map((npc) => {
-                    const isSelected = selectedDialogueNpcs.includes(npc.name);
-                    const attitudeKey = npc.attitude === 'hostile' ? 'attitudeHostile'
-                      : npc.attitude === 'friendly' ? 'attitudeFriendly' : 'attitudeNeutral';
-                    const attitudeStyle = ATTITUDE_STYLES[npc.attitude] || ATTITUDE_STYLES.neutral;
-                    return (
-                      <button
-                        key={npc.id || npc.name}
-                        onClick={() => handleToggleDialogueNpc(npc.name)}
-                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 border rounded-sm transition-all ${
-                          isSelected
-                            ? 'bg-tertiary/15 border-tertiary/30'
-                            : 'bg-surface-container/60 border-outline-variant/10 hover:border-tertiary/20'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`material-symbols-outlined text-sm ${isSelected ? 'text-tertiary' : 'text-on-surface-variant/40'}`}>
-                            {isSelected ? 'check_box' : 'check_box_outline_blank'}
-                          </span>
-                          <span className="text-sm text-on-surface truncate">{npc.name}</span>
-                          <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-sm border font-label uppercase tracking-wider ${attitudeStyle}`}>
-                            {t(`gameplay.${attitudeKey}`)}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[10px] text-on-surface-variant/60 italic px-1">
-                  {t('dialogue.notEnoughNpcs')}
-                </p>
-              )}
-
-              <button
-                onClick={handleInitiateDialogue}
-                disabled={disabled || selectedDialogueNpcs.length < 1}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-label text-on-surface bg-tertiary/15 hover:bg-tertiary/25 border border-tertiary/30 hover:border-tertiary/50 rounded-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <span className="material-symbols-outlined text-sm text-tertiary">forum</span>
-                {t('dialogue.startDialogue')} ({selectedDialogueNpcs.length}/1+)
-              </button>
-
-              <button
-                onClick={() => { setDialoguePickerOpen(false); setSelectedDialogueNpcs([]); }}
-                className="w-full flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] font-label uppercase tracking-widest text-on-surface-variant hover:text-on-surface transition-colors"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -779,21 +696,6 @@ export default function ActionPanel({
               onClick: () => setCombatPickerOpen((v) => !v),
               disabled: disabled || hasPendingAction,
               tone: 'danger',
-            })}
-            {renderQuickActionButton({
-              id: 'dialogue',
-              icon: 'forum',
-              label: dialogueCooldown > 0
-                ? t('dialogue.cooldownShort', { scenes: dialogueCooldown })
-                : t('dialogue.startDialogue'),
-              description: dialogueCooldown > 0
-                ? t('dialogue.cooldownHint', { scenes: dialogueCooldown })
-                : npcs.length < 1
-                  ? t('dialogue.notEnoughNpcs')
-                  : t('dialogue.selectNpcs'),
-              onClick: () => { setDialoguePickerOpen((v) => !v); setCombatPickerOpen(false); },
-              disabled: disabled || hasPendingAction || !canDialogue,
-              tone: 'tertiary',
             })}
             {/* Trade button — visible when NPCs are in scene */}
             {npcs.length > 0 && dispatch && !gameState?.trade?.active && renderQuickActionButton({

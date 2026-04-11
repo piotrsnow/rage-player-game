@@ -793,7 +793,6 @@ The game engine assigns balanced stat blocks based on enemy names. Set combatUpd
 
 For stateChanges.factionChanges: {"faction_id": delta} when actions affect a faction. Use null if none.
 For stateChanges.knowledgeUpdates, narrativeSeeds, resolvedSeeds, npcAgendas: see normal scene documentation.
-For stateChanges.dialogueUpdate: include when dialogue mode starts. Use null otherwise.
 For stateChanges.campaignEnd: only for definitive conclusions. Use null otherwise.
 
 CRITICAL: The dialogueSegments array must cover the FULL narrative broken into narration and dialogue chunks. Narration segments must contain the COMPLETE, VERBATIM narrative text — do NOT summarize, shorten, or paraphrase. The combined text of all narration segments must equal the full "narrative" field (minus any dialogue lines). Every sentence from "narrative" must appear in a narration segment. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST include a "gender" field ("male" or "female"). When a player character speaks, include their dialogue as a dialogue segment with their character name and gender.${langReminder}`;
@@ -939,7 +938,6 @@ For stateChanges.knowledgeUpdates: {"events": [{"summary": "...", "importance": 
 For stateChanges.narrativeSeeds: array of foreshadowing details: [{"id": "seed_id", "description": "what the player notices", "payoffCondition": "location|scenes", "payoffHint": "GM note on resolution", "location": "where it pays off"}]. Plant 0-1 per scene. Use empty array [] if none.
 For stateChanges.resolvedSeeds: array of seed IDs whose payoff is woven into this scene. Use empty array [] if none.
 For stateChanges.npcAgendas: array of off-screen NPC activities: [{"npcName": "NPC", "goal": "what they want", "nextAction": "what they will do", "urgency": "low|medium|high", "triggerAfterScenes": 3}]. Use empty array [] if none.
-For stateChanges.dialogueUpdate: {"active": true, "npcs": [{name, attitude, goal}], "reason": "..."} when structured dialogue mode starts. Use null otherwise.
 For stateChanges.campaignEnd: {"status": "completed"|"failed", "epilogue": "2-3 paragraph epilogue"} ONLY for definitive campaign conclusions. Use null otherwise.
 
 For scenePacing (MANDATORY): return one of: combat, chase, stealth, exploration, dialogue, travel_montage, celebration, rest, dramatic, dream, cutscene. Match prose style to the chosen pacing type.
@@ -1453,10 +1451,9 @@ export async function generateMultiplayerScene(gameState, settings, players, act
     dilemma: result.dilemma || null,
     playerActions: actions.map((a) => ({ name: a.name, action: a.action })),
     timestamp: Date.now(),
-    ...((stateChanges.combatUpdate || stateChanges.dialogueUpdate) && {
+    ...(stateChanges.combatUpdate && {
       stateChanges: {
-        ...(stateChanges.combatUpdate && { combatUpdate: stateChanges.combatUpdate }),
-        ...(stateChanges.dialogueUpdate && { dialogueUpdate: stateChanges.dialogueUpdate }),
+        combatUpdate: stateChanges.combatUpdate,
       },
     }),
   };

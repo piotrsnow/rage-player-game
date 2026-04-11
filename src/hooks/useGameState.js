@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useGame, createDefaultNeeds } from '../contexts/GameContext';
-import { useSettings } from '../contexts/SettingsContext';
 import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
@@ -54,7 +54,7 @@ function buildCharacter(aiResult, campaignSettings) {
 
 export function useGameState() {
   const { state, dispatch, autoSave } = useGame();
-  const { loadCampaignVoiceSettings } = useSettings();
+  const { t } = useTranslation();
 
   const startNewCampaign = useCallback(
     async (aiResult, campaignSettings) => {
@@ -96,6 +96,16 @@ export function useGameState() {
           }
         : buildCharacter(aiResult, campaignSettings);
 
+      // If the character was pre-built (via CharacterCreationModal or library) and has no
+      // inventory, fold in the AI's campaign-specific starting gear so it isn't lost.
+      const aiStartingInventory = aiResult?.characterSuggestion?.inventory || [];
+      const addedStartingItems = [];
+      if ((!initialCharacter.inventory || initialCharacter.inventory.length === 0) && aiStartingInventory.length > 0) {
+        const mapped = gameData.mapStartingInventoryToCatalog(aiStartingInventory);
+        initialCharacter.inventory = mapped;
+        addedStartingItems.push(...mapped);
+      }
+
       // Persist character to its own collection FIRST so we get a backendId
       // to reference from the new campaign. Falls back to a local-only character
       // (no backendId) if backend is offline — campaign save will use that path.
@@ -126,6 +136,21 @@ export function useGameState() {
           timestamp: Date.now(),
         },
       ];
+
+      if (addedStartingItems.length > 0) {
+        const charName = initialCharacter.name || 'Character';
+        const baseTs = Date.now();
+        addedStartingItems.forEach((item, idx) => {
+          const itemName = typeof item === 'string' ? item : item.name;
+          chatHistory.push({
+            id: `msg_${baseTs}_start_item_${idx}`,
+            role: 'system',
+            subtype: 'item_gained',
+            content: t('system.itemGained', { name: charName, item: itemName }),
+            timestamp: baseTs + idx,
+          });
+        });
+      }
 
       const initialQuest = aiResult.initialQuest
         ? {
@@ -197,7 +222,7 @@ export function useGameState() {
 
       return campaign.backendId || campaignId;
     },
-    [dispatch]
+    [dispatch, t]
   );
 
   const loadCampaign = useCallback(
@@ -206,10 +231,6 @@ export function useGameState() {
         const data = await storage.loadCampaign(campaignId);
         if (data) {
           dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-          const backendId = data.campaign?.backendId || data.campaign?.id;
-          if (backendId) {
-            loadCampaignVoiceSettings(backendId).catch(() => { /* non-fatal */ });
-          }
           return true;
         }
       } catch (err) {
@@ -217,7 +238,7 @@ export function useGameState() {
       }
       return false;
     },
-    [dispatch, loadCampaignVoiceSettings]
+    [dispatch]
   );
 
   const resetGame = useCallback(() => {

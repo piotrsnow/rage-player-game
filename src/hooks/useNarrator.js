@@ -365,13 +365,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
-      const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
-      const fallbackVoiceId = Array.isArray(characterVoices) && characterVoices[0]?.voiceId
-        ? characterVoices[0].voiceId
-        : '';
+      const { narratorVoiceId, maleVoices, femaleVoices, dialogueSpeed } = settings;
       const defaultVoiceId = viewerMode
-        ? (state.narratorVoiceId || elevenlabsVoiceId || fallbackVoiceId)
-        : (elevenlabsVoiceId || state.narratorVoiceId || fallbackVoiceId);
+        ? (state.narratorVoiceId || narratorVoiceId)
+        : (narratorVoiceId || state.narratorVoiceId);
 
       if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
         reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
@@ -448,8 +445,6 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         + queueRef.current.slice(1).reduce((sum, item) => sum + (item.narrative?.length || 0), 0);
       setNarrationSecondsRemaining(remainingTextCharsRef.current / CHARS_PER_SECOND_ESTIMATE);
 
-      const localVoiceMap = new Map();
-
       const playerCharNames = viewerMode ? [] : (state.party || [state.character])
         .map(c => c?.name?.toLowerCase())
         .filter(Boolean);
@@ -492,13 +487,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           const existingMapping = state.characterVoiceMap?.[seg.character];
           if (existingMapping?.voiceId) {
             voiceId = existingMapping.voiceId;
-          } else if (!viewerMode && characterVoices?.length > 0) {
+          } else if (!viewerMode) {
             const mapped = resolveVoiceForCharacter(
               seg.character,
               seg.gender,
               state.characterVoiceMap,
-              localVoiceMap,
-              characterVoices,
+              { maleVoices, femaleVoices, narratorVoiceId },
               dispatch
             );
             if (mapped) voiceId = mapped;
@@ -745,13 +739,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
     const myGeneration = generationRef.current;
 
-    const { elevenlabsVoiceId, characterVoices, dialogueSpeed } = settings;
-    const fallbackVoiceId = Array.isArray(characterVoices) && characterVoices[0]?.voiceId
-      ? characterVoices[0].voiceId
-      : '';
+    const { narratorVoiceId, maleVoices, femaleVoices, dialogueSpeed } = settings;
     const defaultVoiceId = viewerMode
-      ? (state.narratorVoiceId || elevenlabsVoiceId || fallbackVoiceId)
-      : (elevenlabsVoiceId || state.narratorVoiceId || fallbackVoiceId);
+      ? (state.narratorVoiceId || narratorVoiceId)
+      : (narratorVoiceId || state.narratorVoiceId);
 
     if (!defaultVoiceId || (!viewerMode && !hasApiKey('elevenlabs'))) {
       reportNarratorError('Narrator unavailable: configure ElevenLabs voice and backend key in Settings.');
@@ -760,7 +751,6 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
 
     const campaignId = state.campaign?.backendId || null;
-    const localVoiceMap = new Map();
     const playerCharNames = viewerMode ? [] : (state.party || [state.character])
       .map(c => c?.name?.toLowerCase())
       .filter(Boolean);
@@ -777,10 +767,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (seg?.type === 'dialogue' && hasNamedSpeaker(seg.character)) {
         const existing = state.characterVoiceMap?.[seg.character];
         if (existing?.voiceId) return existing.voiceId;
-        if (!viewerMode && characterVoices?.length > 0) {
+        if (!viewerMode) {
           const mapped = resolveVoiceForCharacter(
             seg.character, seg.gender, state.characterVoiceMap,
-            localVoiceMap, characterVoices, dispatch
+            { maleVoices, femaleVoices, narratorVoiceId }, dispatch
           );
           if (mapped) return mapped;
         }
@@ -926,14 +916,14 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     currentChunk,
     isNarratorReady: viewerMode
       ? !!(
-          (state.narratorVoiceId || settings.elevenlabsVoiceId || settings.characterVoices?.[0]?.voiceId)
+          (state.narratorVoiceId || settings.narratorVoiceId)
           && backendUrl
           && shareToken
         )
       : !!(
           settings.narratorEnabled
           && hasApiKey('elevenlabs')
-          && (settings.elevenlabsVoiceId || settings.characterVoices?.[0]?.voiceId)
+          && settings.narratorVoiceId
         ),
     speak,
     speakScene,

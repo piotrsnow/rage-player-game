@@ -31,14 +31,8 @@ function ModalLayer() {
   } = useModals();
   const { state, dispatch, autoSave } = useGame();
   const mp = useMultiplayer();
-  const { settings, loadCampaignVoiceSettings } = useSettings();
+  const { settings } = useSettings();
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
-
-  const activeCampaignBackendId = state.campaign?.backendId || null;
-  useEffect(() => {
-    if (!activeCampaignBackendId) return;
-    loadCampaignVoiceSettings(activeCampaignBackendId).catch(() => { /* non-fatal */ });
-  }, [activeCampaignBackendId, loadCampaignVoiceSettings]);
 
   return (
     <>
@@ -48,7 +42,8 @@ function ModalLayer() {
           world={isMultiplayer ? mp.state.gameState?.world : state.world}
           quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
           characterVoiceMap={state.characterVoiceMap}
-          characterVoices={settings.characterVoices}
+          maleVoices={settings.maleVoices}
+          femaleVoices={settings.femaleVoices}
           dispatch={dispatch}
           autoSave={autoSave}
           onClose={closeWorldState}

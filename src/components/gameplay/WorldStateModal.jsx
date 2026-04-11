@@ -48,7 +48,7 @@ function CrossLinkChip({ icon, label, onClick }) {
   );
 }
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, characterVoices, dispatch, autoSave, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
   const [highlightId, setHighlightId] = useState(null);
@@ -123,7 +123,7 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, char
 
         <div ref={contentRef} className="flex-1 overflow-y-auto custom-scrollbar p-5">
           {activeTab === 'npcs' && (
-            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} characterVoices={characterVoices} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
+            <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'map' && (
             <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} npcs={npcs} quests={quests} navigateTo={navigateTo} t={t} />
@@ -298,12 +298,16 @@ function QuestsTab({ quests, npcs, navigateTo, t }) {
 
 /* ── NPC Tab ── */
 
-function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, autoSave, navigateTo, t }) {
+function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, navigateTo, t }) {
   if (npcs.length === 0) {
     return <EmptyState icon="group" text={t('worldState.emptyNpcs')} />;
   }
 
-  const hasVoicePool = characterVoices && characterVoices.length > 0;
+  const taggedVoices = [
+    ...((maleVoices || []).map((v) => ({ ...v, gender: 'male' }))),
+    ...((femaleVoices || []).map((v) => ({ ...v, gender: 'female' }))),
+  ];
+  const hasVoicePool = taggedVoices.length > 0;
 
   const handleVoiceChange = (npcName, npcGender, voiceId) => {
     dispatch({
@@ -388,9 +392,9 @@ function NpcTab({ npcs, quests, characterVoiceMap, characterVoices, dispatch, au
                   onChange={(nextVoiceId) => handleVoiceChange(npc.name, npc.gender, nextVoiceId)}
                   options={[
                     { value: '', label: t('worldState.noVoice') },
-                    ...characterVoices.map((v) => ({
+                    ...taggedVoices.map((v) => ({
                       value: v.voiceId,
-                      label: `${v.voiceName}${v.gender ? ` (${v.gender === 'male' ? '\u2642' : '\u2640'})` : ''}`,
+                      label: `${v.voiceName} (${v.gender === 'male' ? '\u2642' : '\u2640'})`,
                     })),
                   ]}
                   className="flex-1 min-w-0"

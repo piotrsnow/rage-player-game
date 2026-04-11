@@ -13,7 +13,6 @@ const LOCAL_ONLY_SETTINGS_KEYS = [
   'backendUrl', 'useBackend',
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey',
 ];
-const GLOBAL_VOICE_SETTINGS_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
 const _pendingBackendSaves = new Map();
 const _pendingFollowUp = new Map();
@@ -683,7 +682,7 @@ export const storage = {
     if (!apiClient.isConnected()) return false;
     try {
       const uiSettings = { ...settings };
-      for (const key of [...LOCAL_ONLY_SETTINGS_KEYS, ...GLOBAL_VOICE_SETTINGS_KEYS]) {
+      for (const key of LOCAL_ONLY_SETTINGS_KEYS) {
         delete uiSettings[key];
       }
       await apiClient.put('/auth/settings', { settings: uiSettings });

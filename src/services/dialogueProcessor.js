@@ -1,5 +1,5 @@
 import { hasNamedSpeaker } from './dialogueSegments.js';
-import { resolveVoiceForCharacter } from './characterVoiceResolver.js';
+import { resolveVoiceForCharacter, pickRandomVoiceForGender } from './characterVoiceResolver.js';
 
 export function demoteAnonymousDialogueSegments(segments) {
   return (segments || []).map((seg) => {
@@ -34,27 +34,17 @@ export function normalizeIncomingDialogueSegments(segments) {
   });
 }
 
-function pickRandomVoiceForSpeaker(voices, gender) {
-  if (!Array.isArray(voices) || voices.length === 0) return null;
-  const byGender = (gender === 'male' || gender === 'female')
-    ? voices.filter((voice) => voice?.gender === gender)
-    : voices;
-  const pool = byGender.length > 0 ? byGender : voices;
-  if (pool.length === 0) return null;
-  const index = Math.floor(Math.random() * pool.length);
-  return pool[index]?.voiceId || null;
-}
-
 export function enrichDialogueSpeakers({
   segments,
   stateChanges,
   worldNpcs = [],
   characterVoiceMap = {},
-  characterVoices = [],
+  voicePools = {},
   playerNames = [],
   currentLocation = '',
   dispatch,
 }) {
+  const { maleVoices = [], femaleVoices = [], narratorVoiceId = null } = voicePools;
   const source = Array.isArray(segments) ? segments : [];
   if (source.length === 0) {
     return { segments: source, stateChanges: stateChanges || {} };
@@ -77,8 +67,6 @@ export function enrichDialogueSpeakers({
       .map((name) => (typeof name === 'string' ? name.trim().toLowerCase() : ''))
       .filter(Boolean)
   );
-  const localVoiceMap = new Map();
-
   const nextSegments = source.map((segment) => {
     if (!segment || segment.type !== 'dialogue') return segment;
     if (!hasNamedSpeaker(segment.character)) return segment;
@@ -99,14 +87,12 @@ export function enrichDialogueSpeakers({
         speakerName,
         speakerGender,
         characterVoiceMap,
-        localVoiceMap,
-        characterVoices,
+        { maleVoices, femaleVoices, narratorVoiceId },
         dispatch
       ) || voiceId;
     } else {
-      voiceId = pickRandomVoiceForSpeaker(characterVoices, speakerGender) || voiceId;
+      voiceId = pickRandomVoiceForGender(speakerGender, { maleVoices, femaleVoices }) || voiceId;
       if (voiceId) {
-        localVoiceMap.set(speakerName, { voiceId, gender: speakerGender });
         dispatch?.({
           type: 'MAP_CHARACTER_VOICE',
           payload: { characterName: speakerName, voiceId, gender: speakerGender },

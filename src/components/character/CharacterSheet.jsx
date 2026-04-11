@@ -39,7 +39,11 @@ const NEEDS_META = [
   { key: 'rest', icon: 'bedtime', color: 'tertiary' },
 ];
 
-function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, characterVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer, onPortraitChange, campaign, scenes }) {
+function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChange, maleVoices, femaleVoices, showAdvancement, setShowAdvancement, dispatch, isMultiplayer, onPortraitChange, campaign, scenes }) {
+  const allVoices = [
+    ...((maleVoices || []).map((v) => ({ ...v, gender: 'male' }))),
+    ...((femaleVoices || []).map((v) => ({ ...v, gender: 'female' }))),
+  ];
   const [editingPortrait, setEditingPortrait] = useState(false);
   const canEditPortrait = !!onPortraitChange && !isMultiplayer;
 
@@ -173,7 +177,7 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
             </div>
           )}
 
-          {characterVoices && characterVoices.length > 0 && onVoiceChange && (
+          {allVoices.length > 0 && onVoiceChange && (
             <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm">
               <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
                 <span className="material-symbols-outlined text-sm">record_voice_over</span>
@@ -182,12 +186,12 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
               <CustomSelect
                 value={characterVoiceMap?.[character.name]?.voiceId || ''}
                 onChange={(nextVoiceId) => {
-                  const voice = characterVoices.find((v) => v.voiceId === nextVoiceId);
+                  const voice = allVoices.find((v) => v.voiceId === nextVoiceId);
                   onVoiceChange(character.name, nextVoiceId || null, voice?.gender || null);
                 }}
                 options={[
                   { value: '', label: t('character.noVoice') },
-                  ...characterVoices.map((v) => ({ value: v.voiceId, label: v.voiceName })),
+                  ...allVoices.map((v) => ({ value: v.voiceId, label: `${v.voiceName} (${v.gender})` })),
                 ]}
                 className="w-full"
               />
@@ -643,7 +647,8 @@ export default function CharacterSheet({ onClose }) {
                 settings={settings}
                 t={t}
                 characterVoiceMap={state.characterVoiceMap}
-                characterVoices={settings.characterVoices}
+                maleVoices={settings.maleVoices}
+                femaleVoices={settings.femaleVoices}
                 showAdvancement={showAdvancement}
                 setShowAdvancement={setShowAdvancement}
                 dispatch={dispatch}
@@ -655,7 +660,8 @@ export default function CharacterSheet({ onClose }) {
                   setTimeout(() => autoSave(), 300);
                 }}
                 onVoiceChange={(charName, voiceId, gender) => {
-                  const voice = (settings.characterVoices || []).find((v) => v.voiceId === voiceId);
+                  const pool = [...(settings.maleVoices || []), ...(settings.femaleVoices || [])];
+                  const voice = pool.find((v) => v.voiceId === voiceId);
                   dispatch({
                     type: 'MAP_CHARACTER_VOICE',
                     payload: { characterName: charName, voiceId, gender, voiceName: voice?.voiceName || null },

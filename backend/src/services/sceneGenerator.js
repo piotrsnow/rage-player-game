@@ -354,7 +354,6 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. PREFERRED: use enemyHints and let the engine select enemies from the bestiary. budget=threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). maxDifficulty=cap on individual enemy tier. race=optional filter (${BESTIARY_RACES_STR}). Fallback: {active:true, enemies:[{name}], reason} with exact bestiary names.
 - pendingThreat: {race,budget,maxDifficulty,count,description}. Use when building tension ("something approaches") without starting combat yet. Backend stores this and uses it when combat actually triggers.
-- dialogueUpdate: {active:true, npcs:[{name, attitude, goal}], reason}. Include when 2+ NPC structured dialogue starts.
 - codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
 - knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
 - journalEntries: 1-3 concise summaries of important events only.
@@ -441,6 +440,7 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
 {
   "creativityBonus": 0,
   "diceRolls": [{"skill":"","difficulty":"","success":true}],
+  "npcsIntroduced": [{"name":"","gender":"male|female|unknown","speechStyle":"1-sentence description of how this NPC talks"}],
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
@@ -454,7 +454,8 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...}
 }
 diceRolls is a TOP-LEVEL field, NOT nested inside stateChanges. Emit it FIRST so the frontend can start the dice animation in parallel.
-dialogueSegments comes SECOND so scene prose streams to the player immediately — write it BEFORE stateChanges, not after.
+npcsIntroduced comes SECOND. Include one entry for EVERY NPC who speaks in this scene for the first time (not listed in the NPCs section below). MUST be emitted BEFORE dialogueSegments so the frontend can assign a TTS voice based on gender before that NPC's first dialogue line streams in. Omit or use [] if no new NPCs speak. Do NOT include returning NPCs that already exist in the world.
+dialogueSegments comes THIRD so scene prose streams to the player immediately — write it BEFORE stateChanges, not after.
 stateChanges MUST be the LAST field. Fill it out AFTER you have written the full dialogueSegments, cross-checking rewards / journalEntries / questUpdates / newItems / moneyChange against what actually happens in the prose. Never emit stateChanges before the narrative prose is complete.
 There is NO separate "narrative" field — all scene prose lives in dialogueSegments. Do not emit narrative.
 ${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
@@ -479,8 +480,18 @@ System: d50 + attribute (1-25) + skill (0-25) + momentum (±10) vs difficulty th
 Genre: ${campaign.genre || 'Fantasy'} | Tone: ${campaign.tone || 'Dark'} | Style: ${campaign.style || 'Hybrid'}
 Difficulty: ${difficultyLabel(dmSettings.difficulty ?? 50)} | Narrative chaos: ${narrativeLabel(dmSettings.narrativeStyle ?? 50)}
 Response length: ${responseLengthLabel(dmSettings.responseLength ?? 50)}
-Narrator voice: poeticism=${poeticism}, grittiness=${grittiness}, detail=${detail}, humor=${humor}, drama=${drama}
-${dmSettings.narratorCustomInstructions ? `Extra narrator instructions: ${dmSettings.narratorCustomInstructions}` : ''}
+
+NARRATOR VOICE — applies ONLY to dialogueSegments where type="narration":
+- poeticism=${poeticism}, grittiness=${grittiness}, detail=${detail}, humor=${humor}, drama=${drama}
+${dmSettings.narratorCustomInstructions ? `- Extra narrator instructions: ${dmSettings.narratorCustomInstructions}` : ''}
+These parameters shape the narrator's prose style. They MUST NOT affect how NPCs speak.
+
+NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
+- Each NPC's speech derives from their own personality and notes fields below — NOT from narrator sliders.
+- Overall flavor follows the campaign tone "${campaign.tone || 'Dark'}" (Dark=grim/terse/weighted, Epic=grand/formal/heroic, Humorous=witty/playful/irreverent).
+- A peasant does not sound like a scholar. Match vocabulary and register to role/personality/notes.
+- Narrator poeticism/drama/humor DO NOT apply here — NPCs have their own voices.
+
 World: ${campaign.worldDescription || 'A dark fantasy world.'}
 ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
   );
@@ -700,8 +711,8 @@ function isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer } =
   if (!isCustomAction) return false;
   if (fromAutoPlayer) return false;
   if (typeof playerAction !== 'string') return false;
-  // Wszystkie tagi systemowe ([CONTINUE], [WAIT], [INITIATE DIALOGUE: ...],
-  // [Combat resolved: ...], itp.) traktujemy jako nie-kreatywne.
+  // Wszystkie tagi systemowe ([CONTINUE], [WAIT], [Combat resolved: ...], itp.)
+  // traktujemy jako nie-kreatywne.
   if (playerAction.startsWith('[')) return false;
   return true;
 }
@@ -775,8 +786,6 @@ function detectCombatIntent(action) {
 
 function buildUserPrompt(playerAction, {
   resolvedMechanics = null,
-  dialogue = null,
-  dialogueCooldown = 0,
   isFirstScene = false,
   needsSystemEnabled = false,
   characterNeeds = null,
@@ -815,9 +824,6 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   const isSurrender = isPostCombat && playerAction.includes('surrendered');
   const isTruce = isPostCombat && playerAction.includes('forced a truce');
   const isPostCombatDefeat = isPostCombat && (playerAction.includes('LOST') || playerAction.includes('did NOT win'));
-  const isPostDialogue = playerAction?.startsWith('[Dialogue ended:');
-  const isDialogueActive = dialogue?.active;
-  const isDialogueInitiation = playerAction?.startsWith('[INITIATE DIALOGUE');
   const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
   const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
   const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
@@ -840,8 +846,6 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     if (isTruce) {
       parts.push(`TRUCE: Player forced ceasefire from strength. Enemies concede. Player keeps belongings. Narrate enemies backing off. Player is dominant — suggest: interrogate, loot fallen, press advantage.`);
     }
-  } else if (isPostDialogue) {
-    parts.push(`${playerAction}\n\nPOST-DIALOGUE: Return to normal narration. Reflect conversation outcome. Do NOT include dialogueUpdate.`);
   } else {
     // Extract action vs speech
     const speechMatch = playerAction?.match(/(?:mówię|mówi|say|tell|shout|speak|krzyczę)[:\s]*["""](.+?)["""]/i)
@@ -856,18 +860,8 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     }
   }
 
-  // Dialogue mode
-  if (isDialogueActive) {
-    const npcGoals = (dialogue.npcs || []).map(n => `${n.name} (${n.attitude}): ${n.goal || 'conversation'}`).join(', ');
-    parts.push(`DIALOGUE MODE — Round ${dialogue.round}/${dialogue.maxRounds}. NPCs: ${npcGoals}
-Narrator SILENT — only NPCs speak. All dialogueSegments must be type "dialogue". suggestedActions = in-character PC speech lines.${dialogue.round >= dialogue.maxRounds ? ' LAST ROUND — wrap up, include dialogueUpdate:{active:false}.' : ''}`);
-  } else if (isDialogueInitiation) {
-    const npcListMatch = playerAction.match(/\[INITIATE DIALOGUE:\s*(.+?)\]/);
-    parts.push(`INITIATE DIALOGUE MODE with ${npcListMatch ? npcListMatch[1] : 'nearby NPCs'}. Include dialogueUpdate:{active:true, npcs:[{name,attitude,goal}]}.`);
-  } else if (talkNpcMatch) {
-    parts.push(`Player wants to talk to "${talkNpcMatch[1]}". If 2+ NPCs available, consider dialogueUpdate. Otherwise narrate conversation normally.`);
-  } else if (dialogueCooldown > 0 && !isPostCombat) {
-    // silently skip dialogue intent
+  if (talkNpcMatch) {
+    parts.push(`Player wants to talk to "${talkNpcMatch[1]}". Narrate the conversation normally with dialogue segments for each NPC line.`);
   }
 
   // Combat intent
@@ -1192,8 +1186,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     resolvedMechanics: resolvedMechanicsOpt = null,
     needsSystemEnabled = false,
     characterNeeds = null,
-    dialogue = null,
-    dialogueCooldown = 0,
     isFirstScene = false,
     sceneCount = 0,
     isCustomAction = false,
@@ -1289,7 +1281,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 2. Intent classification
     const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
-      dialogue,
       isFirstScene,
       provider,
     });
@@ -1447,8 +1438,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     const userPrompt = buildUserPrompt(playerAction, {
       resolvedMechanics,
-      dialogue,
-      dialogueCooldown,
       isFirstScene,
       needsSystemEnabled,
       characterNeeds,
@@ -1877,6 +1866,44 @@ async function processStateChanges(campaignId, stateChanges) {
         }
       } catch (err) {
         console.error(`Failed to update quest objective ${update.questId}/${update.objectiveId}:`, err.message);
+      }
+    }
+  }
+
+  // Mark quests as completed
+  if (stateChanges.completedQuests?.length) {
+    for (const questId of stateChanges.completedQuests) {
+      try {
+        const quest = await prisma.campaignQuest.findFirst({
+          where: { campaignId, questId },
+        });
+        if (quest) {
+          await prisma.campaignQuest.update({
+            where: { id: quest.id },
+            data: { status: 'completed', completedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to mark quest ${questId} as completed:`, err.message);
+      }
+    }
+  }
+
+  // Mark quests as failed
+  if (stateChanges.failedQuests?.length) {
+    for (const questId of stateChanges.failedQuests) {
+      try {
+        const quest = await prisma.campaignQuest.findFirst({
+          where: { campaignId, questId },
+        });
+        if (quest) {
+          await prisma.campaignQuest.update({
+            where: { id: quest.id },
+            data: { status: 'failed', completedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        console.error(`Failed to mark quest ${questId} as failed:`, err.message);
       }
     }
   }

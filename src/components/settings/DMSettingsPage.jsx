@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useGame } from '../../contexts/GameContext';
 import { elevenlabsService } from '../../services/elevenlabs';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
@@ -15,7 +14,6 @@ export default function DMSettingsPage({ onClose }) {
   const {
     settings,
     updateSettings,
-    updateCampaignVoiceSettings,
     updateDMSettings,
     resetSettings,
     importSettings,
@@ -25,25 +23,9 @@ export default function DMSettingsPage({ onClose }) {
     backendAuthChecking,
     backendLogout,
   } = useSettings();
-  const { state: gameState } = useGame();
-
-  const activeCampaignBackendId = gameState.campaign?.backendId || null;
-  const activeCampaignOwnerId = gameState.campaign?.userId || null;
-  const canEditVoices = Boolean(
-    activeCampaignBackendId
-    && backendUser?.id
-    && (!activeCampaignOwnerId || activeCampaignOwnerId === backendUser.id),
-  );
-  const voiceGatingMessage = !activeCampaignBackendId
-    ? t('settings.voicesNoCampaign', 'Load a campaign to configure its voices.')
-    : !canEditVoices
-      ? t('settings.voicesOwnerOnly', 'Only the campaign creator can change voice settings.')
-      : null;
-
   const applyVoiceUpdate = useCallback((updates) => {
-    if (!canEditVoices) return;
-    updateCampaignVoiceSettings(updates, activeCampaignBackendId);
-  }, [canEditVoices, activeCampaignBackendId, updateCampaignVoiceSettings]);
+    updateSettings(updates);
+  }, [updateSettings]);
 
   const [voices, setVoices] = useState([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -116,45 +98,33 @@ export default function DMSettingsPage({ onClose }) {
     }
   };
 
-  const handleSelectVoice = (voice) => {
+  const handleSelectNarratorVoice = (voice) => {
     applyVoiceUpdate({
-      elevenlabsVoiceId: voice.voiceId,
-      elevenlabsVoiceName: voice.name,
+      narratorVoiceId: voice.voiceId,
+      narratorVoiceName: voice.name,
     });
   };
 
-  const handleToggleCharacterVoice = (voice) => {
-    const current = settings.characterVoices || [];
+  const handleToggleGenderPool = (voice, gender) => {
+    const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
+    const current = settings[key] || [];
     const exists = current.some((v) => v.voiceId === voice.voiceId);
     if (exists) {
-      applyVoiceUpdate({ characterVoices: current.filter((v) => v.voiceId !== voice.voiceId) });
+      applyVoiceUpdate({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
     } else {
-      applyVoiceUpdate({ characterVoices: [...current, { voiceId: voice.voiceId, voiceName: voice.name, gender: 'male' }] });
+      applyVoiceUpdate({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
     }
   };
 
-  const handleToggleVoiceGender = (voiceId) => {
-    const current = settings.characterVoices || [];
-    applyVoiceUpdate({
-      characterVoices: current.map((v) =>
-        v.voiceId === voiceId
-          ? { ...v, gender: v.gender === 'female' ? 'male' : 'female' }
-          : v
-      ),
-    });
+  const isInPool = (voiceId, gender) => {
+    const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
+    return (settings[key] || []).some((v) => v.voiceId === voiceId);
   };
 
-  const getVoiceGender = (voiceId) => {
-    const v = (settings.characterVoices || []).find((v) => v.voiceId === voiceId);
-    return v?.gender || 'male';
-  };
+  const isNarratorVoice = (voiceId) => settings.narratorVoiceId === voiceId;
 
-  const isInCharacterPool = (voiceId) => {
-    return (settings.characterVoices || []).some((v) => v.voiceId === voiceId);
-  };
-
-  const handleTestVoice = async () => {
-    const voiceId = settings.elevenlabsVoiceId;
+  const handleTestVoice = async (voiceIdOverride) => {
+    const voiceId = voiceIdOverride || settings.narratorVoiceId;
     if (!voiceId || !hasApiKey('elevenlabs')) return;
     setTestingVoice(true);
     try {
@@ -698,17 +668,11 @@ export default function DMSettingsPage({ onClose }) {
                     displayValue={`${((settings.dialogueSpeed ?? 100) / 100).toFixed(1)}x`}
                   />
 
-                  {voiceGatingMessage && (
-                    <div className="mb-4 p-3 rounded-sm border border-tertiary/30 bg-tertiary/5 text-tertiary text-xs">
-                      {voiceGatingMessage}
-                    </div>
-                  )}
-
                   {/* Load Voices */}
-                  <div className={`mb-6 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
+                  <div className="mb-6">
                     <button
                       onClick={handleLoadVoices}
-                      disabled={!hasApiKey('elevenlabs') || loadingVoices || !canEditVoices}
+                      disabled={!hasApiKey('elevenlabs') || loadingVoices}
                       className="px-4 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-30"
                     >
                       {loadingVoices ? t('settings.loadingVoices') : t('settings.loadVoices')}
@@ -721,131 +685,94 @@ export default function DMSettingsPage({ onClose }) {
                     )}
                   </div>
 
-                  {/* Voice Picker */}
                   {voices.length > 0 && (
-                    <div className={`mb-6 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
-                      <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                        {t('settings.voiceSelect')}
-                      </label>
-                      <div className="max-h-64 overflow-y-auto space-y-2 custom-scrollbar">
-                        {voices.map((voice) => {
-                          const isNarrator = settings.elevenlabsVoiceId === voice.voiceId;
-                          const isNpc = isInCharacterPool(voice.voiceId);
-                          return (
-                            <div
-                              key={voice.voiceId}
-                              className={`w-full p-3 rounded-sm border flex items-center justify-between transition-all ${
-                                isNarrator
-                                  ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                                  : isNpc
-                                    ? 'bg-tertiary/5 border-tertiary/20 text-tertiary'
-                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                              }`}
-                            >
+                    <div className="space-y-6">
+                      {/* Narrator */}
+                      <div>
+                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                          {t('settings.narratorVoice', 'Narrator')}
+                        </label>
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+                          {voices.map((voice) => {
+                            const isNarrator = isNarratorVoice(voice.voiceId);
+                            return (
                               <button
-                                onClick={() => handleSelectVoice(voice)}
-                                className="flex-1 text-left"
+                                key={voice.voiceId}
+                                onClick={() => handleSelectNarratorVoice(voice)}
+                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                                  isNarrator
+                                    ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                                }`}
                               >
                                 <span className="font-headline text-sm">{voice.name}</span>
-                                {voice.category && (
-                                  <span className="text-[10px] text-outline ml-2">{voice.category}</span>
-                                )}
-                              </button>
-                              <div className="flex items-center gap-2">
                                 {isNarrator && (
-                                  <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
-                                )}
-                                {isNpc && (
                                   <button
-                                    onClick={(e) => { e.stopPropagation(); handleToggleVoiceGender(voice.voiceId); }}
-                                    title={t('settings.toggleGender')}
-                                    className={`w-6 h-6 rounded border flex items-center justify-center transition-all text-[11px] font-bold ${
-                                      getVoiceGender(voice.voiceId) === 'female'
-                                        ? 'bg-pink-500/20 border-pink-400/40 text-pink-300'
-                                        : 'bg-blue-500/20 border-blue-400/40 text-blue-300'
-                                    }`}
+                                    onClick={(e) => { e.stopPropagation(); handleTestVoice(voice.voiceId); }}
+                                    disabled={testingVoice}
+                                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:text-tertiary disabled:opacity-50"
                                   >
-                                    {getVoiceGender(voice.voiceId) === 'female' ? '♀' : '♂'}
+                                    <span className="material-symbols-outlined text-sm">play_arrow</span>
+                                    {t('settings.testVoice')}
                                   </button>
                                 )}
-                                <button
-                                  onClick={(e) => { e.stopPropagation(); handleToggleCharacterVoice(voice); }}
-                                  title={t('settings.npcVoicePool')}
-                                  className={`w-6 h-6 rounded border flex items-center justify-center transition-all ${
-                                    isNpc
-                                      ? 'bg-tertiary/20 border-tertiary/40 text-tertiary'
-                                      : 'border-outline-variant/30 text-outline hover:border-tertiary/30'
-                                  }`}
-                                >
-                                  <span className="material-symbols-outlined text-xs">
-                                    {isNpc ? 'group' : 'group_add'}
-                                  </span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant mt-2">
-                        {t('settings.voicePickerHint')}
-                      </p>
-                    </div>
-                  )}
 
-                  {/* Selected Voice + Test */}
-                  {settings.elevenlabsVoiceName && (
-                    <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10 mb-4">
+                      {/* Male pool */}
                       <div>
-                        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">{t('settings.voiceSelect')}</p>
-                        <p className="font-headline text-tertiary text-sm">{settings.elevenlabsVoiceName}</p>
+                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                          {t('settings.maleVoices', 'Male NPC voices')} ({(settings.maleVoices || []).length})
+                        </label>
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+                          {voices.map((voice) => {
+                            const checked = isInPool(voice.voiceId, 'male');
+                            return (
+                              <button
+                                key={voice.voiceId}
+                                onClick={() => handleToggleGenderPool(voice, 'male')}
+                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                                  checked
+                                    ? 'bg-blue-500/10 border-blue-400/40 text-blue-200'
+                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-blue-400/30'
+                                }`}
+                              >
+                                <span className="font-headline text-sm">♂ {voice.name}</span>
+                                {checked && <span className="material-symbols-outlined text-sm">check</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <button
-                        onClick={handleTestVoice}
-                        disabled={testingVoice}
-                        className="flex items-center gap-1 px-3 py-2 text-xs font-bold uppercase tracking-widest text-primary hover:text-tertiary transition-colors disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-sm">
-                          {testingVoice ? 'volume_up' : 'play_arrow'}
-                        </span>
-                        {t('settings.testVoice')}
-                      </button>
-                    </div>
-                  )}
 
-                  {/* NPC Voice Pool Summary */}
-                  {(settings.characterVoices || []).length > 0 && (
-                    <div className={`p-4 bg-surface-container-high/40 rounded-sm border border-tertiary/10 ${canEditVoices ? '' : 'opacity-50 pointer-events-none'}`}>
-                      <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-2">
-                        {t('settings.npcVoicePool')} ({settings.characterVoices.length})
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {settings.characterVoices.map((v) => (
-                          <span
-                            key={v.voiceId}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-sm bg-tertiary/10 border border-tertiary/20 text-tertiary text-xs font-headline"
-                          >
-                            <button
-                              onClick={() => handleToggleVoiceGender(v.voiceId)}
-                              title={t('settings.toggleGender')}
-                              className={`font-bold transition-colors ${
-                                v.gender === 'female'
-                                  ? 'text-pink-300 hover:text-pink-200'
-                                  : 'text-blue-300 hover:text-blue-200'
-                              }`}
-                            >
-                              {v.gender === 'female' ? '♀' : '♂'}
-                            </button>
-                            {v.voiceName}
-                            <button
-                              onClick={() => handleToggleCharacterVoice(v)}
-                              className="ml-0.5 text-tertiary/60 hover:text-error transition-colors"
-                            >
-                              <span className="material-symbols-outlined text-xs">close</span>
-                            </button>
-                          </span>
-                        ))}
+                      {/* Female pool */}
+                      <div>
+                        <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
+                          {t('settings.femaleVoices', 'Female NPC voices')} ({(settings.femaleVoices || []).length})
+                        </label>
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+                          {voices.map((voice) => {
+                            const checked = isInPool(voice.voiceId, 'female');
+                            return (
+                              <button
+                                key={voice.voiceId}
+                                onClick={() => handleToggleGenderPool(voice, 'female')}
+                                className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                                  checked
+                                    ? 'bg-pink-500/10 border-pink-400/40 text-pink-200'
+                                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-pink-400/30'
+                                }`}
+                              >
+                                <span className="font-headline text-sm">♀ {voice.name}</span>
+                                {checked && <span className="material-symbols-outlined text-sm">check</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant mt-2">{t('settings.npcVoicePoolDesc')}</p>
                     </div>
                   )}
                 </div>

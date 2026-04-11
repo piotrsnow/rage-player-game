@@ -24,16 +24,6 @@ export function detectCombatIntent(playerAction) {
   return COMBAT_INTENT_REGEX.test(playerAction);
 }
 
-export const DIALOGUE_INTENT_REGEX = /\b(rozmawiam|porozmawia[jm]|zagaduj[eę]?|negocjuj[eę]?|przekonuj[eę]?|perswaduj[eę]?|dyskutuj[eę]?|targu[jJeę]|pytam|zagaj|rozmawiaj|talk|speak|negotiate|persuade|discuss|converse|haggle|parley|chat\s+with|bargain|ask\s+about)\b/i;
-
-export function detectDialogueIntent(playerAction) {
-  if (!playerAction) return false;
-  if (playerAction.startsWith('[Dialogue ended:')) return false;
-  if (playerAction.startsWith('[INITIATE DIALOGUE')) return true;
-  if (playerAction.startsWith('[TALK:')) return true;
-  return DIALOGUE_INTENT_REGEX.test(playerAction);
-}
-
 function normalizeActionForComparison(action) {
   return String(action || '')
     .toLowerCase()
@@ -377,14 +367,20 @@ CAMPAIGN SETTINGS:
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens for this scene
 - Prompt input budget: ~${promptTokenBudget ?? 'default'} tokens max
 
-NARRATOR VOICE & STYLE:
+NARRATOR VOICE — applies ONLY to dialogueSegments where type="narration":
 - Poeticism: ${poeticismLabel}
 - Grittiness: ${grittinessLabel}
 - Environmental detail: ${detailLabel}
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
-Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
+These parameters shape the narrator's prose. They MUST NOT affect how NPCs speak.
 ${narratorCustomInstructions ? `- Extra narrator instructions from player: ${narratorCustomInstructions}` : ''}
+
+NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
+- Each NPC's speech derives from their own personality and notes fields — NOT from narrator sliders.
+- Overall flavor follows the campaign tone "${campaign?.tone || 'Epic'}" (Dark=grim/terse/weighted, Epic=grand/formal/heroic, Humorous=witty/playful/irreverent).
+- A peasant does not sound like a scholar. Match vocabulary and register to role/personality/notes.
+- Narrator poeticism/drama/humor DO NOT apply here — NPCs have their own voices.
 
 PROMPT GOVERNANCE (MANDATORY):
 - Respect the selected prompt profile ("${promptProfile}") when choosing depth and verbosity.
@@ -761,21 +757,6 @@ When the player's action explicitly involves attacking, starting a fight, initia
 FACTION & REPUTATION:
 When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.
 
-DIALOGUE MODE:
-When the player requests a structured dialogue (negotiation, parley, group conversation) with 2+ NPCs, include "dialogueUpdate" in stateChanges:
-{
-  "dialogueUpdate": {
-    "active": true,
-    "npcs": [
-      {"name": "NPC Name", "attitude": "friendly", "goal": "what this NPC wants from the conversation"},
-      {"name": "Other NPC", "attitude": "neutral", "goal": "their conversational agenda"}
-    ],
-    "reason": "Short description of why dialogue mode started"
-  }
-}
-Include dialogueUpdate when the player explicitly asks to enter dialogue mode, negotiate with a group, or talk to multiple NPCs. The client-side dialogue engine handles round-by-round conversation flow.
-When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be in-character lines the player can choose to speak — concrete things the PC would say aloud, not stage directions.
-
 NARRATIVE SEEDS (Foreshadowing / Chekhov's Guns):
 You may plant narrative seeds — small foreshadowing details that will pay off later. Include them in stateChanges.narrativeSeeds:
 [{"id": "seed_unique_id", "description": "A strange rune on the tavern door", "payoffCondition": "location", "payoffHint": "the rune will react to magic", "location": "Old Ruins"}]
@@ -814,7 +795,7 @@ TICKING CLOCKS (Quest Deadlines):
 Some quests may have deadlines. When a deadline is approaching or has passed, escalate urgency: NPCs mention time pressure, environmental clues change, consequences begin manifesting.
 ${formatDeadlinesForPrompt(quests?.active, world?.timeState)}
 ${(() => {
-  const tension = calculateTensionScore(gameState.scenes, gameState.combat, gameState.dialogue);
+  const tension = calculateTensionScore(gameState.scenes, gameState.combat);
   return getTensionGuidance(tension, gameState.scenes);
 })()}`;
 }

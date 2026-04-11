@@ -4,7 +4,7 @@ const PACING_TENSION = {
   celebration: -15, rest: -20, dream: -10, cutscene: 5,
 };
 
-export function calculateTensionScore(scenes, combat, dialogue) {
+export function calculateTensionScore(scenes, combat) {
   let tension = 50;
 
   const recent = (scenes || []).slice(-5);
@@ -14,7 +14,6 @@ export function calculateTensionScore(scenes, combat, dialogue) {
   }
 
   if (combat?.active) tension += 20;
-  if (dialogue?.active) tension += 10;
 
   const last3 = (scenes || []).slice(-3);
   for (const scene of last3) {

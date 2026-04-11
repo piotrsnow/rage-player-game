@@ -13,7 +13,6 @@ const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'geminiApiKey', 'meshyApiKey',
 ];
-const VOICE_SETTINGS_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
 function clampCombatCommentaryFrequency(value) {
   const numeric = Number(value);
@@ -56,37 +55,6 @@ function mergeSettingsWithDefaults(source) {
   return merged;
 }
 
-function sanitizeVoiceSettings(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const characterVoices = Array.isArray(source.characterVoices)
-    ? source.characterVoices
-        .filter((entry) => entry && typeof entry === 'object')
-        .map((entry) => ({
-          voiceId: typeof entry.voiceId === 'string' ? entry.voiceId : '',
-          voiceName: typeof entry.voiceName === 'string' ? entry.voiceName : '',
-          gender: entry.gender === 'female' ? 'female' : 'male',
-        }))
-        .filter((entry) => entry.voiceId && entry.voiceName)
-    : [];
-
-  return {
-    elevenlabsVoiceId: typeof source.elevenlabsVoiceId === 'string' ? source.elevenlabsVoiceId : '',
-    elevenlabsVoiceName: typeof source.elevenlabsVoiceName === 'string' ? source.elevenlabsVoiceName : '',
-    characterVoices,
-  };
-}
-
-function extractVoiceSettings(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const subset = {};
-  for (const key of VOICE_SETTINGS_KEYS) {
-    if (source[key] !== undefined) {
-      subset[key] = source[key];
-    }
-  }
-  return sanitizeVoiceSettings(subset);
-}
-
 function shouldCheckBackendSession(settings) {
   return Boolean(settings?.backendUrl && settings?.useBackend && apiClient.getToken());
 }
@@ -100,9 +68,10 @@ const defaultSettings = {
   stabilityApiKey: '',
   geminiApiKey: '',
   language: 'pl',
-  elevenlabsVoiceId: '',
-  elevenlabsVoiceName: '',
-  characterVoices: [],
+  narratorVoiceId: '',
+  narratorVoiceName: '',
+  maleVoices: [],
+  femaleVoices: [],
   narratorEnabled: false,
   narratorAutoPlay: true,
   dialogueSpeed: 100,
@@ -256,35 +225,6 @@ export function SettingsProvider({ children }) {
     }
   }, []);
 
-  const loadCampaignVoiceSettings = useCallback(async (campaignId) => {
-    if (!campaignId) return null;
-    if (!apiClient.isConnected()) return null;
-    try {
-      const voiceSettings = sanitizeVoiceSettings(await apiClient.get(`/campaigns/${campaignId}/voices`));
-      syncingFromBackendRef.current = true;
-      // Only overlay non-empty fields. Campaigns created before per-campaign
-      // voices were introduced have empty server-side settings, and we must
-      // not wipe the user's existing voice picks (which would hide the
-      // narrator button and silently disable streaming TTS).
-      setSettings((prev) => {
-        const next = { ...prev };
-        if (voiceSettings.elevenlabsVoiceId) {
-          next.elevenlabsVoiceId = voiceSettings.elevenlabsVoiceId;
-          next.elevenlabsVoiceName = voiceSettings.elevenlabsVoiceName || prev.elevenlabsVoiceName;
-        }
-        if (Array.isArray(voiceSettings.characterVoices) && voiceSettings.characterVoices.length > 0) {
-          next.characterVoices = voiceSettings.characterVoices;
-        }
-        return next;
-      });
-      setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
-      return voiceSettings;
-    } catch (err) {
-      console.warn('[SettingsContext] Failed to load campaign voice settings:', err.message);
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && apiClient.isConnected()) {
       loadBackendUser();
@@ -316,28 +256,6 @@ export function SettingsProvider({ children }) {
 
   const updateSettings = useCallback((updates) => {
     setSettings((prev) => ({ ...prev, ...updates }));
-  }, []);
-
-  const updateCampaignVoiceSettings = useCallback(async (updates, campaignId) => {
-    let nextVoiceSettings = null;
-
-    setSettings((prev) => {
-      const next = { ...prev, ...updates };
-      nextVoiceSettings = extractVoiceSettings(next);
-      return next;
-    });
-
-    if (!campaignId || !apiClient.isConnected()) {
-      return false;
-    }
-
-    try {
-      await apiClient.put(`/campaigns/${campaignId}/voices`, nextVoiceSettings);
-      return true;
-    } catch (err) {
-      console.warn('[SettingsContext] Failed to save campaign voice settings:', err.message);
-      return false;
-    }
   }, []);
 
   const updateDMSettings = useCallback((updates) => {
@@ -404,8 +322,6 @@ export function SettingsProvider({ children }) {
   const value = {
     settings,
     updateSettings,
-    updateCampaignVoiceSettings,
-    loadCampaignVoiceSettings,
     updateDMSettings,
     updateAutoPlayerSettings,
     resetSettings,

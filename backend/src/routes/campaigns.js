@@ -3,7 +3,6 @@ import { prisma } from '../lib/prisma.js';
 import { generateKey } from '../services/hashService.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
-import { sanitizeVoiceSettings, parseVoiceSettings, MAX_VOICE_SETTINGS_SIZE } from '../services/voiceSettings.js';
 import { deserializeCharacterRow } from '../services/characterMutations.js';
 
 const store = createMediaStore(config);
@@ -618,46 +617,12 @@ export async function campaignRoutes(fastify) {
       ]);
       const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-      const { voiceSettings: rawVoices, ...campaignRest } = campaign;
       return {
-        ...campaignRest,
+        ...campaign,
         coreState,
         scenes: dedupedScenes,
         characters,
-        voiceSettings: parseVoiceSettings(rawVoices),
       };
-    });
-
-    app.get('/:id/voices', async (request, reply) => {
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: request.params.id },
-        select: { id: true, voiceSettings: true },
-      });
-      if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
-      return parseVoiceSettings(campaign.voiceSettings);
-    });
-
-    app.put('/:id/voices', async (request, reply) => {
-      const campaign = await prisma.campaign.findUnique({
-        where: { id: request.params.id },
-        select: { id: true, userId: true },
-      });
-      if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
-      if (campaign.userId !== request.user.id) {
-        return reply.code(403).send({ error: 'Only the campaign owner can change voice settings' });
-      }
-
-      const settings = sanitizeVoiceSettings(request.body);
-      const serialized = JSON.stringify(settings);
-      if (serialized.length > MAX_VOICE_SETTINGS_SIZE) {
-        return reply.code(400).send({ error: 'Voice settings payload too large' });
-      }
-
-      await prisma.campaign.update({
-        where: { id: campaign.id },
-        data: { voiceSettings: serialized },
-      });
-      return settings;
     });
 
     app.post('/', async (request) => {

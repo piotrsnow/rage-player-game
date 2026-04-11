@@ -3,7 +3,6 @@ import { storage } from '../services/storage';
 import { calculateMaxWounds, normalizeMoney } from '../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../services/characterAge';
 import { createCombatState } from '../services/combatEngine';
-import { createDialogueState } from '../services/dialogueEngine';
 import { hourToPeriod, decayNeeds } from '../services/timeUtils';
 import { reduceMultiplayerSlice } from './slices/multiplayerSlice';
 import { SKILL_CAPS, createStartingSkills, xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost, CREATION_LIMITS } from '../data/rpgSystem';
@@ -168,8 +167,6 @@ const initialState = {
   isGeneratingScene: false,
   isGeneratingImage: false,
   combat: null,
-  dialogue: null,
-  dialogueCooldown: 0,
   trade: null,
   crafting: null,
   alchemy: null,
@@ -238,8 +235,8 @@ function gameReducer(state, action) {
       if (!loaded.magic) loaded.magic = { activeSpells: [] };
       if (loaded.narrationTime == null) loaded.narrationTime = 0;
       if (loaded.totalPlayTime == null) loaded.totalPlayTime = 0;
-      if (!loaded.dialogue) loaded.dialogue = null;
-      if (loaded.dialogueCooldown == null) loaded.dialogueCooldown = 0;
+      delete loaded.dialogue;
+      delete loaded.dialogueCooldown;
       if (!loaded.party) loaded.party = [];
       if (loaded.world && !loaded.world.exploredLocations) loaded.world.exploredLocations = [];
       if (loaded.world && !loaded.world.knowledgeBase) {
@@ -386,13 +383,9 @@ function gameReducer(state, action) {
       return { ...state, mainQuestJustCompleted: false };
 
     case 'ADD_SCENE': {
-      const nextCooldown = (!state.dialogue?.active && state.dialogueCooldown > 0)
-        ? state.dialogueCooldown - 1
-        : state.dialogueCooldown;
       return {
         ...state,
         scenes: [...state.scenes, action.payload],
-        dialogueCooldown: nextCooldown,
       };
     }
 
@@ -1374,28 +1367,6 @@ function gameReducer(state, action) {
         next.combat = null;
       }
 
-      if (changes.dialogueUpdate && changes.dialogueUpdate.active) {
-        const dialogueNpcs = (changes.dialogueUpdate.npcs || []).map((npc) => {
-          const worldNpc = (next.world?.npcs || []).find(
-            (n) => n.name?.toLowerCase() === npc.name?.toLowerCase()
-          );
-          return {
-            name: npc.name,
-            attitude: npc.attitude || worldNpc?.attitude || 'neutral',
-            role: worldNpc?.role || '',
-            personality: worldNpc?.personality || '',
-            goal: npc.goal || '',
-          };
-        });
-        next.dialogue = createDialogueState(next.character, dialogueNpcs);
-        next.dialogue.reason = changes.dialogueUpdate.reason || '';
-      } else if (changes.dialogueUpdate && !changes.dialogueUpdate.active) {
-        if (next.dialogue) {
-          next.dialogueCooldown = next.dialogue.round || 0;
-        }
-        next.dialogue = null;
-      }
-
       // Trade panel activation from AI stateChanges (path 2: trade + other intents)
       if (changes.startTrade && changes.startTrade.npcName) {
         // Store trade hint — actual shop building is done by the panel/hook
@@ -1587,20 +1558,6 @@ function gameReducer(state, action) {
 
     case 'END_COMBAT': {
       return { ...state, combat: null };
-    }
-
-    case 'START_DIALOGUE': {
-      return { ...state, dialogue: action.payload };
-    }
-
-    case 'UPDATE_DIALOGUE': {
-      if (!state.dialogue) return state;
-      return { ...state, dialogue: { ...state.dialogue, ...action.payload } };
-    }
-
-    case 'END_DIALOGUE': {
-      const cooldown = state.dialogue?.round || 0;
-      return { ...state, dialogue: null, dialogueCooldown: cooldown };
     }
 
     // ── Trade ──
