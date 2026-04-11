@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useMemo, useState, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useGame } from '../../contexts/GameContext';
+import { useGameCampaign, useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
 import { apiClient } from '../../services/apiClient';
 import { countHighlightWords, splitTextForHighlight } from '../../services/elevenlabs';
 import EffectEngine from '../../effects/EffectEngine';
@@ -359,7 +359,9 @@ export default function ScenePanel({
 }) {
   const { t } = useTranslation();
   const { settings, updateSettings } = useSettings();
-  const { state, dispatch } = useGame();
+  const campaign = useGameCampaign();
+  const fieldMap = useGameSlice((s) => s.world?.fieldMap);
+  const dispatch = useGameDispatch();
 
   const lastSentenceRef = useRef(null);
   const lastOffsetRef = useRef(0);
@@ -580,7 +582,6 @@ export default function ScenePanel({
     }
 
     const atmosphere = scene.atmosphere ?? null;
-    const campaign = state.campaign;
 
     if (isNewScene && atmosphere?.transition) {
       const transitionAtm = { ...atmosphere };
@@ -591,7 +592,7 @@ export default function ScenePanel({
       const layers = resolveEffects(noTransitionAtm, campaign);
       engine.setEffects(layers);
     }
-  }, [scene, scene?.id, scene?.atmosphere, effectsEnabled, state.campaign]);
+  }, [scene, scene?.id, scene?.atmosphere, effectsEnabled, campaign]);
 
   if (!scene) {
     return (
@@ -637,7 +638,7 @@ export default function ScenePanel({
         <SceneCanvas scene={scene} />
       ) : (settings.sceneVisualization || 'image') === 'map' ? (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high via-surface-container to-surface-container-lowest">
-          {state.world?.fieldMap ? (
+          {fieldMap ? (
             <FieldMapCanvas
               onFieldTurnReady={onFieldTurnReady}
               scene={scene}

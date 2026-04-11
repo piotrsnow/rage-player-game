@@ -1,7 +1,14 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useGame } from '../../contexts/GameContext';
+import {
+  useGameCampaign,
+  useGameCharacter,
+  useGameSlice,
+  useGameIsGeneratingScene,
+  useGameDispatch,
+} from '../../stores/gameSelectors';
+import { getGameState } from '../../stores/gameStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
 import { useAI } from '../../hooks/useAI';
@@ -14,7 +21,11 @@ import { translateAttribute } from '../../utils/rpgTranslate';
 export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { state, dispatch } = useGame();
+  const campaign = useGameCampaign();
+  const soloCharacter = useGameCharacter();
+  const timeStateSolo = useGameSlice((s) => s.world?.timeState);
+  const isGeneratingScene = useGameIsGeneratingScene();
+  const dispatch = useGameDispatch();
   const mp = useMultiplayer();
   const { generateScene } = useAI();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
@@ -23,24 +34,24 @@ export default function Sidebar() {
   const saveTimeoutRef = useRef(null);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
-  const hasActiveGame = !!state.campaign || isMultiplayer;
+  const hasActiveGame = !!campaign || isMultiplayer;
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
-    : state.character;
+    : soloCharacter;
   const mana = character?.mana || { current: 0, max: 0 };
   const timeState = isMultiplayer
     ? mp.state.gameState?.world?.timeState
-    : state.world?.timeState;
+    : timeStateSolo;
   const canTriggerNeedAction = useMemo(() => (
-    Boolean(state.campaign)
+    Boolean(campaign)
     && location.pathname.startsWith('/play')
     && !isMultiplayer
-    && !state.isGeneratingScene
-    && (state.campaign?.status || 'active') === 'active'
+    && !isGeneratingScene
+    && (campaign?.status || 'active') === 'active'
     && character?.status !== 'dead'
   ), [
-    state.campaign,
-    state.isGeneratingScene,
+    campaign,
+    isGeneratingScene,
     location.pathname,
     isMultiplayer,
     character?.status,
@@ -78,18 +89,19 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
   };
 
   const handleSaveCampaign = useCallback(async () => {
-    if (saveStatus === 'saving' || !state.campaign) return;
+    const snapshot = getGameState();
+    if (saveStatus === 'saving' || !snapshot.campaign) return;
     setSaveStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     try {
-      await storage.saveCampaign(state);
+      await storage.saveCampaign(snapshot);
       setSaveStatus('saved');
       saveTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
       console.error('[Sidebar] Manual save error:', err);
       setSaveStatus('idle');
     }
-  }, [saveStatus, state]);
+  }, [saveStatus]);
 
   const modalActions = {
     '/character': openCharacterSheet,

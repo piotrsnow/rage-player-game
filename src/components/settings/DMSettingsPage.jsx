@@ -7,6 +7,9 @@ import { useMediaCacheStats } from '../../hooks/useMediaCacheStats';
 import { useConfigImportExport } from '../../hooks/useConfigImportExport';
 import Slider from '../ui/Slider';
 import Button from '../ui/Button';
+import LanguageSection from './sections/LanguageSection';
+import BackendServerSection from './sections/BackendServerSection';
+import ConfigBackupSection from './sections/ConfigBackupSection';
 
 export default function DMSettingsPage({ onClose }) {
   const { t } = useTranslation();
@@ -45,14 +48,6 @@ export default function DMSettingsPage({ onClose }) {
   const { fileInputRef, importStatus, exportConfig, importConfig } = useConfigImportExport({
     importSettings,
   });
-
-  const formatBytes = (bytes) => {
-    if (!bytes) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-  };
 
   const handleReset = () => {
     resetSettings();
@@ -143,38 +138,10 @@ export default function DMSettingsPage({ onClose }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Left Column: DM & Gameplay Settings */}
               <section className="space-y-6 animate-fade-in">
-                {/* Language Switcher */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">translate</span>
-                    {t('settings.language')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-4">{t('settings.languageDesc')}</p>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => updateSettings({ language: 'pl' })}
-                      className={`flex items-center gap-2 px-5 py-3 rounded-sm border transition-all ${
-                        settings.language === 'pl'
-                          ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                          : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                      }`}
-                    >
-                      <span className="text-lg">🇵🇱</span>
-                      <span className="font-headline text-sm">Polski</span>
-                    </button>
-                    <button
-                      onClick={() => updateSettings({ language: 'en' })}
-                      className={`flex items-center gap-2 px-5 py-3 rounded-sm border transition-all ${
-                        settings.language === 'en'
-                          ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                          : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                      }`}
-                    >
-                      <span className="text-lg">🇬🇧</span>
-                      <span className="font-headline text-sm">English</span>
-                    </button>
-                  </div>
-                </div>
+                <LanguageSection
+                  language={settings.language}
+                  onChange={(language) => updateSettings({ language })}
+                />
 
                 <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-primary/20">
                   <h2 className="font-headline text-xl text-tertiary mb-8 flex items-center gap-2">
@@ -810,142 +777,19 @@ export default function DMSettingsPage({ onClose }) {
                   )}
                 </div>
 
-                {/* Backend Server */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">cloud</span>
-                    {t('settings.backendTitle')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-6">{t('settings.backendDesc')}</p>
+                <BackendServerSection
+                  backendAuthChecking={backendAuthChecking}
+                  backendUser={backendUser}
+                  backendLogout={backendLogout}
+                  cacheStats={cacheStats}
+                />
 
-                  {backendAuthChecking ? (
-                    <div className="flex items-center gap-3 p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
-                      <span className="material-symbols-outlined text-primary/60 animate-spin">progress_activity</span>
-                      <div className="flex-1">
-                        <p className="text-on-surface-variant text-xs">
-                          {t('common.loading')}
-                        </p>
-                      </div>
-                    </div>
-                  ) : backendUser ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border border-primary/10">
-                        <div>
-                          <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
-                            {t('settings.backendLoggedInAs')}
-                          </p>
-                          <p className="font-headline text-tertiary text-sm">{backendUser.email}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.8)]" />
-                          <span className="text-xs text-primary font-headline">{t('settings.backendConnected')}</span>
-                        </div>
-                      </div>
-
-                      {cacheStats && (
-                        <div className="p-4 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
-                          <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
-                            {t('settings.cacheStats')}
-                          </p>
-                          <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div>
-                              <span className="text-on-surface-variant">{t('settings.cacheTotal')}: </span>
-                              <span className="text-tertiary font-headline">{cacheStats.total}</span>
-                            </div>
-                            <div>
-                              <span className="text-on-surface-variant">{t('settings.cacheSize')}: </span>
-                              <span className="text-tertiary font-headline">{formatBytes(cacheStats.totalSize)}</span>
-                            </div>
-                            {cacheStats.byType && Object.entries(cacheStats.byType).map(([type, data]) => (
-                              <div key={type}>
-                                <span className="text-on-surface-variant">
-                                  {t(`settings.cache${type.charAt(0).toUpperCase() + type.slice(1)}`, type)}:
-                                </span>{' '}
-                                <span className="text-tertiary font-headline">
-                                  {data.count} ({formatBytes(data.size)})
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={backendLogout}
-                        className="w-full p-3 rounded-sm border border-error/20 text-error text-xs font-headline uppercase tracking-widest hover:bg-error/10 transition-all"
-                      >
-                        {t('settings.backendLogout')}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-3 p-4 bg-surface-container-high/40 rounded-sm border border-outline-variant/10">
-                      <span className="material-symbols-outlined text-outline/40">person_off</span>
-                      <div className="flex-1">
-                        <p className="text-on-surface-variant text-xs">
-                          {t('settings.backendDisconnected')}
-                        </p>
-                        <p className="text-outline/40 text-[10px] mt-0.5">
-                          {t('lobby.loginOnMainPage')}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Export / Import Config */}
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-tertiary/20">
-                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-primary-dim">settings_backup_restore</span>
-                    {t('settings.configBackup')}
-                  </h2>
-                  <p className="text-xs text-on-surface-variant mb-6">{t('settings.configBackupDesc')}</p>
-
-                  <div className="space-y-3">
-                    <button
-                      onClick={exportConfig}
-                      className="w-full p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary text-left flex items-center gap-3 transition-all"
-                    >
-                      <span className="material-symbols-outlined">download</span>
-                      <div>
-                        <span className="font-headline text-sm block">{t('settings.exportConfig')}</span>
-                        <span className="text-[10px] font-label uppercase tracking-widest">{t('settings.exportConfigDesc')}</span>
-                      </div>
-                    </button>
-
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full p-4 rounded-sm border bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20 hover:text-primary text-left flex items-center gap-3 transition-all"
-                    >
-                      <span className="material-symbols-outlined">upload</span>
-                      <div>
-                        <span className="font-headline text-sm block">{t('settings.importConfig')}</span>
-                        <span className="text-[10px] font-label uppercase tracking-widest">{t('settings.importConfigDesc')}</span>
-                      </div>
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".json"
-                      onChange={importConfig}
-                      className="hidden"
-                    />
-
-                    {importStatus === 'success' && (
-                      <div className="flex items-center gap-2 p-3 rounded-sm bg-primary/10 border border-primary/20 text-primary text-xs font-headline">
-                        <span className="material-symbols-outlined text-sm">check_circle</span>
-                        {t('settings.importSuccess')}
-                      </div>
-                    )}
-                    {importStatus === 'error' && (
-                      <div className="flex items-center gap-2 p-3 rounded-sm bg-error/10 border border-error/20 text-error text-xs font-headline">
-                        <span className="material-symbols-outlined text-sm">error</span>
-                        {t('settings.importError')}
-                      </div>
-                    )}
-                  </div>
-
-                  <p className="text-[10px] text-on-surface-variant mt-4">{t('settings.configBackupWarning')}</p>
-                </div>
+                <ConfigBackupSection
+                  fileInputRef={fileInputRef}
+                  importStatus={importStatus}
+                  onExport={exportConfig}
+                  onImport={importConfig}
+                />
               </section>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
-import { useGame } from '../../contexts/GameContext';
+import { getGameState } from '../../stores/gameStore';
 import { apiClient } from '../../services/apiClient';
 import { useModalA11y } from '../../hooks/useModalA11y';
 
@@ -47,7 +47,6 @@ function PlayerRow({ player, myOdId }) {
 export default function MultiplayerPanel({ onClose }) {
   const { t } = useTranslation();
   const mp = useMultiplayer();
-  const { state: gameState } = useGame();
   const [copied, setCopied] = useState(false);
   const [converting, setConverting] = useState(false);
 
@@ -70,6 +69,7 @@ export default function MultiplayerPanel({ onClose }) {
     if (converting) return;
     setConverting(true);
 
+    const gameState = getGameState();
     const mpGameState = {
       campaign: gameState.campaign,
       characters: gameState.character ? [{

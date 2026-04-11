@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGame } from '../../contexts/GameContext';
+import { useGameCharacter, useGameDispatch } from '../../stores/gameSelectors';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
@@ -310,10 +310,10 @@ function SpellTreesTab({ character }) {
 
 export default function AdvancementPanel({ onClose }) {
   const { t } = useTranslation();
-  const { state, dispatch } = useGame();
+  const character = useGameCharacter();
+  const dispatch = useGameDispatch();
   const [activeTab, setActiveTab] = useState('attributes');
   const modalRef = useModalA11y(onClose);
-  const character = state.character;
 
   if (!character) return null;
 

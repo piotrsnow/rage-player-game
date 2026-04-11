@@ -1,7 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useGame } from '../../contexts/GameContext';
+import {
+  useGameCampaign,
+  useGameCharacter,
+  useGameScenes,
+  useGameSlice,
+  useGameDispatch,
+  useGameAutoSave,
+} from '../../stores/gameSelectors';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
@@ -297,7 +304,12 @@ function CharacterPanel({ character, settings, t, characterVoiceMap, onVoiceChan
 export default function CharacterSheet({ onClose }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { state, dispatch, autoSave } = useGame();
+  const dispatch = useGameDispatch();
+  const autoSave = useGameAutoSave();
+  const soloCharacter = useGameCharacter();
+  const soloCampaign = useGameCampaign();
+  const soloScenes = useGameScenes();
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const { settings } = useSettings();
   const mp = useMultiplayer();
   const { ensureMissingInventoryImages } = useAI();
@@ -308,8 +320,8 @@ export default function CharacterSheet({ onClose }) {
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : [];
   const myCharacter = isMultiplayer
     ? allCharacters.find((c) => c.odId === mp.state.myOdId) || allCharacters[0]
-    : state.character;
-  const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+    : soloCharacter;
+  const campaign = isMultiplayer ? mpGameState?.campaign : soloCampaign;
 
   const [selectedIdx, setSelectedIdx] = useState(0);
 
@@ -646,7 +658,7 @@ export default function CharacterSheet({ onClose }) {
                 character={displayCharacter}
                 settings={settings}
                 t={t}
-                characterVoiceMap={state.characterVoiceMap}
+                characterVoiceMap={characterVoiceMap}
                 maleVoices={settings.maleVoices}
                 femaleVoices={settings.femaleVoices}
                 showAdvancement={showAdvancement}
@@ -654,7 +666,7 @@ export default function CharacterSheet({ onClose }) {
                 dispatch={dispatch}
                 isMultiplayer={isMultiplayer}
                 campaign={campaign}
-                scenes={isMultiplayer ? mpGameState?.scenes : state.scenes}
+                scenes={isMultiplayer ? mpGameState?.scenes : soloScenes}
                 onPortraitChange={(url) => {
                   dispatch({ type: 'UPDATE_CHARACTER', payload: { portraitUrl: url } });
                   setTimeout(() => autoSave(), 300);

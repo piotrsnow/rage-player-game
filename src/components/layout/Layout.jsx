@@ -5,7 +5,13 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { MusicProvider } from '../../contexts/MusicContext';
 import { ModalProvider, useModals } from '../../contexts/ModalContext';
-import { useGame } from '../../contexts/GameContext';
+import {
+  useGameWorld,
+  useGameQuests,
+  useGameSlice,
+  useGameDispatch,
+  useGameAutoSave,
+} from '../../stores/gameSelectors';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import ErrorBoundary from '../ui/ErrorBoundary';
@@ -29,7 +35,11 @@ function ModalLayer() {
     keysOpen,
     closeKeys,
   } = useModals();
-  const { state, dispatch, autoSave } = useGame();
+  const soloWorld = useGameWorld();
+  const soloQuests = useGameQuests();
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+  const dispatch = useGameDispatch();
+  const autoSave = useGameAutoSave();
   const mp = useMultiplayer();
   const { settings } = useSettings();
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
@@ -39,9 +49,9 @@ function ModalLayer() {
       {characterSheetOpen && <CharacterSheet onClose={closeCharacterSheet} />}
       {worldStateOpen && (
         <WorldStateModal
-          world={isMultiplayer ? mp.state.gameState?.world : state.world}
-          quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
-          characterVoiceMap={state.characterVoiceMap}
+          world={isMultiplayer ? mp.state.gameState?.world : soloWorld}
+          quests={isMultiplayer ? mp.state.gameState?.quests : soloQuests}
+          characterVoiceMap={characterVoiceMap}
           maleVoices={settings.maleVoices}
           femaleVoices={settings.femaleVoices}
           dispatch={dispatch}
@@ -51,8 +61,8 @@ function ModalLayer() {
       )}
       {tasksInfoOpen && (
         <TasksInfoModal
-          world={isMultiplayer ? mp.state.gameState?.world : state.world}
-          quests={isMultiplayer ? mp.state.gameState?.quests : state.quests}
+          world={isMultiplayer ? mp.state.gameState?.world : soloWorld}
+          quests={isMultiplayer ? mp.state.gameState?.quests : soloQuests}
           onVerifyObjective={isMultiplayer
             ? (questId, objectiveId) => mp.verifyQuestObjective(questId, objectiveId, settings.language || 'en')
             : null}

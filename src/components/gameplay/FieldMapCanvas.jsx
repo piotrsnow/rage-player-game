@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { useGame } from '../../contexts/GameContext';
+import { useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
 import {
   TILE_PX, VIEWPORT_RADIUS, CHUNK_SIZE, STEPS_PER_TURN,
   PREFETCH_EDGE_DISTANCE, chunkKey, worldToChunk,
@@ -111,8 +111,8 @@ function buildEntityList(world, scene, characterName) {
 }
 
 export default function FieldMapCanvas({ onFieldTurnReady, scene, world, characterName }) {
-  const { state, dispatch } = useGame();
-  const fieldMap = state.world?.fieldMap;
+  const dispatch = useGameDispatch();
+  const fieldMap = useGameSlice((s) => s.world?.fieldMap);
 
   const canvasRef = useRef(null);
   const atlasImageRef = useRef(null);

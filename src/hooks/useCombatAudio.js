@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import { useGame } from '../contexts/GameContext';
+import {
+  useGameCampaign,
+  useGameCharacter,
+  useGameParty,
+  useGameSlice,
+  useGameDispatch,
+} from '../stores/gameSelectors';
 import { elevenlabsService } from '../services/elevenlabs';
 import { calculateCost } from '../services/costTracker';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
@@ -18,7 +24,12 @@ function getVolume(level) {
 
 export function useCombatAudio(combat) {
   const { settings, hasApiKey } = useSettings();
-  const { state, dispatch } = useGame();
+  const campaign = useGameCampaign();
+  const character = useGameCharacter();
+  const party = useGameParty();
+  const npcs = useGameSlice((s) => s.world?.npcs);
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+  const dispatch = useGameDispatch();
   const activeAudiosRef = useRef(new Set());
   const audioUnlockedRef = useRef(false);
   const pendingUrlsRef = useRef([]);
@@ -30,7 +41,7 @@ export function useCombatAudio(combat) {
 
   const enabled = settings.sfxEnabled;
   const ttsEnabled = enabled && hasApiKey('elevenlabs');
-  const campaignId = state.campaign?.id || state.campaign?.backendId || null;
+  const campaignId = campaign?.id || campaign?.backendId || null;
 
   const flushPendingUrls = useCallback(() => {
     if (!audioUnlockedRef.current || !pendingUrlsRef.current.length) return;
@@ -138,30 +149,30 @@ export function useCombatAudio(combat) {
 
   const getCombatantGender = useCallback((combatant) => {
     if (!combatant?.name) return null;
-    if (state.character?.name === combatant.name) {
-      return state.character.gender || null;
+    if (character?.name === combatant.name) {
+      return character.gender || null;
     }
 
-    const partyMatch = (state.party || []).find((entry) => entry?.name === combatant.name);
+    const partyMatch = (party || []).find((entry) => entry?.name === combatant.name);
     if (partyMatch?.gender) return partyMatch.gender;
 
-    const npcMatch = (state.world?.npcs || []).find((entry) => entry?.name === combatant.name);
+    const npcMatch = (npcs || []).find((entry) => entry?.name === combatant.name);
     if (npcMatch?.gender) return npcMatch.gender;
 
-    return state.characterVoiceMap?.[combatant.name]?.gender || null;
-  }, [state.character, state.characterVoiceMap, state.party, state.world?.npcs]);
+    return characterVoiceMap?.[combatant.name]?.gender || null;
+  }, [character, characterVoiceMap, party, npcs]);
 
   const resolveCombatantVoiceId = useCallback((combatant) => {
     if (!combatant?.name) return settings.narratorVoiceId || null;
 
-    const mappedVoice = state.characterVoiceMap?.[combatant.name]?.voiceId;
+    const mappedVoice = characterVoiceMap?.[combatant.name]?.voiceId;
     if (mappedVoice) return mappedVoice;
 
     const gender = getCombatantGender(combatant);
     const resolved = resolveVoiceForCharacter(
       combatant.name,
       gender,
-      state.characterVoiceMap || {},
+      characterVoiceMap || {},
       {
         maleVoices: settings.maleVoices || [],
         femaleVoices: settings.femaleVoices || [],
@@ -177,7 +188,7 @@ export function useCombatAudio(combat) {
     settings.maleVoices,
     settings.femaleVoices,
     settings.narratorVoiceId,
-    state.characterVoiceMap,
+    characterVoiceMap,
   ]);
 
   const playBattleCry = useCallback(async (combatant) => {
