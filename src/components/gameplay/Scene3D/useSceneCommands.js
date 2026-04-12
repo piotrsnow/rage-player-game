@@ -1,5 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
-import { useGame } from '../../../contexts/GameContext';
+import { useGameSlice, useGameDispatch } from '../../../stores/gameSelectors';
+import { getGameState } from '../../../stores/gameStore';
 import { planScene, SCENE_PLANNER_VERSION } from '../../../services/scenePlanner';
 import { reportWanted3dEntries } from '../../../services/wanted3dClient';
 import {
@@ -68,7 +69,25 @@ function hasResolvedModelMetadata(sceneCommand) {
  * @returns {import('../../../services/sceneCommandSchema').SceneCommand|null}
  */
 export function useSceneCommands(scene) {
-  const { state, dispatch } = useGame();
+  const dispatch = useGameDispatch();
+  // Fine-grained subscriptions: planner consumes many slices, but we only want
+  // to re-plan when these specific fields change. Full state snapshot is pulled
+  // imperatively inside the memo via getGameState().
+  const currentLocation = useGameSlice((s) => s.world?.currentLocation);
+  const timeOfDay = useGameSlice((s) => s.world?.timeState?.timeOfDay);
+  const hour = useGameSlice((s) => s.world?.timeState?.hour);
+  const weatherType = useGameSlice((s) => s.world?.weather?.type);
+  const combatActive = useGameSlice((s) => s.combat?.active || false);
+  const combatRound = useGameSlice((s) => s.combat?.round);
+  const charName = useGameSlice((s) => s.character?.name);
+  const charSpecies = useGameSlice((s) => s.character?.species);
+  const charCareerName = useGameSlice((s) => s.character?.career?.name);
+  const charModelId = useGameSlice((s) => s.character?.model3d?.modelId);
+  const party = useGameSlice((s) => s.party);
+  const npcs = useGameSlice((s) => s.world?.npcs);
+  const campaignId = useGameSlice((s) => s.campaign?.id);
+  const campaignBackendId = useGameSlice((s) => s.campaign?.backendId);
+
   const prevCmdRef = useRef(null);
   const prevLocationTypeRef = useRef(null);
   const persistedRef = useRef(new Set());
@@ -77,7 +96,6 @@ export function useSceneCommands(scene) {
   const combatSnapshotRef = useRef(null);
   const [catalogVersion, setCatalogVersion] = useState(() => getModelCatalogVersion());
 
-  const combatActive = state.combat?.active || false;
   const combatChanged = combatActive !== combatSnapshotRef.current;
 
   useEffect(() => {
@@ -109,7 +127,7 @@ export function useSceneCommands(scene) {
       prevLocationType: prevLocationTypeRef.current,
     };
 
-    return planScene(scene, state, {
+    return planScene(scene, getGameState(), {
       ...options,
       catalogVersion,
     });
@@ -121,18 +139,18 @@ export function useSceneCommands(scene) {
     scene?.atmosphere?.weather,
     scene?.dialogueSegments?.length,
     scene?.stateChanges,
-    state.world?.currentLocation,
-    state.world?.timeState?.timeOfDay,
-    state.world?.timeState?.hour,
-    state.world?.weather?.type,
+    currentLocation,
+    timeOfDay,
+    hour,
+    weatherType,
     combatActive,
-    state.combat?.round,
-    state.character?.name,
-    state.character?.species,
-    state.character?.career?.name,
-    state.character?.model3d?.modelId,
-    state.party,
-    state.world?.npcs,
+    combatRound,
+    charName,
+    charSpecies,
+    charCareerName,
+    charModelId,
+    party,
+    npcs,
     catalogVersion,
   ]);
 
@@ -179,9 +197,9 @@ export function useSceneCommands(scene) {
     const wantedKey = `${scene.id}:${SCENE_PLANNER_VERSION}`;
     if (wantedRef.current.has(wantedKey)) return;
     wantedRef.current.add(wantedKey);
-    const campaignId = state.campaign?.id || state.campaign?.backendId || null;
-    reportWanted3dEntries(planResult.wantedEntries, campaignId);
-  }, [scene?.id, planResult, state.campaign?.id, state.campaign?.backendId]);
+    const cid = campaignId || campaignBackendId || null;
+    reportWanted3dEntries(planResult.wantedEntries, cid);
+  }, [scene?.id, planResult, campaignId, campaignBackendId]);
 
   if (cmd && cmd !== prevCmdRef.current) {
     prevCmdRef.current = cmd;

@@ -1,3 +1,5 @@
+import { xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost } from '../data/rpgSystem';
+
 function formatMoneyDelta(mc) {
   const parts = [];
   if (mc.gold) parts.push(`${Math.abs(mc.gold)} GC`);
@@ -58,6 +60,49 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     msgs.push({ id: mkId(), role: 'system', subtype: 'xp', content: t('system.xpGained', { name: charName, amount: stateChanges.xp }), timestamp: ts });
   }
 
+  // Skill XP notifications
+  if (stateChanges.skillProgress && typeof stateChanges.skillProgress === 'object') {
+    const charSkills = state.character?.skills || {};
+    let totalCharXpGained = 0;
+    for (const [skillName, xpGain] of Object.entries(stateChanges.skillProgress)) {
+      if (!xpGain || xpGain <= 0) continue;
+      const current = charSkills[skillName] || { level: 0, xp: 0 };
+      const currentXp = current.xp ?? current.progress ?? 0;
+
+      // Simulate full level-up loop (mirrors GameContext) to count char XP
+      let simXp = currentXp + xpGain;
+      let simLevel = current.level;
+      while (simLevel < (current.cap || 10)) {
+        const req = xpForSkillLevel(simLevel + 1);
+        if (req <= 0 || simXp < req) break;
+        simXp -= req;
+        simLevel++;
+        totalCharXpGained += charXpFromSkillLevelUp(simLevel);
+      }
+
+      if (simLevel > current.level) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_levelup', content: `${skillName} +${xpGain} XP — Level Up! (${current.level} → ${simLevel})`, timestamp: ts });
+      } else {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'skill_xp', content: `${skillName} +${xpGain} XP`, timestamp: ts });
+      }
+    }
+
+    // Character level-up notification
+    if (totalCharXpGained > 0) {
+      let charXp = (character?.characterXp || 0) + totalCharXpGained;
+      let charLevel = character?.characterLevel || 1;
+      const oldLevel = charLevel;
+      while (charXp >= charLevelCost(charLevel + 1)) {
+        charXp -= charLevelCost(charLevel + 1);
+        charLevel++;
+      }
+      if (charLevel > oldLevel) {
+        const points = charLevel - oldLevel;
+        msgs.push({ id: mkId(), role: 'system', subtype: 'character_levelup', content: t('system.characterLevelUp', { old: oldLevel, new: charLevel, points, defaultValue: `Poziom postaci ${oldLevel} → ${charLevel}! +${points} punkt atrybutu` }), timestamp: ts });
+      }
+    }
+  }
+
   if (stateChanges.newQuests?.length > 0) {
     for (const q of stateChanges.newQuests) {
       const name = typeof q === 'string' ? q : q.name;
@@ -93,12 +138,17 @@ export function generateStateChangeMessages(stateChanges, state, t) {
   if (stateChanges.questUpdates?.length > 0) {
     const activeQuests = state.quests?.active || [];
     for (const update of stateChanges.questUpdates) {
-      if (!update.completed) continue;
       const quest = activeQuests.find((q) => q.id === update.questId);
       const questName = quest?.name || update.questId;
-      const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
-      const objDesc = obj?.description || update.objectiveId;
-      msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }), timestamp: ts });
+      const sourceTag = update.source === 'nano' ? ' [nano]' : update.source === 'large' ? ' [large]' : '';
+
+      if (update.completed) {
+        const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
+        const objDesc = obj?.description || update.objectiveId;
+        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }) + sourceTag, timestamp: ts });
+      } else if (update.addProgress) {
+        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_progress', content: t('system.questObjectiveProgress', { quest: questName, progress: update.addProgress }) + sourceTag, timestamp: ts });
+      }
     }
   }
 

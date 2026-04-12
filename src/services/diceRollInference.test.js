@@ -1,109 +1,119 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  findSkillCharacteristicKey,
-  inferCharacteristicFromAction,
-  normalizeCharacteristicKey,
+  findSkillAttributeKey,
+  inferAttributeFromAction,
+  normalizeAttributeKey,
   pickBestSkill,
-  resolveDiceRollCharacteristic,
+  resolveDiceRollAttribute,
 } from './diceRollInference.js';
 
 describe('diceRollInference', () => {
-  it('normalizes fellowship aliases to fel', () => {
-    expect(normalizeCharacteristicKey('charisma')).toBe('fel');
-    expect(normalizeCharacteristicKey('charyzma')).toBe('fel');
-    expect(normalizeCharacteristicKey('Fellowship')).toBe('fel');
+  it('normalizes charyzma aliases to charyzma', () => {
+    expect(normalizeAttributeKey('charisma')).toBe('charyzma');
+    expect(normalizeAttributeKey('charyzma')).toBe('charyzma');
+    expect(normalizeAttributeKey('cha')).toBe('charyzma');
+    expect(normalizeAttributeKey('fellowship')).toBe('charyzma');
   });
 
-  it('infers a characteristic from a known WFRP skill', () => {
-    expect(findSkillCharacteristicKey('Charm')).toBe('fel');
-    expect(findSkillCharacteristicKey('Melee (Basic)')).toBe('ws');
+  it('normalizes strength aliases to sila', () => {
+    expect(normalizeAttributeKey('strength')).toBe('sila');
+    expect(normalizeAttributeKey('str')).toBe('sila');
+    expect(normalizeAttributeKey('sila')).toBe('sila');
+    expect(normalizeAttributeKey('sil')).toBe('sila');
   });
 
-  it('infers fellowship from social dialogue actions', () => {
-    expect(inferCharacteristicFromAction('Mowie do kupca: "Opowiedz mi o tej relikwii."')).toBe('fel');
-    expect(inferCharacteristicFromAction('I ask the guard about the forest road.')).toBe('fel');
+  it('normalizes other attribute aliases', () => {
+    expect(normalizeAttributeKey('intelligence')).toBe('inteligencja');
+    expect(normalizeAttributeKey('dexterity')).toBe('zrecznosc');
+    expect(normalizeAttributeKey('agility')).toBe('zrecznosc');
+    expect(normalizeAttributeKey('toughness')).toBe('wytrzymalosc');
+    expect(normalizeAttributeKey('endurance')).toBe('wytrzymalosc');
+    expect(normalizeAttributeKey('luck')).toBe('szczescie');
   });
 
-  it('prefers skill mapping before generic social heuristics', () => {
-    const resolved = resolveDiceRollCharacteristic(
-      { characteristic: 'charisma', skill: 'Intimidate' },
-      'I threaten the thug and demand answers.',
+  it('infers attribute from a known skill', () => {
+    expect(findSkillAttributeKey('Perswazja')).toBe('charyzma');
+    expect(findSkillAttributeKey('Walka bronia jednoręczna')).toBe('sila');
+    expect(findSkillAttributeKey('Atletyka')).toBe('sila');
+    expect(findSkillAttributeKey('Handel')).toBe('charyzma');
+  });
+
+  it('infers charyzma from social dialogue actions', () => {
+    expect(inferAttributeFromAction('Mowie do kupca: "Opowiedz mi o tej relikwii."')).toBe('charyzma');
+    expect(inferAttributeFromAction('I ask the guard about the forest road.')).toBe('charyzma');
+  });
+
+  it('returns null for non-social actions', () => {
+    expect(inferAttributeFromAction('I look at the sky.')).toBeNull();
+  });
+
+  it('prefers explicit attribute when resolving dice roll', () => {
+    const resolved = resolveDiceRollAttribute(
+      { attribute: 'charisma', skill: 'Zastraszanie' },
+      'I threaten the thug.',
     );
-    expect(resolved).toBe('fel');
+    expect(resolved).toBe('charyzma');
   });
 
-  it('returns null when neither characteristic, skill, nor action are trustworthy', () => {
-    expect(resolveDiceRollCharacteristic({ characteristic: 'luck', skill: 'Unknown Skill' }, 'I look at the sky.')).toBeNull();
-  });
-
-  it('normalizes Polish WFRP stat names with diacritics', () => {
-    expect(normalizeCharacteristicKey('Ogłada')).toBe('fel');
-    expect(normalizeCharacteristicKey('Ogd')).toBe('fel');
-    expect(normalizeCharacteristicKey('Siła')).toBe('s');
-    expect(normalizeCharacteristicKey('Wytrzymałość')).toBe('t');
-    expect(normalizeCharacteristicKey('Zwinność')).toBe('ag');
-    expect(normalizeCharacteristicKey('Zręczność')).toBe('dex');
-    expect(normalizeCharacteristicKey('Siła Woli')).toBe('wp');
-    expect(normalizeCharacteristicKey('Walka Wręcz')).toBe('ws');
-  });
-
-  it('resolves characteristic from Polish skill names', () => {
-    expect(findSkillCharacteristicKey('Charyzma')).toBe('fel');
-    expect(findSkillCharacteristicKey('Targowanie')).toBe('fel');
-    expect(findSkillCharacteristicKey('Zastraszanie')).toBe('s');
-    expect(findSkillCharacteristicKey('Atletyka')).toBe('ag');
-  });
-
-  it('resolves full dice roll with Polish Ogłada characteristic', () => {
-    const resolved = resolveDiceRollCharacteristic(
-      { characteristic: 'Ogłada', skill: 'Charyzma' },
-      'Mówię do kupca',
-    );
-    expect(resolved).toBe('fel');
-  });
-
-  it('resolves dice roll from Polish skill when no characteristic given', () => {
-    const resolved = resolveDiceRollCharacteristic(
-      { skill: 'Charyzma' },
+  it('falls back to skill mapping when no explicit attribute', () => {
+    const resolved = resolveDiceRollAttribute(
+      { skill: 'Handel' },
       'Rozmawiam z handlarzem',
     );
-    expect(resolved).toBe('fel');
+    expect(resolved).toBe('charyzma');
+  });
+
+  it('falls back to skill default attribute for unknown skill name', () => {
+    // getSkillAttribute returns 'inteligencja' as default when skill not found
+    const resolved = resolveDiceRollAttribute(
+      { skill: 'Unknown Skill' },
+      'I say to the merchant: "How much?"',
+    );
+    // Unknown skill normalizes to null, but getSkillAttribute defaults to inteligencja
+    expect(resolved).toBe('inteligencja');
+  });
+
+  it('returns inteligencja default when nothing matches', () => {
+    // getSkillAttribute defaults to 'inteligencja' for unknown skills
+    expect(resolveDiceRollAttribute(
+      { attribute: 'bogus', skill: 'Unknown Skill' },
+      'I look at the sky.',
+    )).toBe('inteligencja');
   });
 });
 
 describe('pickBestSkill', () => {
-  const characteristics = { ws: 35, bs: 30, s: 40, t: 30, i: 35, ag: 30, dex: 25, int: 35, wp: 30, fel: 40 };
-
-  it('picks the skill with highest effective target (charValue + advances)', () => {
-    const skills = { Charm: 5, Haggle: 15, Gossip: 0 };
-    const result = pickBestSkill(['Charm', 'Haggle', 'Gossip'], skills, characteristics);
-    expect(result).toEqual({ skill: 'Haggle', advances: 15, characteristic: 'fel' });
+  it('picks the skill with highest level', () => {
+    const skills = { Perswazja: 5, Handel: 15, Wystepy: 0 };
+    const result = pickBestSkill(['Perswazja', 'Handel', 'Wystepy'], skills);
+    expect(result).toEqual({ skill: 'Handel', level: 15, attribute: 'charyzma' });
   });
 
-  it('handles Polish skill names in suggestions', () => {
-    const skills = { Charm: 0, Haggle: 10 };
-    const result = pickBestSkill(['Charyzma', 'Targowanie'], skills, characteristics);
-    expect(result).toEqual({ skill: 'Haggle', advances: 10, characteristic: 'fel' });
-  });
-
-  it('picks across different characteristics based on effective total', () => {
-    const skills = { Charm: 0, Intimidate: 15 };
-    const result = pickBestSkill(['Charm', 'Intimidate'], skills, characteristics);
-    // Charm: fel(40) + 0 = 40, Intimidate: s(40) + 15 = 55
-    expect(result).toEqual({ skill: 'Intimidate', advances: 15, characteristic: 's' });
+  it('picks across different attributes based on level', () => {
+    const skills = { Perswazja: 0, Zastraszanie: 15 };
+    const result = pickBestSkill(['Perswazja', 'Zastraszanie'], skills);
+    expect(result).toEqual({ skill: 'Zastraszanie', level: 15, attribute: 'sila' });
   });
 
   it('returns null for empty or invalid input', () => {
-    expect(pickBestSkill([], {}, {})).toBeNull();
-    expect(pickBestSkill(null, {}, {})).toBeNull();
-    expect(pickBestSkill(['Unknown Skill'], {}, {})).toBeNull();
+    expect(pickBestSkill([], {})).toBeNull();
+    expect(pickBestSkill(null, {})).toBeNull();
+    expect(pickBestSkill(['Unknown Skill'], {})).toBeNull();
   });
 
-  it('defaults advances to 0 for skills not in character sheet', () => {
+  it('defaults level to 0 for skills not in character sheet', () => {
     const skills = {};
-    const result = pickBestSkill(['Charm', 'Athletics'], skills, characteristics);
-    // Charm: fel(40) + 0 = 40, Athletics: ag(30) + 0 = 30
-    expect(result).toEqual({ skill: 'Charm', advances: 0, characteristic: 'fel' });
+    const result = pickBestSkill(['Perswazja', 'Atletyka'], skills);
+    // Both have level 0, picks first valid one
+    expect(result).not.toBeNull();
+    expect(result.level).toBe(0);
+    expect(result.attribute).toBeDefined();
+  });
+
+  it('handles object-style skill entries with level property', () => {
+    const skills = { Perswazja: { level: 8 }, Handel: { level: 3 } };
+    const result = pickBestSkill(['Perswazja', 'Handel'], skills);
+    expect(result).toEqual({ skill: 'Perswazja', level: 8, attribute: 'charyzma' });
   });
 });

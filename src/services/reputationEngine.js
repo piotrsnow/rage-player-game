@@ -1,4 +1,4 @@
-import { FACTION_DEFINITIONS, getReputationTier, REPUTATION_TIERS } from '../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTier, REPUTATION_TIERS } from '../data/rpgFactions';
 
 export function getReputationModifier(factionId, reputation) {
   const tier = getReputationTier(reputation);

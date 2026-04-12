@@ -1,16 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useModals } from '../../contexts/ModalContext';
-import { useGame } from '../../contexts/GameContext';
+import { useGameCampaign } from '../../stores/gameSelectors';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 
 export default function MobileNav() {
   const location = useLocation();
   const { t } = useTranslation();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
-  const { state } = useGame();
+  const campaign = useGameCampaign();
   const mp = useMultiplayer();
-  const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
+  const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
 
   const modalActions = {
     '/character': openCharacterSheet,

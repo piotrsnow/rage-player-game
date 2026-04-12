@@ -93,6 +93,10 @@ export const apiClient = {
     return this.request(path, { method: 'PUT', body });
   },
 
+  patch(path, body) {
+    return this.request(path, { method: 'PATCH', body });
+  },
+
   del(path) {
     return this.request(path, { method: 'DELETE' });
   },

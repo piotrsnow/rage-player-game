@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { rollPercentage } from '../services/gameState.js';
 
 const INTERVAL_SECONDS = 30;
 const THRESHOLD_STEP = 5;
@@ -118,7 +119,7 @@ export function useIdleTimer({
 
         if (next >= checkAt && !isRolling) {
           const threshold = getThreshold(checkIdx);
-          const roll = Math.floor(Math.random() * 100) + 1;
+          const roll = rollPercentage();
           const triggered = roll <= threshold;
 
           checkIndexRef.current = checkIdx + 1;

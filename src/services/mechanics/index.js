@@ -1,83 +1,18 @@
-import { rollD100 } from '../gameState.js';
+import { rollD50 } from '../gameState.js';
 import { resolveSkillCheck, inferActionContext } from './skillCheck.js';
 import { isRestAction, calculateRestRecovery } from './restRecovery.js';
 import { resolveActionDisposition } from './dispositionBonus.js';
-
-const CREATIVITY_KEYWORDS = [
-  'carefully', 'quietly', 'quickly', 'stealthily', 'cleverly', 'forcefully',
-  'ostrożnie', 'cicho', 'szybko', 'sprytnie', 'siłą', 'podstępem',
-];
-
-/**
- * Calculate a creativity bonus for custom/auto-player actions based on description length and keywords.
- * @param {string} actionText
- * @param {boolean} isCustomAction
- * @param {boolean} fromAutoPlayer
- * @returns {number} 0-25
- */
-function getCreativityBonus(actionText, isCustomAction, fromAutoPlayer) {
-  if (!isCustomAction && !fromAutoPlayer) return 0;
-  const text = typeof actionText === 'string' ? actionText.trim().toLowerCase() : '';
-  if (!text) return 0;
-
-  const words = text.match(/[\p{L}\p{N}'-]+/gu) || [];
-  const uniqueWords = new Set(words);
-  const keywordHits = CREATIVITY_KEYWORDS.filter((kw) => text.includes(kw)).length;
-
-  let bonus = 5;
-  if (words.length >= 6) bonus += 5;
-  if (words.length >= 10) bonus += 5;
-  if (keywordHits >= 2) bonus += 5;
-  if (words.length >= 14 && uniqueWords.size >= 10) bonus += 5;
-
-  return Math.min(bonus, 25);
-}
-
-/**
- * @typedef {Object} ResolvedSkillCheck
- * @property {number} roll
- * @property {string} characteristic
- * @property {number} characteristicValue
- * @property {string|null} skill
- * @property {string[]} suggestedSkills
- * @property {number} skillAdvances
- * @property {string|null} applicableTalent
- * @property {number} talentBonus
- * @property {number} baseTarget
- * @property {number} difficultyModifier
- * @property {number} creativityBonus
- * @property {number} momentumBonus
- * @property {number} dispositionBonus
- * @property {string|null} dispositionNpc
- * @property {number} target
- * @property {boolean} success
- * @property {boolean} criticalSuccess
- * @property {boolean} criticalFailure
- * @property {number} sl
- */
-
-/**
- * @typedef {Object} ResolvedMechanics
- * @property {ResolvedSkillCheck|null} diceRoll - resolved BEFORE AI call
- * @property {boolean} skipDiceRoll
- * @property {{ woundsChange: number|undefined, needsChanges: Object }|null} restRecovery
- * @property {boolean} isRest
- */
+export { resolveD50Test } from './d50Test.js';
 
 /**
  * Master orchestrator: resolve all deterministic mechanics before AI call.
- * @param {Object} params
- * @param {Object} params.state - full game state
- * @param {string} params.playerAction
- * @param {Object} params.settings - user settings
- * @param {boolean} params.isFirstScene
- * @param {boolean} params.isCustomAction
- * @param {boolean} params.fromAutoPlayer
- * @param {Function} params.t - i18next translation function
- * @param {Function|null} params.inferSkillCheckFn - async AI inference: (actionText, skills) => { characteristic, skill, difficultyModifier } | { skip: true }
- * @returns {Promise<ResolvedMechanics>}
+ *
+ * Creativity bonus is intentionally NOT computed here — it is awarded
+ * exclusively by the large model in the backend pipeline (see
+ * sceneGenerator.js → applyCreativityToRoll). Any frontend dice roll
+ * resolved here will have creativityBonus=0 until backend reconciles it.
  */
-export async function resolveMechanics({ state, playerAction, settings, isFirstScene, isCustomAction, fromAutoPlayer, t, inferSkillCheckFn = null }) {
+export async function resolveMechanics({ state, playerAction, settings, isFirstScene, t, inferSkillCheckFn = null, skipDiceRoll: forceSkipDiceRoll = false }) {
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPassiveAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
   const isRest = isRestAction(playerAction, t);
@@ -85,14 +20,13 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
   // Dice roll decision
   const testsFrequency = settings?.dmSettings?.testsFrequency ?? 50;
   const shouldRollDice = !isPassiveAction && !isFirstScene && Math.random() * 100 < testsFrequency;
-  const skipDiceRoll = isPassiveAction || isFirstScene || !shouldRollDice;
+  const skipDiceRoll = forceSkipDiceRoll || isPassiveAction || isFirstScene || !shouldRollDice;
 
   let diceRoll = null;
 
   if (!skipDiceRoll) {
-    const roll = rollD100();
+    const roll = rollD50();
     const currentMomentum = state.momentumBonus || 0;
-    const creativityBonus = getCreativityBonus(playerAction, isCustomAction, fromAutoPlayer);
 
     let actionContext = null;
     if (inferSkillCheckFn) {
@@ -100,9 +34,9 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
         const aiResult = await inferSkillCheckFn(playerAction, state.character?.skills);
         if (aiResult && !aiResult.skip) {
           actionContext = {
-            characteristic: aiResult.characteristic,
+            attribute: aiResult.attribute,
             suggestedSkills: aiResult.skill ? [aiResult.skill] : [],
-            difficultyModifier: typeof aiResult.difficultyModifier === 'number' ? aiResult.difficultyModifier : 0,
+            difficulty: aiResult.difficulty || 'medium',
           };
         }
       } catch (err) {
@@ -121,15 +55,12 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
         currentMomentum,
         worldNpcs: state.world?.npcs || [],
         resolveDisposition: resolveActionDisposition,
-        creativityBonus,
         actionContext,
       });
     }
   }
 
-  // Rest recovery (applied after AI call, but calculated now)
-  // Dice roll for rest affects narrative only — healing always applies.
-  // Failed rest: reduced healing (half hours). Succeeded/no roll: full 8 hours.
+  // Rest recovery
   let restRecovery = null;
   if (isRest) {
     const restSucceeded = !diceRoll || diceRoll.success === true;
@@ -147,30 +78,31 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
 
 /**
  * Format resolved skill check for AI prompt injection.
- * @param {ResolvedSkillCheck|null} diceRoll
- * @returns {string}
  */
 export function formatResolvedCheck(diceRoll) {
   if (!diceRoll) return 'No skill check for this action.';
 
-  const outcome = diceRoll.criticalSuccess ? 'CRITICAL SUCCESS'
-    : diceRoll.criticalFailure ? 'CRITICAL FAILURE'
-    : diceRoll.success ? 'SUCCESS' : 'FAILURE';
+  const outcome = diceRoll.luckySuccess ? 'LUCKY SUCCESS (Szczescie!)'
+    : diceRoll.success ? (diceRoll.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS')
+    : (diceRoll.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
 
   const parts = [
-    `Skill: ${diceRoll.skill || 'untrained'} (${diceRoll.characteristic.toUpperCase()})`,
-    `Roll: ${diceRoll.roll} vs Target: ${diceRoll.target}`,
-    `Result: ${outcome} (SL ${diceRoll.sl >= 0 ? '+' : ''}${diceRoll.sl})`,
+    `Skill: ${diceRoll.skill || 'untrained'} (${diceRoll.attribute?.toUpperCase() || '?'})`,
+    `Roll: d50=${diceRoll.roll} + attr=${diceRoll.attributeValue} + skill=${diceRoll.skillLevel} + momentum=${diceRoll.momentumBonus} + creativity=${diceRoll.creativityBonus} = ${diceRoll.total}`,
+    `Threshold: ${diceRoll.threshold} (${diceRoll.difficulty})`,
+    `Result: ${outcome} (margin ${diceRoll.margin >= 0 ? '+' : ''}${diceRoll.margin})`,
   ];
 
-  if (diceRoll.criticalSuccess) {
-    parts.push('Describe an exceptional success with bonus effects.');
-  } else if (diceRoll.criticalFailure) {
-    parts.push('Describe a spectacular failure with extra consequences.');
+  if (diceRoll.luckySuccess) {
+    parts.push('Szczescie strikes! Describe a fortunate twist that turns into success.');
+  } else if (diceRoll.margin >= 15) {
+    parts.push('Describe an impressive, decisive success with bonus effects.');
   } else if (diceRoll.success) {
-    parts.push(`The character succeeds${diceRoll.sl >= 3 ? ' impressively' : ''}.`);
+    parts.push('The character succeeds.');
+  } else if (diceRoll.margin <= -15) {
+    parts.push('Describe a significant failure with serious consequences.');
   } else {
-    parts.push(`The character fails${diceRoll.sl <= -3 ? ' badly' : ''}.`);
+    parts.push('The character fails, but not catastrophically.');
   }
 
   return parts.join('\n');

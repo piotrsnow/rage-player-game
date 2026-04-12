@@ -45,9 +45,9 @@ describe('updateStats', () => {
     const base = createAchievementState();
     const next = updateStats(base, {
       type: 'location_visited',
-      payload: { location: 'Altdorf' },
+      payload: { location: 'Stary Las' },
     });
-    expect(next.stats.locationsVisited).toContain('altdorf');
+    expect(next.stats.locationsVisited).toContain('stary_las');
   });
 });
 

@@ -18,6 +18,7 @@ import { hourToPeriod, decayNeeds } from '../services/timeUtils.js';
 import { validateMultiplayerStateChanges } from '../services/stateValidator.js';
 import { AIServiceError, toClientAiError } from '../services/aiErrors.js';
 import { applyMultiplayerSceneStateChanges } from '../../../shared/domain/multiplayerState.js';
+import { deserializeCharacterRow, applyCharacterStateChanges, characterToPrismaUpdate } from '../services/characterMutations.js';
 import {
   createWsMessage,
   normalizeClientWsType,
@@ -47,6 +48,34 @@ function applySceneStateChanges(gameState, sceneResult, settings) {
   });
 }
 
+/**
+ * Persist mutated character snapshots back to the Character collection.
+ * Each mutated snapshot is matched to a player by odId, and the player's
+ * characterId points at the canonical Character record. Backend-authoritative
+ * — runs in parallel for all characters and never blocks the broadcast path.
+ */
+async function persistMultiplayerCharactersToDB(room, mutatedCharacters) {
+  if (!room || !Array.isArray(mutatedCharacters) || mutatedCharacters.length === 0) return;
+
+  const updates = [];
+  for (const character of mutatedCharacters) {
+    if (!character || !character.odId) continue;
+    const player = room.players.get(character.odId);
+    if (!player?.characterId) continue;
+    updates.push(
+      prisma.character
+        .update({
+          where: { id: player.characterId },
+          data: characterToPrismaUpdate(character),
+        })
+        .catch((err) => {
+          console.warn(`[multiplayer] Failed to persist character ${player.characterId}:`, err.message);
+        }),
+    );
+  }
+  await Promise.all(updates);
+}
+
 function normalizeJoinCharacter(characterData) {
   if (!characterData || typeof characterData !== 'object') return null;
   const name = typeof characterData.name === 'string' ? characterData.name.trim() : '';
@@ -61,6 +90,20 @@ function normalizeJoinCharacter(characterData) {
     gender,
     career,
   };
+}
+
+/**
+ * Fetch a Character record from DB and validate ownership. Used by JOIN_ROOM
+ * and CONVERT_TO_MULTIPLAYER to source the canonical character snapshot
+ * instead of trusting client-supplied characterData.
+ */
+async function fetchOwnedCharacter(characterId, userId) {
+  if (!characterId) return null;
+  const row = await prisma.character.findFirst({
+    where: { id: characterId, userId },
+  });
+  if (!row) return null;
+  return deserializeCharacterRow(row);
 }
 
 function buildArrivalNarrative(playerName, language = 'en') {
@@ -251,12 +294,29 @@ export async function multiplayerRoutes(fastify) {
             odId = result.odId;
             roomCode = result.room.roomCode;
             const player = result.room.players.get(odId);
-            const selectedCharacter = normalizeJoinCharacter(msg.characterData);
+
+            // Prefer the canonical Character record fetched by ID. Fall back
+            // to client-supplied characterData for legacy clients only.
+            let selectedCharacter = null;
+            if (msg.characterId) {
+              selectedCharacter = await fetchOwnedCharacter(msg.characterId, uid);
+              if (!selectedCharacter) {
+                throw new Error('Character not found or not owned by user');
+              }
+              if (player) player.characterId = msg.characterId;
+            } else {
+              selectedCharacter = normalizeJoinCharacter(msg.characterData);
+            }
 
             if (player && selectedCharacter) {
               player.name = selectedCharacter.name;
-              player.gender = selectedCharacter.gender;
+              player.gender = selectedCharacter.gender || 'male';
               player.characterData = selectedCharacter;
+              if (!player.characterId && selectedCharacter.backendId) {
+                player.characterId = selectedCharacter.backendId;
+              } else if (!player.characterId && selectedCharacter.id) {
+                player.characterId = selectedCharacter.id;
+              }
             }
 
             if (result.room.phase === 'playing' && result.room.gameState) {
@@ -377,13 +437,25 @@ export async function multiplayerRoutes(fastify) {
 
           case 'UPDATE_CHARACTER': {
             if (!roomCode || !odId) throw new Error('Not in a room');
+
+            // If client passed a characterId, validate ownership and refresh
+            // the snapshot from DB so the room cache stays in sync with the
+            // canonical Character record.
+            let snapshot = msg.characterData;
+            if (msg.characterId) {
+              const owned = await fetchOwnedCharacter(msg.characterId, uid);
+              if (!owned) throw new Error('Character not found or not owned by user');
+              snapshot = owned;
+            }
+
             const room = updateCharacter(roomCode, odId, {
               name: msg.name,
               gender: msg.gender,
               photo: msg.photo,
               voiceId: msg.voiceId,
               voiceName: msg.voiceName,
-              characterData: msg.characterData,
+              characterId: msg.characterId,
+              characterData: snapshot,
             });
             broadcast(room, {
               type: 'ROOM_STATE',
@@ -544,6 +616,12 @@ export async function multiplayerRoutes(fastify) {
               };
               setGameState(roomCode, updatedGameState);
 
+              // Backend-authoritative: persist each mutated character snapshot
+              // back to its Character record. Fire-and-forget — broadcast doesn't
+              // wait, but the DB row reflects the new state on next load.
+              persistMultiplayerCharactersToDB(room, applied.characters)
+                .catch((err) => fastify.log.warn(err, 'MP character persist failed'));
+
               const updatedRoom = getRoom(roomCode);
               broadcast(updatedRoom, {
                 type: 'SCENE_UPDATE',
@@ -644,6 +722,11 @@ export async function multiplayerRoutes(fastify) {
                 characterMomentum: newSoloMomentum,
               };
               setGameState(roomCode, updatedGameState);
+
+              // Backend-authoritative: persist each mutated character snapshot
+              // back to its Character record. Fire-and-forget.
+              persistMultiplayerCharactersToDB(room, applied.characters)
+                .catch((err) => fastify.log.warn(err, 'MP character persist failed'));
 
               const updatedRoom = getRoom(roomCode);
               broadcast(updatedRoom, {
@@ -991,22 +1074,12 @@ export async function multiplayerRoutes(fastify) {
               if (delta.xp != null) {
                 updated.xp = (updated.xp || 0) + delta.xp;
               }
-              if (Array.isArray(delta.criticalWounds) && delta.criticalWounds.length > 0) {
-                updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
-              }
               if (updated.wounds === 0 && delta.wounds < 0) {
                 const critCount = (updated.criticalWoundCount || 0) + 1;
                 updated.criticalWoundCount = critCount;
                 if (critCount >= 3) {
-                  if ((updated.fate || 0) > 0) {
-                    updated.fate = updated.fate - 1;
-                    updated.fortune = Math.min(updated.fortune || 0, updated.fate);
-                    updated.criticalWoundCount = 2;
-                    updated.wounds = 1;
-                  } else {
-                    updated.status = 'dead';
-                    deadPlayers.push({ name: c.name, odId: c.odId });
-                  }
+                  updated.status = 'dead';
+                  deadPlayers.push({ name: c.name, odId: c.odId });
                 }
               }
               return updated;

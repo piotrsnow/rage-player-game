@@ -18,6 +18,7 @@ export default function TypewriterActionOverlay({
   showLoader = false,
   loaderStartTime,
   loaderEstimatedMs,
+  fastFinish = false,
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
@@ -25,6 +26,18 @@ export default function TypewriterActionOverlay({
   onCompleteRef.current = onComplete;
   const audioRef = useRef(null);
   const charIntervalMs = Math.max(1, CHAR_INTERVAL_MS * typingSpeedMultiplier);
+
+  // fastFinish (set when scene streaming starts): snap text, kill audio, skip
+  // hold, fade out fast. Reduces total dismiss time from ~2100ms to ~250ms.
+  useEffect(() => {
+    if (!fastFinish) return;
+    setDisplayedChars(text.length);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setPhase('fading');
+  }, [fastFinish, text.length]);
   const charHighlightKinds = useMemo(() => {
     const marks = new Uint8Array(text.length); // 0 normal, 1 dialogue, 2 speaker label
     const lines = text.split('\n');
@@ -102,15 +115,17 @@ export default function TypewriterActionOverlay({
   useEffect(() => {
     if (phase === 'holding') {
       if (holdOpen) return undefined;
-      const timer = setTimeout(() => setPhase('fading'), Math.max(0, holdingDurationMs));
+      const hold = fastFinish ? 0 : Math.max(0, holdingDurationMs);
+      const timer = setTimeout(() => setPhase('fading'), hold);
       return () => clearTimeout(timer);
     }
     if (phase === 'fading') {
-      const timer = setTimeout(() => onCompleteRef.current?.(), 600);
+      const fadeMs = fastFinish ? 250 : 600;
+      const timer = setTimeout(() => onCompleteRef.current?.(), fadeMs);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [phase, holdOpen, holdingDurationMs]);
+  }, [phase, holdOpen, holdingDurationMs, fastFinish]);
 
   const progress = text.length > 0 ? displayedChars / text.length : 0;
 
@@ -123,6 +138,7 @@ export default function TypewriterActionOverlay({
         background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.7) 100%)',
         backdropFilter: 'blur(6px)',
         paddingBottom: '160px',
+        ...(fastFinish && phase === 'fading' ? { animationDuration: '250ms' } : null),
       }}
       onClick={() => { if (phase === 'holding') setPhase('fading'); }}
     >

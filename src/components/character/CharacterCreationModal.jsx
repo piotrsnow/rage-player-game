@@ -2,95 +2,65 @@ import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import {
-  SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS,
-  CAREERS, CAREER_CLASSES, getCareerByName, CREATION_LIMITS,
-} from '../../data/wfrp';
+  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS,
+  CREATION_LIMITS, SKILL_CAPS, createStartingSkills, calculateMaxWounds,
+} from '../../data/rpgSystem';
 import {
-  generateCharacteristics, calculateWounds, roll2d10,
-  pickRandomName, randomizeSpecies, randomizeCareer,
-  randomizeSkills, randomizeTalents, randomizeFullCharacter,
+  pickRandomName, randomizeSpecies,
+  randomizeSkills, randomizeFullCharacter,
   generateStartingMoney,
 } from '../../services/gameState';
 import { normalizeCharacterAge } from '../../services/characterAge';
-import { translateSkill, translateTalent } from '../../utils/wfrpTranslate';
 import PortraitGenerator from './PortraitGenerator';
-
-function SectionHeader({ icon, label, onRandomize }) {
-  return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary text-lg">{icon}</span>
-        <h3 className="text-xs text-on-surface-variant font-label uppercase tracking-widest">{label}</h3>
-      </div>
-      {onRandomize && (
-        <button
-          type="button"
-          onClick={onRandomize}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-label text-tertiary hover:text-primary transition-colors rounded-sm hover:bg-surface-tint/10"
-          title={label}
-        >
-          <span className="material-symbols-outlined text-sm">casino</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-function StatBox({ label, shortLabel, value, onReroll }) {
-  return (
-    <div className="flex flex-col items-center gap-1 p-2 bg-surface-container-high/40 border border-outline-variant/10 rounded-sm min-w-[60px]">
-      <span className="text-[11px] text-on-surface-variant uppercase tracking-wider">{shortLabel}</span>
-      <span className="text-lg font-headline text-tertiary">{value}</span>
-      <span className="text-[10px] text-outline truncate max-w-full">{label}</span>
-      {onReroll && (
-        <button
-          type="button"
-          onClick={onReroll}
-          className="material-symbols-outlined text-[12px] text-outline hover:text-primary transition-colors mt-0.5"
-        >
-          casino
-        </button>
-      )}
-    </div>
-  );
-}
+import { SectionHeader } from './creation/Primitives';
+import AttributesSection from './creation/AttributesSection';
+import SkillsSection from './creation/SkillsSection';
 
 export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fantasy', initialCharacter }) {
   const { t } = useTranslation();
 
-  const defaultSpecies = initialCharacter?.species || 'Human';
-  const defaultCareerDef = initialCharacter?.career?.name
-    ? getCareerByName(initialCharacter.career.name) || CAREERS[0]
-    : null;
-
   const [name, setName] = useState(initialCharacter?.name || '');
   const [age, setAge] = useState(normalizeCharacterAge(initialCharacter?.age));
   const [gender, setGender] = useState(initialCharacter?.gender || 'male');
-  const [species, setSpecies] = useState(defaultSpecies);
-  const [careerClassFilter, setCareerClassFilter] = useState(defaultCareerDef?.class || '');
-  const [selectedCareer, setSelectedCareer] = useState(defaultCareerDef || null);
-  const [characteristics, setCharacteristics] = useState(
-    initialCharacter?.characteristics || generateCharacteristics(defaultSpecies),
-  );
-  const [skills, setSkills] = useState(initialCharacter?.skills || {});
-  const [talents, setTalents] = useState(initialCharacter?.talents || []);
+  const [species, setSpecies] = useState(initialCharacter?.species || 'Human');
+  // Point-buy: track added points per attribute (0 to maxPerAttributeAtCreation)
+  const initBase = () => {
+    const base = {};
+    for (const key of ATTRIBUTE_KEYS) base[key] = 0;
+    return base;
+  };
+  const [attrAdded, setAttrAdded] = useState(initBase);
+  const [skills, setSkills] = useState(initialCharacter?.skills || createStartingSkills(initialCharacter?.species || 'Human'));
   const [backstory, setBackstory] = useState(initialCharacter?.backstory || '');
   const [portraitUrl, setPortraitUrl] = useState(initialCharacter?.portraitUrl || null);
   const [portraitOpen, setPortraitOpen] = useState(false);
 
   const speciesData = SPECIES[species] || SPECIES.Human;
-  const maxWounds = useMemo(() => calculateWounds(characteristics), [characteristics]);
 
-  const filteredCareers = useMemo(() => {
-    if (!careerClassFilter) return CAREERS;
-    return CAREERS.filter((c) => c.class === careerClassFilter);
-  }, [careerClassFilter]);
+  // Derive final attributes from base + added + species mod
+  const attributes = useMemo(() => {
+    const result = {};
+    for (const key of ATTRIBUTE_KEYS) {
+      const base = CREATION_LIMITS.baseAttribute + (attrAdded[key] || 0);
+      const mod = speciesData.attributes[key] || 0;
+      result[key] = Math.max(1, base + mod);
+    }
+    return result;
+  }, [attrAdded, speciesData]);
 
-  const tier1 = selectedCareer?.tiers?.[0];
+  const szczCost = CREATION_LIMITS.szczesciePointCost;
+  const attrPointCost = useCallback((key) => key === 'szczescie' ? szczCost : 1, [szczCost]);
+  const attrPointsUsed = useMemo(() =>
+    ATTRIBUTE_KEYS.reduce((sum, key) => sum + (attrAdded[key] || 0) * (key === 'szczescie' ? szczCost : 1), 0),
+  [attrAdded, szczCost]);
+  const attrPointsRemaining = CREATION_LIMITS.distributableAttributePoints - attrPointsUsed;
+
+  const maxWounds = useMemo(() => calculateMaxWounds(attributes?.wytrzymalosc ?? 10), [attributes]);
 
   const handleSpeciesChange = useCallback((sp) => {
     setSpecies(sp);
-    setCharacteristics(generateCharacteristics(sp));
+    setAttrAdded(initBase());
+    setSkills(createStartingSkills(sp));
   }, []);
 
   const handleRandomizeName = useCallback(() => {
@@ -100,35 +70,49 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
   const handleRandomizeSpecies = useCallback(() => {
     const sp = randomizeSpecies();
     setSpecies(sp);
-    setCharacteristics(generateCharacteristics(sp));
+    setAttrAdded(initBase());
+    setSkills(createStartingSkills(sp));
   }, []);
 
-  const handleRandomizeCareer = useCallback(() => {
-    const career = randomizeCareer(careerClassFilter || undefined);
-    setSelectedCareer(career);
-    setCareerClassFilter(career.class);
-    if (career) {
-      setSkills(randomizeSkills(career, species));
-      setTalents(randomizeTalents(career, species));
-    }
-  }, [careerClassFilter, species]);
-
   const handleRandomizeStats = useCallback(() => {
-    setCharacteristics(generateCharacteristics(species));
-  }, [species]);
+    const { distributableAttributePoints, maxPerAttributeAtCreation, szczesciePointCost } = CREATION_LIMITS;
+    const added = {};
+    for (const key of ATTRIBUTE_KEYS) added[key] = 0;
+    let remaining = distributableAttributePoints;
+    // Exclude szczescie from random — too expensive to randomly land on
+    const nonLuckKeys = ATTRIBUTE_KEYS.filter((k) => k !== 'szczescie');
+    let attempts = 0;
+    while (remaining > 0 && attempts < 200) {
+      const key = nonLuckKeys[Math.floor(Math.random() * nonLuckKeys.length)];
+      if (added[key] < maxPerAttributeAtCreation) {
+        added[key]++;
+        remaining--;
+      }
+      attempts++;
+    }
+    setAttrAdded(added);
+  }, []);
 
-  const handleRerollStat = useCallback((key) => {
-    const base = speciesData.characteristics[key];
-    setCharacteristics((prev) => ({ ...prev, [key]: roll2d10() + base }));
-  }, [speciesData]);
+  const handleAttrIncrement = useCallback((key) => {
+    const cost = key === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1;
+    setAttrAdded((prev) => {
+      if ((prev[key] || 0) >= CREATION_LIMITS.maxPerAttributeAtCreation) return prev;
+      const used = ATTRIBUTE_KEYS.reduce((s, k) => s + (prev[k] || 0) * (k === 'szczescie' ? CREATION_LIMITS.szczesciePointCost : 1), 0);
+      if (used + cost > CREATION_LIMITS.distributableAttributePoints) return prev;
+      return { ...prev, [key]: (prev[key] || 0) + 1 };
+    });
+  }, []);
+
+  const handleAttrDecrement = useCallback((key) => {
+    setAttrAdded((prev) => {
+      if ((prev[key] || 0) <= 0) return prev;
+      return { ...prev, [key]: (prev[key] || 0) - 1 };
+    });
+  }, []);
 
   const handleRandomizeSkills = useCallback(() => {
-    setSkills(randomizeSkills(selectedCareer, species));
-  }, [selectedCareer, species]);
-
-  const handleRandomizeTalents = useCallback(() => {
-    setTalents(randomizeTalents(selectedCareer, species));
-  }, [selectedCareer, species]);
+    setSkills(randomizeSkills(species));
+  }, [species]);
 
   const handleRandomizeAll = useCallback(() => {
     const char = randomizeFullCharacter(genre, undefined);
@@ -136,87 +120,95 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     setAge(normalizeCharacterAge(char.age));
     setGender(char.gender);
     setSpecies(char.species);
-    setCharacteristics(char.characteristics);
-    const careerDef = CAREERS.find(
-      (c) => c.name === char.career.name && c.class === char.career.class,
-    );
-    setSelectedCareer(careerDef || null);
-    setCareerClassFilter(char.career.class);
-    setSkills(char.skills);
-    setTalents(char.talents);
+    // Reverse-engineer attrAdded from generated attributes (strip species mods)
+    const sp = SPECIES[char.species] || SPECIES.Human;
+    const added = {};
+    for (const key of ATTRIBUTE_KEYS) {
+      const finalVal = (char.attributes || char.characteristics)?.[key] || CREATION_LIMITS.baseAttribute;
+      const mod = sp.attributes[key] || 0;
+      added[key] = Math.max(0, finalVal - CREATION_LIMITS.baseAttribute - mod);
+    }
+    setAttrAdded(added);
+    setSkills(char.skills || createStartingSkills(char.species));
   }, [genre]);
 
   const handleConfirm = useCallback(() => {
-    const advances = Object.fromEntries(CHARACTERISTIC_KEYS.map((k) => [k, 0]));
-    const career = selectedCareer
-      ? {
-          class: selectedCareer.class,
-          name: selectedCareer.name,
-          tier: 1,
-          tierName: tier1?.name || selectedCareer.name,
-          status: tier1?.status || 'Silver 1',
-        }
-      : { class: 'Warriors', name: 'Soldier', tier: 1, tierName: 'Recruit', status: 'Silver 1' };
-
     onConfirm({
       name: name.trim() || pickRandomName(genre),
       age: normalizeCharacterAge(age),
       gender,
       species,
-      career,
-      characteristics,
-      advances,
+      attributes,
       wounds: maxWounds,
       maxWounds,
       movement: speciesData.movement,
-      fate: speciesData.fate,
-      fortune: speciesData.fate,
-      resilience: speciesData.resilience,
-      resolve: speciesData.resilience,
+      mana: { current: speciesData.startingMana || 0, max: speciesData.startingMana || 0 },
+      spells: { known: [], usageCounts: {}, scrolls: [] },
       skills,
-      talents,
       inventory: [],
-      money: generateStartingMoney(career.status),
+      money: generateStartingMoney(),
       statuses: [],
       backstory,
       portraitUrl: portraitUrl || '',
-      xp: 0,
-      xpSpent: 0,
+      characterLevel: 1,
+      characterXp: 0,
+      attributePoints: 0,
     });
-  }, [name, age, gender, species, selectedCareer, tier1, characteristics, maxWounds, speciesData, skills, talents, backstory, portraitUrl, genre, onConfirm]);
+  }, [name, age, gender, species, attributes, maxWounds, speciesData, skills, backstory, portraitUrl, genre, onConfirm]);
 
-  const availableTalents = useMemo(() => {
-    const careerTalents = tier1?.talents || [];
-    const speciesTalents = speciesData.talents || [];
-    return [...new Set([...careerTalents, ...speciesTalents])];
-  }, [tier1, speciesData]);
+  // Skill points system for creation
+  const racialSkillNames = useMemo(() => new Set(speciesData.skills || []), [speciesData]);
+  const racialBase = CREATION_LIMITS.racialSkillLevel;
+  const maxSkillLevel = SKILL_CAPS.basic;
 
-  const availableSkills = useMemo(() => {
-    const careerSkills = tier1?.skills || [];
-    const speciesSkills = speciesData.skills || [];
-    return [...new Set([...careerSkills, ...speciesSkills])];
-  }, [tier1, speciesData]);
+  const skillPointsUsed = useMemo(() => {
+    let used = 0;
+    for (const [name, v] of Object.entries(skills)) {
+      const level = typeof v === 'object' ? v.level : (v || 0);
+      const base = racialSkillNames.has(name) ? racialBase : 0;
+      used += Math.max(0, level - base);
+    }
+    return used;
+  }, [skills, racialSkillNames, racialBase]);
+  const totalSkillPoints = CREATION_LIMITS.startingSkillPoints;
+  const remainingSkillPoints = totalSkillPoints - skillPointsUsed;
+  const skillPointsPct = Math.min(100, (skillPointsUsed / totalSkillPoints) * 100);
 
-  const usedSkillPoints = useMemo(
-    () => Object.values(skills).reduce((sum, v) => sum + (v || 0), 0),
-    [skills],
-  );
-  const remainingSkillPoints = CREATION_LIMITS.skillPoints - usedSkillPoints;
-  const skillPointsPct = Math.min(100, (usedSkillPoints / CREATION_LIMITS.skillPoints) * 100);
-
-  const handleSkillChange = useCallback((skill, raw) => {
-    const value = Math.max(0, Math.min(CREATION_LIMITS.maxPerSkill, parseInt(raw) || 0));
+  const handleSkillIncrement = useCallback((skillName) => {
     setSkills((prev) => {
-      const oldVal = prev[skill] || 0;
-      const delta = value - oldVal;
-      const currentUsed = Object.values(prev).reduce((s, v) => s + (v || 0), 0);
-      if (delta > 0 && currentUsed + delta > CREATION_LIMITS.skillPoints) {
-        const clamped = oldVal + (CREATION_LIMITS.skillPoints - currentUsed);
-        return { ...prev, [skill]: Math.max(0, clamped) };
+      const old = prev[skillName];
+      const oldLevel = typeof old === 'object' ? old.level : (old || 0);
+      if (oldLevel >= maxSkillLevel) return prev;
+      // Check budget
+      const base = racialSkillNames.has(skillName) ? racialBase : 0;
+      let used = 0;
+      for (const [name, v] of Object.entries(prev)) {
+        const l = typeof v === 'object' ? v.level : (v || 0);
+        const b = racialSkillNames.has(name) ? racialBase : 0;
+        used += Math.max(0, l - b);
       }
-      return { ...prev, [skill]: value };
+      if (used >= totalSkillPoints) return prev;
+      const newLevel = oldLevel + 1;
+      if (typeof old === 'object') {
+        return { ...prev, [skillName]: { ...old, level: newLevel } };
+      }
+      return { ...prev, [skillName]: newLevel };
     });
-  }, []);
+  }, [racialSkillNames, racialBase, totalSkillPoints, maxSkillLevel]);
+
+  const handleSkillDecrement = useCallback((skillName) => {
+    setSkills((prev) => {
+      const old = prev[skillName];
+      const oldLevel = typeof old === 'object' ? old.level : (old || 0);
+      const minLevel = racialSkillNames.has(skillName) ? racialBase : 0;
+      if (oldLevel <= minLevel) return prev;
+      const newLevel = oldLevel - 1;
+      if (typeof old === 'object') {
+        return { ...prev, [skillName]: { ...old, level: newLevel } };
+      }
+      return { ...prev, [skillName]: newLevel };
+    });
+  }, [racialSkillNames, racialBase]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -324,7 +316,6 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
                 species={species}
                 age={age}
                 gender={gender}
-                careerName={selectedCareer?.name}
                 genre={genre}
                 initialPortrait={portraitUrl}
                 onPortraitReady={(url) => {
@@ -357,177 +348,31 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
             </div>
           </section>
 
-          {/* Career */}
-          <section>
-            <SectionHeader icon="work" label={t('charCreator.careerLabel')} onRandomize={handleRandomizeCareer} />
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {['', ...CAREER_CLASSES].map((cls) => (
-                <button
-                  key={cls}
-                  type="button"
-                  onClick={() => setCareerClassFilter(cls)}
-                  className={`px-2.5 py-1.5 rounded-sm font-label text-xs transition-all border ${
-                    careerClassFilter === cls
-                      ? 'bg-surface-tint text-on-primary border-primary'
-                      : 'bg-surface-container-high/30 text-on-surface-variant border-outline-variant/10 hover:border-primary/20'
-                  }`}
-                >
-                  {cls ? t(`careerClasses.${cls}`) : t('careerClasses.any')}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 max-h-[200px] overflow-y-auto custom-scrollbar pr-1">
-              {filteredCareers.map((career) => {
-                const isSelected = selectedCareer?.name === career.name && selectedCareer?.class === career.class;
-                return (
-                  <button
-                    key={`${career.class}-${career.name}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCareer(career);
-                      setSkills(randomizeSkills(career, species));
-                      setTalents(randomizeTalents(career, species));
-                    }}
-                    className={`text-left px-2.5 py-2 rounded-sm border transition-all ${
-                      isSelected
-                        ? 'bg-primary/10 border-primary/30 shadow-[0_0_10px_rgba(197,154,255,0.15)]'
-                        : 'bg-surface-container-high/30 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/50'
-                    }`}
-                  >
-                    <div className={`text-xs font-bold truncate ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
-                      {t(`careers.${career.name}`, career.name)}
-                    </div>
-                    <div className="text-[11px] text-on-surface-variant">{t(`careerClasses.${career.class}`)}</div>
-                  </button>
-                );
-              })}
-            </div>
-            {selectedCareer && tier1 && (
-              <div className="mt-3 p-3 bg-surface-container-high/20 border border-outline-variant/10 rounded-sm">
-                <div className="text-xs text-on-surface-variant mb-1">
-                  <span className="text-tertiary font-bold">{t(`tierNames.${tier1.name}`, tier1.name)}</span>
-                  <span className="mx-1.5 opacity-50">&middot;</span>
-                  <span>{tier1.status.replace(/^(Brass|Silver|Gold)/, (m) => t(`statusTier.${m}`))}</span>
-                </div>
-              </div>
-            )}
-          </section>
+          <AttributesSection
+            attrAdded={attrAdded}
+            attributes={attributes}
+            speciesData={speciesData}
+            attrPointsUsed={attrPointsUsed}
+            attrPointsRemaining={attrPointsRemaining}
+            attrPointCost={attrPointCost}
+            maxWounds={maxWounds}
+            onIncrement={handleAttrIncrement}
+            onDecrement={handleAttrDecrement}
+            onRandomize={handleRandomizeStats}
+          />
 
-          {/* Characteristics */}
-          <section>
-            <SectionHeader icon="monitoring" label={t('charCreator.characteristicsLabel')} onRandomize={handleRandomizeStats} />
-            <div className="grid grid-cols-5 gap-2">
-              {CHARACTERISTIC_KEYS.map((key) => (
-                <StatBox
-                  key={key}
-                  label={t(`stats.${key}Long`)}
-                  shortLabel={t(`stats.${key}`)}
-                  value={characteristics[key]}
-                  onReroll={() => handleRerollStat(key)}
-                />
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-4 mt-3 text-xs text-on-surface-variant">
-              <span>{t('charCreator.derivedWounds')}: <strong className="text-tertiary">{maxWounds}</strong></span>
-              <span>{t('charCreator.derivedMovement')}: <strong className="text-tertiary">{speciesData.movement}</strong></span>
-              <span>{t('charCreator.derivedFate')}: <strong className="text-tertiary">{speciesData.fate}</strong></span>
-              <span>{t('charCreator.derivedResilience')}: <strong className="text-tertiary">{speciesData.resilience}</strong></span>
-            </div>
-          </section>
-
-          {/* Skills */}
-          <section>
-            <SectionHeader icon="construction" label={t('charCreator.skillsLabel')} onRandomize={handleRandomizeSkills} />
-            {availableSkills.length === 0 ? (
-              <p className="text-xs text-on-surface-variant">{t('charCreator.selectCareerFirst')}</p>
-            ) : (
-              <>
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
-                      {t('charCreator.skillPointsRemaining')}
-                    </span>
-                    <span className={`text-xs font-bold tabular-nums ${
-                      remainingSkillPoints <= 0 ? 'text-error' : remainingSkillPoints <= 10 ? 'text-tertiary' : 'text-primary'
-                    }`}>
-                      {remainingSkillPoints} / {CREATION_LIMITS.skillPoints}
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-surface-container-high/60 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        remainingSkillPoints <= 0 ? 'bg-error' : remainingSkillPoints <= 10 ? 'bg-tertiary' : 'bg-primary'
-                      }`}
-                      style={{ width: `${skillPointsPct}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                  {availableSkills.map((skill) => (
-                    <div key={skill} className="flex items-center justify-between py-1 border-b border-outline-variant/5">
-                      <span className="text-xs text-on-surface truncate pr-2">{translateSkill(skill, t)}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={CREATION_LIMITS.maxPerSkill}
-                        value={skills[skill] || 0}
-                        onChange={(e) => handleSkillChange(skill, e.target.value)}
-                        className="w-12 text-center bg-transparent border border-outline-variant/15 rounded-sm text-xs text-tertiary py-0.5 focus:border-primary/50 focus:ring-0"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
-
-          {/* Talents */}
-          <section>
-            <SectionHeader icon="auto_awesome" label={t('charCreator.talentsLabel')} onRandomize={handleRandomizeTalents} />
-            {availableTalents.length === 0 ? (
-              <p className="text-xs text-on-surface-variant">{t('charCreator.selectCareerFirst')}</p>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
-                    {t('charCreator.talentSlots')}
-                  </span>
-                  <span className={`text-xs font-bold tabular-nums ${
-                    talents.length >= CREATION_LIMITS.maxTalents ? 'text-error' : 'text-primary'
-                  }`}>
-                    {talents.length} / {CREATION_LIMITS.maxTalents}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {availableTalents.map((talent) => {
-                    const isSelected = talents.includes(talent);
-                    const atLimit = !isSelected && talents.length >= CREATION_LIMITS.maxTalents;
-                    return (
-                      <button
-                        key={talent}
-                        type="button"
-                        disabled={atLimit}
-                        onClick={() => {
-                          setTalents((prev) =>
-                            isSelected ? prev.filter((t) => t !== talent) : [...prev, talent],
-                          );
-                        }}
-                        className={`px-2.5 py-1.5 rounded-sm text-xs font-label border transition-all ${
-                          isSelected
-                            ? 'bg-primary/15 border-primary/30 text-primary'
-                            : atLimit
-                              ? 'bg-surface-container-high/20 border-outline-variant/5 text-outline/40 cursor-not-allowed'
-                              : 'bg-surface-container-high/30 border-outline-variant/10 text-on-surface-variant hover:border-primary/20'
-                        }`}
-                      >
-                        {translateTalent(talent, t)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </section>
+          <SkillsSection
+            skills={skills}
+            racialSkillNames={racialSkillNames}
+            racialBase={racialBase}
+            totalSkillPoints={totalSkillPoints}
+            skillPointsUsed={skillPointsUsed}
+            remainingSkillPoints={remainingSkillPoints}
+            skillPointsPct={skillPointsPct}
+            onIncrement={handleSkillIncrement}
+            onDecrement={handleSkillDecrement}
+            onRandomize={handleRandomizeSkills}
+          />
 
           {/* Backstory */}
           <section>

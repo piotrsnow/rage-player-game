@@ -37,23 +37,35 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
   const activeConditions = (combatant.conditions || []).filter((c) => c !== 'fled' || combatant.isDefeated);
 
   const mainWeapon = (() => {
-    if (combatant.equippedWeapon) return combatant.equippedWeapon;
-    return (combatant.weapons || combatant.inventory || [])
+    // Player: equipped.mainHand → inventory item name
+    if (combatant.equipped?.mainHand) {
+      const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.mainHand);
+      if (item) return item.name;
+    }
+    // NPC: weapons array
+    return (combatant.weapons || [])
       .map((w) => (typeof w === 'string' ? w : w.name))
       .find(Boolean);
   })();
 
-  const armourSummary = (() => {
-    if (combatant.armour && typeof combatant.armour === 'object' && !Array.isArray(combatant.armour)) {
-      const parts = Object.entries(combatant.armour)
-        .filter(([, v]) => v > 0)
-        .map(([loc, ap]) => `${loc} ${ap}`);
-      return parts.length > 0 ? parts.join(', ') : null;
+  const offHand = (() => {
+    if (combatant.equipped?.offHand) {
+      const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.offHand);
+      if (item) return item.name;
     }
-    const armourItems = (combatant.inventory || [])
-      .filter((i) => (typeof i === 'string' ? i : i.type) === 'armour')
-      .map((i) => (typeof i === 'string' ? i : i.name));
-    return armourItems.length > 0 ? armourItems.join(', ') : null;
+    return combatant.equippedShield || null;
+  })();
+
+  const armourSummary = (() => {
+    // Player: equipped.armour → inventory item name
+    if (combatant.equipped?.armour) {
+      const item = (combatant.inventory || []).find(i => i.id === combatant.equipped.armour);
+      if (item) return item.name;
+    }
+    // NPC: equippedArmour or armourDR
+    if (combatant.equippedArmour) return combatant.equippedArmour;
+    if (combatant.armourDR) return `DR ${combatant.armourDR}`;
+    return null;
   })();
 
   const accentColor = isEnemy ? 'error' : 'primary';
@@ -97,12 +109,6 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
       </div>
 
       <div className="flex items-center gap-3 text-[10px]">
-        {combatant.advantage > 0 && (
-          <div className="flex items-center gap-1">
-            <span className="text-on-surface-variant">{t('combat.advantage', 'Adv')}</span>
-            <span className="text-primary font-bold">+{combatant.advantage}</span>
-          </div>
-        )}
         {combatant.position != null && (
           <div className="flex items-center gap-1">
             <span className="text-on-surface-variant">{t('combat.position', 'Pos')}</span>
@@ -127,24 +133,18 @@ export default function CombatDetailPanel({ combatant, myCombatant, allCombatant
         </div>
       )}
 
-      {combatant.criticalWounds?.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-[10px] text-tertiary font-bold uppercase tracking-wider">{t('combat.criticalWounds', 'Criticals')}</div>
-          {combatant.criticalWounds.map((cw, i) => (
-            <div key={`crit_${i}`} className="text-[10px] text-on-surface-variant leading-snug pl-2 border-l-2 border-tertiary/30">
-              {cw.name || t('combat.criticalWound', 'Critical wound')}
-              {cw.effect && <span className="text-outline-variant"> — {cw.effect}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {(mainWeapon || armourSummary) && (
+      {(mainWeapon || offHand || armourSummary) && (
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-on-surface-variant pt-0.5 border-t border-outline-variant/10">
           {mainWeapon && (
             <span className="flex items-center gap-1">
               <span className="material-symbols-outlined text-[11px]">swords</span>
               {mainWeapon}
+            </span>
+          )}
+          {offHand && (
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[11px]">shield_with_heart</span>
+              {offHand}
             </span>
           )}
           {armourSummary && (

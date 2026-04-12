@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useState, useEffect, useRef, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { useSettings } from '../../../contexts/SettingsContext';
-import { useGame } from '../../../contexts/GameContext';
+import { useGameCampaign } from '../../../stores/gameSelectors';
 import { useCombatAudio } from '../../../hooks/useCombatAudio';
 import { getAnchor } from '../../../data/sceneAnchors';
 import { useSceneCommands } from './useSceneCommands';
@@ -14,8 +14,8 @@ import Lighting3D from './Lighting3D';
 
 function Scene3DContent({ sceneCmd, onCharacterClick }) {
   const { settings } = useSettings();
-  const { state } = useGame();
-  const campaignId = state.campaign?.id || state.campaign?.backendId || null;
+  const campaign = useGameCampaign();
+  const campaignId = campaign?.id || campaign?.backendId || null;
 
   const meshySettings = useMemo(() => ({
     meshyEnabled: settings.meshyEnabled || false,

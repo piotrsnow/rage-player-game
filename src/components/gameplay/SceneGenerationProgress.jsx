@@ -6,9 +6,11 @@ function formatSeconds(ms) {
   return `${s}s`;
 }
 
-export default function SceneGenerationProgress({ startTime, estimatedMs }) {
+export default function SceneGenerationProgress({ startTime, estimatedMs, completing = false }) {
   const { t } = useTranslation();
   const [elapsed, setElapsed] = useState(0);
+  const [fadingOut, setFadingOut] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const rafRef = useRef(null);
   const lastUpdateRef = useRef(0);
 
@@ -29,10 +31,24 @@ export default function SceneGenerationProgress({ startTime, estimatedMs }) {
     };
   }, [startTime]);
 
+  // When completing: snap bar to 100%, then fade out after bar transition.
+  // Aggressive timings (~360ms total) so the loader doesn't linger after the
+  // streamed narrative is already visible in chat.
+  useEffect(() => {
+    if (!completing) return;
+    const fillTimer = setTimeout(() => setFadingOut(true), 160);
+    const hideTimer = setTimeout(() => setHidden(true), 360);
+    return () => { clearTimeout(fillTimer); clearTimeout(hideTimer); };
+  }, [completing]);
+
+  if (hidden) return null;
+
   const hasEstimate = estimatedMs && estimatedMs > 0;
 
   let percent = null;
-  if (hasEstimate) {
+  if (completing) {
+    percent = 100;
+  } else if (hasEstimate) {
     const linear = Math.min(1, elapsed / estimatedMs);
     percent = Math.min(95, Math.round(linear * 100));
   }
@@ -42,7 +58,13 @@ export default function SceneGenerationProgress({ startTime, estimatedMs }) {
     : formatSeconds(elapsed);
 
   return (
-    <div className="flex flex-col items-center gap-3 py-8 animate-fade-in w-full max-w-xs mx-auto">
+    <div
+      className="flex flex-col items-center gap-3 py-8 animate-fade-in w-full max-w-xs mx-auto"
+      style={{
+        opacity: fadingOut ? 0 : 1,
+        transition: 'opacity 200ms ease-out',
+      }}
+    >
       <div className="flex items-center gap-2">
         <div className="w-5 h-5 relative">
           <div
@@ -57,12 +79,12 @@ export default function SceneGenerationProgress({ startTime, estimatedMs }) {
 
       <div className="w-full space-y-1.5">
         <div className="h-1.5 w-full bg-surface-container-highest overflow-hidden rounded-full">
-          {hasEstimate ? (
+          {(hasEstimate || completing) ? (
             <div
               className="h-full bg-gradient-to-r from-primary-dim to-primary rounded-full relative overflow-hidden"
               style={{
                 width: `${percent}%`,
-                transition: 'width 300ms ease-out',
+                transition: 'width 150ms ease-out',
                 boxShadow: '0 0 8px rgba(197, 154, 255, 0.5)',
               }}
             >

@@ -1,118 +1,17 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { useGame } from '../../contexts/GameContext';
+import { useGameSlice, useGameDispatch } from '../../stores/gameSelectors';
 import {
-  TILE_PX, VIEWPORT_RADIUS, CHUNK_SIZE, STEPS_PER_TURN,
-  PREFETCH_EDGE_DISTANCE, chunkKey, worldToChunk,
+  STEPS_PER_TURN, chunkKey, worldToChunk,
 } from '../../services/fieldMap/constants';
 import { generateChunk } from '../../services/fieldMap/chunkGenerator';
-import { loadAtlas, getMeta, getTileById, getTilesBySection } from '../../services/fieldMap/atlasIndex';
+import { loadAtlas, getMeta } from '../../services/fieldMap/atlasIndex';
 import { findPath } from '../../services/fieldMap/pathfinding';
-
-const SCALE = 2;
-const TILE_DRAW = TILE_PX * SCALE;
-
-const HERO_SPRITES = [
-  'ranger_green', 'adventurer_brown', 'warrior_tan', 'rogue_blue',
-  'fighter_gray', 'mage_light', 'priest_white', 'wizard_blue',
-  'jester_green', 'warlock_red',
-];
-
-function hashName(name) {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) {
-    h = ((h << 5) - h) + name.charCodeAt(i);
-    h |= 0;
-  }
-  return Math.abs(h);
-}
-
-function pickHeroSprite(name) {
-  return HERO_SPRITES[hashName(name) % HERO_SPRITES.length];
-}
-
-const NPC_CLUSTER_ROLES = {
-  patrol: ['hostile', 'fearful'],
-  camp: ['friendly', 'neutral'],
-  caravan: ['merchant', 'trader'],
-};
-
-function classifyNpcCluster(npc) {
-  const att = (npc.attitude || '').toLowerCase();
-  const role = (npc.role || '').toLowerCase();
-  if (att === 'hostile' || att === 'fearful') return 'patrol';
-  if (role.includes('merchant') || role.includes('trader') || role.includes('kupiec')) return 'caravan';
-  return 'camp';
-}
-
-function buildEntityList(world, scene, characterName) {
-  const entities = [];
-  const currentLoc = world?.currentLocation?.toLowerCase() || '';
-  const speakerNames = new Set();
-
-  if (scene?.dialogueSegments) {
-    for (const seg of scene.dialogueSegments) {
-      if (seg?.type === 'dialogue' && seg.character) {
-        const name = seg.character.trim();
-        if (name.toLowerCase() !== (characterName || '').toLowerCase()) {
-          speakerNames.add(name.toLowerCase());
-        }
-      }
-    }
-  }
-
-  const npcsHere = (world?.npcs || []).filter((npc) => {
-    if (!npc?.name || npc.alive === false) return false;
-    return npc.lastLocation?.toLowerCase() === currentLoc;
-  });
-
-  const clusters = new Map();
-  for (const npc of npcsHere) {
-    const cluster = classifyNpcCluster(npc);
-    if (!clusters.has(cluster)) clusters.set(cluster, []);
-    clusters.get(cluster).push(npc);
-  }
-
-  let clusterIdx = 0;
-  for (const [clusterType, npcs] of clusters) {
-    for (let i = 0; i < npcs.length; i++) {
-      const npc = npcs[i];
-      const isSpeaker = speakerNames.has(npc.name.toLowerCase());
-      entities.push({
-        name: npc.name,
-        type: 'npc',
-        sprite: pickHeroSprite(npc.name),
-        isSpeaker,
-        highlight: isSpeaker,
-        cluster: clusterType,
-        clusterIdx,
-        isLeader: i === 0,
-        followerOffset: i,
-      });
-      speakerNames.delete(npc.name.toLowerCase());
-    }
-    clusterIdx++;
-  }
-
-  for (const name of speakerNames) {
-    entities.push({
-      name,
-      type: 'npc',
-      sprite: pickHeroSprite(name),
-      isSpeaker: true,
-      highlight: true,
-      cluster: 'camp',
-      clusterIdx: clusterIdx++,
-      isLeader: true,
-      followerOffset: 0,
-    });
-  }
-
-  return entities;
-}
+import { buildEntityList, computeEntityPositions } from './field/fieldMapEntities';
+import { TILE_DRAW, drawFieldMap } from './field/fieldMapDraw';
 
 export default function FieldMapCanvas({ onFieldTurnReady, scene, world, characterName }) {
-  const { state, dispatch } = useGame();
-  const fieldMap = state.world?.fieldMap;
+  const dispatch = useGameDispatch();
+  const fieldMap = useGameSlice((s) => s.world?.fieldMap);
 
   const canvasRef = useRef(null);
   const atlasImageRef = useRef(null);
@@ -212,124 +111,10 @@ export default function FieldMapCanvas({ onFieldTurnReady, scene, world, charact
     };
   }, [fieldMap?.mapMode]);
 
-  const _drawTile = useCallback((ctx, tileId, dx, dy) => {
-    if (!tileId || !atlasReady.current) return;
-    const tile = getTileById(tileId);
-    if (!tile || !atlasImageRef.current) return;
-    ctx.drawImage(
-      atlasImageRef.current,
-      tile.x, tile.y, TILE_PX, TILE_PX,
-      dx, dy, TILE_DRAW, TILE_DRAW
-    );
-  }, []);
-
   const mapEntities = useMemo(
     () => buildEntityList(world, scene, characterName),
     [world?.npcs, world?.currentLocation, scene?.id, scene?.dialogueSegments, characterName]
   );
-
-  useEffect(() => {
-    _draw();
-  }, [fieldMap?.playerPos, viewSize, mapEntities, scene?.id]);
-
-  const entityPositionsRef = useRef(new Map());
-
-  const _computeEntityPositions = useCallback((px, py) => {
-    const positions = new Map();
-    const occupied = new Set([`${px},${py}`]);
-
-    const leaderAnchors = [
-      { dx: -3, dy: -2 }, { dx: 3, dy: -2 }, { dx: -3, dy: 2 }, { dx: 3, dy: 2 },
-      { dx: 0, dy: -3 }, { dx: 0, dy: 3 }, { dx: -4, dy: 0 }, { dx: 4, dy: 0 },
-    ];
-    const speakerAnchors = [
-      { dx: -2, dy: -1 }, { dx: 2, dy: -1 }, { dx: -1, dy: 1 }, { dx: 1, dy: 1 },
-    ];
-    const followerOffsets = [
-      { dx: 1, dy: 0 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 0, dy: -1 },
-      { dx: 1, dy: 1 }, { dx: -1, dy: 1 }, { dx: 1, dy: -1 }, { dx: -1, dy: -1 },
-    ];
-
-    const speakers = mapEntities.filter((e) => e.isSpeaker && e.isLeader);
-    const leaders = mapEntities.filter((e) => !e.isSpeaker && e.isLeader);
-    const followers = mapEntities.filter((e) => !e.isLeader);
-
-    const placeAt = (entity, anchorList, basePx, basePy) => {
-      const h = hashName(entity.name);
-      for (let attempt = 0; attempt < anchorList.length * 2; attempt++) {
-        const off = anchorList[(h + attempt) % anchorList.length];
-        const ex = basePx + off.dx;
-        const ey = basePy + off.dy;
-        const key = `${ex},${ey}`;
-        if (!occupied.has(key) && _getTileAt(ex, ey).passable) {
-          positions.set(entity.name, { x: ex, y: ey });
-          occupied.add(key);
-          return true;
-        }
-      }
-      return false;
-    };
-
-    for (const entity of speakers) {
-      if (!placeAt(entity, speakerAnchors, px, py)) {
-        placeAt(entity, leaderAnchors, px, py);
-      }
-    }
-
-    for (const entity of leaders) {
-      placeAt(entity, leaderAnchors, px, py);
-    }
-
-    for (const entity of followers) {
-      const leaderEntity = mapEntities.find(
-        (e) => e.isLeader && e.clusterIdx === entity.clusterIdx
-      );
-      const leaderPos = leaderEntity ? positions.get(leaderEntity.name) : null;
-      const base = leaderPos || { x: px, y: py };
-      if (!placeAt(entity, followerOffsets, base.x, base.y)) {
-        placeAt(entity, leaderAnchors, px, py);
-      }
-    }
-
-    entityPositionsRef.current = positions;
-  }, [mapEntities, _getTileAt]);
-
-  const _drawEntity = useCallback((ctx, spriteId, drawX, drawY, highlight, isSpeaker) => {
-    const tile = getTileById(spriteId);
-    if (!tile || !atlasImageRef.current) {
-      ctx.fillStyle = highlight ? '#ffdd44' : '#aabbcc';
-      ctx.fillRect(drawX + TILE_DRAW * 0.2, drawY + TILE_DRAW * 0.1, TILE_DRAW * 0.6, TILE_DRAW * 0.8);
-      return;
-    }
-
-    if (highlight) {
-      ctx.shadowColor = isSpeaker ? 'rgba(255, 220, 60, 0.8)' : 'rgba(100, 200, 255, 0.6)';
-      ctx.shadowBlur = 10;
-    }
-
-    ctx.drawImage(
-      atlasImageRef.current,
-      tile.x, tile.y, TILE_PX, TILE_PX,
-      drawX, drawY, TILE_DRAW, TILE_DRAW,
-    );
-
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-  }, []);
-
-  const _drawNameLabel = useCallback((ctx, name, drawX, drawY, isSpeaker) => {
-    const label = name.length > 10 ? name.slice(0, 9) + '…' : name;
-    ctx.font = `bold ${Math.max(8, TILE_DRAW * 0.25)}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    const lx = drawX + TILE_DRAW / 2;
-    const ly = drawY - 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
-    const tw = ctx.measureText(label).width;
-    ctx.fillRect(lx - tw / 2 - 2, ly - Math.max(8, TILE_DRAW * 0.25) - 1, tw + 4, Math.max(8, TILE_DRAW * 0.25) + 2);
-    ctx.fillStyle = isSpeaker ? '#ffdd44' : '#ddeeff';
-    ctx.fillText(label, lx, ly);
-  }, []);
 
   const _draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -341,89 +126,30 @@ export default function FieldMapCanvas({ onFieldTurnReady, scene, world, charact
 
     canvas.width = w;
     canvas.height = h;
-    ctx.imageSmoothingEnabled = false;
 
-    const tilesW = Math.ceil(w / TILE_DRAW) + 2;
-    const tilesH = Math.ceil(h / TILE_DRAW) + 2;
-    const halfW = Math.floor(tilesW / 2);
-    const halfH = Math.floor(tilesH / 2);
+    const entityPositions = computeEntityPositions(
+      mapEntities,
+      fieldMap.playerPos.x,
+      fieldMap.playerPos.y,
+      _getTileAt,
+    );
 
-    const px = fieldMap.playerPos.x;
-    const py = fieldMap.playerPos.y;
+    drawFieldMap({
+      ctx,
+      atlasImage: atlasImageRef.current,
+      fieldMap,
+      viewSize,
+      mapEntities,
+      entityPositions,
+      pathQueue: pathQueueRef.current,
+      characterName,
+      getTileAt: _getTileAt,
+    });
+  }, [fieldMap, viewSize, _getTileAt, mapEntities, characterName]);
 
-    const offsetX = Math.floor(w / 2) - TILE_DRAW / 2;
-    const offsetY = Math.floor(h / 2) - TILE_DRAW / 2;
-
-    for (let ty = -halfH; ty <= halfH; ty++) {
-      for (let tx = -halfW; tx <= halfW; tx++) {
-        const wx = px + tx;
-        const wy = py + ty;
-        const drawX = offsetX + tx * TILE_DRAW;
-        const drawY = offsetY + ty * TILE_DRAW;
-
-        const { ground, object } = _getTileAt(wx, wy);
-        if (ground) _drawTile(ctx, ground, drawX, drawY);
-        if (object) _drawTile(ctx, object, drawX, drawY);
-      }
-    }
-
-    if (pathQueueRef.current.length > 0) {
-      ctx.fillStyle = 'rgba(100, 200, 255, 0.3)';
-      for (const step of pathQueueRef.current) {
-        const sx = offsetX + (step.x - px) * TILE_DRAW;
-        const sy = offsetY + (step.y - py) * TILE_DRAW;
-        ctx.fillRect(sx, sy, TILE_DRAW, TILE_DRAW);
-      }
-    }
-
-    _computeEntityPositions(px, py);
-    for (const entity of mapEntities) {
-      const pos = entityPositionsRef.current.get(entity.name);
-      if (!pos) continue;
-      const ex = offsetX + (pos.x - px) * TILE_DRAW;
-      const ey = offsetY + (pos.y - py) * TILE_DRAW;
-      _drawEntity(ctx, entity.sprite, ex, ey, entity.highlight, entity.isSpeaker);
-      _drawNameLabel(ctx, entity.name, ex, ey, entity.isSpeaker);
-    }
-
-    const playerSprite = getTileById('hero_gold') || getTileById(HERO_SPRITES[0]);
-    if (playerSprite && atlasImageRef.current) {
-      ctx.shadowColor = 'rgba(255, 220, 60, 0.9)';
-      ctx.shadowBlur = 14;
-      ctx.drawImage(
-        atlasImageRef.current,
-        playerSprite.x, playerSprite.y, TILE_PX, TILE_PX,
-        offsetX, offsetY, TILE_DRAW, TILE_DRAW,
-      );
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-    } else {
-      ctx.fillStyle = '#ffdd44';
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.fillRect(offsetX + TILE_DRAW * 0.2, offsetY + TILE_DRAW * 0.1, TILE_DRAW * 0.6, TILE_DRAW * 0.8);
-      ctx.strokeRect(offsetX + TILE_DRAW * 0.2, offsetY + TILE_DRAW * 0.1, TILE_DRAW * 0.6, TILE_DRAW * 0.8);
-    }
-
-    if (characterName) {
-      _drawNameLabel(ctx, characterName, offsetX, offsetY, true);
-    }
-
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(8, 8, 160, 28);
-    ctx.fillStyle = '#fff';
-    ctx.font = '14px monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`Steps: ${fieldMap.stepCounter}/${STEPS_PER_TURN}`, 14, 14);
-
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(8, 40, 260, 20);
-    ctx.fillStyle = '#aaa';
-    ctx.font = '11px monospace';
-    const modeLabel = fieldMap.mapMode === 'trakt' ? `trakt/${fieldMap.roadVariant || 'pola'}` : (fieldMap.mapMode || fieldMap.activeBiome);
-    ctx.fillText(`Pos: (${px}, ${py})  Mode: ${modeLabel}`, 14, 43);
-  }, [fieldMap, viewSize, _getTileAt, _drawTile, _computeEntityPositions, _drawEntity, _drawNameLabel, mapEntities, characterName]);
+  useEffect(() => {
+    _draw();
+  }, [fieldMap?.playerPos, viewSize, mapEntities, scene?.id]);
 
   const _movePlayerTo = useCallback((x, y) => {
     if (!fieldMap) return;

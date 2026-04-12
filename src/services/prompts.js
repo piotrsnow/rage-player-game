@@ -1,41 +1,19 @@
-import { getBonus, formatMoney } from './gameState';
+import { formatMoney } from './gameState.js';
 import { formatResolvedCheck } from './mechanics/index';
 import { gameData } from './gameDataService';
-import { FACTION_DEFINITIONS, getReputationTier } from '../data/wfrpFactions';
-import { formatCriticalWoundsForPrompt } from '../data/wfrpCriticals';
-import { formatMagicForPrompt } from '../data/wfrpMagic';
-import { formatWeatherForPrompt } from './weatherEngine';
-import { formatEquipmentForPrompt } from '../data/wfrpEquipment';
+import { FACTION_DEFINITIONS, getReputationTier } from '../data/rpgFactions';
+import { ATTRIBUTE_KEYS, ATTRIBUTE_SHORT, formatAttributesForPrompt, formatSkillsForPrompt, formatSystemRulesForPrompt } from '../data/rpgSystem';
+import { normalizeNpcName } from './utils/npcMatcher.js';
+// formatMagicForPrompt available from rpgMagic if needed for spell tree overview
+import { formatMagicStatusForPrompt } from './magicEngine';
 import { extractActionParts, extractDialogueParts, hasDialogue } from './actionParser';
-import { formatTalentsForPrompt } from '../data/wfrpTalents';
 import { calculateTensionScore, getTensionGuidance } from './tensionTracker';
 import {
   checkSeedResolution, formatSeedsForPrompt,
   formatCallbacksForPrompt,
   formatAgendasForPrompt,
   formatDeadlinesForPrompt,
-  pickIdleEventType,
-  shouldGenerateDilemma,
 } from './narrativeEngine';
-
-export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęiąa]|rozpoczynam|rzucam\s+si[eę]|wyzywam|bij[eę]|uderz(?:am|e)|zabij|zaatakuj|dobywam|wyci[aą]gam\s+(?:miecz|bro[nń]|topor|n[oó][zż]|sztylet)|attack|fight|strike|hit|punch|stab|slash|shoot|kill|combat|draw\s*(?:my\s+)?(?:sword|weapon|blade|axe|knife|dagger))\b/i;
-
-export function detectCombatIntent(playerAction) {
-  if (!playerAction) return false;
-  if (playerAction.startsWith('[Combat resolved:')) return false;
-  if (playerAction.startsWith('[INITIATE COMBAT]') || playerAction.startsWith('[ATTACK:')) return true;
-  return COMBAT_INTENT_REGEX.test(playerAction);
-}
-
-export const DIALOGUE_INTENT_REGEX = /\b(rozmawiam|porozmawia[jm]|zagaduj[eę]?|negocjuj[eę]?|przekonuj[eę]?|perswaduj[eę]?|dyskutuj[eę]?|targu[jJeę]|pytam|zagaj|rozmawiaj|talk|speak|negotiate|persuade|discuss|converse|haggle|parley|chat\s+with|bargain|ask\s+about)\b/i;
-
-export function detectDialogueIntent(playerAction) {
-  if (!playerAction) return false;
-  if (playerAction.startsWith('[Dialogue ended:')) return false;
-  if (playerAction.startsWith('[INITIATE DIALOGUE')) return true;
-  if (playerAction.startsWith('[TALK:')) return true;
-  return DIALOGUE_INTENT_REGEX.test(playerAction);
-}
 
 function normalizeActionForComparison(action) {
   return String(action || '')
@@ -57,160 +35,6 @@ function collectRecentSuggestedActions(scenes = [], sceneWindow = 3) {
     });
 }
 
-function formatCombatantForCommentary(combatant) {
-  const status = combatant.isDefeated
-    ? 'defeated'
-    : `${combatant.wounds}/${combatant.maxWounds} wounds`;
-  return `- ${combatant.name} [${combatant.type}]${combatant.side ? ` side=${combatant.side}` : ''} — ${status}`;
-}
-
-export function buildCombatCommentaryPrompts(gameState, combatSnapshot, language = 'en') {
-  const campaignName = gameState?.campaign?.name || 'Unnamed Campaign';
-  const currentLocation = gameState?.world?.currentLocation || 'Unknown';
-  const activeCombatants = combatSnapshot?.activeCombatants || [];
-  const defeatedCombatants = combatSnapshot?.defeatedCombatants || [];
-  const recentResults = combatSnapshot?.recentResults || [];
-  const recentLogEntries = combatSnapshot?.recentLogEntries || [];
-  const langNote = language === 'pl'
-    ? 'Write both the narration and battle cries in Polish.'
-    : 'Write both the narration and battle cries in English.';
-
-  const activeBlock = activeCombatants.length > 0
-    ? activeCombatants.map(formatCombatantForCommentary).join('\n')
-    : '- No active combatants remain.';
-  const defeatedBlock = defeatedCombatants.length > 0
-    ? defeatedCombatants.map(formatCombatantForCommentary).join('\n')
-    : '- Nobody has been defeated yet.';
-  const recentResultsBlock = recentResults.length > 0
-    ? recentResults.map((entry) => `- ${entry}`).join('\n')
-    : '- No recent exchanges recorded.';
-  const recentLogBlock = recentLogEntries.length > 0
-    ? recentLogEntries.map((entry) => `- ${entry}`).join('\n')
-    : '- No recent combat log lines.';
-
-  return {
-    system: `You are a battle commentator for the tabletop RPG campaign "${campaignName}" using Warhammer Fantasy Roleplay 4th Edition tone and texture.
-
-Your job is to add a short mid-combat narration to an already active fight.
-
-MANDATORY RULES:
-- This is NOT a full scene. Do not continue the adventure outside the current fight.
-- Do NOT invent or request any state changes, combat resolution, new enemies, victory, surrender, or an end to combat.
-- Write exactly ONE narrator paragraph summarizing the current state and momentum of the battle.
-- Then provide exactly ONE short, vicious battle cry for EACH active combatant listed in the input.
-- Battle cries must be direct speech only, with no narration around them.
-- Use only the listed combatants and recent combat context. Do not introduce new speakers.
-- Keep the output tight and vivid. The commentary should feel fast and reactive, not like a full prose scene.
-- ${langNote}
-- Respond with ONLY valid JSON in this exact format:
-{
-  "narration": "One paragraph of battle narration...",
-  "battleCries": [
-    { "speaker": "Combatant Name", "text": "Short battle cry!" }
-  ]
-}`,
-    user: `Generate a mid-combat commentary for an already active fight.
-
-ROUND: ${combatSnapshot?.round ?? 0}
-LOCATION: ${currentLocation}
-REASON FOR THE FIGHT: ${combatSnapshot?.reason || 'Unknown'}
-ACTIVE COMBATANT COUNT: ${activeCombatants.length}
-
-ACTIVE COMBATANTS:
-${activeBlock}
-
-DEFEATED COMBATANTS:
-${defeatedBlock}
-
-RECENT RESOLUTION SNAPSHOT:
-${recentResultsBlock}
-
-RECENT COMBAT LOG:
-${recentLogBlock}
-
-REMINDERS:
-- Narration must stay in the present battle and reflect visible momentum, wounds, pressure, positioning, fear, fury, or desperation.
-- Battle cries must cover every active combatant exactly once.
-- Do not duplicate the same cry wording for everyone.
-- Do not mention JSON, rules, or mechanics in the narration unless it is natural diegetic language.`,
-  };
-}
-
-const NEEDS_LABELS = {
-  hunger: { moderate: 'starting to feel hungry, thoughts drifting to food', low: 'hungry, distracted', critical: 'weak, dizzy, stomach pains' },
-  thirst: { moderate: 'mouth getting dry, craving a drink', low: 'thirsty, dry mouth', critical: 'parched, cracked lips, fading' },
-  bladder: { moderate: 'mild pressure, aware of need', low: 'uncomfortable, fidgeting', critical: 'desperate, about to lose control', zero: 'lost control!' },
-  hygiene: { moderate: 'starting to feel grimy, faint odor', low: 'smelly, NPCs wrinkle noses', critical: 'terrible stench, NPCs recoil' },
-  rest: { moderate: 'slightly fatigued, occasional yawn', low: 'tired, yawning, slower reactions', critical: 'can barely keep eyes open, stumbling', zero: 'collapses from exhaustion' },
-};
-
-export function buildUnmetNeedsBlock(needs) {
-  if (!needs) return '';
-  const lines = [];
-  for (const [key, labels] of Object.entries(NEEDS_LABELS)) {
-    const val = needs[key] ?? 100;
-    if (val >= 10) continue;
-    const name = key.charAt(0).toUpperCase() + key.slice(1);
-    if (val <= 0 && labels.zero) {
-      lines.push(`- ${name}: ${val}/100 [ZERO — ${key === 'bladder' ? 'ACCIDENT' : 'COLLAPSE'} — ${labels.zero}]`);
-    } else {
-      lines.push(`- ${name}: ${val}/100 [CRITICAL — ${labels.critical}]`);
-    }
-  }
-  if (lines.length === 0) return '';
-  return `CHARACTER NEEDS STATUS (always factor these into narration, NPC reactions, and outcomes):\n${lines.join('\n')}\n\n`;
-}
-
-export function buildNeedsEnforcementReminder(needs, language = 'en') {
-  if (!needs) return '';
-  const urgent = [];
-  for (const [key] of Object.entries(NEEDS_LABELS)) {
-    const val = needs[key] ?? 100;
-    if (val >= 10) continue;
-    const name = key.charAt(0).toUpperCase() + key.slice(1);
-    if (val <= 0) urgent.push(`${name}: ${val}/100 — ZERO`);
-    else urgent.push(`${name}: ${val}/100 — CRITICAL`);
-  }
-  if (urgent.length === 0) return '';
-  return `\nNEEDS ENFORCEMENT (MANDATORY — do NOT skip):
-Unmet needs: ${urgent.join('; ')}.
-YOU MUST:
-1. Weave these need effects into the narrative — describe physical symptoms, character thoughts, NPC reactions to the character's state.
-2. Include stateChanges.needsChanges with non-zero deltas if the character eats, drinks, rests, bathes, or uses a toilet during this scene.
-3. At least ONE of the three suggestedActions MUST address the most urgent unmet need (e.g. "${language === 'pl' ? 'Szukam jedzenia' : 'I look for food'}", "${language === 'pl' ? 'Szukam wody' : 'I search for water'}", "${language === 'pl' ? 'Szukam miejsca do odpoczynku' : 'I find somewhere to rest'}").
-4. The game engine automatically applies a -10 penalty to related skill checks when needs are critical. Reflect this in the narrative — the character struggles with focus, coordination, or social grace.\n`;
-}
-
-const LOW_ACTION_PACING = new Set(['exploration', 'travel_montage', 'rest']);
-const LOW_ACTION_ACTIONS = /\b(id[eę]|iść|wędruj|podróżuj|kontynuuj|rozglądaj|spaceruj|walk|go|travel|continue|explore|move on|head to|proceed|wander|look around)\b/i;
-
-export function buildPacingPressure(scenes) {
-  if (!scenes || scenes.length < 2) return '';
-  const recent = scenes.slice(-5);
-  let consecutive = 0;
-  for (let i = recent.length - 1; i >= 0; i--) {
-    const s = recent[i];
-    const pacing = s.scenePacing || 'exploration';
-    const hadCombat = s.diceRoll?.type === 'combat' || s.stateChanges?.combatUpdate?.active;
-    const hadNewNpcs = (s.stateChanges?.npcs || []).some(n => n.action === 'introduce');
-    const hadQuestOffer = (s.questOffers || []).length > 0;
-    const actionIsLow = !s.chosenAction || LOW_ACTION_ACTIONS.test(s.chosenAction || '');
-
-    if (LOW_ACTION_PACING.has(pacing) && !hadCombat && !hadNewNpcs && !hadQuestOffer && actionIsLow) {
-      consecutive++;
-    } else {
-      break;
-    }
-  }
-  if (consecutive >= 3) {
-    return `\nCRITICAL PACING ALERT — the story has stalled for ${consecutive} consecutive low-action scenes. You MUST introduce a significant plot event, ambush, NPC encounter, or environmental hazard NOW. Use "travel_montage" to skip boring travel and arrive at something interesting. Set scenePacing to something other than exploration/rest/travel_montage.\n`;
-  }
-  if (consecutive >= 2) {
-    return `\nPACING ALERT — the last ${consecutive} scenes have been low-action (no combat, no new NPCs, no quest offers). You MUST inject a meaningful event, complication, encounter, or discovery in this scene. Use "travel_montage" to skip boring travel and arrive at something interesting.\n`;
-  }
-  return '';
-}
-
 function buildRelationshipGraphBlock(npcs, quests, factions) {
   const lines = [];
   const aliveNpcs = (npcs || []).filter((n) => n.alive !== false);
@@ -226,7 +50,7 @@ function buildRelationshipGraphBlock(npcs, quests, factions) {
     }
     const questLinks = [];
     for (const q of [...(quests?.active || []), ...(quests?.completed || [])]) {
-      if (q.questGiverId && (q.questGiverId === npc.id || q.questGiverId.toLowerCase() === npc.name?.toLowerCase())) {
+      if (q.questGiverId && (q.questGiverId === npc.id || normalizeNpcName(q.questGiverId) === normalizeNpcName(npc.name))) {
         questLinks.push(`quest giver for "${q.name}"`);
       }
     }
@@ -312,7 +136,20 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
   const journal = (world?.eventHistory || []).length > 0
     ? world.eventHistory.map((e, i) => `${i + 1}. ${e}`).join('\n')
     : 'No entries yet.';
-  const inventory = character?.inventory?.map((i) => `${i.name} (${i.type})`).join(', ') || 'Empty';
+  const eq = character?.equipped || {};
+  const invItems = character?.inventory || [];
+  const equippedIds = new Set([eq.mainHand, eq.offHand, eq.armour].filter(Boolean));
+  const findItem = (id) => invItems.find(i => i.id === id);
+  const formatEqItem = (id) => {
+    const item = findItem(id);
+    if (!item) return 'none';
+    return item.baseType ? `${item.name} [${item.baseType}]` : item.name;
+  };
+  const equippedLine = `Main hand: ${formatEqItem(eq.mainHand)}, Off-hand: ${formatEqItem(eq.offHand)}, Armour: ${formatEqItem(eq.armour)}`;
+  const unequippedItems = invItems.filter(i => !equippedIds.has(i.id));
+  const inventory = unequippedItems.length > 0
+    ? unequippedItems.map((i) => `${i.name}${i.baseType ? ` [${i.baseType}]` : ''} (${i.type || 'misc'})`).join(', ')
+    : 'Empty';
   const moneyDisplay = character?.money ? formatMoney(character.money) : '0 CP';
   const statuses = character?.statuses?.join(', ') || 'None';
   const contextDepth = dmSettings.contextDepth ?? 100;
@@ -381,26 +218,11 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
     ? activeEffects.map((e) => `- [${e.type}] ${e.description} (at ${e.location || 'unknown location'}${e.placedBy ? `, by ${e.placedBy}` : ''})`).join('\n')
     : 'No active effects.';
 
-  // WFRP character state
-  const chars = character?.characteristics || {};
-  const adv = character?.advances || {};
-  const charLines = ['WS', 'BS', 'S', 'T', 'I', 'Ag', 'Dex', 'Int', 'WP', 'Fel'].map((label, idx) => {
-    const key = ['ws', 'bs', 's', 't', 'i', 'ag', 'dex', 'int', 'wp', 'fel'][idx];
-    const val = chars[key] || 0;
-    const bonus = getBonus(val);
-    const advances = adv[key] || 0;
-    return `${label}: ${val} (Bonus ${bonus}${advances > 0 ? `, +${advances} advances` : ''})`;
-  }).join(', ');
-
-  const skillList = character?.skills && Object.keys(character.skills).length > 0
-    ? Object.entries(character.skills).map(([name, advances]) => `${name} +${advances}`).join(', ')
-    : 'None';
-
-  const talentList = formatTalentsForPrompt(character?.talents);
-
-  const careerInfo = character?.career
-    ? `${character.career.name} (${character.career.class}), Tier ${character.career.tier}: ${character.career.tierName}, Status: ${character.career.status}`
-    : 'Unknown';
+  // RPGon character state
+  const attrLine = formatAttributesForPrompt(character?.attributes || {});
+  const mana = character?.mana || { current: 0, max: 0 };
+  const skillList = formatSkillsForPrompt(character?.skills);
+  const magicStatus = formatMagicStatusForPrompt(character);
 
   const allScenes = gameState.scenes || [];
   const previousSuggestedActions = collectRecentSuggestedActions(allScenes, 3);
@@ -441,12 +263,14 @@ export function buildSystemPrompt(gameState, dmSettings, language = 'en', enhanc
       .join('\n') || 'No scenes yet - this is the beginning of the story.';
   }
 
-  return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under the Warhammer Fantasy Roleplay 4th Edition (WFRP 4e) rules system.
+  return `You are the Game Master AI for "${campaign?.name || 'Unnamed Campaign'}", running under a custom RPG system (RPGon).
+
+${formatSystemRulesForPrompt()}
 
 CAMPAIGN SETTINGS:
 - Genre: ${campaign?.genre || 'Fantasy'}
 - Tone: ${campaign?.tone || 'Epic'}
-- Play Style: ${campaign?.style || 'Hybrid'} (narrative + d100 skill tests)
+- Play Style: ${campaign?.style || 'Hybrid'} (narrative + d50 skill tests)
 - Difficulty: ${difficultyLabel}
 - Narrative chaos: ${narrativeLabel}
 - Response length: ${responseLabel}
@@ -455,14 +279,20 @@ CAMPAIGN SETTINGS:
 - Target output budget: ~${sceneTokenBudget ?? 'default'} tokens for this scene
 - Prompt input budget: ~${promptTokenBudget ?? 'default'} tokens max
 
-NARRATOR VOICE & STYLE:
+NARRATOR VOICE — applies ONLY to dialogueSegments where type="narration":
 - Poeticism: ${poeticismLabel}
 - Grittiness: ${grittinessLabel}
 - Environmental detail: ${detailLabel}
 - Humor: ${humorLabel}
 - Drama: ${dramaLabel}
-Adapt your narration prose style to match ALL of the above parameters simultaneously. They define your voice as the narrator — blend them consistently throughout every scene.
+These parameters shape the narrator's prose. They MUST NOT affect how NPCs speak.
 ${narratorCustomInstructions ? `- Extra narrator instructions from player: ${narratorCustomInstructions}` : ''}
+
+NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
+- Each NPC's speech derives from their own personality and notes fields — NOT from narrator sliders.
+- Overall flavor follows the campaign tone "${campaign?.tone || 'Epic'}" (Dark=grim/terse/weighted, Epic=grand/formal/heroic, Humorous=witty/playful/irreverent).
+- A peasant does not sound like a scholar. Match vocabulary and register to role/personality/notes.
+- Narrator poeticism/drama/humor DO NOT apply here — NPCs have their own voices.
 
 PROMPT GOVERNANCE (MANDATORY):
 - Respect the selected prompt profile ("${promptProfile}") when choosing depth and verbosity.
@@ -475,7 +305,7 @@ NARRATIVE TONE RULES (anti-purple-prose guardrails):
 - AVOID: Excessive metaphors in every paragraph. Overly flowery descriptions of mundane events. A uniform "literary" tone across all NPCs. Multiple adjectives stacked before every noun. Starting every paragraph with a weather or atmosphere description.
 - Avoid repetitive joke templates and recurring clichés. Specifically, do NOT repeatedly use tax collectors/taxes/fiscal bureaucracy as a metaphor unless it is directly relevant to the current in-world situation.
 - NPC DIALOGUE VARIATION: Each NPC speaks differently. A peasant does not sound like a scholar. A soldier does not sound like a merchant. Dialogue should reveal character, not showcase vocabulary.
-- The Old World is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
+- The world is grim and perilous. Death is real. Consequences are lasting. Humor exists as dark comedy and gallows wit — it coexists with danger, never replaces it.
 - HUMOR COUNTERWEIGHT: Even at high humor settings, maintain real stakes. Funny failures should still hurt mechanically (wounds, lost items, reputation). Comedic NPCs can still be dangerous. Never let humor deflate genuine tension in life-or-death situations.
 
 SCENE PACING & PROSE STYLE (MANDATORY — return "scenePacing" in EVERY response):
@@ -493,25 +323,23 @@ ANTI-MONOTONY RULE: Never produce more than 2 consecutive exploration/travel/res
 TRAVEL ACCELERATION: When the player's action is simply traveling/walking with no specific interaction, default to "travel_montage" — skip the boring parts, arrive somewhere interesting.
 
 WORLD DESCRIPTION:
-${campaign?.worldDescription || 'The Old World awaits — a grim and perilous realm of dark fantasy.'}
+${campaign?.worldDescription || 'A grim and perilous realm of dark fantasy awaits.'}
 
 STORY HOOK:
 ${campaign?.hook || 'An adventure begins...'}
 
-CHARACTER STATE (WFRP 4e):
+CHARACTER STATE (RPGon):
 - Name: ${character?.name || 'Unknown'}, ${character?.species || 'Human'}
-- Career: ${careerInfo}
-- XP: ${character?.xp || 0} total, ${character?.xpSpent || 0} spent (${(character?.xp || 0) - (character?.xpSpent || 0)} available)
-- Characteristics: ${charLines}
+- Attributes (1-25): ${attrLine}
+- Mana: ${mana.current}/${mana.max}
 - Wounds: ${character?.wounds ?? 0}/${character?.maxWounds ?? 0}, Movement: ${character?.movement ?? 4}
-- Fate: ${character?.fate ?? 0}, Fortune: ${character?.fortune ?? 0}
-- Resilience: ${character?.resilience ?? 0}, Resolve: ${character?.resolve ?? 0}
 - Skills: ${skillList}
-- Talents: ${talentList}
+- Magic: ${magicStatus}
+- Equipped: ${equippedLine}
 - Inventory: ${inventory}
 - Money: ${moneyDisplay}
 - Statuses: ${statuses}
-${character?.criticalWounds?.length > 0 ? `\n${formatCriticalWoundsForPrompt(character.criticalWounds)}\nCRITICAL WOUND RULES: Active critical wounds impose penalties on the character's tests and movement. When narrating, reflect the character's injuries — limping, pain, restricted movement, bleeding. Critical wounds that require surgery can only be healed by a trained healer/surgeon. Bleeding wounds worsen over time without treatment. Include "healCriticalWound" in stateChanges (string: wound name) when a critical wound is successfully treated.\n` : ''}${(() => {
+${(() => {
   if (!needsSystemEnabled || !character?.needs) return '';
   const needsDefs = [
     { key: 'hunger', zeroLabel: null, critLabel: 'weak, dizzy, stomach pains' },
@@ -539,7 +367,7 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - At 0 for bladder: the character wets themselves — narrate the embarrassment and NPC reactions.
 - At 0 for rest: the character collapses/falls asleep involuntarily.
 - ALWAYS weave these critical need effects into the narrative — weakness, funny walking, NPC reactions to smell, drowsiness, inability to focus. These OVERRIDE normal scene flow.
-- MECHANICAL PENALTIES: Apply -10 to related skill test targets for each critical need: hunger/thirst penalize physical tests (WS, BS, S, T, Ag), rest penalizes ALL tests, hygiene penalizes social tests (Fel, charm, gossip). Multiple critical needs stack.
+- MECHANICAL PENALTIES: Critical needs raise skill test difficulty. Hunger/thirst penalize physical tests (Sila, Zrecznosc, Wytrzymalosc), rest penalizes ALL tests, hygiene penalizes social tests (Charyzma). Multiple critical needs stack.
 - When the character satisfies a need (eats, drinks, uses a toilet, bathes, sleeps), you MUST use stateChanges.needsChanges to restore it. Never narrate eating/drinking/resting without updating the corresponding need.
   Typical restoration: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, short nap +20-30 rest.
 - SLEEPING AT AN INN / TAVERN: When the character sleeps at an inn or tavern, restore ALL needs to 100 (hunger, thirst, bladder, hygiene, rest) — the character eats supper, drinks, uses the privy, washes, and sleeps through the night.
@@ -548,30 +376,28 @@ NEEDS SYSTEM RULES (CRITICAL — these MUST be respected):
 - IMPORTANT: Always include stateChanges.timeAdvance with "hoursElapsed" (decimal).
 `;
 })()}
-WFRP 4e RULES FOR THE GM:
-- Dice rolls and skill checks are handled entirely by the game engine. DO NOT include a "diceRoll" field in your response. The user prompt will tell you the resolved outcome (success/failure/critical, SL) — narrate accordingly.
+RPGon RULES FOR THE GM:
+- Dice rolls and skill checks are handled entirely by the game engine. DO NOT include a "diceRoll" field in your response. The user prompt will tell you the resolved outcome (success/failure, margin, lucky success) — narrate accordingly.
 - When a skill check result is SUCCESS, the narrative MUST describe the action succeeding.
 - When a skill check result is FAILURE, the narrative MUST describe the action failing — the character does NOT succeed.
-- CRITICAL SUCCESS: narrate an exceptionally favorable outcome — extra benefits, impressive feats, bonus loot.
-- CRITICAL FAILURE: narrate a disastrous outcome — injury (woundsChange), broken equipment, angered NPCs, embarrassing mishaps.
-- SL magnitude: +3 or higher = impressive success, -3 or lower = severe failure. Scale narrative intensity with SL.
-- Fortune points can be spent to reroll or add +1 SL. Fate points cheat death. Resolve replenishes Resilience.
-- Wounds represent physical damage. At 0 Wounds, the character takes Critical Wounds.
+- LUCKY SUCCESS (Szczescie): The character's luck intervenes — narrate a fortunate twist or coincidence that turns the situation.
+- Wounds represent physical damage. At 0 Wounds, the character dies (unless rescued).
 - Award XP (typically 20-50 per scene) via stateChanges.xp for good roleplay, clever solutions, and combat.
-- When the character uses Fortune/Resolve, reflect it in stateChanges (fortuneChange/resolveChange as negative deltas).
-- Fortune resets to Fate value after a night's rest.
+- Mana is a rare resource. Include manaChange in stateChanges when spells are cast. Include manaMaxChange when magical stones are found.
+- Track spell usage via stateChanges.spellUsage ({"spellName": 1}) for progression in spell trees.
+- Track skills used via stateChanges.skillsUsed (["SkillName1", "SkillName2"]) — which skills the PC used in this action. Max 3.
+- Set stateChanges.actionDifficulty ("easy"|"medium"|"hard"|"veryHard"|"extreme") — estimated difficulty of the PC's action. XP is calculated by the engine.
 
-GRADED SUCCESS & FAILURE (use SL to determine outcome severity — never purely binary):
-- CRITICAL SUCCESS (roll 01-04): Automatic success with spectacular bonus effects — extra loot, awed NPCs, lasting advantage. Award +1 to +3 bonus SL.
-- STRONG SUCCESS (SL +3 or higher): Clear, decisive success with potential bonus benefits.
-- MARGINAL SUCCESS (SL 0 to +2): SUCCESS AT A COST — the action succeeds, but with a complication: minor wound, lost item, time wasted, noise attracting attention, partial information, NPC annoyance, or an unintended side effect. The goal is achieved, but not cleanly.
-- MARGINAL FAILURE (SL -1 to -2): FAILURE WITH OPPORTUNITY — the action fails, but the character learns something useful, a new option opens, or they narrowly avoid the worst outcome. Still a real failure — no hidden success.
-- HARD FAILURE (SL -3 or worse): Significant consequences — wounds, broken items, reputation loss, faction alerts, enemy gains advantage, rumor spreads. Always include at least one stateChanges consequence.
-- CRITICAL FAILURE (roll 96-100): Catastrophic — lasting stateChanges consequences are MANDATORY (wound, item loss, faction change, NPC hostility, or new complication).
+GRADED SUCCESS & FAILURE (use margin to determine outcome severity — never purely binary):
+- LUCKY SUCCESS: Szczescie auto-success — describe a fortunate twist, improbable luck, or divine intervention.
+- GREAT SUCCESS (margin +15 or higher): Clear, decisive success with bonus benefits.
+- STANDARD SUCCESS (margin 0 to +14): SUCCESS — the action succeeds. Margin 0-5 may include a minor complication.
+- STANDARD FAILURE (margin -1 to -14): The action fails but without catastrophe. Character learns something or avoids the worst.
+- HARD FAILURE (margin -15 or worse): Significant consequences — wounds, broken items, reputation loss, faction alerts. Always include at least one stateChanges consequence.
 
 CONSEQUENCE SYSTEM (MANDATORY for risky actions, especially failures):
 Every risky action should generate at least one consequence from this list: reputation change (factionChanges), NPC disposition shift, time loss, resource loss, wound, rumor spread (worldFacts), price changes, quest complication, new enemy, or environmental change.
-- HEAT MECHANIC: Criminal, chaotic, or violent actions accumulate "heat" — track via journalEntries and worldFacts. Escalating heat triggers: guards patrol more, NPCs become wary and suspicious, prices rise, bounties appear, witch hunters investigate, factions send agents. Use factionChanges to mechanically represent this (negative deltas to lawful factions like military, temple_sigmar, witch_hunters).
+- HEAT MECHANIC: Criminal, chaotic, or violent actions accumulate "heat" — track via journalEntries and worldFacts. Escalating heat triggers: guards patrol more, NPCs become wary and suspicious, prices rise, bounties appear, investigators look into the matter, factions send agents. Use factionChanges to mechanically represent this (negative deltas to lawful factions).
 - RUMOR PROPAGATION: Notable actions (especially failures and crimes) become worldFacts that NPCs reference in future scenes. Major events should spread — "I heard a stranger was asking about..." or "Word is someone tried to..."
 - ECONOMIC CONSEQUENCES: Faction standing should visibly affect prices mentioned in narration. Hostile faction territory = 20-50% markup. Allied = 10-20% discount. Reference this in merchant dialogue.
 
@@ -643,11 +469,11 @@ DIALOGUE RULE: Exactly 1 of the 3 suggestedActions MUST be a direct spoken line 
 POLISH LANGUAGE RULE (CRITICAL): Every suggestedAction MUST be written entirely in Polish. NEVER start an action with the English word "I" — use Polish first-person verbs directly: "Oglądam", "Pytam", "Mówię:", "Przeszukuję". NEVER use "I say:", "I tell", "I ask" — use "Mówię:", "Pytam:", "Krzyczę:" instead. Do NOT prefix actions with the Polish conjunction "I" (meaning "and") — start directly with the verb.` : ''}
 
 INSTRUCTIONS:
-1. Stay in character as a skilled, atmospheric Game Master running WFRP 4e.
+1. Stay in character as a skilled, atmospheric Game Master running the RPGon system.
 2. Maintain narrative consistency with established world facts and events.
-3. In hybrid mode, suggest d100 skill tests for uncertain outcomes. State the skill, target number, and resolve with SL.
+3. In hybrid mode, skill tests are handled by the game engine (d50 system). The prompt provides resolved outcomes — narrate accordingly.
 4. Track consequences of player decisions across scenes.
-5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The Old World is grim and perilous.
+5. Generate vivid, immersive scene descriptions matching the campaign's genre and tone. The world is grim and perilous.
 6. Always respond with valid JSON matching the requested format.
 7. Make the story feel like decisions matter—actions have consequences.
 8. Balance challenge with fun based on the difficulty setting.
@@ -669,7 +495,7 @@ ACTION FEASIBILITY (MANDATORY):
 - EXCEPTIONS: A character may summon a companion/familiar, or an NPC may arrive as part of the narrative — but this should be contextually justified.
 - suggestedActions MUST only include actions that are feasible given who and what is present at the current location. Do not suggest talking to NPCs who are elsewhere. Each suggestion MUST stay in the player character's voice (see SUGGESTED ACTIONS above).
 
-CURRENCY SYSTEM (WFRP):
+CURRENCY SYSTEM:
 The game uses three denominations: Gold Crown (GC), Silver Shilling (SS), Copper Penny (CP). 1 GC = 10 SS = 100 CP.
 - When the player BUYS or PAYS for anything, ALWAYS deduct the cost via stateChanges.moneyChange (use negative deltas, e.g. {"gold": 0, "silver": -2, "copper": -5} to spend 2 SS 5 CP).
 - If the player cannot afford the purchase (not enough money), the purchase MUST FAIL — narrate the merchant refusing or the character realizing they lack funds.
@@ -723,19 +549,17 @@ ${(() => {
   if (combatJustEnded) return 'Combat just ended — do not start another fight immediately.\n';
   return 'ENEMY STATS: The game engine automatically assigns balanced stat blocks to enemies in combatUpdate based on their name. You only need to provide the enemy name, wounds estimate, and weapon/armor names. The engine handles characteristics, skills, and traits.\n';
 })()}
-${character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some(t => t.includes('Arcane Magic')) ? `MAGIC SYSTEM:
-${formatMagicForPrompt(gameState?.magic?.knownSpells || [])}
-The character can cast spells using Channelling (WP) and Language (Magick) tests. Casting Number (CN) is the SL required. Doubles on casting rolls cause Miscasts. When the character attempts magic, describe the wind of magic flowing and the spell's visual effects.
-` : ''}${gameState?.world?.weather ? `CURRENT WEATHER:
-${formatWeatherForPrompt(gameState.world.weather)}
-Factor weather conditions into outdoor scenes — visibility, movement, NPC behavior, and test modifiers.
+${character?.spells?.known?.length > 0 || (character?.mana?.max || 0) > 0 ? `MAGIC SYSTEM (RPGon):
+${magicStatus}
+The character casts spells by spending Mana. Spells are organized in spell trees — using a spell progresses toward unlocking the next one. Scrolls can be used to learn new spells (25% + Intelligence bonus) or for one-shot casting.
+When the character casts a spell, include manaChange (negative) and spellUsage in stateChanges.
 ` : ''}${(() => {
   const loc = (currentLoc || '').toLowerCase();
   const inSettlement = /\b(town|city|village|market|shop|tavern|inn|port|harbor|harbour|forge|smithy|store|emporium|bazaar)\b/.test(loc);
   const recentNarrative = (gameState.scenes || []).slice(-2).map(s => s.narrative || '').join(' ').toLowerCase();
   const tradeLikely = inSettlement || /\b(buy|sell|trade|shop|merchant|vendor|barter|purchase|haggle)\b/.test(recentNarrative);
   if (!tradeLikely) return '';
-  return `EQUIPMENT & TRADE REFERENCE:\n${formatEquipmentForPrompt('weapons')}\n${formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
+  return `EQUIPMENT & TRADE REFERENCE:\n${gameData.formatEquipmentForPrompt('weapons')}\n${gameData.formatEquipmentForPrompt('armour')}\nWhen the character shops, use these prices as baseline. Reputation and location affect final prices.\n`;
 })()}
 
 ${(() => {
@@ -807,7 +631,7 @@ CODEX UPDATE FORMAT in stateChanges:
     "category": "artifact|person|place|event|faction|creature|concept",
     "fragment": {
       "content": "2-4 sentences of specific, detailed information about this subject...",
-      "source": "Who or what revealed this information (e.g. 'Elven scholar in Altdorf', 'Ancient tome', 'Local innkeeper')",
+      "source": "Who or what revealed this information (e.g. 'Wandering scholar', 'Ancient tome', 'Local innkeeper')",
       "aspect": "history|description|location|weakness|rumor|technical|political"
     },
     "tags": ["relevant", "search", "tags"],
@@ -825,16 +649,17 @@ When generating a combat encounter, include "combatUpdate" in stateChanges with 
   "combatUpdate": {
     "active": true,
     "enemies": [
-      {"name": "Enemy Name", "characteristics": {"ws": 35, "bs": 25, "s": 30, "t": 30, "i": 30, "ag": 30, "dex": 25, "int": 20, "wp": 25, "fel": 15}, "wounds": 10, "maxWounds": 10, "skills": {"Melee (Basic)": 5, "Dodge": 3}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
+      {"name": "Enemy Name", "attributes": {"sila": 10, "inteligencja": 8, "charyzma": 5, "zrecznosc": 10, "wytrzymalosc": 12, "szczescie": 3}, "wounds": 15, "maxWounds": 15, "skills": {"Walka bronia jednoręczna": {"level": 3}, "Uniki": {"level": 2}, "Strzelectwo": {"level": 1}}, "traits": [], "armour": {"body": 1}, "weapons": ["Hand Weapon"]}
     ],
     "reason": "Short description of why combat started"
   }
 }
 Include combatUpdate when the narrative describes the beginning of a hostile combat encounter. The client-side combat engine handles the actual turn-by-turn resolution.
+Enemy attributes use the RPGon 1-25 scale. Wounds = wytrzymalosc * 2 + 10. Typical enemies: weak (attr 5-8, 15-20 wounds), medium (attr 10-14, 25-35 wounds), strong (attr 15-20, 40-50 wounds).
 
 PLAYER-INITIATED COMBAT (MANDATORY):
 When the player's action explicitly involves attacking, starting a fight, initiating combat, challenging someone, or provoking a confrontation (e.g. "atakuję", "rozpoczynam walkę", "wyzywam go na pojedynek", "rzucam się na niego", "I attack", "I start a fight"), you MUST include "combatUpdate" in stateChanges with appropriate enemies:
-- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY — pick the closest match and adapt (a town guard → Bandit with +5 WS; a noble's bodyguard → Chaos Warrior scaled down). NEVER invent stats from scratch.
+- Use NPCs currently present in the scene as enemies. Build their stat blocks from the BESTIARY — pick the closest match and adapt.
 - If the player attacks a named NPC, that NPC becomes an enemy combatant. Their allies/guards may also join the fight.
 - The narrative should briefly describe the moment of escalation — the player draws a weapon, the NPC's eyes widen, bystanders scatter — then combat begins via combatUpdate.
 - If there is genuinely no one to fight (empty location, no NPCs, no creatures), narrate that there is no target and do NOT include combatUpdate.
@@ -843,21 +668,6 @@ When the player's action explicitly involves attacking, starting a fight, initia
 
 FACTION & REPUTATION:
 When the character's actions affect a faction's reputation (helping/hindering a guild, temple, criminal organization, military, noble house, or chaos cult), include "factionChanges" in stateChanges: {"guild_name": 5} where positive values improve reputation and negative values worsen it. Faction IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk. Reputation range: -100 to +100.
-
-DIALOGUE MODE:
-When the player requests a structured dialogue (negotiation, parley, group conversation) with 2+ NPCs, include "dialogueUpdate" in stateChanges:
-{
-  "dialogueUpdate": {
-    "active": true,
-    "npcs": [
-      {"name": "NPC Name", "attitude": "friendly", "goal": "what this NPC wants from the conversation"},
-      {"name": "Other NPC", "attitude": "neutral", "goal": "their conversational agenda"}
-    ],
-    "reason": "Short description of why dialogue mode started"
-  }
-}
-Include dialogueUpdate when the player explicitly asks to enter dialogue mode, negotiate with a group, or talk to multiple NPCs. The client-side dialogue engine handles round-by-round conversation flow.
-When dialogue mode is active (indicated in the prompt), the narrator/GM MUST stay silent — only NPCs speak. The "narrative" field should contain ONLY NPC dialogue (no narrator prose). All dialogueSegments must be type "dialogue" with character names. suggestedActions should be in-character lines the player can choose to speak — concrete things the PC would say aloud, not stage directions.
 
 NARRATIVE SEEDS (Foreshadowing / Chekhov's Guns):
 You may plant narrative seeds — small foreshadowing details that will pay off later. Include them in stateChanges.narrativeSeeds:
@@ -897,444 +707,9 @@ TICKING CLOCKS (Quest Deadlines):
 Some quests may have deadlines. When a deadline is approaching or has passed, escalate urgency: NPCs mention time pressure, environmental clues change, consequences begin manifesting.
 ${formatDeadlinesForPrompt(quests?.active, world?.timeState)}
 ${(() => {
-  const tension = calculateTensionScore(gameState.scenes, gameState.combat, gameState.dialogue);
+  const tension = calculateTensionScore(gameState.scenes, gameState.combat);
   return getTensionGuidance(tension, gameState.scenes);
 })()}`;
-}
-
-export function buildSceneGenerationPrompt(playerAction, isFirstScene = false, language = 'en', {
-  needsSystemEnabled = false,
-  characterNeeds = null,
-  isCustomAction = false,
-  fromAutoPlayer = false,
-  resolvedMechanics = null,
-  dialogue = null,
-  dialogueCooldown = 0,
-  scenes = null,
-  promptProfile = 'balanced',
-  sceneTokenBudget = null,
-  promptTokenBudget = null,
-} = {}, dmSettings = null) {
-  const langReminder = `\n\nLANGUAGE REMINDER: Write "narrative", "dialogueSegments" text, "suggestedActions", "journalEntries", "worldFacts", quest names/descriptions/completion conditions/objectives, and "questOffers" names/descriptions/rewards in ${language === 'pl' ? 'Polish' : 'English'}. Phrase each suggestedAction from the player character's perspective (first-person intent like "${language === 'pl' ? 'Przeszukuję skrzynię' : 'I search the chest'}" or clear PC-agency phrasing), not neutral GM-style labels. Only "soundEffect", "musicPrompt", and "imagePrompt" should remain in English.${language === 'pl' ? ' CRITICAL: suggestedActions must be fully in Polish — NEVER use English "I say:", "I ask", "I tell" — use "Mówię:", "Pytam:", etc. Do NOT start actions with "I" or "I ".' : ''}`;
-  const governanceReminder = `\nPROMPT GOVERNANCE:
-- Profile: ${promptProfile}
-- Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
-- Input budget: ~${promptTokenBudget ?? 'default'} tokens
-- NARRATION LENGTH CONTROL: Keep narrator prose about 25% shorter than your normal style for this kind of scene.
-- Be concise, avoid repeated exposition, keep JSON fields dense and actionable.\n`;
-
-  if (isFirstScene) {
-    return `Generate the opening scene of this campaign. Set the stage with an atmospheric description that draws the player in.
-
-PROMPT GOVERNANCE:
-- Profile: ${promptProfile}
-- Target output budget: ~${sceneTokenBudget ?? 'default'} tokens
-- Input budget: ~${promptTokenBudget ?? 'default'} tokens
-- OPENING SCENE LENGTH: Make the first scene extra concise (about half to three-quarters of your normal opening length).
-- NARRATION LENGTH CONTROL: Keep narrator prose about 25% shorter than your normal style.
-- Keep the response focused, structured, and free from repetitive filler.
-
-Respond with ONLY valid JSON in this exact format:
-{
-  "narrative": "A vivid but concise 1-2 short paragraph opening scene...",
-  "scenePacing": "exploration",
-  "dialogueSegments": [
-    {"type": "narration", "text": "Descriptive prose..."},
-    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
-    {"type": "narration", "text": "More prose..."}
-  ],
-  "soundEffect": "Short English description of ambient/atmospheric sound for this scene, or null",
-  "musicPrompt": "Short English description of ideal instrumental background music for this scene, or null",
-  "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
-  "sceneGrid": {
-    "width": 12,
-    "height": 12,
-    "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
-    "entities": [
-      {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
-      {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
-    ]
-  },
-  "atmosphere": {
-    "weather": "rain | snow | storm | clear | fog | fire",
-    "particles": "magic_dust | sparks | embers | arcane | none",
-    "mood": "mystical | dark | peaceful | tense | chaotic",
-    "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
-    "transition": "dissolve | fade | arcane_wipe"
-  },
-  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name; EXACTLY 1 should be a direct PC dialogue line like ${language === 'pl' ? 'Mówię: \\"...\\"' : 'I say: \\"...\\"'})"],
-  "stateChanges": {
-    "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
-    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "factionId": "merchants_guild", "relationships": []}],
-    "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
-    "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
-    "activeEffects": [],
-    "moneyChange": null,
-    "currentLocation": "Location Name",
-    "mapMode": "pola",
-    "roadVariant": null,
-    "codexUpdates": []${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
-  }
-}
-${needsSystemEnabled ? '\nFor stateChanges.needsChanges: use when the character satisfies a biological need (eating, drinking, toilet, bathing, resting). Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Use null if no needs changed.\n' : ''}
-For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
-For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
-
-For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour: quick interaction=0.25, short action/combat=0.5, exploration=0.75-1. Only resting (2-4) and sleeping (6-8) should exceed 1 hour.
-
-For stateChanges.journalEntries: provide 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant player decisions, discoveries, or combat outcomes. Each entry should be a self-contained 1-2 sentence summary. Do NOT log trivial details.
-
-For atmosphere: choose weather, particles, mood, lighting, and transition that match the scene's environment and tone. weather describes the environmental condition, particles adds visual flair (magic_dust for mystical places, sparks for forges/tech, embers for fire/destruction, arcane for magical events), mood sets the overall feel, lighting describes the scene's light source and quality (natural for daylight outdoors, night for darkness/starlight, dawn for sunrise/sunset, bright for strong direct light, rays for god-rays through trees/windows, candlelight for indoor dim light, moonlight for moon-lit nights), and transition is the visual transition into this scene (use "fade" for the opening scene).
-
-For musicPrompt: describe the ideal instrumental background music — mention instruments, tempo, and emotional tone. Keep under 200 characters. Example: "slow strings with harp arpeggios, mysterious and enchanting". Use null only if the scene should be silent.
-
-For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
-
-For sceneGrid: ALWAYS include a playable 2D tactical grid centered on the current scene. Use width/height 8-16. tiles must be a 2D array with exactly height rows and width columns. Tile symbols: W=wall (blocked), F=floor (walkable), P=player start, E=exit/path, D=door, I=interactive point. Include entities with exact x/y coordinates for the player and visible NPCs. Ensure every entity stands on a walkable tile.
-
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names. Every dialogue segment MUST have a "gender" field.
-NPCs present in the scene MUST speak in direct dialogue (as dialogue segments), not just be described in narration. Never summarize what an NPC says — let them speak.${langReminder}`;
-  }
-
-  const needsReminder = needsSystemEnabled ? buildUnmetNeedsBlock(characterNeeds) : '';
-
-  const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
-  const isFieldMove = playerAction && playerAction.startsWith('[FIELD_MOVE]');
-  const isContinue = playerAction === '[CONTINUE]';
-  const isWait = playerAction === '[WAIT]';
-  const isPostCombat = playerAction && playerAction.startsWith('[Combat resolved:');
-  const isSurrender = isPostCombat && playerAction.includes('surrendered');
-  const isTruce = isPostCombat && playerAction.includes('forced a truce');
-  const isPostCombatDefeat = isPostCombat && (
-    playerAction.includes('LOST the fight')
-    || playerAction.includes('did NOT win')
-    || playerAction.includes('party LOST the fight')
-  );
-
-  const actionPart = extractActionParts(playerAction);
-  const dialoguePart = extractDialogueParts(playerAction);
-  const playerHasDialogue = hasDialogue(playerAction);
-
-  const idleEventType = isIdleWorldEvent ? pickIdleEventType() : null;
-  const actionBlock = isIdleWorldEvent
-    ? `IDLE WORLD EVENT — NO PLAYER ACTION OCCURRED.
-EVENT TYPE: ${idleEventType}
-${idleEventType === 'atmospheric' ? 'Generate a small, atmospheric ambient event — something mundane, slice-of-life that happens TO or AROUND the character without their initiative.' : ''}${idleEventType === 'npc_activity' ? 'An NPC does something noticeable nearby — starts an argument, makes a trade, reacts to something, arrives or departs. This can introduce a new minor NPC or show an existing one acting autonomously.' : ''}${idleEventType === 'rumor' ? 'The character overhears a rumor, snippet of conversation, or piece of gossip. This can hint at quest opportunities, world events, or NPC activities.' : ''}${idleEventType === 'foreshadowing' ? 'Something subtly ominous or portentous happens — a symbol appears, an animal behaves strangely, a chill wind blows, distant thunder rumbles. Plant a narrative seed if appropriate.' : ''}${idleEventType === 'consequence_echo' ? 'A past player decision ripples back — someone recognizes the character, a consequence of an earlier choice manifests, or news of the character\'s past actions spreads.' : ''}
-
-RULES FOR THIS SCENE (MANDATORY):
-- The character did NOT take any action. Do not narrate the character doing something deliberate.
-- Something happens in the world spontaneously: a passerby, an animal, weather, a sound, a small incident nearby.
-- Keep the narrative SHORT (1-2 paragraphs). This is a minor world beat, not a major plot event.
-- The event CAN optionally plant a subtle quest hook or introduce a character, but it does NOT have to. Most of the time, keep it purely atmospheric.
-- No skill test is needed for this scene.
-- Do NOT start combat. Do NOT include combatUpdate.
-- suggestedActions should include reactions to what just happened in the PC's voice (e.g. ${language === 'pl' ? '"Klękam, żeby pogłaskać kota", "Podchodzę do sprzedawcy", "Otrzepuję się i udaję, że nic się nie stało", "Ignoruję to i idę dalej"' : '"I kneel to pet the cat", "I go over to the vendor", "I brush off the mess and act casual", "I ignore it and walk on"'}) plus normal exploration options.
-- stateChanges should be minimal or empty. A small timeAdvance (5-15 minutes) is appropriate.`
-    : isWait
-    ? `PLAYER CHOSE "WAIT" — PASSIVE OBSERVATION.
-
-The player deliberately waits and does NOT take initiative. They are watching, listening, or letting events unfold without acting.
-
-RULES FOR THIS SCENE (MANDATORY):
-- Do NOT narrate the player doing something goal-directed (no walking off, no starting conversations, no attacking). They remain passive unless reacting to something that happens TO them.
-- Something meaningful should develop: NPCs act, time passes, tension shifts, news arrives, an opportunity or threat emerges — this should feel more substantial than a tiny idle ambient beat, because the player chose to wait.
-- Advance the situation or plot thread; do not stall the story.
-- No skill test for this scene.
-- Do NOT start combat in this scene unless an external force attacks without the player provoking it; if combat starts, it is because the world came to them.
-- suggestedActions should offer ways to re-engage in first person or clear PC intent: ${language === 'pl' ? '"Odezwuję się", "Wkraczam", "Wymykam się", "Przyglądam się bliżej"' : '"I speak up", "I step in", "I slip away", "I take a closer look"'}, etc.
-- Include a modest timeAdvance (15 minutes to a few hours) if appropriate.`
-    : isContinue
-    ? `PLAYER CHOSE "CONTINUE" — KEEP THE STORY MOVING.
-
-The player wants the narrative to advance without specifying a concrete action. They are still engaged and present, but defer to the GM to push the scene forward.
-
-RULES FOR THIS SCENE (MANDATORY):
-- Advance the plot, deepen the current situation, or introduce the next beat — do not merely repeat the previous scene.
-- The character may participate naturally in what unfolds (walking with the flow, reacting to events), but do not invent a specific detailed player plan they did not state.
-- The game engine may or may not have resolved a skill check — narrate based on the user prompt outcome.
-- suggestedActions should be concrete, varied, and in the PC's voice (not generic "continue" only).
-- This is NOT the same as passive waiting — the player is active in the fiction, just not specifying how.`
-    : isPostCombat
-    ? `COMBAT JUST ENDED — ${playerAction}
-
-POST-COMBAT RULES (MANDATORY):
-- Do NOT include "combatUpdate" in this scene's stateChanges — combat has JUST ended, do not start another fight.
-- Narrate the aftermath: describe the battlefield, fallen enemies, the character's condition and wounds, loot found, NPC reactions if any witnesses are present.
-- The character may be wounded — reflect their physical state in the narration (heavy breathing, bleeding, pain from critical wounds).
-- No skill test is needed for this post-combat transition scene.
-- Suggest post-combat actions in the PC's voice: "I search the bodies for anything useful", "I bandage my wounds", "I catch my breath and rest a moment", "I push on down the road", "I try to work out why they attacked", etc.
-- If the character was defeated, narrate the consequences (capture, rescue, waking up elsewhere, losing items, etc.).${isPostCombatDefeat ? `
-
-DEFEAT RULES (MANDATORY — the player LOST this fight):
-- This scene is a DEFEAT aftermath, not a victory lap.
-- NEVER describe the player as the winner, never imply all enemies were beaten, and never frame the outcome as a triumphant continuation.
-- The surviving enemies, hostile environment, or immediate consequences are IN CONTROL of the scene.
-- Focus on defeat consequences such as capture, rescue, humiliation, being stripped of gear, waking later in pain, or barely surviving under enemy pressure.
-- Suggested actions must fit the losing position: plead, recover, escape captivity, search for help, crawl to safety, bargain, or treat wounds.` : ''}${isSurrender ? `
-
-SURRENDER RULES (MANDATORY — the player SURRENDERED, they did not win):
-- The player character dropped their weapon and yielded. The remaining enemies are NOW IN CONTROL of the situation.
-- Narrate the enemies' reaction to the surrender. Their response depends on WHO they are:
-  * Town guards / authorities → arrest, imprisonment, trial, confiscation of weapons. Use stateChanges to remove weapons/contraband via "itemsRemoved".
-  * Bandits / criminals → rob the player, take valuables and money. Use "itemsRemoved" and "moneyChange" (negative) to reflect theft.
-  * Intelligent enemies (NPCs, rival adventurers) → may capture, bind, interrogate, demand ransom, or force servitude. Consider their personality and goals.
-  * Monsters / beasts → if unintelligent, they may not accept surrender (narrate the player being dragged away, left for dead, or barely escaping).
-  * Faction enemies → use "factionChanges" to reflect reputation consequences (humiliation, submission).
-- The consequences MUST be meaningful: the player chose to surrender to avoid death, so they pay a price. Include at least one of: imprisonment, item confiscation, money loss, forced relocation, reputation damage, or a new quest/obligation imposed by the captors.
-- Suggest actions that reflect the surrendered state: negotiating with captors, attempting escape, accepting imprisonment, pleading for mercy, offering information/services in exchange for freedom.
-- Do NOT let the surrender have zero consequences — the enemies won and should act like victors.` : ''}${isTruce ? `
-
-TRUCE RULES (MANDATORY — the player FORCED A TRUCE from a position of strength):
-- The player had the upper hand — enemies were wounded, outnumbered, or losing badly — and demanded the remaining enemies stand down.
-- The enemies CONCEDE, not the player. Narrate the enemies backing off, dropping weapons, raising hands, fleeing, or grudgingly agreeing to cease hostilities.
-- The player KEEPS all their belongings. Do NOT use "itemsRemoved" or "moneyChange" (negative) — the player is the victor here.
-- Possible aftermath depending on WHO the enemies are:
-  * Town guards / authorities → they retreat and regroup, possibly calling for reinforcements later. Use "factionChanges" if the player's dominance affects local reputation.
-  * Bandits / criminals → they scatter, beg for mercy, or offer information to save themselves. The player may loot the fallen.
-  * Intelligent enemies (NPCs, rival adventurers) → grudging respect, temporary ceasefire, information exchange, or negotiated terms. They may become reluctant allies or sworn enemies later.
-  * Monsters / beasts → unintelligent creatures slink away wounded; intelligent ones may bargain or submit.
-  * Faction enemies → use "factionChanges" to reflect the power shift (fear, grudging respect, or escalation).
-- The player is in a DOMINANT position. Suggest actions that reflect this: demand information, interrogate survivors, loot fallen enemies, let them go with a warning, take prisoners, tend to wounds, press the advantage.
-- The truce may have future consequences — enemies may return with reinforcements, spread word of the player's prowess, or honor/betray the ceasefire.` : ''}`
-    : isFieldMove
-    ? `FIELD MAP MOVEMENT — ${playerAction}
-
-The player has been traveling on the overworld field map. The technical payload above describes their movement — distance covered, starting/ending position, biome, and any points of interest discovered.
-
-RULES FOR THIS SCENE (MANDATORY):
-- This is a TRAVEL scene. The character has been walking through the ${playerAction.match(/biome=(\w+)/)?.[1] || 'unknown'} biome on the field map.
-- Narrate what happens during the journey: encounters, observations, weather, discoveries, atmosphere.
-- If the player discovered POIs (buildings, shrines, portals, etc.), describe them in detail and offer interaction opportunities.
-- If the player moved very little or stayed idle (high idleSteps), narrate local ambiance or small events instead of travel.
-- Keep the narrative moderate in length (2-3 paragraphs) unless something significant occurs.
-- Include timeAdvance proportional to steps taken (15 steps ≈ 0.5 to 1 hour depending on terrain).
-- suggestedActions should reflect what the player can do at their current location: explore nearby structures, set up camp, forage, investigate, or continue moving.
-- You may introduce random encounters, NPC travelers, environmental hazards, or quest hooks based on the biome and distance covered.
-- Do NOT start combat unless the narrative strongly calls for it (random bandit ambush, wild beast encounter, etc.).`
-    : playerHasDialogue
-      ? `The player's ACTION: ${actionPart}
-The player's DIALOGUE (exact words the character speaks aloud): ${dialoguePart}`
-      : `The player's action: ${playerAction}`;
-
-  const combatIntentDetected = !isPostCombat && detectCombatIntent(playerAction);
-  const isGeneralCombatInitiation = playerAction?.startsWith('[INITIATE COMBAT]');
-  const attackNpcMatch = playerAction?.match(/^\[ATTACK:\s*(.+?)\]$/);
-  const attackedNpcName = attackNpcMatch?.[1];
-
-  let combatReminder = '';
-  if (isGeneralCombatInitiation) {
-    combatReminder = `\n\nPLAYER INITIATED COMBAT — MANDATORY RESPONSE REQUIREMENT:
-The player pressed the "Initiate Combat" button. You MUST analyze ALL NPCs present in this scene and determine who is hostile based on their attitude, disposition, and relationships:
-- NPCs with attitude "hostile" or negative disposition MUST become enemies.
-- NPCs with attitude "neutral" or "friendly" should generally NOT become enemies unless the narrative context demands it (e.g. they are secretly working with the hostile NPCs, or story logic dictates they would join the fight).
-- If there are no hostile NPCs present, introduce contextually appropriate enemies (bandits ambush, creatures emerge, etc.) or narrate that there is no immediate threat and do NOT include combatUpdate.
-- You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array. The game engine will fill in stats automatically based on enemy names.
-- For any NPC that becomes an enemy, also include them in stateChanges.npcs with action "update" and attitude "hostile".
-Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "Bandit"}], "reason": "why combat started"}\n`;
-  } else if (attackedNpcName) {
-    combatReminder = `\n\nPLAYER ATTACKS SPECIFIC NPC — MANDATORY RESPONSE REQUIREMENT:
-The player is deliberately attacking "${attackedNpcName}". This NPC MUST be included in combatUpdate.enemies, regardless of their current attitude (even if friendly or neutral).
-- "${attackedNpcName}" becomes hostile. Include them in stateChanges.npcs with action "update" and attitude "hostile".
-- Check if "${attackedNpcName}" has allies, guards, or companions present in the scene. If so, those allies should also join as enemies in combatUpdate (and also be set to hostile in stateChanges.npcs).
-- Other NPCs who are NOT allied with the target should react appropriately: bystanders flee, authorities may intervene later, witnesses remember.
-- The narrative should describe the moment of aggression — the player strikes first, the target's shock or readiness, the chaos that ensues.
-- You MUST include "combatUpdate" in stateChanges with "active": true and the enemies array. The game engine will fill in stats automatically.
-Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "${attackedNpcName}"}], "reason": "Player attacked ${attackedNpcName}"}\n`;
-  } else if (combatIntentDetected) {
-    combatReminder = `\n\nCOMBAT INTENT DETECTED — MANDATORY RESPONSE REQUIREMENT:
-The player is explicitly initiating combat. You MUST include "combatUpdate" in stateChanges with "active": true and an "enemies" array.
-Use NPCs present in the scene as enemies. If no specific NPCs are present, use contextually appropriate opponents (bandits, guards, etc.).
-Do NOT narrate combat without including combatUpdate — the client combat engine needs it. Do NOT set combatUpdate to null.
-Example: "combatUpdate": {"active": true, "enemies": [{"name": "Bandit"}], "reason": "why combat started"}\n`;
-  }
-
-  const isPostDialogue = playerAction && playerAction.startsWith('[Dialogue ended:');
-  const isDialogueActive = dialogue?.active;
-  const isDialogueInitiation = playerAction?.startsWith('[INITIATE DIALOGUE');
-  const talkNpcMatch = playerAction?.match(/^\[TALK:\s*(.+?)\]$/);
-  const dialogueIntentDetected = !isPostCombat && !isPostDialogue && detectDialogueIntent(playerAction);
-
-  let dialogueReminder = '';
-  if (isDialogueActive) {
-    const npcNames = (dialogue.npcs || []).map((n) => n.name).join(', ');
-    const npcGoals = (dialogue.npcs || []).map((n) => `${n.name} (${n.attitude}): ${n.goal || 'engaging in conversation'}`).join('\n');
-    dialogueReminder = `\n\nDIALOGUE MODE ACTIVE — Round ${dialogue.round}/${dialogue.maxRounds}
-NPCs in conversation: ${npcNames}
-NPC goals:
-${npcGoals}
-
-MANDATORY DIALOGUE MODE RULES:
-- The narrator/GM MUST stay completely silent — NO narrator prose or description.
-- ONLY NPCs speak. The "narrative" must contain ONLY the NPCs' spoken dialogue lines.
-- ALL dialogueSegments must be type "dialogue" with an NPC character name and gender. Do NOT include any "narration" segments.
-- Each NPC should respond in character based on their personality, attitude, and conversational goal.
-- suggestedActions must be concrete in-character lines the PC can say (direct speech the player selects) — NOT physical stage directions or narrator summaries.
-- Do NOT include combatUpdate.
-- The game engine handles any skill checks. Focus on the narrative celebration.
-- ${dialogue.round >= dialogue.maxRounds ? 'This is the LAST round. NPCs should wrap up the conversation naturally. Include "dialogueUpdate": {"active": false} in stateChanges to end dialogue mode.' : `${dialogue.maxRounds - dialogue.round} round(s) remaining.`}\n`;
-  } else if (isPostDialogue) {
-    dialogueReminder = `\n\nDIALOGUE JUST ENDED — ${playerAction}
-
-POST-DIALOGUE RULES (MANDATORY):
-- Do NOT include "dialogueUpdate" in stateChanges — dialogue has JUST ended.
-- Return to normal narration: narrator describes the aftermath and consequences of the conversation.
-- Reflect the outcome of the dialogue: agreements reached, information gained, NPC disposition changes, rejected proposals, etc.
-- suggestedActions should be normal exploration/action options based on the dialogue outcome, phrased from the player character's perspective.
-- No skill test for this transition scene.\n`;
-  } else if (isDialogueInitiation) {
-    const npcListMatch = playerAction.match(/\[INITIATE DIALOGUE:\s*(.+?)\]/);
-    const requestedNpcs = npcListMatch ? npcListMatch[1] : 'nearby NPCs';
-    dialogueReminder = `\n\nPLAYER INITIATED DIALOGUE MODE — MANDATORY RESPONSE REQUIREMENT:
-The player wants to enter a structured dialogue with: ${requestedNpcs}.
-You MUST include "dialogueUpdate" in stateChanges with "active": true and an "npcs" array listing the conversation participants (at least 2 NPCs).
-Each NPC entry needs: {"name": "NPC Name", "attitude": "friendly|neutral|hostile", "goal": "what this NPC wants from the conversation"}.
-The narrative should set up the conversation — NPCs notice the player approaching and begin to engage.
-Example: "dialogueUpdate": {"active": true, "npcs": [{"name": "Merchant Hans", "attitude": "friendly", "goal": "sell wares at a premium"}, {"name": "Guard Captain", "attitude": "neutral", "goal": "maintain order"}], "reason": "Player initiated group dialogue"}\n`;
-  } else if (talkNpcMatch) {
-    dialogueReminder = `\n\nPLAYER WANTS TO TALK TO "${talkNpcMatch[1]}" — consider including "dialogueUpdate" in stateChanges if there are 2+ NPCs available for a structured conversation. Otherwise proceed with normal narrative dialogue.\n`;
-  } else if (dialogueIntentDetected && dialogueCooldown <= 0) {
-    dialogueReminder = `\n\nDIALOGUE INTENT DETECTED: The player wants to talk/negotiate. If 2+ NPCs are present, consider including "dialogueUpdate" in stateChanges to start dialogue mode. Otherwise, narrate the conversation normally.\n`;
-  } else if (dialogueCooldown > 0 && dialogueIntentDetected) {
-    dialogueReminder = `\n\nDIALOGUE MODE ON COOLDOWN (${dialogueCooldown} scenes remaining). The character needs time to recover their social energy. Narrate the conversation normally without entering dialogue mode — do NOT include dialogueUpdate.\n`;
-  }
-
-  return `${needsReminder}${governanceReminder}${actionBlock}${combatReminder}${dialogueReminder}
-${isPostCombat ? '' : `
-ACTION VS SPEECH (CRITICAL — read both rules carefully):
-RULE 1 — ACTION PARTS: The ACTION line describes what the character DOES — narrate it as action in prose. Never turn action text into spoken dialogue (the character must NOT announce their own action aloud).
-RULE 2 — SPEECH PARTS (MANDATORY): The DIALOGUE line (if present) contains the character's exact in-character speech. You MUST include each quoted phrase as a "dialogue" segment in dialogueSegments with the player character's name and gender. Do NOT skip, paraphrase, or fold quoted speech into narration — present it as actual spoken dialogue.
-SEGMENT ORDER: When the player spoke in this beat, list their "dialogue" segment(s) first in dialogueSegments, then narration and other speakers — chronological order for the reader.
-If there is no DIALOGUE line, the character does not speak (unless you as GM decide they would naturally say something brief and contextually fitting — but never the player's action text verbatim).
-`}
-Resolve this action and advance the story. Determine outcomes, describe the consequences, and set up the next decision point.
-
-NPC DIRECT SPEECH REMINDER: If any NPC is present in the scene and reacts to the player, that NPC MUST speak in direct dialogue (a "dialogue" segment with their name). Do NOT just describe their reaction in narration — let them talk. Every scene where the player interacts with an NPC must produce at least one NPC dialogue segment.
-
-SKILL CHECK (resolved by game engine — DO NOT calculate dice rolls):
-${formatResolvedCheck(resolvedMechanics?.diceRoll)}
-
-${resolvedMechanics?.diceRoll ? `IMPORTANT: The skill check above was resolved by the game engine. Your narrative MUST be consistent with the outcome:
-- If the result is SUCCESS, the character succeeds at the action.
-- If the result is FAILURE, the character fails — do NOT narrate success.
-- If CRITICAL SUCCESS, describe an exceptional success with bonus effects.
-- If CRITICAL FAILURE, describe a spectacular failure with extra consequences.
-- The SL magnitude indicates how well/poorly: SL +3 or higher = impressive, SL -3 or lower = very bad.
-DO NOT include a "diceRoll" field in your JSON response — the game engine handles all mechanics.` : 'No skill check for this action. DO NOT include a "diceRoll" field in your JSON response.'}
-
-Respond with ONLY valid JSON in this exact format:
-{
-  "narrative": "1-2 concise paragraphs describing what happens as a result of the player's action and setting up the next beat...",
-  "scenePacing": "exploration | combat | chase | stealth | dialogue | travel_montage | celebration | rest | dramatic | dream | cutscene",
-  "cutscene": null,
-  "dilemma": null,
-  "dialogueSegments": [
-    {"type": "narration", "text": "Descriptive prose..."},
-    {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."},
-    {"type": "narration", "text": "More prose..."}
-  ],
-  "soundEffect": "Short English description of a sound effect for impactful moments, or null",
-  "musicPrompt": "Short English description of ideal instrumental background music for this scene, or null",
-  "imagePrompt": "Short ENGLISH visual description of the scene for AI image generation (max 200 chars)",
-  "sceneGrid": {
-    "width": 12,
-    "height": 12,
-    "tiles": [["W","W","W","W"],["W","P","F","E"],["W","F","I","W"],["W","W","W","W"]],
-    "entities": [
-      {"name": "Player Name", "type": "player", "x": 1, "y": 1, "marker": "@"},
-      {"name": "NPC Name", "type": "npc", "x": 2, "y": 2, "marker": "N"}
-    ]
-  },
-  "atmosphere": {
-    "weather": "rain | snow | storm | clear | fog | fire",
-    "particles": "magic_dust | sparks | embers | arcane | none",
-    "mood": "mystical | dark | peaceful | tense | chaotic",
-    "lighting": "natural | night | dawn | bright | rays | candlelight | moonlight",
-    "transition": "dissolve | fade | arcane_wipe"
-  },
-  "suggestedActions": ["(EXACTLY 3 UNIQUE actions specific to THIS scene — reference NPCs, objects, locations by name. NEVER repeat previous suggestions. EXACTLY 1 should be a direct PC dialogue line)"],
-  "questOffers": [],
-  "stateChanges": {
-    "woundsChange": 0,
-    "xp": 0,
-    "fortuneChange": 0,
-    "resolveChange": 0,
-    "newItems": [],
-    "removeItems": [],
-    "newQuests": [],
-    "completedQuests": [],
-    "questUpdates": [],
-    "worldFacts": [],
-    "journalEntries": ["Concise 1-2 sentence summary of a key event from this scene"],
-    "statuses": null,
-    "skillAdvances": null,
-    "newTalents": null,
-    "careerAdvance": null,
-    "npcs": [{"action": "introduce|update", "name": "NPC Name", "gender": "male|female", "role": "their role", "personality": "traits", "attitude": "friendly|neutral|hostile|fearful|etc", "location": "where they are", "notes": "optional notes", "dispositionChange": 5, "factionId": "faction_id_or_null", "relationships": [{"npcName": "Other NPC", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]}],
-    "mapChanges": [{"location": "Location Name", "modification": "what changed", "type": "trap|obstacle|discovery|destruction|other"}],
-    "timeAdvance": {"hoursElapsed": 0.5, "newDay": false},
-    "activeEffects": [{"action": "add|remove|trigger", "id": "unique_id", "type": "trap|spell|environmental", "location": "where", "description": "what it does", "placedBy": "who placed it"}],
-    "moneyChange": {"gold": 0, "silver": 0, "copper": 0},
-    "currentLocation": "Current Location Name",
-    "factionChanges": null,
-    "combatUpdate": "INCLUDE combatUpdate OBJECT WITH active:true AND enemies ARRAY WHEN COMBAT STARTS — omit or set null when no combat",
-    "dialogueUpdate": "INCLUDE dialogueUpdate OBJECT WITH active:true AND npcs ARRAY WHEN DIALOGUE MODE STARTS — omit or set null when no dialogue mode",
-    "knowledgeUpdates": null,
-    "codexUpdates": [],
-    "mapMode": "pola",
-    "roadVariant": null,
-    "campaignEnd": null${needsSystemEnabled ? ',\n    "needsChanges": {"hunger": 0, "thirst": 0, "bladder": 0, "hygiene": 0, "rest": 0}' : ''}
-  }
-}
-
-For atmosphere: choose weather, particles, mood, lighting, and transition that best match the current scene's environment. Pick ONE value for each field. weather = environmental condition (clear/rain/snow/storm/fog/fire). particles = visual flair (magic_dust/sparks/embers/arcane/none). mood = overall feel (mystical/dark/peaceful/tense/chaotic). lighting = light source and quality (natural for daylight, night for darkness/starlight, dawn for sunrise/sunset, bright for strong light, rays for god-rays through trees/windows, candlelight for dim indoor light, moonlight for moon-lit nights). transition = how the scene visually transitions in (dissolve/fade/arcane_wipe — use arcane_wipe for magical events, dissolve for abrupt changes, fade for calm transitions).
-
-For stateChanges: woundsChange is a DELTA (negative = damage, positive = healing). xp is a DELTA (typically +20 to +50 per scene). fortuneChange/resolveChange are DELTAS (usually negative when spent). newItems should be objects with {id, name, type, description, rarity}. newQuests should be objects with {id, name, description, completionCondition, objectives: [{id, description}], questGiverId, turnInNpcId, locationId, prerequisiteQuestIds, reward: {xp, money: {gold, silver, copper}, items: [{id, name, type, description, rarity}], description}, type: "main|side|personal"}. "completionCondition" is the main goal to finish the quest. "objectives" are 2-5 optional milestones guiding the player through the story. "questGiverId" is the NPC name who assigned the quest. "turnInNpcId" is the NPC name to report quest completion to (defaults to questGiverId if omitted). "locationId" is the main location where the quest takes place. "prerequisiteQuestIds" is an array of quest IDs that must be completed before this quest can progress. "reward" MUST be included on every quest — use xp (side: 25-75, main: 100-200), optionally money and items. "type" is "main" for central plot, "side" for independent, "personal" for character-specific. worldFacts are strings of new information. journalEntries are 1-3 concise summaries of IMPORTANT events only — major plot developments, key NPC encounters, significant decisions, discoveries, or combat outcomes. Each entry: 1-2 sentences, self-contained. Do NOT log trivial details. Set any field to null/empty to skip it.
-QUEST TRACKING (MANDATORY): For stateChanges.questUpdates: array of objective completions, e.g. [{"questId": "quest_123", "objectiveId": "obj_1", "completed": true}]. AFTER writing the narrative, you MUST cross-check ALL active quest objectives against the scene events. If the narrative describes events that fulfill any objective (even partially or indirectly), you MUST include the corresponding questUpdates entry. NEVER write a journal entry or narrative that fulfills an objective without marking it here. This is separate from completedQuests which finishes the entire quest.
-QUEST DISCOVERY: When the player explicitly asks about available work, tasks, quests, jobs, or missions (e.g. "I look for quests", "I ask about available work", "I check the notice board"), populate the top-level "questOffers" array with 1-3 quest proposals. Each offer: {"id": "quest_<unique>", "name": "Quest Name", "description": "What the quest entails", "completionCondition": "What must be done to complete it", "objectives": [{"id": "obj_1", "description": "First milestone"}, ...], "locationId": "Primary quest location name", "offeredBy": "NPC name or source", "reward": {"xp": 50, "money": {"gold": 1, "silver": 0, "copper": 0}, "items": [], "description": "50 XP and 1 Gold Crown"}, "type": "main|side|personal"}. "locationId" is MANDATORY for every quest offer and must point to a concrete place in the current world (existing location or a newly introduced one). Narrate the quest sources naturally — NPCs offering jobs, notice boards, tavern rumors, guild contacts, merchant requests, desperate villagers, etc. Quest offers should: (a) mix story-related and independent hooks, (b) fit the current location, NPCs, and world state, (c) have 2-5 trackable objectives, (d) vary in scope — some quick side jobs, some longer arcs. The "type" field: "main" for quests tied to the campaign's central plot, "side" for independent adventures, "personal" for character-specific goals. Use "questOffers" for quests the player discovers and can choose to accept or decline. Use "stateChanges.newQuests" ONLY for quests forced by story events (unavoidable plot developments). When NOT asked about quests, leave "questOffers" as an empty array [].
-ITEM VALIDATION: The character can ONLY use items currently listed in their Inventory above. If the player's action references using an item they do not possess, the action MUST fail or the narrative should reflect they don't have it. Only include items in removeItems that exist in the character's inventory.
-ITEM/MONEY ACQUISITION (CRITICAL — NEVER FORGET): If the narrative describes the character OBTAINING anything (picking up, finding, looting, receiving, buying, stealing, crafting), you MUST mechanically add it: physical items → stateChanges.newItems, money/coins → stateChanges.moneyChange. A narrated acquisition without the matching stateChanges entry is a BUG. After writing the narrative, cross-check: did the character gain any object or money? If yes, verify the corresponding stateChanges field is populated.
-LOOT RARITY GATING (enforced by campaign progression):
-- Scenes 1-15 (Act 1): Only "common" and "uncommon" items as loot or purchases. "rare" items only as major quest rewards.
-- Scenes 16-30 (Act 2): "rare" items available through merchants, loot, and quests. "exotic" items only through major quest lines with narrative buildup.
-- Scenes 31+ (Act 3+): "exotic" items possible but ALWAYS with narrative cost — they attract thieves, faction interest, rumors, political consequences, or obligations. Powerful items are never free.
-- COST OF OWNERSHIP: Rare and exotic items draw attention. NPCs comment on them, thieves target the character, factions want them, and rumors spread about whoever carries them. Include these consequences in worldFacts and NPC reactions.
-- Always set the "rarity" field on new items: "common", "uncommon", "rare", or "exotic".
-For stateChanges.moneyChange: an object with {gold, silver, copper} DELTAS. Use negative values when the character spends money (buying, paying, bribing) and positive values when receiving money (loot, rewards, selling). The system auto-normalizes denominations. ALWAYS check the character's Money before allowing a purchase — if they cannot afford it, the purchase must fail narratively. Use null if no money changed.
-For stateChanges.skillAdvances: an object mapping skill names to advance amounts, e.g. {"Melee (Basic)": 1, "Dodge": 1}. Use only when the GM narratively teaches or the character practices a skill. Use null if no skills improved.
-For stateChanges.newTalents: an array of talent names gained, e.g. ["Strike Mighty Blow"]. Use null if none.
-For stateChanges.careerAdvance: use when the character advances career tier or changes career. Object with fields: {tier, tierName, name, class, status}. Use null if no career change.
-
-For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
-CRITICAL NPC NAME RULE: Do NOT create NPC entries for anonymous/descriptive speakers such as "głos zza kamienia", "voice from behind the door", "someone", or "unknown". These belong in narrative/dialogue only, not in stateChanges.npcs.
-NPC RELATIONSHIP TRACKING: When introducing or updating NPCs, include these optional fields to build the world relationship graph:
-- "factionId": the faction this NPC belongs to (merchants_guild, thieves_guild, temple_sigmar, etc.) — faction reputation will automatically influence their disposition toward the player
-- "relatedQuestIds": array of quest IDs this NPC is involved in (as quest giver, target, or participant)
-- "relationships": array of NPC-to-NPC relationships: [{"npcName": "Other NPC Name", "type": "ally|enemy|family|employer|rival|friend|mentor|subordinate"}]
-These relationships persist across scenes and are used for world consistency. Always set factionId for NPCs who belong to a known faction.
-NPC DISPOSITION TRACKING: When a skill check involves interaction with an NPC (check the SKILL CHECK section in user prompt for the outcome), include that NPC in stateChanges.npcs with a variable "dispositionChange" based on SL — NOT a flat +5/-5:
-- Critical success: +3 to +5
-- Strong success (SL 3+): +2 to +3
-- Marginal success (SL 0-2): +1 to +2
-- Marginal failure (SL -1 to -2): -1 to -2
-- Hard failure (SL -3 or worse): -3 to -5
-- Critical failure: -5 to -8
-- Betrayal, broken promise, or threat: -8 to -10 (immediate, regardless of roll)
-Trust builds SLOWLY but breaks FAST. Disposition delta is capped at +-10 per scene by the game engine.
-NPC PERSONALITY FRICTION: At least 30% of NPCs should be naturally suspicious, hostile, self-interested, or uncooperative. Not every NPC wants to help. Introduce suspicious/hostile NPCs with negative starting disposition (-5 to -20).
-NPC GRUDGE MEMORY: NPCs remember humiliations, failures, threats, and broken promises. These persist across scenes and reduce disposition permanently. Record grudges in NPC notes via stateChanges.npcs. When an NPC has been wronged, reference it in their dialogue and behavior — they do NOT forgive easily.
-For stateChanges.mapChanges: log environmental changes to locations (traps set, doors opened, items left, destruction). type is one of: trap, obstacle, discovery, destruction, other.
-For stateChanges.timeAdvance: ALWAYS include "hoursElapsed" (decimal). Each action typically takes 15 min to 1 hour of in-game time: quick dialogue/interaction=0.25, short action/combat=0.5, exploration/travel=0.75-1. Only resting (2-4h) and sleeping (6-8h) should exceed 1 hour. Set newDay=true when a new day begins.
-For stateChanges.activeEffects: use "add" to place new effects (traps, spells, environmental), "remove" to clear them, "trigger" to mark as triggered. Each needs a unique id.
-For stateChanges.currentLocation: update whenever the player moves to a new location.
-For stateChanges.mapMode (MANDATORY): Set the procedural field-map mode matching the current scene environment. Exactly one of: "trakt" (road/path between locations), "pola" (open fields, plains, farmland), "wnetrze" (interior — tavern, dungeon room, house, cave), "las" (forest, dense woods). Choose based on WHERE the scene takes place, not the overall biome.
-For stateChanges.roadVariant: ONLY set when mapMode is "trakt". Describes the road surroundings. One of: "pola" (road through fields/plains), "las" (road through forest), "miasto" (road through town/city). Use null when mapMode is not "trakt".
-${needsSystemEnabled ? 'For stateChanges.needsChanges: MANDATORY when the character eats, drinks, uses a toilet, bathes, or rests — you MUST include non-zero deltas. Value is an object of DELTAS: {"hunger": 60, "thirst": 40} means +60 hunger and +40 thirst. Typical values: full meal +50-70 hunger, snack +20-30, drink +40-60 thirst, toilet → set bladder to 100, bath +60-80 hygiene, nap +20-30 rest. SLEEPING AT INN/TAVERN: restore ALL needs to 100 (the character eats, drinks, uses the privy, washes, and sleeps). Set all values to 0 only when no need was satisfied in this scene. Needs only affect narration when below 10.\n' : ''}
-For imagePrompt: describe the visual scene composition in ENGLISH — subjects, environment, lighting, colors, atmosphere. Keep under 200 characters. Always English regardless of narrative language.
-For sceneGrid: MANDATORY in every scene. Build a coherent 2D grid around the current action. width/height must be 8-16, tiles must exactly match those dimensions, and every row must be equal length. Use tile symbols: W=wall, F=floor, P=player start, E=exit/path, D=door, I=interactive point. Include entities with x/y coordinates for player and all visible NPCs/enemies. Keep entities on walkable tiles only.
-
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Use consistent NPC names across scenes. Every dialogue segment MUST have a "gender" field ("male" or "female").${needsSystemEnabled ? buildNeedsEnforcementReminder(characterNeeds, language) : ''}${buildPacingPressure(scenes)}${shouldGenerateDilemma(scenes) ? '\nDILEMMA OPPORTUNITY: It has been several scenes since the last moral dilemma. Consider presenting one if the narrative naturally supports it — include a "dilemma" field with 2-4 meaningful choices.\n' : ''}${langReminder}`;
 }
 
 export function buildCampaignCreationPrompt(settings, language = 'en') {
@@ -1350,10 +725,6 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `- Character species: ${settings.species}`
     : '- Character species: not specified (suggest a fitting species — Human, Halfling, Dwarf, High Elf, or Wood Elf)';
 
-  const careerLine = settings.careerPreference
-    ? `- Preferred career: ${settings.careerPreference}`
-    : '- Career: not specified (suggest a career fitting the story and species)';
-
   const existingCharNote = settings.existingCharacter
     ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene narrative and dialogueSegments. The characterSuggestion stats will be ignored — focus on making the firstScene narrative fit this character's identity.`
     : '';
@@ -1362,7 +733,7 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
     ? `\n\nHUMOROUS TONE GUIDELINES: The humor must NOT rely on random absurdity, slapstick, or zaniness. Ground the campaign in a believable world and derive comedy from character flaws, social misunderstandings, irony, awkward situations, and moral dilemmas. Keep wit sharp but varied. Avoid repeating one joke template or one recurring comparison (for example constant tax/tax-collector jokes).`
     : '';
 
-  return `Create a new WFRP 4th Edition campaign with these parameters:
+  return `Create a new RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
@@ -1370,36 +741,25 @@ export function buildCampaignCreationPrompt(settings, language = 'en') {
 - Campaign Length: ${settings.length}
 ${characterNameLine}
 ${speciesLine}
-${careerLine}
 - Player's story idea: "${settings.storyPrompt}"
 ${langInstruction}${existingCharNote}${humorousToneGuidance}
 
-Generate the campaign foundation. The game uses Warhammer Fantasy Roleplay 4th Edition rules. The 10 characteristics are: WS (Weapon Skill), BS (Ballistic Skill), S (Strength), T (Toughness), I (Initiative), Ag (Agility), Dex (Dexterity), Int (Intelligence), WP (Willpower), Fel (Fellowship). Each characteristic is generated as 2d10 + species base modifier (typically 20 for Humans).
+Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 
 Respond with ONLY valid JSON:
 {
   "name": "A compelling campaign name (3-5 words)",
-  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state of the Old World",
+  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "name": "${settings.characterName?.trim() || 'A fitting character name'}",
     "species": "${settings.species || 'Human'}",
-    "career": {
-      "class": "Career class (Academics/Burghers/Courtiers/Peasants/Rangers/Riverfolk/Rogues/Warriors)",
-      "name": "Career name (e.g. Soldier, Wizard, Rat Catcher)",
-      "tier": 1,
-      "tierName": "Tier 1 name of the career",
-      "status": "Social status (e.g. Silver 1, Brass 3)"
+    "attributes": {
+      "sila": 12, "inteligencja": 10, "charyzma": 11, "zrecznosc": 13, "wytrzymalosc": 10, "szczescie": 7
     },
-    "characteristics": {
-      "ws": 31, "bs": 25, "s": 34, "t": 28, "i": 30,
-      "ag": 33, "dex": 27, "int": 35, "wp": 29, "fel": 32
-    },
-    "skills": {"Melee (Basic)": 5, "Dodge": 3, "Cool": 3, "Endurance": 5, "Perception": 3, "Athletics": 3, "Gossip": 3, "Ranged (Bow)": 3},
-    "talents": ["Warrior Born", "Drilled"],
-    "fate": 2,
-    "resilience": 1,
-    "backstory": "2-3 sentences of character backstory tied to the world and the Old World setting",
+    "skills": {"Walka bronia jednoręczna": {"level": 3}, "Uniki": {"level": 2}, "Spostrzegawczosc": {"level": 5}, "Perswazja": {"level": 5}},
+    "mana": {"current": 0, "max": 0},
+    "backstory": "2-3 sentences of character backstory tied to the world",
     "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}],
     "money": {"gold": 0, "silver": 5, "copper": 0}
   },
@@ -1501,252 +861,16 @@ IMPORTANT for initialQuest and initialNPCs:
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 
 IMPORTANT for characterSuggestion:
-- Generate realistic WFRP characteristics: each is 2d10 + species base (20 for Human). Values typically range 21-40, center around 30.
-- Skills object maps skill name to number of advances (typically 3-10 for starting character). Include 6-10 career-appropriate skills.
-- Include 1-3 starting talents from the career's tier 1 talent list.
-- Set fate/resilience based on species (Human: fate 2, resilience 1; Dwarf: fate 0, resilience 2; Halfling: fate 0, resilience 2; Elves: fate 0, resilience 0).
-- Include 2-5 starting inventory items appropriate for the career (weapons, tools, trappings).
-- Set starting money based on career status tier: Brass careers get {gold:0, silver:0, copper:10-20}, Silver careers get {gold:0, silver:3-8, copper:0}, Gold careers get {gold:2-8, silver:0, copper:0}.
+- Generate attributes on the 1-25 scale. Starting characters typically have attributes 8-15, with species modifiers applied (Dwarves: +2 Sila, +3 Wytrzymalosc; Elves: +2 Inteligencja, +2 Zrecznosc; Halflings: +2 Zrecznosc, +3 Szczescie).
+- Skills use {"skillName": {"level": N}} format where level is 0-5 for starting characters. Include 4-8 skills.
+- Set mana to {"current": 0, "max": 0} for non-magical characters. Elves start with {"current": 2, "max": 2}.
+- Include 2-5 starting inventory items (weapons, tools, gear).
+- Set starting money to {gold:0, silver:1-5, copper:0} for typical characters.
 
 The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
 The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.
 
 IMPORTANT for firstScene stateChanges (if included) or top-level initialMapMode: Include "mapMode" in the firstScene's context. The opening scene should establish the field-map mode: "trakt" (road/path), "pola" (open fields), "wnetrze" (interior), or "las" (forest). If the scene starts in a tavern, set "wnetrze"; if on a road, set "trakt"; if in a forest, set "las"; if in open countryside, set "pola".`;
-}
-
-const SANITIZE_PATTERNS = [
-  /\b(blood|bloody|bleeding|bloodied|bloodstain(ed)?)\b/gi,
-  /\b(gore|gory|guts|entrails|viscera|dismember(ed|ment)?)\b/gi,
-  /\b(corpse|dead\s+bod(y|ies)|severed|decapitat(ed|ion)|mutilat(ed|ion))\b/gi,
-  /\b(murder(ed|ing)?|kill(ed|ing)|slaughter(ed|ing)?|massacre)\b/gi,
-  /\b(torture(d|ing)?|torment(ed|ing)?)\b/gi,
-  /\b(naked|nude|undress(ed)?)\b/gi,
-  /\b(slave(ry|s)?|rape|assault(ed|ing)?)\b/gi,
-  /\b(suicide|self-harm)\b/gi,
-  /\b(drug|narcotic|opium|warpstone)\b/gi,
-];
-
-function sanitizeForImageGen(text) {
-  let sanitized = text;
-  for (const pattern of SANITIZE_PATTERNS) {
-    sanitized = sanitized.replace(pattern, '');
-  }
-  return sanitized.replace(/\s{2,}/g, ' ').trim();
-}
-
-const IMAGE_STYLE_PROMPTS = {
-  illustration: {
-    prompt: 'digital illustration, clean defined linework, vibrant saturated colors, fantasy book illustration, detailed ink-and-color art style',
-    portrait: 'detailed character illustration, clean linework, vibrant colors, fantasy book art style',
-    negative: 'photograph, photorealistic, 3d render, blurry',
-  },
-  pencil: {
-    prompt: 'pencil sketch on textured paper, graphite drawing, expressive crosshatching, delicate shading, monochrome pencil art, hand-drawn feel',
-    portrait: 'graphite pencil portrait, crosshatching, paper texture, monochrome sketch, detailed shading',
-    negative: 'color, photograph, photorealistic, digital art, painting',
-  },
-  noir: {
-    prompt: 'film noir style, stark high-contrast black and white, dramatic deep shadows, chiaroscuro lighting, 1940s hard-boiled detective aesthetic, venetian blind light',
-    portrait: 'film noir portrait, high contrast black and white, dramatic shadow across face, chiaroscuro, smoky atmosphere',
-    negative: 'color, bright, cheerful, cartoon, anime',
-  },
-  anime: {
-    prompt: 'anime art style, cel-shaded, vivid colors, expressive eyes, dynamic composition, detailed anime background, Studio Ghibli quality',
-    portrait: 'anime character portrait, cel-shaded, large expressive eyes, vivid colors, clean lines, detailed anime style',
-    negative: 'photorealistic, photograph, 3d render, western cartoon',
-  },
-  painting: {
-    prompt: 'classical oil painting, rich impasto brushstrokes, Renaissance chiaroscuro, deep warm palette, museum-quality fine art, canvas texture visible',
-    portrait: 'oil painting portrait, rich brushwork, warm candlelight, Renaissance master style, deep colors, visible canvas texture',
-    negative: 'photograph, digital art, cartoon, anime, sketch, flat colors',
-  },
-  watercolor: {
-    prompt: 'delicate watercolor painting, soft translucent washes, wet-on-wet bleeding edges, visible paper grain, gentle pastel palette, impressionistic atmosphere',
-    portrait: 'watercolor portrait, soft translucent washes, bleeding edges, visible paper texture, pastel tones, impressionistic',
-    negative: 'photograph, photorealistic, digital art, sharp lines, anime',
-  },
-  comic: {
-    prompt: 'comic book art style, bold black outlines, flat cel colors, halftone dot shading, dynamic panel composition, action-packed graphic novel aesthetic',
-    portrait: 'comic book character portrait, bold ink outlines, flat cel colors, halftone shading, dynamic superhero comic style',
-    negative: 'photorealistic, photograph, watercolor, oil painting, soft',
-  },
-  darkFantasy: {
-    prompt: 'dark fantasy art, Beksinski-inspired eldritch atmosphere, oppressive gothic architecture, sickly muted palette, visceral organic textures, nightmarish surreal composition',
-    portrait: 'dark fantasy portrait, haunted hollow eyes, scarred weathered face, gothic atmosphere, sickly palette, nightmarish eldritch details',
-    negative: 'bright, cheerful, cartoon, anime, clean, happy',
-  },
-  vanGogh: {
-    prompt: 'post-impressionist painting in the style of Van Gogh, expressive swirling brushstrokes, thick impasto texture, luminous night-sky colors, emotional dramatic movement, vivid painterly energy',
-    portrait: 'post-impressionist portrait inspired by Van Gogh, swirling brushwork, thick impasto texture, vivid expressive colors, emotional painterly lighting',
-    negative: 'photograph, photorealistic, 3d render, flat shading, smooth digital art',
-  },
-  photoreal: {
-    prompt: 'photorealistic cinematic photograph, shallow depth of field, RAW photo quality, 8K UHD, DSLR, natural film grain, realistic lighting and materials',
-    portrait: 'photorealistic portrait photograph, DSLR quality, shallow depth of field, natural skin texture, cinematic lighting, 8K detail',
-    negative: 'painting, drawing, illustration, cartoon, anime, sketch, watercolor, digital art',
-  },
-  retro: {
-    prompt: '16-bit pixel art, retro SNES-era RPG scene, limited color palette, dithering, nostalgic low-resolution aesthetic, crisp individual pixels visible',
-    portrait: '16-bit pixel art character portrait, retro RPG style, limited palette, clean pixel work, nostalgic SNES aesthetic',
-    negative: 'photorealistic, photograph, high resolution, smooth, blurry, 3d render',
-  },
-  gothic: {
-    prompt: 'gothic fantasy artwork, towering cathedral arches, ornate stonework, candlelit gloom, medieval illuminated detail, solemn dramatic composition, sacred and ominous atmosphere',
-    portrait: 'gothic portrait, cathedral-lit face, ornate medieval costume details, candlelit shadows, solemn sacred atmosphere, dramatic old-world elegance',
-    negative: 'modern, sci-fi, cartoon, anime, cheerful, bright daylight',
-  },
-  hiphop: {
-    prompt: 'urban hip-hop graffiti art style, bold spray-paint strokes, vibrant neon colors on concrete, street art murals, dripping paint, boombox culture aesthetic, thick outlines, stylized lettering accents',
-    portrait: 'hip-hop street art portrait, spray-paint on brick wall, bold outlines, vibrant neon colors, graffiti style, urban swagger, dripping paint details',
-    negative: 'photorealistic, photograph, watercolor, oil painting, soft, pastel, delicate',
-  },
-  crayon: {
-    prompt: 'child-like crayon drawing on white paper, waxy texture, uneven coloring, playful naive art style, visible paper grain, bright primary colors, simple bold shapes, charming imperfect lines',
-    portrait: 'crayon portrait drawing, waxy colorful strokes, child-like naive art style, uneven coloring, white paper background, playful and charming',
-    negative: 'photorealistic, photograph, digital art, clean lines, professional, polished, 3d render',
-  },
-};
-
-const TONE_MODIFIERS = {
-  Dark: 'moody, desaturated colors, deep shadows, somber ominous atmosphere',
-  Epic: 'grand scale, dramatic golden-hour lighting, heroic composition, sweeping vista',
-  Humorous: 'warm vibrant colors, whimsical playful details, lighthearted cheerful mood',
-};
-
-const SERIOUSNESS_MODIFIERS = {
-  silly: 'whimsical goofy scene, exaggerated cartoon-like proportions, playful absurd humor, comical expressions, slapstick energy',
-  lighthearted: 'lighthearted cheerful mood, playful atmosphere, warm inviting tones, slight whimsy',
-  serious: 'serious dignified atmosphere, realistic proportions, dramatic weight, solemn composed mood',
-  grave: 'gravely somber atmosphere, oppressive heavy mood, no levity, dark weighty tension, haunting stillness',
-};
-
-function getSeriousnessDirective(seriousness) {
-  const val = seriousness ?? 50;
-  if (val < 25) return SERIOUSNESS_MODIFIERS.silly;
-  if (val < 50) return SERIOUSNESS_MODIFIERS.lighthearted;
-  if (val < 75) return SERIOUSNESS_MODIFIERS.serious;
-  return SERIOUSNESS_MODIFIERS.grave;
-}
-
-function getImageStyleDirective(imageStyle, field = 'prompt') {
-  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
-  return entry[field] || entry.prompt;
-}
-
-export function getImageStyleNegative(imageStyle) {
-  const entry = IMAGE_STYLE_PROMPTS[imageStyle] || IMAGE_STYLE_PROMPTS.painting;
-  return entry.negative || '';
-}
-
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false) {
-  const isGemini = provider === 'gemini';
-
-  const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
-  const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
-  const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones, and dark atmospheric hues.' : '';
-  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
-  const portraitRefDirective = hasPortraitRef
-    ? ' The main character from the reference portrait image must appear in the scene, maintaining their visual identity, face, and likeness.'
-    : '';
-
-  const rawDesc = imagePrompt || narrative.substring(0, 300);
-  const sceneDesc = sanitizeForImageGen(rawDesc);
-  const parsedAge = Number(characterAge);
-  const ageDirective = Number.isFinite(parsedAge) ? ` Featured character age: ${Math.max(1, Math.round(parsedAge))}.` : '';
-  const genderDirective = characterGender === 'female' || characterGender === 'male'
-    ? ` Featured character gender: ${characterGender}.`
-    : '';
-
-  if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
-  }
-
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
-}
-
-export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome) {
-  const parts = [];
-
-  if (previousNarrative) {
-    parts.push(`Previous scene: ${sanitizeForImageGen(previousNarrative.substring(0, 200))}`);
-  }
-
-  const skip = !playerAction || playerAction === '[CONTINUE]' || playerAction === '[WAIT]' || playerAction.startsWith('[IDLE_WORLD_EVENT');
-  if (!skip) {
-    parts.push(`The character now: ${sanitizeForImageGen(playerAction.substring(0, 150))}`);
-  }
-
-  if (diceOutcome) {
-    if (diceOutcome.criticalSuccess) {
-      parts.push('Outcome: spectacular, extraordinary success — triumphant, glorious moment.');
-    } else if (diceOutcome.criticalFailure) {
-      parts.push('Outcome: dramatic, catastrophic failure — disaster, chaos, everything goes wrong.');
-    } else if (diceOutcome.success) {
-      parts.push('Outcome: the action succeeds.');
-    } else {
-      parts.push('Outcome: the action fails, complications arise.');
-    }
-  }
-
-  return parts.join(' ');
-}
-
-export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
-  const isGemini = provider === 'gemini';
-  const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
-  const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
-  const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones.' : '';
-  const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
-  const itemName = sanitizeForImageGen(item?.name || 'Unknown item');
-  const itemType = sanitizeForImageGen(item?.type || 'misc');
-  const itemRarity = sanitizeForImageGen(item?.rarity || 'common');
-  const itemDescription = sanitizeForImageGen(item?.description || `${itemName}, ${itemType}`);
-  const worldContext = sanitizeForImageGen(genre || 'Fantasy');
-
-  if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
-  }
-
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
-}
-
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null) {
-  const genderLabel = gender === 'female' ? 'female' : 'male';
-  const isSD = provider === 'stability';
-  const isGemini = provider === 'gemini';
-
-  const speciesTraits = {
-    Human: 'human, weathered skin, visible pores and skin texture',
-    Halfling: 'halfling, short stature, round cheerful face, rosy cheeks, bright eyes',
-    Dwarf: 'dwarf, stocky build, strong jaw, thick brow ridge, deep-set eyes, braided beard',
-    'High Elf': 'high elf, pointed ears, high cheekbones, slender refined features, luminous eyes, ethereal complexion',
-    'Wood Elf': 'wood elf, pointed ears, angular sharp features, intense wild eyes, sun-kissed weathered skin',
-  };
-
-  const styleDirective = getImageStyleDirective(imageStyle, 'portrait');
-  const speciesDesc = speciesTraits[species] || 'human, weathered skin, visible pores and skin texture';
-  const parsedAge = Number(age);
-  const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
-  const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
-  const likenessDirective = hasReferenceImage
-    ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
-    : '';
-  const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
-  const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
-
-  if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
-  }
-
-  if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
-  }
-
-  if (provider === 'gpt-image') {
-    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
-  }
-
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} No text, no watermarks, no borders.`;
 }
 
 export function buildRecapPrompt(language = 'en', options = {}) {
@@ -1845,23 +969,3 @@ PARTIAL RECAPS (already in chronological order):
 ${partsBlock}`;
 }
 
-export function buildObjectiveVerificationPrompt(storyContext, questName, questDescription, objectiveDescription, language = 'en') {
-  const lang = language === 'pl' ? 'Polish' : 'English';
-  return {
-    system: `You are an impartial story analyst for a tabletop RPG game. Your job is to determine whether a specific quest objective has been fulfilled based on the events that occurred in the story. Analyze the provided story context carefully and objectively. Respond with ONLY valid JSON.`,
-    user: `Analyze the following story to determine if the quest objective has been fulfilled.
-
-STORY CONTEXT:
-${storyContext}
-
-QUEST: ${questName}
-Quest description: ${questDescription}
-
-OBJECTIVE TO VERIFY: "${objectiveDescription}"
-
-Has this specific objective been fulfilled based on the story events? Consider partial or indirect fulfillment as well — if the spirit of the objective has been met, it counts as fulfilled.
-
-Respond with ONLY valid JSON:
-{"fulfilled": true or false, "reasoning": "A brief 1-2 sentence explanation in ${lang} of why the objective is or is not fulfilled based on story events."}`
-  };
-}

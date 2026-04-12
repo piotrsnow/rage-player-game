@@ -1,4 +1,7 @@
-import { SPECIES, SPECIES_LIST, CHARACTERISTIC_KEYS, CAREERS, CAREER_CLASSES, CREATION_LIMITS } from '../data/wfrp';
+import {
+  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS, CREATION_LIMITS, SKILL_CAPS,
+  createStartingSkills, calculateMaxWounds as calcMaxWounds,
+} from '../data/rpgSystem';
 import { DEFAULT_CHARACTER_AGE } from './characterAge';
 
 const RANDOM_NAMES = {
@@ -31,89 +34,91 @@ export function randomizeSpecies() {
   return SPECIES_LIST[Math.floor(Math.random() * SPECIES_LIST.length)];
 }
 
-export function randomizeCareer(careerClass) {
-  const pool = careerClass
-    ? CAREERS.filter((c) => c.class === careerClass)
-    : CAREERS;
-  return pool[Math.floor(Math.random() * pool.length)];
-}
+/**
+ * Randomize skills for a species, distributing starting skill points.
+ */
+export function randomizeSkills(speciesName) {
+  const skills = createStartingSkills(speciesName);
+  let remaining = CREATION_LIMITS.startingSkillPoints;
+  const maxLevel = SKILL_CAPS.basic;
 
-export function randomizeSkills(careerDef, speciesName) {
-  const species = SPECIES[speciesName] || SPECIES.Human;
-  const tier1 = careerDef?.tiers?.[0];
-  const careerSkills = tier1?.skills || [];
-  const speciesSkills = species.skills || [];
-  const { skillPoints, maxPerSkill } = CREATION_LIMITS;
-
-  const skills = {};
-  let remaining = skillPoints;
-
-  for (const skill of careerSkills) {
-    if (remaining <= 0) break;
-    const val = Math.min(maxPerSkill, remaining, Math.floor(Math.random() * 8) + 3);
-    skills[skill] = val;
-    remaining -= val;
-  }
-  for (const skill of speciesSkills) {
-    if (remaining <= 0) break;
-    if (!skills[skill]) {
-      const val = Math.min(maxPerSkill, remaining, Math.floor(Math.random() * 6) + 3);
-      skills[skill] = val;
-      remaining -= val;
+  // Spread points randomly among all skills
+  const allSkillNames = Object.keys(skills);
+  let attempts = 0;
+  while (remaining > 0 && attempts < 500) {
+    const name = allSkillNames[Math.floor(Math.random() * allSkillNames.length)];
+    if (skills[name].level < maxLevel) {
+      skills[name] = { ...skills[name], level: skills[name].level + 1 };
+      remaining--;
     }
+    attempts++;
   }
+
   return skills;
 }
 
-export function randomizeTalents(careerDef, speciesName) {
+/**
+ * Generate random attributes for a species (1-25 scale).
+ */
+export function generateAttributes(speciesName) {
   const species = SPECIES[speciesName] || SPECIES.Human;
-  const tier1 = careerDef?.tiers?.[0];
-  const careerTalents = tier1?.talents || [];
-  const speciesTalents = species.talents || [];
+  const attrs = {};
 
-  const pool = [...new Set([...careerTalents, ...speciesTalents])];
-  const count = Math.min(pool.length, CREATION_LIMITS.maxTalents, 2 + Math.floor(Math.random() * 2));
-  const shuffled = pool.sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  const { baseAttribute, distributableAttributePoints, maxPerAttributeAtCreation } = CREATION_LIMITS;
+  let remaining = distributableAttributePoints;
+
+  // All attributes start at base (1)
+  for (const key of ATTRIBUTE_KEYS) {
+    attrs[key] = baseAttribute;
+  }
+
+  // Randomly distribute points — szczescie costs 3× more, skip it in random
+  const nonLuckKeys = ATTRIBUTE_KEYS.filter((k) => k !== 'szczescie');
+  let attempts = 0;
+  while (remaining > 0 && attempts < 200) {
+    const key = nonLuckKeys[Math.floor(Math.random() * nonLuckKeys.length)];
+    if (attrs[key] - baseAttribute < maxPerAttributeAtCreation) {
+      attrs[key]++;
+      remaining--;
+    }
+    attempts++;
+  }
+
+  // Apply species modifiers
+  for (const key of ATTRIBUTE_KEYS) {
+    const mod = species.attributes[key] || 0;
+    attrs[key] = Math.max(1, attrs[key] + mod);
+  }
+
+  return attrs;
 }
 
-export function randomizeFullCharacter(genre, careerClass) {
+export function randomizeFullCharacter(genre) {
   const speciesName = randomizeSpecies();
   const species = SPECIES[speciesName] || SPECIES.Human;
-  const careerDef = randomizeCareer(careerClass);
-  const tier1 = careerDef?.tiers?.[0];
-  const characteristics = generateCharacteristics(speciesName);
-  const maxWounds = calculateWounds(characteristics);
+  const attributes = generateAttributes(speciesName);
+  const maxWounds = calcMaxWounds(attributes.wytrzymalosc);
 
   return {
     name: pickRandomName(genre),
     age: DEFAULT_CHARACTER_AGE,
     gender: Math.random() > 0.5 ? 'male' : 'female',
     species: speciesName,
-    career: {
-      class: careerDef.class,
-      name: careerDef.name,
-      tier: 1,
-      tierName: tier1?.name || careerDef.name,
-      status: tier1?.status || 'Silver 1',
-    },
-    characteristics,
-    advances: Object.fromEntries(CHARACTERISTIC_KEYS.map((k) => [k, 0])),
+    attributes,
+    mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
     wounds: maxWounds,
     maxWounds,
     movement: species.movement,
-    fate: species.fate,
-    fortune: species.fate,
-    resilience: species.resilience,
-    resolve: species.resilience,
-    skills: randomizeSkills(careerDef, speciesName),
-    talents: randomizeTalents(careerDef, speciesName),
+    skills: randomizeSkills(speciesName),
+    spells: { known: [], usageCounts: {}, scrolls: [] },
     inventory: [],
-    money: generateStartingMoney(tier1?.status || 'Silver 1'),
+    money: generateStartingMoney(),
     statuses: [],
     backstory: '',
-    xp: 0,
-    xpSpent: 0,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
+    lastTrainingScene: -10,
   };
 }
 
@@ -125,55 +130,25 @@ export function createSceneId() {
   return `scene_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 }
 
-export function createItemId() {
-  return `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-}
+export { createItemId } from '../../shared/domain/stateValidation.js';
 
 export function createQuestId() {
   return `quest_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 }
 
-// WFRP d100 roll (1-100)
-export function rollD100() {
+// d50 roll (1-50)
+export function rollD50() {
+  return Math.floor(Math.random() * 50) + 1;
+}
+
+// Percentage roll (1-100) — used for luck checks, scroll learning, idle triggers
+export function rollPercentage() {
   return Math.floor(Math.random() * 100) + 1;
 }
 
-// Roll 2d10 (2-20)
-export function roll2d10() {
-  return Math.floor(Math.random() * 10) + 1 + Math.floor(Math.random() * 10) + 1;
-}
-
-// WFRP bonus = tens digit of a characteristic (e.g. 34 → 3)
-export function getBonus(characteristicValue) {
-  return Math.floor(characteristicValue / 10);
-}
-
-// Calculate Success Levels: (target - roll) / 10, rounded toward 0, clamped to [-10, +10]
-export function calculateSL(roll, target) {
-  const diff = target - roll;
-  const raw = diff >= 0 ? Math.floor(diff / 10) : -Math.floor(Math.abs(diff) / 10);
-  return Math.max(-10, Math.min(10, raw));
-}
-
-// WFRP Wounds = Strength Bonus + 2 × Toughness Bonus + Willpower Bonus
-export function calculateWounds(characteristics) {
-  const sb = getBonus(characteristics.s);
-  const tb = getBonus(characteristics.t);
-  const wpb = getBonus(characteristics.wp);
-  return sb + 2 * tb + wpb;
-}
-
-// Generate random characteristics for a given species
-export function generateCharacteristics(speciesName) {
-  const species = SPECIES[speciesName];
-  if (!species) return null;
-
-  const characteristics = {};
-  for (const key of CHARACTERISTIC_KEYS) {
-    const base = species.characteristics[key];
-    characteristics[key] = roll2d10() + base;
-  }
-  return characteristics;
+// Calculate max wounds from Wytrzymalosc attribute
+export function calculateMaxWounds(wytrzymalosc) {
+  return calcMaxWounds(wytrzymalosc);
 }
 
 export function normalizeMoney(money) {
@@ -186,17 +161,9 @@ export function normalizeMoney(money) {
   };
 }
 
-export function generateStartingMoney(careerStatus) {
-  const str = (careerStatus || 'Silver 1').toLowerCase();
-  if (str.startsWith('gold')) {
-    const roll = Math.floor(Math.random() * 10) + 1;
-    return normalizeMoney({ gold: roll, silver: 0, copper: 0 });
-  }
-  if (str.startsWith('brass')) {
-    const roll = Math.floor(Math.random() * 10) + 1 + Math.floor(Math.random() * 10) + 1;
-    return normalizeMoney({ gold: 0, silver: 0, copper: roll });
-  }
-  const roll = Math.floor(Math.random() * 10) + 1;
+export function generateStartingMoney() {
+  // Simple starting money: 1-5 silver
+  const roll = Math.floor(Math.random() * 5) + 1;
   return normalizeMoney({ gold: 0, silver: roll, copper: 0 });
 }
 
@@ -219,8 +186,6 @@ export function getCampaignSummary(gameState) {
     genre: campaign?.genre || 'Unknown',
     tone: campaign?.tone || 'Unknown',
     characterName: character?.name || 'Unknown',
-    characterCareer: character?.career?.name || 'Unknown',
-    characterTier: character?.career?.tier || 1,
     sceneCount: scenes?.length || 0,
     lastPlayed: gameState.lastSaved || Date.now(),
     totalCost: gameState.aiCosts?.total || 0,

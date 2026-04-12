@@ -1,8 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
-import { useGame } from '../../contexts/GameContext';
+import {
+  useGameCampaign,
+  useGameCharacter,
+  useGameParty,
+  useGameWorld,
+  useGameQuests,
+  useGameScenes,
+  useGameChatHistory,
+  useGameCombat,
+  useGameMagic,
+  useGameAchievements,
+  useGameAiCosts,
+  useGameIsLoading,
+  useGameIsGeneratingScene,
+  useGameIsGeneratingImage,
+  useGameError,
+  useGameSlice,
+  useGameDispatch,
+  useGameAutoSave,
+} from '../../stores/gameSelectors';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
@@ -16,41 +35,39 @@ import ChatPanel from './ChatPanel';
 import StatusBar from '../ui/StatusBar';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import SceneGenerationProgress from './SceneGenerationProgress';
-import WorldStateModal from './WorldStateModal';
-import MultiplayerPanel from '../multiplayer/MultiplayerPanel';
 import CostBadge from '../ui/CostBadge';
-import AdvancementPanel from '../character/AdvancementPanel';
 import CombatPanel from './CombatPanel';
-import DialoguePanel from './DialoguePanel';
 import MagicPanel from './MagicPanel';
+import TradePanel from './TradePanel';
+import CraftingPanel from './CraftingPanel';
+import AlchemyPanel from './AlchemyPanel';
 import PartyPanel from './PartyPanel';
-import SummaryModal from './SummaryModal';
-import AchievementsPanel from '../character/AchievementsPanel';
 import QuestOffersPanel from './QuestOffersPanel';
-import GMModal from './gm/GMModal';
-import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
+import GameplayModals from './GameplayModals';
+import GameplayHeader from './GameplayHeader';
 import { useModals } from '../../contexts/ModalContext';
-import { translateCareer } from '../../utils/wfrpTranslate';
-import { createMultiplayerCombatState } from '../../services/combatEngine';
+import { translateAttribute } from '../../utils/rpgTranslate';
 import { useAutoPlayer } from '../../hooks/useAutoPlayer';
 import { useIdleTimer } from '../../hooks/useIdleTimer';
-import AutoPlayerPanel from './AutoPlayerPanel';
 import TypewriterActionOverlay from './TypewriterActionOverlay';
 import DiceRollAnimationOverlay from './DiceRollAnimationOverlay';
 import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { calculateTensionScore } from '../../services/tensionTracker';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
-
-function hashSummaryCacheKey(input) {
-  const text = String(input || '');
-  let hash = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
-}
+import { usePlayTimeTracker } from '../../hooks/usePlayTimeTracker';
+import { useStreamingNarrator } from '../../hooks/useStreamingNarrator';
+import { useMultiplayerSceneGenTimer } from '../../hooks/useMultiplayerSceneGenTimer';
+import { useSceneScrollSync } from '../../hooks/useSceneScrollSync';
+import { useImageRepairQueue } from '../../hooks/useImageRepairQueue';
+import { useSummary } from '../../hooks/useSummary';
+import { useCampaignLoader } from '../../hooks/useCampaignLoader';
+import { useViewerMode } from '../../hooks/useViewerMode';
+import { useMultiplayerVoiceSync } from '../../hooks/useMultiplayerVoiceSync';
+import { useMultiplayerCombatSceneDetect } from '../../hooks/useMultiplayerCombatSceneDetect';
+import { useCombatResolution } from '../../hooks/useCombatResolution';
+import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
+import MainQuestCompleteModal from './MainQuestCompleteModal';
 
 function hashCode(str) {
   let h = 0;
@@ -60,33 +77,77 @@ function hashCode(str) {
   return Math.abs(h);
 }
 
-function shuffleArray(items) {
-  const arr = [...items];
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
 export default function GameplayPage({ readOnly = false, shareToken = null, onRefresh = null }) {
   // Temporary kill switch for timer-driven idle world events.
   const IDLE_WORLD_EVENTS_ENABLED = false;
-  const MAX_SCENE_IMAGE_REPAIR_ATTEMPTS = 2;
-  const MAX_SCENE_IMAGE_REPAIRS_PER_SESSION = 20;
-  const MAX_SCENE_IMAGE_MIGRATION_REPAIRS_PER_PASS = 3;
-  const MAX_SCENE_IMAGE_MIGRATION_SCAN = 12;
-  const SCENE_IMAGE_MIGRATION_COOLDOWN_MS = 12000;
 
   const navigate = useNavigate();
   const location = useLocation();
   const { campaignId: urlCampaignId } = useParams();
   const { t } = useTranslation();
-  const { state, dispatch, autoSave } = useGame();
+  const dispatch = useGameDispatch();
+  const autoSave = useGameAutoSave();
+  // Granular per-slice subscriptions — each field only triggers a re-render when
+  // that specific slice changes. The `state` memo keeps the rest of this file
+  // + all state-receiving children stable when unrelated slices change.
+  const sCampaign = useGameCampaign();
+  const sCharacter = useGameCharacter();
+  const sParty = useGameParty();
+  const sWorld = useGameWorld();
+  const sQuests = useGameQuests();
+  const sScenes = useGameScenes();
+  const sChatHistory = useGameChatHistory();
+  const sCombat = useGameCombat();
+  const sMagic = useGameMagic();
+  const sAchievements = useGameAchievements();
+  const sAiCosts = useGameAiCosts();
+  const sIsLoading = useGameIsLoading();
+  const sIsGeneratingScene = useGameIsGeneratingScene();
+  const sIsGeneratingImage = useGameIsGeneratingImage();
+  const sError = useGameError();
+  const sActiveCharacterId = useGameSlice((s) => s.activeCharacterId);
+  const sCharacterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+  const sMainQuestJustCompleted = useGameSlice((s) => s.mainQuestJustCompleted);
+  const sTrade = useGameSlice((s) => s.trade);
+  const sCrafting = useGameSlice((s) => s.crafting);
+  const sAlchemy = useGameSlice((s) => s.alchemy);
+  const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
+  const sNarrationTime = useGameSlice((s) => s.narrationTime);
+  const state = useMemo(() => ({
+    campaign: sCampaign,
+    character: sCharacter,
+    party: sParty,
+    world: sWorld,
+    quests: sQuests,
+    scenes: sScenes,
+    chatHistory: sChatHistory,
+    combat: sCombat,
+    magic: sMagic,
+    achievements: sAchievements,
+    aiCosts: sAiCosts,
+    isLoading: sIsLoading,
+    isGeneratingScene: sIsGeneratingScene,
+    isGeneratingImage: sIsGeneratingImage,
+    error: sError,
+    activeCharacterId: sActiveCharacterId,
+    characterVoiceMap: sCharacterVoiceMap,
+    mainQuestJustCompleted: sMainQuestJustCompleted,
+    trade: sTrade,
+    crafting: sCrafting,
+    alchemy: sAlchemy,
+    momentumBonus: sMomentumBonus,
+    narrationTime: sNarrationTime,
+  }), [
+    sCampaign, sCharacter, sParty, sWorld, sQuests, sScenes, sChatHistory,
+    sCombat, sMagic, sAchievements, sAiCosts, sIsLoading, sIsGeneratingScene,
+    sIsGeneratingImage, sError, sActiveCharacterId, sCharacterVoiceMap,
+    sMainQuestJustCompleted, sTrade, sCrafting, sAlchemy, sMomentumBonus,
+    sNarrationTime,
+  ]);
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
-  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll } = useAI();
+  const { generateScene, generateImageForScene, generateRecap, acceptQuestOffer, declineQuestOffer, sceneGenStartTime, lastSceneGenMs, earlyDiceRoll, clearEarlyDiceRoll, streamingNarrative, streamingSegments } = useAI();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   const narrator = useNarrator(
     readOnly && shareToken
@@ -94,44 +155,26 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       : undefined
   );
   const { setNarratorState } = useGlobalMusic();
-  const imageAttemptedRef = useRef(new Set());
-  const imageRepairAttemptsRef = useRef(new Map());
-  const imageRepairInFlightRef = useRef(new Set());
-  const imageRepairsCountRef = useRef(0);
-  const imageMigrationRunningRef = useRef(false);
-  const imageMigrationLastRunRef = useRef(0);
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
+  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
 
   useEffect(() => {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
 
-  const [sessionStartTime] = useState(() => Date.now());
-  const [sessionSeconds, setSessionSeconds] = useState(0);
-  const initialTotalPlayTimeRef = useRef(state.totalPlayTime || 0);
+  const { streamingNarrationActiveRef } = useStreamingNarrator({
+    narrator,
+    streamingSegments,
+    streamingNarrative,
+    chatHistory,
+    enabled: settings.narratorEnabled,
+    autoPlay: settings.narratorAutoPlay,
+    readOnly,
+  });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSessionSeconds(Math.floor((Date.now() - sessionStartTime) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionStartTime]);
-
-  useEffect(() => {
-    const flush = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
-    }, 30000);
-    return () => {
-      clearInterval(flush);
-      const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
-      dispatch({ type: 'SET_PLAY_TIME', payload: initialTotalPlayTimeRef.current + elapsed });
-    };
-  }, [sessionStartTime, dispatch]);
-
-  const totalPlayTime = initialTotalPlayTimeRef.current + sessionSeconds;
+  const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [worldModalOpen, setWorldModalOpen] = useState(false);
@@ -141,51 +184,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [videoPanelOpen, setVideoPanelOpen] = useState(false);
   const [autoPlayerSettingsOpen, setAutoPlayerSettingsOpen] = useState(false);
-  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-  const [summaryText, setSummaryText] = useState('');
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryError, setSummaryError] = useState(null);
-  const [summaryProgress, setSummaryProgress] = useState({
-    phase: 'idle',
-    currentBatch: 0,
-    totalBatches: 0,
-    recapMode: 'story',
-  });
-  const [summarySentencesPerScene, setSummarySentencesPerScene] = useState(1);
-  const [summaryOptions, setSummaryOptions] = useState({
-    mode: 'story',
-    literaryStyle: 50,
-    dramaticity: 50,
-    factuality: 50,
-    dialogueParticipants: 3,
-  });
-  const [summaryNarrationMessageId, setSummaryNarrationMessageId] = useState(null);
-  const [summaryNarrationWordOffset, setSummaryNarrationWordOffset] = useState(0);
-  const [summarySpeakLoading, setSummarySpeakLoading] = useState(false);
-  const [summaryCopied, setSummaryCopied] = useState(false);
-  const summarySpeakTimeoutRef = useRef(null);
-  const summaryCopyTimeoutRef = useRef(null);
-  const summaryRequestIdRef = useRef(0);
   const [viewingSceneIndex, setViewingSceneIndex] = useState(null);
-  const [scrollTargetMessageId, setScrollTargetMessageId] = useState(null);
   const [autoPlayScenes, setAutoPlayScenes] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
-  const [mpSceneGenStartTime, setMpSceneGenStartTime] = useState(null);
-  const prevScenesLenRef = useRef(0);
-  const initialViewerChatAlignDoneRef = useRef(false);
   const autoPlayRef = useRef(false);
   const displayedSceneIndexRef = useRef(0);
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
-
-  const requestChatScrollToMessage = useCallback((messageId) => {
-    if (!messageId) return;
-    setScrollTargetMessageId((prev) => (prev === messageId ? null : prev));
-    requestAnimationFrame(() => {
-      setScrollTargetMessageId(messageId);
-    });
-  }, []);
 
   const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
   useDocumentTitle(campaign?.name);
@@ -204,13 +210,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     : null;
   const displayCharacter = viewedMember || character;
 
-  const hasMagic = character?.skills?.['Channelling'] || character?.skills?.['Language (Magick)'] || character?.talents?.some((t) => t?.includes?.('Arcane Magic'));
-  const availableXp = character ? (character.xp || 0) - (character.xpSpent || 0) : 0;
+  const hasMagic = (character?.magic?.knownSpells?.length || 0) > 0;
+  const attrPoints = character?.attributePoints || 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
   const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
-  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
-  const wasGeneratingSceneRef = useRef(false);
-  const prevChatHistoryLenRef = useRef(chatHistory.length);
   const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
   const isGeneratingImage = state.isGeneratingImage;
   const error = isMultiplayer ? mp.state.error : state.error;
@@ -221,17 +224,18 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const aiCosts = state.aiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
 
-  useEffect(() => {
-    if (!isMultiplayer) {
-      setMpSceneGenStartTime(null);
-      return;
-    }
-    if (mp.state.isGenerating) {
-      setMpSceneGenStartTime((prev) => prev || Date.now());
-      return;
-    }
-    setMpSceneGenStartTime(null);
-  }, [isMultiplayer, mp.state.isGenerating]);
+  const mpSceneGenStartTime = useMultiplayerSceneGenTimer({
+    isMultiplayer,
+    isGenerating: mp.state.isGenerating,
+  });
+
+  const { scrollTargetMessageId, requestChatScrollToMessage, clearScrollTargetIfMatches } = useSceneScrollSync({
+    scenes,
+    chatHistory,
+    isGeneratingScene,
+    setViewingSceneIndex,
+  });
+
   const lastChosenAction = (() => {
     if (!currentScene) return null;
     if (currentScene.chosenAction != null && currentScene.chosenAction !== '') return currentScene.chosenAction;
@@ -243,59 +247,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     return null;
   })();
 
-  useEffect(() => {
-    if (scenes.length > prevScenesLenRef.current) {
-      setViewingSceneIndex(null);
-
-      const newestScene = scenes[scenes.length - 1];
-      const newestSceneMessage = newestScene?.id
-        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
-        : null;
-      const newestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
-
-      if (newestSceneMessage?.id) {
-        requestChatScrollToMessage(newestSceneMessage.id);
-      } else if (newestDmMessage?.id) {
-        requestChatScrollToMessage(newestDmMessage.id);
-      }
-    }
-    prevScenesLenRef.current = scenes.length;
-  }, [scenes.length, scenes, chatHistory, requestChatScrollToMessage]);
-
-  useEffect(() => {
-    if (isGeneratingScene) {
-      wasGeneratingSceneRef.current = true;
-      prevChatHistoryLenRef.current = chatHistory.length;
-      return;
-    }
-    if (!wasGeneratingSceneRef.current) {
-      prevChatHistoryLenRef.current = chatHistory.length;
-      return;
-    }
-
-    const hasNewMessages = chatHistory.length > prevChatHistoryLenRef.current;
-    if (hasNewMessages) {
-      const newestScene = scenes[scenes.length - 1];
-      const latestSceneMessage = newestScene?.id
-        ? chatHistory.find((msg) => msg?.sceneId === newestScene.id)
-        : null;
-      const latestDmMessage = [...chatHistory].reverse().find((msg) => msg?.role === 'dm');
-      const latestDiceRollMessage = [...chatHistory].reverse().find((msg) => msg?.subtype === 'dice_roll');
-
-      const preferredMessageId = latestSceneMessage?.id || latestDmMessage?.id || latestDiceRollMessage?.id;
-      if (preferredMessageId) {
-        requestChatScrollToMessage(preferredMessageId);
-      }
-    }
-
-    wasGeneratingSceneRef.current = false;
-    prevChatHistoryLenRef.current = chatHistory.length;
-  }, [isGeneratingScene, chatHistory, scenes, requestChatScrollToMessage]);
-
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
-  const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, state.combat, state.dialogue) : 0;
+  const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, state.combat) : 0;
 
   const buildRecapStateForDisplayedScene = useCallback(() => {
     const lastIncludedIndex = Math.max(0, Math.min(displayedSceneIndex, scenes.length - 1));
@@ -324,242 +279,31 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     };
   }, [displayedSceneIndex, scenes, chatHistory, isMultiplayer, state, mpGameState, character]);
 
-  const handleGenerateSummary = useCallback(async () => {
-    const requestId = summaryRequestIdRef.current + 1;
-    summaryRequestIdRef.current = requestId;
-    setSummaryLoading(true);
-    setSummaryError(null);
-    setSummaryCopied(false);
-    setSummaryText('');
-    setSummaryProgress({
-      phase: 'initializing',
-      currentBatch: 0,
-      totalBatches: 0,
-      recapMode: summaryOptions?.mode || 'story',
-    });
-    try {
-      const recapState = buildRecapStateForDisplayedScene();
-      const recapScenes = Array.isArray(recapState?.scenes) ? recapState.scenes : [];
-      const recapSceneIds = recapScenes
-        .map((scene, idx) => scene?.id || `idx_${idx + 1}`)
-        .join('|');
-      const dmSignature = JSON.stringify({
-        narrativeStyle: settings.dmSettings?.narrativeStyle ?? 50,
-        responseLength: settings.dmSettings?.responseLength ?? 50,
-        narratorPoeticism: settings.dmSettings?.narratorPoeticism ?? 50,
-        narratorGrittiness: settings.dmSettings?.narratorGrittiness ?? 30,
-        narratorDetail: settings.dmSettings?.narratorDetail ?? 50,
-        narratorHumor: settings.dmSettings?.narratorHumor ?? 20,
-        narratorDrama: settings.dmSettings?.narratorDrama ?? 50,
-        narratorCustomInstructions: settings.dmSettings?.narratorCustomInstructions || '',
-      });
-      const cacheInput = JSON.stringify({
-        v: 4,
-        language: settings.language || 'pl',
-        sceneScope: recapScenes.length,
-        displayedSceneIndex,
-        chatHistoryLength: Array.isArray(recapState?.chatHistory) ? recapState.chatHistory.length : 0,
-        sceneIds: recapSceneIds,
-        sentencesPerScene: summarySentencesPerScene,
-        summaryOptions,
-        dm: dmSignature,
-      });
-      const cacheKey = `recap_${hashSummaryCacheKey(cacheInput)}`;
-      const backendId = recapState?.campaign?.backendId;
+  const recap = useSummary({
+    settings,
+    state,
+    narrator,
+    openSettings,
+    t,
+    generateRecap,
+    buildRecapStateForDisplayedScene,
+    displayedSceneIndex,
+  });
 
-      if (backendId && apiClient.isConnected()) {
-        try {
-          const cached = await apiClient.get(`/campaigns/${backendId}/recaps?key=${encodeURIComponent(cacheKey)}`);
-          const cachedRecap = typeof cached?.recap === 'string' ? cached.recap.trim() : '';
-          if (cached?.found && cachedRecap) {
-            if (summaryRequestIdRef.current !== requestId) return;
-            setSummaryText(cachedRecap);
-            setSummaryProgress({
-              phase: 'done',
-              currentBatch: 1,
-              totalBatches: 1,
-              recapMode: summaryOptions?.mode || 'story',
-            });
-            return;
-          }
-        } catch {
-          // Ignore cache lookup errors and fall back to AI generation.
-        }
-      }
-
-      const recap = await generateRecap(recapState, {
-        sentencesPerScene: summarySentencesPerScene,
-        summaryStyle: summaryOptions,
-        onPartial: (partialPayload) => {
-          if (summaryRequestIdRef.current !== requestId) return;
-          const partialText = typeof partialPayload?.text === 'string' ? partialPayload.text.trim() : '';
-          if (partialText) setSummaryText(partialText);
-        },
-        onProgress: (progressPayload) => {
-          if (summaryRequestIdRef.current !== requestId) return;
-          const nextCurrentBatch = Number(progressPayload?.currentBatch) || 0;
-          const nextTotalBatches = Number(progressPayload?.totalBatches) || 0;
-          setSummaryProgress({
-            phase: progressPayload?.phase || 'chunking',
-            currentBatch: nextCurrentBatch,
-            totalBatches: nextTotalBatches,
-            recapMode: progressPayload?.recapMode || summaryOptions?.mode || 'story',
-          });
-        },
-      });
-      if (summaryRequestIdRef.current !== requestId) return;
-      const safeRecap = typeof recap === 'string' ? recap.trim() : '';
-      setSummaryText(safeRecap);
-      setSummaryProgress((prev) => ({
-        ...prev,
-        phase: 'done',
-      }));
-      if (!safeRecap) {
-        setSummaryError(t('gameplay.summaryEmptyGenerated', 'AI returned an empty summary. Try again.'));
-      } else if (backendId && apiClient.isConnected()) {
-        apiClient.post(`/campaigns/${backendId}/recaps`, {
-          key: cacheKey,
-          recap: safeRecap,
-          meta: {
-            displayedSceneIndex,
-            totalScenes: recapScenes.length,
-            sentencesPerScene: summarySentencesPerScene,
-            language: settings.language || 'pl',
-            summaryStyle: summaryOptions,
-          },
-        }).catch(() => {});
-      }
-    } catch (err) {
-      if (summaryRequestIdRef.current !== requestId) return;
-      setSummaryError(err?.message || t('common.somethingWentWrong'));
-    } finally {
-      if (summaryRequestIdRef.current !== requestId) return;
-      setSummaryLoading(false);
-    }
-  }, [buildRecapStateForDisplayedScene, displayedSceneIndex, generateRecap, settings.dmSettings, settings.language, summaryOptions, summarySentencesPerScene, t]);
-
-  const handleOpenSummaryModal = useCallback(() => {
-    setSummaryModalOpen(true);
-    setSummaryText('');
-    setSummaryError(null);
-    setSummaryProgress({
-      phase: 'idle',
-      currentBatch: 0,
-      totalBatches: 0,
-      recapMode: summaryOptions?.mode || 'story',
-    });
-    setSummaryNarrationMessageId(null);
-    setSummarySpeakLoading(false);
-    setSummaryCopied(false);
-  }, [summaryOptions?.mode]);
-
-  const handleCopySummary = useCallback(async () => {
-    const text = typeof summaryText === 'string' ? summaryText.trim() : '';
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setSummaryCopied(true);
-      if (summaryCopyTimeoutRef.current) {
-        window.clearTimeout(summaryCopyTimeoutRef.current);
-      }
-      summaryCopyTimeoutRef.current = window.setTimeout(() => {
-        setSummaryCopied(false);
-      }, 2000);
-    } catch (err) {
-      setSummaryError(err?.message || t('common.somethingWentWrong'));
-    }
-  }, [summaryText, t]);
-
-  const probeSceneImage = useCallback((rawUrl) => {
-    const resolved = apiClient.resolveMediaUrl(rawUrl);
-    if (!resolved || resolved.startsWith('data:')) return Promise.resolve(Boolean(resolved));
-    return new Promise((resolve) => {
-      const image = new Image();
-      let done = false;
-      const settle = (ok) => {
-        if (done) return;
-        done = true;
-        resolve(ok);
-      };
-      const timeoutId = window.setTimeout(() => settle(false), 5000);
-      image.onload = () => {
-        window.clearTimeout(timeoutId);
-        settle(true);
-      };
-      image.onerror = () => {
-        window.clearTimeout(timeoutId);
-        settle(false);
-      };
-      image.src = resolved;
-    });
-  }, []);
-
-  const repairSceneImage = useCallback(
-    async (sceneId, options = {}) => {
-      const {
-        reason = 'manual',
-        skipAutoSave = false,
-        markAttempted = true,
-        forceNew = false,
-      } = options;
-
-      if (!sceneId || (settings.sceneVisualization || 'image') !== 'image') return false;
-
-      const targetScene = scenes.find((scene) => scene?.id === sceneId);
-      if (!targetScene?.narrative) {
-        console.warn(`[image-repair] Skipping ${sceneId}: missing narrative (${reason})`);
-        return false;
-      }
-
-      if (imageRepairInFlightRef.current.has(sceneId)) return false;
-
-      const attempts = imageRepairAttemptsRef.current.get(sceneId) || 0;
-      if (attempts >= MAX_SCENE_IMAGE_REPAIR_ATTEMPTS) {
-        console.warn(`[image-repair] Skipping ${sceneId}: attempt limit reached (${reason})`);
-        return false;
-      }
-
-      if (imageRepairsCountRef.current >= MAX_SCENE_IMAGE_REPAIRS_PER_SESSION) {
-        console.warn(`[image-repair] Session cap reached, skip ${sceneId}`);
-        return false;
-      }
-
-      imageRepairAttemptsRef.current.set(sceneId, attempts + 1);
-      imageRepairInFlightRef.current.add(sceneId);
-
-      try {
-        const imageUrl = await generateImageForScene(
-          sceneId,
-          targetScene.narrative,
-          targetScene.imagePrompt,
-          isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined,
-          { skipAutoSave: readOnly || skipAutoSave, forceNew }
-        );
-        if (!imageUrl) return false;
-
-        imageRepairsCountRef.current += 1;
-        if (markAttempted) {
-          imageAttemptedRef.current.add(sceneId);
-        }
-        if (isMultiplayer) {
-          mp.updateSceneImage(sceneId, imageUrl);
-        }
-        return true;
-      } finally {
-        imageRepairInFlightRef.current.delete(sceneId);
-      }
-    },
-    [
-      settings.sceneVisualization,
-      scenes,
-      generateImageForScene,
-      isMultiplayer,
-      campaign?.genre,
-      campaign?.tone,
-      readOnly,
-      mp,
-    ]
-  );
+  const { repairSceneImage, resetImageAttempts } = useImageRepairQueue({
+    scenes,
+    currentScene,
+    viewedScene,
+    campaign,
+    isGeneratingImage,
+    isGeneratingScene,
+    isMultiplayer,
+    isHost: mp.state.isHost,
+    readOnly,
+    sceneVisualization: settings.sceneVisualization,
+    generateImageForScene,
+    updateSceneImage: mp.updateSceneImage,
+  });
 
   const [typewriterAction, setTypewriterAction] = useState(null);
   const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
@@ -575,160 +319,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     return scene.chosenAction
       || (scene.playerActions && Object.values(scene.playerActions).filter(Boolean).join(' \u2022 '))
       || null;
-  }, []);
-
-  const speakBrowserTts = useCallback((text) => {
-    try {
-      if (!text || typeof window === 'undefined') return false;
-      const synth = window.speechSynthesis;
-      if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') return false;
-
-      synth.cancel();
-      const utter = new window.SpeechSynthesisUtterance(text);
-      utter.lang = settings.language || 'pl';
-      utter.rate = Math.max(0.7, Math.min(1.2, (settings.dialogueSpeed || 100) / 100));
-      utter.pitch = 1;
-      utter.volume = 1;
-      synth.speak(utter);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [settings.language, settings.dialogueSpeed]);
-
-  const SUMMARY_NARRATION_START_TIMEOUT_MS = 45000;
-  const SUMMARY_UTTERANCE_PREFETCH_WINDOW = 3;
-
-  const buildSummaryDialogueSegments = useCallback((text) => {
-    const normalized = typeof text === 'string' ? text.trim() : '';
-    if (!normalized) return [];
-
-    const lines = normalized
-      .split(/\r?\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) return [];
-
-    const speakerLineRegex = /^([A-Za-z0-9\u00C0-\u017F]{1,24})\s*:\s*(.+)$/u;
-    const parsedLines = lines.map((line) => {
-      const match = line.match(speakerLineRegex);
-      if (!match) return null;
-      return {
-        speaker: match[1].trim(),
-        text: match[2].trim(),
-      };
-    });
-
-    const speakerCount = parsedLines.filter(Boolean).length;
-    const isDialogueSummary = speakerCount >= Math.max(2, Math.floor(lines.length * 0.6));
-    if (!isDialogueSummary) {
-      return [{ type: 'narration', text: normalized }];
-    }
-
-    const fallbackVoiceId = settings.elevenlabsVoiceId || state.narratorVoiceId || null;
-    const voicePool = (settings.characterVoices || [])
-      .map((voice) => voice?.voiceId)
-      .filter(Boolean);
-    const shuffledVoices = shuffleArray(voicePool);
-    const speakerVoiceMap = new Map();
-    let nextVoiceIndex = 0;
-
-    const assignVoice = (speaker) => {
-      if (!speaker) return fallbackVoiceId;
-      if (speakerVoiceMap.has(speaker)) return speakerVoiceMap.get(speaker);
-      if (shuffledVoices.length === 0) {
-        speakerVoiceMap.set(speaker, fallbackVoiceId);
-        return fallbackVoiceId;
-      }
-      const picked = shuffledVoices[nextVoiceIndex % shuffledVoices.length];
-      nextVoiceIndex += 1;
-      speakerVoiceMap.set(speaker, picked);
-      return picked;
-    };
-
-    return lines.map((line, index) => {
-      const parsed = parsedLines[index];
-      if (!parsed || !parsed.text) {
-        return {
-          type: 'narration',
-          text: line,
-          voiceId: fallbackVoiceId,
-        };
-      }
-      return {
-        type: 'dialogue',
-        character: parsed.speaker,
-        text: parsed.text,
-        voiceId: assignVoice(parsed.speaker),
-      };
-    });
-  }, [settings.characterVoices, settings.elevenlabsVoiceId, state.narratorVoiceId]);
-
-  const handleSpeakSummary = useCallback((textToRead = summaryText, wordOffset = 0) => {
-    const normalizedText = typeof textToRead === 'string' ? textToRead.trim() : '';
-    if (!normalizedText) return;
-    setSummarySpeakLoading(true);
-    setSummaryError(null);
-    setSummaryNarrationWordOffset(Math.max(0, Number(wordOffset) || 0));
-    if (summarySpeakTimeoutRef.current) {
-      window.clearTimeout(summarySpeakTimeoutRef.current);
-      summarySpeakTimeoutRef.current = null;
-    }
-
-    if (narrator.isNarratorReady) {
-      const narrationId = `summary_${Date.now()}`;
-      const dialogueSegments = buildSummaryDialogueSegments(normalizedText);
-      setSummaryNarrationMessageId(narrationId);
-      narrator.speakSingle(
-        {
-          content: normalizedText,
-          dialogueSegments,
-          segmentPrefetchWindow: SUMMARY_UTTERANCE_PREFETCH_WINDOW,
-        },
-        narrationId
-      );
-      summarySpeakTimeoutRef.current = window.setTimeout(() => {
-        setSummarySpeakLoading(false);
-        setSummaryError(t('gameplay.summaryReadAloudUnavailable', 'Could not start voice playback. Check narrator settings.'));
-      }, SUMMARY_NARRATION_START_TIMEOUT_MS);
-      return;
-    }
-
-    setSummarySpeakLoading(false);
-    setSummaryError(t('gameplay.summaryElevenlabsOnly', 'ElevenLabs narrator is required. Configure narrator voice/settings.'));
-    openSettings();
-  }, [summaryText, narrator, openSettings, t, buildSummaryDialogueSegments]);
-
-  useEffect(() => {
-    if (!summarySpeakLoading || !summaryNarrationMessageId) return;
-    const isThisSummaryPlaying =
-      narrator.currentMessageId === summaryNarrationMessageId
-      && narrator.playbackState === narrator.STATES.PLAYING;
-    if (!isThisSummaryPlaying) return;
-
-    setSummarySpeakLoading(false);
-    if (summarySpeakTimeoutRef.current) {
-      window.clearTimeout(summarySpeakTimeoutRef.current);
-      summarySpeakTimeoutRef.current = null;
-    }
-  }, [
-    summarySpeakLoading,
-    summaryNarrationMessageId,
-    narrator.currentMessageId,
-    narrator.playbackState,
-    narrator.STATES.PLAYING,
-  ]);
-
-  useEffect(() => () => {
-    if (summarySpeakTimeoutRef.current) {
-      window.clearTimeout(summarySpeakTimeoutRef.current);
-      summarySpeakTimeoutRef.current = null;
-    }
-    if (summaryCopyTimeoutRef.current) {
-      window.clearTimeout(summaryCopyTimeoutRef.current);
-      summaryCopyTimeoutRef.current = null;
-    }
   }, []);
 
   const playSceneNarration = useCallback((scene, fallbackIndex = null) => {
@@ -750,9 +340,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
 
     // Fallback: browser TTS (works in viewer without backend auth)
-    const ok = speakBrowserTts(scene.narrative);
-    if (!ok) openSettings();
-  }, [narrator, chatHistory, speakBrowserTts, openSettings]);
+    try {
+      const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+      if (synth && typeof window.SpeechSynthesisUtterance !== 'undefined') {
+        synth.cancel();
+        const utter = new window.SpeechSynthesisUtterance(scene.narrative);
+        utter.lang = settings.language || 'pl';
+        utter.rate = Math.max(0.7, Math.min(1.2, (settings.dialogueSpeed || 100) / 100));
+        synth.speak(utter);
+        return;
+      }
+    } catch {
+      // fall through to settings
+    }
+    openSettings();
+  }, [narrator, chatHistory, openSettings, settings.language, settings.dialogueSpeed]);
 
   const navigateWithTypewriter = useCallback((nextIdx) => {
     if (typewriterAction) return;
@@ -803,6 +405,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
     if (!sceneGenSucceededRef.current) return;
+    // Skip if streaming narration already started reading this scene
+    if (streamingNarrationActiveRef.current || narrator.playbackState !== narrator.STATES.IDLE) return;
     if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
       const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
       if (latestDm) {
@@ -823,27 +427,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
   }, [pendingOverlayText, narrator.playbackState, narrator.narrationSecondsRemaining]);
 
-  useEffect(() => {
-    if (campaign || isMultiplayer || readOnly) return;
-    if (urlCampaignId) {
-      let cancelled = false;
-      storage.loadCampaign(urlCampaignId)
-        .then((data) => {
-          if (cancelled) return;
-          if (data) {
-            dispatch({ type: 'LOAD_CAMPAIGN', payload: data });
-            storage.saveLocalSnapshot(data);
-          } else {
-            navigate('/', { replace: true, state: { campaignNotFound: true } });
-          }
-        })
-        .catch(() => {
-          if (!cancelled) navigate('/', { replace: true, state: { campaignNotFound: true } });
-        });
-      return () => { cancelled = true; };
-    }
-    navigate('/');
-  }, [campaign, isMultiplayer, readOnly, navigate, urlCampaignId, dispatch]);
+  useCampaignLoader({ campaign, isMultiplayer, readOnly, urlCampaignId, dispatch, navigate });
 
   const handleRefresh = useCallback(async () => {
     if (isRefreshing) return;
@@ -874,180 +458,26 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Viewer mode: force-enable narrator toggle so speaker controls work.
-  const viewerNarratorEnabledRef = useRef(false);
-  useEffect(() => {
-    if (!readOnly) return;
-    if (viewerNarratorEnabledRef.current) return;
-    if (!settings.narratorEnabled) {
-      viewerNarratorEnabledRef.current = true;
-      updateSettings({ narratorEnabled: true });
-    }
-  }, [readOnly, settings.narratorEnabled, updateSettings]);
-
-  // Viewer mode: default to scene=0 unless URL says otherwise.
-  useEffect(() => {
-    if (!readOnly) return;
-    if (!scenes || scenes.length === 0) return;
-
-    const params = new URLSearchParams(location.search || '');
-    const raw = params.get('scene');
-
-    if (raw == null) {
-      params.set('scene', '0');
-      navigate(`${location.pathname}?${params.toString()}`, { replace: true });
-      return;
-    }
-
-    let idx = 0;
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed)) idx = parsed;
-
-    const clamped = Math.max(0, Math.min(scenes.length - 1, idx));
-    setViewingSceneIndex(clamped);
-    handleSceneNavigation(clamped);
-    initialViewerChatAlignDoneRef.current = false;
-  }, [readOnly, scenes?.length, location.pathname, location.search, navigate]);
-
-  useEffect(() => {
-    if (!readOnly) return;
-    if (!scenes || scenes.length === 0) return;
-    if (!chatHistory || chatHistory.length === 0) return;
-    if (initialViewerChatAlignDoneRef.current) return;
-
-    const safeIndex = Number.isInteger(viewingSceneIndex)
-      ? Math.max(0, Math.min(scenes.length - 1, viewingSceneIndex))
-      : 0;
-    const scene = scenes[safeIndex];
-    if (!scene) return;
-
-    const targetMsg = scene.id ? chatHistory.find((m) => m.sceneId === scene.id) : null;
-    const fallbackMsg = !targetMsg ? chatHistory.filter((m) => m.role === 'dm')[safeIndex] : null;
-    const preferredMessageId = targetMsg?.id || fallbackMsg?.id;
-
-    if (preferredMessageId) {
-      requestChatScrollToMessage(preferredMessageId);
-      initialViewerChatAlignDoneRef.current = true;
-    }
-  }, [readOnly, scenes, chatHistory, viewingSceneIndex, requestChatScrollToMessage]);
-
-  useEffect(() => {
-    if (readOnly) return;
-    if ((settings.sceneVisualization || 'image') !== 'image') return;
-    if (
-      currentScene &&
-      !currentScene.image &&
-      !isGeneratingImage &&
-      !isGeneratingScene &&
-      !imageAttemptedRef.current.has(currentScene.id)
-    ) {
-      if (isMultiplayer && !mp.state.isHost) return;
-      repairSceneImage(currentScene.id, { reason: 'current-missing' });
-    }
-  }, [
+  useViewerMode({
     readOnly,
-    settings.sceneVisualization,
-    currentScene,
-    isGeneratingImage,
-    isGeneratingScene,
-    isMultiplayer,
-    mp.state.isHost,
-    repairSceneImage,
-  ]);
-
-  useEffect(() => {
-    if (!readOnly) return;
-    if ((settings.sceneVisualization || 'image') !== 'image') return;
-    if (
-      viewedScene &&
-      !viewedScene.image &&
-      !isGeneratingImage &&
-      !isGeneratingScene &&
-      !imageAttemptedRef.current.has(viewedScene.id) &&
-      viewedScene.narrative
-    ) {
-      repairSceneImage(viewedScene.id, { reason: 'viewer-missing', skipAutoSave: true });
-    }
-  }, [readOnly, settings.sceneVisualization, viewedScene, isGeneratingImage, isGeneratingScene, repairSceneImage]);
-
-  useEffect(() => {
-    if ((settings.sceneVisualization || 'image') !== 'image') return;
-    if (!scenes?.length) return;
-    if (isGeneratingImage || isGeneratingScene) return;
-    if (isMultiplayer && !mp.state.isHost) return;
-
-    const now = Date.now();
-    if (now - imageMigrationLastRunRef.current < SCENE_IMAGE_MIGRATION_COOLDOWN_MS) return;
-    if (imageMigrationRunningRef.current) return;
-
-    let cancelled = false;
-    imageMigrationRunningRef.current = true;
-    imageMigrationLastRunRef.current = now;
-
-    (async () => {
-      let repairsDone = 0;
-      for (const scene of scenes.slice(0, MAX_SCENE_IMAGE_MIGRATION_SCAN)) {
-        if (cancelled) break;
-        if (!scene?.id || !scene.narrative) continue;
-        if (repairsDone >= MAX_SCENE_IMAGE_MIGRATION_REPAIRS_PER_PASS) break;
-        if (imageRepairInFlightRef.current.has(scene.id)) continue;
-        if ((imageRepairAttemptsRef.current.get(scene.id) || 0) >= MAX_SCENE_IMAGE_REPAIR_ATTEMPTS) continue;
-
-        if (!scene.image) {
-          const repaired = await repairSceneImage(scene.id, {
-            reason: 'migration-missing',
-            skipAutoSave: readOnly,
-            markAttempted: false,
-          });
-          if (repaired) repairsDone += 1;
-          continue;
-        }
-
-        const canLoad = await probeSceneImage(scene.image);
-        if (!canLoad) {
-          const repaired = await repairSceneImage(scene.id, {
-            reason: 'migration-broken-url',
-            skipAutoSave: readOnly,
-            markAttempted: false,
-          });
-          if (repaired) repairsDone += 1;
-        }
-      }
-    })()
-      .finally(() => {
-        imageMigrationRunningRef.current = false;
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    settings.sceneVisualization,
     scenes,
-    isGeneratingImage,
-    isGeneratingScene,
-    isMultiplayer,
-    mp.state.isHost,
-    readOnly,
-    probeSceneImage,
-    repairSceneImage,
-  ]);
+    chatHistory,
+    viewingSceneIndex,
+    settings,
+    updateSettings,
+    location,
+    navigate,
+    setViewingSceneIndex,
+    handleSceneNavigation: (idx) => handleSceneNavRef.current?.(idx),
+    requestChatScrollToMessage,
+  });
 
-  useEffect(() => {
-    if (!isMultiplayer) return;
-    const players = mp.state.players || [];
-    for (const p of players) {
-      if (p.voiceId && p.name) {
-        const existing = state.characterVoiceMap?.[p.name];
-        if (!existing || existing.voiceId !== p.voiceId) {
-          dispatch({
-            type: 'MAP_CHARACTER_VOICE',
-            payload: { characterName: p.name, voiceId: p.voiceId, gender: p.gender || null },
-          });
-        }
-      }
-    }
-  }, [isMultiplayer, mp.state.players, state.characterVoiceMap, dispatch]);
+  useMultiplayerVoiceSync({
+    isMultiplayer,
+    players: mp.state.players,
+    characterVoiceMap: state.characterVoiceMap,
+    dispatch,
+  });
 
   const handleSceneNavigation = (sceneIndex) => {
     const scene = scenes[sceneIndex];
@@ -1165,7 +595,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const overlayTypingSpeedMultiplier = isPlayerActionOverlayActive
     ? (isGeneratingScene ? 3 : 1)
     : 1;
-  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
+  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
 
   const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
@@ -1178,7 +608,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       diceTypewriterTimerRef.current = null;
     }
 
-    if (overlayText && earlyDiceRoll) {
+    // Decoupled from overlayText on purpose: the typewriter overlay fast-fades
+    // as soon as scene streaming starts (`fastFinish={streamingNarrative !== null}`),
+    // but the dice animation (z-80, pointer-events-none) renders over the chat
+    // independently. If we gate on overlayText, the dice overlay disappears the
+    // moment the typewriter closes, cutting off the roll mid-animation.
+    if (earlyDiceRoll) {
       diceTypewriterTimerRef.current = setTimeout(
         () => setDiceAfterTypewriter(true),
         DICE_AFTER_TYPEWRITER_DELAY_MS
@@ -1192,7 +627,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
 
     setDiceAfterTypewriter(false);
-  }, [overlayText, earlyDiceRoll]);
+  }, [earlyDiceRoll]);
 
   const MAX_CONSECUTIVE_IDLE_EVENTS = 2;
 
@@ -1200,14 +635,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     if (!IDLE_WORLD_EVENTS_ENABLED) return;
     if (consecutiveIdleEventsRef.current >= MAX_CONSECUTIVE_IDLE_EVENTS) return;
     consecutiveIdleEventsRef.current += 1;
-    generateScene(`[IDLE_WORLD_EVENT: d100=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
+    generateScene(`[IDLE_WORLD_EVENT: d50=${roll}, threshold=${threshold}]`, false, false).catch(() => {});
   }, [IDLE_WORLD_EVENTS_ENABLED, generateScene]);
 
   const idlePaused = isMultiplayer
     || !IDLE_WORLD_EVENTS_ENABLED
     || isGeneratingScene
     || !!(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)
-    || !!state.dialogue?.active
     || autoPlayer.isAutoPlaying
     || isReviewingPastScene
     || (campaign?.status && campaign.status !== 'active')
@@ -1223,291 +657,23 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     onIdleEvent: handleIdleEvent,
   });
 
-  const handleEndCombat = (summary) => {
-    dispatch({ type: 'END_COMBAT' });
+  const combatHandlers = useCombatResolution({
+    isMultiplayer,
+    dispatch,
+    autoSave,
+    narrator,
+    generateScene,
+    mp,
+    settings,
+    t,
+  });
 
-    const combatJournal = summary.playerSurvived
-      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}`
-      : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
-
-    const stateChanges = {
-      journalEntries: [combatJournal],
-    };
-    if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
-    if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
-
-    if (!summary.playerSurvived && character) {
-      const critCount = (character.criticalWoundCount || 0) + 1;
-      if (critCount >= 3 && (character.fate || 0) <= 0) {
-        stateChanges.forceStatus = 'dead';
-      }
-    }
-
-    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
-
-    const isDead = stateChanges.forceStatus === 'dead';
-    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
-
-    dispatch({
-      type: 'ADD_CHAT_MESSAGE',
-      payload: {
-        id: `msg_${Date.now()}_combat_end`,
-        role: 'system',
-        subtype: isDead ? 'combat_death' : 'combat_end',
-        content: isDead
-          ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
-          : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${summary.playerSurvived ? t('combat.youSurvived', 'You survived!') : t('combat.youWereDefeated', 'You were defeated!')}${xpRewardText}`,
-        timestamp: Date.now(),
-      },
-    });
-    setTimeout(() => autoSave(), 300);
-
-    if (isDead) {
-      narrator.stop?.();
-      return;
-    }
-
-    const combatActionText = summary.playerSurvived
-      ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}${summary.criticalWounds?.length ? ` Suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`
-      : `[Combat resolved: the player LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They were reduced to 0 wounds and did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss.${summary.woundsChange ? ` The player took ${Math.abs(summary.woundsChange)} wounds.` : ''}${summary.criticalWounds?.length ? ` The player suffered ${summary.criticalWounds.length} critical wound(s).` : ''} Narrate ONLY the defeat aftermath: capture, rescue, being left for dead, waking up wounded, losing gear, or enemies taking control. NEVER describe this as a victory, clean escape, or total enemy defeat.]`;
-
-    generateScene(combatActionText, false, false).catch(() => {});
-  };
-
-  const handleSurrender = (summary) => {
-    dispatch({ type: 'END_COMBAT' });
-
-    const remainingList = summary.remainingEnemies.map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
-    const combatJournal = `Combat: Surrender — yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
-
-    const stateChanges = {
-      journalEntries: [combatJournal],
-    };
-    if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
-    if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
-    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
-
-    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
-
-    dispatch({
-      type: 'ADD_CHAT_MESSAGE',
-      payload: {
-        id: `msg_${Date.now()}_combat_surrender`,
-        role: 'system',
-        subtype: 'combat_end',
-        content: `${t('combat.youSurrenderedAfterRounds', 'You surrendered after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
-        timestamp: Date.now(),
-      },
-    });
-    setTimeout(() => autoSave(), 300);
-
-    const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
-
-    generateScene(combatActionText, false, false).catch(() => {});
-  };
-
-  const handleForceTruce = (summary) => {
-    dispatch({ type: 'END_COMBAT' });
-
-    const remainingList = summary.remainingEnemies.map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
-    const combatJournal = `Combat: Truce — forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
-
-    const stateChanges = {
-      journalEntries: [combatJournal],
-    };
-    if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
-    if (summary.xp) stateChanges.xp = summary.xp;
-    if (summary.criticalWounds?.length > 0) stateChanges.criticalWounds = summary.criticalWounds;
-    dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
-
-    const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
-
-    dispatch({
-      type: 'ADD_CHAT_MESSAGE',
-      payload: {
-        id: `msg_${Date.now()}_combat_truce`,
-        role: 'system',
-        subtype: 'combat_end',
-        content: `${t('combat.youForcedTruceAfterRounds', 'You forced a truce after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
-        timestamp: Date.now(),
-      },
-    });
-    setTimeout(() => autoSave(), 300);
-
-    const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}${summary.criticalWounds?.length ? ` Player suffered ${summary.criticalWounds.length} critical wound(s).` : ''}]`;
-
-    generateScene(combatActionText, false, false).catch(() => {});
-  };
-
-  const handleEndDialogue = (summary) => {
-    dispatch({ type: 'END_DIALOGUE' });
-
-    const npcList = (summary.npcs || []).join(', ');
-    const journalEntry = summary.endedEarly
-      ? `Dialogue: Ended conversation early with ${npcList} after ${summary.rounds}/${summary.maxRounds} rounds.`
-      : `Dialogue: Completed conversation with ${npcList} over ${summary.rounds} rounds.`;
-
-    dispatch({
-      type: 'APPLY_STATE_CHANGES',
-      payload: { journalEntries: [journalEntry] },
-    });
-
-    dispatch({
-      type: 'ADD_CHAT_MESSAGE',
-      payload: {
-        id: `msg_${Date.now()}_dialogue_end`,
-        role: 'system',
-        subtype: 'dialogue_end',
-        content: summary.endedEarly
-          ? t('dialogue.endedEarly', { rounds: summary.rounds, maxRounds: summary.maxRounds })
-          : t('dialogue.completed', { rounds: summary.rounds }),
-        timestamp: Date.now(),
-      },
-    });
-    setTimeout(() => autoSave(), 300);
-
-    const dialogueActionText = `[Dialogue ended: ${summary.endedEarly ? 'ended early' : 'completed'} after ${summary.rounds} rounds with ${npcList}. Resume normal narration — describe the aftermath and consequences of the conversation.]`;
-    generateScene(dialogueActionText, false, false).catch(() => {});
-  };
-
-  // --- Multiplayer combat handlers (host-only) ---
-  const combatPanelRef = useRef(null);
-
-  const handleMpEndCombat = (summary) => {
-    const perChar = summary.perCharacter || {};
-    const perCharForServer = {};
-    for (const [name, data] of Object.entries(perChar)) {
-      perCharForServer[name] = {
-        wounds: data.wounds || 0,
-        xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
-      };
-    }
-
-    const allSurvived = Object.values(perChar).every((p) => p.survived);
-    const combatJournal = allSurvived
-      ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.`
-      : `Combat: Defeat — party fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
-
-    mp.endMultiplayerCombat({
-      perCharacter: perCharForServer,
-      enemiesDefeated: summary.enemiesDefeated,
-      totalEnemies: summary.totalEnemies,
-      rounds: summary.rounds,
-      outcome: allSurvived ? 'victory' : 'defeat',
-      journalEntry: combatJournal,
-    });
-
-    const combatActionText = allSurvived
-      ? `[Combat resolved: party defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.]`
-      : `[Combat resolved: the party LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss. Narrate ONLY the defeat aftermath: capture, forced retreat, rescue, imprisonment, losing equipment, or waking later under enemy control. NEVER describe this as a victory or as if all enemies were defeated.]`;
-
-    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
-  };
-
-  const handleMpSurrender = (summary) => {
-    const perChar = summary.perCharacter || {};
-    const perCharForServer = {};
-    for (const [name, data] of Object.entries(perChar)) {
-      perCharForServer[name] = {
-        wounds: data.wounds || 0,
-        xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
-      };
-    }
-
-    const remainingList = (summary.remainingEnemies || []).map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
-    const combatJournal = `Combat: Surrender — party yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining: ${remainingList}.`;
-
-    mp.endMultiplayerCombat({
-      perCharacter: perCharForServer,
-      enemiesDefeated: summary.enemiesDefeated,
-      totalEnemies: summary.totalEnemies,
-      rounds: summary.rounds,
-      outcome: 'surrender',
-      journalEntry: combatJournal,
-    });
-
-    const combatActionText = `[Combat resolved: party surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason: ${summary.reason || 'unknown'}.]`;
-
-    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
-  };
-
-  const handleMpForceTruce = (summary) => {
-    const perChar = summary.perCharacter || {};
-    const perCharForServer = {};
-    for (const [name, data] of Object.entries(perChar)) {
-      perCharForServer[name] = {
-        wounds: data.wounds || 0,
-        xp: data.xp || 0,
-        criticalWounds: data.criticalWounds || [],
-      };
-    }
-
-    const remainingList = (summary.remainingEnemies || []).map((e) => `${e.name} (${e.wounds}/${e.maxWounds} HP)`).join(', ');
-    const combatJournal = `Combat: Truce — party forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining: ${remainingList}.`;
-
-    mp.endMultiplayerCombat({
-      perCharacter: perCharForServer,
-      enemiesDefeated: summary.enemiesDefeated,
-      totalEnemies: summary.totalEnemies,
-      rounds: summary.rounds,
-      outcome: 'truce',
-      journalEntry: combatJournal,
-    });
-
-    const combatActionText = `[Combat resolved: party forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The party had the upper hand and demanded the enemies stand down. Reason: ${summary.reason || 'unknown'}.]`;
-
-    mp.soloAction(combatActionText, false, settings.language, settings.dmSettings);
-  };
-
-  // Host: detect combatUpdate from scene results and create MP combat state
-  const lastCombatSceneRef = useRef(null);
-  useEffect(() => {
-    if (!isMultiplayer || !mp.state.isHost) return;
-    const lastScene = (mpGameState?.scenes || []).at(-1);
-    if (!lastScene || lastScene.id === lastCombatSceneRef.current) return;
-    if (mpGameState?.combat?.active) return;
-
-    const combatUpdate = lastScene.stateChanges?.combatUpdate;
-    if (combatUpdate?.active) {
-      lastCombatSceneRef.current = lastScene.id;
-      const chars = mpGameState.characters || [];
-      const aiEnemies = Array.isArray(combatUpdate.enemies)
-        ? combatUpdate.enemies.filter((enemy) => enemy?.name)
-        : [];
-      const fallbackEnemies = aiEnemies.length > 0
-        ? aiEnemies
-        : [{
-            name: 'Hostile Foe',
-            characteristics: { ws: 35, bs: 25, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 15 },
-            wounds: 10,
-            maxWounds: 10,
-            skills: { 'Melee (Basic)': 5 },
-            traits: [],
-            armour: { body: 0 },
-            weapons: ['Hand Weapon'],
-          }];
-      const combatState = createMultiplayerCombatState(chars, fallbackEnemies, []);
-      combatState.reason = combatUpdate.reason || '';
-      mp.syncCombatState(combatState);
-    }
-  }, [isMultiplayer, mp.state.isHost, mpGameState?.scenes, mpGameState?.combat, mpGameState?.characters]);
-
-  // Host: handle incoming COMBAT_MANOEUVRE from other players
-  useEffect(() => {
-    if (!isMultiplayer || !mp.state.isHost) return;
-    const pending = mp.state.pendingCombatManoeuvre;
-    if (!pending) return;
-
-    mp.clearPendingCombatManoeuvre();
-    const fromPlayerId = `player_${pending.fromOdId}`;
-    if (CombatPanel.resolveRemoteManoeuvre) {
-      CombatPanel.resolveRemoteManoeuvre(fromPlayerId, pending.manoeuvre, pending.targetId, pending.customDescription);
-    }
-  }, [isMultiplayer, mp.state.isHost, mp.state.pendingCombatManoeuvre]);
+  useMultiplayerCombatSceneDetect({
+    isMultiplayer,
+    isHost: mp.state.isHost,
+    mp,
+    mpGameState,
+  });
 
   const dismissError = () => {
     dispatch({ type: 'SET_ERROR', payload: null });
@@ -1558,326 +724,48 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       {/* Main Game Area */}
       <div className={`flex-1 flex flex-col min-h-0 ${readOnly ? 'lg:mt-8' : ''}`}>
         <div className="flex-1 flex flex-col px-4 md:px-6 pt-4 md:pt-6 pb-2 gap-6 overflow-y-auto custom-scrollbar min-h-0">
-        {/* Scene Counter */}
-        {scenes.length > 0 && (
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">
-                {campaign.name}
-              </span>
-              <span className="w-1 h-1 bg-primary/50 rounded-full" />
-              <span className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    setViewingSceneIndex(0);
-                    handleSceneNavigation(0);
-                  }}
-                  disabled={displayedSceneIndex <= 0}
-                  title={t('gameplay.firstScene', 'First scene')}
-                  aria-label={t('gameplay.firstScene', 'First scene')}
-                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
-                >
-                  first_page
-                </button>
-                <button
-                  onClick={() => {
-                    const newIndex = Math.max(0, displayedSceneIndex - 1);
-                    setViewingSceneIndex(newIndex);
-                    handleSceneNavigation(newIndex);
-                  }}
-                  disabled={displayedSceneIndex <= 0}
-                  title={t('gameplay.previousScene', 'Previous scene')}
-                  aria-label={t('gameplay.previousScene', 'Previous scene')}
-                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
-                >
-                  chevron_left
-                </button>
-                <span className={`text-xs ${isReviewingPastScene ? 'text-primary font-bold' : 'text-outline'}`}>
-                  {t('common.scene')} {displayedSceneIndex + 1} / {scenes.length}
-                </span>
-                {scenes.length > 2 && (
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-sm border ${
-                      tensionScore > 70 ? 'text-error border-error/30 bg-error/10' :
-                      tensionScore > 40 ? 'text-amber-400 border-amber-400/30 bg-amber-400/10' :
-                      'text-tertiary border-tertiary/30 bg-tertiary/10'
-                    }`}
-                    title={t('gameplay.tensionScore', 'Tension') + `: ${tensionScore}/100`}
-                  >
-                    {tensionScore > 70 ? t('gameplay.tensionHigh', 'High') :
-                     tensionScore > 40 ? t('gameplay.tensionMedium', 'Med') :
-                     t('gameplay.tensionLow', 'Low')}
-                  </span>
-                )}
-                <button
-                  onClick={() => {
-                    const next = displayedSceneIndex + 1;
-                    const newIndex = next >= scenes.length - 1 ? null : next;
-                    setViewingSceneIndex(newIndex);
-                    handleSceneNavigation(next);
-                  }}
-                  disabled={displayedSceneIndex >= scenes.length - 1}
-                  title={t('gameplay.nextScene', 'Next scene')}
-                  aria-label={t('gameplay.nextScene', 'Next scene')}
-                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
-                >
-                  chevron_right
-                </button>
-                <button
-                  onClick={() => {
-                    const next = displayedSceneIndex + 1;
-                    navigateWithTypewriter(next);
-                  }}
-                  disabled={displayedSceneIndex >= scenes.length - 1}
-                  title={t('gameplay.lastScene', 'Last scene')}
-                  aria-label={t('gameplay.lastScene', 'Last scene')}
-                  className="material-symbols-outlined text-base text-outline hover:text-primary disabled:text-outline/30 disabled:cursor-default transition-colors"
-                >
-                  last_page
-                </button>
-                {viewedScene?.narrative && (
-                  <button
-                    onClick={() => {
-                      playSceneNarration(viewedScene, displayedSceneIndex);
-                    }}
-                    title={t('gameplay.playScene', 'Play scene')}
-                    aria-label={t('gameplay.playScene', 'Play scene')}
-                    className="material-symbols-outlined text-xs text-outline hover:text-primary transition-colors ml-1"
-                  >
-                    play_circle
-                  </button>
-                )}
-                {narrator.isNarratorReady && narrator.playbackState === narrator.STATES.PLAYING && (
-                  <button
-                    onClick={() => narrator.skipSegment()}
-                    title={t('gameplay.skipSegment', 'Skip to next segment')}
-                    aria-label={t('gameplay.skipSegment', 'Skip to next segment')}
-                    className="material-symbols-outlined text-xs text-outline hover:text-primary transition-colors"
-                  >
-                    skip_next
-                  </button>
-                )}
-                {((settings.narratorEnabled || readOnly) && narrator.isNarratorReady && scenes.length > 1) && (
-                  <button
-                    onClick={() => {
-                      if (autoPlayScenes) {
-                        setAutoPlayScenes(false);
-                        narrator.stop();
-                      } else {
-                        if (displayedSceneIndex >= scenes.length - 1) {
-                          setViewingSceneIndex(0);
-                          handleSceneNavigation(0);
-                        }
-                        setAutoPlayScenes(true);
-                      }
-                    }}
-                    title={autoPlayScenes
-                      ? t('gameplay.stopAutoPlay', 'Stop auto-play')
-                      : t('gameplay.autoPlayScenes', 'Auto-play all scenes')}
-                    aria-label={autoPlayScenes
-                      ? t('gameplay.stopAutoPlay', 'Stop auto-play')
-                      : t('gameplay.autoPlayScenes', 'Auto-play all scenes')}
-                    className={`material-symbols-outlined text-xs transition-colors ml-1 ${
-                      autoPlayScenes
-                        ? 'text-tertiary hover:text-error animate-pulse'
-                        : 'text-outline hover:text-primary'
-                    }`}
-                  >
-                    {autoPlayScenes ? 'stop' : 'play_arrow'}
-                  </button>
-                )}
-              </span>
-              {campaign?.structure?.acts?.length > 0 && (
-                <>
-                  <span className="w-1 h-1 bg-primary/50 rounded-full" />
-                  <span className="text-[10px] text-outline">
-                    {t('gameplay.act', 'Act')} {campaign.structure.currentAct || 1}
-                    {campaign.structure.acts.find((a) => a.number === (campaign.structure.currentAct || 1))?.name
-                      ? ` — ${campaign.structure.acts.find((a) => a.number === (campaign.structure.currentAct || 1)).name}`
-                      : ''}
-                  </span>
-                  <div className="hidden sm:flex items-center gap-1 ml-1">
-                    <div className="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary/60 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, ((scenes.length) / (campaign.structure.totalTargetScenes || 25)) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-[9px] text-outline">~{campaign.structure.totalTargetScenes || '?'}</span>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              {!readOnly && aiCosts?.total > 0 && (
-                <CostBadge costs={aiCosts} />
-              )}
-              {!readOnly && availableXp > 0 && (
-                <button
-                  onClick={handleAdvancementOpen}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-primary/15 text-primary text-[10px] font-bold uppercase tracking-widest rounded-sm border border-primary/20 hover:bg-primary/25 transition-all animate-fade-in"
-                >
-                  <span className="material-symbols-outlined text-xs">upgrade</span>
-                  {availableXp} {t('common.xp')}
-                </button>
-              )}
-              {isMultiplayer && allCharacters.length > 0 ? (
-                <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
-                  {allCharacters.map((c) => (
-                    <span key={c.name}>{c.name} W:{c.wounds}/{c.maxWounds}</span>
-                  ))}
-                </div>
-              ) : displayCharacter ? (
-                <div className="hidden lg:flex items-center gap-4 text-xs text-on-surface-variant">
-                  <span>{displayCharacter.name}</span>
-                  <span>{translateCareer(displayCharacter.career?.name, t)}</span>
-                  {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
-                </div>
-              ) : null}
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                title={t('gameplay.refreshTooltip', 'Reload campaign')}
-                aria-label={t('gameplay.refresh', 'Refresh')}
-                className={`material-symbols-outlined text-sm transition-colors ${
-                  isRefreshing ? 'text-primary animate-spin' : 'text-outline hover:text-primary'
-                }`}
-              >
-                {isRefreshing ? 'progress_activity' : 'refresh'}
-              </button>
-              {!readOnly && (
-                <>
-                  {/* Auto-Player toggle (solo only) */}
-                  {!isMultiplayer && currentScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={autoPlayer.toggleAutoPlayer}
-                        title={t('autoPlayer.toggle')}
-                        aria-label={t('autoPlayer.toggle')}
-                        className={`relative w-8 h-[18px] rounded-full transition-colors duration-200 ${
-                          autoPlayer.isAutoPlaying ? 'bg-primary' : 'bg-outline/30'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-[3px] left-[3px] w-3 h-3 rounded-full bg-on-primary transition-transform duration-200 ${
-                            autoPlayer.isAutoPlaying ? 'translate-x-[14px]' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                      {autoPlayer.isAutoPlaying && autoPlayer.isThinking && (
-                        <span className="material-symbols-outlined text-xs text-primary animate-spin">progress_activity</span>
-                      )}
-                      <span className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant hidden xl:inline">
-                        {t('autoPlayer.title')}
-                      </span>
-                      {autoPlayer.isAutoPlaying && (
-                        <span className="text-[9px] text-outline tabular-nums">
-                          {autoPlayer.turnsPlayed}{autoPlayer.autoPlayerSettings.maxTurns > 0 ? `/${autoPlayer.autoPlayerSettings.maxTurns}` : ''}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => setAutoPlayerSettingsOpen(true)}
-                        title={t('autoPlayer.settings')}
-                        aria-label={t('autoPlayer.settings')}
-                        className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                      >
-                        tune
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setMpPanelOpen(true)}
-                    title={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-                    aria-label={isMultiplayer ? t('multiplayer.invitePlayers') : t('multiplayer.openMultiplayer')}
-                    className={`material-symbols-outlined text-sm transition-colors ${
-                      isMultiplayer ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-                    }`}
-                  >
-                    {isMultiplayer ? 'group' : 'group_add'}
-                  </button>
-                  {isMultiplayer && (
-                    <button
-                      onClick={() => setVideoPanelOpen((v) => !v)}
-                      title={t('webcam.videoChat')}
-                      aria-label={t('webcam.videoChat')}
-                      className={`material-symbols-outlined text-sm transition-colors ${
-                        videoPanelOpen ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
-                      }`}
-                    >
-                      video_camera_front
-                    </button>
-                  )}
-                  {campaign?.backendId && apiClient.isConnected() && (
-                    <button
-                      onClick={handleShare}
-                      disabled={shareLoading}
-                      title={shareCopied ? t('gameplay.shareCopied') : t('gameplay.share')}
-                      aria-label={t('gameplay.share')}
-                      className={`material-symbols-outlined text-sm transition-colors ${
-                        shareCopied ? 'text-emerald-400' : shareLoading ? 'text-outline/50 animate-pulse' : 'text-outline hover:text-primary'
-                      }`}
-                    >
-                      {shareCopied ? 'check' : 'share'}
-                    </button>
-                  )}
-                  <button
-                    onClick={handleOpenSummaryModal}
-                    title={t('gameplay.summaryTitle', 'Story summary')}
-                    aria-label={t('gameplay.summaryTitle', 'Story summary')}
-                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                  >
-                    short_text
-                  </button>
-                  <button
-                    onClick={() => setAchievementsOpen(true)}
-                    title={t('achievements.title', 'Achievements')}
-                    aria-label={t('achievements.title', 'Achievements')}
-                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                  >
-                    emoji_events
-                  </button>
-                  <button
-                    onClick={() => setWorldModalOpen(true)}
-                    title={t('worldState.title')}
-                    aria-label={t('worldState.title')}
-                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                  >
-                    public
-                  </button>
-                  <button
-                    onClick={() => setGmModalOpen(true)}
-                    title={t('gmModal.title')}
-                    aria-label={t('gmModal.title')}
-                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                  >
-                    auto_stories
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (isMultiplayer && mpGameState) {
-                        exportAsMarkdown({
-                          campaign: mpGameState.campaign,
-                          character: character,
-                          scenes: mpGameState.scenes,
-                          chatHistory: mpGameState.chatHistory,
-                          quests: mpGameState.quests,
-                          world: mpGameState.world,
-                        });
-                      } else {
-                        exportAsMarkdown(state);
-                      }
-                    }}
-                    title={t('gameplay.exportLog')}
-                    aria-label={t('gameplay.exportLog')}
-                    className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
-                  >
-                    download
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+        <GameplayHeader
+          readOnly={readOnly}
+          isMultiplayer={isMultiplayer}
+          mpGameState={mpGameState}
+          state={state}
+          campaign={campaign}
+          scenes={scenes}
+          displayedSceneIndex={displayedSceneIndex}
+          isReviewingPastScene={isReviewingPastScene}
+          tensionScore={tensionScore}
+          viewedScene={viewedScene}
+          currentScene={currentScene}
+          character={character}
+          allCharacters={allCharacters}
+          displayCharacter={displayCharacter}
+          isViewingCompanion={isViewingCompanion}
+          attrPoints={attrPoints}
+          setViewingSceneIndex={setViewingSceneIndex}
+          handleSceneNavigation={handleSceneNavigation}
+          navigateWithTypewriter={navigateWithTypewriter}
+          playSceneNarration={playSceneNarration}
+          narrator={narrator}
+          settings={settings}
+          autoPlayScenes={autoPlayScenes}
+          setAutoPlayScenes={setAutoPlayScenes}
+          handleRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
+          handleShare={handleShare}
+          shareCopied={shareCopied}
+          shareLoading={shareLoading}
+          aiCosts={aiCosts}
+          autoPlayer={autoPlayer}
+          onOpenAutoPlayerSettings={() => setAutoPlayerSettingsOpen(true)}
+          onOpenAdvancement={handleAdvancementOpen}
+          onOpenMpPanel={() => setMpPanelOpen(true)}
+          onOpenSummaryModal={recap.openSummaryModal}
+          onOpenAchievements={() => setAchievementsOpen(true)}
+          onOpenWorldModal={() => setWorldModalOpen(true)}
+          onOpenGmModal={() => setGmModalOpen(true)}
+          videoPanelOpen={videoPanelOpen}
+          setVideoPanelOpen={setVideoPanelOpen}
+        />
 
         {/* Context Depth Slider */}
         {!readOnly && (
@@ -1940,8 +828,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             onRegenerateImage={readOnly ? null : (sceneId) => {
               if (!sceneId) return Promise.resolve(false);
               if (isMultiplayer && !mp.state.isHost) return Promise.resolve(false);
-              imageAttemptedRef.current.delete(sceneId);
-              imageRepairAttemptsRef.current.delete(sceneId);
+              resetImageAttempts(sceneId);
               return repairSceneImage(sceneId, { reason: 'manual-retry', forceNew: true });
             }}
           />
@@ -1952,9 +839,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
-              showLoader={isPlayerActionOverlayActive && isGeneratingScene}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
+              fastFinish={streamingNarrative !== null}
             />
           )}
           {earlyDiceRoll && diceAfterTypewriter && (
@@ -2010,30 +898,21 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {/* Character Quick Stats (Wounds/Meta-currencies for mobile) */}
         {displayCharacter && (
           <div className="lg:hidden space-y-3 px-2">
-            {(() => {
-              const fate = displayCharacter.fate ?? 0;
-              const resilience = displayCharacter.resilience ?? 0;
-              const fortune = displayCharacter.fortune ?? fate;
-              const resolve = displayCharacter.resolve ?? resilience;
-
-              return (
-                <div className="grid grid-cols-2 gap-4">
-                  <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
-                  <div className="flex items-center justify-center gap-3 text-[10px] text-on-surface-variant uppercase tracking-widest">
-                    <span>{t('common.fortune')} {fortune}/{fate}</span>
-                    <span>{t('common.resolve')} {resolve}/{resilience}</span>
-                  </div>
-                </div>
-              );
-            })()}
+            <div className="grid grid-cols-2 gap-4">
+              <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
+              {displayCharacter.mana && (
+                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="tertiary" />
+              )}
+            </div>
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading State — fill bar to 100% + fade out once streaming starts */}
         {isGeneratingScene && !readOnly && (
           <SceneGenerationProgress
             startTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
             estimatedMs={lastSceneGenMs}
+            completing={streamingNarrative !== null}
           />
         )}
 
@@ -2097,9 +976,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               combat={isMultiplayer ? mpGameState.combat : state.combat}
               gameState={isMultiplayer ? mpGameState : state}
               dispatch={dispatch}
-              onEndCombat={isMultiplayer ? handleMpEndCombat : handleEndCombat}
-              onSurrender={isMultiplayer ? handleMpSurrender : handleSurrender}
-              onForceTruce={isMultiplayer ? handleMpForceTruce : handleForceTruce}
+              onEndCombat={combatHandlers.onEndCombat}
+              onSurrender={combatHandlers.onSurrender}
+              onForceTruce={combatHandlers.onForceTruce}
               character={character}
               isMultiplayer={isMultiplayer}
               myPlayerId={isMultiplayer ? `player_${mp.state.myOdId}` : 'player'}
@@ -2107,40 +986,24 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onHostResolve={mp.syncCombatState}
               isHost={mp.state.isHost}
               mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
-              onPersistState={() => setTimeout(() => autoSave(), 300)}
-            />
-          </div>
-        )}
-
-        {/* Dialogue Panel */}
-        {state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <DialoguePanel
-              dialogue={state.dialogue}
-              gameState={state}
-              onAction={handleAction}
-              onEndDialogue={handleEndDialogue}
-              disabled={isGeneratingScene}
+              onPersistState={() => autoSave()}
             />
           </div>
         )}
 
         {/* Magic Panel */}
-        {hasMagic && !isMultiplayer && !state.combat?.active && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <MagicPanel
               character={character}
               combat={state.combat}
-              dispatch={dispatch}
               onCastSpell={(result) => {
-                const spellName = t(`magic.spellData.${result.spell?.name}.name`, '') || result.spell?.name || t('magic.spells');
+                const spellName = result.spellName || result.spell?.name || t('magic.spells');
                 let content;
                 if (result.success) {
-                  content = t('magic.chatCastSuccess', { spell: spellName, sl: result.totalSL || result.sl });
-                } else if (result.miscast) {
-                  content = t('magic.chatCastFailMiscast', { spell: spellName });
+                  content = t('magic.chatCastSuccess', { spell: spellName, defaultValue: `Rzucono ${spellName}` });
                 } else {
-                  content = t('magic.chatCastFail', { spell: spellName });
+                  content = result.error || t('magic.chatCastFail', { spell: spellName, defaultValue: `Nie udalo sie rzucic ${spellName}` });
                 }
                 dispatch({
                   type: 'ADD_CHAT_MESSAGE',
@@ -2155,6 +1018,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               }}
             />
           </div>
+        )}
+
+        {/* Trade/Crafting/Alchemy panels moved to bottom fixed area */}
+
+        {/* Main Quest Complete Modal */}
+        {state.mainQuestJustCompleted && campaign?.status === 'active' && (
+          <MainQuestCompleteModal state={state} dispatch={dispatch} navigate={navigate} />
         )}
 
         {/* Campaign End Screen */}
@@ -2185,7 +1055,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                   {t('gameplay.exportLog')}
                 </button>
                 <button
-                  onClick={() => { dispatch({ type: 'RESET' }); navigate('/'); }}
+                  onClick={() => {
+                    const guard = canLeaveCampaign(state);
+                    if (!guard.allowed) { window.alert(getLeaveBlockedMessage(guard.reason)); return; }
+                    dispatch({ type: 'RESET' }); navigate('/');
+                  }}
                   className="flex items-center gap-2 px-6 py-2 bg-primary/15 border border-primary/30 rounded-sm text-xs font-label uppercase tracking-widest text-primary hover:bg-primary/25 transition-all"
                 >
                   <span className="material-symbols-outlined text-sm">add</span>
@@ -2197,7 +1071,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Quest Offers */}
-        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <QuestOffersPanel
               offers={currentScene.questOffers}
@@ -2211,7 +1085,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {/* Bottom panel — always visible */}
         <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !state.dialogue?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
+        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
@@ -2235,12 +1109,48 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
               npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
-              dialogueCooldown={state.dialogueCooldown || 0}
               character={character}
               dilemma={currentScene.dilemma}
               lastChosenAction={lastChosenAction}
               multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
               typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
+              dispatch={dispatch}
+              gameState={state}
+            />
+          </div>
+        )}
+
+        {/* Trade Panel */}
+        {state.trade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <TradePanel
+              trade={state.trade}
+              character={character}
+              world={state.world}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Crafting Panel */}
+        {state.crafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <CraftingPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
+            />
+          </div>
+        )}
+
+        {/* Alchemy Panel */}
+        {state.alchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <AlchemyPanel
+              character={character}
+              dispatch={dispatch}
+              disabled={isGeneratingScene}
             />
           </div>
         )}
@@ -2251,7 +1161,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <div className="bg-error-container/20 border border-error/20 p-6 rounded-sm text-center space-y-3">
               <span className="material-symbols-outlined text-4xl text-error">skull</span>
               <p className="text-error font-headline text-lg">{t('gameplay.characterDead', 'Your character has fallen')}</p>
-              <p className="text-on-surface-variant text-xs">{t('gameplay.characterDeadDesc', 'With no Fate points remaining, death is final.')}</p>
+              <p className="text-on-surface-variant text-xs">{t('gameplay.characterDeadDesc', 'Death is final.')}</p>
             </div>
           </div>
         )}
@@ -2274,6 +1184,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       <aside className="w-full lg:w-96 bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0">
         <ChatPanel
           messages={chatHistory}
+          streamingNarrative={streamingNarrative}
+          streamingSegments={streamingSegments}
           narrator={settings.narratorEnabled ? narrator : null}
           autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !pendingOverlayText && !playerActionOverlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
@@ -2281,9 +1193,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
             : (state.momentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
-          onScrollTargetHandled={(handledId) => {
-            setScrollTargetMessageId((current) => (current === handledId ? null : current));
-          }}
+          onScrollTargetHandled={clearScrollTargetIfMatches}
           typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
           sessionSeconds={sessionSeconds}
           totalPlayTime={totalPlayTime}
@@ -2291,88 +1201,36 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         />
       </aside>
 
-      {!readOnly && (
-        <>
-          {worldModalOpen && (
-            <WorldStateModal
-              world={isMultiplayer ? mpGameState?.world : state.world}
-              quests={isMultiplayer ? mpGameState?.quests : state.quests}
-              characterVoiceMap={state.characterVoiceMap}
-              characterVoices={settings.characterVoices}
-              dispatch={dispatch}
-              autoSave={autoSave}
-              onClose={() => setWorldModalOpen(false)}
-            />
-          )}
-
-          {gmModalOpen && (
-            <GMModal onClose={() => setGmModalOpen(false)} />
-          )}
-
-          {mpPanelOpen && (
-            <MultiplayerPanel onClose={() => setMpPanelOpen(false)} />
-          )}
-
-          {advancementOpen && (
-            <AdvancementPanel onClose={handleAdvancementClose} />
-          )}
-
-          {achievementsOpen && (
-            <AchievementsPanel
-              achievementState={state.achievements}
-              onClose={() => setAchievementsOpen(false)}
-            />
-          )}
-
-          {autoPlayerSettingsOpen && (
-            <AutoPlayerPanel
-              isAutoPlaying={autoPlayer.isAutoPlaying}
-              isThinking={autoPlayer.isThinking}
-              turnsPlayed={autoPlayer.turnsPlayed}
-              lastError={autoPlayer.lastError}
-              toggleAutoPlayer={autoPlayer.toggleAutoPlayer}
-              autoPlayerSettings={autoPlayer.autoPlayerSettings}
-              updateAutoPlayerSettings={autoPlayer.updateAutoPlayerSettings}
-              characterName={character?.name}
-              isGeneratingScene={isGeneratingScene}
-              onClose={() => setAutoPlayerSettingsOpen(false)}
-            />
-          )}
-
-          {summaryModalOpen && (
-            <SummaryModal
-              onClose={() => setSummaryModalOpen(false)}
-              onGenerate={handleGenerateSummary}
-              onCopy={handleCopySummary}
-              onSpeak={handleSpeakSummary}
-              summaryText={summaryText}
-              isLoading={summaryLoading}
-              error={summaryError}
-              progress={summaryProgress}
-              copied={summaryCopied}
-              summaryOptions={summaryOptions}
-              onSummaryOptionsChange={setSummaryOptions}
-              sceneIndex={displayedSceneIndex}
-              totalScenes={scenes.length}
-              narrationMessageId={summaryNarrationMessageId}
-              narrationWordOffset={summaryNarrationWordOffset}
-              narratorCurrentMessageId={narrator.currentMessageId}
-              narratorHighlightInfo={narrator.highlightInfo}
-              speakLoading={summarySpeakLoading}
-              sentencesPerScene={summarySentencesPerScene}
-              onSentencesPerSceneChange={setSummarySentencesPerScene}
-              recapScenes={scenes.slice(0, Math.max(0, displayedSceneIndex) + 1)}
-            />
-          )}
-
-          {isMultiplayer && (
-            <FloatingVideoPanel
-              visible={videoPanelOpen}
-              onClose={() => setVideoPanelOpen(false)}
-            />
-          )}
-        </>
-      )}
+      <GameplayModals
+        readOnly={readOnly}
+        isMultiplayer={isMultiplayer}
+        mpGameState={mpGameState}
+        state={state}
+        settings={settings}
+        dispatch={dispatch}
+        autoSave={autoSave}
+        narrator={narrator}
+        worldModalOpen={worldModalOpen}
+        onWorldModalClose={() => setWorldModalOpen(false)}
+        gmModalOpen={gmModalOpen}
+        onGmModalClose={() => setGmModalOpen(false)}
+        mpPanelOpen={mpPanelOpen}
+        onMpPanelClose={() => setMpPanelOpen(false)}
+        advancementOpen={advancementOpen}
+        onAdvancementClose={handleAdvancementClose}
+        achievementsOpen={achievementsOpen}
+        onAchievementsClose={() => setAchievementsOpen(false)}
+        autoPlayerSettingsOpen={autoPlayerSettingsOpen}
+        onAutoPlayerSettingsClose={() => setAutoPlayerSettingsOpen(false)}
+        autoPlayer={autoPlayer}
+        character={character}
+        isGeneratingScene={isGeneratingScene}
+        recap={recap}
+        displayedSceneIndex={displayedSceneIndex}
+        scenes={scenes}
+        videoPanelOpen={videoPanelOpen}
+        onVideoPanelClose={() => setVideoPanelOpen(false)}
+      />
     </div>
   );
 }

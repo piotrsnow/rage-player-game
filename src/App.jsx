@@ -1,22 +1,75 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/layout/Layout';
-import LobbyPage from './components/lobby/LobbyPage';
-import CampaignCreatorPage from './components/creator/CampaignCreatorPage';
-import GameplayPage from './components/gameplay/GameplayPage';
-import JoinRoomPage from './components/multiplayer/JoinRoomPage';
-import GalleryPage from './components/gallery/GalleryPage';
-import CampaignViewerPage from './components/viewer/CampaignViewerPage';
+import LoadingSpinner from './components/ui/LoadingSpinner';
+
+const LobbyPage = lazy(() => import('./components/lobby/LobbyPage'));
+const CampaignCreatorPage = lazy(() => import('./components/creator/CampaignCreatorPage'));
+const GameplayPage = lazy(() => import('./components/gameplay/GameplayPage'));
+const JoinRoomPage = lazy(() => import('./components/multiplayer/JoinRoomPage'));
+const GalleryPage = lazy(() => import('./components/gallery/GalleryPage'));
+const CampaignViewerPage = lazy(() => import('./components/viewer/CampaignViewerPage'));
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <LoadingSpinner size="lg" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<LobbyPage />} />
-        <Route path="/create" element={<CampaignCreatorPage />} />
-        <Route path="/play/:campaignId?" element={<GameplayPage />} />
-        <Route path="/join/:code?" element={<JoinRoomPage />} />
-        <Route path="/gallery" element={<GalleryPage />} />
-        <Route path="/view/:shareToken" element={<CampaignViewerPage />} />
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <LobbyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/create"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <CampaignCreatorPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/play/:campaignId?"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <GameplayPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/join/:code?"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <JoinRoomPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/gallery"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <GalleryPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/view/:shareToken"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <CampaignViewerPage />
+            </Suspense>
+          }
+        />
       </Route>
     </Routes>
   );

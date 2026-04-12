@@ -1,4 +1,6 @@
-import { generateScene, generateSceneStream } from '../services/sceneGenerator.js';
+import { generateSceneStream } from '../services/sceneGenerator.js';
+import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
+import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import {
   embedText,
@@ -13,77 +15,52 @@ export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   /**
-   * POST /ai/campaigns/:id/generate-scene
+   * POST /ai/generate-story-prompt
    *
-   * Generate a new scene using AI with dynamic context (tool use).
-   * AI gets lean base context and can query backend for more information.
+   * Generate a random story premise for the campaign creator.
+   * Non-streaming — response is a single JSON object.
    */
-  fastify.post('/campaigns/:id/generate-scene', async (request, reply) => {
-    const campaignId = request.params.id;
-    const {
-      playerAction,
-      provider = 'openai',
-      model,
-      language = 'pl',
-      dmSettings = {},
-      resolvedMechanics = null,
-      needsSystemEnabled = false,
-      characterNeeds = null,
-      dialogue = null,
-      dialogueCooldown = 0,
-      isFirstScene = false,
-      isCustomAction = false,
-      fromAutoPlayer = false,
-      sceneCount = 0,
-    } = request.body;
-
-    if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
-      return reply.code(400).send({ error: 'playerAction is required' });
+  fastify.post('/generate-story-prompt', async (request, reply) => {
+    const { genre, tone, style, seedText, language, provider, model } = request.body || {};
+    try {
+      const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model });
+      return result;
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
     }
+  });
 
-    // Verify campaign ownership
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { userId: true },
+  /**
+   * POST /ai/generate-campaign
+   *
+   * Generate a new campaign with SSE streaming.
+   * Events: chunk (raw JSON text), complete (full parsed result), error
+   */
+  fastify.post('/generate-campaign', async (request, reply) => {
+    const { settings, language, provider, model } = request.body || {};
+
+    const origin = request.headers.origin || '*';
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
     });
 
-    if (!campaign) {
-      return reply.code(404).send({ error: 'Campaign not found' });
-    }
+    await generateCampaignStream(
+      settings || {},
+      { provider, model, language },
+      (event) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch { /* client disconnected */ }
+      },
+    );
 
-    if (campaign.userId !== request.user.id) {
-      return reply.code(403).send({ error: 'Not authorized' });
-    }
-
-    try {
-      const result = await generateScene(campaignId, playerAction || '[FIRST_SCENE]', {
-        provider,
-        model,
-        language,
-        dmSettings,
-        resolvedMechanics,
-        needsSystemEnabled,
-        characterNeeds,
-        dialogue,
-        dialogueCooldown,
-        isFirstScene,
-        isCustomAction,
-        fromAutoPlayer,
-        sceneCount,
-      });
-
-      return {
-        scene: result.scene,
-        sceneIndex: result.sceneIndex,
-        sceneId: result.sceneId,
-      };
-    } catch (err) {
-      console.error('Scene generation error:', err);
-      return reply.code(err.statusCode || 500).send({
-        error: err.message || 'Scene generation failed',
-        code: err.code || 'SCENE_GENERATION_ERROR',
-      });
-    }
+    reply.raw.end();
   });
 
   /**
@@ -103,10 +80,10 @@ export async function aiRoutes(fastify) {
       resolvedMechanics = null,
       needsSystemEnabled = false,
       characterNeeds = null,
-      dialogue = null,
-      dialogueCooldown = 0,
       isFirstScene = false,
       sceneCount = 0,
+      isCustomAction = false,
+      fromAutoPlayer = false,
     } = request.body;
 
     if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
@@ -126,12 +103,15 @@ export async function aiRoutes(fastify) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    // SSE headers
+    // SSE headers (must include CORS manually since writeHead bypasses Fastify hooks)
+    const origin = request.headers.origin || '*';
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
     });
 
     await generateSceneStream(
@@ -145,10 +125,10 @@ export async function aiRoutes(fastify) {
         resolvedMechanics,
         needsSystemEnabled,
         characterNeeds,
-        dialogue,
-        dialogueCooldown,
         isFirstScene,
         sceneCount,
+        isCustomAction,
+        fromAutoPlayer,
       },
       (event) => {
         try {
@@ -370,31 +350,30 @@ export async function aiRoutes(fastify) {
    */
   fastify.patch('/campaigns/:id/core', async (request, reply) => {
     const campaignId = request.params.id;
-    const updates = request.body;
+    const updates = request.body || {};
+
+    // Character data lives in the Character collection now. Reject any
+    // attempt to write character state through the campaign endpoint.
+    if ('character' in updates) {
+      return reply.code(400).send({
+        error: 'Character data must be saved via /characters endpoints, not /ai/campaigns/:id/core. Use PATCH /characters/:id/state-changes for AI deltas or PUT /characters/:id for full snapshots.',
+      });
+    }
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { userId: true, coreState: true, characterState: true },
+      select: { userId: true, coreState: true },
     });
 
     if (!campaign || campaign.userId !== request.user.id) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const data = { lastSaved: new Date() };
-
-    if (updates.character) {
-      const currentChar = JSON.parse(campaign.characterState || '{}');
-      data.characterState = JSON.stringify(deepMerge(currentChar, updates.character));
-      const { character: _c, ...rest } = updates;
-      const currentState = JSON.parse(campaign.coreState);
-      if (Object.keys(rest).length > 0) {
-        data.coreState = JSON.stringify(deepMerge(currentState, rest));
-      }
-    } else {
-      const currentState = JSON.parse(campaign.coreState);
-      data.coreState = JSON.stringify(deepMerge(currentState, updates));
-    }
+    const currentState = JSON.parse(campaign.coreState);
+    const data = {
+      lastSaved: new Date(),
+      coreState: JSON.stringify(deepMerge(currentState, updates)),
+    };
 
     await prisma.campaign.update({
       where: { id: campaignId },

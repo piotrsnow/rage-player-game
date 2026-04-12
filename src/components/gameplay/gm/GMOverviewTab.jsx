@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/wfrpFactions';
+import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
 
 export default function GMOverviewTab({ gameState }) {
   const { t } = useTranslation();
@@ -15,7 +15,6 @@ export default function GMOverviewTab({ gameState }) {
   const combat = gameState?.combat;
 
   const timeState = world.timeState || {};
-  const weather = world.weather;
   const npcs = world.npcs || [];
   const factions = world.factions || {};
   const exploredLocations = world.exploredLocations || [];
@@ -118,17 +117,6 @@ export default function GMOverviewTab({ gameState }) {
             </div>
           </div>
         )}
-        {weather && (
-          <div className="p-3 rounded-sm bg-surface-container/40 border border-outline-variant/10">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="material-symbols-outlined text-sm text-primary">cloud</span>
-              <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">{t('gmModal.overview.weather')}</span>
-            </div>
-            <div className="text-[11px] text-on-surface-variant">
-              {typeof weather === 'string' ? weather : weather.description || weather.type || JSON.stringify(weather)}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Character quick stats */}
@@ -140,11 +128,9 @@ export default function GMOverviewTab({ gameState }) {
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-[11px] text-on-surface-variant">
             <Field label={t('gmModal.detail.species')} value={character.species} />
-            <Field label={t('gmModal.detail.career')} value={`${character.career?.name || '?'} (T${character.career?.tier || 1})`} />
             <Field label={t('gmModal.detail.wounds')} value={`${character.wounds} / ${character.maxWounds}`} />
-            <Field label="XP" value={`${character.xp || 0} (${t('gmModal.overview.spent')}: ${character.xpSpent || 0})`} />
-            <Field label={t('gmModal.overview.fate')} value={`${character.fortune ?? '?'} / ${character.fate ?? '?'}`} />
-            <Field label={t('gmModal.overview.resilience')} value={`${character.resolve ?? '?'} / ${character.resilience ?? '?'}`} />
+            <Field label="Mana" value={`${character.mana?.current ?? 0} / ${character.mana?.max ?? 0}`} />
+            <Field label={t('stats.level', { defaultValue: 'Poziom' })} value={`${character.characterLevel || 1} (XP: ${character.characterXp || 0})`} />
           </div>
         </div>
       )}

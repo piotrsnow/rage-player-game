@@ -13,7 +13,6 @@ const LOCAL_ONLY_KEYS = [
   'backendUrl', 'useBackend',
   'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'geminiApiKey', 'meshyApiKey',
 ];
-const SHARED_VOICE_KEYS = ['elevenlabsVoiceId', 'elevenlabsVoiceName', 'characterVoices'];
 
 function clampCombatCommentaryFrequency(value) {
   const numeric = Number(value);
@@ -56,37 +55,6 @@ function mergeSettingsWithDefaults(source) {
   return merged;
 }
 
-function sanitizeSharedVoiceSettings(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const characterVoices = Array.isArray(source.characterVoices)
-    ? source.characterVoices
-        .filter((entry) => entry && typeof entry === 'object')
-        .map((entry) => ({
-          voiceId: typeof entry.voiceId === 'string' ? entry.voiceId : '',
-          voiceName: typeof entry.voiceName === 'string' ? entry.voiceName : '',
-          gender: entry.gender === 'female' ? 'female' : 'male',
-        }))
-        .filter((entry) => entry.voiceId && entry.voiceName)
-    : [];
-
-  return {
-    elevenlabsVoiceId: typeof source.elevenlabsVoiceId === 'string' ? source.elevenlabsVoiceId : '',
-    elevenlabsVoiceName: typeof source.elevenlabsVoiceName === 'string' ? source.elevenlabsVoiceName : '',
-    characterVoices,
-  };
-}
-
-function extractSharedVoiceSettings(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const subset = {};
-  for (const key of SHARED_VOICE_KEYS) {
-    if (source[key] !== undefined) {
-      subset[key] = source[key];
-    }
-  }
-  return sanitizeSharedVoiceSettings(subset);
-}
-
 function shouldCheckBackendSession(settings) {
   return Boolean(settings?.backendUrl && settings?.useBackend && apiClient.getToken());
 }
@@ -100,9 +68,10 @@ const defaultSettings = {
   stabilityApiKey: '',
   geminiApiKey: '',
   language: 'pl',
-  elevenlabsVoiceId: '',
-  elevenlabsVoiceName: '',
-  characterVoices: [],
+  narratorVoiceId: '',
+  narratorVoiceName: '',
+  maleVoices: [],
+  femaleVoices: [],
   narratorEnabled: false,
   narratorAutoPlay: true,
   dialogueSpeed: 100,
@@ -256,26 +225,11 @@ export function SettingsProvider({ children }) {
     }
   }, []);
 
-  const loadSharedVoiceSettings = useCallback(async () => {
-    if (!apiClient.isConnected()) return null;
-    try {
-      const voiceSettings = sanitizeSharedVoiceSettings(await apiClient.get('/auth/shared-voices'));
-      syncingFromBackendRef.current = true;
-      setSettings((prev) => ({ ...prev, ...voiceSettings }));
-      setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
-      return voiceSettings;
-    } catch (err) {
-      console.warn('[SettingsContext] Failed to load shared voice settings:', err.message);
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && apiClient.isConnected()) {
       loadBackendUser();
-      loadSharedVoiceSettings();
     }
-  }, [settings.backendUrl, settings.useBackend, loadBackendUser, loadSharedVoiceSettings]);
+  }, [settings.backendUrl, settings.useBackend, loadBackendUser]);
 
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();
@@ -294,37 +248,14 @@ export function SettingsProvider({ children }) {
     setTimeout(() => { syncingFromBackendRef.current = false; }, 200);
 
     fetchBackendKeys();
-    await loadSharedVoiceSettings();
 
     storage.migrateLocalCampaignsToBackend().catch((err) => {
       console.warn('[SettingsContext] Campaign migration failed:', err.message);
     });
-  }, [fetchBackendKeys, loadSharedVoiceSettings]);
+  }, [fetchBackendKeys]);
 
   const updateSettings = useCallback((updates) => {
     setSettings((prev) => ({ ...prev, ...updates }));
-  }, []);
-
-  const updateSharedVoiceSettings = useCallback(async (updates) => {
-    let nextVoiceSettings = null;
-
-    setSettings((prev) => {
-      const next = { ...prev, ...updates };
-      nextVoiceSettings = extractSharedVoiceSettings(next);
-      return next;
-    });
-
-    if (!apiClient.isConnected()) {
-      return true;
-    }
-
-    try {
-      await apiClient.put('/auth/shared-voices', nextVoiceSettings);
-      return true;
-    } catch (err) {
-      console.warn('[SettingsContext] Failed to save shared voice settings:', err.message);
-      return false;
-    }
   }, []);
 
   const updateDMSettings = useCallback((updates) => {
@@ -391,7 +322,6 @@ export function SettingsProvider({ children }) {
   const value = {
     settings,
     updateSettings,
-    updateSharedVoiceSettings,
     updateDMSettings,
     updateAutoPlayerSettings,
     resetSettings,

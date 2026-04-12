@@ -15,8 +15,6 @@ export function mockCampaignCreationResponse() {
       characteristics: { ws: 35, bs: 30, s: 30, t: 30, i: 25, ag: 30, dex: 25, int: 25, wp: 25, fel: 20 },
       skills: {},
       talents: ['Warrior Born'],
-      fate: 2,
-      resilience: 1,
       backstory: 'A veteran of countless skirmishes.',
       inventory: [
         { id: 'sword-1', name: 'Hand Weapon', type: 'weapon', quantity: 1 },
@@ -128,7 +126,7 @@ export function mockSceneResponse() {
 
 export function mockStoryPromptResponse() {
   return {
-    prompt: 'In the war-torn province of Reikland, a mysterious plague transforms the dead into restless undead.',
+    prompt: 'In a war-torn borderland province, a mysterious plague transforms the dead into restless undead.',
   };
 }
 

@@ -124,9 +124,9 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
                                   if (offer.reward.xp) parts.push(`${offer.reward.xp} XP`);
                                   if (offer.reward.money) {
                                     const m = offer.reward.money;
-                                    if (m.gold) parts.push(`${m.gold} GC`);
-                                    if (m.silver) parts.push(`${m.silver} SS`);
-                                    if (m.copper) parts.push(`${m.copper} CP`);
+                                    if (m.gold) parts.push(`${m.gold} ZK`);
+                                    if (m.silver) parts.push(`${m.silver} SK`);
+                                    if (m.copper) parts.push(`${m.copper} MK`);
                                   }
                                   if (offer.reward.items?.length > 0) parts.push(offer.reward.items.map((i) => i.name || i).join(', '));
                                   return parts.length > 0 ? parts.join(', ') : offer.reward.description || '';
@@ -151,14 +151,18 @@ export default function QuestOffersPanel({ offers = [], onAccept, onDecline }) {
                         <p className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-1.5">
                           {t('quests.objectives')}
                         </p>
-                        {offer.objectives.map((obj) => (
-                          <div key={obj.id} className="flex items-start gap-2 py-0.5">
-                            <span className="material-symbols-outlined text-sm text-outline/30 mt-0.5">
-                              check_box_outline_blank
-                            </span>
-                            <p className="text-xs text-on-surface leading-relaxed">{obj.description}</p>
+                        <div key={offer.objectives[0].id} className="flex items-start gap-2 py-0.5">
+                          <span className="material-symbols-outlined text-sm text-outline/30 mt-0.5">
+                            check_box_outline_blank
+                          </span>
+                          <p className="text-xs text-on-surface leading-relaxed">{offer.objectives[0].description}</p>
+                        </div>
+                        {offer.objectives.length > 1 && (
+                          <div className="flex items-center gap-2 py-0.5 text-outline/40">
+                            <span className="material-symbols-outlined text-sm mt-0.5">lock</span>
+                            <p className="text-xs italic">{t('quests.hiddenObjectives', { count: offer.objectives.length - 1 })}</p>
                           </div>
-                        ))}
+                        )}
                       </div>
                     )}
                   </div>

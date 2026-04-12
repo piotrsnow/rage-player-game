@@ -1,4 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Mock the autoPlayer service to break the circular import chain
+// (autoPlayer -> ai -> ... -> mechanics/restRecovery -> autoPlayer)
+vi.mock('../services/autoPlayer', () => ({
+  decideAction: vi.fn(),
+  NEED_KEYWORD_HINTS: {
+    hunger: ['eat', 'food'],
+    thirst: ['drink', 'water'],
+    rest: ['rest', 'sleep'],
+  },
+}));
+
 import { getAutoPlayerAdvanceDelay } from './useAutoPlayer.js';
 
 describe('getAutoPlayerAdvanceDelay', () => {

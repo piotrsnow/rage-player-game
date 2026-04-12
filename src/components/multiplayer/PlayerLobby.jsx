@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import Button from '../ui/Button';
 import FloatingVideoPanel from './FloatingVideoPanel';
-import { CHARACTERISTIC_SHORT } from '../../data/wfrp';
-import { translateCareer } from '../../utils/wfrpTranslate';
+import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
 
 function CharacterSummaryBadge({ characterData, t }) {
   if (!characterData) return null;
@@ -18,13 +17,11 @@ function CharacterSummaryBadge({ characterData, t }) {
         <span className="font-bold">{characterData.name}</span>
         <span className="mx-1 text-outline">·</span>
         <span className="text-on-surface-variant">{t(`species.${characterData.species}`, { defaultValue: characterData.species })}</span>
-        <span className="mx-1 text-outline">·</span>
-        <span className="text-on-surface-variant">{translateCareer(characterData.career?.name, t)}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-1">
-        {Object.entries(CHARACTERISTIC_SHORT).slice(0, 5).map(([key, short]) => (
+        {ATTRIBUTE_KEYS.map((key) => (
           <span key={key} className="text-[9px] text-on-surface-variant">
-            {short}: <strong className="text-tertiary">{characterData.characteristics?.[key]}</strong>
+            {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(characterData.attributes || characterData.characteristics)?.[key]}</strong>
           </span>
         ))}
       </div>
