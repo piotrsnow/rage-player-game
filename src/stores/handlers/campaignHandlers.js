@@ -176,6 +176,15 @@ export const campaignHandlers = {
     return loaded;
   },
 
+  SET_CAMPAIGN_BACKEND_ID: (draft, action) => {
+    if (draft.campaign) {
+      draft.campaign.backendId = action.payload.backendId;
+      if (action.payload.characterIds) {
+        draft.campaign.characterIds = action.payload.characterIds;
+      }
+    }
+  },
+
   RESET: () => initialState,
 
   SET_FREEROAM: (draft) => {

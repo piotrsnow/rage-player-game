@@ -1537,49 +1537,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       },
     });
 
-    // 8. Tag large model quest updates + nano safety net
+    // 8. Tag large model quest updates + kick off nano safety net in parallel
     if (sceneResult.stateChanges?.questUpdates?.length) {
       for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
     }
-    const nanoQuestUpdates = await checkQuestObjectives(
-      sceneResult.narrative,
-      playerAction,
-      coreState.quests?.active || [],
-      sceneResult.stateChanges?.questUpdates || [],
-      provider
-    ).catch(err => {
-      console.error('Quest objective check failed:', err.message);
-      return [];
-    });
-    if (nanoQuestUpdates.length > 0) {
-      if (!sceneResult.stateChanges) sceneResult.stateChanges = {};
-      if (!sceneResult.stateChanges.questUpdates) sceneResult.stateChanges.questUpdates = [];
-      sceneResult.stateChanges.questUpdates.push(...nanoQuestUpdates);
-    }
-    // Dedupe quest updates: collapse duplicate completions for the same
-    // questId/objectiveId (large model can repeat entries, nano can echo large).
-    // Prefer the large-model entry when both sources mark the same completion.
-    if (sceneResult.stateChanges?.questUpdates?.length > 1) {
-      const seenCompleted = new Map();
-      const deduped = [];
-      for (const u of sceneResult.stateChanges.questUpdates) {
-        if (!u?.completed) { deduped.push(u); continue; }
-        const key = `${u.questId}/${u.objectiveId}`;
-        const existingIdx = seenCompleted.get(key);
-        if (existingIdx === undefined) {
-          seenCompleted.set(key, deduped.length);
-          deduped.push(u);
-        } else if (u.source === 'large' && deduped[existingIdx].source !== 'large') {
-          deduped[existingIdx] = u;
-        }
-      }
-      sceneResult.stateChanges.questUpdates = deduped;
-    }
 
-    // 9a. Synchronously apply character state changes BEFORE the SSE complete
-    // event so the frontend gets an authoritative snapshot. Only the character
-    // branch is sync; the other normalized writes (NPCs/codex/quests) keep
-    // running async behind the scenes.
+    // Start nano quest check NOW — runs in parallel with DB writes below.
+    // It only needs narrative + quests, not the DB results.
+    const activeQuests = coreState.quests?.active || [];
+    const nanoQuestPromise = activeQuests.length > 0
+      ? checkQuestObjectives(
+          sceneResult.narrative,
+          playerAction,
+          activeQuests,
+          sceneResult.stateChanges?.questUpdates || [],
+          provider
+        ).catch(err => { console.error('Quest objective check failed:', err.message); return []; })
+      : Promise.resolve([]);
+
+    // 9a. Apply character state changes + persist (runs in parallel with nano)
     let updatedCharacter = activeCharacter;
     if (activeCharacterId && activeCharacter && sceneResult.stateChanges) {
       try {
@@ -1590,11 +1566,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         });
       } catch (err) {
         console.error('[sceneGenerator] Failed to persist character state changes:', err.message);
-        // Fall through — frontend will reconcile to whatever is in DB on next load.
       }
     }
 
-    // 9b. Async: embedding + remaining state changes + memory compression
+    // 9b. Async fire-and-forget: embedding + NPC/codex/quest sync + memory compression
     generateSceneEmbedding(savedScene).catch(err =>
       console.error('Failed to generate scene embedding:', err.message)
     );
@@ -1614,19 +1589,31 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       );
     }
 
-    // 10. Complete (diceRolls already unified in step 6b)
+    // 10. Complete — emit immediately so frontend can render the scene
     onEvent({
       type: 'complete',
       data: {
         scene: sceneResult,
         sceneIndex: newSceneIndex,
         sceneId: savedScene.id,
-        // Authoritative character snapshot after applying all state changes.
-        // Frontend reconciles state.character to this rather than mutating
-        // its local copy from sceneResult.stateChanges.
         character: updatedCharacter,
       },
     });
+
+    // 11. Await nano quest result (started in step 8, likely already done by now)
+    //     and emit follow-up event if it found new completions.
+    const nanoQuestUpdates = await nanoQuestPromise;
+    if (nanoQuestUpdates.length > 0) {
+      const largeKeys = new Set(
+        (sceneResult.stateChanges?.questUpdates || [])
+          .filter(u => u.completed)
+          .map(u => `${u.questId}/${u.objectiveId}`)
+      );
+      const unique = nanoQuestUpdates.filter(u => !largeKeys.has(`${u.questId}/${u.objectiveId}`));
+      if (unique.length > 0) {
+        onEvent({ type: 'quest_nano_update', data: { questUpdates: unique } });
+      }
+    }
   } catch (err) {
     onEvent({ type: 'error', error: err.message || 'Stream generation failed', code: err.code || 'STREAM_ERROR' });
   }

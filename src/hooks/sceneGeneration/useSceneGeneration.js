@@ -217,7 +217,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             if (imageUrl) {
               dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
               dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: capturedSceneId, image: imageUrl } });
-              setTimeout(() => autoSave(), 300);
+              autoSave();
             }
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
           });
@@ -245,7 +245,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         recordCompletedSceneGenTiming();
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
-        setTimeout(() => autoSave(), 300);
+        autoSave();
 
         // Compression
         if (!compressionInFlightRef.current && contextManager.needsCompression(state)) {
@@ -258,7 +258,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               const worldUpdate = { compressedHistory: compResult.summary };
               if (compResult.entitySnapshot) worldUpdate.compressedEntityState = compResult.entitySnapshot;
               dispatch({ type: 'UPDATE_WORLD', payload: worldUpdate });
-              setTimeout(() => autoSave(), 300);
+              autoSave();
             }
             if (compResult?.usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', compResult.usage) });
           }).catch(() => { compressionInFlightRef.current = false; });
@@ -276,7 +276,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl } });
-            setTimeout(() => autoSave(), 300);
+            autoSave();
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);
           } finally {
@@ -310,7 +310,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
       dispatch({ type: 'ADD_QUEST', payload: quest });
       dispatch({ type: 'UPDATE_SCENE_QUEST_OFFER', payload: { sceneId, offerId: questOffer.id, status: 'accepted' } });
       dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_quest_accept`, role: 'system', subtype: 'quest_new', content: t('system.questNew', { quest: questOffer.name }), timestamp: Date.now() } });
-      setTimeout(() => autoSave(), 300);
+      autoSave();
     },
     [state.world?.currentLocation, dispatch, autoSave, t]
   );

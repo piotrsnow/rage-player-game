@@ -44,6 +44,7 @@ export const EQUIPMENT = {
     weight: 0,
     description: 'Kitchen or belt knife; poor as a weapon but ubiquitous.',
     properties: ['Small'],
+    combatKey: 'Dagger',
   },
   club: {
     name: 'Club',

@@ -19,21 +19,17 @@ function buildCharacter(aiResult, campaignSettings) {
     };
   }
 
-  const speciesName = campaignSettings.species || aiResult.characterSuggestion?.species || 'Human';
+  // Character stats are always created by the player (CharacterCreationModal or library).
+  // AI only provides campaign-specific starting inventory and backstory.
+  const speciesName = campaignSettings.species || 'Human';
   const species = SPECIES[speciesName] || SPECIES.Human;
-
-  const aiChar = aiResult.characterSuggestion || {};
-  const attributes = aiChar.attributes || generateAttributes(speciesName);
-
+  const attributes = generateAttributes(speciesName);
   const maxWounds = calculateMaxWounds(attributes.wytrzymalosc ?? 10);
-
-  const skills = aiChar.skills && typeof aiChar.skills === 'object' && !Array.isArray(aiChar.skills)
-    ? aiChar.skills
-    : createStartingSkills(speciesName);
+  const aiChar = aiResult.characterSuggestion || {};
 
   return {
-    name: campaignSettings.characterName?.trim() || aiChar.name || 'Adventurer',
-    age: normalizeCharacterAge(aiChar.age ?? campaignSettings.characterAge),
+    name: campaignSettings.characterName?.trim() || 'Adventurer',
+    age: normalizeCharacterAge(campaignSettings.characterAge),
     species: speciesName,
     characterLevel: 1,
     characterXp: 0,
@@ -44,9 +40,9 @@ function buildCharacter(aiResult, campaignSettings) {
     movement: species.movement,
     mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
     spells: { known: [], usageCounts: {}, scrolls: [] },
-    skills,
+    skills: createStartingSkills(speciesName),
     inventory: gameData.mapStartingInventoryToCatalog(aiChar.inventory || []),
-    money: aiChar.money || generateStartingMoney(),
+    money: generateStartingMoney(),
     statuses: [],
     backstory: aiChar.backstory || '',
     needs: createDefaultNeeds(),
@@ -112,10 +108,17 @@ export function useGameState() {
       // (no backendId) if backend is offline — campaign save will use that path.
       const character = await storage.saveCharacter(initialCharacter);
 
+      const firstDialogueSegments = aiResult.firstScene?.dialogueSegments || [];
+      const firstNarrative = firstDialogueSegments
+        .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
+        .map(s => s.text.trim())
+        .filter(Boolean)
+        .join(' ') || aiResult.hook;
+
       const firstScene = {
         id: createSceneId(),
-        narrative: aiResult.firstScene?.narrative || aiResult.hook,
-        dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+        narrative: firstNarrative,
+        dialogueSegments: firstDialogueSegments,
         soundEffect: aiResult.firstScene?.soundEffect || null,
         imagePrompt: aiResult.firstScene?.imagePrompt || null,
         sceneGrid: aiResult.firstScene?.sceneGrid || null,
@@ -131,8 +134,8 @@ export function useGameState() {
           id: `msg_${Date.now()}_dm`,
           role: 'dm',
           sceneId: firstScene.id,
-          content: aiResult.firstScene?.narrative || aiResult.hook,
-          dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+          content: firstNarrative,
+          dialogueSegments: firstDialogueSegments,
           soundEffect: aiResult.firstScene?.soundEffect || null,
           timestamp: Date.now(),
         },
@@ -220,6 +223,15 @@ export function useGameState() {
         chatHistory,
       };
       await storage.saveCampaign(fullState);
+
+      // After save, campaign.backendId is set by _doSave mutation.
+      // Sync it back to the store so autoSave won't POST a duplicate.
+      if (campaign.backendId) {
+        dispatch({
+          type: 'SET_CAMPAIGN_BACKEND_ID',
+          payload: { backendId: campaign.backendId, characterIds: campaign.characterIds },
+        });
+      }
 
       return campaign.backendId || campaignId;
     },

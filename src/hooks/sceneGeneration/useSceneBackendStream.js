@@ -140,6 +140,10 @@ export function useSceneBackendStream() {
           } else if (typeof parsed.narrative === 'string' && parsed.narrative.length > 0) {
             setStreamingNarrative(parsed.narrative);
           }
+        } else if (event.type === 'quest_nano_update' && Array.isArray(event.data?.questUpdates)) {
+          // Nano quest objective updates arrive after `complete` — apply them
+          // directly via dispatch so they show up without waiting for next scene.
+          dispatch({ type: 'APPLY_STATE_CHANGES', payload: { questUpdates: event.data.questUpdates } });
         }
       },
     });

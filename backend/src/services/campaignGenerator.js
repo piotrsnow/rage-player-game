@@ -178,7 +178,7 @@ function buildCampaignCreationPrompt(settings, language = 'en') {
     : '- Character species: not specified (suggest a fitting species — Human, Halfling, Dwarf, High Elf, or Wood Elf)';
 
   const existingCharNote = settings.existingCharacter
-    ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene narrative and dialogueSegments. The characterSuggestion stats will be ignored — focus on making the firstScene narrative fit this character's identity.`
+    ? `\n\nIMPORTANT: The player is using a PRE-EXISTING character named "${settings.characterName?.trim() || settings.existingCharacter.name}". Do NOT rename this character or invent a different name. Use this exact name consistently in the firstScene dialogueSegments.`
     : '';
 
   const humorousToneGuidance = settings.tone === 'Humorous'
@@ -204,19 +204,10 @@ Respond with ONLY valid JSON:
   "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
-    "name": "${settings.characterName?.trim() || 'A fitting character name'}",
-    "species": "${settings.species || 'Human'}",
-    "attributes": {
-      "sila": 12, "inteligencja": 10, "charyzma": 11, "zrecznosc": 13, "wytrzymalosc": 10, "szczescie": 7
-    },
-    "skills": {"Walka bronia jednoręczna": {"level": 3}, "Uniki": {"level": 2}, "Spostrzegawczosc": {"level": 5}, "Perswazja": {"level": 5}},
-    "mana": {"current": 0, "max": 0},
-    "backstory": "2-3 sentences of character backstory tied to the world",
-    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}],
-    "money": {"gold": 0, "silver": 5, "copper": 0}
+    "backstory": "2-3 sentences of character backstory tied to the campaign world (only if player didn't provide one)",
+    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}]
   },
   "firstScene": {
-    "narrative": "1-2 short vivid paragraphs of the opening scene",
     "dialogueSegments": [
       {"type": "narration", "text": "Descriptive prose..."},
       {"type": "dialogue", "character": "NPC Name", "gender": "male", "text": "What they say..."}
@@ -254,8 +245,7 @@ Respond with ONLY valid JSON:
     "reward": {
       "xp": 200,
       "money": {"gold": 5, "silver": 10, "copper": 0},
-      "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Opis nagrody' : 'Reward item description'}", "rarity": "uncommon"}],
-      "description": "${language === 'pl' ? '200 PD, 5 Złotych Koron, 10 Srebrnych Szylingów i przedmiot' : '200 XP, 5 Gold Crowns, 10 Silver Shillings and an item'}"
+      "items": [{"id": "reward_1", "name": "${language === 'pl' ? 'Nazwa nagrody' : 'Reward item name'}", "type": "weapon|armor|trinket|consumable", "description": "${language === 'pl' ? 'Opis nagrody' : 'Reward item description'}", "rarity": "uncommon"}]
     },
     "objectives": [
       {"id": "obj_1", "description": "${language === 'pl' ? 'Spotkaj się z NPC_1 w lokalizacji_1 — dowiedz się o problemie' : 'Meet NPC_1 at location_1 — learn about the problem'}"},
@@ -313,13 +303,12 @@ IMPORTANT for initialQuest and initialNPCs:
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 
 IMPORTANT for characterSuggestion:
-- Generate attributes on the 1-25 scale. Starting characters typically have attributes 8-15, with species modifiers applied (Dwarves: +2 Sila, +3 Wytrzymalosc; Elves: +2 Inteligencja, +2 Zrecznosc; Halflings: +2 Zrecznosc, +3 Szczescie).
-- Skills use {"skillName": {"level": N}} format where level is 0-5 for starting characters. Include 4-8 skills.
-- Set mana to {"current": 0, "max": 0} for non-magical characters. Elves start with {"current": 2, "max": 2}.
-- Include 2-5 starting inventory items (weapons, tools, gear).
-- Set starting money to {gold:0, silver:1-5, copper:0} for typical characters.
+- The player already has a character with stats/skills/money. Do NOT generate attributes, skills, mana, or money.
+- Include 2-5 starting inventory items (weapons, tools, gear) appropriate for the campaign setting.
+- Include backstory ONLY if it adds campaign-specific context the player wouldn't have written themselves.
 
-The dialogueSegments array must cover the full narrative broken into narration and dialogue chunks — narration segments must contain the COMPLETE text from "narrative" (verbatim, not summarized or shortened). Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
+There is NO separate "narrative" field — all scene prose lives in dialogueSegments.
+The dialogueSegments array must cover the full opening scene broken into narration and dialogue chunks. Narration segments must NEVER contain quoted speech — always split dialogue into separate "dialogue" segments. Every dialogue segment MUST have a "gender" field ("male" or "female").
 The firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.
 
 IMPORTANT for firstScene stateChanges (if included) or top-level initialMapMode: Include "mapMode" in the firstScene's context. The opening scene should establish the field-map mode: "trakt" (road/path), "pola" (open fields), "wnetrze" (interior), or "las" (forest). If the scene starts in a tavern, set "wnetrze"; if on a road, set "trakt"; if in a forest, set "las"; if in open countryside, set "pola".`;

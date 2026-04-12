@@ -986,7 +986,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onHostResolve={mp.syncCombatState}
               isHost={mp.state.isHost}
               mpCharacters={isMultiplayer ? mpGameState?.characters : undefined}
-              onPersistState={() => setTimeout(() => autoSave(), 300)}
+              onPersistState={() => autoSave()}
             />
           </div>
         )}

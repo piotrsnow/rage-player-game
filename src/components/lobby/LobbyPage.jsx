@@ -142,12 +142,6 @@ export default function LobbyPage() {
       .then((list) => {
         if (cancelled) return;
         setCampaigns(list);
-        if (backendUser && apiClient.isConnected() && list.some((c) => c.source === 'remote' && !c.characterName && c.sceneCount > 0)) {
-          apiClient.post('/campaigns/backfill-summaries')
-            .then(() => storage.getCampaigns())
-            .then((fresh) => { if (!cancelled) setCampaigns(fresh); })
-            .catch(() => {});
-        }
       })
       .catch(() => { if (!cancelled) setCampaigns([]); })
       .finally(() => {

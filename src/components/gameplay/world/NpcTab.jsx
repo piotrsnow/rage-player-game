@@ -17,7 +17,7 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
       type: 'MAP_CHARACTER_VOICE',
       payload: { characterName: npcName, voiceId: voiceId || null, gender: npcGender || null },
     });
-    if (autoSave) setTimeout(() => autoSave(), 300);
+    if (autoSave) autoSave();
   };
 
   return (

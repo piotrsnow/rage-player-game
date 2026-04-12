@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGameCharacter, useGameDispatch } from '../../stores/gameSelectors';
+import { useGameCharacter, useGameDispatch, useGameAutoSave } from '../../stores/gameSelectors';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
@@ -312,6 +312,7 @@ export default function AdvancementPanel({ onClose }) {
   const { t } = useTranslation();
   const character = useGameCharacter();
   const dispatch = useGameDispatch();
+  const autoSave = useGameAutoSave();
   const [activeTab, setActiveTab] = useState('attributes');
   const modalRef = useModalA11y(onClose);
 
@@ -377,10 +378,10 @@ export default function AdvancementPanel({ onClose }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {activeTab === 'attributes' && (
-            <AttributesTab character={character} dispatch={dispatch} />
+            <AttributesTab character={character} dispatch={(action) => { dispatch(action); autoSave(); }} />
           )}
           {activeTab === 'skills' && (
-            <SkillsTab character={character} dispatch={dispatch} />
+            <SkillsTab character={character} dispatch={(action) => { dispatch(action); autoSave(); }} />
           )}
           {activeTab === 'spellTrees' && (
             <SpellTreesTab character={character} />

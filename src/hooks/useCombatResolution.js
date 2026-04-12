@@ -70,7 +70,7 @@ export function useCombatResolution({
           timestamp: Date.now(),
         },
       });
-      setTimeout(() => autoSave(), 300);
+      autoSave();
 
       if (isDead) {
         narrator.stop?.();
@@ -105,7 +105,7 @@ export function useCombatResolution({
           timestamp: Date.now(),
         },
       });
-      setTimeout(() => autoSave(), 300);
+      autoSave();
 
       const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
       generateScene(combatActionText, false, false).catch(() => {});
@@ -132,7 +132,7 @@ export function useCombatResolution({
           timestamp: Date.now(),
         },
       });
-      setTimeout(() => autoSave(), 300);
+      autoSave();
 
       const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
       generateScene(combatActionText, false, false).catch(() => {});

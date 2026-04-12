@@ -55,7 +55,7 @@ export function useImageGeneration() {
         itemImageFailureTimestampsRef.current.delete(itemId);
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         if (!options.skipAutoSave) {
-          setTimeout(() => autoSave(), 300);
+          autoSave();
         }
         return imageUrl;
       } catch (err) {
@@ -106,7 +106,7 @@ export function useImageGeneration() {
       }
 
       if (!options.skipAutoSave && generated > 0) {
-        setTimeout(() => autoSave(), 300);
+        autoSave();
       }
       return { generated, failed };
     },
@@ -144,7 +144,7 @@ export function useImageGeneration() {
           payload: { sceneId, image: imageUrl },
         });
         if (!options.skipAutoSave) {
-          setTimeout(() => autoSave(), 300);
+          autoSave();
         }
         return imageUrl;
       } catch (imgErr) {

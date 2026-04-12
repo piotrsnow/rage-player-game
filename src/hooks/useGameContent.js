@@ -221,7 +221,7 @@ export function useGameContent() {
             timestamp: Date.now(),
           },
         });
-        setTimeout(() => autoSave(), 300);
+        autoSave();
       }
 
       return result;

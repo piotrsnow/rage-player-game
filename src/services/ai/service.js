@@ -314,6 +314,11 @@ export const aiService = {
     let result = null;
     let buffer = '';
 
+    // Read until `complete` event, then return immediately.
+    // Post-complete events (quest_nano_update) are consumed in the background
+    // via onEvent callback so the frontend doesn't block on the nano model call.
+    let backgroundReader = null;
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -322,6 +327,7 @@ export const aiService = {
       const lines = buffer.split('\n');
       buffer = lines.pop();
 
+      let gotComplete = false;
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         try {
@@ -330,12 +336,37 @@ export const aiService = {
 
           if (event.type === 'complete') {
             result = event.data;
+            gotComplete = true;
           } else if (event.type === 'error') {
             throw new Error(event.error || 'Stream generation failed');
           }
         } catch (e) {
           if (e.message && !e.message.includes('JSON')) throw e;
         }
+      }
+
+      if (gotComplete) {
+        // Drain remaining events in the background (nano quest updates, etc.)
+        backgroundReader = (async () => {
+          let bg = buffer;
+          try {
+            while (true) {
+              const { done: d, value: v } = await reader.read();
+              if (d) break;
+              bg += decoder.decode(v, { stream: true });
+              const bgLines = bg.split('\n');
+              bg = bgLines.pop();
+              for (const ln of bgLines) {
+                if (!ln.startsWith('data: ')) continue;
+                try {
+                  const ev = JSON.parse(ln.slice(6));
+                  if (onEvent) onEvent(ev);
+                } catch { /* skip */ }
+              }
+            }
+          } catch { /* stream closed */ }
+        })();
+        break;
       }
     }
 

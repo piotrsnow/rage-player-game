@@ -32,6 +32,7 @@ export default function CharacterPanel({
   showAdvancement,
   setShowAdvancement,
   dispatch,
+  autoSave,
   isMultiplayer,
   onPortraitChange,
   campaign,
@@ -255,8 +256,8 @@ export default function CharacterPanel({
             money={character.money}
             equipped={character.equipped}
             materialBag={character.materialBag}
-            onEquipItem={(itemId, slot) => dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } })}
-            onUnequipItem={(slot) => dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } })}
+            onEquipItem={(itemId, slot) => { dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } }); if (autoSave) autoSave(); }}
+            onUnequipItem={(slot) => { dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } }); if (autoSave) autoSave(); }}
           />
 
           <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">

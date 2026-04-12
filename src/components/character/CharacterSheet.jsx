@@ -258,12 +258,13 @@ export default function CharacterSheet({ onClose }) {
                 showAdvancement={showAdvancement}
                 setShowAdvancement={setShowAdvancement}
                 dispatch={dispatch}
+                autoSave={autoSave}
                 isMultiplayer={isMultiplayer}
                 campaign={campaign}
                 scenes={isMultiplayer ? mpGameState?.scenes : soloScenes}
                 onPortraitChange={(url) => {
                   dispatch({ type: 'UPDATE_CHARACTER', payload: { portraitUrl: url } });
-                  setTimeout(() => autoSave(), 300);
+                  autoSave();
                 }}
                 onVoiceChange={(charName, voiceId, gender) => {
                   const pool = [...(settings.maleVoices || []), ...(settings.femaleVoices || [])];
@@ -272,7 +273,7 @@ export default function CharacterSheet({ onClose }) {
                     type: 'MAP_CHARACTER_VOICE',
                     payload: { characterName: charName, voiceId, gender, voiceName: voice?.voiceName || null },
                   });
-                  setTimeout(() => autoSave(), 300);
+                  autoSave();
                 }}
               />
             </div>
