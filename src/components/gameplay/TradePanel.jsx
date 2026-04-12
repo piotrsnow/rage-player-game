@@ -8,6 +8,7 @@ import {
 import { canAfford, applyDiscount, formatCoinPrice } from '../../../shared/domain/pricing.js';
 import { gameData } from '../../services/gameDataService.js';
 import { formatMoney } from '../../services/gameState.js';
+import { getSkillLevel } from '../../data/rpgSystem.js';
 
 export default function TradePanel({ trade, character, world, dispatch, onHaggle, disabled }) {
   const { t } = useTranslation();
@@ -312,11 +313,6 @@ export default function TradePanel({ trade, character, world, dispatch, onHaggle
 
 // ── Helpers ──
 
-function getSkillLevel(skills, name) {
-  const e = skills?.[name];
-  if (!e) return 0;
-  return typeof e === 'object' ? (e.level || 0) : e;
-}
 
 function resolveLocationType(location) {
   if (!location) return 'city';

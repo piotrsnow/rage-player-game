@@ -4,6 +4,7 @@ import { gameData } from '../../services/gameDataService';
 import { useCombatAudio } from '../../hooks/useCombatAudio';
 import { useAI } from '../../hooks/useAI';
 import { useSettings } from '../../contexts/SettingsContext';
+import { shortId } from '../../utils/ids';
 import {
   resolveManoeuvre,
   advanceTurn,
@@ -30,6 +31,7 @@ import CombatTurnStatus from './combat/CombatTurnStatus';
 import { buildResultLogEntries, buildResultChatMessages } from './combat/combatLogBuilders';
 import { useEnemyTurnResolver } from '../../hooks/useEnemyTurnResolver';
 import { useCombatResultSync } from '../../hooks/useCombatResultSync';
+import { useCombatHostResolve } from '../../hooks/useCombatHostResolve';
 
 function isCustomAttackManoeuvre(manoeuvreKey) {
   return Boolean(manoeuvreKey && gameData.manoeuvres[manoeuvreKey]?.type === 'offensive');
@@ -192,6 +194,14 @@ export default function CombatPanel({
     addResultToLog: (r) => addResultToLog(r),
   });
 
+  useCombatHostResolve({
+    combat,
+    isMultiplayer,
+    isHost,
+    onHostResolve,
+    addResultToLog,
+  });
+
   const handleManoeuvreSelect = (key) => {
     setSelectedManoeuvre(key);
     const man = gameData.manoeuvres[key];
@@ -265,24 +275,6 @@ export default function CombatPanel({
     }
   };
 
-  const handleHostResolveManoeuvre = (fromPlayerId, manoeuvre, targetId, remoteCustomDescription = '') => {
-    if (!isHost || !isMultiplayer) return;
-
-    const { combat: updatedCombat, result } = resolveManoeuvre(
-      combat, fromPlayerId, manoeuvre, targetId, { customDescription: remoteCustomDescription }
-    );
-    addResultToLog(result);
-    const allResults = result ? [result] : [];
-
-    let finalCombat = advanceTurn(updatedCombat);
-
-    finalCombat.lastResults = allResults;
-    finalCombat.lastResultsTs = Date.now();
-    onHostResolve?.(finalCombat);
-  };
-
-  CombatPanel.resolveRemoteManoeuvre = handleHostResolveManoeuvre;
-
   const handleEndCombat = () => {
     if (isMultiplayer) {
       if (!isHost || !mpCharacters) return;
@@ -330,7 +322,7 @@ export default function CombatPanel({
     if (!moved) return;
 
     const actor = updated.combatants.find((c) => c.id === actorId);
-    const uid = Math.random().toString(36).slice(2, 6);
+    const uid = shortId(4);
     addLogEntry({
       type: 'info',
       actor: actor?.name || '?',

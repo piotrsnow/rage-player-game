@@ -1,11 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import QuickActionButton from './QuickActionButton';
-
-function getSkillLevel(skills, name) {
-  const e = skills?.[name];
-  if (!e) return 0;
-  return typeof e === 'object' ? (e.level || 0) : e;
-}
+import { getSkillLevel } from '../../../data/rpgSystem.js';
 
 export default function QuickActionsBar({
   disabled,

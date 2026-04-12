@@ -6,8 +6,8 @@ import {
   HighlightedText,
   DialogueSegments,
   NarratorHeaderButtons,
-  filterDuplicateDialogueSegments,
 } from './ChatMessageParts';
+import { filterDuplicateDialogueSegments } from '../../../services/dialogueSegments';
 
 export function DmMessage({ message, narrator }) {
   const { t } = useTranslation();

@@ -4,6 +4,7 @@ import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../dat
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
 import { resolveD50Test } from './mechanics/d50Test';
 import { castSpell } from './magicEngine.js';
+import { shortId } from '../utils/ids';
 
 const getWeaponData = (name) => gameData.getWeaponData(name);
 
@@ -282,7 +283,7 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
 
   for (const enemy of enemies) {
     combatants.push(createCombatantFromCharacter(enemy,
-      `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${Math.random().toString(36).slice(2, 5)}`, 'enemy'));
+      `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${shortId(3)}`, 'enemy'));
   }
 
   assignInitialPositions(combatants);
@@ -749,7 +750,7 @@ export function createMultiplayerCombatState(playerCharacters, enemies, allies =
 
   for (const enemy of enemies) {
     combatants.push(createCombatantFromCharacter(enemy,
-      `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${Math.random().toString(36).slice(2, 5)}`, 'enemy'));
+      `enemy_${enemy.name.toLowerCase().replace(/\s+/g, '_')}_${shortId(3)}`, 'enemy'));
   }
 
   assignInitialPositions(combatants);

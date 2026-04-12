@@ -42,25 +42,22 @@ export default function ScenePanel({
   const dispatch = useGameDispatch();
 
   const lastSentenceRef = useRef(null);
-  const lastOffsetRef = useRef(0);
 
-  const displayedSentence = useMemo(() => {
+  const { displayedSentence, sentenceWordOffset } = useMemo(() => {
     if (!currentChunk) {
       lastSentenceRef.current = null;
-      lastOffsetRef.current = 0;
-      return null;
+      return { displayedSentence: null, sentenceWordOffset: 0 };
     }
 
     const sentences = splitIntoSentences(currentChunk);
     if (sentences.length <= 1) {
       lastSentenceRef.current = currentChunk;
-      lastOffsetRef.current = 0;
-      return currentChunk;
+      return { displayedSentence: currentChunk, sentenceWordOffset: 0 };
     }
 
     const wordIdx = highlightInfo?.sentenceWordIndex ?? -1;
     if (wordIdx < 0) {
-      return lastSentenceRef.current || sentences[0];
+      return { displayedSentence: lastSentenceRef.current || sentences[0], sentenceWordOffset: 0 };
     }
 
     let total = 0;
@@ -68,19 +65,15 @@ export default function ScenePanel({
       const wc = countHighlightWords(s);
       if (wordIdx < total + wc) {
         lastSentenceRef.current = s;
-        lastOffsetRef.current = total;
-        return s;
+        return { displayedSentence: s, sentenceWordOffset: total };
       }
       total += wc;
     }
 
     const last = sentences[sentences.length - 1];
     lastSentenceRef.current = last;
-    lastOffsetRef.current = total - countHighlightWords(last);
-    return last;
+    return { displayedSentence: last, sentenceWordOffset: total - countHighlightWords(last) };
   }, [currentChunk, highlightInfo]);
-
-  const sentenceWordOffset = lastOffsetRef.current;
   const currentOverlayRolls = useMemo(() => {
     if (diceRolls && diceRolls.length > 0) return diceRolls;
     return diceRoll ? [diceRoll] : [];

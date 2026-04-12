@@ -5,7 +5,7 @@ import {
   safeParseAIResponse,
   SceneResponseSchema,
   CampaignResponseSchema,
-} from './aiResponseValidator.js';
+} from './index.js';
 
 describe('repairDialogueSegments', () => {
   it('passes through segments with no quoted text in narration', () => {

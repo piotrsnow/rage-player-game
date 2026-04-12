@@ -2,6 +2,7 @@ import { SKILL_CAPS, xpForSkillLevel, charXpFromSkillLevelUp } from '../../data/
 import { calculateMaxWounds, normalizeMoney } from '../../services/gameState';
 import { createCombatState } from '../../services/combatEngine';
 import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
+import { shortId } from '../../utils/ids';
 import {
   PERIOD_START_HOUR,
   createDefaultNeeds,
@@ -287,7 +288,7 @@ export function applyStateChangesHandler(draft, action) {
 
       if (incoming.action === 'introduce' && idx < 0) {
         draft.world.npcs.push({
-          id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: `npc_${Date.now()}_${shortId(5)}`,
           name: incoming.name,
           gender: incoming.gender || 'unknown',
           role: incoming.role || '',
@@ -350,7 +351,7 @@ export function applyStateChangesHandler(draft, action) {
         draft.world.mapState[idx].modifications.push(modification);
       } else {
         draft.world.mapState.push({
-          id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: `loc_${Date.now()}_${shortId(5)}`,
           name: change.location,
           description: '',
           modifications: [modification],
@@ -458,7 +459,7 @@ export function applyStateChangesHandler(draft, action) {
         const isDuplicate = existing.fragments.some((f) => f.content === update.fragment.content);
         if (!isDuplicate && existing.fragments.length < MAX_FRAGMENTS_PER_ENTRY) {
           existing.fragments.push({
-            id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: `frag_${Date.now()}_${shortId(5)}`,
             ...update.fragment,
             sceneIndex: sceneIdx,
             timestamp: Date.now(),
@@ -472,7 +473,7 @@ export function applyStateChangesHandler(draft, action) {
           name: update.name,
           category: update.category || 'concept',
           fragments: [{
-            id: `frag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: `frag_${Date.now()}_${shortId(5)}`,
             ...update.fragment,
             sceneIndex: sceneIdx,
             timestamp: Date.now(),
@@ -550,7 +551,7 @@ export function applyStateChangesHandler(draft, action) {
     for (const fx of changes.activeEffects) {
       if (fx.action === 'add') {
         draft.world.activeEffects.push({
-          id: fx.id || `fx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          id: fx.id || `fx_${Date.now()}_${shortId(5)}`,
           type: fx.type || 'other',
           location: fx.location || '',
           description: fx.description || '',
@@ -649,7 +650,7 @@ export function applyStateChangesHandler(draft, action) {
       for (const locName of [prevLoc, newLoc]) {
         if (!draft.world.mapState.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
           draft.world.mapState.push({
-            id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: `loc_${Date.now()}_${shortId(5)}`,
             name: locName,
             description: '',
             modifications: [],

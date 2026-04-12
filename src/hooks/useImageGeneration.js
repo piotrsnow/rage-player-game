@@ -3,6 +3,7 @@ import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { imageService } from '../services/imageGen';
 import { calculateCost } from '../services/costTracker';
+import { shortId } from '../utils/ids';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
 
@@ -65,7 +66,7 @@ export function useImageGeneration() {
           dispatch({
             type: 'ADD_CHAT_MESSAGE',
             payload: {
-              id: `msg_${Date.now()}_item_image_warn_${Math.random().toString(36).slice(2, 6)}`,
+              id: `msg_${Date.now()}_item_image_warn_${shortId(4)}`,
               role: 'system',
               subtype: 'validation_warning',
               content: `⚠ ${message}`,

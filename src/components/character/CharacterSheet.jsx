@@ -18,12 +18,7 @@ import AdvancementPanel from './AdvancementPanel';
 import CharacterPanel from './CharacterPanel';
 import CharacterLibrary from './CharacterLibrary';
 import { getActiveTitle, getTopTitles } from '../../data/achievements';
-
-function getGenderLabel(gender, t) {
-  if (gender === 'female') return t('multiplayer.female');
-  if (gender === 'male') return t('multiplayer.male');
-  return t('gmModal.genders.unknown');
-}
+import { getGenderLabel } from '../../utils/characterUtils';
 
 export default function CharacterSheet({ onClose }) {
   const navigate = useNavigate();

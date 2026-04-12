@@ -1,6 +1,7 @@
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
 import { SKILL_CAPS, createStartingSkills, charLevelCost } from '../../data/rpgSystem';
+import { shortId } from '../../utils/ids';
 
 export function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -97,7 +98,7 @@ export function ensureMapContainsLocationDraft(worldDraft, locationName) {
   );
   if (exists) return;
   worldDraft.mapState.push({
-    id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    id: `loc_${Date.now()}_${shortId(5)}`,
     name: normalized,
     description: '',
     modifications: [],

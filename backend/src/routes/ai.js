@@ -1,4 +1,6 @@
 import { generateSceneStream } from '../services/sceneGenerator.js';
+import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
+import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import {
   embedText,
@@ -11,6 +13,55 @@ import { writeEmbedding } from '../services/vectorSearchService.js';
 
 export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
+
+  /**
+   * POST /ai/generate-story-prompt
+   *
+   * Generate a random story premise for the campaign creator.
+   * Non-streaming — response is a single JSON object.
+   */
+  fastify.post('/generate-story-prompt', async (request, reply) => {
+    const { genre, tone, style, seedText, language, provider, model } = request.body || {};
+    try {
+      const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model });
+      return result;
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/generate-campaign
+   *
+   * Generate a new campaign with SSE streaming.
+   * Events: chunk (raw JSON text), complete (full parsed result), error
+   */
+  fastify.post('/generate-campaign', async (request, reply) => {
+    const { settings, language, provider, model } = request.body || {};
+
+    const origin = request.headers.origin || '*';
+    reply.raw.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Credentials': 'true',
+    });
+
+    await generateCampaignStream(
+      settings || {},
+      { provider, model, language },
+      (event) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch { /* client disconnected */ }
+      },
+    );
+
+    reply.raw.end();
+  });
 
   /**
    * POST /ai/campaigns/:id/generate-scene-stream

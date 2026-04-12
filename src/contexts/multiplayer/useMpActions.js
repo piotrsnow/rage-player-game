@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { wsService, clearPersistedRejoinInfo, getPersistedRejoinInfo } from '../../services/websocket';
 import { apiClient } from '../../services/apiClient';
 import { WS_CLIENT_TYPES } from '../../../shared/contracts/multiplayer.js';
+import { shortId } from '../../utils/ids';
 
 export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
   const connect = useCallback(() => {
@@ -138,7 +139,7 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
         return;
       }
 
-      const requestId = `verify_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const requestId = `verify_${Date.now()}_${shortId()}`;
       const timeoutId = setTimeout(() => {
         pendingQuestVerifyRef.current.delete(requestId);
         reject(new Error('Quest objective verification timed out.'));

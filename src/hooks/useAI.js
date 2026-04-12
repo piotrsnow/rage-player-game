@@ -1,5 +1,5 @@
 import { useImageGeneration } from './useImageGeneration';
-import { useSceneGeneration } from './useSceneGeneration';
+import { useSceneGeneration } from './sceneGeneration';
 import { useGameContent } from './useGameContent';
 
 export function useAI() {

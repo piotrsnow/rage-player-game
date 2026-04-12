@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useEvent } from './useEvent';
 
 /**
  * Non-host multiplayer players consume combat results synced by the host
@@ -8,7 +9,7 @@ import { useEffect, useRef } from 'react';
 export function useCombatResultSync({ combat, isMultiplayer, isHost, addResultToLog }) {
   const lastProcessedTsRef = useRef(null);
 
-  useEffect(() => {
+  const drainResults = useEvent(() => {
     if (!combat.lastResults?.length || !combat.lastResultsTs) return;
     if (combat.lastResultsTs === lastProcessedTsRef.current) return;
     if (!isMultiplayer || isHost) return;
@@ -16,6 +17,9 @@ export function useCombatResultSync({ combat, isMultiplayer, isHost, addResultTo
     for (const r of combat.lastResults) {
       addResultToLog(r);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [combat.lastResultsTs, isMultiplayer, isHost]);
+  });
+
+  useEffect(() => {
+    drainResults();
+  }, [combat.lastResultsTs, isMultiplayer, isHost, drainResults]);
 }

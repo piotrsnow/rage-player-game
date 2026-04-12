@@ -4,7 +4,7 @@
  */
 
 import { resolveSkillCheck } from './mechanics/skillCheck.js';
-import { DIFFICULTY_THRESHOLDS } from '../data/rpgSystem.js';
+import { DIFFICULTY_THRESHOLDS, getSkillLevel } from '../data/rpgSystem.js';
 
 // ── Outcome Tiers ──
 
@@ -188,10 +188,5 @@ function countInventoryItems(inventory) {
   return counts;
 }
 
-function getSkillLevel(skills, skillName) {
-  const entry = skills?.[skillName];
-  if (!entry) return 0;
-  return typeof entry === 'object' ? (entry.level || 0) : entry;
-}
 
 export { DIFFICULTY_THRESHOLDS };

@@ -64,7 +64,7 @@ import { useSummary } from '../../hooks/useSummary';
 import { useCampaignLoader } from '../../hooks/useCampaignLoader';
 import { useViewerMode } from '../../hooks/useViewerMode';
 import { useMultiplayerVoiceSync } from '../../hooks/useMultiplayerVoiceSync';
-import { useMultiplayerCombatHost } from '../../hooks/useMultiplayerCombatHost';
+import { useMultiplayerCombatSceneDetect } from '../../hooks/useMultiplayerCombatSceneDetect';
 import { useCombatResolution } from '../../hooks/useCombatResolution';
 import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
@@ -668,12 +668,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     t,
   });
 
-  useMultiplayerCombatHost({
+  useMultiplayerCombatSceneDetect({
     isMultiplayer,
     isHost: mp.state.isHost,
     mp,
     mpGameState,
-    combatPanelComponent: CombatPanel,
   });
 
   const dismissError = () => {

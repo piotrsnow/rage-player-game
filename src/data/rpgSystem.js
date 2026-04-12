@@ -412,3 +412,9 @@ MAGIA:
 - Nauka z scrolli (25% + bonus Inteligencji) lub jednorazowe uzycie scrolla
 - Odblokowanie nastepnego zaklecia w drzewku: 5 * koszt_many poprzedniego zaklecia uzyc`;
 }
+
+export function getSkillLevel(skills, skillName) {
+  const entry = skills?.[skillName];
+  if (!entry) return 0;
+  return typeof entry === 'object' ? (entry.level || 0) : entry;
+}

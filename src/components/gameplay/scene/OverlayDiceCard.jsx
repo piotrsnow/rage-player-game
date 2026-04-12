@@ -115,9 +115,9 @@ export default function OverlayDiceCard({ dr, t, showCharacter = false, isVisibl
   const outcomeClasses = dr ? getDiceOutcomeCardClasses(dr) : '';
   const glow = dr ? getOutcomeGlow(dr) : null;
 
-  const safeRoll = dr ? (dr.roll === 100 ? 100 : Math.max(0, Math.min(99, Number(dr.roll) || 0))) : 0;
-  const tensLabel = safeRoll === 100 ? '00' : String(Math.floor(safeRoll / 10) * 10).padStart(2, '0');
-  const unitsLabel = safeRoll === 100 ? '0' : String(safeRoll % 10);
+  const safeRoll = dr ? Math.max(1, Math.min(50, Number(dr.roll) || 0)) : 0;
+  const tensLabel = String(Math.floor(safeRoll / 10) * 10).padStart(2, '0');
+  const unitsLabel = String(safeRoll % 10);
 
   return (
     <div className={`glass-panel-dice-roll-overlay relative w-max max-w-[min(92vw,24rem)] overflow-hidden rounded-2xl border px-5 py-4 flex flex-col gap-3 transition-all duration-300 ${

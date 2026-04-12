@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { splitTextForHighlight } from '../../../services/elevenlabs';
+import { filterDuplicateDialogueSegments, getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
 import Tooltip from '../../ui/Tooltip';
 
 export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
@@ -37,52 +38,6 @@ export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, 
   );
 }
 
-function normalizeForNarrativeDedup(text) {
-  if (typeof text !== 'string') return '';
-  return text
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .toLowerCase()
-    .replace(/^[\s"'`]+|[\s"'`]+$/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function isDialogueDuplicateOfNarration(dialogueText, narrativeText) {
-  const normalizedDialogue = normalizeForNarrativeDedup(dialogueText);
-  const normalizedNarrative = normalizeForNarrativeDedup(narrativeText);
-  if (!normalizedDialogue || !normalizedNarrative) return false;
-  if (normalizedDialogue === normalizedNarrative) return true;
-
-  const shorter = normalizedDialogue.length <= normalizedNarrative.length ? normalizedDialogue : normalizedNarrative;
-  const longer = shorter === normalizedDialogue ? normalizedNarrative : normalizedDialogue;
-  if (longer.includes(shorter) && (shorter.length / longer.length) >= 0.9) {
-    return true;
-  }
-
-  const dialogueWords = normalizedDialogue.split(' ');
-  const narrativeWords = normalizedNarrative.split(' ');
-  const minLength = Math.min(dialogueWords.length, narrativeWords.length);
-  const maxLength = Math.max(dialogueWords.length, narrativeWords.length);
-  if (maxLength === 0) return false;
-
-  let samePositionCount = 0;
-  for (let i = 0; i < minLength; i += 1) {
-    if (dialogueWords[i] === narrativeWords[i]) {
-      samePositionCount += 1;
-    }
-  }
-  return (samePositionCount / maxLength) >= 0.9;
-}
-
-export function filterDuplicateDialogueSegments(segments, narrativeText) {
-  if (!Array.isArray(segments) || segments.length === 0) return [];
-  return segments.filter((segment) => {
-    if (segment?.type !== 'dialogue') return true;
-    return !isDialogueDuplicateOfNarration(segment?.text, narrativeText);
-  });
-}
 
 export function DialogueSegments({ segments, narrator, messageId }) {
   const { t } = useTranslation();
@@ -92,17 +47,6 @@ export function DialogueSegments({ segments, narrator, messageId }) {
     return narrator?.currentMessageId === messageId && narrator?.currentSegmentIndex === index;
   };
 
-  const getDialogueSpeakerLabel = (segment) => {
-    const character = typeof segment?.character === 'string' ? segment.character.trim() : '';
-    if (character && character.toLowerCase() !== 'npc') {
-      return character;
-    }
-    const speaker = typeof segment?.speaker === 'string' ? segment.speaker.trim() : '';
-    if (speaker && speaker.toLowerCase() !== 'npc') {
-      return speaker;
-    }
-    return t('common.npc');
-  };
 
   return (
     <div className="space-y-2">
@@ -113,7 +57,7 @@ export function DialogueSegments({ segments, narrator, messageId }) {
             <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {getDialogueSpeakerLabel(seg)}
+                  {getDialogueSpeakerLabel(seg, t('common.npc'))}
                 </span>
                 {active && (
                   <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
@@ -270,11 +214,7 @@ export function StreamingContent({ narrative, segments }) {
         {segments.map((seg, i) => {
           const isLast = i === segments.length - 1;
           if (seg.type === 'dialogue') {
-            const speaker = (typeof seg.character === 'string' && seg.character.trim() && seg.character.trim().toLowerCase() !== 'npc')
-              ? seg.character.trim()
-              : (typeof seg.speaker === 'string' && seg.speaker.trim() && seg.speaker.trim().toLowerCase() !== 'npc')
-                ? seg.speaker.trim()
-                : t('common.npc');
+            const speaker = getDialogueSpeakerLabel(seg, t('common.npc'));
             return (
               <div key={i} className="pl-3 border-l-2 border-tertiary-dim/40">
                 <div className="flex items-center gap-1.5 mb-0.5">

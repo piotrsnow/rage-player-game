@@ -1,5 +1,6 @@
 import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+import { shortId } from '../../utils/ids';
 
 export const initialState = {
   isMultiplayer: false,
@@ -248,7 +249,7 @@ export function mpReducer(state, action) {
             for (const locName of [prevLoc, newLoc]) {
               if (!mapSt.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
                 mapSt.push({
-                  id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                  id: `loc_${Date.now()}_${shortId(5)}`,
                   name: locName,
                   description: '',
                   modifications: [],
@@ -278,7 +279,7 @@ export function mpReducer(state, action) {
               };
             } else {
               mapState.push({
-                id: `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                id: `loc_${Date.now()}_${shortId(5)}`,
                 name: change.location,
                 description: '',
                 modifications: [{ description: change.modification, type: change.type || 'other', timestamp: Date.now() }],

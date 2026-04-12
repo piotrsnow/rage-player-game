@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { translateSkill } from '../../utils/rpgTranslate';
 import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
+import { shortId } from '../../utils/ids';
 
 const BEHAVIORS = ['aggressive', 'defensive', 'supportive', 'passive'];
 const STANCES = ['attack', 'defend', 'support'];
@@ -39,7 +40,7 @@ function WoundsBar({ current, max, memberType }) {
 }
 
 function buildDefaultCompanion({ name, species, sila, zrecznosc, wytrzymalosc }) {
-  const id = `companion_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `companion_${Date.now()}_${shortId()}`;
   return {
     id,
     type: 'companion',

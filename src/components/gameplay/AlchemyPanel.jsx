@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getAvailableRecipes, resolveAlchemy, ALCHEMY_TIERS } from '../../services/alchemyEngine.js';
+import { getSkillLevel } from '../../data/rpgSystem.js';
 import { gameData } from '../../services/gameDataService.js';
 
 const DIFFICULTY_COLORS = {
@@ -195,8 +196,3 @@ function formatEffect(effect, t) {
   }
 }
 
-function getSkillLevel(skills, name) {
-  const e = skills?.[name];
-  if (!e) return 0;
-  return typeof e === 'object' ? (e.level || 0) : e;
-}

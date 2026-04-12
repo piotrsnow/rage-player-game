@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { useEvent } from './useEvent';
 
 /**
  * Generates flavourful combat commentary via AI every N rounds and pushes
@@ -73,7 +74,7 @@ export function useCombatCommentary({
     };
   }, [invalidateCommentaryRequests]);
 
-  useEffect(() => {
+  const requestCommentary = useEvent(() => {
     if (!combat.active || combatOver) return;
     if (isMultiplayer && !isHost) return;
     if (frequency <= 0) return;
@@ -124,20 +125,9 @@ export function useCombatCommentary({
         commentaryInFlightRef.current = false;
       }
     });
-  }, [
-    combat,
-    combat.active,
-    combat.lastResults,
-    combat.round,
-    frequency,
-    combatLog,
-    combatOver,
-    combatInstanceKey,
-    generateCombatCommentary,
-    isHost,
-    isMultiplayer,
-    gameState,
-    summarizeLogEntry,
-    onEmitMessage,
-  ]);
+  });
+
+  useEffect(() => {
+    requestCommentary();
+  }, [combat.round, combat.active, combatOver, frequency, isMultiplayer, isHost, combatInstanceKey, requestCommentary]);
 }

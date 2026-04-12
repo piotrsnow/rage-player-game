@@ -1,11 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import CharacterPanel from './CharacterPanel';
-
-function getGenderLabel(gender, t) {
-  if (gender === 'female') return t('multiplayer.female');
-  if (gender === 'male') return t('multiplayer.male');
-  return t('gmModal.genders.unknown');
-}
+import { getGenderLabel } from '../../utils/characterUtils';
 
 function BrowsingView({ character, settings, onBack }) {
   const { t } = useTranslation();

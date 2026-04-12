@@ -12,12 +12,11 @@ const FALLBACK_ENEMY = {
   weapons: ['Hand Weapon'],
 };
 
-/**
- * Host-only multiplayer combat plumbing:
- * 1. Detects combatUpdate from the latest scene and creates MP combat state.
- * 2. Forwards pending combat maneuvers from remote players to the combat panel.
- */
-export function useMultiplayerCombatHost({ isMultiplayer, isHost, mp, mpGameState, combatPanelComponent }) {
+// Host-only: detects a `combatUpdate` on the latest scene and bootstraps
+// multiplayer combat state from it. Remote-manoeuvre forwarding used to
+// live here as well, but now lives inside CombatPanel via
+// useCombatHostResolve — this hook is pure scene → combat initialisation.
+export function useMultiplayerCombatSceneDetect({ isMultiplayer, isHost, mp, mpGameState }) {
   const lastCombatSceneRef = useRef(null);
 
   useEffect(() => {
@@ -39,21 +38,4 @@ export function useMultiplayerCombatHost({ isMultiplayer, isHost, mp, mpGameStat
       mp.syncCombatState(combatState);
     }
   }, [isMultiplayer, isHost, mp, mpGameState?.scenes, mpGameState?.combat, mpGameState?.characters]);
-
-  useEffect(() => {
-    if (!isMultiplayer || !isHost) return;
-    const pending = mp.state.pendingCombatManoeuvre;
-    if (!pending) return;
-
-    mp.clearPendingCombatManoeuvre();
-    const fromPlayerId = `player_${pending.fromOdId}`;
-    if (combatPanelComponent?.resolveRemoteManoeuvre) {
-      combatPanelComponent.resolveRemoteManoeuvre(
-        fromPlayerId,
-        pending.manoeuvre,
-        pending.targetId,
-        pending.customDescription
-      );
-    }
-  }, [isMultiplayer, isHost, mp, mp.state.pendingCombatManoeuvre, combatPanelComponent]);
 }

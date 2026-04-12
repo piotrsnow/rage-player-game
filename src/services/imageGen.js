@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './prompts';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getImageStyleNegative } from './imagePrompts';
 import { apiClient } from './apiClient';
 
 const GENERATED_IMAGE_SCALE = 0.75;

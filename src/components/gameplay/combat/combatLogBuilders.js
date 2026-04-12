@@ -1,6 +1,5 @@
 import { buildCombatLogDetails } from '../CombatLogEntry';
-
-const shortId = () => Math.random().toString(36).slice(2, 6);
+import { shortId } from '../../../utils/ids';
 
 export function buildResultLogEntries(result, { isActorFriendly, t }) {
   if (!result) return [];

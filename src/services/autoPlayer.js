@@ -1,6 +1,6 @@
 import { resolveModel } from './ai';
 import { apiClient } from './apiClient';
-import { safeParseJSON } from './aiResponseValidator';
+import { safeParseJSON } from './aiResponse';
 
 const STYLE_PROMPTS = {
   cautious: 'You are cautious and careful. Prefer safe options, avoid unnecessary risks, gather information before acting, and retreat from danger when wounded.',

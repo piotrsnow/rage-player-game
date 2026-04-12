@@ -6,6 +6,7 @@ import { createCampaignId, createSceneId, createQuestId, generateAttributes, cal
 import { normalizeCharacterAge } from '../services/characterAge';
 import { SPECIES, createStartingSkills } from '../data/rpgSystem';
 import { gameData } from '../services/gameDataService';
+import { shortId } from '../utils/ids';
 
 function buildCharacter(aiResult, campaignSettings) {
   // If a fully pre-built character was created via the CharacterCreationModal, use it directly
@@ -172,7 +173,7 @@ export function useGameState() {
       };
 
       const initialNPCs = (aiResult.initialNPCs || []).map((npc) => ({
-        id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `npc_${Date.now()}_${shortId(5)}`,
         name: npc.name,
         gender: npc.gender || 'unknown',
         role: npc.role || '',
