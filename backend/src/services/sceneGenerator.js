@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { requireServerApiKey } from './apiKeyService.js';
+import { config } from '../config.js';
 import { parseProviderError, toClientAiError, AIServiceError } from './aiErrors.js';
 import {
   assembleContext,
@@ -108,7 +109,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
+          model: config.aiModels.standard.anthropic,
           max_tokens: 200,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
         }),
@@ -983,7 +984,7 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: model || 'gpt-5.4',
+      model: model || config.aiModels.premium.openai,
       messages,
       temperature,
       max_completion_tokens: maxTokens,
@@ -1071,7 +1072,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
   const apiKey = requireServerApiKey('anthropic', 'Anthropic');
 
   const body = {
-    model: model || 'claude-sonnet-4-20250514',
+    model: model || config.aiModels.premium.anthropic,
     max_tokens: maxTokens,
     messages,
     temperature,

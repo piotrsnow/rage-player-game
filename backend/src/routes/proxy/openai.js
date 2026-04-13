@@ -47,7 +47,7 @@ export async function openaiProxyRoutes(fastify) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model || 'gpt-5.4',
+        model: model || config.aiModels.premium.openai,
         messages,
         temperature: temperature ?? 0.8,
         ...(response_format ? { response_format } : {}),

@@ -1,4 +1,5 @@
 import { requireServerApiKey } from '../../services/apiKeyService.js';
+import { config } from '../../config.js';
 import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
 
 export async function anthropicProxyRoutes(fastify) {
@@ -26,7 +27,7 @@ export async function anthropicProxyRoutes(fastify) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: model || 'claude-sonnet-4-20250514',
+        model: model || config.aiModels.premium.anthropic,
         max_tokens: max_tokens || 4096,
         messages,
         ...(system ? { system } : {}),

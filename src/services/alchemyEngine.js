@@ -6,6 +6,7 @@
 
 import { resolveSkillCheck } from './mechanics/skillCheck.js';
 import { getSkillLevel } from '../data/rpgSystem.js';
+import { prefixedId } from '../../shared/domain/ids.js';
 
 // ── Outcome Tiers ──
 
@@ -116,7 +117,7 @@ function buildResultItem(recipe, tier) {
 
   const base = recipe.resultItem;
   const item = {
-    id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: prefixedId('item', 4),
     name: base.name,
     type: base.type || 'potion',
     rarity: base.rarity || 'common',

@@ -1,5 +1,7 @@
 // Shared state validation helpers — single source of truth for frontend + backend stateValidators
 
+import { prefixedId } from './ids.js';
+
 // ── Utilities ──
 
 export function clamp(value, min, max) {
@@ -11,7 +13,7 @@ export function moneyToCopper(m) {
 }
 
 export function createItemId() {
-  return `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  return prefixedId('item', 4);
 }
 
 // ── NPC Name Sanitization ──
@@ -230,7 +232,7 @@ export function normalizeCodexUpdates(codexUpdates, corrections, prefix = '') {
     const normalizedName = typeof raw.name === 'string' && raw.name.trim()
       ? raw.name.trim()
       : (typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().replace(/^codex[_-]?/i, '') : 'Unknown entry');
-    const normalizedId = toSafeCodexId(raw.id) || buildCodexIdFromName(normalizedName) || `codex_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const normalizedId = toSafeCodexId(raw.id) || buildCodexIdFromName(normalizedName) || prefixedId('codex', 5);
 
     const normalizedSource = typeof raw.fragment?.source === 'string' && raw.fragment.source.trim()
       ? raw.fragment.source.trim()

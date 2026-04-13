@@ -1,7 +1,8 @@
 import { normalizeMultiplayerStateChanges } from '../contracts/multiplayer.js';
+import { prefixedId } from './ids.js';
 
 function createId(prefix) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return prefixedId(prefix, 5);
 }
 
 function defaultPeriodResolver(hour) {

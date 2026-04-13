@@ -5,6 +5,7 @@
 
 import { resolveSkillCheck } from './mechanics/skillCheck.js';
 import { DIFFICULTY_THRESHOLDS, getSkillLevel } from '../data/rpgSystem.js';
+import { prefixedId } from '../../shared/domain/ids.js';
 
 // ── Outcome Tiers ──
 
@@ -118,7 +119,7 @@ function buildResultItem(recipe, tier) {
   }
 
   const item = {
-    id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: prefixedId('item', 4),
     name: recipe.resultItem.name,
     type: recipe.resultItem.type || 'misc',
     rarity: recipe.resultItem.rarity || 'common',

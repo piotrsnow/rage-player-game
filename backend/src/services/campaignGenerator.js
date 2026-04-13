@@ -1,15 +1,11 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
-
-const MODEL_MAP = {
-  openai: 'gpt-5.4',
-  anthropic: 'claude-sonnet-4-20250514',
-};
+import { config } from '../config.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en' } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider === 'anthropic' ? 'anthropic' : 'openai');
-  const resolvedModel = model || MODEL_MAP[resolvedProvider];
+  const resolvedModel = model || config.aiModels.premium[resolvedProvider];
 
   const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
   const userPrompt = buildCampaignCreationPrompt(settings, language);

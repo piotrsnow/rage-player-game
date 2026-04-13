@@ -3,6 +3,7 @@ import {
   createStartingSkills, calculateMaxWounds as calcMaxWounds,
 } from '../data/rpgSystem';
 import { DEFAULT_CHARACTER_AGE } from './characterAge';
+import { prefixedId } from '../../shared/domain/ids.js';
 
 const RANDOM_NAMES = {
   Fantasy: [
@@ -123,17 +124,17 @@ export function randomizeFullCharacter(genre) {
 }
 
 export function createCampaignId() {
-  return `campaign_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  return prefixedId('campaign', 6);
 }
 
 export function createSceneId() {
-  return `scene_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  return prefixedId('scene', 6);
 }
 
 export { createItemId } from '../../shared/domain/stateValidation.js';
 
 export function createQuestId() {
-  return `quest_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  return prefixedId('quest', 4);
 }
 
 // d50 roll (1-50)

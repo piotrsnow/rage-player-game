@@ -26,6 +26,7 @@ import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
 import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
+import { prisma } from './lib/prisma.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
@@ -49,7 +50,15 @@ await fastify.register(websocket);
 
 await fastify.register(rateLimit, { global: false });
 
-fastify.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
+fastify.get('/health', async (request, reply) => {
+  try {
+    await prisma.$runCommandRaw({ ping: 1 });
+    return { status: 'ok', db: 'ok', timestamp: Date.now() };
+  } catch (err) {
+    fastify.log.warn({ err }, 'Health check DB ping failed');
+    return reply.code(503).send({ status: 'degraded', db: 'down', timestamp: Date.now() });
+  }
+});
 
 await fastify.register(async function authScope(app) {
   app.addHook('onRoute', (routeOptions) => {

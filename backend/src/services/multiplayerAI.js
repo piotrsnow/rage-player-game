@@ -985,7 +985,7 @@ async function callAI(messages) {
             Authorization: `Bearer ${openaiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-5.4',
+            model: config.aiModels.premium.openai,
             messages,
             temperature: 0.8,
             response_format: { type: 'json_object' },
@@ -1009,7 +1009,7 @@ async function callAI(messages) {
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
+            model: config.aiModels.premium.anthropic,
             max_tokens: 4096,
             system: systemMsg?.content || '',
             messages: userMsgs,

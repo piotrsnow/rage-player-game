@@ -9,6 +9,7 @@
  */
 
 import { EQUIPMENT, MATERIALS, normalizeCoins, priceToCopper, ALCHEMY_RECIPES } from '../data/equipment/index.js';
+import { prefixedId } from '../../../shared/domain/ids.js';
 
 // ── Constants ──
 
@@ -156,7 +157,7 @@ function resolveEquipmentItem(descriptor, rarity) {
   const chosen = pickRandom(pool);
   return {
     newItems: [{
-      id: `reward_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: prefixedId('reward', 4),
       name: chosen.name,
       type: descriptor.type === 'weapon' ? 'weapon' : descriptor.type === 'armour' ? 'armor' : descriptor.type === 'shield' ? 'shield' : chosen.category,
       baseType: chosen.id,
@@ -184,7 +185,7 @@ function resolvePotion(descriptor, rarity) {
   const recipe = pickRandom(pool);
   return {
     newItems: [{
-      id: `reward_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: prefixedId('reward', 4),
       name: recipe.resultItem.name,
       type: 'potion',
       rarity: recipe.resultItem.rarity || 'common',

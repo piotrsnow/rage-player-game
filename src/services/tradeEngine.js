@@ -8,6 +8,7 @@ import {
   priceToCopper, normalizeCoins, calculatePrice, canAfford,
   applyDiscount, formatCoinPrice,
 } from '../../shared/domain/pricing.js';
+import { prefixedId } from '../../shared/domain/ids.js';
 
 // ── Shop Archetypes ──
 
@@ -238,7 +239,7 @@ export function executeBuy(item, finalPrice) {
   }
 
   const newItem = {
-    id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: prefixedId('item', 4),
     name: item.name,
     type: item.type || item.category || 'misc',
     rarity: item.rarity || item.availability || 'common',

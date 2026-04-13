@@ -40,4 +40,23 @@ export const config = {
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,
 
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+
+  // Model tiering — premium for scene/campaign generation, standard for
+  // compression/recaps/combat commentary, nano for intent classification +
+  // fact extraction. Override via env vars for staging/dev without editing
+  // code. See CLAUDE.md "AI Architecture — Two-Stage Pipeline".
+  aiModels: {
+    premium: {
+      openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-5.4',
+      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-20250514',
+    },
+    standard: {
+      openai: process.env.AI_MODEL_STANDARD_OPENAI || 'gpt-5.4-mini',
+      anthropic: process.env.AI_MODEL_STANDARD_ANTHROPIC || 'claude-haiku-4-5-20251001',
+    },
+    nano: {
+      openai: process.env.AI_MODEL_NANO_OPENAI || 'gpt-5.4-nano',
+      anthropic: process.env.AI_MODEL_NANO_ANTHROPIC || 'claude-haiku-4-5-20251001',
+    },
+  },
 };
