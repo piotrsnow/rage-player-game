@@ -1,5 +1,6 @@
 import { SKILLS, DIFFICULTY_THRESHOLDS, MOMENTUM_RANGE, CREATIVITY_BONUS_MAX } from '../../data/rpgSystem.js';
 import { rollD50, rollPercentage } from '../gameState.js';
+import { rollLuckCheck } from '../../../shared/domain/luck.js';
 
 // ── CONSTANTS ──
 
@@ -119,9 +120,7 @@ export function resolveSkillCheck({
   if (attributeValue == null) return null;
 
   // --- Luck check (Szczescie) ---
-  const szczescie = attributes.szczescie || 0;
-  const luckRoll = rollPercentage();
-  const luckySuccess = luckRoll <= szczescie;
+  const { luckRoll, luckySuccess } = rollLuckCheck(attributes.szczescie, rollPercentage);
 
   // --- Pick best skill ---
   const bestSkill = pickBestSkillForAttribute(

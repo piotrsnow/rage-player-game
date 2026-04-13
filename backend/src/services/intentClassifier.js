@@ -10,17 +10,9 @@
 
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
+import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 
 const log = childLogger({ module: 'intentClassifier' });
-
-// ── COMBAT INTENT REGEX (extracted from sceneGenerator.js) ──
-
-const COMBAT_REGEX = /\b(atak|walcz|bijat|zabij|uderzam|rzucam się|wyzywam|attack|fight|strike|kill|charge|challenge|initiate combat|hit him|hit her|stab|slash)\b/i;
-
-function detectCombatIntent(action) {
-  if (!action || typeof action !== 'string') return false;
-  return COMBAT_REGEX.test(action);
-}
 
 // ── TRADE INTENT REGEX ──
 

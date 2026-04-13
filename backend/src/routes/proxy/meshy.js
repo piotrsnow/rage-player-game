@@ -8,6 +8,54 @@ const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const store = createMediaStore(config);
 const TARGET_FORMATS = ['glb'];
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
+const TEXT_TO_3D_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 2000 },
+    assetKey: { type: 'string', maxLength: 256 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    cacheVersion: { type: 'string', maxLength: 64 },
+  },
+};
+
+const REFINE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['previewTaskId'],
+  properties: {
+    previewTaskId: { type: 'string', maxLength: 128 },
+  },
+};
+
+const STORE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['glbUrl', 'cacheKey'],
+  properties: {
+    glbUrl: { type: 'string', maxLength: 2048 },
+    cacheKey: { type: 'string', maxLength: 512 },
+    assetKey: { type: 'string', maxLength: 256 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    prompt: { type: 'string', maxLength: 2000 },
+    cacheVersion: { type: 'string', maxLength: 64 },
+  },
+};
+
+const CHECK_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    prompt: { type: 'string', maxLength: 2000 },
+    assetKey: { type: 'string', maxLength: 256 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    cacheVersion: { type: 'string', maxLength: 64 },
+  },
+};
+
 function normalizeIdPart(value) {
   return String(value || '')
     .replace(/\.glb$/i, '')
@@ -137,7 +185,7 @@ export async function meshyProxyRoutes(fastify) {
     return apiKey;
   }
 
-  fastify.post('/text-to-3d', async (request, reply) => {
+  fastify.post('/text-to-3d', { schema: { body: TEXT_TO_3D_BODY_SCHEMA } }, async (request, reply) => {
     const apiKey = await getMeshyKey(request, reply);
     if (!apiKey) return;
 
@@ -180,7 +228,7 @@ export async function meshyProxyRoutes(fastify) {
     return { cached: false, taskId: data.result, key: cacheKey };
   });
 
-  fastify.post('/refine', async (request, reply) => {
+  fastify.post('/refine', { schema: { body: REFINE_BODY_SCHEMA } }, async (request, reply) => {
     const apiKey = await getMeshyKey(request, reply);
     if (!apiKey) return;
 
@@ -239,7 +287,7 @@ export async function meshyProxyRoutes(fastify) {
     };
   });
 
-  fastify.post('/store', async (request, reply) => {
+  fastify.post('/store', { schema: { body: STORE_BODY_SCHEMA } }, async (request, reply) => {
     const { glbUrl, cacheKey, assetKey, campaignId, prompt, cacheVersion } = request.body;
     if (!glbUrl || !cacheKey) {
       return reply.code(400).send({ error: 'glbUrl and cacheKey are required' });
@@ -285,7 +333,7 @@ export async function meshyProxyRoutes(fastify) {
     return { cached: false, url: storeResult.url, key: cacheKey };
   });
 
-  fastify.post('/check', async (request, reply) => {
+  fastify.post('/check', { schema: { body: CHECK_BODY_SCHEMA } }, async (request, reply) => {
     const { prompt, assetKey, campaignId, cacheVersion } = request.body;
     const cacheParams = buildCacheParams(prompt, assetKey, cacheVersion);
     const cacheKey = generateKey('model3d', cacheParams, campaignId);

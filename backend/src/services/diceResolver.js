@@ -56,7 +56,7 @@ export const SKILL_BY_NAME = Object.fromEntries(SKILLS.map(s => [s.name, s]));
 
 // ── HELPERS ──
 
-function rollD50() {
+export function rollD50() {
   return Math.floor(Math.random() * 50) + 1;
 }
 
@@ -68,13 +68,16 @@ export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+import { getSkillLevel as getSkillLevelFromMap } from '../../../shared/domain/skills.js';
+import { rollLuckCheck, isLuckySuccess } from '../../../shared/domain/luck.js';
+
 /**
  * Find the skill level for the given skill name from character's skills.
+ * Backend helpers pass the whole character; thin wrapper over the shared
+ * map-based helper.
  */
 export function getSkillLevel(character, skillName) {
-  const entry = character?.skills?.[skillName];
-  if (!entry) return 0;
-  return typeof entry === 'object' ? (entry.level || 0) : (entry || 0);
+  return getSkillLevelFromMap(character?.skills, skillName);
 }
 
 /**
@@ -125,8 +128,7 @@ export function resolveBackendDiceRollWithPreRoll(character, skillName, difficul
  */
 export function resolveBackendDiceRoll(character, skillName, difficulty, options = {}) {
   const d50 = rollD50();
-  const szczescie = character?.attributes?.szczescie || 0;
-  const luckySuccess = rollPercentage() <= szczescie;
+  const { luckySuccess } = rollLuckCheck(character?.attributes?.szczescie, rollPercentage);
   return resolveBackendDiceRollWithPreRoll(character, skillName, difficulty, d50, luckySuccess);
 }
 
@@ -144,7 +146,7 @@ export function generatePreRolls(character) {
       d50,
       momentum,
       base: d50 + momentum,
-      luckySuccess: luckyRoll <= szczescie,
+      luckySuccess: isLuckySuccess(szczescie, luckyRoll),
     };
   });
 }

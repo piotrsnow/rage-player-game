@@ -3,6 +3,7 @@ import { calculateMaxWounds, normalizeMoney } from '../../services/gameState';
 import { createCombatState } from '../../services/combatEngine';
 import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
 import { shortId } from '../../utils/ids';
+import { mergeUnique } from '../../../shared/domain/arrays';
 import {
   PERIOD_START_HOUR,
   createDefaultNeeds,
@@ -320,7 +321,7 @@ export function applyStateChangesHandler(draft, action) {
         if (incoming.factionId !== undefined) npc.factionId = incoming.factionId;
 
         if (incoming.relatedQuestIds?.length > 0) {
-          npc.relatedQuestIds = [...new Set([...(npc.relatedQuestIds || []), ...incoming.relatedQuestIds])];
+          npc.relatedQuestIds = mergeUnique(npc.relatedQuestIds, incoming.relatedQuestIds);
         }
         if (incoming.relationships?.length > 0) {
           const filteredExisting = (npc.relationships || []).filter(
@@ -427,10 +428,10 @@ export function applyStateChangesHandler(draft, action) {
         const existing = kb.plotThreads.find((t) => t.id === pt.id);
         if (existing) {
           Object.assign(existing, pt);
-          existing.relatedNpcIds = [...new Set([...(existing.relatedNpcIds || []), ...(pt.relatedNpcIds || [])])];
-          existing.relatedQuestIds = [...new Set([...(existing.relatedQuestIds || []), ...(pt.relatedQuestIds || [])])];
-          existing.relatedLocationIds = [...new Set([...(existing.relatedLocationIds || []), ...(pt.relatedLocationIds || [])])];
-          existing.relatedScenes = [...new Set([...(existing.relatedScenes || []), sceneIdx])];
+          existing.relatedNpcIds = mergeUnique(existing.relatedNpcIds, pt.relatedNpcIds);
+          existing.relatedQuestIds = mergeUnique(existing.relatedQuestIds, pt.relatedQuestIds);
+          existing.relatedLocationIds = mergeUnique(existing.relatedLocationIds, pt.relatedLocationIds);
+          existing.relatedScenes = mergeUnique(existing.relatedScenes, sceneIdx);
         } else {
           kb.plotThreads.push({
             ...pt,
@@ -464,8 +465,8 @@ export function applyStateChangesHandler(draft, action) {
             sceneIndex: sceneIdx,
             timestamp: Date.now(),
           });
-          existing.tags = [...new Set([...(existing.tags || []), ...(update.tags || [])])];
-          existing.relatedEntries = [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])];
+          existing.tags = mergeUnique(existing.tags, update.tags);
+          existing.relatedEntries = mergeUnique(existing.relatedEntries, update.relatedEntries);
         }
       } else if (Object.keys(codex).length < MAX_CODEX_ENTRIES) {
         codex[update.id] = {
@@ -524,7 +525,7 @@ export function applyStateChangesHandler(draft, action) {
       const npcsHere = (draft.world.npcs || [])
         .filter((n) => n.alive !== false && n.lastLocation?.toLowerCase() === currentLoc.toLowerCase())
         .map((n) => n.name);
-      const mergedNpcs = [...new Set([...(existing.npcsEncountered || []), ...npcsHere])];
+      const mergedNpcs = mergeUnique(existing.npcsEncountered, npcsHere);
       kb.locations[key] = {
         name: currentLoc,
         visitCount: existing.visitCount + (changes.currentLocation ? 1 : 0),

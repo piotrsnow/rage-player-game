@@ -1,4 +1,5 @@
 import { rollD50, rollPercentage } from './gameState';
+import { rollLuckCheck } from '../../shared/domain/luck.js';
 import { gameData } from './gameDataService';
 import { DIFFICULTY_THRESHOLDS, COMBAT_SKILL_XP, WEAPON_SKILL_MAP } from '../data/rpgSystem';
 import { calculateCreativityBonus } from './mechanics/creativityBonus';
@@ -223,7 +224,11 @@ function resolveShieldBlock(target, rawDamage, weaponData) {
   const effectiveBlockReduction = Math.min(0.95, shield.blockReduction * scale);
 
   const blockRoll = rollD50();
-  if (blockRoll > effectiveBlockChance) return { blocked: false, damage: rawDamage, blockRoll };
+  const blockedByRoll = blockRoll <= effectiveBlockChance;
+  const { luckRoll, luckySuccess } = rollLuckCheck(getLuck(target), rollPercentage);
+  if (!blockedByRoll && !luckySuccess) {
+    return { blocked: false, damage: rawDamage, blockRoll, luckRoll, luckySuccess };
+  }
 
   let reduction = effectiveBlockReduction;
   // Piercing weapons cap block reduction at 50%
@@ -231,7 +236,7 @@ function resolveShieldBlock(target, rawDamage, weaponData) {
     reduction = Math.min(reduction, 0.5);
   }
   const reducedDamage = Math.ceil(rawDamage * (1 - reduction));
-  return { blocked: true, damage: reducedDamage, blockRoll, reduction };
+  return { blocked: true, damage: reducedDamage, blockRoll, reduction, luckRoll, luckySuccess };
 }
 
 function getDualWieldPenalties(skillLevel) {

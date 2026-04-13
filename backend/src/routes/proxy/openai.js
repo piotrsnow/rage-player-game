@@ -9,6 +9,8 @@ import { AIServiceError, parseProviderError, toClientAiError } from '../../servi
 
 const store = createMediaStore(config);
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
 const CHAT_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -31,6 +33,35 @@ const CHAT_BODY_SCHEMA = {
     response_format: { type: 'object' },
   },
   required: ['messages'],
+};
+
+const IMAGES_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    size: { type: 'string', maxLength: 32 },
+    quality: { type: 'string', maxLength: 32 },
+    model: { type: 'string', maxLength: 64 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
+const IMAGES_EDITS_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    portraitUrl: { type: 'string', maxLength: 2048 },
+    size: { type: 'string', maxLength: 32 },
+    quality: { type: 'string', maxLength: 32 },
+    inputFidelity: { type: 'string', enum: ['low', 'high'] },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
 };
 
 async function fetchPortraitBuffer(portraitUrl) {
@@ -95,7 +126,7 @@ export async function openaiProxyRoutes(fastify) {
     return data;
   });
 
-  fastify.post('/images', async (request, reply) => {
+  fastify.post('/images', { schema: { body: IMAGES_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');
@@ -274,7 +305,7 @@ export async function openaiProxyRoutes(fastify) {
     return { url: storeResult.url, key: cacheKey };
   });
 
-  fastify.post('/images/edits', async (request, reply) => {
+  fastify.post('/images/edits', { schema: { body: IMAGES_EDITS_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');

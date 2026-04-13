@@ -48,7 +48,7 @@ export const config = {
   aiModels: {
     premium: {
       openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-5.4',
-      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-20250514',
+      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-6',
     },
     standard: {
       openai: process.env.AI_MODEL_STANDARD_OPENAI || 'gpt-5.4-mini',

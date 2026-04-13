@@ -1,5 +1,6 @@
 import { rollD50, rollPercentage } from '../gameState.js';
 import { DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem.js';
+import { rollLuckCheck } from '../../../shared/domain/luck.js';
 
 /**
  * Resolve a raw d50 test with pre-computed values.
@@ -20,8 +21,7 @@ export function resolveD50Test({
   threshold = DIFFICULTY_THRESHOLDS.medium,
   luck = 0,
 }) {
-  const luckRoll = rollPercentage();
-  const luckySuccess = luckRoll <= luck;
+  const { luckRoll, luckySuccess } = rollLuckCheck(luck, rollPercentage);
 
   const roll = rollD50();
   const total = roll + attribute + skillLevel + creativityBonus;

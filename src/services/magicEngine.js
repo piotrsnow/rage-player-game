@@ -6,6 +6,7 @@ import {
   findSpell, isSpellUnlocked, getAvailableSpells as getAvailable,
 } from '../data/rpgMagic.js';
 import { rollPercentage } from './gameState.js';
+import { rollLuckCheck } from '../../shared/domain/luck.js';
 
 /**
  * Cast a known spell. Checks mana, deducts cost, tracks usage.
@@ -67,7 +68,8 @@ export function learnFromScroll(character, scrollSpellName) {
   const chance = Math.min(95, SCROLL_BASE_CHANCE * 100 + intelligence);
 
   const roll = rollPercentage();
-  const learned = roll <= chance;
+  const { luckRoll, luckySuccess } = rollLuckCheck(character.attributes?.szczescie, rollPercentage);
+  const learned = luckySuccess || roll <= chance;
 
   return {
     success: true,
@@ -77,6 +79,8 @@ export function learnFromScroll(character, scrollSpellName) {
     learnSpell: learned ? scrollSpellName : null,
     roll,
     chance,
+    luckRoll,
+    luckySuccess,
   };
 }
 

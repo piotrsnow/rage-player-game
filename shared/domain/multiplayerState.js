@@ -1,5 +1,6 @@
 import { normalizeMultiplayerStateChanges } from '../contracts/multiplayer.js';
 import { prefixedId } from './ids.js';
+import { mergeUnique } from './arrays.js';
 
 function createId(prefix) {
   return prefixedId(prefix, 5);
@@ -180,7 +181,7 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         });
       } else if (idx >= 0) {
         const mergedRelQuestIds = npc.relatedQuestIds?.length > 0
-          ? [...new Set([...(npcs[idx].relatedQuestIds || []), ...npc.relatedQuestIds])]
+          ? mergeUnique(npcs[idx].relatedQuestIds, npc.relatedQuestIds)
           : npcs[idx].relatedQuestIds;
         const mergedRelationships = npc.relationships?.length > 0
           ? [...(npcs[idx].relationships || []).filter((r) => !npc.relationships.some((nr) => nr.npcName === r.npcName)), ...npc.relationships]
@@ -217,8 +218,8 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           codex[update.id] = {
             ...existing,
             fragments: [...existing.fragments, { id: createId('frag'), ...update.fragment, sceneIndex, timestamp: now() }],
-            tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
-            relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
+            tags: mergeUnique(existing.tags, update.tags),
+            relatedEntries: mergeUnique(existing.relatedEntries, update.relatedEntries),
           };
         }
       } else if (Object.keys(codex).length < 100) {
@@ -283,10 +284,10 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           threads[idx] = {
             ...threads[idx],
             ...pt,
-            relatedNpcIds: [...new Set([...(threads[idx].relatedNpcIds || []), ...(pt.relatedNpcIds || [])])],
-            relatedQuestIds: [...new Set([...(threads[idx].relatedQuestIds || []), ...(pt.relatedQuestIds || [])])],
-            relatedLocationIds: [...new Set([...(threads[idx].relatedLocationIds || []), ...(pt.relatedLocationIds || [])])],
-            relatedScenes: [...new Set([...(threads[idx].relatedScenes || []), sceneIndex])],
+            relatedNpcIds: mergeUnique(threads[idx].relatedNpcIds, pt.relatedNpcIds),
+            relatedQuestIds: mergeUnique(threads[idx].relatedQuestIds, pt.relatedQuestIds),
+            relatedLocationIds: mergeUnique(threads[idx].relatedLocationIds, pt.relatedLocationIds),
+            relatedScenes: mergeUnique(threads[idx].relatedScenes, sceneIndex),
           };
         } else {
           threads.push({ ...pt, relatedScenes: [sceneIndex] });
@@ -336,7 +337,7 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         visitCount: existing.visitCount + (stateChanges.currentLocation ? 1 : 0),
         lastVisited: sceneIndex,
         knownFacts: existing.knownFacts,
-        npcsEncountered: [...new Set([...(existing.npcsEncountered || []), ...npcsHere])],
+        npcsEncountered: mergeUnique(existing.npcsEncountered, npcsHere),
       };
       kb.locations = kbLocs;
       kbChanged = true;

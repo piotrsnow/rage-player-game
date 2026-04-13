@@ -17,6 +17,33 @@ const PACING_STABILITY = {
 };
 const DEFAULT_STABILITY = 0.5;
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+const PACING_VALUES = Object.keys(PACING_STABILITY);
+
+const TTS_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['voiceId', 'text'],
+  properties: {
+    voiceId: { type: 'string', maxLength: 128 },
+    text: { type: 'string', maxLength: 8000 },
+    modelId: { type: 'string', maxLength: 64 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    pacing: { type: 'string', enum: PACING_VALUES },
+  },
+};
+
+const SFX_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['text'],
+  properties: {
+    text: { type: 'string', maxLength: 2000 },
+    durationSeconds: { type: 'number', minimum: 0.5, maximum: 22 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+  },
+};
+
 export async function elevenlabsProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -42,7 +69,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     return response.json();
   });
 
-  fastify.post('/tts', async (request, reply) => {
+  fastify.post('/tts', { schema: { body: TTS_BODY_SCHEMA } }, async (request, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
       select: { apiKeys: true },
@@ -119,7 +146,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     };
   });
 
-  fastify.post('/tts-stream', async (request, reply) => {
+  fastify.post('/tts-stream', { schema: { body: TTS_BODY_SCHEMA } }, async (request, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
       select: { apiKeys: true },
@@ -188,7 +215,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     return { cached: false, url: responseUrl, key: cacheKey };
   });
 
-  fastify.post('/sfx', async (request, reply) => {
+  fastify.post('/sfx', { schema: { body: SFX_BODY_SCHEMA } }, async (request, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
       select: { apiKeys: true },

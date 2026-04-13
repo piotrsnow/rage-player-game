@@ -3,7 +3,7 @@ import { calculateDiceRollSkillXP } from '../../data/rpgSystem';
 import { processStateChanges as processAchievements } from '../../services/achievementTracker';
 import { generateStateChangeMessages } from '../../services/stateChangeMessages';
 import { checkWorldConsistency, applyConsistencyPatches } from '../../services/worldConsistency';
-import { detectCombatIntent } from '../../services/mechanics/combatIntent';
+import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 import { gameData } from '../../services/gameDataService';
 import { shortId } from '../../utils/ids';
 

@@ -1,16 +1,27 @@
 # Merge `new_rpg_system` → `main` — Current Status
 
-**Updated:** 2026-04-13 (end of session 4)
+**Updated:** 2026-04-13 (session 5 — verification pass)
 
-This branch carries a massive RPGon rewrite + frontend decomposition. Four rounds of hardening are either committed or staged in the working tree. This document is the single resume point — a fresh chat should read this, `CLAUDE.md`, and `knowledge/concepts/frontend-refactor-regressions.md` to pick up context.
+This branch carries a massive RPGon rewrite + frontend decomposition. Five rounds of hardening are all committed and pushed. This document is the single resume point — a fresh chat should read this, `CLAUDE.md`, and `knowledge/concepts/frontend-refactor-regressions.md` to pick up context.
+
+**Current state:** working tree clean, `new_rpg_system` up-to-date with `origin/new_rpg_system`. Only blocker to merge is manual playtest.
 
 ---
 
-## What's done (committed)
+## What's done (committed, all on origin)
 
-Branch is **3 commits ahead** of `origin/new_rpg_system`. `fc322a1 BE AUDIT` is already on origin from the start of the session; the three new commits below are local-only.
+### `95763f8` — Custom logger for BE (Phase 4 batch 3 — structured logging)
+- **New module** [backend/src/lib/logger.js](../backend/src/lib/logger.js) — shared pino instance (`logger`) + `childLogger({ bindings })` helper. JSON output, `LOG_LEVEL` env override, `debug` in dev / `info` in prod.
+- **Fastify adoption**: `Fastify({ loggerInstance: logger })` in [server.js](../backend/src/server.js). `request.log`, `fastify.log`, and `import { logger }` all resolve to the same pino instance.
+- **No pino-pretty transport** — breaks test discovery when the package isn't installed. Human-readable dev logs should be piped through `pino-pretty` in the npm script (`"dev": "node --watch src/server.js | pino-pretty"`).
+- **11 files migrated** from `console.*` → `log.{warn,error,info,debug}({ err, ...bindings }, 'msg')`:
+  - Services: roomManager (7), sceneGenerator (~17), multiplayerAI (2), memoryCompressor (3), intentClassifier (1), aiContextTools (4)
+  - Routes: campaigns (~10), multiplayer (uses `fastify.log` pino-shorthand with Error objects — valid pino), ai (2), music (2)
+  - Plugin: cors (1)
+- **Scripts in `backend/src/scripts/*` intentionally untouched** — CLI tools, `console.*` is fine there.
+- Also bundled in this commit: `plans/combat_e2e_tests.md`, `plans/merge_status.md` (initial), and 4 new `skills/*.md` docs (backend_architect, cleanup-rpg, frontend_patterns_skill, senior_baseline).
 
-### `fc322a1` — BE AUDIT (Phase 1 security hardening) — *on origin*
+### `fc322a1` — BE AUDIT (Phase 1 security hardening)
 - Deleted `barnaba.md` + `quirky-chasing-iverson.md` (tracked JWT-token files). `JWT_SECRET` rotation scheduled before release — neutralizes any leaked tokens.
 - **CORS allowlist for SSE**: new `resolveSseCorsOrigin()` helper in [backend/src/plugins/cors.js](backend/src/plugins/cors.js) + `writeSseHead()` wrapper in [backend/src/routes/ai.js](backend/src/routes/ai.js). Rejects disallowed origins instead of reflecting `request.headers.origin`.
 - **MP char-ownership fallback deleted**: `normalizeJoinCharacter(msg.characterData)` branch at multiplayer.js JOIN_ROOM removed — `characterId` is now required, validated via `fetchOwnedCharacter()`.
@@ -48,101 +59,50 @@ Branch is **3 commits ahead** of `origin/new_rpg_system`. `fc322a1 BE AUDIT` is 
 
 ---
 
-## What's in progress — UNCOMMITTED
+## Pre-merge checklist (non-playtest)
 
-### Phase 4 batch 3 — Structured logging (pino)
+Manual playtest is handled by user out of band. Before actually merging `new_rpg_system` → `main`:
 
-All changes in working tree, validated end-to-end (364 vitest passed, build clean). **Not yet committed** — waiting for user approval.
-
-- **New module** [backend/src/lib/logger.js](backend/src/lib/logger.js) — shared pino instance (`logger`) + `childLogger({ bindings })` helper.
-- **Fastify adoption**: `Fastify({ loggerInstance: logger })` in server.js. `request.log`, `fastify.log`, and `import { logger }` are all the same pino instance under the hood.
-- **No pino-pretty dependency** — output is JSON by default. For human-readable dev logs, pipe through `pino-pretty` in the npm script (the canonical pattern). Transport was initially configured for dev but failed hard when pino-pretty wasn't installed, breaking test discovery — removed.
-- **11 files migrated from `console.*` to `log.{warn,error,info,debug}` with structured bindings** (err, campaignId, roomCode, characterId, etc.):
-  - Services: [roomManager.js](backend/src/services/roomManager.js), [sceneGenerator.js](backend/src/services/sceneGenerator.js) (~12 call sites), [multiplayerAI.js](backend/src/services/multiplayerAI.js), [memoryCompressor.js](backend/src/services/memoryCompressor.js), [intentClassifier.js](backend/src/services/intentClassifier.js), [aiContextTools.js](backend/src/services/aiContextTools.js)
-  - Routes: [campaigns.js](backend/src/routes/campaigns.js), [multiplayer.js](backend/src/routes/multiplayer.js), [ai.js](backend/src/routes/ai.js), [music.js](backend/src/routes/music.js)
-  - Plugin: [cors.js](backend/src/plugins/cors.js)
-- **Scripts in `backend/src/scripts/*` left alone** — CLI tools, not server runtime. `console.*` is fine there.
-
-**Files modified in working tree:**
-```
-backend/src/lib/logger.js                 (new)
-backend/src/server.js                     (Fastify loggerInstance)
-backend/src/plugins/cors.js               (1 log)
-backend/src/services/roomManager.js       (8 logs)
-backend/src/services/sceneGenerator.js    (~12 logs)
-backend/src/services/multiplayerAI.js     (2 logs)
-backend/src/services/memoryCompressor.js  (3 logs)
-backend/src/services/intentClassifier.js  (1 log)
-backend/src/services/aiContextTools.js    (4 logs)
-backend/src/routes/campaigns.js           (~10 logs)
-backend/src/routes/multiplayer.js         (1 log)
-backend/src/routes/ai.js                  (2 logs)
-backend/src/routes/music.js               (2 logs)
-```
-
-**First decision in a new chat:** commit or revert this batch. It's validated and working; revert only if playtest surfaces a logger-related issue.
+- **`JWT_SECRET` rotation** in production env — tracked JWT-token files were deleted in `fc322a1`, secret rotation neutralizes any leaked tokens.
+- **Verify OpenAI model defaults** resolve — see "Known config drift" below.
+- ~~**Rebase/merge check** vs current `main`~~ → verified session 5: `new_rpg_system` is 33 commits ahead, 0 behind `origin/main`. Clean fast-forward, no conflicts.
 
 ---
 
-## Playtest gate — BLOCKS MERGE
+## Pre-merge backlog — all to be done in current session (sessions 5-6)
 
-User explicitly chose to batch playtest at the end of all changes, not per-phase (see `feedback_playtest_cadence` in auto-memory).
+User decision (session 5): the entire pre-merge backlog is tackled in this chat before merging to `main`. `useNarrator.js` stays off-limits (flagged `playtest-driven`). Infra items extracted to [post_merge_infra.md](post_merge_infra.md) for after the merge.
 
-### High-risk (biggest automation gaps)
-- **Combat solo + multiplayer** — zero automated coverage. Victory / defeat / surrender / truce / enemy auto-turn (2.5s delay) / MP host path / non-host result sync
-- **Scene image repair** — current-missing + viewer-missing + migration sweep (now generation-ref safe) + manual retry in ScenePanel
-- **Story recap** — `useSummary` cache/generate/speak (ElevenLabs + browser TTS fallback)/copy/re-open cycle
-- **Viewer mode** — `?view/:shareToken` flows: narrator force-enable, `?scene=N` URL sync, initial chat alignment
+### Group A — mechanical / self-contained
+1. **Remaining dedup audit** — `getSkillLevel` x6 (frontend), `Set add/delete spread` x4. `getGenderLabel`, `short-id`, `Toggle` already closed in prior sessions.
+2. **Full schema coverage** — proxy image gen (openai `/images`, stability, gemini image), meshy 3d gen, elevenlabs TTS, media multipart upload. All still unschematized after batch 2.
+3. **More backend tests** — auth flow, campaign save-state, WS message handling. Only `characterMutations.test.js` + `roomManager.test.js` exist today.
+4. **Luck coverage sweep** — session 5 decision: no migration, no backward compat. `szczescie` must apply to every success/failure roll. Formula: `luckRoll = rollPercentage(); luckySuccess = luckRoll <= szczescie; success = luckySuccess || baseSuccess`.
 
-### Medium-risk (touched in Phase 3)
-- **DMSettingsPage sliders** — extra scrutiny after SettingsContext deps fix. Historical regressions: sliders lag on settings memoization changes. Check narratorPoeticism, narratorGrittiness (default 30, not 50!), narratorDetail, narratorHumor (default 20!), narratorDrama, narratorSeriousness.
-- **Chat message rendering** — all 5 types (dm, combat_commentary, player, dice_roll, system), HighlightedText during narration, DialogueSegments dedup, StreamingContent partial view, dice roll expand/collapse
-- **GameplayHeader button row** — ~17 buttons. `exportAsMarkdown` now uses `getGameState()` inline (no longer receives `state` prop). Verify export produces correct JSON.
+### Group B — monolith splits (each gets its own plan doc first, per `feedback_docs_before_impl`)
+5. ~~**[backend/src/routes/campaigns.js](../backend/src/routes/campaigns.js)** 912L — smallest, simplest starting point.~~ → **done in session 6**. Plan in [split_campaigns_routes.md](split_campaigns_routes.md). Thin entrypoint re-exports `extractTotalCost` + `stripNormalizedFromCoreState` so `campaigns.saveState.test.js` still passes unchanged. 4 route sub-plugins (`public.js`, `crud.js`, `sharing.js`, `recaps.js`) + 3 services (`campaignSerialize.js`, `campaignSync.js`, `campaignRecap.js`). All 410 unit tests green.
+6. ~~**[backend/src/routes/multiplayer.js](../backend/src/routes/multiplayer.js)** 1289L — WS handling, JOIN_ROOM / START_GAME / combat paths.~~ → **done in session 6**. Plan in [split_multiplayer.md](split_multiplayer.md). Thin entrypoint (7L) + `http.js` + `connection.js` (WS lifecycle + inline dispatcher) + 6 handler files under `routes/multiplayer/handlers/` (lobby/roomState/gameplay/quests/combat/webrtc). Extracted `runMultiplayerSceneFlow` in new `services/multiplayerSceneFlow.js` dedupes ~90L between `APPROVE_ACTIONS` and `SOLO_ACTION` via `soloActionName` param. Backend vitest: 53 tests green.
+7. ~~**[backend/src/services/multiplayerAI.js](../backend/src/services/multiplayerAI.js)** 1612L.~~ → **done in session 6**. Plan in [split_multiplayer_ai.md](split_multiplayer_ai.md). Thin facade (7L) re-exporting 5 public funkcji + 9 modułów pod `multiplayerAI/`: `fallbackActions` (159L), `dialogueRepair` (282L), `diceNormalization` (90L), `systemPrompt` (244L), `scenePrompt` (226L), `aiClient` (93L), `campaignGeneration` (160L), `sceneGeneration` (208L), `compression` (83L). Bonus cleanups: `generateMidGameCharacter` (94L dead code) usunięty, `calculateMargin` (dead) usunięte, `clamp` + `rollD50` zdedupowane z `diceResolver.js` (exportuje teraz `rollD50`), `normalizeDiceRoll` / `recalcDiceRoll` wyjechały z closure'a w `generateMultiplayerScene` do pure helperów w `diceNormalization.js`. Known FE/BE duplication (dialogue repair, fallback actions, parse) udokumentowana jako post-merge item 10 w [post_merge_infra.md](post_merge_infra.md). Backend vitest: 53/53 green.
+8. ~~**[backend/src/services/sceneGenerator.js](../backend/src/services/sceneGenerator.js)** 1897L — largest, most critical path, last.~~ → **done in session 6**. Plan in [split_scene_generator.md](split_scene_generator.md). Thin facade (1L) + 12 modułów pod `sceneGenerator/`: `labels` (24L), `inlineKeys` (36L), `systemPrompt` (412L, template świadomie over 300L soft), `userPrompt` (151L), `contextSection` (43L), `diceResolution` (154L), `enemyFill` (45L), `shortcuts` (180L, wyciągnięty trade + combat fast-path), `streamingClient` (254L — OpenAI/Anthropic SSE + parseAIResponse), `processStateChanges` (227L, rozbite na inline helpers per NPCs/knowledge/codex/quests), `campaignLoader` (106L, DB loading z hydratacją coreState), `generateSceneStream` (316L orchestrator). Bonus: `detectCombatIntent` wyciągnięte do **[shared/domain/combatIntent.js](../shared/domain/combatIntent.js)** (FE wersja richsza = canonical), usunięte 3 duplikaty (2× BE + 1× FE local), 3 call sites zaktualizowane. Backend vitest: 53/53, frontend vitest: 393/393.
 
-### Security verification (quick smoke)
-- CORS allowlist rejects disallowed origin on SSE (`curl -H "Origin: https://evil.example"`)
-- Schema validation returns 400 on malformed body (send extra properties)
-- Rate limit headers present on `/multiplayer/rooms` and `/game-data`
-- WebSocket heartbeat: open DevTools Network → WS frames, see ping/pong every 30s
-- **`JWT_SECRET` rotation** in production env before release
+### Out of scope for this chat
+- **Combat e2e tests** (`plans/combat_e2e_tests.md`, ~8h) — separate session, after the merge lands.
+- **`useNarrator.js` split** — flagged `playtest-driven`, do not touch until a specific bug surfaces.
+- **All infra items** — see [plans/post_merge_infra.md](post_merge_infra.md). Deferred until after merge.
 
-**If anything breaks during playtest:** triage per the `feedback_fix_and_ask` memory — fix broken/missing code in-place, don't silently preserve regressions.
-
----
-
-## Backlog — post-merge, not blockers
-
-### Backend architecture (each needs its own dedicated session)
-- **Split monolithic files** — `sceneGenerator.js` 1897L, `multiplayerAI.js` 1612L, `multiplayer` route 1289L, `campaigns` route 912L. Each file needs its own plan.
-- **Redis room state** — unblocks horizontal scaling, survives instance restart.
-- **BullMQ for AI generation** — unblocks request handlers on 10-30s scene gens.
-- **Refresh tokens + revocation** — short-lived access + httpOnly refresh cookie + Redis blacklist.
-- **Basic CSP** — currently `contentSecurityPolicy: false` in helmet; needs CDN audit first.
-- **Proxy route middleware extraction** — variance too high for shallow refactor (text-gen vs image-gen + DB cache vs TTS vs 3D model all have different shapes). Dedicated design session required.
-- **Full schema coverage** — Phase 1B + batch 2 covered high-risk routes; still unschematized: proxy image gen (openai /images, stability, gemini image), meshy 3d gen, elevenlabs TTS, media multipart upload.
-- **More backend tests** — only `characterMutations.test.js` + `roomManager.test.js` exist. Priority: auth flow, campaign save-state, WS message handling.
-- **API versioning** (`/v1/`), **idempotency keys** on critical endpoints, **embedding LRU TTL**, **per-user rate limiting** (currently per-IP).
-
-### Frontend architecture
-- **`useNarrator.js` split** — 945L monolith. Flagged `playtest-driven` in `frontend-refactor-regressions.md`. **Do NOT touch until a specific bug surfaces.**
-- **Combat e2e tests** — full plan at [plans/combat_e2e_tests.md](plans/combat_e2e_tests.md). Hybrid Vitest + Playwright, ~8h total.
-- **Remaining dedup audit items** — `getSkillLevel` x6 (frontend), `Set add/delete spread` x4. `getGenderLabel`, `short-id`, `Toggle` already closed.
-- **Fate system migration** — existing characters with fate points will behave differently post-merge. Decision pending: document behavior change vs write a one-shot migration.
-
-### Memory updates needed after merge
-- `project_optimization_progress.md` — Faza E is DONE (useAI.js already split to 67 LOC), update status to "complete".
-- `project_frontend_refactor.md` — all PRs #1-#10 committed, granular selectors migration done, mark as "complete, pending playtest".
-- `project_dedup_audit_backlog.md` — `short-id` and `getGenderLabel` are closed. Remaining: `getSkillLevel` x6, `Set add/delete spread` x4.
+### Known config drift
+- OpenAI defaults reference `gpt-5.4` / `gpt-5.4-mini` / `gpt-5.4-nano` in [config.js](../backend/src/config.js). Verify these model IDs still resolve at OpenAI before release; env vars `AI_MODEL_*_OPENAI` override at deploy time if needed.
+- ~~`claude-sonnet-4-20250514` premium default~~ → bumped to `claude-sonnet-4-6` in session 5.
 
 ---
 
 ## How to resume in a new chat
 
-1. Open a fresh chat in `c:\git\rage-player-game`.
+1. Open a fresh chat in the repo root.
 2. Point me at this file: *"Continue from `plans/merge_status.md`"*.
-3. I'll read this + `CLAUDE.md` + memory + `knowledge/concepts/frontend-refactor-regressions.md` to pick up context.
-4. **First decision point:** commit or revert Phase 4 batch 3 (structured logging). Run `git status` — if the 13 files listed above are still modified, that batch is uncommitted. Recommended action: commit (it's validated and working).
-5. **Second decision point:** playtest now or tackle more backlog. User's stated preference is big batched playtest before merge — default to playtest unless otherwise directed.
+3. I'll read this + `CLAUDE.md` + auto-memory + `knowledge/concepts/frontend-refactor-regressions.md` to pick up context.
+4. **Default next step:** pick one of the Backlog items below, or proceed with the merge if user's out-of-band playtest is green.
+5. **Before opening the merge PR:** run the "Pre-merge checklist" section — JWT rotation, OpenAI model verify, rebase check vs `main`.
 
 ### Key reference files
 - `CLAUDE.md` — project instructions (always loaded)
