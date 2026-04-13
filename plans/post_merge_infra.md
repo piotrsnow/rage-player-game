@@ -246,6 +246,41 @@ Frontend-proxy mode and backend-scene-gen mode both run the full pipeline end-to
 
 ---
 
+## 11. WS message handling tests
+
+**Problem.** Carryover z merge_status.md Group A.3. Backend testy pokrywają dziś auth flow ([backend/src/routes/auth.test.js](../backend/src/routes/auth.test.js)), campaign save-state ([backend/src/routes/campaigns.saveState.test.js](../backend/src/routes/campaigns.saveState.test.js)), character mutations, apiKeyService i roomManager. Brakuje testów dla WS dispatcher + handlers pod [backend/src/routes/multiplayer/](../backend/src/routes/multiplayer/) — 21 typów wiadomości rozbitych na 6 handler-files po split B.2, zero automated coverage. Każda zmiana w handlerze wymaga dziś manual playtest.
+
+**Solution shape.** Unit-level testy per handler, nie end-to-end WS. Strategia analogiczna do `characterMutations.test.js`:
+
+- Zmock'ować `ctx` (`{ fastify, ws, uid, sendWs, log }`) + mutable `session` — każdy handler dostaje stuby zamiast prawdziwego socketu.
+- Zmock'ować `roomManager` (`getRoom`, `addPlayer`, `removePlayer`, `setGameState`, `touchRoom`, `saveRoomToDB`) na poziomie modułu przez `vi.mock`.
+- Per handler-file jeden `.test.js`:
+  - `handlers/lobby.test.js` — CREATE_ROOM, JOIN_ROOM (ownership check), LEAVE_ROOM, REJOIN_ROOM, KICK_PLAYER, CONVERT_TO_MULTIPLAYER
+  - `handlers/roomState.test.js` — UPDATE_CHARACTER, UPDATE_SETTINGS, SYNC_CHARACTER, UPDATE_SCENE_IMAGE, PING
+  - `handlers/gameplay.test.js` — START_GAME, SUBMIT_ACTION, WITHDRAW_ACTION, APPROVE_ACTIONS, SOLO_ACTION (+ `runMultiplayerSceneFlow` zmock'owane)
+  - `handlers/quests.test.js` — ACCEPT/DECLINE/VERIFY quest objective
+  - `handlers/combat.test.js` — COMBAT_SYNC, COMBAT_MANOEUVRE, COMBAT_ENDED
+  - `handlers/webrtc.test.js` — OFFER/ANSWER/ICE/TRACK_STATE passthrough
+- Dispatcher test w `connection.test.js` — unknown message type → ERROR, znany type → delegate do handlera, session mutation (JOIN_ROOM ustawia `session.roomCode`).
+
+**Blockers.**
+- Zero — nic nie wymaga Redis / infra. Czysta praca refactorowo-testowa, można zrobić w 1-2 sesjach.
+- Ryzyko drift: handlery wołają `runMultiplayerSceneFlow`, które chodzi po AI + DB. Trzeba zmock'ować na poziomie `services/multiplayerSceneFlow.js` żeby testy były <10ms.
+
+**Ordering.** Niezależne od items 1-10. Może być zrobione w dowolnym momencie post-merge, dobrze pasuje obok item 10 (FE↔BE helper consolidation) bo obie pozycje to quality/test work bez infra deps.
+
+---
+
+## 12. Pre-merge deployment checklist (carryover)
+
+Two items from `merge_status.md` pre-merge checklist that survived to post-merge as deployment concerns. Not Claude-implementable — flag them here so they're not lost when `merge_status.md` is deleted.
+
+- **`JWT_SECRET` rotation w production env.** Tracked JWT-token files (`barnaba.md`, `quirky-chasing-iverson.md`) zostały usunięte w `fc322a1`, ale tokeny wydane pod starym secret są ważne do ~kwiecień 2026. Rotacja secret kasuje je wszystkie. **Akcja:** zaktualizować `JWT_SECRET` env var na Cloud Run przy najbliższym deploy, wszyscy active users zostaną wylogowani (jednorazowy koszt, akceptowalny).
+
+- **OpenAI model IDs verify.** Defaults w [backend/src/config.js](../backend/src/config.js) wskazują na `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`. Przed release trzeba potwierdzić że te ID wciąż resolvują u OpenAI (API się zmienia, model naming rzadko ale zdarza). **Akcja:** curl `https://api.openai.com/v1/models` z prod key, grep powyższe ID, w razie 404 ustawić `AI_MODEL_*_OPENAI` env var na fallback (`gpt-4o` / `gpt-4o-mini`).
+
+---
+
 ## Not in this plan (intentionally)
 
 - **Horizontal scaling beyond Cloud Run autoscale** — out of scope until item 1 is live.
