@@ -2,8 +2,11 @@ import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { searchCampaignMemory, searchCodex, searchNPCs } from './vectorSearchService.js';
 import { embedText } from './embeddingService.js';
-import { formatWeaponCatalog, searchBestiary } from '../data/wfrpEquipment.js';
+import { formatWeaponCatalog, formatBaseTypeCatalog, searchBestiary } from '../data/equipment/index.js';
 import { getLocationSummary } from './memoryCompressor.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'aiContextTools' });
 
 /**
  * Tool definitions for OpenAI/Anthropic function calling.
@@ -116,13 +119,13 @@ export const CONTEXT_TOOLS_OPENAI = [
     function: {
       name: 'get_bestiary',
       description:
-        'Get WFRP stat block templates for common enemies (Skaven, Beastmen, Greenskins, Undead, Chaos, Animals, Humans). Use when creating combatUpdate enemies — copy or adapt stat blocks from here instead of inventing stats.',
+        'Get stat block templates for common enemies. Races: ludzie, orkowie, gobliny, nieumarli, zwierzeta, demony, trolle, pajaki, krasnoludy, elfy, niziolki. Difficulty tiers: trivial, low, medium, high, deadly. Use to review available enemies before creating combatUpdate.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
-            description: 'Enemy type or name to search for (e.g. "bandit", "skaven", "undead", "low threat")',
+            description: 'Enemy race, name, or difficulty to search for (e.g. "bandyta", "orkowie", "nieumarli", "high")',
           },
         },
         required: ['query'],
@@ -172,9 +175,15 @@ export async function executeToolCall(campaignId, toolName, toolArgs) {
 }
 
 async function handleSearchMemory(campaignId, query) {
-  const results = await searchCampaignMemory(campaignId, query, { limit: 8 });
+  let results;
+  try {
+    results = await searchCampaignMemory(campaignId, query, { limit: 8 });
+  } catch (err) {
+    log.warn({ err, campaignId }, 'Memory search skipped');
+    return 'Memory search unavailable.';
+  }
 
-  if (results.length === 0) {
+  if (!results || results.length === 0) {
     return 'No relevant memories found for this query.';
   }
 
@@ -199,14 +208,18 @@ async function handleGetNPC(campaignId, npcName) {
     return formatNPC(npc);
   }
 
-  // Fallback to vector search
+  // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
   if (config.apiKeys.openai) {
-    const queryEmbedding = await embedText(npcName);
-    if (queryEmbedding) {
-      const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
-      if (results.length > 0) {
-        return formatNPC(results[0]);
+    try {
+      const queryEmbedding = await embedText(npcName);
+      if (queryEmbedding) {
+        const results = await searchNPCs(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
+        if (results.length > 0) {
+          return formatNPC(results[0]);
+        }
       }
+    } catch (err) {
+      log.warn({ err, campaignId, npcName }, 'NPC vector search skipped');
     }
   }
 
@@ -331,11 +344,14 @@ async function handleGetLocation(campaignId, locationName) {
     match.npcsHere?.length ? `NPCs here: ${match.npcsHere.join(', ')}` : null,
   ];
 
-  // Search for scenes that mention this location
+  // Search for scenes that mention this location (graceful — skip if embedding API unavailable)
   if (config.apiKeys.openai) {
-    const memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, {
-      limit: 3,
-    });
+    let memories = [];
+    try {
+      memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, { limit: 3 });
+    } catch (err) {
+      log.warn({ err, campaignId, location: match.name }, 'Location memory search skipped');
+    }
     if (memories.length > 0) {
       lines.push('\nRecent events at this location:');
       for (const m of memories) {
@@ -360,14 +376,18 @@ async function handleGetCodex(campaignId, topic) {
     return formatCodex(codex);
   }
 
-  // Fallback to vector search
+  // Fallback to vector search (graceful — skip if embedding API unavailable/quota exceeded)
   if (config.apiKeys.openai) {
-    const queryEmbedding = await embedText(topic);
-    if (queryEmbedding) {
-      const results = await searchCodex(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
-      if (results.length > 0) {
-        return formatCodex(results[0]);
+    try {
+      const queryEmbedding = await embedText(topic);
+      if (queryEmbedding) {
+        const results = await searchCodex(campaignId, queryEmbedding, { limit: 1, minScore: 0.6 });
+        if (results.length > 0) {
+          return formatCodex(results[0]);
+        }
       }
+    } catch (err) {
+      log.warn({ err, campaignId, topic }, 'Codex vector search skipped');
     }
   }
 
@@ -388,13 +408,15 @@ function formatCodex(codex) {
 }
 
 function handleGetEquipmentCatalog(category = 'all') {
-  return formatWeaponCatalog(category || 'all');
+  const catalog = formatWeaponCatalog(category || 'all');
+  const baseTypes = formatBaseTypeCatalog();
+  return `${catalog}\n\n${baseTypes}`;
 }
 
 function handleGetBestiary(query) {
   if (!query) return 'Please provide a search query (enemy name, type, or threat level).';
   const result = searchBestiary(query);
-  if (!result) return `No bestiary entries found matching "${query}". Try: bandit, skaven, undead, beastmen, chaos, wolf, bear, orc, goblin, or threat levels: trivial, low, medium, high, deadly.`;
+  if (!result) return `No bestiary entries found matching "${query}". Try: bandyta, orkowie, gobliny, nieumarli, zwierzeta, demony, trolle, pajaki, krasnoludy, elfy, niziolki, or difficulty: trivial, low, medium, high, deadly.`;
   return result;
 }
 
@@ -421,11 +443,18 @@ export {
  * @param {string} currentLocation - Current location name (for expand_location)
  * @returns {Promise<object>} Grouped context blocks: { npcs, quests, location, codex, memory }
  */
-export async function assembleContext(campaignId, selectionResult, currentLocation) {
+export async function assembleContext(campaignId, selectionResult, currentLocation, skipKeys = {}) {
   const fetches = [];
+
+  // Encje już obecne w dynamicSuffix promptu (Key NPCs / Active Quests / ALREADY DISCOVERED).
+  // Pomijamy je w EXPANDED CONTEXT, żeby nie dublować tych samych danych dwa razy.
+  const skipNpcs = new Set((skipKeys.npcs || []).map(s => String(s).toLowerCase()));
+  const skipQuests = new Set((skipKeys.quests || []).map(s => String(s).toLowerCase()));
+  const skipCodex = new Set((skipKeys.codex || []).map(s => String(s).toLowerCase()));
 
   // Expand selected NPCs
   for (const name of selectionResult.expand_npcs || []) {
+    if (skipNpcs.has(name.toLowerCase())) continue;
     fetches.push(
       handleGetNPC(campaignId, name).then(r => ({ type: 'npc', key: name, data: r }))
     );
@@ -433,25 +462,10 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
 
   // Expand selected quests
   for (const name of selectionResult.expand_quests || []) {
-    if (name === '__all_active__') {
-      // Special: expand all active quests (for [CONTINUE] action)
-      fetches.push(
-        prisma.campaignQuest.findMany({
-          where: { campaignId, status: 'active' },
-        }).then(quests => ({
-          type: 'quest',
-          key: 'all_active',
-          data: quests.map(q => {
-            const objectives = JSON.parse(q.objectives || '[]');
-            return `${q.name} (${q.type}): ${q.description || 'N/A'}\nObjectives: ${objectives.map(o => `${o.completed ? '[X]' : '[ ]'} ${o.description}`).join(', ')}`;
-          }).join('\n\n'),
-        }))
-      );
-    } else {
-      fetches.push(
-        handleGetQuest(campaignId, name).then(r => ({ type: 'quest', key: name, data: r }))
-      );
-    }
+    if (skipQuests.has(name.toLowerCase())) continue;
+    fetches.push(
+      handleGetQuest(campaignId, name).then(r => ({ type: 'quest', key: name, data: r }))
+    );
   }
 
   // Expand location + include location summary from previous visits
@@ -469,6 +483,7 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
 
   // Expand codex entries
   for (const topic of selectionResult.expand_codex || []) {
+    if (skipCodex.has(topic.toLowerCase())) continue;
     fetches.push(
       handleGetCodex(campaignId, topic).then(r => ({ type: 'codex', key: topic, data: r }))
     );

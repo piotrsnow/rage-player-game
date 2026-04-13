@@ -9,6 +9,61 @@ import { AIServiceError, parseProviderError, toClientAiError } from '../../servi
 
 const store = createMediaStore(config);
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
+const CHAT_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    messages: {
+      type: 'array',
+      maxItems: 200,
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          role: { type: 'string', maxLength: 40 },
+          content: { type: ['string', 'array'] },
+        },
+      },
+    },
+    model: { type: 'string', maxLength: 200 },
+    temperature: { type: 'number' },
+    max_completion_tokens: { type: 'number' },
+    response_format: { type: 'object' },
+  },
+  required: ['messages'],
+};
+
+const IMAGES_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    size: { type: 'string', maxLength: 32 },
+    quality: { type: 'string', maxLength: 32 },
+    model: { type: 'string', maxLength: 64 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
+const IMAGES_EDITS_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    portraitUrl: { type: 'string', maxLength: 2048 },
+    size: { type: 'string', maxLength: 32 },
+    quality: { type: 'string', maxLength: 32 },
+    inputFidelity: { type: 'string', enum: ['low', 'high'] },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
 async function fetchPortraitBuffer(portraitUrl) {
   if (!portraitUrl) return null;
   const localPrefix = '/media/file/';
@@ -26,7 +81,7 @@ export async function openaiProxyRoutes(fastify) {
   await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   fastify.addHook('onRequest', fastify.authenticate);
 
-  fastify.post('/chat', async (request, reply) => {
+  fastify.post('/chat', { schema: { body: CHAT_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');
@@ -47,7 +102,7 @@ export async function openaiProxyRoutes(fastify) {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: model || 'gpt-5.4',
+        model: model || config.aiModels.premium.openai,
         messages,
         temperature: temperature ?? 0.8,
         ...(response_format ? { response_format } : {}),
@@ -71,7 +126,7 @@ export async function openaiProxyRoutes(fastify) {
     return data;
   });
 
-  fastify.post('/images', async (request, reply) => {
+  fastify.post('/images', { schema: { body: IMAGES_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');
@@ -138,8 +193,9 @@ export async function openaiProxyRoutes(fastify) {
     const storagePath = cacheKey;
     const storeResult = await store.put(storagePath, buffer, 'image/png');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -150,6 +206,7 @@ export async function openaiProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };
@@ -230,8 +287,9 @@ export async function openaiProxyRoutes(fastify) {
     const cacheKey = generateKey('image', cacheParams);
     const storeResult = await store.put(cacheKey, resultBuffer, 'image/png');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         key: cacheKey,
         type: 'image',
@@ -241,12 +299,13 @@ export async function openaiProxyRoutes(fastify) {
         path: cacheKey,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { url: storeResult.url, key: cacheKey };
   });
 
-  fastify.post('/images/edits', async (request, reply) => {
+  fastify.post('/images/edits', { schema: { body: IMAGES_EDITS_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');
@@ -332,8 +391,9 @@ export async function openaiProxyRoutes(fastify) {
     const buffer = await downscaleGeneratedImage(originalBuffer);
     const storeResult = await store.put(cacheKey, buffer, 'image/png');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -344,6 +404,7 @@ export async function openaiProxyRoutes(fastify) {
         path: cacheKey,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };

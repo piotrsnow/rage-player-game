@@ -1,54 +1,35 @@
-import { SKILLS } from '../../data/wfrp.js';
-import { calculateSL, rollD100 } from '../gameState.js';
-import { pickBestSkill, normalizeSkillName, inferSkillFromCharacter, findSkillCharacteristicKey } from '../diceRollInference.js';
-import { getApplicableTalentBonus } from '../../data/wfrpTalents.js';
+import { SKILLS, DIFFICULTY_THRESHOLDS, MOMENTUM_RANGE, CREATIVITY_BONUS_MAX } from '../../data/rpgSystem.js';
+import { rollD50, rollPercentage } from '../gameState.js';
+import { rollLuckCheck } from '../../../shared/domain/luck.js';
 
-export const MAX_COMBINED_BONUS = 30;
-export const MIN_DIFFICULTY_MODIFIER = -40;
-export const MAX_DIFFICULTY_MODIFIER = 40;
+// ── CONSTANTS ──
+
+export const MOMENTUM_MIN = MOMENTUM_RANGE.min;
+export const MOMENTUM_MAX = MOMENTUM_RANGE.max;
 
 export function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-export function normalizeDifficultyModifier(value) {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? clamp(value, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER)
-    : 0;
-}
-
-export function snapDifficultyModifier(value) {
-  if (!Number.isFinite(value)) return 0;
-  return clamp(Math.round(value / 10) * 10, MIN_DIFFICULTY_MODIFIER, MAX_DIFFICULTY_MODIFIER);
-}
-
-// --- Action-to-characteristic keyword matching (PL + EN) ---
+// --- Action-to-attribute keyword matching (PL + EN) ---
 
 const ACTION_PATTERNS = [
-  // Combat melee
-  { re: /\b(?:atak(?:uj[eę]?|ować)?|uderz(?:am|ać|yć)?|tn(?:ij|ę)|walcz(?:[eę]|yć)?|attack|hit|strike|slash|stab|punch|kick|fight|swing|cleave|parry|block)\b/iu, characteristic: 'ws', difficulty: 0 },
-  // Ranged
-  { re: /\b(?:strzel(?:am|ać)?|rzuc(?:am|ić)?|celuj[eę]?|miot(?:am|ać)?|shoot|fire|throw|aim|hurl|toss|snipe)\b/iu, characteristic: 'bs', difficulty: 0 },
-  // Strength / physical force
-  { re: /\b(?:wywa[żz](?:am|ać|yć)?|łam(?:ię|ać)?|podnos[zię]|dźwig(?:am|ać)?|pcham|forsuj[eę]?|force|lift|push|pull|break\s*(?:down|open)|smash|pry|bend|carry)\b/iu, characteristic: 's', difficulty: 0 },
-  // Toughness / endurance
-  { re: /\b(?:wytrzym(?:uj[eę]?|ać)?|znos[zię]|opier(?:am|ać)|endure|resist|withstand|tough(?:en)?|brace|stomach)\b/iu, characteristic: 't', difficulty: 0 },
-  // Agility / stealth / dodge
-  { re: /\b(?:skrad(?:am|ać)|chow(?:am|ać)|ukryw(?:am|ać)|przemyk(?:am|ać)?|unikai?(?:m|ć)|wspina(?:m|ć)|skacz[eę]?|biegnę|sprint|sneak|hide|stealth|dodge|evade|climb|jump|sprint|run|acrobat|tumble|leap|vault|dash|crawl)\b/iu, characteristic: 'ag', difficulty: 0 },
-  // Dexterity / manual
-  { re: /\b(?:otwieram\s*zamek|włam(?:uj[eę]?|ać)?|kradnę|podkrad(?:am|ać)?|wytrych|majstru(?:ję|ać)|lockpick|pick\s*(?:lock|pocket)|sleight|craft|disarm\s*trap|tinker|forge|sew|repair)\b/iu, characteristic: 'dex', difficulty: -10 },
-  // Intelligence / perception / knowledge
-  { re: /\b(?:szuk(?:am|ać)|badam|przeszuk(?:uj[eę]?|iwać)?|obserwuj[eę]?|analizuj[eę]?|czyt(?:am|ać)|rozpozn(?:aję|ać)?|identyfik(?:uj[eę]?|ować)|search|look|examine|investigate|inspect|read|study|analyze|identify|perceive|notice|spot|recall|research|decipher)\b/iu, characteristic: 'int', difficulty: 0 },
-  // Willpower / magic / resist fear
-  { re: /\b(?:rzuc(?:am)?\s*(?:zaklęcie|czar)|medytuj[eę]?|skupi(?:am|ć)|modl[eę]|opier(?:am|ać)\s*si[eę]\s*(?:strachowi|magii)|cast\s*spell|channel|meditat|pray|concentrate|focus|resist\s*(?:fear|magic|corruption)|invoke|dispel)\b/iu, characteristic: 'wp', difficulty: 0 },
-  // Fellowship / social
-  { re: /\b(?:mów(?:ię|ić)?|powiedz|rozmawiam|przekonuj[eę]?|negocjuj[eę]?|targuj[eę]?|kłam(?:ię|ać)?|blefuj[eę]?|pytam|prosz[eę]?|zagaduj[eę]?|flirtuj[eę]?|zastrasz(?:am|ać)?|say|tell|talk|speak|persuade|convince|negotiate|bargain|haggle|bluff|lie|charm|flirt|intimidate|gossip|bribe|seduce|question|ask|request|plead|taunt|boast|command|order|greet)\b/iu, characteristic: 'fel', difficulty: 0 },
+  // Combat melee / physical force (Sila)
+  { re: /\b(?:atak(?:uj[eę]?|ować)?|uderz(?:am|ać|yć)?|tn(?:ij|ę)|walcz(?:[eę]|yć)?|łam(?:ię|ać)?|podnos[zię]|dźwig(?:am|ać)?|pcham|forsuj[eę]?|attack|hit|strike|slash|stab|punch|kick|fight|swing|cleave|parry|block|force|lift|push|pull|break\s*(?:down|open)|smash|carry)\b/iu, attribute: 'sila', difficulty: 'medium' },
+  // Ranged / stealth / dodge / acrobatics (Zrecznosc)
+  { re: /\b(?:strzel(?:am|ać)?|celuj[eę]?|skrad(?:am|ać)|chow(?:am|ać)|ukryw(?:am|ać)|przemyk(?:am|ać)?|unikai?(?:m|ć)|skacz[eę]?|biegnę|sprint|sneak|hide|stealth|dodge|evade|climb|jump|sprint|run|acrobat|tumble|leap|shoot|fire|aim|lockpick|pick\s*(?:lock|pocket)|sleight)\b/iu, attribute: 'zrecznosc', difficulty: 'medium' },
+  // Social (Charyzma)
+  { re: /\b(?:mów(?:ię|ić)?|powiedz|rozmawiam|przekonuj[eę]?|negocjuj[eę]?|targuj[eę]?|kłam(?:ię|ać)?|blefuj[eę]?|pytam|prosz[eę]?|flirtuj[eę]?|zastrasz(?:am|ać)?|say|tell|talk|speak|persuade|convince|negotiate|bargain|haggle|bluff|lie|charm|flirt|intimidate|gossip|command|order)\b/iu, attribute: 'charyzma', difficulty: 'medium' },
+  // Knowledge / perception / investigation (Inteligencja)
+  { re: /\b(?:szuk(?:am|ać)|badam|przeszuk(?:uj[eę]?|iwać)?|obserwuj[eę]?|analizuj[eę]?|czyt(?:am|ać)|rozpozn(?:aję|ać)?|search|look|examine|investigate|inspect|read|study|analyze|identify|perceive|notice|spot|recall|research|decipher)\b/iu, attribute: 'inteligencja', difficulty: 'medium' },
+  // Endurance / survival (Wytrzymalosc)
+  { re: /\b(?:wytrzym(?:uj[eę]?|ać)?|znos[zię]|opier(?:am|ać)|przetrwa(?:ć|m)?|endure|resist|withstand|tough(?:en)?|brace|survive|swim|march)\b/iu, attribute: 'wytrzymalosc', difficulty: 'medium' },
+  // Magic / spellcasting (Inteligencja — casting uses mana, but scroll learning uses INT)
+  { re: /\b(?:rzuc(?:am)?\s*(?:zaklęcie|czar)|cast\s*spell|channel|meditat|invoke|dispel)\b/iu, attribute: 'inteligencja', difficulty: 'medium' },
 ];
 
 /**
- * Infer characteristic, suggested skills and difficulty from action text.
- * @param {string} actionText
- * @returns {{ characteristic: string, suggestedSkills: string[], difficultyModifier: number } | null}
+ * Infer attribute, suggested skills and difficulty from action text.
  */
 export function inferActionContext(actionText) {
   if (typeof actionText !== 'string' || !actionText.trim()) return null;
@@ -57,16 +38,15 @@ export function inferActionContext(actionText) {
 
   for (const pattern of ACTION_PATTERNS) {
     if (pattern.re.test(text)) {
-      const allSkills = [...SKILLS.basic, ...SKILLS.advanced];
-      const suggestedSkills = allSkills
-        .filter((s) => s.characteristic.toLowerCase() === pattern.characteristic)
+      const suggestedSkills = SKILLS
+        .filter((s) => s.attribute === pattern.attribute)
         .map((s) => s.name)
         .slice(0, 6);
 
       return {
-        characteristic: pattern.characteristic,
+        attribute: pattern.attribute,
         suggestedSkills,
-        difficultyModifier: pattern.difficulty,
+        difficulty: pattern.difficulty,
       };
     }
   }
@@ -75,68 +55,87 @@ export function inferActionContext(actionText) {
 }
 
 /**
- * Fully resolve a WFRP4e skill check before AI call.
+ * Pick the best matching skill from character's skills for an attribute.
+ */
+function pickBestSkillForAttribute(suggestedSkills, characterSkills, attribute) {
+  if (!characterSkills || !suggestedSkills?.length) return null;
+
+  let best = null;
+  let bestLevel = -1;
+
+  for (const skillName of suggestedSkills) {
+    const entry = characterSkills[skillName];
+    if (!entry) continue;
+    const level = typeof entry === 'object' ? entry.level : entry;
+    if (level > bestLevel) {
+      best = { skill: skillName, level, attribute };
+      bestLevel = level;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Resolve a d50 skill check.
+ *
+ * Mechanic:
+ * 1. Luck check: roll 1-100, if <= szczescie → auto-success
+ * 2. Roll d50
+ * 3. Total = d50 + attribute + skillLevel + momentum (±10) + creativity (0-10)
+ * 4. Compare to difficulty threshold
+ * 5. Margin = total - threshold
+ *
  * @param {Object} params
  * @param {Object} params.character - player character state
  * @param {string} params.actionText - raw action text
- * @param {number} params.roll - pre-rolled d100
- * @param {number} params.currentMomentum - current momentum value (bonus to this roll)
- * @param {Array} params.worldNpcs - NPC list for disposition lookup
- * @param {Function} params.resolveDisposition - (actionText, npcs) => { npcName, bonus } | null
- * @param {number} [params.creativityBonus] - bonus for custom/auto-player actions (0-25)
- * @returns {import('./index.js').ResolvedSkillCheck | null}
+ * @param {number} [params.roll] - pre-rolled d50 (auto-rolled if not provided)
+ * @param {number} [params.currentMomentum] - current momentum value (±10)
+ * @param {Array} [params.worldNpcs] - NPC list for disposition lookup
+ * @param {Function} [params.resolveDisposition] - (actionText, npcs) => { npcName, bonus }
+ * @param {number} [params.creativityBonus] - bonus for creative actions (0-10)
+ * @param {Object} [params.actionContext] - pre-inferred action context
+ * @param {string} [params.difficultyOverride] - override difficulty level
+ * @returns {Object|null} resolved skill check result
  */
-export function resolveSkillCheck({ character, actionText, roll, currentMomentum = 0, worldNpcs = [], resolveDisposition, creativityBonus = 0, actionContext = null }) {
+export function resolveSkillCheck({
+  character,
+  actionText,
+  roll,
+  currentMomentum = 0,
+  worldNpcs = [],
+  resolveDisposition,
+  creativityBonus = 0,
+  actionContext = null,
+  difficultyOverride = null,
+}) {
   const context = actionContext || inferActionContext(actionText);
   if (!context) return null;
 
-  const characteristics = character?.characteristics;
-  if (!characteristics) return null;
+  const attributes = character?.attributes;
+  if (!attributes) return null;
 
-  let resolvedCharacteristic = context.characteristic;
-  const characteristicValue = characteristics[resolvedCharacteristic];
-  if (characteristicValue == null) return null;
+  const attribute = context.attribute;
+  const attributeValue = attributes[attribute];
+  if (attributeValue == null) return null;
 
-  // Pick best skill from character's skills matching this characteristic
-  const bestSkill = pickBestSkill(
+  // --- Luck check (Szczescie) ---
+  const { luckRoll, luckySuccess } = rollLuckCheck(attributes.szczescie, rollPercentage);
+
+  // --- Pick best skill ---
+  const bestSkill = pickBestSkillForAttribute(
     context.suggestedSkills,
     character?.skills,
-    characteristics,
+    attribute,
   );
 
-  let skill = null;
-  let skillAdvances = 0;
-  let baseTarget = characteristicValue;
+  const skill = bestSkill?.skill || null;
+  const skillLevel = bestSkill?.level || 0;
 
-  if (bestSkill) {
-    skill = bestSkill.skill;
-    skillAdvances = bestSkill.advances;
-    if (bestSkill.characteristic !== resolvedCharacteristic) {
-      resolvedCharacteristic = bestSkill.characteristic;
-    }
-    const charVal = characteristics[resolvedCharacteristic] ?? characteristicValue;
-    baseTarget = charVal + skillAdvances;
-  }
-
-  // Normalize skill name
-  if (skill) {
-    const normalized = normalizeSkillName(skill);
-    if (normalized) skill = normalized;
-  }
-  if (!skill && skillAdvances > 0) {
-    const inferred = inferSkillFromCharacter(resolvedCharacteristic, skillAdvances, character?.skills);
-    if (inferred) skill = inferred;
-  }
-
-  // Talent bonus
-  const talentResult = getApplicableTalentBonus(character?.talents, resolvedCharacteristic, skill);
-  const talentBonus = talentResult ? talentResult.bonus : 0;
-  const applicableTalent = talentResult ? talentResult.talent : null;
-
-  // Disposition bonus (for social tests)
+  // --- Disposition bonus (for social tests) ---
   let dispositionBonus = 0;
   let dispositionNpc = null;
-  if (resolvedCharacteristic === 'fel' && typeof resolveDisposition === 'function') {
+  if (attribute === 'charyzma' && typeof resolveDisposition === 'function') {
     const disposition = resolveDisposition(actionText, worldNpcs);
     if (disposition) {
       dispositionBonus = disposition.bonus;
@@ -144,38 +143,41 @@ export function resolveSkillCheck({ character, actionText, roll, currentMomentum
     }
   }
 
-  // Bonuses with cap
-  const totalBonus = creativityBonus + currentMomentum + dispositionBonus;
-  const cappedBonus = Math.min(totalBonus, MAX_COMBINED_BONUS);
+  // --- Roll d50 ---
+  const d50Roll = roll ?? rollD50();
 
-  const difficultyModifier = context.difficultyModifier;
-  const effectiveTarget = baseTarget + talentBonus + cappedBonus + difficultyModifier;
+  // --- Clamp bonuses ---
+  const clampedMomentum = clamp(currentMomentum, MOMENTUM_MIN, MOMENTUM_MAX);
+  const clampedCreativity = clamp(creativityBonus, 0, CREATIVITY_BONUS_MAX);
 
-  // Success / critical determination
-  const isCriticalSuccess = roll >= 1 && roll <= 4;
-  const isCriticalFailure = roll >= 96 && roll <= 100;
-  const isSuccess = isCriticalSuccess || (!isCriticalFailure && roll <= effectiveTarget);
-  const sl = calculateSL(roll, effectiveTarget);
+  // --- Calculate total ---
+  const total = d50Roll + attributeValue + skillLevel + clampedMomentum + clampedCreativity + dispositionBonus;
+
+  // --- Determine threshold ---
+  const difficultyKey = difficultyOverride || context.difficulty || 'medium';
+  const threshold = DIFFICULTY_THRESHOLDS[difficultyKey] || DIFFICULTY_THRESHOLDS.medium;
+
+  // --- Determine success ---
+  const margin = total - threshold;
+  const success = luckySuccess || margin >= 0;
 
   return {
-    roll,
-    characteristic: resolvedCharacteristic,
-    characteristicValue: characteristics[resolvedCharacteristic] ?? characteristicValue,
+    roll: d50Roll,
+    attribute,
+    attributeValue,
     skill,
     suggestedSkills: context.suggestedSkills,
-    skillAdvances,
-    applicableTalent,
-    talentBonus,
-    baseTarget,
-    difficultyModifier,
-    creativityBonus,
-    momentumBonus: currentMomentum,
+    skillLevel,
+    difficulty: difficultyKey,
+    threshold,
+    creativityBonus: clampedCreativity,
+    momentumBonus: clampedMomentum,
     dispositionBonus,
     dispositionNpc,
-    target: effectiveTarget,
-    success: isSuccess,
-    criticalSuccess: isCriticalSuccess,
-    criticalFailure: isCriticalFailure,
-    sl,
+    total,
+    margin,
+    success,
+    luckySuccess,
+    luckRoll,
   };
 }

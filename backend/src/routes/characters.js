@@ -1,12 +1,9 @@
 import { prisma } from '../lib/prisma.js';
-
-function safeJsonParse(raw, fallback = {}) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
+import {
+  applyCharacterStateChanges,
+  characterToPrismaUpdate,
+  deserializeCharacterRow,
+} from '../services/characterMutations.js';
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -14,30 +11,149 @@ function normalizeCharacterAge(age) {
   return Math.max(1, Math.round(parsed));
 }
 
-function splitCareerData(raw) {
-  const parsed = safeJsonParse(raw, {});
-  const customAttackPresets = Array.isArray(parsed?.customAttackPresets)
-    ? parsed.customAttackPresets
-    : [];
-  const { customAttackPresets: _ignored, ...careerData } = parsed || {};
-  return { careerData, customAttackPresets };
+/**
+ * Build a Prisma create payload from a request body. Stringifies all JSON
+ * fields and applies sane defaults for the RPGon shape.
+ */
+function buildCreatePayload(userId, body) {
+  const payload = {
+    userId,
+    name: body.name || 'Adventurer',
+    age: normalizeCharacterAge(body.age),
+    gender: body.gender || '',
+    species: body.species || 'Human',
+    // RPGon stats
+    attributes: JSON.stringify(body.attributes || {
+      sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5,
+    }),
+    skills: JSON.stringify(body.skills || {}),
+    wounds: body.wounds ?? 0,
+    maxWounds: body.maxWounds ?? 0,
+    movement: body.movement ?? 4,
+    characterLevel: body.characterLevel ?? 1,
+    characterXp: body.characterXp ?? 0,
+    attributePoints: body.attributePoints ?? 0,
+    // Magic
+    mana: JSON.stringify(body.mana || { current: 0, max: 0 }),
+    spells: JSON.stringify(body.spells || { known: [], usageCounts: {}, scrolls: [] }),
+    // Inventory & equipment
+    inventory: JSON.stringify(body.inventory || []),
+    materialBag: JSON.stringify(body.materialBag || []),
+    money: JSON.stringify(body.money || { gold: 0, silver: 0, copper: 0 }),
+    equipped: JSON.stringify(body.equipped || { mainHand: null, offHand: null, armour: null }),
+    // Status & needs
+    statuses: JSON.stringify(body.statuses || []),
+    needs: JSON.stringify(body.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }),
+    // Narrative
+    backstory: body.backstory || '',
+    customAttackPresets: JSON.stringify(Array.isArray(body.customAttackPresets) ? body.customAttackPresets : []),
+    // Presentation
+    portraitUrl: body.portraitUrl || '',
+    voiceId: body.voiceId || '',
+    voiceName: body.voiceName || '',
+    campaignCount: body.campaignCount ?? 0,
+    // Legacy WFRP fields (kept for CharacterCreationModal back-compat)
+    careerData: JSON.stringify(body.careerData || {}),
+    characteristics: JSON.stringify(body.characteristics || {}),
+    advances: JSON.stringify(body.advances || {}),
+    xp: body.xp ?? 0,
+    xpSpent: body.xpSpent ?? 0,
+  };
+  return payload;
 }
 
-function deserializeCharacter(c) {
-  const { careerData, customAttackPresets } = splitCareerData(c.careerData);
-  return {
-    ...c,
-    age: normalizeCharacterAge(c.age),
-    careerData,
-    customAttackPresets,
-    characteristics: safeJsonParse(c.characteristics, {}),
-    advances: safeJsonParse(c.advances, {}),
-    skills: safeJsonParse(c.skills, {}),
-    talents: safeJsonParse(c.talents, []),
-    inventory: safeJsonParse(c.inventory, []),
-    money: safeJsonParse(c.money, {}),
-  };
+/**
+ * Selective PUT update — only writes fields actually present in the body.
+ * Stringifies JSON fields when provided.
+ */
+function buildUpdatePayload(body) {
+  const data = {};
+  const scalarPassthrough = [
+    'name', 'gender', 'species',
+    'wounds', 'maxWounds', 'movement',
+    'characterLevel', 'characterXp', 'attributePoints',
+    'backstory', 'portraitUrl', 'voiceId', 'voiceName',
+    'campaignCount', 'xp', 'xpSpent',
+  ];
+  for (const key of scalarPassthrough) {
+    if (body[key] !== undefined) data[key] = body[key];
+  }
+  if (body.age !== undefined) data.age = normalizeCharacterAge(body.age);
+
+  const jsonFields = [
+    'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
+    'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
+    'careerData', 'characteristics', 'advances',
+  ];
+  for (const key of jsonFields) {
+    if (body[key] !== undefined) data[key] = JSON.stringify(body[key]);
+  }
+  return data;
 }
+
+const CHARACTER_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', maxLength: 200 },
+    age: { type: ['number', 'string'] },
+    gender: { type: 'string', maxLength: 40 },
+    species: { type: 'string', maxLength: 100 },
+    attributes: { type: 'object' },
+    skills: { type: 'object' },
+    wounds: { type: 'number' },
+    maxWounds: { type: 'number' },
+    movement: { type: 'number' },
+    characterLevel: { type: 'number' },
+    characterXp: { type: 'number' },
+    attributePoints: { type: 'number' },
+    mana: { type: 'object' },
+    spells: { type: 'object' },
+    inventory: { type: 'array', maxItems: 500 },
+    materialBag: { type: 'array', maxItems: 500 },
+    money: { type: 'object' },
+    equipped: { type: 'object' },
+    statuses: { type: 'array', maxItems: 100 },
+    needs: { type: 'object' },
+    backstory: { type: 'string', maxLength: 10000 },
+    customAttackPresets: { type: 'array', maxItems: 50 },
+    portraitUrl: { type: 'string', maxLength: 2000 },
+    voiceId: { type: 'string', maxLength: 200 },
+    voiceName: { type: 'string', maxLength: 200 },
+    campaignCount: { type: 'number' },
+    careerData: { type: 'object' },
+    characteristics: { type: 'object' },
+    advances: { type: 'object' },
+    xp: { type: 'number' },
+    xpSpent: { type: 'number' },
+  },
+};
+
+const STATE_CHANGES_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    woundsChange: { type: 'number' },
+    xp: { type: 'number' },
+    manaChange: { type: 'number' },
+    manaMaxChange: { type: 'number' },
+    attributeChanges: { type: 'object' },
+    skillProgress: { type: 'object' },
+    spellUsage: { type: 'object' },
+    learnSpell: { type: ['string', 'object', 'null'] },
+    consumeScroll: { type: ['string', 'object', 'null'] },
+    addScroll: { type: ['string', 'object', 'null'] },
+    newItems: { type: 'array', maxItems: 100 },
+    newMaterials: { type: 'array', maxItems: 100 },
+    removeItems: { type: 'array', maxItems: 100 },
+    removeItemsByName: { type: 'array', maxItems: 100 },
+    moneyChange: { type: 'object' },
+    statuses: { type: ['array', 'object'] },
+    needsChanges: { type: 'object' },
+    equipChange: { type: 'object' },
+    forceStatus: { type: 'string', maxLength: 100 },
+  },
+};
 
 export async function characterRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -47,8 +163,7 @@ export async function characterRoutes(fastify) {
       where: { userId: request.user.id },
       orderBy: { updatedAt: 'desc' },
     });
-
-    return characters.map(deserializeCharacter);
+    return characters.map(deserializeCharacterRow);
   });
 
   fastify.get('/:id', async (request, reply) => {
@@ -56,96 +171,56 @@ export async function characterRoutes(fastify) {
       where: { id: request.params.id, userId: request.user.id },
     });
     if (!character) return reply.code(404).send({ error: 'Character not found' });
-
-    return deserializeCharacter(character);
+    return deserializeCharacterRow(character);
   });
 
-  fastify.post('/', async (request) => {
-    const body = request.body;
-    const careerData = {
-      ...(body.careerData || {}),
-      customAttackPresets: Array.isArray(body.customAttackPresets) ? body.customAttackPresets : [],
-    };
-
+  fastify.post('/', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request) => {
     const character = await prisma.character.create({
-      data: {
-        userId: request.user.id,
-        name: body.name || 'Adventurer',
-        age: normalizeCharacterAge(body.age),
-        species: body.species || 'Human',
-        careerData: JSON.stringify(careerData),
-        characteristics: JSON.stringify(body.characteristics || {}),
-        advances: JSON.stringify(body.advances || {}),
-        skills: JSON.stringify(body.skills || {}),
-        talents: JSON.stringify(body.talents || []),
-        wounds: body.wounds ?? 0,
-        maxWounds: body.maxWounds ?? 0,
-        movement: body.movement ?? 4,
-        fate: body.fate ?? 0,
-        resilience: body.resilience ?? 0,
-        xp: body.xp ?? 0,
-        xpSpent: body.xpSpent ?? 0,
-        backstory: body.backstory || '',
-        inventory: JSON.stringify(body.inventory || []),
-        money: JSON.stringify(body.money || {}),
-        equippedWeapon: body.equippedWeapon || '',
-        portraitUrl: body.portraitUrl || '',
-        campaignCount: body.campaignCount ?? 0,
-        voiceId: body.voiceId || '',
-        voiceName: body.voiceName || '',
-      },
+      data: buildCreatePayload(request.user.id, request.body || {}),
     });
-
-    return deserializeCharacter(character);
+    return deserializeCharacterRow(character);
   });
 
-  fastify.put('/:id', async (request, reply) => {
+  fastify.put('/:id', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request, reply) => {
     const existing = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
     });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
 
-    const body = request.body;
-    const updateData = {};
-    const existingCareer = splitCareerData(existing.careerData);
-
-    if (body.name !== undefined) updateData.name = body.name;
-    if (body.age !== undefined) updateData.age = normalizeCharacterAge(body.age);
-    if (body.species !== undefined) updateData.species = body.species;
-    if (body.careerData !== undefined || body.customAttackPresets !== undefined) {
-      updateData.careerData = JSON.stringify({
-        ...(body.careerData !== undefined ? body.careerData : existingCareer.careerData),
-        customAttackPresets: Array.isArray(body.customAttackPresets)
-          ? body.customAttackPresets
-          : existingCareer.customAttackPresets,
-      });
-    }
-    if (body.characteristics !== undefined) updateData.characteristics = JSON.stringify(body.characteristics);
-    if (body.advances !== undefined) updateData.advances = JSON.stringify(body.advances);
-    if (body.skills !== undefined) updateData.skills = JSON.stringify(body.skills);
-    if (body.talents !== undefined) updateData.talents = JSON.stringify(body.talents);
-    if (body.wounds !== undefined) updateData.wounds = body.wounds;
-    if (body.maxWounds !== undefined) updateData.maxWounds = body.maxWounds;
-    if (body.movement !== undefined) updateData.movement = body.movement;
-    if (body.fate !== undefined) updateData.fate = body.fate;
-    if (body.resilience !== undefined) updateData.resilience = body.resilience;
-    if (body.xp !== undefined) updateData.xp = body.xp;
-    if (body.xpSpent !== undefined) updateData.xpSpent = body.xpSpent;
-    if (body.backstory !== undefined) updateData.backstory = body.backstory;
-    if (body.inventory !== undefined) updateData.inventory = JSON.stringify(body.inventory);
-    if (body.money !== undefined) updateData.money = JSON.stringify(body.money);
-    if (body.portraitUrl !== undefined) updateData.portraitUrl = body.portraitUrl;
-    if (body.campaignCount !== undefined) updateData.campaignCount = body.campaignCount;
-    if (body.equippedWeapon !== undefined) updateData.equippedWeapon = body.equippedWeapon;
-    if (body.voiceId !== undefined) updateData.voiceId = body.voiceId || '';
-    if (body.voiceName !== undefined) updateData.voiceName = body.voiceName || '';
-
     const character = await prisma.character.update({
+      where: { id: request.params.id },
+      data: buildUpdatePayload(request.body || {}),
+    });
+    return deserializeCharacterRow(character);
+  });
+
+  /**
+   * PATCH /:id/state-changes — apply an AI/manual state-change delta atomically.
+   *
+   * Body shape matches the GameContext APPLY_STATE_CHANGES payload (and the
+   * subset of AI stateChanges that affect a character):
+   *   { woundsChange, xp, manaChange, manaMaxChange, attributeChanges,
+   *     skillProgress, spellUsage, learnSpell, consumeScroll, addScroll,
+   *     newItems, newMaterials, removeItems, removeItemsByName,
+   *     moneyChange, statuses, needsChanges, equipChange, forceStatus }
+   *
+   * Returns the updated, deserialized Character snapshot.
+   */
+  fastify.patch('/:id/state-changes', { schema: { body: STATE_CHANGES_SCHEMA } }, async (request, reply) => {
+    const existing = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+    });
+    if (!existing) return reply.code(404).send({ error: 'Character not found' });
+
+    const snapshot = deserializeCharacterRow(existing);
+    const mutated = applyCharacterStateChanges(snapshot, request.body || {});
+    const updateData = characterToPrismaUpdate(mutated);
+
+    const updated = await prisma.character.update({
       where: { id: request.params.id },
       data: updateData,
     });
-
-    return deserializeCharacter(character);
+    return deserializeCharacterRow(updated);
   });
 
   fastify.delete('/:id', async (request, reply) => {

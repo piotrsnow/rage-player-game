@@ -1,6 +1,6 @@
 import { resolveModel } from './ai';
 import { apiClient } from './apiClient';
-import { safeParseJSON } from './aiResponseValidator';
+import { safeParseJSON } from './aiResponse';
 
 const STYLE_PROMPTS = {
   cautious: 'You are cautious and careful. Prefer safe options, avoid unnecessary risks, gather information before acting, and retreat from danger when wounded.',
@@ -46,7 +46,7 @@ function formatCharacterSummary(character) {
   if (!character) return 'No character data.';
   const lines = [];
   lines.push(`Name: ${character.name} | Species: ${character.species} | Career: ${character.career?.name || 'Unknown'} (Tier ${character.career?.tier || 1})`);
-  lines.push(`Wounds: ${character.wounds}/${character.maxWounds} | Fortune: ${character.fortune}/${character.fate} | Resolve: ${character.resolve}/${character.resilience}`);
+  lines.push(`Wounds: ${character.wounds}/${character.maxWounds}`);
 
   if (character.backstory) {
     lines.push(`Backstory: ${character.backstory.slice(0, 200)}`);
@@ -57,9 +57,6 @@ function formatCharacterSummary(character) {
     .map(([k, v]) => `${k}(${v})`)
     .join(', ');
   if (skillList) lines.push(`Skills: ${skillList}`);
-
-  const talents = (character.talents || []).join(', ');
-  if (talents) lines.push(`Talents: ${talents}`);
 
   const items = (character.inventory || []).map((i) => typeof i === 'string' ? i : i.name).join(', ');
   if (items) lines.push(`Inventory: ${items}`);

@@ -1,354 +1,151 @@
-# AGENTS.md — RPGon / Nikczemny Krzemuch
+# RPGON / Nikczemny Krzemuch — RPGon (custom RPG system) AI RPG Game
 
-> Browser-based solo & multiplayer tabletop RPG with an AI Dungeon Master, built on Warhammer Fantasy Roleplay (WFRP) mechanics.
+## Stack
+- **Frontend**: React 18 + Vite 6, Tailwind CSS, React Three Fiber (3D scenes), i18next, Zod 4
+- **Backend**: Fastify 5, Prisma (MongoDB), JWT auth, WebSocket (multiplayer)
+- **Database**: MongoDB Atlas (normalized collections + vector search)
+- **AI**: OpenAI (GPT-5.4/mini/nano, 4.1/mini/nano, 4o/mini, o3/o4-mini) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini — multi-provider, nano/standard/premium tiering
+- **3D**: Three.js / React Three Fiber — procedural scene rendering with GLB model support
+- **Media**: Sharp (image resize), ElevenLabs (TTS), Stability AI (scene images), Meshy (3D models), GCP Storage
+- **Testing**: Vitest (unit), Playwright (e2e)
+- **Shared**: `shared/` directory with contracts and domain logic used by both frontend and backend
 
-## Project Overview
+## Commands
+- `npm run dev` - Frontend + backend concurrently
+- `npm run build` - Vite production build
+- `npm test` - Vitest unit tests
+- `npm run test:e2e` - Playwright e2e tests
+- `cd backend && npm run db:push` - Push Prisma schema to MongoDB
+- `cd backend && npx prisma generate` - Regenerate Prisma client
 
-RPGon is a React SPA + Fastify backend application where a Large Language Model acts as a Game Master. The AI returns structured JSON responses (narrative, suggested actions, dice checks, state changes) that drive the game loop. The game supports solo play with localStorage persistence and multiplayer (up to 6 players) via WebSockets with MongoDB persistence.
+## Conventions
+- ES Modules everywhere (`"type": "module"`)
+- No ESLint/Prettier config - use sensible defaults
+- Polish language in UI (i18next), English in code/comments
+- No TypeScript — plain JavaScript with `.jsx` extensions
+- React: Functional components only, hooks for all logic
+- State: Zustand store (`src/stores/gameStore.js`) with Immer-based reducer handlers, granular selectors. Legacy `useGame()` facade in `GameContext.jsx`.
+- AI responses: Always validated with Zod before dispatch
+- Game mechanics: Engines in `src/services/*Engine.js`, data in `src/data/rpg*.js`
+- Deterministic mechanics separated in `src/services/mechanics/`
+- Styling: Tailwind utility classes, dark theme with glassmorphism (`backdrop-blur`, `bg-opacity`)
+- File naming: React components `PascalCase.jsx`, services/hooks/data `camelCase.js`, tests `*.test.js` next to source
+- Embeddings stored as native BSON arrays via mongodb driver (not Prisma)
+- JSON fields stored as strings in Prisma (MongoDB limitation), parsed on read
+- **Dedup direction**: logic used by BOTH frontend and backend lives in `shared/domain/*.js`. Backend-only dedup stays in `backend/src/services/`. Don't create parallel copies — if you spot a helper that belongs on both sides, lift it to `shared/domain/` with the richer version as canonical.
+- **Large file splits**: when a route / service exceeds ~800L or has clearly separable phases, split into thin facade (`routes/foo.js`, `services/foo.js`) + submodule folder (`routes/foo/*`, `services/foo/*`). See `knowledge/patterns/backend-monolith-split.md`. Facade must preserve the external import path.
 
-**App name in UI:** "Nikczemny Krzemuch"  
-**Product/marketing name:** "RPGon"
+## Architecture Overview
 
----
+### Frontend (`src/`)
+- **State**: Zustand store + Immer reducer handlers in `src/stores/`. Contexts for Settings, Multiplayer, Music, Modals.
+- **Hooks**: `useAI.js` (main AI integration), `useGameState.js` (campaign lifecycle), `useSceneGeneration.js` (scene gen orchestration), `useGameContent.js` (quest/NPC updates), `useCombatResolution.js`, `useNarrator.js` (TTS)
+- **Services**: AI providers (`src/services/ai/`), game engines (`*Engine.js`), deterministic mechanics (`mechanics/`), storage/sync (`storage.js`), field map (`fieldMap/`)
+- **Components**: `GameplayPage` orchestrates panels (Scene, Action, Chat, Combat, Magic, Trade, Party). Character sheet, campaign creator, lobby, gallery, multiplayer, settings, 3D scene rendering (`Scene3D/`)
+- **Data**: RPGon rules (`rpgSystem.js`, `rpgMagic.js`, `rpgFactions.js`), equipment, achievements, 3D prefabs
 
-## Tech Stack
+### Backend (`backend/`)
+- **Routes**: auth, characters, AI endpoints (generate-scene SSE stream), game data, media, music, wanted3d, proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). Two large route families are **split into thin facades + submodule folders** (see [[knowledge/patterns/backend-monolith-split]]):
+  - `routes/campaigns.js` → `routes/campaigns/{public,crud,sharing,recaps,schemas}.js`
+  - `routes/multiplayer.js` → `routes/multiplayer/{http,connection}.js` + `routes/multiplayer/handlers/{lobby,roomState,gameplay,quests,combat,webrtc}.js`
+- **Services**: Two AI pipelines are similarly split into thin facades + folders:
+  - `services/sceneGenerator.js` (single-player) → `services/sceneGenerator/{generateSceneStream,campaignLoader,shortcuts,systemPrompt,userPrompt,contextSection,streamingClient,diceResolution,enemyFill,processStateChanges,labels,inlineKeys}.js`
+  - `services/multiplayerAI.js` → `services/multiplayerAI/{aiClient,systemPrompt,scenePrompt,dialogueRepair,fallbackActions,diceNormalization,campaignGeneration,sceneGeneration,compression}.js`
+- **Campaign helpers**: `campaignSerialize.js` (pure) + `campaignSync.js` (DB) + `campaignRecap.js` — extracted during the campaigns split
+- **Shared multiplayer flow**: `multiplayerSceneFlow.js` — deduped `runMultiplayerSceneFlow()` used by both APPROVE_ACTIONS and SOLO_ACTION handlers
+- **Other AI services**: `intentClassifier.js` (heuristic + nano fallback), `aiContextTools.js` (`assembleContext()` for the two-stage pipeline), `memoryCompressor.js` (post-scene fact extraction), `aiErrors.js` (structured AI error handling)
+- **Infra**: `roomManager.js` (in-memory + Prisma persistence), `mediaStore.js` (local/GCS), `vectorSearchService.js` (Atlas Vector Search), `diceResolver.js` (d50 skill check + pre-rolls)
 
-| Layer         | Technology                                                                 |
-|---------------|---------------------------------------------------------------------------|
-| Frontend      | React 18, Vite 6, React Router 6, Tailwind CSS 3, i18next, Zod           |
-| Backend       | Fastify 5, @fastify/websocket, @fastify/jwt, Prisma, MongoDB             |
-| AI providers  | OpenAI (GPT-4o / GPT-4o-mini), Anthropic (Claude Sonnet / Haiku)         |
-| Media         | ElevenLabs (TTS), Stability AI (images), Suno (music)                    |
-| Storage       | localStorage (solo), MongoDB via Prisma (backend), GCS / local filesystem (media) |
-| Testing       | Vitest                                                                     |
+### Database (MongoDB via Prisma)
+| Model | Purpose |
+|---|---|
+| `User` | Auth, encrypted API keys, settings |
+| `Campaign` | coreState (lean JSON), metadata |
+| `CampaignScene/NPC/Knowledge/Codex/Quest` | Normalized with Atlas Vector Search embeddings |
+| `Character` | Reusable character library |
+| `MultiplayerSession` | Room state backup for crash recovery |
+| `MediaAsset` | User-generated images/music/TTS |
+| `PrefabAsset` / `Wanted3D` | 3D model catalog |
+| `Achievement` | Per-user unlocked achievements |
 
----
+## AI Architecture — Two-Stage Pipeline
 
-## Project Structure
+### Design Principles
+1. **Context selection over tool calling** — nano model determines what context is needed, backend assembles it, then one large model call (not AI->tool->AI loops)
+2. **Game state over history** — structured state over raw scene history. Reduces tokens, improves consistency
+3. **Memory compression** — nano model extracts key facts after each scene. Full history NOT in prompt
+4. **Nano for planning** — cheap/fast model handles intent classification + fact extraction
+5. **Tool-use is a fallback** — legacy loop exists but two-stage pipeline is primary
 
+### Flow (Backend Mode — Primary)
 ```
-rage-player-game/
-├── src/                              # Frontend (React + Vite)
-│   ├── App.jsx                       # Routes: /, /create, /play, /join/:code, /gallery
-│   ├── main.jsx                      # Provider tree: Settings → Multiplayer → Game → App
-│   ├── i18n.js                       # i18next setup (en, pl)
-│   ├── components/
-│   │   ├── gameplay/                 # Main game UI
-│   │   │   ├── GameplayPage.jsx      # Central play screen — orchestrates all gameplay panels
-│   │   │   ├── ScenePanel.jsx        # Scene narrative display with narrator highlighting
-│   │   │   ├── ActionPanel.jsx       # Player action selection / free-text input
-│   │   │   ├── ChatPanel.jsx         # Chat / game log
-│   │   │   ├── CombatPanel.jsx       # Tactical WFRP combat UI (initiative, manoeuvres)
-│   │   │   ├── MagicPanel.jsx        # Spellcasting: channelling, casting, wind management
-│   │   │   ├── PartyPanel.jsx        # Party management (companions, active character)
-│   │   │   ├── MapCanvas.jsx         # Force-directed world map on canvas
-│   │   │   └── WorldStateModal.jsx   # World overview: NPCs, map, factions, time, journal
-│   │   ├── character/
-│   │   │   ├── CharacterSheet.jsx    # Full character sheet modal (stats, skills, inventory)
-│   │   │   └── AchievementsPanel.jsx # Achievement browser with progress tracking
-│   │   ├── lobby/                    # Campaign list, load/create
-│   │   ├── creator/                  # Campaign creation wizard
-│   │   ├── multiplayer/              # Multiplayer lobby, join room, pending actions
-│   │   ├── settings/
-│   │   │   └── DMSettingsPage.jsx    # All settings: API keys, DM sliders, backend, media
-│   │   ├── gallery/
-│   │   │   └── GalleryPage.jsx       # Public campaign gallery with fork-to-play
-│   │   ├── layout/                   # Header, Sidebar, Layout, MobileNav
-│   │   └── ui/                       # Shared UI primitives (Button, GlassCard, Slider…)
-│   ├── contexts/
-│   │   ├── GameContext.jsx           # Central game state (useReducer) — campaign, character,
-│   │   │                             # world, quests, scenes, combat, magic, achievements
-│   │   ├── SettingsContext.jsx       # User preferences, API keys, DM settings, i18n
-│   │   └── MultiplayerContext.jsx    # WebSocket room state, player management
-│   ├── hooks/
-│   │   ├── useAI.js                  # AI orchestration: scene gen, campaign gen, dice, costs
-│   │   ├── useNarrator.js            # ElevenLabs TTS with word highlighting, voice queue
-│   │   ├── useGameState.js           # Game state helpers
-│   │   └── useMusic.js              # Background music management
-│   ├── services/
-│   │   ├── ai.js                     # LLM calls (OpenAI + Anthropic), retry, fallback, model selection
-│   │   ├── prompts.js                # System/user prompt construction from full game state
-│   │   ├── contextManager.js         # Long-context: compression, knowledge retrieval, memory
-│   │   ├── aiResponseValidator.js    # Zod schemas for AI JSON responses, safe parsing
-│   │   ├── stateValidator.js         # Validates AI stateChanges (caps, clamps, WFRP rules)
-│   │   ├── combatEngine.js           # WFRP tactical combat resolution
-│   │   ├── magicEngine.js            # Spellcasting: channelling, casting tests, miscasts
-│   │   ├── weatherEngine.js          # Weather simulation (season, region, transitions)
-│   │   ├── tradeEngine.js            # Economy: haggling, crafting, availability
-│   │   ├── reputationEngine.js       # Faction reputation and NPC reactions
-│   │   ├── achievementTracker.js     # Achievement state machine, event → achievement mapping
-│   │   ├── costTracker.js            # API usage cost calculation per model/service
-│   │   ├── storage.js                # localStorage persistence + backend campaign sync
-│   │   ├── localAI.js                # Ollama / LM Studio integration for local LLMs
-│   │   ├── elevenlabs.js             # ElevenLabs TTS + SFX API
-│   │   ├── websocket.js              # WebSocket client for multiplayer
-│   │   ├── apiClient.js              # Backend REST client with JWT auth
-│   │   ├── imageGen.js               # Scene image generation (Stability AI)
-│   │   ├── suno.js                   # Music generation (Suno API)
-│   │   └── exportLog.js              # Gameplay log export to markdown
-│   ├── data/                         # WFRP game rules and content
-│   │   ├── wfrp.js                   # Core: characteristics, species, skills, careers, costs
-│   │   ├── wfrpBestiary.js           # Named enemies with full stat blocks
-│   │   ├── wfrpCombat.js             # Manoeuvres, weapons, armour, hit locations
-│   │   ├── wfrpCriticals.js          # Critical wounds by body location
-│   │   ├── wfrpEquipment.js          # Equipment catalog with pricing (GC/SS/CP)
-│   │   ├── wfrpFactions.js           # Faction definitions and reputation tier effects
-│   │   ├── wfrpMagic.js              # Winds of magic, spells, petty spells, miscast tables
-│   │   ├── achievements.js           # Achievement catalog, categories, conditions
-│   │   ├── encounterTables.js        # Random encounters by terrain (weighted)
-│   │   └── oldWorldMap.js            # Old World regions, provinces, geography
-│   ├── effects/                      # Visual effects engine (weather, particles, transitions)
-│   └── locales/
-│       ├── en.json                   # English translations
-│       └── pl.json                   # Polish translations (primary)
-├── backend/                          # Backend (Fastify + MongoDB)
-│   ├── prisma/schema.prisma          # Data models: User, Campaign, Character, MediaAsset,
-│   │                                 # Achievement, MultiplayerSession
-│   ├── src/
-│   │   ├── server.js                 # Fastify entry: plugins, routes, WebSocket
-│   │   ├── config.js                 # Env validation (JWT_SECRET, API_KEY_ENCRYPTION_SECRET)
-│   │   ├── routes/
-│   │   │   ├── auth.js               # /register, /login, /me, /settings, /api-keys
-│   │   │   ├── campaigns.js          # CRUD + publish/public gallery
-│   │   │   ├── characters.js         # Character library CRUD
-│   │   │   ├── media.js              # Media upload/serve (local or GCS)
-│   │   │   ├── music.js              # Music generation proxy
-│   │   │   ├── multiplayer.js        # WebSocket game lifecycle + state application
-│   │   │   └── proxy/                # API key proxying
-│   │   │       ├── openai.js
-│   │   │       ├── anthropic.js
-│   │   │       ├── elevenlabs.js
-│   │   │       ├── stability.js
-│   │   │       └── suno.js
-│   │   └── services/
-│   │       ├── roomManager.js        # In-memory rooms + Prisma persistence for recovery
-│   │       ├── multiplayerAI.js      # Server-side AI calls for multiplayer scenes
-│   │       ├── mediaStore.js         # Media storage abstraction (local filesystem / GCS)
-│   │       ├── stateValidator.js     # Multiplayer state change validation
-│   │       └── timeUtils.js          # Time/period utilities
-│   └── package.json
-├── package.json                      # Root: scripts, frontend deps, concurrently
-├── vite.config.js                    # Vite + React plugin, /suno-api proxy
-├── tailwind.config.js                # Dark theme, extended color palette
-└── index.html                        # SPA entry
+Player Action
+  → [Frontend] resolveMechanics() — deterministic d50/combat/magic
+  → [Backend POST /ai/campaigns/:id/generate-scene]
+      Stage 1: classifyIntent() — heuristic regex ~70% free; nano for freeform
+      Stage 2: assembleContext() — parallel DB queries for needed categories
+      Stage 3: runTwoStagePipeline() — single large model call, lean prompt ~3.5k tokens
+  → [AI Response] → validateStateChanges() → processStateChanges()
+  → [Post-scene async] compressSceneToSummary() — nano extracts facts
 ```
 
----
+### Model Tiering
+- **nano** (gpt-5.4-nano / gpt-4.1-nano): intent classification, fact extraction, skill check inference
+- **standard** (gpt-5.4-mini / haiku-4.5): compression, recaps, combat commentary
+- **premium** (gpt-5.4 / claude-sonnet-4): scene generation, campaign creation
 
-## Architecture & Data Flow
+### RPGon Game System (custom, replaces WFRP)
+- **Dice**: d50 (not d100). Roll d50 vs attribute + skill + modifiers
+- **Attributes**: 6 stats (Siła, Inteligencja, Charyzma, Zręczność, Wytrzymałość, Szczęście), scale 1-25
+- **Skills**: ~60 skills, each tied to one attribute. Levels 0-25, cap system
+- **Magic**: 9 spell trees, mana-based (no casting test), spells from scrolls, cost 1-5 mana
+- **Combat**: d50-based, damage = Siła + weapon - Wytrzymałość - AP, margin instead of SL
+- **Szczęście**: X% auto-success chance on any roll
+- **No**: careers, talents, fate/fortune/resolve/resilience, critical wounds table, channelling, advantage
+- Full spec: `RPG_SYSTEM.md`
 
-### Solo Play
+## Known Gaps / Consolidation Candidates
+- No token budget enforcement in `assembleContext()`
+- State changes still AI-driven — no mechanical validation for buying items etc.
+- `diceRollInference.js` — frontend copy has extras vs `shared/domain/` version. Merge.
+- `stateValidator.js` exists in frontend + backend — extract shared logic to `shared/domain/`
+- Frontend proxy mode duplicates prompt building from backend lean version — 4 specific parallels tracked as item 10 in [plans/post_merge_infra.md](plans/post_merge_infra.md): dialogue repair, fallback actions, lean response parser, AI client
 
-```
-User action → useAI.generateScene()
-  → prompts.js builds system + user prompt (full game state, WFRP rules, DM settings)
-  → ai.js calls OpenAI/Anthropic (direct or via /proxy/* if backend connected)
-  → AI returns JSON: { narrative, actions, diceCheck, stateChanges }
-  → aiResponseValidator.js validates with Zod schemas
-  → stateValidator.js caps/clamps stateChanges against WFRP rules
-  → GameContext dispatches ADD_SCENE + APPLY_STATE_CHANGES
-  → achievementTracker processes events
-  → storage.js persists to localStorage
-  → optional: image generation, TTS narration, background music
-```
+## Knowledge Base — `knowledge/`
 
-### Multiplayer
+**When working on a subsystem, read the relevant knowledge file first.** These files contain detailed information that CLAUDE.md intentionally omits to save context.
 
-```
-Player submits action via WebSocket → backend multiplayer.js
-  → roomManager validates room/player state
-  → host approves pending action
-  → multiplayerAI.js builds prompts + calls AI (using host's encrypted keys)
-  → stateValidator validates per-character stateChanges
-  → multiplayer.js applies state changes (time, map, NPCs, quests, needs)
-  → roomManager broadcasts SCENE_UPDATE to all players via WebSocket
-```
+### File Inventory (read when looking for specific files)
+- `concepts/frontend-structure.md` — full file listing: contexts, stores, hooks, services, components, data, effects
+- `concepts/backend-structure.md` — full file listing: routes, services, shared/ (**updated session 6** after the 4 monolith splits), scripts
 
-### Key Patterns
+### State Management & Refactoring
+- `concepts/game-context.md` — Zustand facade architecture, selectors API, `getGameState()` pattern
+- `concepts/context-migration-plan.md` — which contexts → Zustand (Modal, Music) vs stay (Settings, Multiplayer)
+- `concepts/frontend-refactor-2026-04.md` — god-component decomposition: 6 components before/after, 10 PRs, 13 extracted hooks
+- `concepts/frontend-refactor-regressions.md` — **READ BEFORE TESTING**: manual test watchlist, 7 open questions
+- `patterns/reducer-context.md` — Zustand facade + granular selectors pattern
+- `patterns/component-decomposition.md` — 5-step pure-lift refactoring ladder, naming conventions
 
-- **AI responses are always JSON** with a defined schema — never free-text
-- **stateChanges** are validated both client-side and server-side before applying
-- **Prompt construction** (`prompts.js`) injects relevant WFRP data snippets (bestiary, factions, criticals, magic, equipment, weather) based on current context
-- **Context management** (`contextManager.js`) compresses old scenes to stay within token limits
-- **Dice resolution** uses d100 with Success Levels (SL) and momentum — pre-rolled before AI call, results sent to AI for narrative integration
-- **Cost tracking** runs per-request for all AI/media API calls
+### Game Systems
+- `concepts/bestiary.md` — 36 units, 11 races, encounter budget system, fast-path combat
+- `concepts/model-tiering.md` — ai/ submodule structure (models.js, providers.js, service.js)
+- `decisions/currency-three-tier-pl.md` — 3 denominations + exchange rates
+- `decisions/titles-from-achievements.md` — 12 example achievement titles with rarity + conditions
+- `decisions/embeddings-native-driver.md` — why native MongoDB driver (BSON array requirement)
 
----
+### Patterns
+- `patterns/backend-monolith-split.md` — thin facade + submodule folder split. Applied 4× in session 6 (campaigns / multiplayer / multiplayerAI / sceneGenerator). Read before splitting any large backend file.
+- `patterns/backend-proxy.md` — SSE endpoints (generate-scene-stream), `callBackendStream()` pattern
+- `patterns/prerolled-dice-fallback.md` — pre-rolled d50 fallback: max 3 rolls/scene, thresholds 20/35/50/65/80
 
-## Game State Shape (GameContext)
+When coding:
+- follow patterns
+- reuse decisions
+- avoid repeated bugs
 
-The central state managed by `useReducer` in `GameContext.jsx`:
-
-```
-{
-  campaign: { id, name, genre, tone, setting, antagonist, ... },
-  character: { name, species, career, characteristics, skills, talents, inventory, wounds, xp, ... },
-  party: [ character, ...companions ],
-  activeCharacterId: string,
-  world: {
-    npcs: [...],
-    mapState: { locations, connections },
-    currentLocation: string,
-    exploredLocations: [...],
-    time: { day, period, season },
-    weather: {...},
-    factions: { [id]: reputation },
-    knowledgeBase: { events, decisions, plotThreads },
-    compressedHistory: string,
-    needs: { hunger, fatigue, ... }
-  },
-  quests: [...],
-  scenes: [...],
-  chatHistory: [...],
-  combat: { active, combatants, round, turn, ... } | null,
-  magic: { windPoints, activeEffects, ... },
-  achievements: { stats, unlocked },
-  aiCosts: { total, breakdown },
-  momentum: number,
-  undoStack: [...]
-}
-```
-
----
-
-## WFRP Game Rules (src/data/)
-
-The game implements a subset of Warhammer Fantasy Roleplay 4th Edition rules:
-
-- **d100 test system** with 10 characteristics (WS, BS, S, T, I, Ag, Dex, Int, WP, Fel)
-- **Success Levels (SL)** = (tens digit of target - tens digit of roll), clamped ±6
-- **Careers** with 4 tiers, each unlocking skills/talents/stat advances
-- **Combat**: initiative, manoeuvres (defend, dodge, flee, offensive, magic), weapon/armour stats, hit locations, critical wounds
-- **Magic**: 8 Winds + petty spells, channelling tests, casting numbers (CN), overcasting, miscasts on doubles
-- **Economy**: Gold Crown (GC) / Silver Shilling (SS) / Brass Penny (CP), haggling via Fellowship + reputation
-- **Factions**: reputation tiers affecting prices, quest access, NPC attitudes
-
-All rule data lives in `src/data/wfrp*.js`. Game engines (`combatEngine.js`, `magicEngine.js`, etc.) implement the mechanical resolution. The AI is grounded in these rules via prompt injection.
-
----
-
-## Database Models (Prisma + MongoDB)
-
-| Model                | Purpose                                        |
-|----------------------|------------------------------------------------|
-| `User`               | Auth, encrypted API keys, settings JSON        |
-| `Campaign`           | Full game state JSON, public gallery metadata  |
-| `Character`          | Character library (reusable across campaigns)  |
-| `Achievement`        | Per-user unlocked achievements                 |
-| `MultiplayerSession` | Room state backup for crash recovery           |
-| `MediaAsset`         | Generated images/music/TTS with storage path   |
-
----
-
-## API Routes (Backend)
-
-| Route           | Method  | Auth | Description                                      |
-|-----------------|---------|------|--------------------------------------------------|
-| `/auth/register`| POST    | No   | Create account (email + password)                |
-| `/auth/login`   | POST    | No   | Login → JWT token                                |
-| `/auth/me`      | GET     | Yes  | Current user profile                             |
-| `/auth/settings`| PUT     | Yes  | Save settings + encrypted API keys               |
-| `/campaigns`    | CRUD    | Yes  | User's campaigns                                 |
-| `/campaigns/public` | GET | No   | Public gallery listing                           |
-| `/campaigns/:id/publish` | PATCH | Yes | Toggle public visibility                  |
-| `/characters`   | CRUD    | Yes  | Character library                                |
-| `/media/*`      | Various | Yes  | Upload/serve media assets                        |
-| `/proxy/openai` | POST    | Yes  | Proxied OpenAI call (server-side keys)           |
-| `/proxy/anthropic` | POST | Yes  | Proxied Anthropic call                           |
-| `/proxy/elevenlabs` | POST| Yes  | Proxied ElevenLabs TTS                           |
-| `/proxy/stability` | POST | Yes  | Proxied Stability AI image generation            |
-| `/multiplayer`  | WS      | Yes  | WebSocket for multiplayer game lifecycle         |
-
----
-
-## Environment Configuration
-
-### Backend (`backend/.env`)
-
-| Variable                    | Required | Description                                   |
-|-----------------------------|----------|-----------------------------------------------|
-| `DATABASE_URL`              | Yes      | MongoDB connection string                     |
-| `JWT_SECRET`                | Yes      | Strong secret for JWT signing                 |
-| `API_KEY_ENCRYPTION_SECRET` | Yes      | Secret for encrypting user API keys in DB     |
-| `PORT`                      | No       | Server port (default: 3001)                   |
-| `CORS_ORIGIN`               | No       | CORS origin (default: true for dev)           |
-| `MEDIA_BACKEND`             | No       | "local" or "gcp"                              |
-| `MEDIA_LOCAL_PATH`          | No       | Filesystem path for local media storage       |
-| `OPENAI_API_KEY`            | No       | Default OpenAI key (fallback)                 |
-| `ANTHROPIC_API_KEY`         | No       | Default Anthropic key (fallback)              |
-| `ELEVENLABS_API_KEY`        | No       | Default ElevenLabs key                        |
-| `STABILITY_API_KEY`         | No       | Default Stability AI key                      |
-| `SUNO_API_KEY`              | No       | Default Suno key                              |
-
-### Frontend
-
-No `.env` file. All configuration is managed through the Settings UI (`SettingsContext`) and persisted in localStorage under `nikczemny_krzemuch_settings`. API keys can be entered directly in the app or stored server-side when the backend is connected.
-
----
-
-## Scripts
-
-```bash
-npm run dev          # Start frontend (Vite) + backend (Fastify) concurrently
-npm run dev:frontend # Frontend only on :5173
-npm run dev:backend  # Backend only on :3001
-npm run build        # Production build (Vite)
-npm run test         # Run Vitest
-```
-
----
-
-## Internationalization (i18n)
-
-- Default language: **Polish** (`pl`)
-- Supported: Polish (`pl.json`), English (`en.json`)
-- Configured in `src/i18n.js`, language switch in `SettingsContext`
-- Translation keys are nested: `common`, `nav`, `lobby`, `creator`, `gameplay`, `character`, `settings`, `multiplayer`, `gallery`
-- When adding UI text, always use `t('key')` from `useTranslation()` and add keys to **both** locale files
-
----
-
-## Testing
-
-Tests use **Vitest** and live alongside their source files:
-
-| Test file                                      | Covers                                          |
-|------------------------------------------------|-------------------------------------------------|
-| `src/services/stateValidator.test.js`          | XP caps, wound clamping, item limits, needs     |
-| `src/services/achievementTracker.test.js`      | Achievement state, event processing, stats      |
-| `backend/src/services/roomManager.test.js`     | WebSocket broadcast, room cleanup, host transfer|
-
-Test coverage is minimal — when adding new engines or validators, add corresponding test files.
-
----
-
-## Key Conventions
-
-### Code Style
-- **React**: Functional components only, hooks for all logic
-- **State**: `useReducer` in contexts, never direct mutation
-- **AI responses**: Always validated with Zod before dispatch
-- **Game mechanics**: Engines in `src/services/*Engine.js`, data in `src/data/wfrp*.js`
-- **Styling**: Tailwind utility classes, dark theme with glassmorphism (`backdrop-blur`, `bg-opacity`)
-- **No TypeScript** — the project uses plain JavaScript with `.jsx` extensions
-
-### File Naming
-- React components: `PascalCase.jsx`
-- Services/hooks/data: `camelCase.js`
-- Test files: `*.test.js` next to source
-
-### Adding New Features
-1. If it involves game mechanics → add data to `src/data/` + engine to `src/services/`
-2. If it needs AI awareness → update `prompts.js` to include relevant context
-3. If it affects game state → add action type to `GameContext.jsx` reducer
-4. If it has UI → add to appropriate `src/components/` subdirectory
-5. If it needs i18n → add keys to both `en.json` and `pl.json`
-6. If it needs backend → add route in `backend/src/routes/`, update `schema.prisma` if DB needed
-7. If multiplayer-relevant → handle in both `MultiplayerContext` and `backend/src/routes/multiplayer.js`
-
-### AI Prompt Engineering
-- System prompts are assembled in `prompts.js` from modular blocks
-- WFRP data snippets are injected selectively (not dumped wholesale)
-- The AI must return valid JSON matching Zod schemas in `aiResponseValidator.js`
-- `stateChanges` are the only mechanism for AI to modify game state
-- DM personality is controlled via sliders in `dmSettings` (narrative detail, test frequency, danger level, humor, etc.)
+## Important Notes
+- No production backward compatibility constraints
+- Frontend works in two modes: backend scene generation (preferred) or proxy (legacy, heavier)
+- Vector search indexes: `cd backend && node src/scripts/createVectorIndexes.js`
+- Multiplayer contracts shared via `shared/contracts/multiplayer.js`

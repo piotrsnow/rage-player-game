@@ -1,10 +1,35 @@
 import { requireServerApiKey } from '../../services/apiKeyService.js';
+import { config } from '../../config.js';
 import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
+
+const CHAT_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    messages: {
+      type: 'array',
+      maxItems: 200,
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          role: { type: 'string', maxLength: 40 },
+          content: { type: ['string', 'array'] },
+        },
+      },
+    },
+    model: { type: 'string', maxLength: 200 },
+    max_tokens: { type: 'number' },
+    system: { type: 'string', maxLength: 40000 },
+    temperature: { type: 'number' },
+  },
+  required: ['messages'],
+};
 
 export async function anthropicProxyRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
-  fastify.post('/chat', async (request, reply) => {
+  fastify.post('/chat', { schema: { body: CHAT_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('anthropic', 'Anthropic');
@@ -26,7 +51,7 @@ export async function anthropicProxyRoutes(fastify) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: model || 'claude-sonnet-4-20250514',
+        model: model || config.aiModels.premium.anthropic,
         max_tokens: max_tokens || 4096,
         messages,
         ...(system ? { system } : {}),

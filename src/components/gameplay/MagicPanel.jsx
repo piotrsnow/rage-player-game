@@ -1,39 +1,13 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  performChannellingTest,
-  performCastingTest,
-  getAvailableSpells,
-  canCastSpell,
-  calculateOvercast,
+  castSpell,
+  canCastAnySpell,
+  learnFromScroll,
+  useScrollOneShot,
+  getSpellProgressionStatus,
 } from '../../services/magicEngine';
-import { WINDS_OF_MAGIC, SPELLS, PETTY_SPELLS } from '../../data/wfrpMagic';
-import { getBonus } from '../../services/gameState';
-
-function loreLabel(loreKey, t) {
-  if (loreKey === 'petty') return t('gameplay.pettyMagic');
-  const i18nLabel = t(`magic.lore.${loreKey}`, '');
-  if (i18nLabel) return i18nLabel;
-  const w = WINDS_OF_MAGIC[loreKey];
-  return w?.title || loreKey;
-}
-
-function spellField(spell, field, t) {
-  const key = `magic.spellData.${spell.name}.${field}`;
-  const val = t(key, '');
-  return val || spell[field] || '';
-}
-
-function effectRoundsFromSpell(spell, wp) {
-  const d = (spell?.duration || '').toLowerCase();
-  if (d.includes('instant')) return null;
-  const wpb = Math.max(1, getBonus(wp));
-  if (d.includes('round')) return wpb;
-  if (d.includes('minute')) return wpb * 10;
-  return wpb * 5;
-}
-
-const defaultMagic = () => ({ storedWindPoints: 0, activeMagicEffects: [] });
+import { SPELL_TREES } from '../../data/rpgMagic';
 
 function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
   return (
@@ -63,210 +37,86 @@ function SectionToggle({ label, icon, open, onToggle, badge, children, desc }) {
   );
 }
 
-export default function MagicPanel({ character, combat, dispatch, onCastSpell }) {
+export default function MagicPanel({ character, combat, onCastSpell }) {
   const { t } = useTranslation();
-  const [channelLore, setChannelLore] = useState('petty');
-  const [lastChannelResult, setLastChannelResult] = useState(null);
-  const [castSpell, setCastSpell] = useState(null);
+  const [selectedSpell, setSelectedSpell] = useState(null);
   const [lastCastResult, setLastCastResult] = useState(null);
-  const [miscastFlash, setMiscastFlash] = useState(null);
-  const [localMagic, setLocalMagic] = useState(defaultMagic);
-  const prevRoundRef = useRef(combat?.round);
-
+  const [lastScrollResult, setLastScrollResult] = useState(null);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [openSections, setOpenSections] = useState({
-    channelling: true,
+    mana: true,
     spells: true,
     casting: true,
-    activeEffects: true,
+    scrolls: true,
+    progression: false,
   });
 
   const toggleSection = useCallback((key) => {
     setOpenSections((s) => ({ ...s, [key]: !s[key] }));
   }, []);
 
+  const mana = character?.mana || { current: 0, max: 0 };
+  const spells = character?.spells || { known: [], usageCounts: {}, scrolls: [] };
   const inCombat = Boolean(combat);
-  const combatMagic = combat?.magic || {};
-  const storedWindPoints = inCombat
-    ? (combatMagic.storedWindPoints ?? 0)
-    : localMagic.storedWindPoints;
-  const activeMagicEffects = inCombat
-    ? (combatMagic.activeMagicEffects ?? [])
-    : localMagic.activeMagicEffects;
 
-  const setMagic = useCallback(
-    (updater) => {
-      if (inCombat) {
-        const current = { ...defaultMagic(), ...combatMagic };
-        const next = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
-        dispatch({ type: 'UPDATE_COMBAT', payload: { magic: next } });
-      } else {
-        setLocalMagic((s) => {
-          const base = { ...defaultMagic(), ...s };
-          return typeof updater === 'function' ? updater(base) : { ...base, ...updater };
-        });
-      }
-    },
-    [inCombat, combatMagic, dispatch]
-  );
+  const progression = useMemo(() => getSpellProgressionStatus(character), [character]);
+  const canCast = canCastAnySpell(character);
 
-  const availableSpells = useMemo(() => getAvailableSpells(character), [character]);
-
-  const loreSortOrder = useMemo(() => {
-    const order = [];
-    const seen = new Set();
-    for (const s of [...PETTY_SPELLS, ...SPELLS]) {
-      if (!seen.has(s.lore)) {
-        seen.add(s.lore);
-        order.push(s.lore);
-      }
-    }
-    return order;
-  }, []);
-
-  const spellsByLore = useMemo(() => {
+  // Group known spells by tree
+  const spellsByTree = useMemo(() => {
     const map = new Map();
-    for (const s of availableSpells) {
-      const lk = s.lore;
-      if (!map.has(lk)) map.set(lk, []);
-      map.get(lk).push(s);
+    for (const spellName of spells.known) {
+      for (const [treeId, tree] of Object.entries(SPELL_TREES)) {
+        const spell = tree.spells.find((s) => s.name === spellName);
+        if (spell) {
+          if (!map.has(treeId)) map.set(treeId, { tree, spells: [] });
+          map.get(treeId).spells.push(spell);
+          break;
+        }
+      }
     }
-    const keys = [...map.keys()].sort(
-      (a, b) => loreSortOrder.indexOf(a) - loreSortOrder.indexOf(b)
-    );
-    return keys.map((k) => ({ loreKey: k, label: loreLabel(k, t), spells: map.get(k) }));
-  }, [availableSpells, loreSortOrder, t]);
+    return [...map.entries()];
+  }, [spells.known]);
 
-  const channelLoreOptions = useMemo(() => {
-    const keys = [...new Set(availableSpells.map((s) => s.lore))].sort(
-      (a, b) => loreSortOrder.indexOf(a) - loreSortOrder.indexOf(b)
-    );
-    return keys;
-  }, [availableSpells, loreSortOrder]);
-
+  // Auto-select first available spell
   useEffect(() => {
-    if (!channelLoreOptions.length) return;
-    if (!channelLoreOptions.includes(channelLore)) {
-      setChannelLore(channelLoreOptions[0]);
+    if (!selectedSpell && spells.known.length > 0) {
+      setSelectedSpell(spells.known[0]);
     }
-  }, [channelLoreOptions, channelLore]);
-
-  useEffect(() => {
-    if (!castSpell || !availableSpells.some((s) => s.name === castSpell.name)) {
-      setCastSpell(availableSpells[0] || null);
-    }
-  }, [availableSpells, castSpell]);
-
-  useEffect(() => {
-    const prev = prevRoundRef.current;
-    const round = combat?.round;
-    if (round == null) {
-      prevRoundRef.current = round;
-      return;
-    }
-    if (prev != null && round > prev && activeMagicEffects.length > 0) {
-      setMagic((m) => ({
-        ...m,
-        activeMagicEffects: (m.activeMagicEffects || [])
-          .map((e) => ({ ...e, roundsLeft: e.roundsLeft - 1 }))
-          .filter((e) => e.roundsLeft > 0),
-      }));
-    }
-    prevRoundRef.current = round;
-  }, [combat?.round, activeMagicEffects.length, setMagic]);
-
-  useEffect(() => {
-    if (!miscastFlash) return;
-    const tmr = setTimeout(() => setMiscastFlash(null), 6500);
-    return () => clearTimeout(tmr);
-  }, [miscastFlash]);
-
-  const handleChannel = () => {
-    if (!character) return;
-    const res = performChannellingTest(character, channelLore);
-    setLastChannelResult(res);
-    if (res.success && res.windPoints > 0) {
-      setMagic((m) => ({
-        ...m,
-        storedWindPoints: (m.storedWindPoints ?? 0) + res.windPoints,
-      }));
-    }
-  };
+  }, [selectedSpell, spells.known]);
 
   const handleCast = () => {
-    if (!character || !castSpell) return;
-    const windUsed = storedWindPoints;
-    const result = performCastingTest(character, castSpell, windUsed);
-    setLastCastResult({ ...result, spell: castSpell, storedWindPointsUsed: windUsed });
-
-    onCastSpell?.({
-      ...result,
-      spell: castSpell,
-      storedWindPointsUsed: windUsed,
-      overcastDetail: calculateOvercast(result.totalSL, result.spellCn, character.characteristics?.wp),
-    });
-
-    setMagic((m) => ({ ...m, storedWindPoints: 0 }));
-
-    if (result.miscast && result.miscastResult) {
-      setMiscastFlash(result.miscastResult);
-    }
+    if (!character || !selectedSpell) return;
+    const result = castSpell(character, selectedSpell);
+    setLastCastResult(result);
 
     if (result.success) {
-      const rounds = effectRoundsFromSpell(castSpell, character.characteristics?.wp ?? 30);
-      if (rounds != null && rounds > 0) {
-        setMagic((m) => ({
-          ...m,
-          activeMagicEffects: [
-            ...(m.activeMagicEffects || []),
-            {
-              id: `${castSpell.name}-${Date.now()}`,
-              spellName: castSpell.name,
-              lore: castSpell.lore,
-              effect: castSpell.effect,
-              roundsLeft: rounds,
-            },
-          ],
-        }));
-      }
+      onCastSpell?.(result);
     }
   };
 
-  const wp = character?.characteristics?.wp ?? 30;
-
-  const formatOvercast = (totalSL, spellCn) => {
-    const oc = calculateOvercast(totalSL, spellCn, wp);
-    if (oc.overcasts <= 0) return t('magic.overcastNone');
-    const wpb = oc.effects.willpowerBonus;
-    if (wpb != null) {
-      return t('magic.overcastSummary', { count: oc.overcasts, wpb });
+  const handleLearnScroll = (scrollName) => {
+    if (!character) return;
+    const result = learnFromScroll(character, scrollName);
+    setLastScrollResult(result);
+    if (result.success) {
+      onCastSpell?.({ ...result, type: 'learnScroll' });
     }
-    return t('magic.overcastSummaryNoWpb', { count: oc.overcasts });
   };
+
+  const handleUseScroll = (scrollName) => {
+    if (!character) return;
+    const result = useScrollOneShot(character, scrollName);
+    setLastScrollResult(result);
+    if (result.success) {
+      onCastSpell?.({ ...result, type: 'useScroll' });
+    }
+  };
+
+  const manaPct = mana.max > 0 ? (mana.current / mana.max) * 100 : 0;
 
   return (
     <div className="relative space-y-2 p-3 bg-tertiary-container/5 border border-tertiary/20 rounded-sm">
-      {/* Miscast overlay */}
-      {miscastFlash && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center rounded-sm bg-black/75 backdrop-blur-md p-3">
-          <div className="max-w-sm w-full border-2 border-error shadow-lg shadow-error/30 bg-error-container/30 p-4 rounded-sm text-center space-y-2 animate-pulse">
-            <span className="material-symbols-outlined text-4xl text-error">crisis_alert</span>
-            <div className="text-xs font-label uppercase tracking-[0.2em] text-error">
-              {t('magic.miscast')}
-            </div>
-            <div className="text-[10px] uppercase text-error/90 font-bold">
-              {t(`magic.severity.${miscastFlash.severity}`, miscastFlash.severity)}
-            </div>
-            <p className="text-xs text-on-surface leading-snug">
-              {miscastFlash.id ? t(`magic.miscastData.${miscastFlash.id}.desc`, miscastFlash.description) : miscastFlash.description}
-            </p>
-            <p className="text-[10px] text-on-surface-variant border-t border-outline-variant/20 pt-2">
-              {miscastFlash.id ? t(`magic.miscastData.${miscastFlash.id}.effect`, miscastFlash.mechanicalEffect) : miscastFlash.mechanicalEffect}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Panel header — collapsible */}
       <button
         type="button"
@@ -287,9 +137,8 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1 text-[10px] text-on-surface-variant tabular-nums">
-            <span className="material-symbols-outlined text-xs">air</span>
-            <span className="font-bold text-primary">{storedWindPoints}</span>
-            <span>{t('magic.wind')}</span>
+            <span className="material-symbols-outlined text-xs">water_drop</span>
+            <span className="font-bold text-tertiary">{mana.current}/{mana.max}</span>
           </div>
           <span className={`material-symbols-outlined text-sm text-on-surface-variant transition-transform ${panelCollapsed ? '' : 'rotate-180'}`}>
             expand_more
@@ -299,111 +148,75 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
 
       {!panelCollapsed && (
         <div className="space-y-2">
-          {/* Channelling section */}
+          {/* Mana bar */}
           <SectionToggle
-            label={t('magic.channelling')}
-            icon="waves"
-            open={openSections.channelling}
-            onToggle={() => toggleSection('channelling')}
-            desc={t('magic.channellingDesc')}
+            label="Mana"
+            icon="water_drop"
+            open={openSections.mana}
+            onToggle={() => toggleSection('mana')}
           >
-            <div className="flex flex-wrap gap-1">
-              {channelLoreOptions.map((lk) => (
-                <button
-                  key={lk}
-                  type="button"
-                  onClick={() => setChannelLore(lk)}
-                  className={`px-2 py-1 rounded-sm border text-[9px] font-bold uppercase tracking-wide transition-all ${
-                    channelLore === lk
-                      ? 'bg-primary/15 text-primary border-primary/30'
-                      : 'bg-surface-dim/40 text-on-surface-variant border-outline-variant/10 hover:border-primary/20'
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-3 bg-surface-container-high/60 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    manaPct > 50 ? 'bg-tertiary' : manaPct > 20 ? 'bg-tertiary/70' : 'bg-error/70'
                   }`}
-                >
-                  {loreLabel(lk, t)}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={handleChannel}
-              disabled={!character || !channelLoreOptions.length}
-              className="w-full px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {t('magic.channelWind')}
-            </button>
-            {lastChannelResult && (
-              <div className="text-[9px] text-on-surface-variant bg-surface-dim/30 rounded-sm px-2 py-1 border border-outline-variant/10 leading-tight">
-                <span className="font-bold text-on-surface">{t('magic.d100')} {lastChannelResult.roll}</span>
-                <span> {t('magic.vs')} {lastChannelResult.target}</span>
-                <span className={lastChannelResult.success ? ' text-primary' : ' text-outline'}>
-                  {' '}
-                  — {lastChannelResult.success ? `${t('magic.success')} (+${lastChannelResult.windPoints} ${t('magic.wind')})` : t('magic.fail')}
-                </span>
-                {lastChannelResult.success && (
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ml-1 ${
-                    lastChannelResult.sl > 0
-                      ? 'text-primary bg-primary/12 border-primary/20'
-                      : lastChannelResult.sl < 0
-                        ? 'text-error bg-error/12 border-error/20'
-                        : 'text-on-surface-variant bg-surface-container-high/40 border-outline-variant/20'
-                  }`}>
-                    <span className="material-symbols-outlined text-[11px] leading-none">fitness_center</span>
-                    <span className="font-bold">
-                      {t('gameplay.rollEdge', { value: `${lastChannelResult.sl > 0 ? '+' : ''}${lastChannelResult.sl}` })}
-                    </span>
-                  </span>
-                )}
+                  style={{ width: `${manaPct}%` }}
+                />
               </div>
-            )}
+              <span className="text-sm font-headline text-tertiary tabular-nums w-14 text-right">
+                {mana.current}/{mana.max}
+              </span>
+            </div>
           </SectionToggle>
 
-          {/* Spell list section */}
+          {/* Known spells by tree */}
           <SectionToggle
-            label={t('magic.spells')}
+            label={t('magic.spells', 'Zaklecia')}
             icon="menu_book"
             open={openSections.spells}
             onToggle={() => toggleSection('spells')}
             badge={
-              availableSpells.length > 0 ? (
-                <span className="text-[8px] text-on-surface-variant/60 tabular-nums ml-1">({availableSpells.length})</span>
+              spells.known.length > 0 ? (
+                <span className="text-[8px] text-on-surface-variant/60 tabular-nums ml-1">({spells.known.length})</span>
               ) : null
             }
-            desc={t('magic.spellsDesc')}
           >
-            <div className="max-h-40 overflow-y-auto custom-scrollbar space-y-1">
-              {!availableSpells.length && (
-                <p className="text-[10px] text-on-surface-variant">{t('magic.noSpells')}</p>
+            <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+              {spells.known.length === 0 && (
+                <p className="text-[10px] text-on-surface-variant">{t('magic.noSpells', 'Brak znanych zakleć')}</p>
               )}
-              {spellsByLore.map(({ loreKey, label, spells }) => (
-                <div key={loreKey} className="space-y-1">
-                  <div className="text-[9px] font-bold text-primary/90 uppercase tracking-wide">{label}</div>
+              {spellsByTree.map(([treeId, { tree, spells: treeSpells }]) => (
+                <div key={treeId} className="space-y-1">
+                  <div className="flex items-center gap-1 text-[9px] font-bold text-primary/90 uppercase tracking-wide">
+                    <span className="material-symbols-outlined text-xs">{tree.icon}</span>
+                    {tree.name}
+                  </div>
                   <div className="space-y-1 pl-1 border-l border-outline-variant/20">
-                    {spells.map((s) => {
-                      const allowed = canCastSpell(character, s);
-                      const selected = castSpell?.name === s.name;
+                    {treeSpells.map((s) => {
+                      const isSelected = selectedSpell === s.name;
+                      const hasEnoughMana = mana.current >= s.manaCost;
+                      const uses = spells.usageCounts?.[s.name] || 0;
                       return (
                         <button
                           key={s.name}
                           type="button"
-                          onClick={() => setCastSpell(s)}
+                          onClick={() => setSelectedSpell(s.name)}
                           className={`w-full text-left rounded-sm px-2 py-1 border transition-all ${
-                            selected
+                            isSelected
                               ? 'border-tertiary/40 bg-tertiary/10'
                               : 'border-transparent hover:border-outline-variant/20'
-                          } ${allowed ? '' : 'opacity-45'}`}
+                          } ${hasEnoughMana ? '' : 'opacity-45'}`}
                         >
                           <div className="flex items-center justify-between gap-2 min-w-0">
-                            <span className={`text-[10px] font-bold truncate ${allowed ? 'text-on-surface' : 'text-on-surface-variant'}`}>
-                              {spellField(s, 'name', t)}
+                            <span className={`text-[10px] font-bold truncate ${hasEnoughMana ? 'text-on-surface' : 'text-on-surface-variant'}`}>
+                              {s.name}
                             </span>
-                            <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">{t('magic.cn')} {s.cn}</span>
+                            <span className="text-[9px] text-on-surface-variant tabular-nums shrink-0">
+                              {s.manaCost} many · {uses} {t('magic.usesShort', 'uż.')}
+                            </span>
                           </div>
-                          <div className="text-[9px] text-on-surface-variant leading-tight mt-0.5">
-                            <span className="text-outline">{spellField(s, 'range', t)}</span>
-                            <span className="mx-1">·</span>
-                            <span>{spellField(s, 'duration', t)}</span>
-                          </div>
-                          <div className="text-[9px] text-on-surface-variant/90 leading-tight line-clamp-2">{spellField(s, 'effect', t)}</div>
+                          <div className="text-[9px] text-on-surface-variant/90 leading-tight line-clamp-2">{s.description}</div>
                         </button>
                       );
                     })}
@@ -415,109 +228,137 @@ export default function MagicPanel({ character, combat, dispatch, onCastSpell })
 
           {/* Casting section */}
           <SectionToggle
-            label={t('magic.casting')}
+            label={t('magic.casting', 'Rzucanie')}
             icon="flare"
             open={openSections.casting}
             onToggle={() => toggleSection('casting')}
-            desc={t('magic.castingDesc')}
           >
-            {castSpell ? (
+            {selectedSpell ? (
               <>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-on-surface-variant">
                   <span>
-                    <span className="text-on-surface font-bold">{spellField(castSpell, 'name', t)}</span>
-                    <span className="text-on-surface-variant"> — {t('magic.cn')} {castSpell.cn}</span>
+                    <span className="text-on-surface font-bold">{selectedSpell}</span>
                   </span>
                   <span className="tabular-nums">
-                    {t('magic.storedWind')}:{' '}
-                    <span className="text-primary font-bold">{storedWindPoints}</span>
-                  </span>
-                  <span className="tabular-nums">
-                    {t('magic.totalSlNeeded')} ≥ {castSpell.cn}
+                    Mana: <span className="text-tertiary font-bold">{mana.current}/{mana.max}</span>
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleCast}
-                  disabled={!character || !canCastSpell(character, castSpell)}
+                  disabled={!canCast || !selectedSpell}
                   className="w-full px-2 py-1.5 text-[10px] font-bold uppercase tracking-widest bg-tertiary/15 text-tertiary border border-tertiary/25 rounded-sm hover:bg-tertiary/25 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
-                  {t('magic.cast')}
+                  {t('magic.cast', 'Rzuc zaklecie')}
                 </button>
               </>
             ) : (
-              <p className="text-[10px] text-on-surface-variant">{t('magic.pickSpell')}</p>
+              <p className="text-[10px] text-on-surface-variant">{t('magic.pickSpell', 'Wybierz zaklecie')}</p>
             )}
 
             {lastCastResult && (
               <div className="text-[9px] bg-surface-dim/30 rounded-sm px-2 py-1.5 border border-outline-variant/10 space-y-1">
                 <div className="font-bold text-on-surface">
-                  {lastCastResult.spell ? spellField(lastCastResult.spell, 'name', t) : ''}
-                  <span className={lastCastResult.success ? ' text-primary' : ' text-outline'}>
-                    {' '}
-                    — {lastCastResult.success ? t('magic.castSuccess') : t('magic.castFail')}
+                  {lastCastResult.spellName}
+                  <span className={lastCastResult.success ? ' text-primary' : ' text-error'}>
+                    {' '}— {lastCastResult.success ? t('magic.castSuccess', 'Sukces') : t('magic.castFail', 'Nieudane')}
                   </span>
                 </div>
-                <div className="text-on-surface-variant leading-tight">
-                  {t('magic.d100')} {lastCastResult.roll} {t('magic.vs')} {lastCastResult.target} — {t('magic.castingSl')} {lastCastResult.sl}
-                  {lastCastResult.storedWindPointsUsed > 0 && (
-                    <span>
-                      {' '}
-                      + {lastCastResult.storedWindPointsUsed} {t('magic.wind')} → {t('magic.totalSl')}{' '}
-                      {lastCastResult.totalSL}
-                    </span>
-                  )}
-                </div>
-                {lastCastResult.success && lastCastResult.overcasts > 0 && (
-                  <div className="text-primary leading-tight">
-                    {t('magic.overcasts')}: {lastCastResult.overcasts} — {formatOvercast(lastCastResult.totalSL, lastCastResult.spellCn)}
+                {lastCastResult.success && (
+                  <div className="text-on-surface-variant leading-tight">
+                    -{lastCastResult.manaCost} many · {lastCastResult.description}
                   </div>
                 )}
-                {lastCastResult.miscast && (
-                  <div className="text-error font-bold flex items-start gap-1">
-                    <span className="material-symbols-outlined text-xs shrink-0">warning</span>
-                    <span>{t('magic.miscastWarning')}</span>
-                  </div>
+                {lastCastResult.error && (
+                  <div className="text-error leading-tight">{lastCastResult.error}</div>
                 )}
               </div>
             )}
           </SectionToggle>
 
-          {/* Active effects section */}
-          <SectionToggle
-            label={t('magic.activeEffects')}
-            icon="timer"
-            open={openSections.activeEffects}
-            onToggle={() => toggleSection('activeEffects')}
-            badge={
-              activeMagicEffects.length > 0 ? (
-                <span className="text-[8px] text-primary tabular-nums ml-1">({activeMagicEffects.length})</span>
-              ) : null
-            }
-            desc={t('magic.activeEffectsDesc')}
-          >
-            <div className="max-h-28 overflow-y-auto custom-scrollbar space-y-1.5">
-              {!activeMagicEffects.length && (
-                <p className="text-[10px] text-on-surface-variant">{t('magic.noneActive')}</p>
-              )}
-              {activeMagicEffects.map((e) => (
-                <div
-                  key={e.id}
-                  className="text-[9px] border border-outline-variant/10 rounded-sm px-2 py-1 bg-surface-dim/20 leading-tight"
-                >
-                  <div className="flex justify-between gap-2">
-                    <span className="font-bold text-on-surface truncate">{spellField({ name: e.spellName }, 'name', t)}</span>
-                    <span className="text-primary tabular-nums shrink-0">
-                      {e.roundsLeft} {inCombat ? t('magic.rounds') : t('magic.ticks')}
+          {/* Scrolls section */}
+          {spells.scrolls?.length > 0 && (
+            <SectionToggle
+              label={t('magic.scrolls', 'Scrolle')}
+              icon="article"
+              open={openSections.scrolls}
+              onToggle={() => toggleSection('scrolls')}
+              badge={<span className="text-[8px] text-on-surface-variant/60 tabular-nums ml-1">({spells.scrolls.length})</span>}
+            >
+              <div className="space-y-1.5">
+                {spells.scrolls.map((scrollName, idx) => (
+                  <div key={`${scrollName}-${idx}`} className="flex items-center justify-between gap-2 px-2 py-1 bg-surface-dim/20 rounded-sm border border-outline-variant/10">
+                    <span className="text-[10px] text-on-surface font-bold truncate">{scrollName}</span>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleLearnScroll(scrollName)}
+                        className="px-2 py-0.5 text-[9px] font-bold bg-primary/15 text-primary border border-primary/20 rounded-sm hover:bg-primary/25 transition-colors"
+                      >
+                        {t('magic.learn', 'Naucz sie')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUseScroll(scrollName)}
+                        className="px-2 py-0.5 text-[9px] font-bold bg-tertiary/15 text-tertiary border border-tertiary/20 rounded-sm hover:bg-tertiary/25 transition-colors"
+                      >
+                        {t('magic.useOnce', 'Uzyj raz')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {lastScrollResult && (
+                <div className="text-[9px] bg-surface-dim/30 rounded-sm px-2 py-1 border border-outline-variant/10 mt-1">
+                  {lastScrollResult.learned !== undefined ? (
+                    <span className={lastScrollResult.learned ? 'text-primary' : 'text-error'}>
+                      {lastScrollResult.learned
+                        ? t('magic.scrollLearned', { spell: lastScrollResult.learnSpell, defaultValue: `Nauczono sie: ${lastScrollResult.learnSpell}` })
+                        : t('magic.scrollFailed', { roll: lastScrollResult.roll, chance: lastScrollResult.chance, defaultValue: `Nie udalo sie (${lastScrollResult.roll} > ${lastScrollResult.chance}%). Scroll zuzyty.` })}
                     </span>
-                  </div>
-                  <div className="text-on-surface-variant line-clamp-2">
-                    {spellField({ name: e.spellName, effect: e.effect }, 'effect', t)}
-                  </div>
+                  ) : (
+                    <span className="text-tertiary">
+                      {t('magic.scrollUsed', { spell: lastScrollResult.spellName, defaultValue: `Uzyto scrolla: ${lastScrollResult.spellName}` })}
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          </SectionToggle>
+              )}
+            </SectionToggle>
+          )}
+
+          {/* Progression section */}
+          {progression.length > 0 && (
+            <SectionToggle
+              label={t('magic.progression', 'Progresja')}
+              icon="trending_up"
+              open={openSections.progression}
+              onToggle={() => toggleSection('progression')}
+            >
+              <div className="space-y-1.5">
+                {progression.map((p) => (
+                  <div key={p.spellName} className="px-2 py-1 bg-surface-dim/20 rounded-sm border border-outline-variant/10">
+                    <div className="flex items-center justify-between gap-2 text-[10px]">
+                      <span className="font-bold text-on-surface">{p.spellName}</span>
+                      <span className="text-on-surface-variant tabular-nums">
+                        {p.treeName} · lv.{p.level} · {p.manaCost} many
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1 bg-surface-container-high/60 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${p.unlocked ? 'bg-green-400' : 'bg-primary/60'}`}
+                          style={{ width: `${p.progress * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-[9px] text-on-surface-variant/60 tabular-nums">
+                        {p.unlocked ? '✓' : `${p.currentUses}/${p.requiredUses}`}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionToggle>
+          )}
         </div>
       )}
     </div>

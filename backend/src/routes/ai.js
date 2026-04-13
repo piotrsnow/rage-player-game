@@ -1,5 +1,11 @@
-import { generateScene, generateSceneStream } from '../services/sceneGenerator.js';
+import { generateSceneStream } from '../services/sceneGenerator.js';
+import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
+import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
+import { resolveSseCorsOrigin } from '../plugins/cors.js';
+
+const log = childLogger({ module: 'ai' });
 import {
   embedText,
   buildSceneEmbeddingText,
@@ -9,81 +15,155 @@ import {
 } from '../services/embeddingService.js';
 import { writeEmbedding } from '../services/vectorSearchService.js';
 
+function writeSseHead(request, reply) {
+  const origin = resolveSseCorsOrigin(request.headers.origin);
+  if (origin === false) {
+    reply.code(403).send({ error: 'Origin not allowed' });
+    return false;
+  }
+  const headers = {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  };
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
+  reply.raw.writeHead(200, headers);
+  return true;
+}
+
+const PROVIDER_SCHEMA = { type: 'string', maxLength: 40 };
+const MODEL_SCHEMA = { type: ['string', 'null'], maxLength: 200 };
+const LANGUAGE_SCHEMA = { type: 'string', maxLength: 10 };
+
+const STORY_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    genre: { type: 'string', maxLength: 100 },
+    tone: { type: 'string', maxLength: 100 },
+    style: { type: 'string', maxLength: 100 },
+    seedText: { type: 'string', maxLength: 2000 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+};
+
+const GENERATE_CAMPAIGN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    settings: { type: 'object' },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+};
+
+const GENERATE_SCENE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    playerAction: { type: ['string', 'null'], maxLength: 4000 },
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    language: LANGUAGE_SCHEMA,
+    dmSettings: { type: 'object' },
+    resolvedMechanics: { type: ['object', 'null'] },
+    needsSystemEnabled: { type: 'boolean' },
+    characterNeeds: { type: ['object', 'null'] },
+    isFirstScene: { type: 'boolean' },
+    sceneCount: { type: 'number' },
+    isCustomAction: { type: 'boolean' },
+    fromAutoPlayer: { type: 'boolean' },
+  },
+};
+
+const SCENE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    id: { type: 'string', maxLength: 200 },
+    sceneIndex: { type: 'number' },
+    narrative: { type: 'string', maxLength: 20000 },
+    chosenAction: { type: ['string', 'null'], maxLength: 4000 },
+    suggestedActions: { type: 'array', maxItems: 20 },
+    actions: { type: 'array', maxItems: 20 },
+    dialogueSegments: { type: 'array', maxItems: 200 },
+    imagePrompt: { type: ['string', 'null'], maxLength: 4000 },
+    imageUrl: { type: ['string', 'null'], maxLength: 4000 },
+    image: { type: ['string', 'null'], maxLength: 4000 },
+    soundEffect: { type: ['string', 'null'], maxLength: 200 },
+    diceRoll: { type: ['object', 'null'] },
+    stateChanges: { type: ['object', 'null'] },
+    scenePacing: { type: 'string', maxLength: 50 },
+  },
+};
+
+const SCENE_BULK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scenes: {
+      type: 'array',
+      maxItems: 200,
+      items: SCENE_BODY_SCHEMA,
+    },
+  },
+  required: ['scenes'],
+};
+
+const CORE_STATE_PATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+};
+
 export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   /**
-   * POST /ai/campaigns/:id/generate-scene
+   * POST /ai/generate-story-prompt
    *
-   * Generate a new scene using AI with dynamic context (tool use).
-   * AI gets lean base context and can query backend for more information.
+   * Generate a random story premise for the campaign creator.
+   * Non-streaming — response is a single JSON object.
    */
-  fastify.post('/campaigns/:id/generate-scene', async (request, reply) => {
-    const campaignId = request.params.id;
-    const {
-      playerAction,
-      provider = 'openai',
-      model,
-      language = 'pl',
-      dmSettings = {},
-      resolvedMechanics = null,
-      needsSystemEnabled = false,
-      characterNeeds = null,
-      dialogue = null,
-      dialogueCooldown = 0,
-      isFirstScene = false,
-      isCustomAction = false,
-      fromAutoPlayer = false,
-      sceneCount = 0,
-    } = request.body;
-
-    if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
-      return reply.code(400).send({ error: 'playerAction is required' });
-    }
-
-    // Verify campaign ownership
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { userId: true },
-    });
-
-    if (!campaign) {
-      return reply.code(404).send({ error: 'Campaign not found' });
-    }
-
-    if (campaign.userId !== request.user.id) {
-      return reply.code(403).send({ error: 'Not authorized' });
-    }
-
+  fastify.post('/generate-story-prompt', { schema: { body: STORY_PROMPT_SCHEMA } }, async (request, reply) => {
+    const { genre, tone, style, seedText, language, provider, model } = request.body || {};
     try {
-      const result = await generateScene(campaignId, playerAction || '[FIRST_SCENE]', {
-        provider,
-        model,
-        language,
-        dmSettings,
-        resolvedMechanics,
-        needsSystemEnabled,
-        characterNeeds,
-        dialogue,
-        dialogueCooldown,
-        isFirstScene,
-        isCustomAction,
-        fromAutoPlayer,
-        sceneCount,
-      });
-
-      return {
-        scene: result.scene,
-        sceneIndex: result.sceneIndex,
-        sceneId: result.sceneId,
-      };
+      const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model });
+      return result;
     } catch (err) {
-      console.error('Scene generation error:', err);
-      return reply.code(err.statusCode || 500).send({
-        error: err.message || 'Scene generation failed',
-        code: err.code || 'SCENE_GENERATION_ERROR',
-      });
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
     }
+  });
+
+  /**
+   * POST /ai/generate-campaign
+   *
+   * Generate a new campaign with SSE streaming.
+   * Events: chunk (raw JSON text), complete (full parsed result), error
+   */
+  fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
+    const { settings, language, provider, model } = request.body || {};
+
+    if (!writeSseHead(request, reply)) return;
+
+    await generateCampaignStream(
+      settings || {},
+      { provider, model, language },
+      (event) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch { /* client disconnected */ }
+      },
+    );
+
+    reply.raw.end();
   });
 
   /**
@@ -92,7 +172,7 @@ export async function aiRoutes(fastify) {
    * Generate a new scene with SSE streaming.
    * Events: intent, context_ready, chunk, complete, error
    */
-  fastify.post('/campaigns/:id/generate-scene-stream', async (request, reply) => {
+  fastify.post('/campaigns/:id/generate-scene-stream', { schema: { body: GENERATE_SCENE_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const {
       playerAction,
@@ -103,10 +183,10 @@ export async function aiRoutes(fastify) {
       resolvedMechanics = null,
       needsSystemEnabled = false,
       characterNeeds = null,
-      dialogue = null,
-      dialogueCooldown = 0,
       isFirstScene = false,
       sceneCount = 0,
+      isCustomAction = false,
+      fromAutoPlayer = false,
     } = request.body;
 
     if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
@@ -126,13 +206,8 @@ export async function aiRoutes(fastify) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    // SSE headers
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
+    // SSE headers (must include CORS manually since writeHead bypasses Fastify hooks)
+    if (!writeSseHead(request, reply)) return;
 
     await generateSceneStream(
       campaignId,
@@ -145,10 +220,10 @@ export async function aiRoutes(fastify) {
         resolvedMechanics,
         needsSystemEnabled,
         characterNeeds,
-        dialogue,
-        dialogueCooldown,
         isFirstScene,
         sceneCount,
+        isCustomAction,
+        fromAutoPlayer,
       },
       (event) => {
         try {
@@ -168,7 +243,7 @@ export async function aiRoutes(fastify) {
    * Save a scene (created by frontend) to the normalized collection.
    * Generates embedding asynchronously.
    */
-  fastify.post('/campaigns/:id/scenes', async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes', { schema: { body: SCENE_BODY_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const scene = request.body;
 
@@ -221,7 +296,7 @@ export async function aiRoutes(fastify) {
         .then((emb) => {
           if (emb) writeEmbedding('CampaignScene', savedScene.id, emb, embeddingText);
         })
-        .catch((err) => console.error('Scene embedding failed:', err.message));
+        .catch((err) => log.error({ err }, 'Scene embedding failed'));
     }
 
     return { sceneId: savedScene.id, sceneIndex: savedScene.sceneIndex };
@@ -233,7 +308,7 @@ export async function aiRoutes(fastify) {
    * Save multiple scenes in one request. DB writes run with bounded
    * concurrency (5) instead of sequentially. Embeddings are fire-and-forget.
    */
-  fastify.post('/campaigns/:id/scenes/bulk', async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes/bulk', { schema: { body: SCENE_BULK_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const scenes = request.body?.scenes;
 
@@ -300,7 +375,7 @@ export async function aiRoutes(fastify) {
                   .then((emb) => {
                     if (emb) writeEmbedding('CampaignScene', saved.id, emb, embeddingText);
                   })
-                  .catch((err) => console.error('Scene embedding failed:', err.message));
+                  .catch((err) => log.error({ err }, 'Scene embedding failed'));
               }
             }
             return { sceneId: saved.id, sceneIndex: saved.sceneIndex };
@@ -368,33 +443,32 @@ export async function aiRoutes(fastify) {
    *
    * Update campaign core state (partial update).
    */
-  fastify.patch('/campaigns/:id/core', async (request, reply) => {
+  fastify.patch('/campaigns/:id/core', { schema: { body: CORE_STATE_PATCH_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
-    const updates = request.body;
+    const updates = request.body || {};
+
+    // Character data lives in the Character collection now. Reject any
+    // attempt to write character state through the campaign endpoint.
+    if ('character' in updates) {
+      return reply.code(400).send({
+        error: 'Character data must be saved via /characters endpoints, not /ai/campaigns/:id/core. Use PATCH /characters/:id/state-changes for AI deltas or PUT /characters/:id for full snapshots.',
+      });
+    }
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { userId: true, coreState: true, characterState: true },
+      select: { userId: true, coreState: true },
     });
 
     if (!campaign || campaign.userId !== request.user.id) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    const data = { lastSaved: new Date() };
-
-    if (updates.character) {
-      const currentChar = JSON.parse(campaign.characterState || '{}');
-      data.characterState = JSON.stringify(deepMerge(currentChar, updates.character));
-      const { character: _c, ...rest } = updates;
-      const currentState = JSON.parse(campaign.coreState);
-      if (Object.keys(rest).length > 0) {
-        data.coreState = JSON.stringify(deepMerge(currentState, rest));
-      }
-    } else {
-      const currentState = JSON.parse(campaign.coreState);
-      data.coreState = JSON.stringify(deepMerge(currentState, updates));
-    }
+    const currentState = JSON.parse(campaign.coreState);
+    const data = {
+      lastSaved: new Date(),
+      coreState: JSON.stringify(deepMerge(currentState, updates)),
+    };
 
     await prisma.campaign.update({
       where: { id: campaignId },

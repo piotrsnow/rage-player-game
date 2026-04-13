@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildImagePrompt, buildPortraitPrompt } from './prompts';
+import { buildImagePrompt, buildPortraitPrompt } from './imagePrompts';
 import { enforcePromptTokenBudget, getSceneAIGovernance } from './promptGovernance';
 
 describe('image prompt age integration', () => {

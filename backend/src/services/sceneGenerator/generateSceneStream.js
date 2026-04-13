@@ -1,0 +1,316 @@
+import { prisma } from '../../lib/prisma.js';
+import { childLogger } from '../../lib/logger.js';
+import { assembleContext } from '../aiContextTools.js';
+import { classifyIntent } from '../intentClassifier.js';
+import { compressSceneToSummary, generateLocationSummary, checkQuestObjectives } from '../memoryCompressor.js';
+import {
+  resolveBackendDiceRollWithPreRoll,
+  generatePreRolls,
+  CREATIVITY_BONUS_MAX,
+} from '../diceResolver.js';
+import { resolveAndApplyRewards } from '../rewardResolver.js';
+import {
+  applyCharacterStateChanges,
+  characterToPrismaUpdate,
+} from '../characterMutations.js';
+import { loadCampaignState } from './campaignLoader.js';
+import { tryTradeShortcut, tryCombatFastPath } from './shortcuts.js';
+import { getInlineEntityKeys } from './inlineKeys.js';
+import { buildLeanSystemPrompt } from './systemPrompt.js';
+import { buildUserPrompt } from './userPrompt.js';
+import { runTwoStagePipelineStreaming } from './streamingClient.js';
+import {
+  applyCreativityToRoll,
+  isCreativityEligible,
+  resolveModelDiceRolls,
+  calculateFreeformSkillXP,
+} from './diceResolution.js';
+import { fillEnemiesFromBestiary } from './enemyFill.js';
+import { generateSceneEmbedding, processStateChanges } from './processStateChanges.js';
+
+const log = childLogger({ module: 'sceneGenerator' });
+
+/**
+ * Generate a scene with SSE streaming. Emits events via the onEvent callback.
+ * Events: { type: 'intent', data }, { type: 'context_ready' },
+ * { type: 'chunk', text }, { type: 'complete', data }, { type: 'error', error }
+ */
+export async function generateSceneStream(campaignId, playerAction, options = {}, onEvent) {
+  const {
+    provider = 'openai',
+    model,
+    language = 'pl',
+    dmSettings = {},
+    resolvedMechanics: resolvedMechanicsOpt = null,
+    needsSystemEnabled = false,
+    characterNeeds = null,
+    isFirstScene = false,
+    sceneCount = 0,
+    isCustomAction = false,
+    fromAutoPlayer = false,
+  } = options;
+  let resolvedMechanics = resolvedMechanicsOpt;
+  const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
+
+  try {
+    // 1. Load campaign data (DB → hydrated coreState)
+    const {
+      coreState,
+      activeCharacter,
+      activeCharacterId,
+      dbNpcs,
+      dbQuests,
+      dbCodex,
+    } = await loadCampaignState(campaignId);
+
+    // 2. Intent classification
+    const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
+      isFirstScene,
+      provider,
+    });
+    onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
+
+    // 2a. Trade shortcut
+    const trade = tryTradeShortcut(intentResult, coreState, dbNpcs);
+    if (trade.handled) {
+      onEvent({ type: 'complete', data: { scene: trade.result, sceneIndex: -1 } });
+      return;
+    }
+
+    // 2a2. Combat fast-path
+    const combat = await tryCombatFastPath(intentResult, playerAction, dbNpcs, provider);
+    if (combat.handled) {
+      if (combat.intent) onEvent({ type: 'intent', data: { intent: combat.intent } });
+      onEvent({ type: 'complete', data: { scene: combat.result, sceneIndex: -1 } });
+      return;
+    }
+
+    // 2b. Pre-roll 3 dice sets + resolve nano-detected skill check
+    const characterForRoll = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };
+    const preRolls = generatePreRolls(characterForRoll);
+    let serverDiceRoll = null;
+
+    if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
+      const testsFrequency = dmSettings?.testsFrequency ?? 50;
+      if (Math.random() * 100 < testsFrequency) {
+        serverDiceRoll = resolveBackendDiceRollWithPreRoll(
+          characterForRoll,
+          intentResult.roll_skill,
+          intentResult.roll_difficulty || 'medium',
+          preRolls[0].d50,
+          preRolls[0].luckySuccess,
+        );
+        if (serverDiceRoll) {
+          resolvedMechanics = { diceRoll: serverDiceRoll };
+        }
+      }
+    }
+
+    // 2c. Emit nano-resolved dice roll EARLY so the frontend can start the
+    // animation in parallel with narrative streaming.
+    if (resolvedMechanics?.diceRoll) {
+      onEvent({ type: 'dice_early', data: { diceRoll: resolvedMechanics.diceRoll } });
+    }
+
+    // 3. Context assembly — skip entities already emitted inline in system prompt
+    const currentLocation = coreState.world?.currentLocation || '';
+    const inlineKeys = getInlineEntityKeys(coreState);
+    const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation, inlineKeys);
+    onEvent({ type: 'context_ready' });
+
+    // 4. Build prompts
+    const recentScenes = await prisma.campaignScene.findMany({
+      where: { campaignId },
+      orderBy: { sceneIndex: 'desc' },
+      take: 5,
+    });
+    recentScenes.reverse();
+
+    const systemPromptParts = buildLeanSystemPrompt(coreState, recentScenes, language, {
+      dmSettings,
+      needsSystemEnabled,
+      characterNeeds,
+      sceneCount,
+      skipToolProtocol: true,
+    });
+
+    const userPrompt = buildUserPrompt(playerAction, {
+      resolvedMechanics,
+      isFirstScene,
+      needsSystemEnabled,
+      characterNeeds,
+      language,
+      sceneCount,
+      preRolls,
+      creativityEligible,
+    });
+
+    // 5. Streaming AI call
+    const sceneResult = await runTwoStagePipelineStreaming(
+      systemPromptParts, userPrompt, contextBlocks,
+      { provider, model },
+      (text) => onEvent({ type: 'chunk', text }),
+    );
+
+    // 5b. Validate creativity bonus awarded by the model.
+    // Anti-cheat: only hand-typed player actions get a bonus; suggestedActions /
+    // autoplayer / system actions are forced to 0.
+    const modelCreativityRaw = Number(sceneResult.creativityBonus) || 0;
+    const effectiveCreativity = creativityEligible
+      ? Math.max(0, Math.min(CREATIVITY_BONUS_MAX, Math.floor(modelCreativityRaw)))
+      : 0;
+    sceneResult.creativityBonus = effectiveCreativity;
+
+    // 5c. Apply creativity to the nano roll (if any) post-hoc — the backend
+    // already resolved that roll in step 2b before the model call.
+    if (effectiveCreativity > 0 && resolvedMechanics?.diceRoll) {
+      applyCreativityToRoll(resolvedMechanics.diceRoll, effectiveCreativity);
+    }
+
+    // 6a. Resolve model-initiated dice rolls (if any)
+    resolveModelDiceRolls(sceneResult, characterForRoll, resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls);
+
+    // 6a2. Apply creativity also to self-resolved model rolls — all dice in
+    // one scene share the same top-level creativity bonus.
+    if (effectiveCreativity > 0 && Array.isArray(sceneResult.diceRolls)) {
+      for (const roll of sceneResult.diceRolls) {
+        applyCreativityToRoll(roll, effectiveCreativity);
+      }
+    }
+
+    // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array.
+    // Dedupe by skill name: if nano already resolved a skill, drop any model
+    // roll on the same skill. Nano takes priority because it already fired
+    // the dice_early animation on the frontend.
+    const allDiceRolls = [];
+    const usedSkills = new Set();
+    const skillKey = (s) => (s ? String(s).toLowerCase().trim() : null);
+    if (resolvedMechanics?.diceRoll) {
+      allDiceRolls.push(resolvedMechanics.diceRoll);
+      const k = skillKey(resolvedMechanics.diceRoll.skill);
+      if (k) usedSkills.add(k);
+    }
+    if (sceneResult.diceRolls) {
+      for (const r of sceneResult.diceRolls) {
+        const k = skillKey(r?.skill);
+        if (k && usedSkills.has(k)) {
+          log.debug({ skill: r.skill }, 'Dropped duplicate model dice roll');
+          continue;
+        }
+        if (k) usedSkills.add(k);
+        allDiceRolls.push(r);
+      }
+    }
+    sceneResult.diceRolls = allDiceRolls.length > 0 ? allDiceRolls : undefined;
+
+    // 6c. Calculate deterministic skill XP from freeform actions
+    const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
+    calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
+
+    // 6. Fill enemy stats from bestiary
+    fillEnemiesFromBestiary(sceneResult.stateChanges);
+
+    // 7. Save scene
+    const lastScene = recentScenes[recentScenes.length - 1];
+    const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
+
+    // 6d. Resolve abstract rewards into concrete items/materials/money
+    resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
+
+    const savedScene = await prisma.campaignScene.create({
+      data: {
+        campaignId,
+        sceneIndex: newSceneIndex,
+        narrative: sceneResult.narrative || '',
+        chosenAction: playerAction,
+        suggestedActions: JSON.stringify(sceneResult.suggestedActions || []),
+        dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
+        imagePrompt: sceneResult.imagePrompt || null,
+        soundEffect: sceneResult.soundEffect || null,
+        diceRoll: sceneResult.diceRolls ? JSON.stringify(sceneResult.diceRolls) : (sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null),
+        stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
+        scenePacing: sceneResult.scenePacing || 'exploration',
+      },
+    });
+
+    // 8. Tag large model quest updates + kick off nano safety net in parallel
+    if (sceneResult.stateChanges?.questUpdates?.length) {
+      for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
+    }
+
+    // Start nano quest check NOW — runs in parallel with DB writes below.
+    // It only needs narrative + quests, not the DB results.
+    const activeQuests = coreState.quests?.active || [];
+    const nanoQuestPromise = activeQuests.length > 0
+      ? checkQuestObjectives(
+          sceneResult.narrative,
+          playerAction,
+          activeQuests,
+          sceneResult.stateChanges?.questUpdates || [],
+          provider
+        ).catch((err) => { log.error({ err, campaignId }, 'Quest objective check failed'); return []; })
+      : Promise.resolve([]);
+
+    // 9a. Apply character state changes + persist (runs in parallel with nano)
+    let updatedCharacter = activeCharacter;
+    if (activeCharacterId && activeCharacter && sceneResult.stateChanges) {
+      try {
+        updatedCharacter = applyCharacterStateChanges(activeCharacter, sceneResult.stateChanges);
+        await prisma.character.update({
+          where: { id: activeCharacterId },
+          data: characterToPrismaUpdate(updatedCharacter),
+        });
+      } catch (err) {
+        log.error({ err, characterId: activeCharacterId }, 'Failed to persist character state changes');
+      }
+    }
+
+    // 9b. Async fire-and-forget: embedding + NPC/codex/quest sync + memory compression
+    generateSceneEmbedding(savedScene).catch((err) =>
+      log.error({ err, sceneId: savedScene.id }, 'Failed to generate scene embedding')
+    );
+    if (sceneResult.stateChanges) {
+      processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
+        log.error({ err, campaignId }, 'Failed to process state changes')
+      );
+    }
+    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider).catch((err) =>
+      log.error({ err, campaignId }, 'Failed to compress scene to summary')
+    );
+    const newLoc = sceneResult.stateChanges?.currentLocation;
+    const prevLoc = coreState.world?.currentLocation;
+    if (newLoc && prevLoc && newLoc !== prevLoc) {
+      generateLocationSummary(campaignId, newLoc, prevLoc, provider).catch((err) =>
+        log.error({ err, campaignId, newLoc, prevLoc }, 'Failed to generate location summary')
+      );
+    }
+
+    // 10. Complete — emit immediately so frontend can render the scene
+    onEvent({
+      type: 'complete',
+      data: {
+        scene: sceneResult,
+        sceneIndex: newSceneIndex,
+        sceneId: savedScene.id,
+        character: updatedCharacter,
+      },
+    });
+
+    // 11. Await nano quest result (started in step 8, likely already done by now)
+    //     and emit follow-up event if it found new completions.
+    const nanoQuestUpdates = await nanoQuestPromise;
+    if (nanoQuestUpdates.length > 0) {
+      const largeKeys = new Set(
+        (sceneResult.stateChanges?.questUpdates || [])
+          .filter(u => u.completed)
+          .map(u => `${u.questId}/${u.objectiveId}`)
+      );
+      const unique = nanoQuestUpdates.filter(u => !largeKeys.has(`${u.questId}/${u.objectiveId}`));
+      if (unique.length > 0) {
+        onEvent({ type: 'quest_nano_update', data: { questUpdates: unique } });
+      }
+    }
+  } catch (err) {
+    onEvent({ type: 'error', error: err.message || 'Stream generation failed', code: err.code || 'STREAM_ERROR' });
+  }
+}

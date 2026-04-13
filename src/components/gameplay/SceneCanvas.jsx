@@ -1,5 +1,6 @@
 import { useRef, useEffect, useMemo } from 'react';
-import { useGame } from '../../contexts/GameContext';
+import { useGameSlice } from '../../stores/gameSelectors';
+import { getGameState } from '../../stores/gameStore';
 import EffectEngine from '../../effects/EffectEngine';
 import SceneRenderer from '../../effects/SceneRenderer';
 import { resolveSceneConfig } from '../../effects/biomeResolver';
@@ -8,23 +9,33 @@ export default function SceneCanvas({ scene }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const rendererRef = useRef(null);
-  const { state } = useGame();
+
+  // Subscribe only to the fields that actually drive the scene config.
+  // `resolveSceneConfig` itself reads from the full state snapshot, but we
+  // don't need to re-run it on every reducer tick — only on these deps.
+  const currentLocation = useGameSlice((s) => s.world?.currentLocation);
+  const timeHour = useGameSlice((s) => s.world?.timeState?.hour);
+  const timeOfDay = useGameSlice((s) => s.world?.timeState?.timeOfDay);
+  const combatActive = useGameSlice((s) => s.combat?.active);
+  const combatRound = useGameSlice((s) => s.combat?.round);
+  const characterName = useGameSlice((s) => s.character?.name);
+  const characterSpecies = useGameSlice((s) => s.character?.species);
 
   const sceneConfig = useMemo(
-    () => (scene ? resolveSceneConfig(state, scene) : null),
+    () => (scene ? resolveSceneConfig(getGameState(), scene) : null),
     [
       scene?.id,
       scene?.atmosphere?.weather,
       scene?.atmosphere?.mood,
       scene?.atmosphere?.lighting,
       scene?.imagePrompt,
-      state.world?.currentLocation,
-      state.world?.timeState?.hour,
-      state.world?.timeState?.timeOfDay,
-      state.combat?.active,
-      state.combat?.round,
-      state.character?.name,
-      state.character?.species,
+      currentLocation,
+      timeHour,
+      timeOfDay,
+      combatActive,
+      combatRound,
+      characterName,
+      characterSpecies,
     ]
   );
 

@@ -1,332 +1,273 @@
-import { rollD100, calculateSL, getBonus } from './gameState';
-import { getReputationModifier } from './reputationEngine';
+/**
+ * RPGon Trade Engine — deterministic shop, buy/sell, haggling.
+ * AI is used ONLY for haggle flavor text (called externally, not here).
+ */
+
+import { resolveSkillCheck } from './mechanics/skillCheck.js';
 import {
-  EQUIPMENT,
-  calculatePrice,
-  priceToCopper,
-  AVAILABILITY_MODIFIERS,
-  CRAFTING_RECIPES,
-} from '../data/wfrpEquipment';
+  priceToCopper, normalizeCoins, calculatePrice, canAfford,
+  applyDiscount, formatCoinPrice,
+} from '../../shared/domain/pricing.js';
+import { prefixedId } from '../../shared/domain/ids.js';
 
-const AVAILABILITY_ORDER = { common: 0, uncommon: 1, rare: 2, exotic: 3 };
+// ── Shop Archetypes ──
 
-function totalCopper(money) {
-  return (money?.gold || 0) * 100 + (money?.silver || 0) * 10 + (money?.copper || 0);
+export const SHOP_ARCHETYPES = {
+  blacksmith:  { categories: ['weapons', 'armour'], materialCategories: ['metal', 'misc'] },
+  smith:       { categories: ['weapons', 'armour'], materialCategories: ['metal', 'misc'] },
+  weaponsmith: { categories: ['weapons'], materialCategories: ['metal'] },
+  armourer:    { categories: ['armour'], materialCategories: ['metal', 'fabric'] },
+  apothecary:  { categories: ['medical'], materialCategories: ['herb', 'liquid', 'misc'] },
+  herbalist:   { categories: ['medical'], materialCategories: ['herb', 'liquid'] },
+  merchant:    { categories: ['adventuring_gear', 'food_drink', 'tools', 'clothing'], materialCategories: ['misc', 'fabric', 'wood'] },
+  trader:      { categories: ['adventuring_gear', 'food_drink', 'tools', 'clothing'], materialCategories: ['misc', 'fabric', 'wood'] },
+  tailor:      { categories: ['clothing'], materialCategories: ['fabric'] },
+  innkeeper:   { categories: ['food_drink'] },
+  jeweller:    { categories: ['clothing'], materialCategories: ['metal'] },
+  goldsmith:   { categories: ['clothing'], materialCategories: ['metal'] },
+  general:     { categories: ['adventuring_gear', 'food_drink', 'tools'], materialCategories: ['misc', 'wood'] },
+};
+
+// Sell price factor (50% of base price)
+const SELL_FACTOR = 0.5;
+const MAX_HAGGLE_ATTEMPTS = 3;
+const MAX_RANDOM_ITEMS = 5;
+const MIN_RANDOM_ITEMS = 3;
+
+// ── Seeded PRNG (for consistent shop inventory per NPC) ──
+
+function seedHash(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h;
 }
 
-function moneyFromCopper(total) {
-  let t = Math.max(0, Math.round(total));
-  return {
-    gold: Math.floor(t / 100),
-    silver: Math.floor((t % 100) / 10),
-    copper: t % 10,
+function seededRandom(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) | 0;
+    return ((s >>> 0) / 4294967296);
   };
 }
 
-function effectiveFel(character) {
-  const base = character?.characteristics?.fel ?? 30;
-  const adv = character?.advances?.fel ?? 0;
-  return base + adv;
-}
-
-function resolveEquipmentEntry(item) {
-  if (!item) return null;
-  if (typeof item === 'string') {
-    const def = EQUIPMENT[item];
-    return def ? { id: item, ...def } : null;
+function seededShuffle(arr, rng) {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
   }
-  if (item.price && item.name) {
-    return { id: item.id || item.name, ...item };
-  }
-  return null;
+  return result;
 }
 
-function findRecipe(recipeId) {
-  if (recipeId == null) return null;
-  if (typeof recipeId === 'number' && Number.isInteger(recipeId)) {
-    return CRAFTING_RECIPES[recipeId] ?? null;
-  }
-  const asNum = Number(recipeId);
-  if (!Number.isNaN(asNum) && String(asNum) === String(recipeId).trim()) {
-    return CRAFTING_RECIPES[asNum] ?? null;
-  }
-  const sid = String(recipeId).trim().toLowerCase();
-  return (
-    CRAFTING_RECIPES.find(
-      (r) =>
-        r.name.toLowerCase() === sid ||
-        r.name.toLowerCase().replace(/\s+/g, '_') === sid
-    ) ?? null
-  );
-}
-
-function normName(s) {
-  return String(s || '')
-    .trim()
-    .toLowerCase();
-}
-
-/** @returns {Record<string, number>} */
-function inventoryMaterialCounts(inventory) {
-  const counts = {};
-  for (const entry of inventory || []) {
-    if (typeof entry === 'string') {
-      const k = normName(entry);
-      counts[k] = (counts[k] || 0) + 1;
-      continue;
-    }
-    const name = normName(entry?.name);
-    if (!name) continue;
-    const q = entry.quantity != null ? Number(entry.quantity) : 1;
-    counts[name] = (counts[name] || 0) + (Number.isFinite(q) ? q : 1);
-  }
-  return counts;
-}
-
-function itemAvailableAtLocation(row, locationType) {
-  const tier = row.availability || 'common';
-  const rank = AVAILABILITY_ORDER[tier] ?? 0;
-  const loc = locationType || 'city';
-
-  if (loc === 'wilderness') return rank === 0;
-
-  if (loc === 'village') {
-    if (tier === 'exotic') return false;
-    if (rank <= AVAILABILITY_ORDER.uncommon) return true;
-    if (tier === 'rare') {
-      const pool = Object.keys(EQUIPMENT)
-        .filter((id) => EQUIPMENT[id].availability === 'rare')
-        .sort();
-      const stable = pool.indexOf(row.id);
-      return stable >= 0 && stable % 3 === 0;
-    }
-    return false;
-  }
-
-  if (loc === 'town') return tier !== 'exotic';
-
-  return true;
-}
-
-function formatCoinPrice(price) {
-  const parts = [];
-  if (price.gold) parts.push(`${price.gold} GC`);
-  if (price.silver) parts.push(`${price.silver} SS`);
-  if (price.copper) parts.push(`${price.copper} CP`);
-  return parts.length ? parts.join(' ') : '0 CP';
-}
+// ── Archetype Resolution ──
 
 /**
- * Fellowship-based haggle vs list price. Positive SL reduces price (10% per SL, max 50%); failure adds ~10%.
+ * Resolve NPC role string to a shop archetype key.
+ * Fuzzy: "town blacksmith" → "blacksmith", "traveling merchant" → "merchant".
  */
-export function performHaggleTest(
-  character,
-  basePrice,
-  factionId = null,
-  factionReputation = 0,
-  locationModifier = 0
-) {
-  const rep =
-    factionId != null
-      ? getReputationModifier(factionId, factionReputation)
-      : { fellowshipMod: 0 };
-  const target =
-    effectiveFel(character) + (rep.fellowshipMod || 0) + (locationModifier || 0);
-  const roll = rollD100();
-  const sl = calculateSL(roll, target);
-  const success = sl >= 0;
-
-  let discountPercent = 0;
-  if (success && sl > 0) {
-    discountPercent = Math.min(50, sl * 10);
-  } else if (!success) {
-    discountPercent = -10;
+export function resolveShopArchetype(npcRole) {
+  if (!npcRole) return 'general';
+  const lower = npcRole.toLowerCase();
+  for (const key of Object.keys(SHOP_ARCHETYPES)) {
+    if (lower.includes(key)) return key;
   }
-
-  const baseCp = totalCopper(basePrice);
-  let factor = 1;
-  if (success && discountPercent > 0) {
-    factor = 1 - discountPercent / 100;
-  } else if (!success) {
-    factor = 1.1;
-  }
-
-  const finalPrice = moneyFromCopper(baseCp * factor);
-  const felTens = getBonus(effectiveFel(character));
-  const description = success
-    ? sl > 0
-      ? `Haggle succeeded at +${sl} SL (Fellowship ${effectiveFel(character)}, +${felTens}): ${discountPercent}% off the asking price.`
-      : `Haggle barely succeeds (Fellowship ${effectiveFel(character)}, +${felTens}); the merchant holds firm on the tag price.`
-    : `Haggle fails (${sl} SL); the trader steels themselves and quotes a steeper price.`;
-
-  return {
-    success,
-    roll,
-    target,
-    sl,
-    finalPrice,
-    discount: discountPercent,
-    description,
-  };
+  return 'general';
 }
 
-export function canAfford(character, price) {
-  return totalCopper(character?.money) >= totalCopper(price);
-}
+// ── Shop Inventory Building ──
 
 /**
- * @param {object} character
- * @param {string|object} item - equipment id or item-shaped object with price
- * @param {number} quantity
- * @param {string|null} factionId
- * @param {number} factionReputation
- * @param {string} locationType - key of AVAILABILITY_MODIFIERS
+ * Build deterministic shop inventory from equipment catalog + materials.
+ * @param {string} archetypeKey - resolved archetype
+ * @param {object} equipment - full equipment catalog (keyed by id)
+ * @param {Array} materials - materials catalog array
+ * @param {string} npcName - used as seed for randomization
+ * @param {string} [locationType='city'] - affects availability filter
+ * @returns {Array} shop items with prices
  */
-export function calculateTransaction(
-  character,
-  item,
-  quantity = 1,
-  factionId = null,
-  factionReputation = 0,
-  locationType = 'city'
-) {
-  const def = resolveEquipmentEntry(item);
-  const q = Math.max(1, quantity || 1);
-  const unitBaseCp = def ? priceToCopper(def.price) : 0;
-  const totalBaseCp = unitBaseCp * q;
+export function buildShopInventory(archetypeKey, equipment, materials, npcName, locationType = 'city') {
+  const archetype = SHOP_ARCHETYPES[archetypeKey] || SHOP_ARCHETYPES.general;
+  const rng = seededRandom(seedHash(npcName + archetypeKey));
+  const items = [];
 
-  const totalPrice = moneyFromCopper(totalBaseCp);
-
-  const rep =
-    factionId != null
-      ? getReputationModifier(factionId, factionReputation)
-      : { priceModifier: 1 };
-  const priceModifier = rep.priceModifier ?? 1;
-  const locMod = AVAILABILITY_MODIFIERS[locationType] ?? AVAILABILITY_MODIFIERS.city ?? 0;
-  const repPercent = (priceModifier - 1) * 100;
-  const locFactor = 1 - locMod / 100;
-
-  const unitAdjusted = def
-    ? calculatePrice(def, repPercent, locMod)
-    : { gold: 0, silver: 0, copper: 0 };
-  const adjustedCp = priceToCopper(unitAdjusted) * q;
-  const adjustedPrice = moneyFromCopper(adjustedCp);
-
-  const reputationDiscount = (1 - priceModifier) * 100;
-  const locationMarkup = (locFactor - 1) * 100;
-
-  return {
-    totalPrice,
-    adjustedPrice,
-    canAfford: canAfford(character, adjustedPrice),
-    reputationDiscount,
-    locationMarkup,
-  };
-}
-
-/**
- * Trade (skill) test; validates materials and required Trade skill on the sheet.
- */
-export function performCraftingTest(character, recipeId) {
-  const recipe = findRecipe(recipeId);
-  if (!recipe) {
-    return {
-      success: false,
-      roll: null,
-      target: null,
-      sl: null,
-      resultItem: null,
-      materialsConsumed: [],
-      timeRequired: null,
-      description: 'No matching recipe found.',
-    };
-  }
-
-  const skillKey = recipe.requiredSkill;
-  if (!Object.prototype.hasOwnProperty.call(character?.skills || {}, skillKey)) {
-    return {
-      success: false,
-      roll: null,
-      target: null,
-      sl: null,
-      resultItem: recipe.resultItem,
-      materialsConsumed: [],
-      timeRequired: recipe.time,
-      description: `You have no training in ${skillKey}; you cannot attempt this craft properly.`,
-    };
-  }
-
-  const counts = inventoryMaterialCounts(character?.inventory);
-  const missing = [];
-  for (const mat of recipe.requiredMaterials || []) {
-    const need = mat.quantity ?? 1;
-    const have = counts[normName(mat.name)] || 0;
-    if (have < need) {
-      missing.push(`${mat.name} (need ${need}, have ${have})`);
+  // Add equipment items matching archetype categories
+  if (archetype.categories) {
+    for (const [id, item] of Object.entries(equipment)) {
+      if (!archetype.categories.includes(item.category)) continue;
+      if (!filterByAvailability(item.availability, locationType, rng)) continue;
+      items.push({ ...item, id, source: 'equipment' });
     }
   }
-  if (missing.length) {
-    return {
-      success: false,
-      roll: null,
-      target: null,
-      sl: null,
-      resultItem: recipe.resultItem,
-      materialsConsumed: [],
-      timeRequired: recipe.time,
-      description: `Insufficient materials: ${missing.join('; ')}.`,
-    };
+
+  // Add materials matching archetype material categories
+  if (archetype.materialCategories && materials.length) {
+    for (const mat of materials) {
+      if (!archetype.materialCategories.includes(mat.category)) continue;
+      if (!filterByAvailability(mat.availability, locationType, rng)) continue;
+      items.push({ ...mat, id: `mat_${mat.name.toLowerCase().replace(/\s+/g, '_')}`, source: 'material' });
+    }
   }
 
-  const dex = (character.characteristics?.dex ?? 30) + (character.advances?.dex ?? 0);
-  const skill = character.skills[skillKey] ?? 0;
-  const difficulty = recipe.difficulty ?? 0;
-  const target = dex + skill + difficulty;
-  const roll = rollD100();
-  const sl = calculateSL(roll, target);
-  const success = sl >= 0;
-
-  const materialsConsumed = (recipe.requiredMaterials || []).map((m) => ({
-    name: m.name,
-    quantity: m.quantity ?? 1,
-  }));
-
-  const description = success
-    ? `Craft succeeds at ${sl} SL: ${recipe.resultItem} is ready after ${recipe.time} hours.`
-    : `The work goes wrong (${sl} SL); scrap the attempt or try again with better prep.`;
-
-  return {
-    success,
-    roll,
-    target,
-    sl,
-    resultItem: recipe.resultItem,
-    materialsConsumed: success ? materialsConsumed : [],
-    timeRequired: recipe.time,
-    description,
-  };
+  return seededShuffle(items, rng);
 }
 
 /**
- * @param {string} locationType - city | town | village | wilderness
- * @param {string|null} category - EQUIPMENT category key or null for all
+ * Build small random inventory for non-merchant NPCs.
  */
-export function getAvailableItems(locationType = 'city', category = null) {
-  const rows = Object.entries(EQUIPMENT)
-    .map(([id, def]) => ({ id, ...def }))
-    .filter((row) => !category || row.category === category)
-    .filter((row) => itemAvailableAtLocation(row, locationType));
+export function buildRandomInventory(npcName, equipment, materials) {
+  const rng = seededRandom(seedHash(npcName + '_random'));
+  const count = MIN_RANDOM_ITEMS + Math.floor(rng() * (MAX_RANDOM_ITEMS - MIN_RANDOM_ITEMS + 1));
 
-  return rows;
+  // Combine common items from both catalogs
+  const pool = [];
+  for (const [id, item] of Object.entries(equipment)) {
+    if (item.availability === 'common') pool.push({ ...item, id, source: 'equipment' });
+  }
+  for (const mat of materials) {
+    if (mat.availability === 'common') pool.push({ ...mat, id: `mat_${mat.name.toLowerCase().replace(/\s+/g, '_')}`, source: 'material' });
+  }
+
+  const shuffled = seededShuffle(pool, rng);
+  return shuffled.slice(0, count);
 }
 
-export function formatTradeForPrompt(availableItems) {
-  if (!availableItems?.length) return 'TRADE STOCK: (nothing listed for this venue)\n';
+function filterByAvailability(availability, locationType, rng) {
+  const chances = {
+    common: { city: 1, town: 0.9, village: 0.7, wilderness: 0.4 },
+    uncommon: { city: 0.7, town: 0.5, village: 0.3, wilderness: 0.1 },
+    rare: { city: 0.4, town: 0.2, village: 0.05, wilderness: 0 },
+    exotic: { city: 0.15, town: 0.05, village: 0, wilderness: 0 },
+  };
+  const chance = chances[availability]?.[locationType] ?? chances.common[locationType] ?? 0.5;
+  return rng() < chance;
+}
 
-  const lines = availableItems.map((e) => {
-    const props = e.properties?.length ? ` [${e.properties.join('; ')}]` : '';
-    return `- ${e.name} — ${formatCoinPrice(e.price)}; ${e.availability}; Enc ${e.weight}${props}. ${e.description}`;
+// ── Trade Session ──
+
+/**
+ * Create a new trade session state object.
+ */
+export function createTradeSession(shopItems, npcData, locationMod = 0) {
+  return {
+    active: true,
+    shopItems,
+    npcName: npcData.name,
+    npcRole: npcData.role || 'merchant',
+    disposition: npcData.disposition || 0,
+    locationMod,
+    haggleAttempts: 0,
+    maxHaggle: MAX_HAGGLE_ATTEMPTS,
+    haggleLog: [],
+    // Track per-item haggled prices: { [itemId]: { gold, silver, copper } }
+    haggleDiscounts: {},
+  };
+}
+
+// ── Pricing ──
+
+/**
+ * Calculate buy price for an item, applying disposition and location modifiers.
+ */
+export function calculateItemBuyPrice(item, disposition = 0, locationMod = 0) {
+  if (!item.price) return { gold: 0, silver: 0, copper: 0 };
+  // Disposition: -50 to +50 maps to +25% to -25% price modifier
+  const dispositionMod = -(disposition / 2);
+  return calculatePrice(item, dispositionMod, locationMod);
+}
+
+/**
+ * Calculate sell price (50% of base, modified by Handel skill).
+ */
+export function calculateItemSellPrice(item, handelLevel = 0) {
+  if (!item.price) return { gold: 0, silver: 0, copper: 0 };
+  const base = priceToCopper(item.price);
+  // Base 50%, +1% per Handel level (max 75%)
+  const factor = Math.min(0.75, SELL_FACTOR + handelLevel * 0.01);
+  return normalizeCoins(Math.round(base * factor));
+}
+
+// ── Haggling ──
+
+/**
+ * Resolve a haggle attempt using d50 skill check.
+ * Returns mechanical result — AI flavor text is generated separately.
+ */
+export function resolveHaggle(character, currentMomentum = 0, difficulty = 'medium', worldNpcs = [], resolveDisposition = null) {
+  const result = resolveSkillCheck({
+    character,
+    actionText: 'haggle negotiate price',
+    currentMomentum,
+    worldNpcs,
+    resolveDisposition,
+    actionContext: {
+      attribute: 'charyzma',
+      suggestedSkills: ['Handel', 'Perswazja', 'Blef'],
+      difficulty,
+    },
+    difficultyOverride: difficulty,
   });
 
-  return `TRADE STOCK:\n${lines.join('\n')}\n`;
+  if (!result) return { success: false, margin: 0, discountPercent: 0 };
+
+  const discountPercent = result.success
+    ? Math.min(30, Math.max(5, Math.round(result.margin * 2)))
+    : 0;
+
+  return {
+    ...result,
+    discountPercent,
+  };
 }
+
+// ── Buy / Sell Execution ──
+
+/**
+ * Execute a purchase. Returns state changes to dispatch.
+ */
+export function executeBuy(item, finalPrice) {
+  const moneyChange = {
+    gold: -(finalPrice.gold || 0),
+    silver: -(finalPrice.silver || 0),
+    copper: -(finalPrice.copper || 0),
+  };
+
+  // Materials go to materialBag (stacked), equipment goes to inventory
+  if (item.source === 'material') {
+    return { moneyChange, newMaterials: [{ name: item.name, quantity: 1 }] };
+  }
+
+  const newItem = {
+    id: prefixedId('item', 4),
+    name: item.name,
+    type: item.type || item.category || 'misc',
+    rarity: item.rarity || item.availability || 'common',
+    description: item.description,
+  };
+
+  // Preserve special fields
+  if (item.weight != null) newItem.weight = item.weight;
+  if (item.properties) newItem.properties = item.properties;
+  if (item.effect) newItem.effect = item.effect;
+  if (item.baseType) newItem.baseType = item.baseType;
+
+  return { moneyChange, newItems: [newItem] };
+}
+
+/**
+ * Execute a sale. Returns state changes to dispatch.
+ */
+export function executeSell(item, sellPrice) {
+  return {
+    moneyChange: {
+      gold: sellPrice.gold || 0,
+      silver: sellPrice.silver || 0,
+      copper: sellPrice.copper || 0,
+    },
+    removeItems: [item.id],
+  };
+}
+
+// Re-export for panel convenience
+export { canAfford, formatCoinPrice, priceToCopper, applyDiscount };

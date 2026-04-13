@@ -1,7 +1,9 @@
 import { normalizeMultiplayerStateChanges } from '../contracts/multiplayer.js';
+import { prefixedId } from './ids.js';
+import { mergeUnique } from './arrays.js';
 
 function createId(prefix) {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return prefixedId(prefix, 5);
 }
 
 function defaultPeriodResolver(hour) {
@@ -58,15 +60,8 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           const currentCritCount = updated.criticalWoundCount || 0;
           updated.criticalWoundCount = currentCritCount + 1;
           if (updated.criticalWoundCount >= 3) {
-            if (updated.fate > 0) {
-              updated.fate = updated.fate - 1;
-              updated.fortune = Math.min(updated.fortune, updated.fate);
-              updated.criticalWoundCount = 2;
-              updated.wounds = 1;
-            } else {
-              updated.status = 'dead';
-              updated.wounds = 0;
-            }
+            updated.status = 'dead';
+            updated.wounds = 0;
           } else {
             updated.wounds = newWounds;
           }
@@ -77,16 +72,6 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
       if (delta.xp != null) updated.xp = (updated.xp || 0) + delta.xp;
       if (delta.hp != null && updated.hp != null) updated.hp = Math.max(0, Math.min(updated.maxHp || 100, updated.hp + delta.hp));
       if (delta.mana != null && updated.mana != null) updated.mana = Math.max(0, Math.min(updated.maxMana || 50, updated.mana + delta.mana));
-      if (delta.fortuneChange != null) updated.fortune = Math.max(0, Math.min(updated.fate ?? 2, (updated.fortune ?? 0) + delta.fortuneChange));
-      if (delta.resolveChange != null) updated.resolve = Math.max(0, Math.min(updated.resilience ?? 1, (updated.resolve ?? 0) + delta.resolveChange));
-      if (delta.fateChange != null) {
-        updated.fate = Math.max(0, (updated.fate ?? 0) + delta.fateChange);
-        updated.fortune = Math.min(updated.fortune ?? 0, updated.fate);
-      }
-      if (delta.resilienceChange != null) {
-        updated.resilience = Math.max(0, (updated.resilience ?? 0) + delta.resilienceChange);
-        updated.resolve = Math.min(updated.resolve ?? 0, updated.resilience);
-      }
       if (Array.isArray(delta.newItems)) updated.inventory = [...(updated.inventory || []), ...delta.newItems];
       if (Array.isArray(delta.removeItems)) {
         const removeSet = new Set(delta.removeItems.map((i) => (typeof i === 'string' ? i : i.name)));
@@ -114,10 +99,6 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         updated.needs = needs;
       }
       if (delta.statuses) updated.statuses = delta.statuses;
-      if (Array.isArray(delta.criticalWounds)) updated.criticalWounds = [...(updated.criticalWounds || []), ...delta.criticalWounds];
-      if (delta.healCriticalWound) {
-        updated.criticalWounds = (updated.criticalWounds || []).filter((cw) => cw.name !== delta.healCriticalWound);
-      }
       return updated;
     });
   }
@@ -200,7 +181,7 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         });
       } else if (idx >= 0) {
         const mergedRelQuestIds = npc.relatedQuestIds?.length > 0
-          ? [...new Set([...(npcs[idx].relatedQuestIds || []), ...npc.relatedQuestIds])]
+          ? mergeUnique(npcs[idx].relatedQuestIds, npc.relatedQuestIds)
           : npcs[idx].relatedQuestIds;
         const mergedRelationships = npc.relationships?.length > 0
           ? [...(npcs[idx].relationships || []).filter((r) => !npc.relationships.some((nr) => nr.npcName === r.npcName)), ...npc.relationships]
@@ -237,8 +218,8 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           codex[update.id] = {
             ...existing,
             fragments: [...existing.fragments, { id: createId('frag'), ...update.fragment, sceneIndex, timestamp: now() }],
-            tags: [...new Set([...(existing.tags || []), ...(update.tags || [])])],
-            relatedEntries: [...new Set([...(existing.relatedEntries || []), ...(update.relatedEntries || [])])],
+            tags: mergeUnique(existing.tags, update.tags),
+            relatedEntries: mergeUnique(existing.relatedEntries, update.relatedEntries),
           };
         }
       } else if (Object.keys(codex).length < 100) {
@@ -303,10 +284,10 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
           threads[idx] = {
             ...threads[idx],
             ...pt,
-            relatedNpcIds: [...new Set([...(threads[idx].relatedNpcIds || []), ...(pt.relatedNpcIds || [])])],
-            relatedQuestIds: [...new Set([...(threads[idx].relatedQuestIds || []), ...(pt.relatedQuestIds || [])])],
-            relatedLocationIds: [...new Set([...(threads[idx].relatedLocationIds || []), ...(pt.relatedLocationIds || [])])],
-            relatedScenes: [...new Set([...(threads[idx].relatedScenes || []), sceneIndex])],
+            relatedNpcIds: mergeUnique(threads[idx].relatedNpcIds, pt.relatedNpcIds),
+            relatedQuestIds: mergeUnique(threads[idx].relatedQuestIds, pt.relatedQuestIds),
+            relatedLocationIds: mergeUnique(threads[idx].relatedLocationIds, pt.relatedLocationIds),
+            relatedScenes: mergeUnique(threads[idx].relatedScenes, sceneIndex),
           };
         } else {
           threads.push({ ...pt, relatedScenes: [sceneIndex] });
@@ -356,7 +337,7 @@ export function applyMultiplayerSceneStateChanges(gameState, sceneResult, option
         visitCount: existing.visitCount + (stateChanges.currentLocation ? 1 : 0),
         lastVisited: sceneIndex,
         knownFacts: existing.knownFacts,
-        npcsEncountered: [...new Set([...(existing.npcsEncountered || []), ...npcsHere])],
+        npcsEncountered: mergeUnique(existing.npcsEncountered, npcsHere),
       };
       kb.locations = kbLocs;
       kbChanged = true;

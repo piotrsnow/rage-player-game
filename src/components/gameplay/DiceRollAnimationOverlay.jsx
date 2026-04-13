@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import DiceRoller from '../../effects/DiceRoller';
-import { translateSkill } from '../../utils/wfrpTranslate';
+import { translateSkill } from '../../utils/rpgTranslate';
 
 const RESULT_HOLD_MS = 4200;
 const FADE_OUT_MS = 600;
@@ -37,12 +37,26 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
   onDismissRef.current = onDismiss;
   const diceRollRef = useRef(diceRoll);
   const wasHeldRef = useRef(false);
+  const rollerCompletedWhileStreamingRef = useRef(false);
 
   useEffect(() => {
+    const wasStreaming = diceRollRef.current?._streaming === true;
     diceRollRef.current = diceRoll;
+    // Streaming placeholder upgraded to full server roll: if the DiceRoller
+    // already finished spinning while we were waiting, jump to result now.
+    if (wasStreaming && diceRoll && !diceRoll._streaming && rollerCompletedWhileStreamingRef.current) {
+      rollerCompletedWhileStreamingRef.current = false;
+      setPhase('result');
+    }
   }, [diceRoll]);
 
   const handleRollComplete = useCallback(() => {
+    // Don't reveal the result card while we still have a placeholder roll —
+    // wait for the server-reconciled values to arrive via setEarlyDiceRoll.
+    if (diceRollRef.current?._streaming) {
+      rollerCompletedWhileStreamingRef.current = true;
+      return;
+    }
     setPhase('result');
   }, []);
 
@@ -67,7 +81,8 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
   const dr = diceRollRef.current;
   if (!dr) return null;
 
-  const target = dr.target || dr.dc;
+  const isStreaming = dr._streaming === true;
+  const target = dr.threshold ?? dr.target ?? dr.dc;
   const skillLabel = dr.skill
     ? translateSkill(dr.skill, t)
     : dr.characteristic
@@ -98,11 +113,20 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
         />
       </div>
 
+      {/* Streaming placeholder: skill known but values not yet reconciled. */}
+      {isStreaming && skillLabel && (
+        <div className="mt-2 animate-fade-in">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-on-surface-variant text-center">
+            {t('gameplay.diceCheck', { skill: skillLabel })}
+          </p>
+        </div>
+      )}
+
       {/* Result card - appears after roll animation finishes, slightly after dice fade */}
       <div
         className={`mt-2 transition-all ease-out ${
-          phase === 'rolling'
-            ? 'opacity-0 translate-y-4 scale-90 duration-0'
+          phase === 'rolling' || isStreaming
+            ? 'opacity-0 translate-y-4 scale-90 duration-0 pointer-events-none'
             : 'opacity-100 translate-y-0 scale-100 duration-500 delay-150'
         }`}
       >
@@ -151,18 +175,18 @@ export default function DiceRollAnimationOverlay({ diceRoll, onDismiss, holdOpen
             )}
 
             {/* Divider */}
-            {dr.sl != null && <div className="w-px h-10 bg-outline-variant/20" />}
+            {(dr.margin ?? dr.sl) != null && <div className="w-px h-10 bg-outline-variant/20" />}
 
-            {/* SL */}
-            {dr.sl != null && (
+            {/* Margin */}
+            {(dr.margin ?? dr.sl) != null && (
               <div className="flex flex-col items-center">
                 <span className="text-[9px] font-bold uppercase tracking-widest text-on-surface-variant/70">
-                  SL
+                  {t('gameplay.margin', 'Margines')}
                 </span>
                 <span className={`font-mono text-3xl font-black leading-none ${
-                  dr.sl >= 0 ? 'text-emerald-300' : 'text-rose-400'
+                  (dr.margin ?? dr.sl) >= 0 ? 'text-emerald-300' : 'text-rose-400'
                 }`}>
-                  {dr.sl > 0 ? '+' : ''}{dr.sl}
+                  {(dr.margin ?? dr.sl) > 0 ? '+' : ''}{dr.margin ?? dr.sl}
                 </span>
               </div>
             )}

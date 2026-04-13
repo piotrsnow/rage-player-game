@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import { useGame } from '../contexts/GameContext';
+import { useGameSlice } from '../stores/gameSelectors';
+import { getGameState } from '../stores/gameStore';
 import { decideAction } from '../services/autoPlayer';
 
 const DEFAULT_AUTO_PLAYER = {
@@ -43,7 +44,11 @@ export function getAutoPlayerAdvanceDelay({
 }
 
 export function useAutoPlayer(handleAction, options = {}) {
-  const { state } = useGame();
+  const scenesLen = useGameSlice((s) => s.scenes?.length || 0);
+  const isGeneratingScene = useGameSlice((s) => s.isGeneratingScene);
+  const combatActive = useGameSlice((s) => s.combat?.active);
+  const campaignStatus = useGameSlice((s) => s.campaign?.status);
+  const characterStatus = useGameSlice((s) => s.character?.status);
   const { settings, getApiKey, updateSettings } = useSettings();
   const {
     narratorPlaybackState = 'idle',
@@ -139,7 +144,8 @@ export function useAutoPlayer(handleAction, options = {}) {
     try {
       const apiKey = getApiKey();
       const provider = settings.aiProvider || 'openai';
-      const result = await decideAction(state, settings, autoPlayerSettings, apiKey, provider, {
+      const snapshot = getGameState();
+      const result = await decideAction(snapshot, settings, autoPlayerSettings, apiKey, provider, {
         recentAutoActions: recentActionsRef.current,
       });
 
@@ -172,19 +178,19 @@ export function useAutoPlayer(handleAction, options = {}) {
       overlayResolveRef.current = null;
       isRunningRef.current = false;
     }
-  }, [state, settings, autoPlayerSettings, getApiKey, handleAction, showOverlay]);
+  }, [settings, autoPlayerSettings, getApiKey, handleAction, showOverlay]);
 
   useEffect(() => {
-    const currentLen = state.scenes?.length || 0;
+    const currentLen = scenesLen;
 
     const justEnabled = autoPlayerSettings.enabled && !prevEnabledRef.current;
     prevEnabledRef.current = autoPlayerSettings.enabled;
 
     if (!autoPlayerSettings.enabled) return;
-    if (state.isGeneratingScene) return;
-    if (state.combat?.active) return;
-    if (state.campaign?.status && state.campaign.status !== 'active') return;
-    if (state.character?.status === 'dead') return;
+    if (isGeneratingScene) return;
+    if (combatActive) return;
+    if (campaignStatus && campaignStatus !== 'active') return;
+    if (characterStatus === 'dead') return;
     if (isRunningRef.current) return;
 
     if (autoPlayerSettings.maxTurns > 0 && turnsPlayed >= autoPlayerSettings.maxTurns) {
@@ -246,11 +252,11 @@ export function useAutoPlayer(handleAction, options = {}) {
       }
     };
   }, [
-    state.scenes?.length,
-    state.isGeneratingScene,
-    state.combat?.active,
-    state.campaign?.status,
-    state.character?.status,
+    scenesLen,
+    isGeneratingScene,
+    combatActive,
+    campaignStatus,
+    characterStatus,
     autoPlayerSettings.enabled,
     autoPlayerSettings.maxTurns,
     turnsPlayed,

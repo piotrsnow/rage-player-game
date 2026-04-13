@@ -56,7 +56,7 @@ const BATTLE_CRY_LINES = {
   en: [
     'Forward, to the charge!',
     'Let steel decide!',
-    'For the Empire!',
+    'For honor and glory!',
     'Fall before me!',
     'No mercy, advance!',
     'Blood and glory!',

@@ -5,7 +5,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
-import { translateCareer } from '../../utils/wfrpTranslate';
+import { translateSkill } from '../../utils/rpgTranslate';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import Button from '../ui/Button';
 
@@ -186,10 +186,9 @@ export default function JoinRoomPage() {
               >
                 {savedCharacters.map((ch) => {
                   const charId = ch.backendId || ch.localId || ch.id;
-                  const career = ch.career?.name || ch.careerData?.name || '';
                   return (
                     <option key={charId} value={charId}>
-                      {`${ch.name} · ${t(`species.${ch.species}`, { defaultValue: ch.species })}${career ? ` · ${translateCareer(career, t)}` : ''}`}
+                      {`${ch.name} · ${t(`species.${ch.species}`, { defaultValue: ch.species })}`}
                     </option>
                   );
                 })}

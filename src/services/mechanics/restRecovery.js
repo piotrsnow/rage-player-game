@@ -46,14 +46,8 @@ export function calculateRestRecovery(character, hoursSlept = 0.5) {
     if (delta > 0) needsChanges[key] = delta;
   }
 
-  // Fortune resets to Fate value after rest
-  const fate = character.fate ?? 0;
-  const fortune = character.fortune ?? 0;
-  const fortuneChange = fate > fortune ? fate - fortune : undefined;
-
   return {
     woundsChange: healed > 0 ? healed : undefined,
     needsChanges,
-    fortuneChange,
   };
 }

@@ -5,6 +5,10 @@ export class GalleryPage {
 
   async goto() {
     await this.page.goto('/gallery');
+    // Wait for the lazy-loaded GalleryPage chunk to mount. The search input
+    // is always rendered (independent of fetch state), so it's the earliest
+    // reliable signal that the Suspense fallback has been replaced.
+    await this.searchInput.waitFor({ state: 'visible', timeout: 10_000 }).catch(() => {});
   }
 
   get searchInput() { return this.page.locator('[data-testid="gallery-search"]'); }

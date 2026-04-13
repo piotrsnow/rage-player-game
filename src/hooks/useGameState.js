@@ -1,11 +1,15 @@
 import { useCallback } from 'react';
-import { useGame, createDefaultNeeds } from '../contexts/GameContext';
+import { useTranslation } from 'react-i18next';
+import { useGame } from '../contexts/GameContext';
+import { createDefaultNeeds } from '../stores/gameReducer';
 import { storage } from '../services/storage';
-import { createCampaignId, createSceneId, createQuestId, generateCharacteristics, calculateWounds, generateStartingMoney } from '../services/gameState';
+import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
-import { SPECIES, CHARACTERISTIC_KEYS, getCareerByName } from '../data/wfrp';
+import { SPECIES, createStartingSkills } from '../data/rpgSystem';
+import { gameData } from '../services/gameDataService';
+import { shortId } from '../utils/ids';
 
-function buildWfrpCharacter(aiResult, campaignSettings) {
+function buildCharacter(aiResult, campaignSettings) {
   // If a fully pre-built character was created via the CharacterCreationModal, use it directly
   if (campaignSettings.createdCharacter) {
     const cc = campaignSettings.createdCharacter;
@@ -16,64 +20,30 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
     };
   }
 
-  const speciesName = campaignSettings.species || aiResult.characterSuggestion?.species || 'Human';
+  // Character stats are always created by the player (CharacterCreationModal or library).
+  // AI only provides campaign-specific starting inventory and backstory.
+  const speciesName = campaignSettings.species || 'Human';
   const species = SPECIES[speciesName] || SPECIES.Human;
-
+  const attributes = generateAttributes(speciesName);
+  const maxWounds = calculateMaxWounds(attributes.wytrzymalosc ?? 10);
   const aiChar = aiResult.characterSuggestion || {};
-  const characteristics = aiChar.characteristics || generateCharacteristics(speciesName);
-
-  const advances = {};
-  for (const key of CHARACTERISTIC_KEYS) {
-    advances[key] = 0;
-  }
-
-  const careerName = aiChar.career?.name || campaignSettings.careerPreference || 'Soldier';
-  const careerDef = getCareerByName(careerName);
-  const careerClass = careerDef?.class || aiChar.career?.class || 'Warriors';
-  const tier = aiChar.career?.tier || 1;
-  const tierData = careerDef?.tiers?.[tier - 1];
-
-  const career = {
-    class: careerClass,
-    name: careerName,
-    tier,
-    tierName: tierData?.name || aiChar.career?.tierName || careerName,
-    status: tierData?.status || aiChar.career?.status || 'Silver 1',
-  };
-
-  const maxWounds = calculateWounds(characteristics);
-
-  const skills = {};
-  if (aiChar.skills && typeof aiChar.skills === 'object' && !Array.isArray(aiChar.skills)) {
-    Object.assign(skills, aiChar.skills);
-  } else if (tierData?.skills) {
-    for (const skill of tierData.skills) {
-      skills[skill] = 5;
-    }
-  }
-
-  const talents = aiChar.talents || tierData?.talents?.slice(0, 2) || [];
 
   return {
-    name: campaignSettings.characterName?.trim() || aiChar.name || 'Adventurer',
-    age: normalizeCharacterAge(aiChar.age ?? campaignSettings.characterAge),
+    name: campaignSettings.characterName?.trim() || 'Adventurer',
+    age: normalizeCharacterAge(campaignSettings.characterAge),
     species: speciesName,
-    career,
-    xp: 0,
-    xpSpent: 0,
-    characteristics,
-    advances,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
+    attributes,
     wounds: maxWounds,
     maxWounds,
     movement: species.movement,
-    fate: aiChar.fate ?? species.fate,
-    fortune: aiChar.fate ?? species.fate,
-    resilience: aiChar.resilience ?? species.resilience,
-    resolve: aiChar.resilience ?? species.resilience,
-    skills,
-    talents,
-    inventory: aiChar.inventory || [],
-    money: aiChar.money || generateStartingMoney(career.status),
+    mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
+    spells: { known: [], usageCounts: {}, scrolls: [] },
+    skills: createStartingSkills(speciesName),
+    inventory: gameData.mapStartingInventoryToCatalog(aiChar.inventory || []),
+    money: generateStartingMoney(),
     statuses: [],
     backstory: aiChar.backstory || '',
     needs: createDefaultNeeds(),
@@ -82,9 +52,17 @@ function buildWfrpCharacter(aiResult, campaignSettings) {
 
 export function useGameState() {
   const { state, dispatch, autoSave } = useGame();
+  const { t } = useTranslation();
 
   const startNewCampaign = useCallback(
     async (aiResult, campaignSettings) => {
+      // Equipment catalog is needed by buildCharacter() to resolve AI starting
+      // inventory items into real catalog baseTypes. Cached after first load.
+      try {
+        await gameData.loadEquipment();
+      } catch (err) {
+        console.warn('[useGameState] Failed to load equipment catalog before campaign start:', err.message);
+      }
       const campaignId = createCampaignId();
       const campaign = {
         id: campaignId,
@@ -96,34 +74,52 @@ export function useGameState() {
         length: campaignSettings.length,
         worldDescription: aiResult.worldDescription,
         hook: aiResult.hook,
+        characterIds: [], // populated after the character is saved below
       };
 
-      const character = campaignSettings.existingCharacter
+      const initialCharacter = campaignSettings.existingCharacter
         ? {
-            characteristics: generateCharacteristics(campaignSettings.existingCharacter.species || 'Human'),
-            advances: Object.fromEntries(CHARACTERISTIC_KEYS.map((k) => [k, 0])),
-            skills: {},
-            talents: [],
+            attributes: generateAttributes(campaignSettings.existingCharacter.species || 'Human'),
+            skills: createStartingSkills(campaignSettings.existingCharacter.species || 'Human'),
             inventory: [],
             money: { gold: 0, silver: 0, copper: 0 },
             movement: 4,
-            fate: 2,
-            fortune: 2,
-            resilience: 1,
-            resolve: 1,
+            mana: { current: 0, max: 0 },
+            spells: { known: [], usageCounts: {}, scrolls: [] },
             statuses: [],
             backstory: '',
-            criticalWounds: [],
             ...campaignSettings.existingCharacter,
             age: normalizeCharacterAge(campaignSettings.existingCharacter.age),
             needs: campaignSettings.existingCharacter.needs || createDefaultNeeds(),
           }
-        : buildWfrpCharacter(aiResult, campaignSettings);
+        : buildCharacter(aiResult, campaignSettings);
+
+      // If the character was pre-built (via CharacterCreationModal or library) and has no
+      // inventory, fold in the AI's campaign-specific starting gear so it isn't lost.
+      const aiStartingInventory = aiResult?.characterSuggestion?.inventory || [];
+      const addedStartingItems = [];
+      if ((!initialCharacter.inventory || initialCharacter.inventory.length === 0) && aiStartingInventory.length > 0) {
+        const mapped = gameData.mapStartingInventoryToCatalog(aiStartingInventory);
+        initialCharacter.inventory = mapped;
+        addedStartingItems.push(...mapped);
+      }
+
+      // Persist character to its own collection FIRST so we get a backendId
+      // to reference from the new campaign. Falls back to a local-only character
+      // (no backendId) if backend is offline — campaign save will use that path.
+      const character = await storage.saveCharacter(initialCharacter);
+
+      const firstDialogueSegments = aiResult.firstScene?.dialogueSegments || [];
+      const firstNarrative = firstDialogueSegments
+        .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
+        .map(s => s.text.trim())
+        .filter(Boolean)
+        .join(' ') || aiResult.hook;
 
       const firstScene = {
         id: createSceneId(),
-        narrative: aiResult.firstScene?.narrative || aiResult.hook,
-        dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+        narrative: firstNarrative,
+        dialogueSegments: firstDialogueSegments,
         soundEffect: aiResult.firstScene?.soundEffect || null,
         imagePrompt: aiResult.firstScene?.imagePrompt || null,
         sceneGrid: aiResult.firstScene?.sceneGrid || null,
@@ -139,12 +135,27 @@ export function useGameState() {
           id: `msg_${Date.now()}_dm`,
           role: 'dm',
           sceneId: firstScene.id,
-          content: aiResult.firstScene?.narrative || aiResult.hook,
-          dialogueSegments: aiResult.firstScene?.dialogueSegments || [],
+          content: firstNarrative,
+          dialogueSegments: firstDialogueSegments,
           soundEffect: aiResult.firstScene?.soundEffect || null,
           timestamp: Date.now(),
         },
       ];
+
+      if (addedStartingItems.length > 0) {
+        const charName = initialCharacter.name || 'Character';
+        const baseTs = Date.now();
+        addedStartingItems.forEach((item, idx) => {
+          const itemName = typeof item === 'string' ? item : item.name;
+          chatHistory.push({
+            id: `msg_${baseTs}_start_item_${idx}`,
+            role: 'system',
+            subtype: 'item_gained',
+            content: t('system.itemGained', { name: charName, item: itemName }),
+            timestamp: baseTs + idx,
+          });
+        });
+      }
 
       const initialQuest = aiResult.initialQuest
         ? {
@@ -166,7 +177,7 @@ export function useGameState() {
       };
 
       const initialNPCs = (aiResult.initialNPCs || []).map((npc) => ({
-        id: `npc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `npc_${Date.now()}_${shortId(5)}`,
         name: npc.name,
         gender: npc.gender || 'unknown',
         role: npc.role || '',
@@ -188,6 +199,13 @@ export function useGameState() {
         eventHistory: aiResult.firstScene?.journalEntries || [],
       };
 
+      // The character now lives in /characters and is referenced from the
+      // campaign by ID. backendId is only present if the backend was online
+      // during saveCharacter; offline runs fall back to local-only persistence.
+      if (character.backendId) {
+        campaign.characterIds = [character.backendId];
+      }
+
       dispatch({
         type: 'START_CAMPAIGN',
         payload: { campaign, character, world, scenes: [firstScene], chatHistory },
@@ -207,9 +225,18 @@ export function useGameState() {
       };
       await storage.saveCampaign(fullState);
 
+      // After save, campaign.backendId is set by _doSave mutation.
+      // Sync it back to the store so autoSave won't POST a duplicate.
+      if (campaign.backendId) {
+        dispatch({
+          type: 'SET_CAMPAIGN_BACKEND_ID',
+          payload: { backendId: campaign.backendId, characterIds: campaign.characterIds },
+        });
+      }
+
       return campaign.backendId || campaignId;
     },
-    [dispatch]
+    [dispatch, t]
   );
 
   const loadCampaign = useCallback(

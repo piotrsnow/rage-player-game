@@ -1,58 +1,53 @@
+/**
+ * Resolves a voice for an NPC/character by name.
+ *
+ * - Existing mapping in `characterVoiceMap` always wins (NPC keeps same voice across scenes).
+ * - For a new NPC, picks a random unused voice from the matching gender pool.
+ * - Unknown gender falls back to the full pool (male + female), then narrator.
+ * - Persists the picked voice via `MAP_CHARACTER_VOICE` dispatch.
+ */
 export function resolveVoiceForCharacter(
   characterName,
   gender,
   characterVoiceMap = {},
-  localMap = new Map(),
-  characterVoices = [],
+  { maleVoices = [], femaleVoices = [], narratorVoiceId = null } = {},
   dispatch = null
 ) {
   if (!characterName) return null;
 
   const persisted = characterVoiceMap[characterName];
-  if (persisted?.voiceId) {
-    localMap.set(characterName, persisted);
-    const genderOk = !gender || !persisted.gender || persisted.gender === gender;
-    if (genderOk) return persisted.voiceId;
-  }
+  if (persisted?.voiceId) return persisted.voiceId;
 
-  const local = localMap.get(characterName);
-  if (local) {
-    const genderOk = !gender || !local.gender || local.gender === gender;
-    if (genderOk) return local.voiceId;
-  }
+  const pool = gender === 'female'
+    ? femaleVoices
+    : gender === 'male'
+    ? maleVoices
+    : [...maleVoices, ...femaleVoices];
 
-  const existing = persisted || local;
-  if (existing && !characterVoices?.length) return existing.voiceId;
+  if (!pool.length) return narratorVoiceId || null;
 
-  if (!characterVoices || characterVoices.length === 0) {
-    return existing?.voiceId || null;
-  }
+  const used = new Set(Object.values(characterVoiceMap).map((e) => e.voiceId).filter(Boolean));
+  const unused = pool.filter((v) => !used.has(v.voiceId));
+  const candidates = unused.length ? unused : pool;
 
-  const usedVoiceIds = new Set();
-  for (const entry of Object.values(characterVoiceMap)) usedVoiceIds.add(entry.voiceId);
-  for (const entry of localMap.values()) usedVoiceIds.add(entry.voiceId);
-
-  const genderPool = gender === 'male' || gender === 'female'
-    ? characterVoices.filter((voice) => voice.gender === gender)
-    : characterVoices;
-
-  const pool = genderPool.length > 0 ? genderPool : characterVoices;
-
-  let assigned = pool.find((voice) => !usedVoiceIds.has(voice.voiceId));
-  if (!assigned) {
-    const totalMapped = Object.keys(characterVoiceMap).length + localMap.size;
-    assigned = pool[totalMapped % pool.length];
-  }
-
-  if (!assigned) return existing?.voiceId || null;
-
-  const entry = { voiceId: assigned.voiceId, gender: gender || null };
-  localMap.set(characterName, entry);
+  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  if (!chosen?.voiceId) return narratorVoiceId || null;
 
   dispatch?.({
     type: 'MAP_CHARACTER_VOICE',
-    payload: { characterName, voiceId: assigned.voiceId, gender: gender || null },
+    payload: { characterName, voiceId: chosen.voiceId, gender: gender || null },
   });
 
-  return assigned.voiceId;
+  return chosen.voiceId;
+}
+
+/** Pick a random voice from the matching gender pool without persisting. Used when no name is available. */
+export function pickRandomVoiceForGender(gender, { maleVoices = [], femaleVoices = [] } = {}) {
+  const pool = gender === 'female'
+    ? femaleVoices
+    : gender === 'male'
+    ? maleVoices
+    : [...maleVoices, ...femaleVoices];
+  if (!pool.length) return null;
+  return pool[Math.floor(Math.random() * pool.length)]?.voiceId || null;
 }

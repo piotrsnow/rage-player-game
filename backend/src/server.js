@@ -25,14 +25,27 @@ import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
-import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
+import {
+  startRoomCleanup,
+  stopRoomCleanup,
+  loadActiveSessionsFromDB,
+  saveAllActiveRooms,
+  closeAllRoomSockets,
+} from './services/roomManager.js';
+import { prisma } from './lib/prisma.js';
+import { logger } from './lib/logger.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
 
+const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
+const MEDIA_BODY_LIMIT = 50 * 1024 * 1024;
+
+// Hand the shared pino instance to Fastify so route handlers' request.log
+// and services' `import { logger }` are the same underlying instance.
 const fastify = Fastify({
-  logger: true,
-  bodyLimit: 50 * 1024 * 1024, // 50MB for media uploads
+  loggerInstance: logger,
+  bodyLimit: DEFAULT_BODY_LIMIT,
 });
 
 await fastify.register(compress, { global: true });
@@ -46,7 +59,15 @@ await fastify.register(websocket);
 
 await fastify.register(rateLimit, { global: false });
 
-fastify.get('/health', async () => ({ status: 'ok', timestamp: Date.now() }));
+fastify.get('/health', async (request, reply) => {
+  try {
+    await prisma.$runCommandRaw({ ping: 1 });
+    return { status: 'ok', db: 'ok', timestamp: Date.now() };
+  } catch (err) {
+    fastify.log.warn({ err }, 'Health check DB ping failed');
+    return reply.code(503).send({ status: 'degraded', db: 'down', timestamp: Date.now() });
+  }
+});
 
 await fastify.register(async function authScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -58,6 +79,9 @@ await fastify.register(async function authScope(app) {
 await fastify.register(async function dataScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+    if (routeOptions.url?.startsWith('/media')) {
+      routeOptions.bodyLimit = MEDIA_BODY_LIMIT;
+    }
   });
   app.register(campaignRoutes, { prefix: '/campaigns' });
   app.register(characterRoutes, { prefix: '/characters' });
@@ -91,10 +115,21 @@ await fastify.register(async function aiScope(app) {
   app.register(aiRoutes, { prefix: '/ai' });
 });
 
-await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
+await fastify.register(async function multiplayerScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    // WebSocket upgrades are throttled here; per-message throttling lives in the ws handler.
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
+  });
+  app.register(multiplayerRoutes);
+}, { prefix: '/multiplayer' });
 
 // Static game rules data — no auth, generous rate limit
-await fastify.register(gameDataRoutes, { prefix: '/game-data' });
+await fastify.register(async function gameDataScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
+  });
+  app.register(gameDataRoutes);
+}, { prefix: '/game-data' });
 
 startRoomCleanup();
 
@@ -129,3 +164,57 @@ try {
 loadActiveSessionsFromDB().catch((err) => {
   fastify.log.warn(`Failed to load active sessions from DB: ${err.message}`);
 });
+
+// ── Graceful shutdown ─────────────────────────────────────────────
+// SIGTERM arrives from container orchestrators on deploy/stop. We must:
+//   1. Stop the room cleanup timer (so it doesn't schedule new work)
+//   2. Persist every active room to DB (so players can reconnect after deploy)
+//   3. Close WebSocket sockets cleanly so clients see a graceful close frame
+//   4. Let Fastify drain in-flight HTTP requests via fastify.close()
+//   5. Disconnect Prisma
+// prisma.js also registers SIGTERM/SIGINT handlers for disconnect, but those
+// run independently — double-disconnect is a no-op.
+
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
+let shuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  fastify.log.info(`[shutdown] received ${signal} — draining`);
+
+  stopRoomCleanup();
+
+  try {
+    const savedCount = await saveAllActiveRooms();
+    fastify.log.info(`[shutdown] persisted ${savedCount} active rooms`);
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to persist active rooms');
+  }
+
+  try {
+    const closedCount = closeAllRoomSockets(1001, 'Server shutting down');
+    fastify.log.info(`[shutdown] closed ${closedCount} WebSocket connections`);
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to close sockets');
+  }
+
+  const forceExit = setTimeout(() => {
+    fastify.log.error('[shutdown] drain timeout — force exiting');
+    process.exit(1);
+  }, SHUTDOWN_DRAIN_TIMEOUT_MS);
+  forceExit.unref();
+
+  try {
+    await fastify.close();
+    fastify.log.info('[shutdown] fastify closed');
+  } catch (err) {
+    fastify.log.error({ err }, '[shutdown] fastify close failed');
+  }
+
+  clearTimeout(forceExit);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

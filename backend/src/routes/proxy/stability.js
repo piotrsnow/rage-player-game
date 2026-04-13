@@ -8,11 +8,27 @@ import { config } from '../../config.js';
 
 const store = createMediaStore(config);
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
+const GENERATE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    negativePrompt: { type: 'string', maxLength: 2000 },
+    model: { type: 'string', maxLength: 64 },
+    aspectRatio: { type: 'string', maxLength: 16 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
 export async function stabilityProxyRoutes(fastify) {
   await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   fastify.addHook('onRequest', fastify.authenticate);
 
-  fastify.post('/generate', async (request, reply) => {
+  fastify.post('/generate', { schema: { body: GENERATE_BODY_SCHEMA } }, async (request, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
       select: { apiKeys: true },
@@ -68,8 +84,9 @@ export async function stabilityProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', '.jpg');
     const storeResult = await store.put(storagePath, buffer, 'image/jpeg');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -80,6 +97,7 @@ export async function stabilityProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };
@@ -147,8 +165,9 @@ export async function stabilityProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', '.jpg');
     const storeResult = await store.put(storagePath, resultBuffer, 'image/jpeg');
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         key: cacheKey,
         type: 'image',
@@ -158,6 +177,7 @@ export async function stabilityProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { url: storeResult.url, key: cacheKey };

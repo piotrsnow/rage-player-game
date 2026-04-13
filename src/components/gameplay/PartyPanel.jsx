@@ -1,19 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { translateCareer, translateSkill } from '../../utils/wfrpTranslate';
-
-const CHAR_KEYS = [
-  { key: 'ws', label: 'WS' },
-  { key: 'bs', label: 'BS' },
-  { key: 's', label: 'S' },
-  { key: 't', label: 'T' },
-  { key: 'i', label: 'I' },
-  { key: 'ag', label: 'Ag' },
-  { key: 'dex', label: 'Dex' },
-  { key: 'int', label: 'Int' },
-  { key: 'wp', label: 'WP' },
-  { key: 'fel', label: 'Fel' },
-];
+import { translateSkill } from '../../utils/rpgTranslate';
+import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
+import { shortId } from '../../utils/ids';
 
 const BEHAVIORS = ['aggressive', 'defensive', 'supportive', 'passive'];
 const STANCES = ['attack', 'defend', 'support'];
@@ -34,12 +23,6 @@ function memberId(m) {
   return m.id ?? m.odId ?? m.name ?? '';
 }
 
-function careerLabel(career) {
-  if (!career) return '';
-  if (typeof career === 'string') return career;
-  return career.name || career.tierName || '';
-}
-
 function WoundsBar({ current, max, memberType }) {
   const safeMax = max > 0 ? max : 1;
   const pct = (Math.min(current ?? 0, safeMax) / safeMax) * 100;
@@ -56,38 +39,30 @@ function WoundsBar({ current, max, memberType }) {
   );
 }
 
-function buildDefaultCompanion({ name, species, ws, bs, s, t }) {
-  const id = `companion_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function buildDefaultCompanion({ name, species, sila, zrecznosc, wytrzymalosc }) {
+  const id = `companion_${Date.now()}_${shortId()}`;
   return {
     id,
     type: 'companion',
     name: name?.trim() || 'Companion',
     species: species?.trim() || 'Human',
-    career: { class: 'Followers', name: 'Servant', tier: 1, tierName: 'Hireling', status: 'Brass 3' },
-    xp: 0,
-    xpSpent: 0,
-    characteristics: {
-      ws: Number(ws) || 30,
-      bs: Number(bs) || 30,
-      s: Number(s) || 30,
-      t: Number(t) || 30,
-      i: 30,
-      ag: 30,
-      dex: 30,
-      int: 28,
-      wp: 28,
-      fel: 28,
+    characterLevel: 1,
+    characterXp: 0,
+    attributePoints: 0,
+    attributes: {
+      sila: Number(sila) || 10,
+      inteligencja: 10,
+      charyzma: 8,
+      zrecznosc: Number(zrecznosc) || 10,
+      wytrzymalosc: Number(wytrzymalosc) || 10,
+      szczescie: 5,
     },
-    advances: { ws: 0, bs: 0, s: 0, t: 0, i: 0, ag: 0, dex: 0, int: 0, wp: 0, fel: 0 },
     wounds: 10,
     maxWounds: 10,
     movement: 4,
-    fate: 0,
-    fortune: 0,
-    resilience: 0,
-    resolve: 0,
-    skills: { 'Melee (Basic)': 35, Athletics: 30 },
-    talents: [],
+    mana: { current: 0, max: 0 },
+    skills: { 'Walka bronia jednoręczna': { level: 5, progress: 0, cap: 10 }, 'Atletyka': { level: 3, progress: 0, cap: 10 } },
+    spells: { known: [], usageCounts: {}, scrolls: [] },
     inventory: [],
     statuses: [],
     backstory: '',
@@ -105,7 +80,7 @@ export default function PartyPanel({
 }) {
   const { t } = useTranslation();
   const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', species: 'Human', ws: 30, bs: 30, s: 30, t: 30 });
+  const [form, setForm] = useState({ name: '', species: 'Human', sila: 10, zrecznosc: 10, wytrzymalosc: 10 });
 
   const list = Array.isArray(party) ? party : [];
   const active = useMemo(() => {
@@ -118,7 +93,9 @@ export default function PartyPanel({
   const topSkills = useMemo(() => {
     if (!active?.skills || typeof active.skills !== 'object') return [];
     return Object.entries(active.skills)
-      .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+      .map(([name, v]) => [name, typeof v === 'object' ? v.level : (v || 0)])
+      .filter(([, level]) => level > 0)
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
   }, [active]);
 
@@ -136,7 +113,7 @@ export default function PartyPanel({
     if (typeof dispatch === 'function') {
       dispatch({ type: 'ADD_PARTY_COMPANION', payload: companion });
     }
-    setForm({ name: '', species: 'Human', ws: 30, bs: 30, s: 30, t: 30 });
+    setForm({ name: '', species: 'Human', sila: 10, zrecznosc: 10, wytrzymalosc: 10 });
     setAddOpen(false);
   };
 
@@ -188,13 +165,13 @@ export default function PartyPanel({
               placeholder={t('party.species', 'Species')}
               className="px-2 py-1 text-[10px] bg-surface-container border border-outline-variant/20 rounded-sm text-on-surface placeholder:text-outline"
             />
-            {['ws', 'bs', 's', 't'].map((k) => (
+            {['sila', 'zrecznosc', 'wytrzymalosc'].map((k) => (
               <label key={k} className="flex items-center gap-1 text-[9px] text-on-surface-variant">
-                <span className="uppercase w-6">{k}</span>
+                <span className="uppercase w-8">{t(`rpgAttributeShort.${k}`)}</span>
                 <input
                   type="number"
                   min={1}
-                  max={100}
+                  max={25}
                   value={form[k]}
                   onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                   className="flex-1 px-1 py-0.5 text-[10px] bg-surface-container border border-outline-variant/20 rounded-sm text-on-surface"
@@ -254,7 +231,7 @@ export default function PartyPanel({
                 <div className="min-w-0 flex-1">
                   <div className="text-[10px] font-bold text-on-surface truncate">{m.name}</div>
                   <div className="text-[9px] text-on-surface-variant truncate">
-                    {translateCareer(careerLabel(m.career), t)}
+                    {t(`species.${m.species}`, { defaultValue: m.species })}
                   </div>
                 </div>
               </div>
@@ -291,15 +268,15 @@ export default function PartyPanel({
             </span>
           </div>
 
-          <div className="grid grid-cols-5 sm:grid-cols-10 gap-1">
-            {CHAR_KEYS.map(({ key, label }) => (
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+            {ATTRIBUTE_KEYS.map((key) => (
               <div
                 key={key}
                 className="text-center px-0.5 py-1 rounded-sm bg-surface-container/50 border border-outline-variant/5"
               >
-                <div className="text-[8px] text-on-surface-variant">{label}</div>
+                <div className="text-[8px] text-on-surface-variant">{t(`rpgAttributeShort.${key}`)}</div>
                 <div className="text-[10px] font-bold text-on-surface tabular-nums">
-                  {active.characteristics?.[key] ?? '—'}
+                  {(active.attributes || active.characteristics)?.[key] ?? '—'}
                 </div>
               </div>
             ))}

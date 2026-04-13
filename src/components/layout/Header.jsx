@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { useModals } from '../../contexts/ModalContext';
-import { useGame } from '../../contexts/GameContext';
+import { useGameCampaign } from '../../stores/gameSelectors';
+import { getGameState } from '../../stores/gameStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
 
@@ -14,9 +15,9 @@ export default function Header() {
   const { settings } = useSettings();
   const music = useGlobalMusic();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
-  const { state } = useGame();
+  const campaign = useGameCampaign();
   const mp = useMultiplayer();
-  const hasActiveGame = !!state.campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
+  const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
   const showMpStatus = mp.state.isMultiplayer;
   const mpReconnectState = mp.state.reconnectState || { status: 'disconnected' };
   const mpStatusLabel = !mp.state.connected
@@ -33,18 +34,19 @@ export default function Header() {
   const saveTimeoutRef = useRef(null);
 
   const handleSaveCampaign = useCallback(async () => {
-    if (saveStatus === 'saving' || !state.campaign) return;
+    const snapshot = getGameState();
+    if (saveStatus === 'saving' || !snapshot.campaign) return;
     setSaveStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     try {
-      await storage.saveCampaign(state);
+      await storage.saveCampaign(snapshot);
       setSaveStatus('saved');
       saveTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (err) {
       console.error('[Header] Manual save error:', err);
       setSaveStatus('idle');
     }
-  }, [saveStatus, state]);
+  }, [saveStatus]);
 
   useEffect(() => {
     const handleClick = (e) => {
@@ -56,7 +58,7 @@ export default function Header() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const playPath = `/play/${state.campaign?.id || ''}`;
+  const playPath = `/play/${campaign?.id || ''}`;
   const navLinks = [
     { path: '/', label: t('nav.lobby') },
     hasActiveGame && { path: playPath, label: t('nav.grimoire') },

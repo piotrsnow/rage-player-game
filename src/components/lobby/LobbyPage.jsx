@@ -27,10 +27,7 @@ function FloatingRune({ delay, className }) {
 
 function CharacterSummary({ char, label, icon, accent, disabled }) {
   if (!char) return null;
-  const career = char.career?.name || char.careerData?.name || char.career || char.careerData || '—';
-  const tier = char.career?.tier || char.careerData?.tier || '?';
-  const xp = char.xp ?? 0;
-  const xpSpent = char.xpSpent ?? 0;
+  const level = char.characterLevel || 1;
   return (
     <div className={`flex-1 min-w-0 p-4 rounded-sm border transition-colors ${disabled ? 'opacity-40 border-outline-variant/20 bg-surface-container-low/30' : `border-${accent}/20 bg-surface-container-low`}`}>
       <div className="flex items-center gap-2 mb-3">
@@ -38,8 +35,8 @@ function CharacterSummary({ char, label, icon, accent, disabled }) {
         <span className={`font-label text-xs uppercase tracking-wider ${disabled ? 'text-outline' : `text-${accent}`}`}>{label}</span>
       </div>
       <p className="text-on-surface font-headline text-sm truncate">{char.name || '—'}</p>
-      <p className="text-on-surface-variant text-xs mt-1">{career} (T{tier})</p>
-      <p className="text-on-surface-variant text-[10px] mt-1">XP: {xp} / {xpSpent} spent</p>
+      <p className="text-on-surface-variant text-xs mt-1">{char.species || '—'}</p>
+      <p className="text-on-surface-variant text-[10px] mt-1">Poziom {level}</p>
     </div>
   );
 }
@@ -145,12 +142,6 @@ export default function LobbyPage() {
       .then((list) => {
         if (cancelled) return;
         setCampaigns(list);
-        if (backendUser && apiClient.isConnected() && list.some((c) => c.source === 'remote' && !c.characterName && c.sceneCount > 0)) {
-          apiClient.post('/campaigns/backfill-summaries')
-            .then(() => storage.getCampaigns())
-            .then((fresh) => { if (!cancelled) setCampaigns(fresh); })
-            .catch(() => {});
-        }
       })
       .catch(() => { if (!cancelled) setCampaigns([]); })
       .finally(() => {

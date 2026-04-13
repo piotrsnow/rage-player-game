@@ -3,12 +3,12 @@ import { checkWorldConsistency, applyConsistencyPatches, buildConsistencyWarning
 
 const baseWorld = {
   npcs: [
-    { id: 'npc_1', name: 'Grumli', alive: true, disposition: 0, lastLocation: 'Altdorf', factionId: 'merchants_guild', relatedQuestIds: [], relationships: [] },
-    { id: 'npc_2', name: 'Hilda', alive: true, disposition: 10, lastLocation: 'Altdorf', factionId: 'thieves_guild', relatedQuestIds: [], relationships: [] },
+    { id: 'npc_1', name: 'Grumli', alive: true, disposition: 0, lastLocation: 'Krynsk', factionId: 'merchants_guild', relatedQuestIds: [], relationships: [] },
+    { id: 'npc_2', name: 'Hilda', alive: true, disposition: 10, lastLocation: 'Krynsk', factionId: 'thieves_guild', relatedQuestIds: [], relationships: [] },
     { id: 'npc_3', name: 'Olaf', alive: false, disposition: -5, lastLocation: 'Nuln', factionId: null, relatedQuestIds: [], relationships: [] },
   ],
   mapState: [
-    { id: 'loc_1', name: 'Altdorf', description: 'The capital' },
+    { id: 'loc_1', name: 'Krynsk', description: 'The capital' },
     { id: 'loc_2', name: 'Nuln', description: 'Industrial city' },
   ],
   factions: { merchants_guild: 20, thieves_guild: -30 },
@@ -17,7 +17,7 @@ const baseWorld = {
 
 const baseQuests = {
   active: [
-    { id: 'q1', name: 'Missing Shipment', questGiverId: 'npc_1', locationId: 'Altdorf', prerequisiteQuestIds: [], objectives: [] },
+    { id: 'q1', name: 'Missing Shipment', questGiverId: 'npc_1', locationId: 'Krynsk', prerequisiteQuestIds: [], objectives: [] },
     { id: 'q2', name: 'Secret Task', questGiverId: 'npc_3', locationId: 'Nuln', prerequisiteQuestIds: ['q_done'], objectives: [] },
   ],
   completed: [{ id: 'q0', name: 'Intro Quest' }],
@@ -101,7 +101,7 @@ describe('checkWorldConsistency', () => {
       ...baseWorld,
       npcs: [
         ...baseWorld.npcs,
-        { id: 'npc_5', name: 'Rogue', alive: true, lastLocation: 'Altdorf', factionId: 'fake_faction' },
+        { id: 'npc_5', name: 'Rogue', alive: true, lastLocation: 'Krynsk', factionId: 'fake_faction' },
       ],
     };
     const { warnings } = checkWorldConsistency({ world, quests: baseQuests });

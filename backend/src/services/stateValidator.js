@@ -1,24 +1,15 @@
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
+import { STATE_CHANGE_LIMITS } from '../../../src/data/rpgSystem.js';
+import {
+  clamp,
+  moneyToCopper,
+  sanitizeNpcChanges,
+  normalizeItemList,
+  sanitizeInventoryItems,
+  normalizeCodexUpdates,
+} from '../../../shared/domain/stateValidation.js';
 
-const DEFAULTS = {
-  maxXpPerScene: 50,
-  maxItemsPerScene: 3,
-  maxWoundsDelta: 20,
-  needsDeltaMin: -30,
-  needsDeltaMax: 50,
-  maxMoneyGainCopper: 500,
-  maxDispositionDelta: 10,
-  maxCodexPerScene: 3,
-  maxCodexFragmentLength: 1000,
-};
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function moneyToCopper(m) {
-  return (m.gold || 0) * 100 + (m.silver || 0) * 10 + (m.copper || 0);
-}
+const DEFAULTS = { ...STATE_CHANGE_LIMITS };
 
 export function validateMultiplayerStateChanges(stateChanges, gameState, config = {}) {
   if (!stateChanges || typeof stateChanges !== 'object') {
@@ -64,10 +55,12 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
       }
 
       if (charDelta.newItems && Array.isArray(charDelta.newItems)) {
+        charDelta.newItems = normalizeItemList(charDelta.newItems, allCorrections, `${charName}: `);
         if (charDelta.newItems.length > limits.maxItemsPerScene) {
           charDelta.newItems = charDelta.newItems.slice(0, limits.maxItemsPerScene);
           allCorrections.push(`${charName}: items capped to ${limits.maxItemsPerScene}`);
         }
+        charDelta.newItems = sanitizeInventoryItems(charDelta.newItems, allCorrections, `${charName}: `);
       }
 
       if (charDelta.moneyChange) {
@@ -101,6 +94,7 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   }
 
   if (validated.npcs && Array.isArray(validated.npcs)) {
+    validated.npcs = sanitizeNpcChanges(validated.npcs, allCorrections, 'multiplayer: ');
     for (const npc of validated.npcs) {
       if (typeof npc.dispositionChange === 'number') {
         const clamped = clamp(npc.dispositionChange, -limits.maxDispositionDelta, limits.maxDispositionDelta);
@@ -113,21 +107,11 @@ export function validateMultiplayerStateChanges(stateChanges, gameState, config 
   }
 
   if (validated.codexUpdates && Array.isArray(validated.codexUpdates)) {
+    validated.codexUpdates = normalizeCodexUpdates(validated.codexUpdates, allCorrections);
     if (validated.codexUpdates.length > limits.maxCodexPerScene) {
       allCorrections.push(`Codex updates capped from ${validated.codexUpdates.length} to ${limits.maxCodexPerScene}`);
       validated.codexUpdates = validated.codexUpdates.slice(0, limits.maxCodexPerScene);
     }
-    validated.codexUpdates = validated.codexUpdates.filter((u) => {
-      if (!u || typeof u !== 'object' || Array.isArray(u)) {
-        allCorrections.push('Invalid codex update removed (not an object)');
-        return false;
-      }
-      if (!u.id || !u.name || !u.fragment?.content || !u.fragment?.source) {
-        allCorrections.push('Invalid codex update removed (missing required fields)');
-        return false;
-      }
-      return true;
-    });
     for (const update of validated.codexUpdates) {
       if (update.fragment.content.length > limits.maxCodexFragmentLength) {
         update.fragment.content = update.fragment.content.substring(0, limits.maxCodexFragmentLength);

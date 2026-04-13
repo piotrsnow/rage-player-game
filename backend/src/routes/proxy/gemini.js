@@ -9,6 +9,19 @@ import { config } from '../../config.js';
 const store = createMediaStore(config);
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent';
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
+const GENERATE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
 function extractImageFromResponse(data) {
   const parts = data.candidates?.[0]?.content?.parts;
   if (!parts) return null;
@@ -21,7 +34,7 @@ export async function geminiProxyRoutes(fastify) {
   await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   fastify.addHook('onRequest', fastify.authenticate);
 
-  fastify.post('/generate', async (request, reply) => {
+  fastify.post('/generate', { schema: { body: GENERATE_BODY_SCHEMA } }, async (request, reply) => {
     const user = await prisma.user.findUnique({
       where: { id: request.user.id },
       select: { apiKeys: true },
@@ -81,8 +94,9 @@ export async function geminiProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', ext);
     const storeResult = await store.put(storagePath, buffer, contentType);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         campaignId: toObjectId(campaignId),
         key: cacheKey,
@@ -93,6 +107,7 @@ export async function geminiProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { cached: false, url: storeResult.url, key: cacheKey };
@@ -174,8 +189,9 @@ export async function geminiProxyRoutes(fastify) {
     const storagePath = cacheKey.replace('.png', ext);
     const storeResult = await store.put(storagePath, resultBuffer, resultContentType);
 
-    await prisma.mediaAsset.create({
-      data: {
+    await prisma.mediaAsset.upsert({
+      where: { key: cacheKey },
+      create: {
         userId: request.user.id,
         key: cacheKey,
         type: 'image',
@@ -185,6 +201,7 @@ export async function geminiProxyRoutes(fastify) {
         path: storagePath,
         metadata: JSON.stringify(cacheParams),
       },
+      update: {},
     });
 
     return { url: storeResult.url, key: cacheKey };

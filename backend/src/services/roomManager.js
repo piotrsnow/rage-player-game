@@ -1,5 +1,9 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
+import { deserializeCharacterRow } from './characterMutations.js';
+
+const log = childLogger({ module: 'roomManager' });
 
 const rooms = new Map();
 const ROOM_INACTIVE_TTL_MS = 30 * 60 * 1000;
@@ -35,6 +39,10 @@ function sanitizeRoom(room) {
       lastSoloActionAt: p.lastSoloActionAt || null,
       voiceId: p.voiceId || null,
       voiceName: p.voiceName || null,
+      // characterId is the canonical reference into the Character collection.
+      // characterData is a transient cache for in-room rendering — the DB
+      // record is the source of truth for persistence.
+      characterId: p.characterId || null,
       characterData: p.characterData || null,
     });
   }
@@ -64,6 +72,7 @@ export function createRoom(hostUserId, ws) {
     lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
+    characterId: null,
     characterData: null,
   };
 
@@ -104,6 +113,14 @@ export function createRoomWithGameState(hostUserId, ws, gameState, settings) {
     lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
+    // Character record reference. Caller is expected to populate this from
+    // gameState.character.backendId before invoking createRoomWithGameState.
+    characterId: gameState.characters?.[0]?.backendId
+      || gameState.characters?.[0]?.id
+      || gameState.character?.backendId
+      || gameState.character?.id
+      || null,
+    characterData: gameState.characters?.[0] || gameState.character || null,
   };
 
   if (gameState.characters?.length > 0) {
@@ -150,6 +167,7 @@ export function joinRoom(roomCode, userId, ws) {
     lastSoloActionAt: null,
     voiceId: null,
     voiceName: null,
+    characterId: null,
     characterData: null,
   };
 
@@ -165,7 +183,9 @@ export function leaveRoom(roomCode, odId) {
 
   if (room.players.size === 0) {
     rooms.delete(roomCode);
-    deleteRoomFromDB(roomCode).catch(() => {});
+    deleteRoomFromDB(roomCode).catch((err) => {
+      log.warn({ err, roomCode }, 'deleteRoomFromDB after last leave failed');
+    });
     return null;
   }
 
@@ -227,7 +247,7 @@ export function listUserRooms(userId) {
   return result;
 }
 
-export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName, characterData }) {
+export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, voiceName, characterId, characterData }) {
   const room = rooms.get(roomCode);
   if (!room) throw new Error('Room not found');
   const player = room.players.get(odId);
@@ -238,6 +258,7 @@ export function updateCharacter(roomCode, odId, { name, gender, photo, voiceId, 
   if (photo !== undefined) player.photo = photo;
   if (voiceId !== undefined) player.voiceId = voiceId;
   if (voiceName !== undefined) player.voiceName = voiceName;
+  if (characterId !== undefined) player.characterId = characterId;
   if (characterData !== undefined) player.characterData = characterData;
 
   return room;
@@ -392,7 +413,7 @@ export function sendTo(room, odId, message) {
     return true;
   }
   if (process.env.NODE_ENV !== 'production') {
-    console.warn('[roomManager] sendTo skipped: target socket not open', { roomCode: room?.roomCode, odId });
+    log.warn({ roomCode: room?.roomCode, odId }, 'sendTo skipped: target socket not open');
   }
   return false;
 }
@@ -408,7 +429,9 @@ function cleanupInactiveRooms() {
     const hasConnectedPlayers = [...room.players.values()].some((p) => p.ws?.readyState === 1);
     if (!hasConnectedPlayers && (now - room.lastActivity) > ROOM_INACTIVE_TTL_MS) {
       rooms.delete(code);
-      deleteRoomFromDB(code).catch(() => {});
+      deleteRoomFromDB(code).catch((err) => {
+        log.warn({ err, roomCode: code }, 'deleteRoomFromDB cleanup failed');
+      });
     }
   }
 }
@@ -426,6 +449,36 @@ export function stopRoomCleanup() {
   cleanupTimer = null;
 }
 
+/**
+ * Persist all active rooms to DB. Used by the graceful shutdown handler so
+ * in-flight multiplayer sessions survive a SIGTERM-triggered deploy.
+ */
+export async function saveAllActiveRooms() {
+  const codes = [];
+  for (const [code, room] of rooms) {
+    if (room?.gameState) codes.push(code);
+  }
+  await Promise.allSettled(codes.map((code) => saveRoomToDB(code)));
+  return codes.length;
+}
+
+/**
+ * Close every active WebSocket attached to a room. Called from shutdown so
+ * clients get a clean close frame instead of dangling sockets.
+ */
+export function closeAllRoomSockets(code = 1001, reason = 'Server shutting down') {
+  let closed = 0;
+  for (const [, room] of rooms) {
+    for (const [, player] of room.players) {
+      const ws = player.ws;
+      if (ws && ws.readyState === 1) {
+        try { ws.close(code, reason); closed += 1; } catch { /* already closing */ }
+      }
+    }
+  }
+  return closed;
+}
+
 function serializePlayersForDB(room) {
   const players = [];
   for (const [, p] of room.players) {
@@ -438,10 +491,34 @@ function serializePlayersForDB(room) {
       isHost: p.isHost,
       voiceId: p.voiceId || null,
       voiceName: p.voiceName || null,
-      characterData: p.characterData || null,
+      characterId: p.characterId || null,
+      // characterData snapshot is intentionally NOT persisted — the Character
+      // record is the source of truth on rehydration. We only save IDs.
     });
   }
   return JSON.stringify(players);
+}
+
+function collectCharacterIdsForRoom(room) {
+  const ids = [];
+  for (const [, p] of room.players) {
+    if (p.characterId) ids.push(p.characterId);
+  }
+  return ids;
+}
+
+/**
+ * Strip embedded character snapshots out of gameState before persistence.
+ * Multiplayer sessions reference characters by ID via the characterIds column,
+ * not via embedded snapshots in the gameState blob. The in-memory snapshot is
+ * still useful for live rendering, but we never write it to disk.
+ */
+function stripCharactersFromGameStateForDB(gameState) {
+  if (!gameState) return gameState;
+  const out = { ...gameState };
+  delete out.character;
+  delete out.characters;
+  return out;
 }
 
 export async function saveRoomToDB(roomCode) {
@@ -452,6 +529,9 @@ export async function saveRoomToDB(roomCode) {
     const hostPlayer = room.players.get(room.hostId);
     if (!hostPlayer) return;
 
+    const characterIds = collectCharacterIdsForRoom(room);
+    const slimGameState = stripCharactersFromGameStateForDB(room.gameState);
+
     await prisma.multiplayerSession.upsert({
       where: { roomCode },
       create: {
@@ -459,27 +539,32 @@ export async function saveRoomToDB(roomCode) {
         hostId: hostPlayer.userId,
         phase: room.phase,
         players: serializePlayersForDB(room),
-        gameState: JSON.stringify(room.gameState),
+        characterIds,
+        gameState: JSON.stringify(slimGameState),
         settings: JSON.stringify(room.settings),
       },
       update: {
         hostId: hostPlayer.userId,
         phase: room.phase,
         players: serializePlayersForDB(room),
-        gameState: JSON.stringify(room.gameState),
+        characterIds,
+        gameState: JSON.stringify(slimGameState),
         settings: JSON.stringify(room.settings),
       },
     });
   } catch (err) {
-    console.warn('[roomManager] Failed to save room to DB:', err.message);
+    log.warn({ err }, 'Failed to save room to DB');
   }
 }
 
 export async function deleteRoomFromDB(roomCode) {
   try {
-    await prisma.multiplayerSession.delete({ where: { roomCode } }).catch(() => {});
-  } catch {
-    // ignore
+    await prisma.multiplayerSession.delete({ where: { roomCode } });
+  } catch (err) {
+    // Record-not-found (Prisma P2025) is benign — the session was already cleaned up.
+    if (err?.code !== 'P2025') {
+      log.warn({ err, roomCode }, 'Failed to delete session from DB');
+    }
   }
 }
 
@@ -498,10 +583,34 @@ export async function loadActiveSessionsFromDB() {
 
       if (!gameState) continue;
 
+      // Rehydrate Character snapshots from the Character collection. Each
+      // player's characterId points at a row that holds the authoritative
+      // state — we never trust embedded snapshots from the gameState blob.
+      const characterIds = Array.isArray(session.characterIds) ? session.characterIds : [];
+      const charRows = characterIds.length > 0
+        ? await prisma.character.findMany({ where: { id: { in: characterIds } } })
+        : [];
+      const charById = new Map(charRows.map((r) => [r.id, deserializeCharacterRow(r)]));
+
       const playerMap = new Map();
+      const refreshedCharacters = [];
       for (const p of players) {
-        playerMap.set(p.odId, { ...p, ws: null, pendingAction: null, lastSoloActionAt: null });
+        const characterData = p.characterId ? charById.get(p.characterId) || null : null;
+        playerMap.set(p.odId, {
+          ...p,
+          ws: null,
+          pendingAction: null,
+          lastSoloActionAt: null,
+          characterData,
+        });
+        if (characterData) {
+          refreshedCharacters.push({ ...characterData, odId: p.odId });
+        }
       }
+
+      // Rebuild gameState.characters from the freshly-loaded Character snapshots.
+      gameState.characters = refreshedCharacters;
+      if (refreshedCharacters[0]) gameState.character = refreshedCharacters[0];
 
       const hostOdId = players.find((p) => p.isHost)?.odId || players[0]?.odId;
 
@@ -518,10 +627,10 @@ export async function loadActiveSessionsFromDB() {
     }
 
     if (sessions.length > 0) {
-      console.log(`[roomManager] Loaded ${sessions.length} multiplayer sessions from DB`);
+      log.info({ count: sessions.length }, 'Loaded multiplayer sessions from DB');
     }
   } catch (err) {
-    console.warn('[roomManager] Failed to load sessions from DB:', err.message);
+    log.warn({ err }, 'Failed to load sessions from DB');
   }
 }
 

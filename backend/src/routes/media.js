@@ -10,6 +10,33 @@ const EXT_CONTENT_TYPES = {
   glb: 'model/gltf-binary',
 };
 
+const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
+
+const CHECK_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['type', 'params'],
+  properties: {
+    type: { type: 'string', maxLength: 64 },
+    params: { type: 'object', additionalProperties: true },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+  },
+};
+
+const STORE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['key', 'type', 'contentType', 'data'],
+  properties: {
+    key: { type: 'string', maxLength: 512 },
+    type: { type: 'string', maxLength: 64 },
+    contentType: { type: 'string', maxLength: 128 },
+    metadata: { type: 'object', additionalProperties: true },
+    data: { type: 'string' },
+    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+  },
+};
+
 export async function mediaRoutes(fastify) {
   // Public read by storage path (opaque hashed paths) — needed for shared campaign viewers without JWT.
   fastify.get('/file/*', async (request, reply) => {
@@ -20,7 +47,7 @@ export async function mediaRoutes(fastify) {
       prisma.mediaAsset.update({
         where: { key: asset.key },
         data: { lastAccessedAt: new Date() },
-      }).catch(() => {});
+      }).catch((err) => fastify.log.warn(err, `mediaAsset.update lastAccessedAt failed (${asset.key})`));
     }
 
     const result = await store.get(path);
@@ -37,7 +64,7 @@ export async function mediaRoutes(fastify) {
   await fastify.register(async function mediaAuthedRoutes(f) {
     f.addHook('onRequest', f.authenticate);
 
-    f.post('/check', async (request) => {
+    f.post('/check', { schema: { body: CHECK_BODY_SCHEMA } }, async (request) => {
       const { type, params, campaignId } = request.body;
       const key = generateKey(type, params, campaignId);
 
@@ -54,7 +81,7 @@ export async function mediaRoutes(fastify) {
       return { cached: false, key };
     });
 
-    f.post('/store', async (request) => {
+    f.post('/store', { schema: { body: STORE_BODY_SCHEMA } }, async (request) => {
       const { key, type, contentType, metadata, data, campaignId } = request.body;
 
       const buffer = Buffer.from(data, 'base64');
