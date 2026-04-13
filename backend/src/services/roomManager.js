@@ -180,7 +180,9 @@ export function leaveRoom(roomCode, odId) {
 
   if (room.players.size === 0) {
     rooms.delete(roomCode);
-    deleteRoomFromDB(roomCode).catch(() => {});
+    deleteRoomFromDB(roomCode).catch((err) => {
+      console.warn(`[roomManager] deleteRoomFromDB after last leave (${roomCode}):`, err?.message);
+    });
     return null;
   }
 
@@ -424,7 +426,9 @@ function cleanupInactiveRooms() {
     const hasConnectedPlayers = [...room.players.values()].some((p) => p.ws?.readyState === 1);
     if (!hasConnectedPlayers && (now - room.lastActivity) > ROOM_INACTIVE_TTL_MS) {
       rooms.delete(code);
-      deleteRoomFromDB(code).catch(() => {});
+      deleteRoomFromDB(code).catch((err) => {
+        console.warn(`[roomManager] deleteRoomFromDB cleanup (${code}):`, err?.message);
+      });
     }
   }
 }
@@ -522,9 +526,12 @@ export async function saveRoomToDB(roomCode) {
 
 export async function deleteRoomFromDB(roomCode) {
   try {
-    await prisma.multiplayerSession.delete({ where: { roomCode } }).catch(() => {});
-  } catch {
-    // ignore
+    await prisma.multiplayerSession.delete({ where: { roomCode } });
+  } catch (err) {
+    // Record-not-found (Prisma P2025) is benign — the session was already cleaned up.
+    if (err?.code !== 'P2025') {
+      console.warn(`[roomManager] Failed to delete session ${roomCode} from DB:`, err?.message);
+    }
   }
 }
 

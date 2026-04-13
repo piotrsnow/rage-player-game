@@ -5,6 +5,22 @@ import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { deserializeCharacterRow } from '../services/characterMutations.js';
 
+const CAMPAIGN_WRITE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', maxLength: 200 },
+    genre: { type: 'string', maxLength: 100 },
+    tone: { type: 'string', maxLength: 100 },
+    coreState: { type: ['object', 'string'] },
+    characterIds: {
+      type: 'array',
+      maxItems: 20,
+      items: { type: 'string', maxLength: 100 },
+    },
+  },
+};
+
 const store = createMediaStore(config);
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
@@ -625,7 +641,7 @@ export async function campaignRoutes(fastify) {
       };
     });
 
-    app.post('/', async (request) => {
+    app.post('/', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request) => {
       const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
@@ -673,20 +689,13 @@ export async function campaignRoutes(fastify) {
       return { ...campaign, coreState: fullState, scenes: [], characters };
     });
 
-    app.put('/:id', async (request, reply) => {
+    app.put('/:id', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request, reply) => {
       const existing = await prisma.campaign.findFirst({
         where: { id: request.params.id, userId: request.user.id },
       });
       if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
       const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
-
-      // Reject any attempt to write character data through the campaign endpoint.
-      if ('character' in (request.body || {}) || 'characterState' in (request.body || {})) {
-        return reply.code(400).send({
-          error: 'Character data must be saved via /characters endpoints, not /campaigns. Use PATCH /characters/:id/state-changes for AI deltas or PUT /characters/:id for full snapshots.',
-        });
-      }
 
       const updateData = { lastSaved: new Date() };
 

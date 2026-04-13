@@ -91,6 +91,70 @@ function buildUpdatePayload(body) {
   return data;
 }
 
+const CHARACTER_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    name: { type: 'string', maxLength: 200 },
+    age: { type: ['number', 'string'] },
+    gender: { type: 'string', maxLength: 40 },
+    species: { type: 'string', maxLength: 100 },
+    attributes: { type: 'object' },
+    skills: { type: 'object' },
+    wounds: { type: 'number' },
+    maxWounds: { type: 'number' },
+    movement: { type: 'number' },
+    characterLevel: { type: 'number' },
+    characterXp: { type: 'number' },
+    attributePoints: { type: 'number' },
+    mana: { type: 'object' },
+    spells: { type: 'object' },
+    inventory: { type: 'array', maxItems: 500 },
+    materialBag: { type: 'array', maxItems: 500 },
+    money: { type: 'object' },
+    equipped: { type: 'object' },
+    statuses: { type: 'array', maxItems: 100 },
+    needs: { type: 'object' },
+    backstory: { type: 'string', maxLength: 10000 },
+    customAttackPresets: { type: 'array', maxItems: 50 },
+    portraitUrl: { type: 'string', maxLength: 2000 },
+    voiceId: { type: 'string', maxLength: 200 },
+    voiceName: { type: 'string', maxLength: 200 },
+    campaignCount: { type: 'number' },
+    careerData: { type: 'object' },
+    characteristics: { type: 'object' },
+    advances: { type: 'object' },
+    xp: { type: 'number' },
+    xpSpent: { type: 'number' },
+  },
+};
+
+const STATE_CHANGES_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    woundsChange: { type: 'number' },
+    xp: { type: 'number' },
+    manaChange: { type: 'number' },
+    manaMaxChange: { type: 'number' },
+    attributeChanges: { type: 'object' },
+    skillProgress: { type: 'object' },
+    spellUsage: { type: 'object' },
+    learnSpell: { type: ['string', 'object', 'null'] },
+    consumeScroll: { type: ['string', 'object', 'null'] },
+    addScroll: { type: ['string', 'object', 'null'] },
+    newItems: { type: 'array', maxItems: 100 },
+    newMaterials: { type: 'array', maxItems: 100 },
+    removeItems: { type: 'array', maxItems: 100 },
+    removeItemsByName: { type: 'array', maxItems: 100 },
+    moneyChange: { type: 'object' },
+    statuses: { type: ['array', 'object'] },
+    needsChanges: { type: 'object' },
+    equipChange: { type: 'object' },
+    forceStatus: { type: 'string', maxLength: 100 },
+  },
+};
+
 export async function characterRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -110,14 +174,14 @@ export async function characterRoutes(fastify) {
     return deserializeCharacterRow(character);
   });
 
-  fastify.post('/', async (request) => {
+  fastify.post('/', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request) => {
     const character = await prisma.character.create({
       data: buildCreatePayload(request.user.id, request.body || {}),
     });
     return deserializeCharacterRow(character);
   });
 
-  fastify.put('/:id', async (request, reply) => {
+  fastify.put('/:id', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request, reply) => {
     const existing = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
     });
@@ -142,7 +206,7 @@ export async function characterRoutes(fastify) {
    *
    * Returns the updated, deserialized Character snapshot.
    */
-  fastify.patch('/:id/state-changes', async (request, reply) => {
+  fastify.patch('/:id/state-changes', { schema: { body: STATE_CHANGES_SCHEMA } }, async (request, reply) => {
     const existing = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
     });

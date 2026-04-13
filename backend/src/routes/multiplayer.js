@@ -9,7 +9,6 @@ import {
 import {
   generateMultiplayerScene,
   generateMultiplayerCampaign,
-  generateMidGameCharacter,
   needsCompression,
   compressOldScenes,
   verifyMultiplayerQuestObjective,
@@ -76,22 +75,6 @@ async function persistMultiplayerCharactersToDB(room, mutatedCharacters) {
   await Promise.all(updates);
 }
 
-function normalizeJoinCharacter(characterData) {
-  if (!characterData || typeof characterData !== 'object') return null;
-  const name = typeof characterData.name === 'string' ? characterData.name.trim() : '';
-  if (!name) return null;
-  const gender = typeof characterData.gender === 'string' && characterData.gender
-    ? characterData.gender
-    : 'male';
-  const career = characterData.career || characterData.careerData || null;
-  return {
-    ...characterData,
-    name,
-    gender,
-    career,
-  };
-}
-
 /**
  * Fetch a Character record from DB and validate ownership. Used by JOIN_ROOM
  * and CONVERT_TO_MULTIPLAYER to source the canonical character snapshot
@@ -112,6 +95,11 @@ function buildArrivalNarrative(playerName, language = 'en') {
   }
   return `${playerName} joins the party and takes a place by the campfire, ready for the journey ahead.`;
 }
+
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const MESSAGE_RATE_WINDOW_MS = 1000;
+const MESSAGE_RATE_LIMIT = 30;
+const MESSAGE_RATE_BURST_CLOSE = 60;
 
 export async function multiplayerRoutes(fastify) {
   const sendWs = (ws, type, payload = {}) => {
@@ -181,9 +169,39 @@ export async function multiplayerRoutes(fastify) {
 
       const userId = user.id;
 
+      let isAlive = true;
+      socket.on('pong', () => { isAlive = true; });
+      const heartbeat = setInterval(() => {
+        if (!isAlive) {
+          fastify.log.warn(`[multiplayer] heartbeat timeout — terminating socket (uid=${userId})`);
+          socket.terminate();
+          return;
+        }
+        isAlive = false;
+        try { socket.ping(); } catch { /* socket already closing */ }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      const messageTimestamps = [];
+
       let messageQueueTail = Promise.resolve();
 
       socket.on('message', (raw) => {
+        const now = Date.now();
+        while (messageTimestamps.length > 0 && messageTimestamps[0] < now - MESSAGE_RATE_WINDOW_MS) {
+          messageTimestamps.shift();
+        }
+        messageTimestamps.push(now);
+        if (messageTimestamps.length > MESSAGE_RATE_BURST_CLOSE) {
+          fastify.log.warn(`[multiplayer] message burst limit exceeded (uid=${userId}) — closing socket`);
+          sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Too many messages', code: 'RATE_LIMIT' });
+          socket.close();
+          return;
+        }
+        if (messageTimestamps.length > MESSAGE_RATE_LIMIT) {
+          sendWs(socket, WS_SERVER_TYPES.ERROR, { message: 'Message rate limit — slow down', code: 'RATE_LIMIT' });
+          return;
+        }
+
         messageQueueTail = messageQueueTail.then(async () => {
           let msg;
           try {
@@ -222,6 +240,7 @@ export async function multiplayerRoutes(fastify) {
       });
 
       socket.on('close', () => {
+        clearInterval(heartbeat);
         if (roomCode && odId) {
           const currentRoom = getRoom(roomCode);
           if (!currentRoom) return;
@@ -247,7 +266,13 @@ export async function multiplayerRoutes(fastify) {
                 playerName,
                 room: sanitizeRoom(room),
               });
-              saveRoomToDB(roomCode).catch(() => {});
+              saveRoomToDB(roomCode).catch((err) => {
+                fastify.log.warn(err, `MP room save on disconnect failed for ${roomCode} — state may diverge from DB`);
+                sendWs(socket, WS_SERVER_TYPES.ERROR, {
+                  message: 'Room save failed — your progress may not persist across disconnects',
+                  code: 'ROOM_SAVE_FAILED',
+                });
+              });
             }
           }
         }
@@ -290,58 +315,32 @@ export async function multiplayerRoutes(fastify) {
           }
 
           case 'JOIN_ROOM': {
+            if (!msg.characterId) {
+              throw new Error('characterId is required');
+            }
             const result = joinRoom(msg.roomCode, uid, ws);
             odId = result.odId;
             roomCode = result.room.roomCode;
             const player = result.room.players.get(odId);
 
-            // Prefer the canonical Character record fetched by ID. Fall back
-            // to client-supplied characterData for legacy clients only.
-            let selectedCharacter = null;
-            if (msg.characterId) {
-              selectedCharacter = await fetchOwnedCharacter(msg.characterId, uid);
-              if (!selectedCharacter) {
-                throw new Error('Character not found or not owned by user');
-              }
-              if (player) player.characterId = msg.characterId;
-            } else {
-              selectedCharacter = normalizeJoinCharacter(msg.characterData);
+            const selectedCharacter = await fetchOwnedCharacter(msg.characterId, uid);
+            if (!selectedCharacter) {
+              throw new Error('Character not found or not owned by user');
             }
-
-            if (player && selectedCharacter) {
+            if (player) {
+              player.characterId = msg.characterId;
               player.name = selectedCharacter.name;
               player.gender = selectedCharacter.gender || 'male';
               player.characterData = selectedCharacter;
-              if (!player.characterId && selectedCharacter.backendId) {
-                player.characterId = selectedCharacter.backendId;
-              } else if (!player.characterId && selectedCharacter.id) {
-                player.characterId = selectedCharacter.id;
-              }
             }
 
             if (result.room.phase === 'playing' && result.room.gameState) {
-              let newChar;
-              let arrivalNarrative;
-              if (selectedCharacter) {
-                newChar = {
-                  ...selectedCharacter,
-                  odId,
-                  playerName: selectedCharacter.name,
-                };
-                arrivalNarrative = buildArrivalNarrative(newChar.name, msg.language || 'en');
-              } else {
-                const charResult = await generateMidGameCharacter(
-                  result.room.gameState,
-                  result.room.settings,
-                  player.name,
-                  player.gender,
-                  null,
-                  msg.language || 'en',
-                  player.characterData || null,
-                );
-                newChar = { ...charResult.character, odId };
-                arrivalNarrative = charResult.arrivalNarrative;
-              }
+              const newChar = {
+                ...selectedCharacter,
+                odId,
+                playerName: selectedCharacter.name,
+              };
+              const arrivalNarrative = buildArrivalNarrative(newChar.name, msg.language || 'en');
 
               result.room.gameState.characters = [...(result.room.gameState.characters || []), newChar];
 
@@ -644,7 +643,7 @@ export async function multiplayerRoutes(fastify) {
                           compressedHistory: summary,
                         };
                         setGameState(roomCode, currentRoom.gameState);
-                        saveRoomToDB(roomCode).catch(() => {});
+                        saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after compression failed'));
                       }
                     }
                   })
@@ -750,7 +749,7 @@ export async function multiplayerRoutes(fastify) {
                           compressedHistory: summary,
                         };
                         setGameState(roomCode, currentRoom.gameState);
-                        saveRoomToDB(roomCode).catch(() => {});
+                        saveRoomToDB(roomCode).catch((err) => fastify.log.warn(err, 'MP room save after compression failed'));
                       }
                     }
                   })

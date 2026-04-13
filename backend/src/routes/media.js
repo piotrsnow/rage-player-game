@@ -20,7 +20,7 @@ export async function mediaRoutes(fastify) {
       prisma.mediaAsset.update({
         where: { key: asset.key },
         data: { lastAccessedAt: new Date() },
-      }).catch(() => {});
+      }).catch((err) => fastify.log.warn(err, `mediaAsset.update lastAccessedAt failed (${asset.key})`));
     }
 
     const result = await store.get(path);

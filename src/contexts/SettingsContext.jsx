@@ -171,8 +171,8 @@ export function SettingsProvider({ children }) {
       setBackendAuthChecking(false);
       return;
     }
-    setBackendAuthChecking(shouldCheckBackendSession(settings));
-  }, [settings, backendUser]);
+    setBackendAuthChecking(Boolean(apiClient.getToken()));
+  }, [settings.backendUrl, settings.useBackend, backendUser]);
 
   const fetchBackendKeys = useCallback(async () => {
     if (!apiClient.isConnected()) {

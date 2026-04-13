@@ -2,6 +2,7 @@ import { generateSceneStream } from '../services/sceneGenerator.js';
 import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
 import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
+import { resolveSseCorsOrigin } from '../plugins/cors.js';
 import {
   embedText,
   buildSceneEmbeddingText,
@@ -10,6 +11,74 @@ import {
   buildCodexEmbeddingText,
 } from '../services/embeddingService.js';
 import { writeEmbedding } from '../services/vectorSearchService.js';
+
+function writeSseHead(request, reply) {
+  const origin = resolveSseCorsOrigin(request.headers.origin);
+  if (origin === false) {
+    reply.code(403).send({ error: 'Origin not allowed' });
+    return false;
+  }
+  const headers = {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  };
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers['Access-Control-Allow-Credentials'] = 'true';
+  }
+  reply.raw.writeHead(200, headers);
+  return true;
+}
+
+const PROVIDER_SCHEMA = { type: 'string', maxLength: 40 };
+const MODEL_SCHEMA = { type: ['string', 'null'], maxLength: 200 };
+const LANGUAGE_SCHEMA = { type: 'string', maxLength: 10 };
+
+const STORY_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    genre: { type: 'string', maxLength: 100 },
+    tone: { type: 'string', maxLength: 100 },
+    style: { type: 'string', maxLength: 100 },
+    seedText: { type: 'string', maxLength: 2000 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+};
+
+const GENERATE_CAMPAIGN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    settings: { type: 'object' },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+};
+
+const GENERATE_SCENE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    playerAction: { type: ['string', 'null'], maxLength: 4000 },
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    language: LANGUAGE_SCHEMA,
+    dmSettings: { type: 'object' },
+    resolvedMechanics: { type: ['object', 'null'] },
+    needsSystemEnabled: { type: 'boolean' },
+    characterNeeds: { type: ['object', 'null'] },
+    isFirstScene: { type: 'boolean' },
+    sceneCount: { type: 'number' },
+    isCustomAction: { type: 'boolean' },
+    fromAutoPlayer: { type: 'boolean' },
+  },
+};
 
 export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
@@ -20,7 +89,7 @@ export async function aiRoutes(fastify) {
    * Generate a random story premise for the campaign creator.
    * Non-streaming — response is a single JSON object.
    */
-  fastify.post('/generate-story-prompt', async (request, reply) => {
+  fastify.post('/generate-story-prompt', { schema: { body: STORY_PROMPT_SCHEMA } }, async (request, reply) => {
     const { genre, tone, style, seedText, language, provider, model } = request.body || {};
     try {
       const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model });
@@ -37,18 +106,10 @@ export async function aiRoutes(fastify) {
    * Generate a new campaign with SSE streaming.
    * Events: chunk (raw JSON text), complete (full parsed result), error
    */
-  fastify.post('/generate-campaign', async (request, reply) => {
+  fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
 
-    const origin = request.headers.origin || '*';
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-    });
+    if (!writeSseHead(request, reply)) return;
 
     await generateCampaignStream(
       settings || {},
@@ -69,7 +130,7 @@ export async function aiRoutes(fastify) {
    * Generate a new scene with SSE streaming.
    * Events: intent, context_ready, chunk, complete, error
    */
-  fastify.post('/campaigns/:id/generate-scene-stream', async (request, reply) => {
+  fastify.post('/campaigns/:id/generate-scene-stream', { schema: { body: GENERATE_SCENE_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const {
       playerAction,
@@ -104,15 +165,7 @@ export async function aiRoutes(fastify) {
     }
 
     // SSE headers (must include CORS manually since writeHead bypasses Fastify hooks)
-    const origin = request.headers.origin || '*';
-    reply.raw.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Credentials': 'true',
-    });
+    if (!writeSseHead(request, reply)) return;
 
     await generateSceneStream(
       campaignId,

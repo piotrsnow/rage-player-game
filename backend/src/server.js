@@ -30,9 +30,12 @@ import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManag
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
 
+const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
+const MEDIA_BODY_LIMIT = 50 * 1024 * 1024;
+
 const fastify = Fastify({
   logger: true,
-  bodyLimit: 50 * 1024 * 1024, // 50MB for media uploads
+  bodyLimit: DEFAULT_BODY_LIMIT,
 });
 
 await fastify.register(compress, { global: true });
@@ -58,6 +61,9 @@ await fastify.register(async function authScope(app) {
 await fastify.register(async function dataScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+    if (routeOptions.url?.startsWith('/media')) {
+      routeOptions.bodyLimit = MEDIA_BODY_LIMIT;
+    }
   });
   app.register(campaignRoutes, { prefix: '/campaigns' });
   app.register(characterRoutes, { prefix: '/characters' });
@@ -91,10 +97,21 @@ await fastify.register(async function aiScope(app) {
   app.register(aiRoutes, { prefix: '/ai' });
 });
 
-await fastify.register(multiplayerRoutes, { prefix: '/multiplayer' });
+await fastify.register(async function multiplayerScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    // WebSocket upgrades are throttled here; per-message throttling lives in the ws handler.
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
+  });
+  app.register(multiplayerRoutes);
+}, { prefix: '/multiplayer' });
 
 // Static game rules data — no auth, generous rate limit
-await fastify.register(gameDataRoutes, { prefix: '/game-data' });
+await fastify.register(async function gameDataScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
+  });
+  app.register(gameDataRoutes);
+}, { prefix: '/game-data' });
 
 startRoomCleanup();
 
