@@ -1,7 +1,10 @@
 import { prisma } from '../lib/prisma.js';
 import { requireServerApiKey } from './apiKeyService.js';
 import { config } from '../config.js';
+import { childLogger } from '../lib/logger.js';
 import { parseProviderError, toClientAiError, AIServiceError } from './aiErrors.js';
+
+const log = childLogger({ module: 'sceneGenerator' });
 import {
   assembleContext,
 } from './aiContextTools.js';
@@ -134,8 +137,8 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         return data.choices?.[0]?.message?.content || instruction;
       }
     }
-  } catch (e) {
-    console.warn('generateShortNarrative failed:', e.message);
+  } catch (err) {
+    log.warn({ err }, 'generateShortNarrative failed');
   }
   return instruction;
 }
@@ -1009,14 +1012,14 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
     try {
       parsed = JSON.parse(data);
     } catch {
-      if (debug) console.log('[openai-stream] UNPARSEABLE:', JSON.stringify(data));
+      if (debug) log.debug({ data }, 'openai-stream UNPARSEABLE');
       return;
     }
     const choice = parsed.choices?.[0];
     if (!choice) return;
     const delta = choice.delta;
     if (!delta) return;
-    if (debug) console.log('[openai-stream] delta:', JSON.stringify(delta));
+    if (debug) log.debug({ delta }, 'openai-stream delta');
     // `content` can be a plain string OR (on some models / via Responses-style
     // chunking) an array of content parts like [{type:'text', text:'...'}].
     // Our old code only handled the string form, which silently dropped the
@@ -1111,7 +1114,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
       if (parsed.type === 'message_delta' && parsed.usage) {
         const u = parsed.usage;
         if (u.cache_read_input_tokens > 0 || u.cache_creation_input_tokens > 0) {
-          console.log(`[anthropic-stream] Cache: read=${u.cache_read_input_tokens || 0} created=${u.cache_creation_input_tokens || 0}`);
+          log.debug({ cacheRead: u.cache_read_input_tokens || 0, cacheCreated: u.cache_creation_input_tokens || 0 }, 'anthropic-stream cache hit');
         }
       }
     } catch {
@@ -1499,7 +1502,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       for (const r of sceneResult.diceRolls) {
         const k = skillKey(r?.skill);
         if (k && usedSkills.has(k)) {
-          console.log('[sceneGenerator] Dropped duplicate model dice roll for skill:', r.skill);
+          log.debug({ skill: r.skill }, 'Dropped duplicate model dice roll');
           continue;
         }
         if (k) usedSkills.add(k);
@@ -1553,7 +1556,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           activeQuests,
           sceneResult.stateChanges?.questUpdates || [],
           provider
-        ).catch(err => { console.error('Quest objective check failed:', err.message); return []; })
+        ).catch((err) => { log.error({ err, campaignId }, 'Quest objective check failed'); return []; })
       : Promise.resolve([]);
 
     // 9a. Apply character state changes + persist (runs in parallel with nano)
@@ -1566,27 +1569,27 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           data: characterToPrismaUpdate(updatedCharacter),
         });
       } catch (err) {
-        console.error('[sceneGenerator] Failed to persist character state changes:', err.message);
+        log.error({ err, characterId: activeCharacterId }, 'Failed to persist character state changes');
       }
     }
 
     // 9b. Async fire-and-forget: embedding + NPC/codex/quest sync + memory compression
-    generateSceneEmbedding(savedScene).catch(err =>
-      console.error('Failed to generate scene embedding:', err.message)
+    generateSceneEmbedding(savedScene).catch((err) =>
+      log.error({ err, sceneId: savedScene.id }, 'Failed to generate scene embedding')
     );
     if (sceneResult.stateChanges) {
-      processStateChanges(campaignId, sceneResult.stateChanges).catch(err =>
-        console.error('Failed to process state changes:', err.message)
+      processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
+        log.error({ err, campaignId }, 'Failed to process state changes')
       );
     }
-    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider).catch(err =>
-      console.error('Failed to compress scene to summary:', err.message)
+    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider).catch((err) =>
+      log.error({ err, campaignId }, 'Failed to compress scene to summary')
     );
     const newLoc = sceneResult.stateChanges?.currentLocation;
     const prevLoc = coreState.world?.currentLocation;
     if (newLoc && prevLoc && newLoc !== prevLoc) {
-      generateLocationSummary(campaignId, newLoc, prevLoc, provider).catch(err =>
-        console.error('Failed to generate location summary:', err.message)
+      generateLocationSummary(campaignId, newLoc, prevLoc, provider).catch((err) =>
+        log.error({ err, campaignId, newLoc, prevLoc }, 'Failed to generate location summary')
       );
     }
 
@@ -1747,7 +1750,7 @@ async function processStateChanges(campaignId, stateChanges) {
           if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
         }
       } catch (err) {
-        console.error(`Failed to process NPC change for ${npcChange.name}:`, err.message);
+        log.error({ err, campaignId, npcName: npcChange.name }, 'Failed to process NPC change');
       }
     }
   }
@@ -1777,7 +1780,7 @@ async function processStateChanges(campaignId, stateChanges) {
         const emb = await embedText(embText);
         if (emb) writeEmbedding('CampaignKnowledge', created.id, emb, embText);
       } catch (err) {
-        console.error('Failed to save knowledge entry:', err.message);
+        log.error({ err, campaignId, entryType: entry.entryType }, 'Failed to save knowledge entry');
       }
     }
   }
@@ -1823,7 +1826,7 @@ async function processStateChanges(campaignId, stateChanges) {
           if (emb) writeEmbedding('CampaignCodex', created.id, emb, embText);
         }
       } catch (err) {
-        console.error(`Failed to process codex update for ${cu.id}:`, err.message);
+        log.error({ err, campaignId, codexId: cu.id }, 'Failed to process codex update');
       }
     }
   }
@@ -1853,7 +1856,7 @@ async function processStateChanges(campaignId, stateChanges) {
           });
         }
       } catch (err) {
-        console.error(`Failed to update quest objective ${update.questId}/${update.objectiveId}:`, err.message);
+        log.error({ err, campaignId, questId: update.questId, objectiveId: update.objectiveId }, 'Failed to update quest objective');
       }
     }
   }
@@ -1872,7 +1875,7 @@ async function processStateChanges(campaignId, stateChanges) {
           });
         }
       } catch (err) {
-        console.error(`Failed to mark quest ${questId} as completed:`, err.message);
+        log.error({ err, campaignId, questId }, 'Failed to mark quest as completed');
       }
     }
   }
@@ -1891,7 +1894,7 @@ async function processStateChanges(campaignId, stateChanges) {
           });
         }
       } catch (err) {
-        console.error(`Failed to mark quest ${questId} as failed:`, err.message);
+        log.error({ err, campaignId, questId }, 'Failed to mark quest as failed');
       }
     }
   }

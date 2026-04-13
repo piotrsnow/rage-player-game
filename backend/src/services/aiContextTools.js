@@ -4,6 +4,9 @@ import { searchCampaignMemory, searchCodex, searchNPCs } from './vectorSearchSer
 import { embedText } from './embeddingService.js';
 import { formatWeaponCatalog, formatBaseTypeCatalog, searchBestiary } from '../data/equipment/index.js';
 import { getLocationSummary } from './memoryCompressor.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'aiContextTools' });
 
 /**
  * Tool definitions for OpenAI/Anthropic function calling.
@@ -176,7 +179,7 @@ async function handleSearchMemory(campaignId, query) {
   try {
     results = await searchCampaignMemory(campaignId, query, { limit: 8 });
   } catch (err) {
-    console.warn(`[assembleContext] Memory search skipped: ${err.message}`);
+    log.warn({ err, campaignId }, 'Memory search skipped');
     return 'Memory search unavailable.';
   }
 
@@ -216,7 +219,7 @@ async function handleGetNPC(campaignId, npcName) {
         }
       }
     } catch (err) {
-      console.warn(`[assembleContext] NPC vector search skipped: ${err.message}`);
+      log.warn({ err, campaignId, npcName }, 'NPC vector search skipped');
     }
   }
 
@@ -347,7 +350,7 @@ async function handleGetLocation(campaignId, locationName) {
     try {
       memories = await searchCampaignMemory(campaignId, `events at ${match.name}`, { limit: 3 });
     } catch (err) {
-      console.warn(`[assembleContext] Location memory search skipped: ${err.message}`);
+      log.warn({ err, campaignId, location: match.name }, 'Location memory search skipped');
     }
     if (memories.length > 0) {
       lines.push('\nRecent events at this location:');
@@ -384,7 +387,7 @@ async function handleGetCodex(campaignId, topic) {
         }
       }
     } catch (err) {
-      console.warn(`[assembleContext] Codex vector search skipped: ${err.message}`);
+      log.warn({ err, campaignId, topic }, 'Codex vector search skipped');
     }
   }
 

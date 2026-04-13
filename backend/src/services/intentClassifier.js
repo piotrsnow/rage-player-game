@@ -9,6 +9,9 @@
  */
 
 import { config } from '../config.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'intentClassifier' });
 
 // ── COMBAT INTENT REGEX (extracted from sceneGenerator.js) ──
 
@@ -265,7 +268,7 @@ export async function selectContextWithNano(playerAction, availableSummary, { pr
     // No API keys available
     return fallbackSelection(playerAction);
   } catch (err) {
-    console.warn('Nano context selector failed, using fallback:', err.message);
+    log.warn({ err }, 'Nano context selector failed, using fallback');
     return fallbackSelection(playerAction);
   }
 }

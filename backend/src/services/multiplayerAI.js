@@ -3,6 +3,9 @@ import { generateStateChangeMessages } from './stateChangeMessages.js';
 import { resolveDiceRollAttribute } from '../../../shared/domain/diceRollInference.js';
 // RPGon: no talent bonuses
 import { AIServiceError, AI_ERROR_CODES, parseProviderError } from './aiErrors.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'multiplayerAI' });
 
 const MAX_COMBINED_BONUS = 30;
 const MIN_DIFFICULTY_MODIFIER = -40;
@@ -1026,7 +1029,7 @@ async function callAI(messages) {
       lastError = err;
       if (attempt < 2) {
         const delay = RETRY_DELAYS[attempt] || 3000;
-        console.warn(`[multiplayerAI] Retry ${attempt + 1} after ${delay}ms:`, err.message);
+        log.warn({ err, attempt: attempt + 1, delayMs: delay }, 'Retry scheduled');
         await new Promise((r) => setTimeout(r, delay));
       }
     }
@@ -1562,7 +1565,7 @@ export async function compressOldScenes(gameState, _encryptedApiKeys, language =
     );
     return result?.summary || null;
   } catch (err) {
-    console.warn('[multiplayerAI] Scene compression failed:', err.message);
+    log.warn({ err }, 'Scene compression failed');
     return null;
   }
 }

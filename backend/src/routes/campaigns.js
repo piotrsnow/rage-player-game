@@ -1,9 +1,12 @@
 import crypto from 'node:crypto';
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
 import { generateKey } from '../services/hashService.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { config } from '../config.js';
 import { deserializeCharacterRow } from '../services/characterMutations.js';
+
+const log = childLogger({ module: 'campaigns' });
 
 const CAMPAIGN_WRITE_SCHEMA = {
   type: 'object',
@@ -112,7 +115,7 @@ async function syncNPCsToNormalized(campaignId, npcs) {
         update: data,
       });
     } catch (err) {
-      console.error(`[campaigns] NPC sync failed for ${npc.name}:`, err.message);
+      log.error({ err, npcName: npc.name }, 'NPC sync failed');
     }
   }
 }
@@ -142,7 +145,7 @@ async function syncKnowledgeToNormalized(campaignId, events, decisions) {
         },
       });
     } catch (err) {
-      console.error('[campaigns] Knowledge event sync failed:', err.message);
+      log.error({ err }, 'Knowledge event sync failed');
     }
   }
 
@@ -163,7 +166,7 @@ async function syncKnowledgeToNormalized(campaignId, events, decisions) {
         },
       });
     } catch (err) {
-      console.error('[campaigns] Knowledge decision sync failed:', err.message);
+      log.error({ err }, 'Knowledge decision sync failed');
     }
   }
 }
@@ -199,7 +202,7 @@ async function syncQuestsToNormalized(campaignId, quests) {
         update: data,
       });
     } catch (err) {
-      console.error(`[campaigns] Quest sync failed for ${q.name}:`, err.message);
+      log.error({ err, questName: q.name }, 'Quest sync failed');
     }
   }
 }
@@ -688,9 +691,9 @@ export async function campaignRoutes(fastify) {
         },
       });
 
-      await syncNPCsToNormalized(campaign.id, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
-      await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
-      await syncQuestsToNormalized(campaign.id, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+      await syncNPCsToNormalized(campaign.id, npcs).catch((err) => log.error({ err, campaignId: campaign.id }, 'NPC sync wrapper failed'));
+      await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId: campaign.id }, 'Knowledge sync wrapper failed'));
+      await syncQuestsToNormalized(campaign.id, quests).catch((err) => log.error({ err, campaignId: campaign.id }, 'Quest sync wrapper failed'));
 
       const fullState = { ...slim };
       if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
@@ -755,9 +758,9 @@ export async function campaignRoutes(fastify) {
 
       if (pendingSync) {
         const { campaignId, npcs, knowledgeEvents, knowledgeDecisions, quests } = pendingSync;
-        await syncNPCsToNormalized(campaignId, npcs).catch((e) => console.error('[campaigns] NPC sync:', e.message));
-        await syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((e) => console.error('[campaigns] Knowledge sync:', e.message));
-        await syncQuestsToNormalized(campaignId, quests).catch((e) => console.error('[campaigns] Quest sync:', e.message));
+        await syncNPCsToNormalized(campaignId, npcs).catch((err) => log.error({ err, campaignId }, 'NPC sync wrapper failed'));
+        await syncKnowledgeToNormalized(campaignId, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId }, 'Knowledge sync wrapper failed'));
+        await syncQuestsToNormalized(campaignId, quests).catch((err) => log.error({ err, campaignId }, 'Quest sync wrapper failed'));
       }
 
       let parsedCoreState = {};

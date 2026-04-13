@@ -9,6 +9,9 @@
 
 import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'memoryCompressor' });
 
 // ── NANO MODEL CALLER (provider-aware) ──
 
@@ -164,7 +167,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}`;
       data: { coreState: JSON.stringify(coreState) },
     });
   } catch (err) {
-    console.error('Memory compression failed:', err.message);
+    log.error({ err }, 'Memory compression failed');
   }
 }
 
@@ -248,7 +251,7 @@ ${scenesAtLocation.join('\n\n')}`;
       });
     }
   } catch (err) {
-    console.error('Location summary generation failed:', err.message);
+    log.error({ err }, 'Location summary generation failed');
   }
 }
 
@@ -362,7 +365,7 @@ ${objectiveLines}`;
         source: 'nano',
       }));
   } catch (err) {
-    console.error('Quest objective check failed:', err.message);
+    log.error({ err }, 'Quest objective check failed');
     return [];
   }
 }

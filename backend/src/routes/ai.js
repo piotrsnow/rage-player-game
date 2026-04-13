@@ -2,7 +2,10 @@ import { generateSceneStream } from '../services/sceneGenerator.js';
 import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
 import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
 import { resolveSseCorsOrigin } from '../plugins/cors.js';
+
+const log = childLogger({ module: 'ai' });
 import {
   embedText,
   buildSceneEmbeddingText,
@@ -293,7 +296,7 @@ export async function aiRoutes(fastify) {
         .then((emb) => {
           if (emb) writeEmbedding('CampaignScene', savedScene.id, emb, embeddingText);
         })
-        .catch((err) => console.error('Scene embedding failed:', err.message));
+        .catch((err) => log.error({ err }, 'Scene embedding failed'));
     }
 
     return { sceneId: savedScene.id, sceneIndex: savedScene.sceneIndex };
@@ -372,7 +375,7 @@ export async function aiRoutes(fastify) {
                   .then((emb) => {
                     if (emb) writeEmbedding('CampaignScene', saved.id, emb, embeddingText);
                   })
-                  .catch((err) => console.error('Scene embedding failed:', err.message));
+                  .catch((err) => log.error({ err }, 'Scene embedding failed'));
               }
             }
             return { sceneId: saved.id, sceneIndex: saved.sceneIndex };

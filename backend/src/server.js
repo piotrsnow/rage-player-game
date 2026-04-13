@@ -33,6 +33,7 @@ import {
   closeAllRoomSockets,
 } from './services/roomManager.js';
 import { prisma } from './lib/prisma.js';
+import { logger } from './lib/logger.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
@@ -40,8 +41,10 @@ const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
 const DEFAULT_BODY_LIMIT = 2 * 1024 * 1024;
 const MEDIA_BODY_LIMIT = 50 * 1024 * 1024;
 
+// Hand the shared pino instance to Fastify so route handlers' request.log
+// and services' `import { logger }` are the same underlying instance.
 const fastify = Fastify({
-  logger: true,
+  loggerInstance: logger,
   bodyLimit: DEFAULT_BODY_LIMIT,
 });
 

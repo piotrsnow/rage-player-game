@@ -1,6 +1,9 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
 import { deserializeCharacterRow } from './characterMutations.js';
+
+const log = childLogger({ module: 'roomManager' });
 
 const rooms = new Map();
 const ROOM_INACTIVE_TTL_MS = 30 * 60 * 1000;
@@ -181,7 +184,7 @@ export function leaveRoom(roomCode, odId) {
   if (room.players.size === 0) {
     rooms.delete(roomCode);
     deleteRoomFromDB(roomCode).catch((err) => {
-      console.warn(`[roomManager] deleteRoomFromDB after last leave (${roomCode}):`, err?.message);
+      log.warn({ err, roomCode }, 'deleteRoomFromDB after last leave failed');
     });
     return null;
   }
@@ -410,7 +413,7 @@ export function sendTo(room, odId, message) {
     return true;
   }
   if (process.env.NODE_ENV !== 'production') {
-    console.warn('[roomManager] sendTo skipped: target socket not open', { roomCode: room?.roomCode, odId });
+    log.warn({ roomCode: room?.roomCode, odId }, 'sendTo skipped: target socket not open');
   }
   return false;
 }
@@ -427,7 +430,7 @@ function cleanupInactiveRooms() {
     if (!hasConnectedPlayers && (now - room.lastActivity) > ROOM_INACTIVE_TTL_MS) {
       rooms.delete(code);
       deleteRoomFromDB(code).catch((err) => {
-        console.warn(`[roomManager] deleteRoomFromDB cleanup (${code}):`, err?.message);
+        log.warn({ err, roomCode: code }, 'deleteRoomFromDB cleanup failed');
       });
     }
   }
@@ -550,7 +553,7 @@ export async function saveRoomToDB(roomCode) {
       },
     });
   } catch (err) {
-    console.warn('[roomManager] Failed to save room to DB:', err.message);
+    log.warn({ err }, 'Failed to save room to DB');
   }
 }
 
@@ -560,7 +563,7 @@ export async function deleteRoomFromDB(roomCode) {
   } catch (err) {
     // Record-not-found (Prisma P2025) is benign — the session was already cleaned up.
     if (err?.code !== 'P2025') {
-      console.warn(`[roomManager] Failed to delete session ${roomCode} from DB:`, err?.message);
+      log.warn({ err, roomCode }, 'Failed to delete session from DB');
     }
   }
 }
@@ -624,10 +627,10 @@ export async function loadActiveSessionsFromDB() {
     }
 
     if (sessions.length > 0) {
-      console.log(`[roomManager] Loaded ${sessions.length} multiplayer sessions from DB`);
+      log.info({ count: sessions.length }, 'Loaded multiplayer sessions from DB');
     }
   } catch (err) {
-    console.warn('[roomManager] Failed to load sessions from DB:', err.message);
+    log.warn({ err }, 'Failed to load sessions from DB');
   }
 }
 

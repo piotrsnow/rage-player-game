@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { childLogger } from '../lib/logger.js';
 import {
   createRoom, createRoomWithGameState, joinRoom, leaveRoom, updateCharacter,
   updateSettings, submitAction, withdrawAction, approveActions, executeSoloAction,
@@ -68,7 +69,7 @@ async function persistMultiplayerCharactersToDB(room, mutatedCharacters) {
           data: characterToPrismaUpdate(character),
         })
         .catch((err) => {
-          console.warn(`[multiplayer] Failed to persist character ${player.characterId}:`, err.message);
+          log.warn({ err, characterId: player.characterId }, 'Failed to persist character');
         }),
     );
   }
@@ -100,6 +101,8 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const MESSAGE_RATE_WINDOW_MS = 1000;
 const MESSAGE_RATE_LIMIT = 30;
 const MESSAGE_RATE_BURST_CLOSE = 60;
+
+const log = childLogger({ module: 'multiplayer' });
 
 export async function multiplayerRoutes(fastify) {
   const sendWs = (ws, type, payload = {}) => {

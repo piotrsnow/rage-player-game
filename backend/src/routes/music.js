@@ -3,6 +3,9 @@ import { resolve, join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
 import { createMediaStore } from '../services/mediaStore.js';
+import { childLogger } from '../lib/logger.js';
+
+const log = childLogger({ module: 'music' });
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const MUSIC_ROOT = resolve(__dirname, '..', '..', 'public', 'music');
@@ -50,7 +53,7 @@ async function localTracks(folder) {
       })
     );
   } catch (err) {
-    console.warn('[music] Failed to read local music dir:', musicDir, err?.code || err?.message || err);
+    log.warn({ err, musicDir }, 'Failed to read local music dir');
     return [];
   }
 }
@@ -79,7 +82,7 @@ async function gcsTracks(store, folder) {
       })
     );
   } catch (err) {
-    console.warn('[music] Failed to read GCS music tracks:', err?.code || err?.message || err);
+    log.warn({ err }, 'Failed to read GCS music tracks');
     return [];
   }
 }
