@@ -25,7 +25,13 @@ import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
-import { startRoomCleanup, loadActiveSessionsFromDB } from './services/roomManager.js';
+import {
+  startRoomCleanup,
+  stopRoomCleanup,
+  loadActiveSessionsFromDB,
+  saveAllActiveRooms,
+  closeAllRoomSockets,
+} from './services/roomManager.js';
 import { prisma } from './lib/prisma.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -155,3 +161,57 @@ try {
 loadActiveSessionsFromDB().catch((err) => {
   fastify.log.warn(`Failed to load active sessions from DB: ${err.message}`);
 });
+
+// ── Graceful shutdown ─────────────────────────────────────────────
+// SIGTERM arrives from container orchestrators on deploy/stop. We must:
+//   1. Stop the room cleanup timer (so it doesn't schedule new work)
+//   2. Persist every active room to DB (so players can reconnect after deploy)
+//   3. Close WebSocket sockets cleanly so clients see a graceful close frame
+//   4. Let Fastify drain in-flight HTTP requests via fastify.close()
+//   5. Disconnect Prisma
+// prisma.js also registers SIGTERM/SIGINT handlers for disconnect, but those
+// run independently — double-disconnect is a no-op.
+
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
+let shuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  fastify.log.info(`[shutdown] received ${signal} — draining`);
+
+  stopRoomCleanup();
+
+  try {
+    const savedCount = await saveAllActiveRooms();
+    fastify.log.info(`[shutdown] persisted ${savedCount} active rooms`);
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to persist active rooms');
+  }
+
+  try {
+    const closedCount = closeAllRoomSockets(1001, 'Server shutting down');
+    fastify.log.info(`[shutdown] closed ${closedCount} WebSocket connections`);
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to close sockets');
+  }
+
+  const forceExit = setTimeout(() => {
+    fastify.log.error('[shutdown] drain timeout — force exiting');
+    process.exit(1);
+  }, SHUTDOWN_DRAIN_TIMEOUT_MS);
+  forceExit.unref();
+
+  try {
+    await fastify.close();
+    fastify.log.info('[shutdown] fastify closed');
+  } catch (err) {
+    fastify.log.error({ err }, '[shutdown] fastify close failed');
+  }
+
+  clearTimeout(forceExit);
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

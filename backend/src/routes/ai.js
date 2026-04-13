@@ -80,6 +80,45 @@ const GENERATE_SCENE_SCHEMA = {
   },
 };
 
+const SCENE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    id: { type: 'string', maxLength: 200 },
+    sceneIndex: { type: 'number' },
+    narrative: { type: 'string', maxLength: 20000 },
+    chosenAction: { type: ['string', 'null'], maxLength: 4000 },
+    suggestedActions: { type: 'array', maxItems: 20 },
+    actions: { type: 'array', maxItems: 20 },
+    dialogueSegments: { type: 'array', maxItems: 200 },
+    imagePrompt: { type: ['string', 'null'], maxLength: 4000 },
+    imageUrl: { type: ['string', 'null'], maxLength: 4000 },
+    image: { type: ['string', 'null'], maxLength: 4000 },
+    soundEffect: { type: ['string', 'null'], maxLength: 200 },
+    diceRoll: { type: ['object', 'null'] },
+    stateChanges: { type: ['object', 'null'] },
+    scenePacing: { type: 'string', maxLength: 50 },
+  },
+};
+
+const SCENE_BULK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scenes: {
+      type: 'array',
+      maxItems: 200,
+      items: SCENE_BODY_SCHEMA,
+    },
+  },
+  required: ['scenes'],
+};
+
+const CORE_STATE_PATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: true,
+};
+
 export async function aiRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -201,7 +240,7 @@ export async function aiRoutes(fastify) {
    * Save a scene (created by frontend) to the normalized collection.
    * Generates embedding asynchronously.
    */
-  fastify.post('/campaigns/:id/scenes', async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes', { schema: { body: SCENE_BODY_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const scene = request.body;
 
@@ -266,7 +305,7 @@ export async function aiRoutes(fastify) {
    * Save multiple scenes in one request. DB writes run with bounded
    * concurrency (5) instead of sequentially. Embeddings are fire-and-forget.
    */
-  fastify.post('/campaigns/:id/scenes/bulk', async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes/bulk', { schema: { body: SCENE_BULK_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const scenes = request.body?.scenes;
 
@@ -401,7 +440,7 @@ export async function aiRoutes(fastify) {
    *
    * Update campaign core state (partial update).
    */
-  fastify.patch('/campaigns/:id/core', async (request, reply) => {
+  fastify.patch('/campaigns/:id/core', { schema: { body: CORE_STATE_PATCH_SCHEMA } }, async (request, reply) => {
     const campaignId = request.params.id;
     const updates = request.body || {};
 

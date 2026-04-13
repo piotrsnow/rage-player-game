@@ -9,6 +9,30 @@ import { AIServiceError, parseProviderError, toClientAiError } from '../../servi
 
 const store = createMediaStore(config);
 
+const CHAT_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    messages: {
+      type: 'array',
+      maxItems: 200,
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          role: { type: 'string', maxLength: 40 },
+          content: { type: ['string', 'array'] },
+        },
+      },
+    },
+    model: { type: 'string', maxLength: 200 },
+    temperature: { type: 'number' },
+    max_completion_tokens: { type: 'number' },
+    response_format: { type: 'object' },
+  },
+  required: ['messages'],
+};
+
 async function fetchPortraitBuffer(portraitUrl) {
   if (!portraitUrl) return null;
   const localPrefix = '/media/file/';
@@ -26,7 +50,7 @@ export async function openaiProxyRoutes(fastify) {
   await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   fastify.addHook('onRequest', fastify.authenticate);
 
-  fastify.post('/chat', async (request, reply) => {
+  fastify.post('/chat', { schema: { body: CHAT_BODY_SCHEMA } }, async (request, reply) => {
     let apiKey;
     try {
       apiKey = requireServerApiKey('openai', 'OpenAI');

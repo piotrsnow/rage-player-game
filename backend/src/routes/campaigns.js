@@ -21,6 +21,17 @@ const CAMPAIGN_WRITE_SCHEMA = {
   },
 };
 
+const RECAP_SAVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    key: { type: 'string', maxLength: 500 },
+    recap: { type: 'string', maxLength: 40000 },
+    meta: { type: 'object' },
+  },
+  required: ['key', 'recap'],
+};
+
 const store = createMediaStore(config);
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 50;
@@ -855,7 +866,7 @@ export async function campaignRoutes(fastify) {
       };
     });
 
-    app.post('/:id/recaps', async (request, reply) => {
+    app.post('/:id/recaps', { schema: { body: RECAP_SAVE_SCHEMA } }, async (request, reply) => {
       const key = normalizeRecapCacheKey(request.body?.key);
       const recap = typeof request.body?.recap === 'string' ? request.body.recap.trim() : '';
       const meta = request.body?.meta && typeof request.body.meta === 'object' ? request.body.meta : {};

@@ -446,6 +446,36 @@ export function stopRoomCleanup() {
   cleanupTimer = null;
 }
 
+/**
+ * Persist all active rooms to DB. Used by the graceful shutdown handler so
+ * in-flight multiplayer sessions survive a SIGTERM-triggered deploy.
+ */
+export async function saveAllActiveRooms() {
+  const codes = [];
+  for (const [code, room] of rooms) {
+    if (room?.gameState) codes.push(code);
+  }
+  await Promise.allSettled(codes.map((code) => saveRoomToDB(code)));
+  return codes.length;
+}
+
+/**
+ * Close every active WebSocket attached to a room. Called from shutdown so
+ * clients get a clean close frame instead of dangling sockets.
+ */
+export function closeAllRoomSockets(code = 1001, reason = 'Server shutting down') {
+  let closed = 0;
+  for (const [, room] of rooms) {
+    for (const [, player] of room.players) {
+      const ws = player.ws;
+      if (ws && ws.readyState === 1) {
+        try { ws.close(code, reason); closed += 1; } catch { /* already closing */ }
+      }
+    }
+  }
+  return closed;
+}
+
 function serializePlayersForDB(room) {
   const players = [];
   for (const [, p] of room.players) {
