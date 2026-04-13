@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
+import { getGameState } from '../../stores/gameStore';
 import {
   useGameCampaign,
   useGameCharacter,
   useGameParty,
   useGameWorld,
-  useGameQuests,
   useGameScenes,
   useGameChatHistory,
   useGameCombat,
-  useGameMagic,
-  useGameAchievements,
   useGameAiCosts,
-  useGameIsLoading,
   useGameIsGeneratingScene,
   useGameIsGeneratingImage,
   useGameError,
@@ -88,20 +85,17 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
   // Granular per-slice subscriptions — each field only triggers a re-render when
-  // that specific slice changes. The `state` memo keeps the rest of this file
-  // + all state-receiving children stable when unrelated slices change.
+  // that specific slice changes. No reconstructed `state` object: children that
+  // need full state use getGameState() on demand, and MP-resolved vars below
+  // swap in mpGameState fields when in multiplayer mode.
   const sCampaign = useGameCampaign();
   const sCharacter = useGameCharacter();
   const sParty = useGameParty();
   const sWorld = useGameWorld();
-  const sQuests = useGameQuests();
   const sScenes = useGameScenes();
   const sChatHistory = useGameChatHistory();
   const sCombat = useGameCombat();
-  const sMagic = useGameMagic();
-  const sAchievements = useGameAchievements();
   const sAiCosts = useGameAiCosts();
-  const sIsLoading = useGameIsLoading();
   const sIsGeneratingScene = useGameIsGeneratingScene();
   const sIsGeneratingImage = useGameIsGeneratingImage();
   const sError = useGameError();
@@ -113,37 +107,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sAlchemy = useGameSlice((s) => s.alchemy);
   const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
   const sNarrationTime = useGameSlice((s) => s.narrationTime);
-  const state = useMemo(() => ({
-    campaign: sCampaign,
-    character: sCharacter,
-    party: sParty,
-    world: sWorld,
-    quests: sQuests,
-    scenes: sScenes,
-    chatHistory: sChatHistory,
-    combat: sCombat,
-    magic: sMagic,
-    achievements: sAchievements,
-    aiCosts: sAiCosts,
-    isLoading: sIsLoading,
-    isGeneratingScene: sIsGeneratingScene,
-    isGeneratingImage: sIsGeneratingImage,
-    error: sError,
-    activeCharacterId: sActiveCharacterId,
-    characterVoiceMap: sCharacterVoiceMap,
-    mainQuestJustCompleted: sMainQuestJustCompleted,
-    trade: sTrade,
-    crafting: sCrafting,
-    alchemy: sAlchemy,
-    momentumBonus: sMomentumBonus,
-    narrationTime: sNarrationTime,
-  }), [
-    sCampaign, sCharacter, sParty, sWorld, sQuests, sScenes, sChatHistory,
-    sCombat, sMagic, sAchievements, sAiCosts, sIsLoading, sIsGeneratingScene,
-    sIsGeneratingImage, sError, sActiveCharacterId, sCharacterVoiceMap,
-    sMainQuestJustCompleted, sTrade, sCrafting, sAlchemy, sMomentumBonus,
-    sNarrationTime,
-  ]);
   const { settings, updateSettings, updateDMSettings } = useSettings();
   const { openSettings } = useModals();
   const mp = useMultiplayer();
@@ -158,7 +121,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
   const mpGameState = mp.state.gameState;
-  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : state.chatHistory;
+  const chatHistory = isMultiplayer ? (mpGameState?.chatHistory || []) : sChatHistory;
 
   useEffect(() => {
     setNarratorState(narrator.playbackState);
@@ -193,16 +156,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const handleSceneNavRef = useRef(null);
   const consecutiveIdleEventsRef = useRef(0);
 
-  const campaign = isMultiplayer ? mpGameState?.campaign : state.campaign;
+  const campaign = isMultiplayer ? mpGameState?.campaign : sCampaign;
   useDocumentTitle(campaign?.name);
   const character = isMultiplayer
     ? mpGameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mpGameState?.characters?.[0]
-    : state.character;
+    : sCharacter;
 
-  const party = state.party || [];
+  const party = sParty || [];
   const hasParty = party.length > 0;
 
-  const activeCharacterId = state.activeCharacterId;
+  const activeCharacterId = sActiveCharacterId;
   const isViewingCompanion = !isMultiplayer && hasParty && activeCharacterId
     && party.some((m) => (m.id || m.name) === activeCharacterId);
   const viewedMember = isViewingCompanion
@@ -213,15 +176,15 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const hasMagic = (character?.magic?.knownSpells?.length || 0) > 0;
   const attrPoints = character?.attributePoints || 0;
   const allCharacters = isMultiplayer ? (mpGameState?.characters || []) : (character ? [character] : []);
-  const scenes = isMultiplayer ? (mpGameState?.scenes || []) : state.scenes;
-  const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : state.isGeneratingScene;
-  const isGeneratingImage = state.isGeneratingImage;
-  const error = isMultiplayer ? mp.state.error : state.error;
-  const mpErrorCode = isMultiplayer ? mp.state.errorCode : null;
+  const scenes = isMultiplayer ? (mpGameState?.scenes || []) : sScenes;
+  const isGeneratingScene = isMultiplayer ? mp.state.isGenerating : sIsGeneratingScene;
+  const isGeneratingImage = sIsGeneratingImage;
+  const error = isMultiplayer ? mp.sError : sError;
+  const mpErrorCode = isMultiplayer ? mp.sErrorCode : null;
   const reconnectState = mp.state.reconnectState || { status: 'disconnected', attempt: 0, maxAttempts: 10 };
   const isMpReconnecting = isMultiplayer && reconnectState.status === 'reconnecting';
   const showMpConnectionBanner = isMultiplayer && (!mp.state.connected || isMpReconnecting);
-  const aiCosts = state.aiCosts;
+  const aiCosts = sAiCosts;
   const currentScene = scenes[scenes.length - 1] || null;
 
   const mpSceneGenStartTime = useMultiplayerSceneGenTimer({
@@ -250,7 +213,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const isReviewingPastScene = viewingSceneIndex !== null && viewingSceneIndex < scenes.length - 1;
   const displayedSceneIndex = viewingSceneIndex ?? (scenes.length - 1);
   const viewedScene = scenes[displayedSceneIndex] || currentScene;
-  const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, state.combat) : 0;
+  const tensionScore = scenes.length > 0 ? calculateTensionScore(scenes, sCombat) : 0;
 
   const buildRecapStateForDisplayedScene = useCallback(() => {
     const lastIncludedIndex = Math.max(0, Math.min(displayedSceneIndex, scenes.length - 1));
@@ -261,11 +224,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       return includedSceneIds.has(msg.sceneId);
     });
 
+    const baseState = getGameState();
+
     if (isMultiplayer) {
       return {
-        ...state,
+        ...baseState,
         ...(mpGameState || {}),
-        campaign: mpGameState?.campaign || state.campaign,
+        campaign: mpGameState?.campaign || baseState.campaign,
         character,
         scenes: includedScenes,
         chatHistory: filteredChatHistory,
@@ -273,15 +238,14 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     }
 
     return {
-      ...state,
+      ...baseState,
       scenes: includedScenes,
       chatHistory: filteredChatHistory,
     };
-  }, [displayedSceneIndex, scenes, chatHistory, isMultiplayer, state, mpGameState, character]);
+  }, [displayedSceneIndex, scenes, chatHistory, isMultiplayer, mpGameState, character]);
 
   const recap = useSummary({
     settings,
-    state,
     narrator,
     openSettings,
     t,
@@ -475,7 +439,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   useMultiplayerVoiceSync({
     isMultiplayer,
     players: mp.state.players,
-    characterVoiceMap: state.characterVoiceMap,
+    characterVoiceMap: sCharacterVoiceMap,
     dispatch,
   });
 
@@ -526,8 +490,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   };
 
   const handleFieldTurnReady = useCallback(() => {
-    if (!state.world?.fieldMap) return;
-    const fm = state.world.fieldMap;
+    if (!sWorld?.fieldMap) return;
+    const fm = sWorld.fieldMap;
     const buf = fm.stepBuffer || [];
     const from = buf.length > 0 ? buf[0] : fm.playerPos;
     const to = fm.playerPos;
@@ -537,7 +501,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     const actionText = `[FIELD_MOVE] steps=${buf.length} from=(${from.x},${from.y}) to=(${to.x},${to.y}) uniqueTiles=${uniqueTiles} idleSteps=${idleSteps} biome=${fm.activeBiome}${discovered ? ` discovered=${discovered}` : ''}`;
     dispatch({ type: 'FIELD_MAP_RESET_STEPS' });
     generateScene(actionText, false, false).catch(() => {});
-  }, [state.world?.fieldMap, dispatch, generateScene]);
+  }, [sWorld?.fieldMap, dispatch, generateScene]);
 
   const handleSceneGridChange = useCallback((sceneId, nextSceneGrid) => {
     if (!sceneId || !nextSceneGrid) return;
@@ -552,16 +516,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   useEffect(() => {
     if ((settings.sceneVisualization || 'image') !== 'map') return;
-    if (state.world?.fieldMap) return;
-    if (!state.campaign) return;
+    if (sWorld?.fieldMap) return;
+    if (!sCampaign) return;
     dispatch({
       type: 'INIT_FIELD_MAP',
       payload: {
-        seed: state.campaign.id ? hashCode(state.campaign.id) : Date.now(),
+        seed: sCampaign.id ? hashCode(sCampaign.id) : Date.now(),
         activeBiome: 'plains',
       },
     });
-  }, [settings.sceneVisualization, state.world?.fieldMap, state.campaign, dispatch]);
+  }, [settings.sceneVisualization, sWorld?.fieldMap, sCampaign, dispatch]);
 
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
@@ -641,7 +605,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const idlePaused = isMultiplayer
     || !IDLE_WORLD_EVENTS_ENABLED
     || isGeneratingScene
-    || !!(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)
+    || !!(isMultiplayer ? mpGameState?.combat?.active : sCombat?.active)
     || autoPlayer.isAutoPlaying
     || isReviewingPastScene
     || (campaign?.status && campaign.status !== 'active')
@@ -690,8 +654,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   };
 
   const handleAdvancementClose = () => {
-    if (isMultiplayer && state.character) {
-      mp.syncCharacter(state.character);
+    if (isMultiplayer && sCharacter) {
+      mp.syncCharacter(sCharacter);
     }
     setAdvancementOpen(false);
   };
@@ -728,7 +692,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           readOnly={readOnly}
           isMultiplayer={isMultiplayer}
           mpGameState={mpGameState}
-          state={state}
           campaign={campaign}
           scenes={scenes}
           displayedSceneIndex={displayedSceneIndex}
@@ -804,13 +767,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         <div className="relative">
           <ScenePanel
             scene={viewedScene}
-            combat={isMultiplayer ? mpGameState?.combat : state.combat}
+            combat={isMultiplayer ? mpGameState?.combat : sCombat}
             isGeneratingImage={!isReviewingPastScene && isGeneratingImage}
             highlightInfo={narrator.highlightInfo}
             currentChunk={narrator.currentChunk}
             diceRoll={viewedScene?.diceRoll && !isGeneratingScene ? viewedScene.diceRoll : null}
             diceRolls={viewedScene?.diceRolls?.length && !isGeneratingScene ? viewedScene.diceRolls : null}
-            world={isMultiplayer ? mpGameState?.world : state.world}
+            world={isMultiplayer ? mpGameState?.world : sWorld}
             characterName={character?.name}
             multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
             interactiveMap={!isMultiplayer && !readOnly && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active')}
@@ -961,7 +924,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           <div className="px-2 animate-fade-in">
             <PartyPanel
               party={[{ ...character, type: 'player', id: character?.name }, ...party]}
-              activeCharacterId={state.activeCharacterId || character?.name}
+              activeCharacterId={sActiveCharacterId || character?.name}
               onSwitchCharacter={(id) => dispatch({ type: 'SET_ACTIVE_CHARACTER', payload: id })}
               onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
               dispatch={dispatch}
@@ -970,10 +933,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Combat Panel */}
-        {((isMultiplayer ? mpGameState?.combat?.active : state.combat?.active)) && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {((isMultiplayer ? mpGameState?.combat?.active : sCombat?.active)) && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <CombatPanel
-              combat={isMultiplayer ? mpGameState.combat : state.combat}
+              combat={isMultiplayer ? mpGameState.combat : sCombat}
               gameState={isMultiplayer ? mpGameState : state}
               dispatch={dispatch}
               onEndCombat={combatHandlers.onEndCombat}
@@ -992,11 +955,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Magic Panel */}
-        {hasMagic && !isMultiplayer && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {hasMagic && !isMultiplayer && !sCombat?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <MagicPanel
               character={character}
-              combat={state.combat}
+              combat={sCombat}
               onCastSpell={(result) => {
                 const spellName = result.spellName || result.spell?.name || t('magic.spells');
                 let content;
@@ -1023,8 +986,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {/* Trade/Crafting/Alchemy panels moved to bottom fixed area */}
 
         {/* Main Quest Complete Modal */}
-        {state.mainQuestJustCompleted && campaign?.status === 'active' && (
-          <MainQuestCompleteModal state={state} dispatch={dispatch} navigate={navigate} />
+        {sMainQuestJustCompleted && campaign?.status === 'active' && (
+          <MainQuestCompleteModal dispatch={dispatch} navigate={navigate} />
         )}
 
         {/* Campaign End Screen */}
@@ -1046,7 +1009,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                     if (isMultiplayer && mpGameState) {
                       exportAsMarkdown({ campaign: mpGameState.campaign, character, scenes: mpGameState.scenes, chatHistory: mpGameState.chatHistory, quests: mpGameState.quests, world: mpGameState.world });
                     } else {
-                      exportAsMarkdown(state);
+                      exportAsMarkdown(getGameState());
                     }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-surface-container-high/40 border border-outline-variant/15 rounded-sm text-xs font-label uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
@@ -1056,7 +1019,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
                 </button>
                 <button
                   onClick={() => {
-                    const guard = canLeaveCampaign(state);
+                    const guard = canLeaveCampaign(getGameState());
                     if (!guard.allowed) { window.alert(getLeaveBlockedMessage(guard.reason)); return; }
                     dispatch({ type: 'RESET' }); navigate('/');
                   }}
@@ -1071,7 +1034,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Quest Offers */}
-        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !state.combat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
+        {currentScene?.questOffers?.length > 0 && !isGeneratingScene && !sCombat?.active && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && !readOnly && (
           <div className="px-2 animate-fade-in">
             <QuestOffersPanel
               offers={currentScene.questOffers}
@@ -1085,7 +1048,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         {/* Bottom panel — always visible */}
         <div className="shrink-0 px-4 md:px-6 pb-4 md:pb-6 pt-2">
         {/* Action Panel */}
-        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : state.combat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
+        {currentScene && !isGeneratingScene && !(isMultiplayer ? mpGameState?.combat?.active : sCombat?.active) && !isViewingCompanion && !isReviewingPastScene && (!campaign?.status || campaign.status === 'active') && character?.status !== 'dead' && !mp.state.isDead && !readOnly && (
           <div className={`px-2 animate-fade-in ${autoPlayer.isAutoPlaying && !autoPlayer.overlayAction && !isMultiplayer ? 'opacity-50 pointer-events-none' : autoPlayer.overlayAction ? 'pointer-events-none' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
@@ -1108,25 +1071,24 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onAction={handleAction}
               disabled={isGeneratingScene}
               autoPlayerTypingText={autoPlayer.typingText}
-              npcs={((isMultiplayer ? mpGameState?.world?.npcs : state.world?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : state.world?.currentLocation))}
+              npcs={((isMultiplayer ? mpGameState?.world?.npcs : sWorld?.npcs) || []).filter((npc) => npc.alive !== false && npc.lastLocation === (isMultiplayer ? mpGameState?.world?.currentLocation : sWorld?.currentLocation))}
               character={character}
               dilemma={currentScene.dilemma}
               lastChosenAction={lastChosenAction}
               multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
               typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
               dispatch={dispatch}
-              gameState={state}
             />
           </div>
         )}
 
         {/* Trade Panel */}
-        {state.trade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {sTrade?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <TradePanel
-              trade={state.trade}
+              trade={sTrade}
               character={character}
-              world={state.world}
+              world={sWorld}
               dispatch={dispatch}
               disabled={isGeneratingScene}
             />
@@ -1134,7 +1096,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Crafting Panel */}
-        {state.crafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {sCrafting?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <CraftingPanel
               character={character}
@@ -1145,7 +1107,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         )}
 
         {/* Alchemy Panel */}
-        {state.alchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
+        {sAlchemy?.active && !isViewingCompanion && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <AlchemyPanel
               character={character}
@@ -1191,13 +1153,13 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)
-            : (state.momentumBonus || 0)}
+            : (sMomentumBonus || 0)}
           scrollToMessageId={scrollTargetMessageId}
           onScrollTargetHandled={clearScrollTargetIfMatches}
           typingPlayers={isMultiplayer ? mp.state.typingPlayers : {}}
           sessionSeconds={sessionSeconds}
           totalPlayTime={totalPlayTime}
-          narrationTime={state.narrationTime || 0}
+          narrationTime={sNarrationTime || 0}
         />
       </aside>
 
@@ -1205,7 +1167,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         readOnly={readOnly}
         isMultiplayer={isMultiplayer}
         mpGameState={mpGameState}
-        state={state}
         settings={settings}
         dispatch={dispatch}
         autoSave={autoSave}

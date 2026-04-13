@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { useGameStore, flushPendingSave } from '../stores/gameStore';
 
-export { createDefaultNeeds } from '../stores/gameReducer';
-
 export function GameProvider({ children }) {
   useEffect(() => {
     const handler = () => flushPendingSave();

@@ -641,7 +641,7 @@ export async function campaignRoutes(fastify) {
       };
     });
 
-    app.post('/', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request) => {
+    app.post('/', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request, reply) => {
       const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
@@ -658,7 +658,7 @@ export async function campaignRoutes(fastify) {
         const ownedSet = new Set(owned.map((c) => c.id));
         for (const id of characterIds) {
           if (!ownedSet.has(id)) {
-            return { error: `Character ${id} not found or not owned by user` };
+            return reply.code(403).send({ error: `Character ${id} not found or not owned by user` });
           }
         }
       }

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import QuickActionButton from './QuickActionButton';
 import { getSkillLevel } from '../../../data/rpgSystem.js';
+import { useGameSlice } from '../../../stores/gameSelectors';
 
 export default function QuickActionsBar({
   disabled,
@@ -8,7 +9,6 @@ export default function QuickActionsBar({
   lastChosenAction,
   npcs,
   dispatch,
-  gameState,
   character,
   needsSystemEnabled,
   onSuggestedAction,
@@ -16,6 +16,9 @@ export default function QuickActionsBar({
   onToggleTradePicker,
 }) {
   const { t } = useTranslation();
+  const tradeActive = useGameSlice((s) => s.trade?.active);
+  const craftingActive = useGameSlice((s) => s.crafting?.active);
+  const alchemyActive = useGameSlice((s) => s.alchemy?.active);
 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
@@ -53,7 +56,7 @@ export default function QuickActionsBar({
         disabled={disabled || hasPendingAction}
         tone="danger"
       />
-      {npcs.length > 0 && dispatch && !gameState?.trade?.active && (
+      {npcs.length > 0 && dispatch && !tradeActive && (
         <QuickActionButton
           icon="storefront"
           label={t('trade.tradeWith')}
@@ -63,7 +66,7 @@ export default function QuickActionsBar({
           tone="tertiary"
         />
       )}
-      {dispatch && !gameState?.crafting?.active && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && (
+      {dispatch && !craftingActive && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && (
         <QuickActionButton
           icon="construction"
           label={t('crafting.title')}
@@ -73,7 +76,7 @@ export default function QuickActionsBar({
           tone="primary"
         />
       )}
-      {dispatch && !gameState?.alchemy?.active && getSkillLevel(character?.skills, 'Alchemia') > 0 && (
+      {dispatch && !alchemyActive && getSkillLevel(character?.skills, 'Alchemia') > 0 && (
         <QuickActionButton
           icon="science"
           label={t('alchemy.title')}

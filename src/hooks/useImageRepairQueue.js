@@ -171,6 +171,7 @@ export function useImageRepairQueue({
   }, [readOnly, sceneVisualization, viewedScene, isGeneratingImage, isGeneratingScene, repairSceneImage]);
 
   // Background migration sweep (probe older scenes, regenerate broken URLs)
+  const migrationGenRef = useRef(0);
   useEffect(() => {
     if ((sceneVisualization || 'image') !== 'image') return;
     if (!scenes?.length) return;
@@ -181,14 +182,14 @@ export function useImageRepairQueue({
     if (now - imageMigrationLastRunRef.current < SCENE_IMAGE_MIGRATION_COOLDOWN_MS) return;
     if (imageMigrationRunningRef.current) return;
 
-    let cancelled = false;
+    const gen = ++migrationGenRef.current;
     imageMigrationRunningRef.current = true;
     imageMigrationLastRunRef.current = now;
 
     (async () => {
       let repairsDone = 0;
       for (const scene of scenes.slice(0, MAX_SCENE_IMAGE_MIGRATION_SCAN)) {
-        if (cancelled) break;
+        if (gen !== migrationGenRef.current) break;
         if (!scene?.id || !scene.narrative) continue;
         if (repairsDone >= MAX_SCENE_IMAGE_MIGRATION_REPAIRS_PER_PASS) break;
         if (imageRepairInFlightRef.current.has(scene.id)) continue;
@@ -205,6 +206,7 @@ export function useImageRepairQueue({
         }
 
         const canLoad = await probeSceneImage(scene.image);
+        if (gen !== migrationGenRef.current) break;
         if (!canLoad) {
           const repaired = await repairSceneImage(scene.id, {
             reason: 'migration-broken-url',
@@ -216,11 +218,13 @@ export function useImageRepairQueue({
       }
     })()
       .finally(() => {
-        imageMigrationRunningRef.current = false;
+        if (gen === migrationGenRef.current) {
+          imageMigrationRunningRef.current = false;
+        }
       });
 
     return () => {
-      cancelled = true;
+      migrationGenRef.current += 1;
     };
   }, [
     sceneVisualization,

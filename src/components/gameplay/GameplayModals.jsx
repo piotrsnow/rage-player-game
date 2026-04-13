@@ -6,12 +6,17 @@ import AchievementsPanel from '../character/AchievementsPanel';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import SummaryModal from './SummaryModal';
 import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
+import {
+  useGameWorld,
+  useGameQuests,
+  useGameAchievements,
+  useGameSlice,
+} from '../../stores/gameSelectors';
 
 export default function GameplayModals({
   readOnly,
   isMultiplayer,
   mpGameState,
-  state,
   settings,
   dispatch,
   autoSave,
@@ -45,15 +50,20 @@ export default function GameplayModals({
   videoPanelOpen,
   onVideoPanelClose,
 }) {
+  const soloWorld = useGameWorld();
+  const soloQuests = useGameQuests();
+  const soloAchievements = useGameAchievements();
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+
   if (readOnly) return null;
 
   return (
     <>
       {worldModalOpen && (
         <WorldStateModal
-          world={isMultiplayer ? mpGameState?.world : state.world}
-          quests={isMultiplayer ? mpGameState?.quests : state.quests}
-          characterVoiceMap={state.characterVoiceMap}
+          world={isMultiplayer ? mpGameState?.world : soloWorld}
+          quests={isMultiplayer ? mpGameState?.quests : soloQuests}
+          characterVoiceMap={characterVoiceMap}
           maleVoices={settings.maleVoices}
           femaleVoices={settings.femaleVoices}
           dispatch={dispatch}
@@ -70,7 +80,7 @@ export default function GameplayModals({
 
       {achievementsOpen && (
         <AchievementsPanel
-          achievementState={state.achievements}
+          achievementState={soloAchievements}
           onClose={onAchievementsClose}
         />
       )}

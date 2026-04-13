@@ -1,17 +1,20 @@
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
+import { useGameQuests, useGameCharacter } from '../../stores/gameSelectors';
 
-export default function MainQuestCompleteModal({ state, dispatch, navigate }) {
+export default function MainQuestCompleteModal({ dispatch, navigate }) {
   const { t } = useTranslation();
+  const quests = useGameQuests();
+  const character = useGameCharacter();
 
-  const completedMain = (state.quests?.completed || [])
+  const completedMain = (quests?.completed || [])
     .filter((q) => q.type === 'main')
     .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0))[0];
 
   const handleEndCampaign = async () => {
-    if (state.character) {
+    if (character) {
       try {
-        await storage.saveCharacter(state.character);
+        await storage.saveCharacter(character);
       } catch (_) { /* best-effort */ }
     }
     dispatch({ type: 'RESET' });

@@ -12,6 +12,7 @@ import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
 import { resolveMechanics } from '../../services/mechanics/index';
 import { calculateNextMomentum } from '../../services/mechanics/momentumTracker';
 import { loadSceneGenDurationHistory, appendSceneGenDuration, historyToSceneGenEstimateMs, persistSceneGenDurationHistory } from '../../services/performanceTracker';
+import { useEvent } from '../useEvent';
 import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
@@ -51,7 +52,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
     setSceneGenStartTime(null);
   }, []);
 
-  const generateScene = useCallback(
+  const generateScene = useEvent(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
@@ -295,8 +296,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         stream.clearStreamingOutput();
         throw err;
       }
-    },
-    [state, settings, aiProvider, imageApiKey, imageProvider, imageGenEnabled, imageStyle, darkPalette, imageSeriousness, language, needsSystemEnabled, aiModelTier, apiKey, hasApiKey, imgKeyProvider, dispatch, autoSave, t, recordCompletedSceneGenTiming, ensureMissingInventoryImages, stream]
+    }
   );
 
   const acceptQuestOffer = useCallback(

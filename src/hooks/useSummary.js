@@ -47,7 +47,6 @@ function speakBrowserTts(text, { language, dialogueSpeed }) {
  */
 export function useSummary({
   settings,
-  state,
   narrator,
   openSettings,
   t,
@@ -256,7 +255,7 @@ export function useSummary({
       return [{ type: 'narration', text: normalized }];
     }
 
-    const fallbackVoiceId = settings.narratorVoiceId || state.narratorVoiceId || null;
+    const fallbackVoiceId = settings.narratorVoiceId || null;
     const voicePool = [
       ...(settings.maleVoices || []),
       ...(settings.femaleVoices || []),
@@ -294,7 +293,7 @@ export function useSummary({
         voiceId: assignVoice(parsed.speaker),
       };
     });
-  }, [settings.maleVoices, settings.femaleVoices, settings.narratorVoiceId, state.narratorVoiceId]);
+  }, [settings.maleVoices, settings.femaleVoices, settings.narratorVoiceId]);
 
   const speakSummary = useCallback((textToRead = summaryText, wordOffset = 0) => {
     const normalizedText = typeof textToRead === 'string' ? textToRead.trim() : '';
@@ -356,7 +355,6 @@ export function useSummary({
     summaryNarrationMessageId,
     narrator.currentMessageId,
     narrator.playbackState,
-    narrator.STATES.PLAYING,
   ]);
 
   // Cleanup timers on unmount

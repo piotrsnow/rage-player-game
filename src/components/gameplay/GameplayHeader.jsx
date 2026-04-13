@@ -1,13 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { exportAsMarkdown } from '../../services/exportLog';
+import { getGameState } from '../../stores/gameStore';
 import CostBadge from '../ui/CostBadge';
 
 export default function GameplayHeader({
   readOnly,
   isMultiplayer,
   mpGameState,
-  state,
   campaign,
   scenes,
   displayedSceneIndex,
@@ -356,7 +356,7 @@ export default function GameplayHeader({
                     world: mpGameState.world,
                   });
                 } else {
-                  exportAsMarkdown(state);
+                  exportAsMarkdown(getGameState());
                 }
               }}
               title={t('gameplay.exportLog')}

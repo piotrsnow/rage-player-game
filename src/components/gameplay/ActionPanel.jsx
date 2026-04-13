@@ -29,7 +29,6 @@ export default function ActionPanel({
   multiplayerPlayers = [],
   typingPlayers = {},
   dispatch = null,
-  gameState = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -336,7 +335,6 @@ export default function ActionPanel({
             lastChosenAction={lastChosenAction}
             npcs={npcs}
             dispatch={dispatch}
-            gameState={gameState}
             character={character}
             needsSystemEnabled={settings.needsSystemEnabled}
             onSuggestedAction={handleSuggestedAction}

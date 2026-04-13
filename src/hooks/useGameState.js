@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGame, createDefaultNeeds } from '../contexts/GameContext';
+import { useGame } from '../contexts/GameContext';
+import { createDefaultNeeds } from '../stores/gameReducer';
 import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
