@@ -14,6 +14,11 @@ const PACING_STABILITY = {
   rest: 0.6,
   dramatic: 0.4,
   celebration: 0.4,
+  exploration: 0.5,
+  dialogue: 0.55,
+  travel_montage: 0.5,
+  dream: 0.35,
+  cutscene: 0.4,
 };
 const DEFAULT_STABILITY = 0.5;
 

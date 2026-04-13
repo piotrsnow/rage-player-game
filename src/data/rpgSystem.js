@@ -1,19 +1,11 @@
 // RPGon — Custom RPG System Data Definitions
 // Based on RPG_SYSTEM.md
 
-// ── STATE CHANGE LIMITS (single source of truth for stateValidator) ──
+// ── STATE CHANGE LIMITS ──
+// Defined in shared/domain/stateValidation.js so backend (which only ships /app/shared)
+// can import without pulling in this frontend file. Re-exported here for frontend callers.
 
-export const STATE_CHANGE_LIMITS = {
-  maxXpPerScene: 50,
-  maxItemsPerScene: 3,
-  maxWoundsDelta: 20,
-  needsDeltaMin: -30,
-  needsDeltaMax: 100,
-  maxMoneyGainCopper: 500, // 5 ZK equivalent
-  maxDispositionDelta: 10,
-  maxCodexPerScene: 3,
-  maxCodexFragmentLength: 1000,
-};
+export { STATE_CHANGE_LIMITS } from '../../shared/domain/stateValidation.js';
 
 // ── ATTRIBUTES ──
 

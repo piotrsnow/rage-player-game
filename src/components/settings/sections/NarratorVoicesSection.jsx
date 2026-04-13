@@ -94,27 +94,33 @@ export default function NarratorVoicesSection({
               {voices.map((voice) => {
                 const isNarrator = isNarratorVoice(voice.voiceId);
                 return (
-                  <button
+                  <div
                     key={voice.voiceId}
-                    onClick={() => onSelectNarratorVoice(voice)}
-                    className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                    className={`w-full rounded-sm border flex items-center justify-between transition-all ${
                       isNarrator
                         ? 'bg-surface-tint/10 border-primary/30 text-primary'
                         : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
                     }`}
                   >
-                    <span className="font-headline text-sm">{voice.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectNarratorVoice(voice)}
+                      className="flex-1 p-2 text-left font-headline text-sm"
+                    >
+                      {voice.name}
+                    </button>
                     {isNarrator && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); onTestVoice(voice.voiceId); }}
+                        type="button"
+                        onClick={() => onTestVoice(voice.voiceId)}
                         disabled={testingVoice}
-                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase text-primary hover:text-tertiary disabled:opacity-50"
+                        className="flex items-center gap-1 px-2 py-1 mr-1 text-[10px] font-bold uppercase text-primary hover:text-tertiary disabled:opacity-50"
                       >
                         <span className="material-symbols-outlined text-sm">play_arrow</span>
                         {t('settings.testVoice')}
                       </button>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>

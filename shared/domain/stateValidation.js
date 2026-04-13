@@ -2,6 +2,20 @@
 
 import { prefixedId } from './ids.js';
 
+// ── State change limits ──
+
+export const STATE_CHANGE_LIMITS = {
+  maxXpPerScene: 50,
+  maxItemsPerScene: 3,
+  maxWoundsDelta: 20,
+  needsDeltaMin: -30,
+  needsDeltaMax: 100,
+  maxMoneyGainCopper: 500, // 5 ZK equivalent
+  maxDispositionDelta: 10,
+  maxCodexPerScene: 3,
+  maxCodexFragmentLength: 1000,
+};
+
 // ── Utilities ──
 
 export function clamp(value, min, max) {

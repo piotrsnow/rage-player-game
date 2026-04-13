@@ -1,6 +1,6 @@
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
-import { STATE_CHANGE_LIMITS } from '../../../src/data/rpgSystem.js';
 import {
+  STATE_CHANGE_LIMITS,
   clamp,
   moneyToCopper,
   sanitizeNpcChanges,
