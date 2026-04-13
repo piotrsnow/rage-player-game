@@ -32,6 +32,8 @@
 - File naming: React components `PascalCase.jsx`, services/hooks/data `camelCase.js`, tests `*.test.js` next to source
 - Embeddings stored as native BSON arrays via mongodb driver (not Prisma)
 - JSON fields stored as strings in Prisma (MongoDB limitation), parsed on read
+- **Dedup direction**: logic used by BOTH frontend and backend lives in `shared/domain/*.js`. Backend-only dedup stays in `backend/src/services/`. Don't create parallel copies — if you spot a helper that belongs on both sides, lift it to `shared/domain/` with the richer version as canonical.
+- **Large file splits**: when a route / service exceeds ~800L or has clearly separable phases, split into thin facade (`routes/foo.js`, `services/foo.js`) + submodule folder (`routes/foo/*`, `services/foo/*`). See `knowledge/patterns/backend-monolith-split.md`. Facade must preserve the external import path.
 
 ## Architecture Overview
 
@@ -43,8 +45,16 @@
 - **Data**: RPGon rules (`rpgSystem.js`, `rpgMagic.js`, `rpgFactions.js`), equipment, achievements, 3D prefabs
 
 ### Backend (`backend/`)
-- **Routes**: auth, campaigns CRUD, characters, AI endpoints (generate-scene + SSE stream), game data, media, multiplayer WebSocket, proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy)
-- **Services**: scene generation pipeline (`sceneGenerator.js`), intent classification (`intentClassifier.js`), context assembly (`aiContextTools.js`), memory compression (`memoryCompressor.js`), vector search, room manager, media storage (local/GCS)
+- **Routes**: auth, characters, AI endpoints (generate-scene SSE stream), game data, media, music, wanted3d, proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). Two large route families are **split into thin facades + submodule folders** (see [[knowledge/patterns/backend-monolith-split]]):
+  - `routes/campaigns.js` → `routes/campaigns/{public,crud,sharing,recaps,schemas}.js`
+  - `routes/multiplayer.js` → `routes/multiplayer/{http,connection}.js` + `routes/multiplayer/handlers/{lobby,roomState,gameplay,quests,combat,webrtc}.js`
+- **Services**: Two AI pipelines are similarly split into thin facades + folders:
+  - `services/sceneGenerator.js` (single-player) → `services/sceneGenerator/{generateSceneStream,campaignLoader,shortcuts,systemPrompt,userPrompt,contextSection,streamingClient,diceResolution,enemyFill,processStateChanges,labels,inlineKeys}.js`
+  - `services/multiplayerAI.js` → `services/multiplayerAI/{aiClient,systemPrompt,scenePrompt,dialogueRepair,fallbackActions,diceNormalization,campaignGeneration,sceneGeneration,compression}.js`
+- **Campaign helpers**: `campaignSerialize.js` (pure) + `campaignSync.js` (DB) + `campaignRecap.js` — extracted during the campaigns split
+- **Shared multiplayer flow**: `multiplayerSceneFlow.js` — deduped `runMultiplayerSceneFlow()` used by both APPROVE_ACTIONS and SOLO_ACTION handlers
+- **Other AI services**: `intentClassifier.js` (heuristic + nano fallback), `aiContextTools.js` (`assembleContext()` for the two-stage pipeline), `memoryCompressor.js` (post-scene fact extraction), `aiErrors.js` (structured AI error handling)
+- **Infra**: `roomManager.js` (in-memory + Prisma persistence), `mediaStore.js` (local/GCS), `vectorSearchService.js` (Atlas Vector Search), `diceResolver.js` (d50 skill check + pre-rolls)
 
 ### Database (MongoDB via Prisma)
 | Model | Purpose |
@@ -99,7 +109,7 @@ Player Action
 - State changes still AI-driven — no mechanical validation for buying items etc.
 - `diceRollInference.js` — frontend copy has extras vs `shared/domain/` version. Merge.
 - `stateValidator.js` exists in frontend + backend — extract shared logic to `shared/domain/`
-- Frontend proxy mode duplicates prompt building from backend lean version
+- Frontend proxy mode duplicates prompt building from backend lean version — 4 specific parallels tracked as item 10 in [plans/post_merge_infra.md](plans/post_merge_infra.md): dialogue repair, fallback actions, lean response parser, AI client
 
 ## Knowledge Base — `knowledge/`
 
@@ -107,7 +117,7 @@ Player Action
 
 ### File Inventory (read when looking for specific files)
 - `concepts/frontend-structure.md` — full file listing: contexts, stores, hooks, services, components, data, effects
-- `concepts/backend-structure.md` — full file listing: routes, services, shared/, scripts
+- `concepts/backend-structure.md` — full file listing: routes, services, shared/ (**updated session 6** after the 4 monolith splits), scripts
 
 ### State Management & Refactoring
 - `concepts/game-context.md` — Zustand facade architecture, selectors API, `getGameState()` pattern
@@ -125,6 +135,7 @@ Player Action
 - `decisions/embeddings-native-driver.md` — why native MongoDB driver (BSON array requirement)
 
 ### Patterns
+- `patterns/backend-monolith-split.md` — thin facade + submodule folder split. Applied 4× in session 6 (campaigns / multiplayer / multiplayerAI / sceneGenerator). Read before splitting any large backend file.
 - `patterns/backend-proxy.md` — SSE endpoints (generate-scene-stream), `callBackendStream()` pattern
 - `patterns/prerolled-dice-fallback.md` — pre-rolled d50 fallback: max 3 rolls/scene, thresholds 20/35/50/65/80
 

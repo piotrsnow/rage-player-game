@@ -1,10 +1,10 @@
 # Knowledge Base — Nikczemny Krzemuch / RPGon
 
-Detailed knowledge files for the AI RPG game project. CLAUDE.md has a routing index — read the relevant file before working on a subsystem.
+Detailed knowledge files for the AI RPG game project. AGENTS.md has a routing index — read the relevant file before working on a subsystem.
 
 ## Concepts
 - [[concepts/frontend-structure]] — Full frontend file inventory (contexts, stores, hooks, services, components)
-- [[concepts/backend-structure]] — Full backend file inventory (routes, services, shared/)
+- [[concepts/backend-structure]] — Full backend file inventory (routes, services, shared/) — **updated session 6** after the 4 monolith splits
 - [[concepts/game-context]] — Zustand facade architecture, selectors API, getGameState() pattern
 - [[concepts/context-migration-plan]] — Context -> Zustand migration plan (Modal/Music -> Zustand, Settings/Multiplayer stay)
 - [[concepts/bestiary]] — 36 units, 11 races, encounter budget system, fast-path combat
@@ -14,7 +14,8 @@ Detailed knowledge files for the AI RPG game project. CLAUDE.md has a routing in
 
 ## Patterns
 - [[patterns/reducer-context]] — Zustand facade + granular selectors pattern
-- [[patterns/component-decomposition]] — 5-step pure-lift refactoring ladder for god-components
+- [[patterns/component-decomposition]] — 5-step pure-lift refactoring ladder for god-components (frontend)
+- [[patterns/backend-monolith-split]] — Thin facade + submodule folder split (backend) — applied 4× in session 6
 - [[patterns/backend-proxy]] — SSE endpoints, callBackendStream() pattern
 - [[patterns/prerolled-dice-fallback]] — Pre-rolled d50 fallback: max 3 rolls/scene, thresholds
 
