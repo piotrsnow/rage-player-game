@@ -6,7 +6,6 @@ import { imageService } from '../../services/imageGen';
 import { apiClient } from '../../services/apiClient';
 import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
-import { contextManager } from '../../services/contextManager';
 import { calculateCost } from '../../services/costTracker';
 import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
 import { resolveMechanics } from '../../services/mechanics/index';
@@ -22,8 +21,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   const { state, dispatch, autoSave } = useGame();
   const { settings, hasApiKey } = useSettings();
 
-  const compressionGenRef = useRef(0);
-  const compressionInFlightRef = useRef(false);
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
   const sceneGenDurationHistoryRef = useRef(null);
@@ -35,8 +32,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, language, needsSystemEnabled, aiModelTier = 'premium' } = settings;
-  const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
+  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium' } = settings;
 
   const stream = useSceneBackendStream();
 
@@ -68,7 +64,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         const resolved = await resolveMechanics({
           state, playerAction, settings, isFirstScene, t,
-          inferSkillCheckFn: null,
           skipDiceRoll: true,
         });
 
@@ -248,22 +243,9 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         dispatch({ type: 'SET_GENERATING_SCENE', payload: false });
         autoSave();
 
-        // Compression
-        if (!compressionInFlightRef.current && contextManager.needsCompression(state)) {
-          compressionInFlightRef.current = true;
-          const gen = ++compressionGenRef.current;
-          contextManager.compressOldScenes(state, aiProvider, apiKey, language, aiModelTier).then((compResult) => {
-            compressionInFlightRef.current = false;
-            if (gen !== compressionGenRef.current) return;
-            if (compResult?.summary) {
-              const worldUpdate = { compressedHistory: compResult.summary };
-              if (compResult.entitySnapshot) worldUpdate.compressedEntityState = compResult.entitySnapshot;
-              dispatch({ type: 'UPDATE_WORLD', payload: worldUpdate });
-              autoSave();
-            }
-            if (compResult?.usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', compResult.usage) });
-          }).catch(() => { compressionInFlightRef.current = false; });
-        }
+        // FE-side scene compression removed with no-BYOK cleanup. Backend
+        // scene pipeline runs its own memoryCompressor.js post-scene, so the
+        // client no longer needs to summarize old scenes itself.
 
         // Deferred image
         if (!earlyImagePromise && imageGenEnabled && hasImageKey) {

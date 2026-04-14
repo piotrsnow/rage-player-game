@@ -1,11 +1,17 @@
 import { generateSceneStream } from '../services/sceneGenerator.js';
 import { generateStoryPrompt } from '../services/storyPromptGenerator.js';
 import { generateCampaignStream } from '../services/campaignGenerator.js';
+import { generateCombatCommentary } from '../services/combatCommentary.js';
+import { verifyObjective } from '../services/objectiveVerifier.js';
+import { generateRecap } from '../services/recapGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveSseCorsOrigin } from '../plugins/cors.js';
+import crypto from 'crypto';
 import { enqueueJob, findJobAcrossQueues } from '../services/queues/aiQueue.js';
-import { isRedisEnabled } from '../services/redisClient.js';
+import { isRedisEnabled, getRedisClient } from '../services/redisClient.js';
+import { sceneJobChannel } from '../workers/aiWorker.js';
+import { loadUserApiKeys } from '../services/apiKeyService.js';
 
 const log = childLogger({ module: 'ai' });
 import {
@@ -64,6 +70,51 @@ const GENERATE_CAMPAIGN_SCHEMA = {
     provider: PROVIDER_SCHEMA,
     model: MODEL_SCHEMA,
   },
+};
+
+const COMBAT_COMMENTARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    gameState: { type: 'object' },
+    combatSnapshot: { type: 'object' },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    modelTier: { type: 'string', maxLength: 20 },
+  },
+  required: ['combatSnapshot'],
+};
+
+const VERIFY_OBJECTIVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    storyContext: { type: 'string', maxLength: 60000 },
+    questName: { type: 'string', maxLength: 500 },
+    questDescription: { type: 'string', maxLength: 4000 },
+    objectiveDescription: { type: 'string', maxLength: 2000 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    modelTier: { type: 'string', maxLength: 20 },
+  },
+  required: ['questName', 'objectiveDescription'],
+};
+
+const RECAP_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    scenes: { type: 'array', maxItems: 500 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+    modelTier: { type: 'string', maxLength: 20 },
+    sentencesPerScene: { type: 'number' },
+    summaryStyle: { type: ['object', 'null'] },
+  },
+  required: ['scenes'],
 };
 
 const GENERATE_SCENE_SCHEMA = {
@@ -135,9 +186,97 @@ export async function aiRoutes(fastify) {
    */
   fastify.post('/generate-story-prompt', { schema: { body: STORY_PROMPT_SCHEMA } }, async (request, reply) => {
     const { genre, tone, style, seedText, language, provider, model } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
-      const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model });
+      const result = await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model, userApiKeys });
       return result;
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/combat-commentary
+   *
+   * Generate mid-combat narration + battle cries for an active fight.
+   * Single-shot AI call. Returns { result: { narration, battleCries }, usage }.
+   */
+  fastify.post('/combat-commentary', { schema: { body: COMBAT_COMMENTARY_SCHEMA } }, async (request, reply) => {
+    const { gameState = {}, combatSnapshot, language = 'en', provider = 'openai', model, modelTier = 'premium' } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await generateCombatCommentary({ gameState, combatSnapshot, language, provider, model, modelTier, userApiKeys });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/verify-objective
+   *
+   * Classify whether a quest objective has been fulfilled given a story context.
+   * Returns { result: { fulfilled, reasoning }, usage }.
+   */
+  fastify.post('/verify-objective', { schema: { body: VERIFY_OBJECTIVE_SCHEMA } }, async (request, reply) => {
+    const {
+      storyContext = '',
+      questName = '',
+      questDescription = '',
+      objectiveDescription = '',
+      language = 'en',
+      provider = 'openai',
+      model,
+      modelTier = 'premium',
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await verifyObjective({
+        storyContext,
+        questName,
+        questDescription,
+        objectiveDescription,
+        language,
+        provider,
+        model,
+        modelTier,
+        userApiKeys,
+      });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/generate-recap
+   *
+   * Generate a "Previously on..." campaign recap. Chunks long histories and
+   * merges. Returns { result: { recap, meta? }, usage }.
+   */
+  fastify.post('/generate-recap', { schema: { body: RECAP_SCHEMA } }, async (request, reply) => {
+    const {
+      scenes = [],
+      language = 'en',
+      provider = 'openai',
+      model,
+      modelTier = 'premium',
+      sentencesPerScene = 1,
+      summaryStyle = null,
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await generateRecap({
+        scenes,
+        language,
+        provider,
+        model,
+        modelTier,
+        sentencesPerScene,
+        summaryStyle,
+        userApiKeys,
+      });
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
@@ -157,12 +296,13 @@ export async function aiRoutes(fastify) {
    */
   fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
 
     if (isRedisEnabled()) {
       try {
         const { id, queue } = await enqueueJob(
           'generate-campaign',
-          { settings: settings || {}, language, provider, model },
+          { settings: settings || {}, language, provider, model, userApiKeys },
           { provider, userId: request.user?.id },
         );
         return reply.code(202).send({ jobId: id, queue });
@@ -177,7 +317,7 @@ export async function aiRoutes(fastify) {
 
     await generateCampaignStream(
       settings || {},
-      { provider, model, language },
+      { provider, model, language, userApiKeys },
       (event) => {
         try {
           reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -247,29 +387,107 @@ export async function aiRoutes(fastify) {
     // SSE headers (must include CORS manually since writeHead bypasses Fastify hooks)
     if (!writeSseHead(request, reply)) return;
 
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+
+    const opts = {
+      provider,
+      model,
+      language,
+      dmSettings,
+      resolvedMechanics,
+      needsSystemEnabled,
+      characterNeeds,
+      isFirstScene,
+      sceneCount,
+      isCustomAction,
+      fromAutoPlayer,
+      userApiKeys,
+    };
+
+    const writeEvent = (event) => {
+      try {
+        reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        // client disconnected
+      }
+    };
+
+    // Queue path — worker runs generateSceneStream and publishes every
+    // event to a per-job Redis pub/sub channel. This handler subscribes
+    // to that channel (BEFORE enqueueing, with a pre-generated jobId, so
+    // there is no subscribe-after-publish race) and forwards each event
+    // to the SSE client. Closes the stream on `complete` or `error`.
+    //
+    // When Redis is off, falls back to the legacy inline path below.
+    if (isRedisEnabled()) {
+      const jobId = crypto.randomUUID();
+      const channel = sceneJobChannel(jobId);
+      const subscriber = getRedisClient().duplicate();
+
+      let closed = false;
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+
+      const cleanup = async () => {
+        if (closed) return;
+        closed = true;
+        try { await subscriber.unsubscribe(channel); } catch { /* ignore */ }
+        try { await subscriber.quit(); } catch { /* ignore */ }
+        try { reply.raw.end(); } catch { /* ignore */ }
+        resolveDone();
+      };
+
+      subscriber.on('message', (ch, msg) => {
+        if (ch !== channel) return;
+        try {
+          reply.raw.write(`data: ${msg}\n\n`);
+        } catch { /* ignore */ }
+        try {
+          const event = JSON.parse(msg);
+          if (event.type === 'complete' || event.type === 'error') {
+            cleanup();
+          }
+        } catch { /* ignore */ }
+      });
+
+      request.raw.on('close', () => { cleanup(); });
+
+      // 5-minute safety timeout — scene gen is usually 15-30s, if nothing
+      // arrives in 5min the worker crashed or got stuck on a retry.
+      const timeoutHandle = setTimeout(() => {
+        writeEvent({ type: 'error', error: 'Scene job timed out', code: 'JOB_TIMEOUT' });
+        cleanup();
+      }, 5 * 60 * 1000);
+      timeoutHandle.unref?.();
+
+      let enqueueFailed = false;
+      try {
+        await subscriber.subscribe(channel);
+        await enqueueJob(
+          'generate-scene',
+          { campaignId, playerAction: playerAction || '[FIRST_SCENE]', opts },
+          { provider, userId: request.user?.id, jobId },
+        );
+      } catch (err) {
+        log.warn({ err }, 'Failed to start scene job — falling back to inline');
+        enqueueFailed = true;
+        clearTimeout(timeoutHandle);
+        await cleanup();
+      }
+
+      if (!enqueueFailed) {
+        await done;
+        clearTimeout(timeoutHandle);
+        return;
+      }
+    }
+
+    // Legacy inline fallback (Redis disabled or enqueue failed).
     await generateSceneStream(
       campaignId,
       playerAction || '[FIRST_SCENE]',
-      {
-        provider,
-        model,
-        language,
-        dmSettings,
-        resolvedMechanics,
-        needsSystemEnabled,
-        characterNeeds,
-        isFirstScene,
-        sceneCount,
-        isCustomAction,
-        fromAutoPlayer,
-      },
-      (event) => {
-        try {
-          reply.raw.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-        } catch {
-          // client disconnected
-        }
-      },
+      opts,
+      writeEvent,
     );
 
     reply.raw.end();

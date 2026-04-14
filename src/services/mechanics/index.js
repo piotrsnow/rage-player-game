@@ -12,7 +12,7 @@ export { resolveD50Test } from './d50Test.js';
  * sceneGenerator.js → applyCreativityToRoll). Any frontend dice roll
  * resolved here will have creativityBonus=0 until backend reconciles it.
  */
-export async function resolveMechanics({ state, playerAction, settings, isFirstScene, t, inferSkillCheckFn = null, skipDiceRoll: forceSkipDiceRoll = false }) {
+export async function resolveMechanics({ state, playerAction, settings, isFirstScene, t, skipDiceRoll: forceSkipDiceRoll = false }) {
   const isIdleWorldEvent = playerAction && playerAction.startsWith('[IDLE_WORLD_EVENT');
   const isPassiveAction = Boolean(isIdleWorldEvent || playerAction === '[WAIT]');
   const isRest = isRestAction(playerAction, t);
@@ -28,24 +28,7 @@ export async function resolveMechanics({ state, playerAction, settings, isFirstS
     const roll = rollD50();
     const currentMomentum = state.momentumBonus || 0;
 
-    let actionContext = null;
-    if (inferSkillCheckFn) {
-      try {
-        const aiResult = await inferSkillCheckFn(playerAction, state.character?.skills);
-        if (aiResult && !aiResult.skip) {
-          actionContext = {
-            attribute: aiResult.attribute,
-            suggestedSkills: aiResult.skill ? [aiResult.skill] : [],
-            difficulty: aiResult.difficulty || 'medium',
-          };
-        }
-      } catch (err) {
-        console.warn('[resolveMechanics] AI skill inference failed, falling back to regex:', err.message);
-        actionContext = inferActionContext(playerAction);
-      }
-    } else {
-      actionContext = inferActionContext(playerAction);
-    }
+    const actionContext = inferActionContext(playerAction);
 
     if (actionContext) {
       diceRoll = resolveSkillCheck({

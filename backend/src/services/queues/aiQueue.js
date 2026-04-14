@@ -13,12 +13,14 @@ import { logger } from '../../lib/logger.js';
 //
 // Producer side only — worker consumption lives in workers/aiWorker.js.
 
+// Note: BullMQ forbids `:` in queue names — it uses `:` internally as the
+// Redis key separator. Use `-` here instead.
 export const QUEUE_NAMES = {
-  OPENAI: 'ai:openai',
-  ANTHROPIC: 'ai:anthropic',
-  GEMINI: 'ai:gemini',
-  STABILITY: 'ai:stability',
-  MESHY: 'ai:meshy',
+  OPENAI: 'ai-openai',
+  ANTHROPIC: 'ai-anthropic',
+  GEMINI: 'ai-gemini',
+  STABILITY: 'ai-stability',
+  MESHY: 'ai-meshy',
 };
 
 const DEFAULT_JOB_OPTS = {
@@ -90,14 +92,15 @@ export function getQueueEvents(provider) {
   return events;
 }
 
-export async function enqueueJob(jobName, data, { provider = 'openai', userId = null } = {}) {
+export async function enqueueJob(jobName, data, { provider = 'openai', userId = null, jobId = undefined } = {}) {
   const queue = getQueue(provider);
   if (!queue) {
     throw Object.assign(new Error('Queue unavailable — Redis disabled'), { code: 'QUEUE_DISABLED' });
   }
-  const job = await queue.add(jobName, data, {
-    jobId: undefined,
-  });
+  // Caller may pre-generate a jobId so it can subscribe to the pub/sub
+  // channel (`scene-job:<jobId>:events`) BEFORE the worker starts
+  // publishing, eliminating the subscribe-after-enqueue race window.
+  const job = await queue.add(jobName, data, jobId ? { jobId } : undefined);
   logger.info({ jobId: job.id, jobName, provider, userId }, '[queue] job enqueued');
   return { id: job.id, queue: queue.name };
 }

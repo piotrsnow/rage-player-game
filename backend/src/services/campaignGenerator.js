@@ -2,9 +2,9 @@ import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 
-export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en' } = {}, onEvent) {
+export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
-  const apiKey = requireServerApiKey(resolvedProvider === 'anthropic' ? 'anthropic' : 'openai');
+  const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
   const resolvedModel = model || config.aiModels.premium[resolvedProvider];
 
   const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
@@ -15,7 +15,7 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     const accumulated = await streamFn(
       systemPrompt,
       userPrompt,
-      { model: resolvedModel, maxTokens: 8000 },
+      { model: resolvedModel, maxTokens: 8000, apiKey },
       (text) => onEvent({ type: 'chunk', text }),
     );
 
@@ -34,8 +34,7 @@ function parseResponse(text) {
   return JSON.parse(jsonStr);
 }
 
-async function callOpenAIStreaming(systemPrompt, userPrompt, { model, maxTokens = 8000 } = {}, onChunk) {
-  const apiKey = requireServerApiKey('openai', 'OpenAI');
+async function callOpenAIStreaming(systemPrompt, userPrompt, { model, maxTokens = 8000, apiKey } = {}, onChunk) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -111,8 +110,7 @@ async function callOpenAIStreaming(systemPrompt, userPrompt, { model, maxTokens 
   return accumulated;
 }
 
-async function callAnthropicStreaming(systemPrompt, userPrompt, { model, maxTokens = 8000 } = {}, onChunk) {
-  const apiKey = requireServerApiKey('anthropic', 'Anthropic');
+async function callAnthropicStreaming(systemPrompt, userPrompt, { model, maxTokens = 8000, apiKey } = {}, onChunk) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {

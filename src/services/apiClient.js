@@ -72,8 +72,13 @@ export const apiClient = {
     return _token;
   },
 
+  // After the no-BYOK cleanup, "connected" just means "authenticated". The
+  // backend is always at the same origin (empty baseUrl = relative URL) so
+  // the only gate is whether the user has a JWT token. Callers that used
+  // this to branch proxy-mode vs backend-mode no longer need the branch
+  // — every feature path goes through the backend now.
   isConnected() {
-    return !!(this.getBaseUrl() && this.getToken());
+    return !!this.getToken();
   },
 
   async request(path, options = {}) {

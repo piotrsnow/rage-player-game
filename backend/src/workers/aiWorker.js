@@ -2,7 +2,12 @@ import { Worker } from 'bullmq';
 import { getRedisClient, isRedisEnabled, closeRedis } from '../services/redisClient.js';
 import { QUEUE_NAMES } from '../services/queues/aiQueue.js';
 import { generateCampaignStream } from '../services/campaignGenerator.js';
+import { generateSceneStream } from '../services/sceneGenerator.js';
 import { logger } from '../lib/logger.js';
+
+export function sceneJobChannel(jobId) {
+  return `scene-job:${jobId}:events`;
+}
 
 // BullMQ workers. Each worker binds to one queue and runs jobs on the
 // shared redis connection. The processor dispatches by job name so we can
@@ -83,11 +88,48 @@ export async function stopWorkers() {
 
 // ── Handler registration ──────────────────────────────────────────
 
+// Scene generation: streaming preserved via Redis pub/sub bridge.
+// Input: { campaignId, playerAction, opts }
+// Flow: the callback passed into generateSceneStream publishes every event
+// to `scene-job:<jobId>:events`. The HTTP handler that enqueued the job is
+// subscribed to the same channel and forwards events to the SSE client.
+// Output: job.returnvalue stores the final scene result for bull-board
+// history; clients get the data via the `complete` SSE event, not the
+// job API.
+registerHandler('generate-scene', async (job) => {
+  const { campaignId, playerAction, opts = {} } = job.data || {};
+  const redis = getRedisClient();
+  const channel = sceneJobChannel(job.id);
+
+  let completeData = null;
+  let streamError = null;
+
+  await generateSceneStream(campaignId, playerAction, opts, (event) => {
+    // Fire-and-forget publish. ioredis buffers on disconnect; an occasional
+    // dropped message is acceptable — the HTTP subscriber uses the `complete`
+    // event to detect end-of-stream and will also time out on silence.
+    if (redis) {
+      redis.publish(channel, JSON.stringify(event)).catch((err) => {
+        logger.warn({ err, jobId: job.id }, '[worker] scene event publish failed');
+      });
+    }
+    if (event.type === 'complete') completeData = event.data;
+    if (event.type === 'error') {
+      streamError = Object.assign(new Error(event.error || 'Scene generation failed'), {
+        code: event.code || 'STREAM_ERROR',
+      });
+    }
+  });
+
+  if (streamError) throw streamError;
+  return { result: completeData };
+});
+
 // Campaign generation: non-streaming (drop streaming per plan — spinner OK).
 // Input: { settings, language, provider, model }
 // Output: { result } — fully parsed campaign object
 registerHandler('generate-campaign', async (job) => {
-  const { settings = {}, language = 'en', provider = 'openai', model = null } = job.data || {};
+  const { settings = {}, language = 'en', provider = 'openai', model = null, userApiKeys = null } = job.data || {};
 
   let completeData = null;
   let streamError = null;
@@ -96,7 +138,7 @@ registerHandler('generate-campaign', async (job) => {
 
   await generateCampaignStream(
     settings,
-    { provider, model, language },
+    { provider, model, language, userApiKeys },
     (event) => {
       if (event.type === 'chunk') {
         chunkCount += 1;

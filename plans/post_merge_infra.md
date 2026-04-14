@@ -1,42 +1,44 @@
 # Post-Merge Infra Backlog
 
 **Extracted from:** `plans/merge_status.md` (session 5, 2026-04-13)
-**Status (2026-04-14 late evening):** All small/medium items closed. Redis plumbing + 4 real consumers live (embedding cache, rate-limit, idempotency, BullMQ queues). **Item 2 Stage 1 (BullMQ backend infra + campaign-gen migration) DONE 2026-04-14.** Only 2 heavy items remain: 1 Stage 2 (roomManager → Redis + pub/sub), 3 (refresh tokens + CSRF). Scene-gen migration to BullMQ is a separate session (Item 2 Stage 2) since it preserves streaming UX and is deeper FE surgery. Plus item 6 (proxy middleware) still needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
+**Status (2026-04-14 night):** All small/medium items closed. Redis plumbing + 4 consumers live (embedding cache, rate-limit, idempotency, BullMQ queues). **Item 2 FULLY DONE** (BullMQ for campaign + scene gen with pub/sub streaming bridge). **No-BYOK cleanup DONE** — FE direct-dispatch removed, BE now resolves per-user keys properly, 3 new BE endpoints for recap/combat/verify. **Remaining heavy items: item 1 Stage 2 (roomManager → Redis + pub/sub), item 3 (refresh tokens + CSRF).** Plus item 6 (proxy middleware) needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
 
 ## Progress snapshot
 
 | # | Item | Status |
 |---|---|---|
 | — | **Redis decision + plumbing (Stage 1)** | **✅ DONE 2026-04-14** — Prod-A (self-hosted Valkey in docker-compose on single VM), `redisClient.js` singleton with optional mode, `/health` reports redis status, graceful shutdown wired |
-| 1 | Redis room state | **TODO** — plumbing unblocked but migration is heavy (roomManager has 675L with ws refs interleaved across 20+ functions) — deferred to dedicated session |
-| 2 | BullMQ for AI generation | **STAGE 1 DONE 2026-04-14** — bullmq + bull-board installed, per-provider queues live, worker entrypoint, in-process + standalone modes, /generate-campaign enqueues via job queue, /ai/jobs/:id poller, FE dispatches on content-type. Scene-gen migration still TODO (Stage 2) |
-| 3 | Refresh tokens + revocation | **TODO** — plumbing unblocked |
+| 1 | Redis room state | **TODO (Stage 2)** — plumbing unblocked but migration is heavy (roomManager has 675L with ws refs interleaved across 20+ functions) — see section 1 for handoff |
+| 2 | BullMQ for AI generation | **✅ DONE 2026-04-14** — Stage 1: bullmq + bull-board, per-provider queues, worker, /generate-campaign via queue, /ai/jobs/:id poller. Stage 2: /generate-scene-stream via queue + Redis pub/sub bridge to SSE, pre-generated jobId removes subscribe-after-publish race, FE unchanged (transparent migration). |
+| 3 | Refresh tokens + revocation | **TODO** — plumbing unblocked, see section 3 for handoff |
 | 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
 | 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
 | 6 | Proxy route middleware extraction | **TODO** — standalone, needs design session |
-| 7 | Idempotency keys | **✅ DONE 2026-04-14** — backend plugin (9 tests) + FE apiClient extension (8 tests) + opt-in on all 5 mutation call sites (3× POST /campaigns, 1× POST /scenes, 1× POST /scenes/bulk) |
+| 7 | Idempotency keys | **✅ DONE 2026-04-14** — backend plugin (9 tests) + FE apiClient extension (8 tests) + opt-in on 5 mutation call sites |
 | 8 | Per-user rate limiting | **✅ DONE 2026-04-14** — custom keyGenerator (userId when authed, IP fallback), Redis store when enabled, 6 tests |
 | 9a | Embedding LRU short-term TTL | **✅ DONE 2026-04-14** |
 | 9b | Embedding LRU Redis migration | **✅ DONE 2026-04-14** — two-tier L1+L2 cache, SHA256 keys, EX TTL, fallback on Redis errors, 6 new tests |
 | 10 | FE↔BE AI helper consolidation | **✅ DONE 2026-04-14** (fallbackActions + aiResponseParser + dialogueRepair → `shared/domain/`) |
 | 11 | WS message handler tests | **✅ DONE 2026-04-14** (64 tests across 6 handler files) |
 | 12 | Pre-merge deployment checklist | **TODO** — not Claude-implementable (JWT rotation, OpenAI model ID verify) |
+| — | **No-BYOK cleanup** | **✅ DONE 2026-04-14 night** — BE `resolveApiKey` now decrypts user keys; user keys threaded through scene/campaign/story-prompt; 3 new BE services + routes (combat commentary, verify objective, recap with chunking); FE `service.js` / `imageGen.js` / `meshyClient.js` rewritten to BE-only; `providers.js` + `aiStream.js` + `compressScenes` + `inferSkillCheck` deleted; `apiClient.isConnected()` simplified to token check. See `project_no_byok` memory. |
 
-**What landed on 2026-04-14 (cumulative across morning + afternoon sessions):** items 4 (audit), 5, 7, 8, 9a, 9b, 10 (a/b/c), 11, plus the Redis infra/plumbing layer (Stage 1 of item 1). Full test suite 532/532, build green. See `project_post_merge_progress` memory for the detailed handoff.
+**Test suite after all 2026-04-14 work:** 44 files 505 tests passing, production build green. See `project_post_merge_progress` memory for the detailed handoff.
 
 ---
 
 ## Handoff for the remaining heavy tasks
 
-Each of the 3 remaining items (1 Stage 2, 2, 3) is self-contained enough to start a **fresh chat** with just its section of this doc plus the deployment context below. The intended flow is: open a new chat, point it at the specific section in this plan, and let it plan + execute against a clean working tree.
+Each of the 2 remaining items (**1 Stage 2** — roomManager, **3** — refresh tokens) is self-contained enough to start a **fresh chat** with just its section of this doc plus the deployment context below. The intended flow is: open a new chat, point it at the specific section in this plan, and let it plan + execute against a clean working tree.
 
 **Shared context every new chat needs to know:**
 
-- **Redis is live and optional.** `backend/src/services/redisClient.js` exposes `getRedisClient()` / `isRedisEnabled()` / `pingRedis()` / `closeRedis()`. Every consumer so far uses the pattern *"check `isRedisEnabled()`, call Redis, catch errors, fall back gracefully"*. Three production consumers already follow this pattern as reference: [backend/src/services/embeddingService.js](../backend/src/services/embeddingService.js) (L1+L2 cache), [backend/src/plugins/rateLimitKey.js](../backend/src/plugins/rateLimitKey.js) (keyGenerator), [backend/src/plugins/idempotency.js](../backend/src/plugins/idempotency.js) (full plugin with preHandler + onSend). A new consumer should copy this pattern, not invent a new one.
-- **Deployment reality.** Single Compute Engine VM running `docker compose` with backend + Valkey side-by-side. `REDIS_URL=redis://valkey:6379` comes from [docker-compose.prod.yml](../docker-compose.prod.yml). CI/CD from `main` auto-deploys. No VPC connector, no Cloud Run autoscale concerns — everything runs in one process space on one VM. This is Prod-A from the hosting decision in section 1.
+- **Redis is live and optional.** `backend/src/services/redisClient.js` exposes `getRedisClient()` / `isRedisEnabled()` / `pingRedis()` / `closeRedis()`. Every consumer so far uses the pattern *"check `isRedisEnabled()`, call Redis, catch errors, fall back gracefully"*. Four production consumers already follow this pattern as reference: [backend/src/services/embeddingService.js](../backend/src/services/embeddingService.js) (L1+L2 cache), [backend/src/plugins/rateLimitKey.js](../backend/src/plugins/rateLimitKey.js) (keyGenerator), [backend/src/plugins/idempotency.js](../backend/src/plugins/idempotency.js) (full plugin), [backend/src/services/queues/aiQueue.js](../backend/src/services/queues/aiQueue.js) + [backend/src/workers/aiWorker.js](../backend/src/workers/aiWorker.js) (BullMQ queue + worker + pub/sub bridge for scene-gen). A new consumer should copy this pattern, not invent a new one.
+- **BullMQ is live.** Per-provider queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`), in-process workers by default, standalone mode via `WORKER_MODE=1` + `docker compose --profile workers up`. `enqueueJob(name, data, { provider, userId, jobId? })` supports pre-generated jobIds for subscribe-before-publish patterns. Bull-board UI at `/v1/admin/queues` (admin JWT claim required). For scene-gen, the handler publishes stream events to `scene-job:<jobId>:events` and the route handler subscribes + bridges to SSE — see [backend/src/routes/ai.js](../backend/src/routes/ai.js) `/campaigns/:id/generate-scene-stream` for the full pattern.
+- **Deployment reality.** Single Compute Engine VM running `docker compose` with backend + Valkey side-by-side. `REDIS_URL=redis://valkey:6379` comes from [docker-compose.prod.yml](../docker-compose.prod.yml). CI/CD from `main` auto-deploys. No VPC connector, no Cloud Run autoscale concerns — everything runs in one process space on one VM. This is Prod-A from the hosting decision in section 1. Local dev: `npm run dev` (= `docker compose up --build --watch`) with auto-restart of backend on `backend/src` / `shared` edits.
 - **API versioning is in place.** All routes under `/v1/`. Any breaking change (notably item 3 refresh tokens) should register new routes under `/v2/` and leave `/v1/` running in parallel.
-- **No BYOK.** Frontend proxy mode is being removed (see `project_no_byok` memory). Backend scene generation is the sole AI path. Don't add features to FE proxy-mode code.
-- **Auto-memory exists.** Check `project_post_merge_progress` memory for the cumulative handoff. Read `user_profile` + `feedback_*` memories for working style (pragmatic, batched playtest cadence, right-sized commits).
+- **No BYOK cleanup DONE.** Backend is the sole AI dispatch path. FE `src/services/ai/service.js`, `imageGen.js`, `meshyClient.js` all go through BE. Per-user API keys work end-to-end: KeysModal posts to `PUT /v1/auth/settings`, BE encrypts and stores on `User.apiKeys`, `resolveApiKey(encryptedBundle, keyName)` decrypts and falls back to env when the user hasn't set a key. New AI services must accept `userApiKeys` in options and pass it to `requireServerApiKey(keyName, userApiKeys, providerLabel)`. The pattern is threaded through `sceneGenerator`, `campaignGenerator`, `storyPromptGenerator`, plus 3 new services wired in the no-BYOK pass: `combatCommentary.js`, `objectiveVerifier.js`, `recapGenerator.js`. See [backend/src/services/aiJsonCall.js](../backend/src/services/aiJsonCall.js) for the shared helper.
+- **Auto-memory exists.** Check `project_post_merge_progress` and `project_no_byok` memories for the cumulative handoff. Read `user_profile` + `feedback_*` memories for working style (pragmatic, batched playtest cadence, right-sized commits).
 
 ## Deployment context (updated 2026-04-14)
 
@@ -101,72 +103,21 @@ TTL                       → ROOM_INACTIVE_TTL_MS (30min) refreshed on every wr
 
 ---
 
-## 2. BullMQ for AI generation
+## 2. BullMQ for AI generation — ✅ DONE 2026-04-14
 
-**Stage 1 DONE 2026-04-14 late evening.** Backend queue infra + campaign-gen migration landed. Stage 2 (scene-gen migration) deferred — see below.
+**Both stages landed in one day.** Stage 1: backend queue infra + `/generate-campaign` migration. Stage 2: `/generate-scene-stream` migration with streaming UX preserved via Redis pub/sub bridge.
 
-**What landed in Stage 1:**
-- `bullmq@5` and `@bull-board/fastify@7` installed in backend
-- [backend/src/services/queues/aiQueue.js](../backend/src/services/queues/aiQueue.js) — per-provider queues (`ai:openai`, `ai:anthropic`, `ai:gemini`, `ai:stability`, `ai:meshy`), reuses the singleton ioredis client from `redisClient.js`. `getQueue(provider)`, `enqueueJob`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Follows the `isRedisEnabled()` → fall back pattern — returns null when Redis is disabled so legacy inline SSE keeps working in dev/CI without Docker.
-- [backend/src/workers/aiWorker.js](../backend/src/workers/aiWorker.js) — worker entrypoint with two modes. In-process: `startWorkers()` is called from `server.js` when `WORKER_MODE` is not set and Redis is enabled. Standalone: `npm run worker` spawns a separate process (used by the `backend-worker` compose service under the `workers` profile). Handlers registered per job name; `generate-campaign` handler wraps the existing `generateCampaignStream` service and collects the `complete` event into `job.returnvalue`. Progress updates every 10 chunks.
-- [backend/src/plugins/bullBoard.js](../backend/src/plugins/bullBoard.js) — bull-board UI mounted under `/v1/admin/queues`, gated by `fastify.authenticate` + `request.user.admin` claim (403 for non-admins). No-op when Redis is disabled.
-- [backend/src/routes/ai.js](../backend/src/routes/ai.js) — `/ai/generate-campaign` now enqueues a job when Redis is enabled and returns `202 { jobId, queue }`. Falls through to legacy SSE when Redis is off or enqueue fails. New `GET /ai/jobs/:id` endpoint calls `findJobAcrossQueues` and returns state + result + progress.
-- [backend/src/server.js](../backend/src/server.js) — `startWorkers()` called on boot (non-worker mode, Redis enabled), `stopWorkers()` + `closeAllQueues()` wired into the graceful shutdown hook before Redis close.
-- [docker-compose.yml](../docker-compose.yml) — `backend-worker` service added under `profiles: ["workers"]`, shares the backend image and runs `npm run worker` with `WORKER_MODE=1`. Inactive by default on Prod-A single VM — activate with `docker compose --profile workers up` when you want worker isolation.
-- [src/services/aiJobPoller.js](../src/services/aiJobPoller.js) — FE polling helper with adaptive intervals (500ms → 2s). Returns `returnvalue` on `completed`, throws on `failed`.
-- [src/services/ai/service.js](../src/services/ai/service.js) — `aiService.generateCampaign` now POSTs via raw `fetch`, dispatches on content-type (JSON → `pollJob`, SSE → existing `drainCampaignStream` helper kept inline for the Redis-disabled path). `onPartialScene` callback is no-op in the queue path (spinner-only, per this plan).
-- [backend/src/services/queues/aiQueue.test.js](../backend/src/services/queues/aiQueue.test.js) — 9 unit tests covering provider mapping, caching, disabled-mode, enqueue + findJobAcrossQueues. Uses `vi.hoisted` for the BullMQ Queue factory mock.
-- Full backend test suite 152/152 green; FE unit suite 541 tests green; production build green.
+**Key files to know about:**
+- [backend/src/services/queues/aiQueue.js](../backend/src/services/queues/aiQueue.js) — 5 per-provider queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`). Note the `-` separator: BullMQ forbids `:` in queue names. `enqueueJob(name, data, { provider, userId, jobId? })` supports pre-generated jobIds.
+- [backend/src/workers/aiWorker.js](../backend/src/workers/aiWorker.js) — handler registry with `generate-campaign` and `generate-scene`. Two launch modes: in-process (`startWorkers()` from `server.js`) and standalone (`npm run worker`, `WORKER_MODE=1`). Exports `sceneJobChannel(jobId)` helper — shared with the route handler so both sides agree on the pub/sub key.
+- [backend/src/plugins/bullBoard.js](../backend/src/plugins/bullBoard.js) — bull-board UI at `/v1/admin/queues`, admin-claim gated.
+- [backend/src/routes/ai.js](../backend/src/routes/ai.js) — `/generate-campaign` returns `202 { jobId }` (poll path) or SSE (fallback when Redis off). `/campaigns/:id/generate-scene-stream` pre-generates jobId, subscribes to pub/sub, enqueues with that ID, bridges events to SSE. `GET /ai/jobs/:id` polling endpoint.
+- [src/services/aiJobPoller.js](../src/services/aiJobPoller.js) — FE adaptive poller (500ms → 2s).
+- [docker-compose.yml](../docker-compose.yml) — `backend-worker` service under `profiles: ["workers"]`. Dormant by default on Prod-A (main container runs workers in-process); activate with `docker compose --profile workers up` when you want worker isolation.
 
-**Verification after landing:**
-- [ ] Boot `docker compose up` locally and POST to `/v1/ai/generate-campaign` with auth — should get `202 { jobId }`, then poll `/v1/ai/jobs/:id` returns `completed` with the campaign result in `returnvalue.result`.
-- [ ] Open bull-board at `http://localhost:3001/v1/admin/queues` with an admin-claim JWT and confirm queues + job history are visible.
-- [ ] Toggle `REDIS_URL=''` in env and confirm `/generate-campaign` falls back to SSE streaming without errors (legacy path).
-- [ ] End-to-end playtest: create a new campaign via the UI with the backend-mode path; confirm the spinner UX works (no progressive first-scene preview expected since streaming is dropped here).
+**Pattern to copy for new queue consumers:** pre-generate `jobId` with `crypto.randomUUID()`, `subscriber.subscribe(channel)` BEFORE `enqueueJob(..., { jobId })`, forward messages to SSE, close on terminal event. Handler inside the worker publishes via `redis.publish(channel, JSON.stringify(event))` fire-and-forget.
 
-**Stage 2 — scene-gen migration (TODO, separate session).** The primary gameplay loop streams SSE with progressive partial JSON parsing in `useSceneBackendStream`. Migrating it requires publishing progress events from the worker to a Redis pub/sub channel per job, then subscribing via a new SSE endpoint (`/v1/ai/jobs/:id/stream`). The FE hook needs a deep refactor — roughly 2 hours of careful work plus a playtest. Plan a full read of `useSceneBackendStream.js` + `useSceneGeneration.js` consumers before touching it.
-
-**Status update 2026-04-14 (original, kept for context).** Redis plumbing is live (Stage 1 of item 1). BullMQ itself is NOT installed — a new chat starting this item should run `cd backend && npm install bullmq` as its first step. The dependency graph is clear now: BullMQ uses ioredis under the hood, and our `redisClient.js` already instantiates an ioredis client that can be reused for the queue.
-
-**Problem.** Scene generation (10-30s), campaign generation (20-60s), and image generation (15-45s) all run synchronously inside request handlers. Long generations:
-- Block the handler process — a single backend instance can't serve many parallel scene gens. On Prod-A single-VM deployment, this is already observable under multi-player load.
-- Have no retry/resume on instance restart. `docker compose restart backend` kills an in-flight generation and the client has to retry manually.
-- Cannot be observed — no job UI, no queue depth metric, no per-provider rate-limit visibility.
-
-**Solution shape.** BullMQ (Redis-backed) job queue.
-- Client submits `/v1/ai/generate-scene` → backend enqueues a job, returns `{ jobId }` immediately.
-- Client polls `/v1/ai/jobs/:id` or subscribes via SSE for progress updates.
-- Worker process consumes the queue. On Prod-A this can run as a second container in `docker-compose.yml` (just another service with `WORKER_MODE=1`), sharing the Valkey instance. No separate Cloud Run service needed.
-- Built-in retries, dead-letter queue, job UI via `@bull-board/fastify` mounted under `/v1/admin/queues` (authenticated).
-
-**Design questions the new chat will need to answer:**
-- **One queue or multiple?** Recommend multiple — one per provider (`ai:openai`, `ai:anthropic`, `ai:meshy`, `ai:stability`), because rate limits and failure modes differ per provider. Independent concurrency limits on each queue prevent one flaky provider from starving the others.
-- **Where does the worker run?** Option A: separate compose service `backend-worker` with `WORKER_MODE=1` env var, shares the repo image but different entrypoint. Option B: same backend container, just spawn worker threads on startup. Recommend A for isolation and ability to scale the worker independently.
-- **Streaming vs polling.** Current FE path in `useSceneGeneration` uses SSE streaming to show tokens as they arrive. Job queue breaks that UX by default. Two options:
-  - **Preserve streaming:** worker publishes progress events to a per-job Redis pub/sub channel; FE subscribes via SSE to `/v1/ai/jobs/:id/stream`. Complex but keeps the nice "watch the AI think" UX.
-  - **Drop streaming:** FE polls `/v1/ai/jobs/:id` every 500ms, shows a spinner instead of token-by-token text. Simpler but UX regression.
-  - Recommend: preserve streaming for scene gen (user-facing, visible wait), drop for campaign gen (less user-visible, OK to show spinner).
-
-**Scope.**
-
-- **Backend:**
-  - Install `bullmq` and `@bull-board/fastify`
-  - New `backend/src/services/queues/*` with per-provider queue definitions
-  - Refactor `backend/src/routes/ai.js` SSE endpoints to enqueue + return job ID (or keep both paths in parallel during migration)
-  - New worker entrypoint `backend/src/workers/aiWorker.js` that consumes jobs and calls the existing scene generator services
-  - `docker-compose.yml` + `docker-compose.prod.yml` — add `backend-worker` service with `WORKER_MODE=1` env var
-  - Mount bull-board under `/v1/admin/queues` behind auth
-- **Frontend:**
-  - Refactor [src/hooks/sceneGeneration/useSceneGeneration.js](../src/hooks/sceneGeneration/useSceneGeneration.js) — currently awaits SSE inline, needs to enqueue + subscribe to progress stream
-  - New status UI for "queued" vs "processing" states
-  - Graceful handling of worker disconnection mid-job
-
-**Blockers.**
-- **None for starting.** Redis is live, no missing infra.
-- **Risk:** FE refactor is the biggest unknown. Current SSE flow is deep in the hook and has assumptions about `await`-ing the streamed response. Plan a full read of `useSceneGeneration.js` + its consumers before writing code.
-- **Playtest required** before shipping — this touches the primary gameplay loop. Can't land without a multiplayer + solo end-to-end test.
-
-**Estimated scope.** 2 focused sessions. Session 1: backend queue setup + worker + one endpoint migrated (probably `/generate-campaign` since it's lower-traffic). Session 2: scene-gen migration + FE refactor + playtest.
+**Tests:** [backend/src/services/queues/aiQueue.test.js](../backend/src/services/queues/aiQueue.test.js) (9 tests) + [backend/src/workers/aiWorker.test.js](../backend/src/workers/aiWorker.test.js) (5 tests). Uses `vi.hoisted` for BullMQ Queue factory mocks.
 
 ---
 

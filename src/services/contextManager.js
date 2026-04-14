@@ -1,17 +1,10 @@
-import { aiService } from './ai';
 import { resolveContextDepthForProfile } from './promptGovernance';
-import { normalizeNpcName } from './utils/npcMatcher.js';
 
 const FULL_SCENE_COUNT = 3;
 const MEDIUM_SCENE_COUNT = 5;
 const MEDIUM_SUMMARY_LENGTH = 500;
-const COMPRESSION_THRESHOLD = 15;
-const INCREMENTAL_COMPRESSION_INTERVAL = 10;
-const MAX_COMPRESSED_HISTORY_LENGTH = 5000;
 const MIN_KEYWORD_LENGTH = 2;
 const RECENTLY_RESOLVED_SCENE_WINDOW = 10;
-const MIN_SUMMARY_LENGTH = 220;
-const MIN_COMPRESSION_QUALITY_SCORE = 3;
 
 function extractKeywords(text) {
   if (!text) return [];
@@ -25,14 +18,6 @@ function scoreTags(entryTags, keywords) {
   if (!entryTags?.length || !keywords?.length) return 0;
   const lower = entryTags.map((t) => t.toLowerCase());
   return keywords.reduce((score, kw) => score + (lower.some((t) => t.includes(kw) || kw.includes(t)) ? 1 : 0), 0);
-}
-
-function collectRelatedEntityNames(npcs, quests) {
-  const npcsByName = {};
-  for (const npc of (npcs || [])) {
-    npcsByName[npc.name?.toLowerCase()] = npc;
-  }
-  return { npcsByName };
 }
 
 function expandKeywordsWithRelations(keywords, npcs, quests, factions) {
@@ -86,29 +71,6 @@ function scoreRecency(entry, currentSceneIdx) {
   if (age <= 8) return 2;
   if (age <= 15) return 1;
   return 0;
-}
-
-function scoreCompressionQuality(summary = '', entitySnapshot = {}, existingHistory = '') {
-  const text = String(summary || '').trim();
-  if (!text) return 0;
-  let score = 0;
-  if (text.length >= MIN_SUMMARY_LENGTH) score += 1;
-
-  const normalizedText = normalizeNpcName(text);
-  const npcNames = (entitySnapshot?.npcs || []).map((n) => String(n?.name || '').trim()).filter(Boolean);
-  const questNames = (entitySnapshot?.activeQuests || []).map((q) => String(q?.name || '').trim()).filter(Boolean);
-  const location = String(entitySnapshot?.currentLocation || '').trim();
-
-  const hasNpcAnchor = npcNames.some((name) => normalizedText.includes(normalizeNpcName(name)));
-  if (hasNpcAnchor) score += 1;
-  const hasQuestAnchor = questNames.some((name) => normalizedText.includes(normalizeNpcName(name)));
-  if (hasQuestAnchor) score += 1;
-  if (location && normalizedText.includes(normalizeNpcName(location))) score += 1;
-
-  // Guard against replacing good history with a much shorter, low-signal summary.
-  if (existingHistory && text.length >= Math.round(existingHistory.length * 0.6)) score += 1;
-
-  return score;
 }
 
 export const contextManager = {
@@ -297,92 +259,4 @@ export const contextManager = {
     return parts.join('\n\n') || 'No scenes yet - this is the beginning of the story.';
   },
 
-  needsCompression(gameState) {
-    const sceneCount = gameState.scenes?.length || 0;
-    const scenesOutsideWindow = sceneCount - FULL_SCENE_COUNT - MEDIUM_SCENE_COUNT;
-    if (scenesOutsideWindow <= 0) return false;
-
-    // Unified interval logic: trigger at every INCREMENTAL_COMPRESSION_INTERVAL
-    // scenes outside the context window (10, 20, 30 …).
-    // Previously, the no-history branch used `sceneCount > COMPRESSION_THRESHOLD`
-    // which returned true EVERY turn once past the threshold, causing a
-    // summarisation call on every single action when the quality gate kept
-    // rejecting the result (compressedHistory never set → condition true again).
-    return scenesOutsideWindow % INCREMENTAL_COMPRESSION_INTERVAL === 0;
-  },
-
-  buildEntitySnapshot(gameState) {
-    const npcs = (gameState.world?.npcs || []).map((n) => ({
-      name: n.name,
-      alive: n.alive,
-      disposition: n.disposition || 0,
-      lastLocation: n.lastLocation || '',
-      factionId: n.factionId || null,
-      role: n.role || '',
-    }));
-    const activeQuests = (gameState.quests?.active || []).map((q) => ({
-      id: q.id,
-      name: q.name,
-      objectivesCompleted: (q.objectives || []).filter((o) => o.completed).length,
-      objectivesTotal: (q.objectives || []).length,
-      questGiverId: q.questGiverId || null,
-    }));
-    const completedQuestNames = (gameState.quests?.completed || []).map((q) => q.name);
-    const factions = { ...(gameState.world?.factions || {}) };
-    const currentLocation = gameState.world?.currentLocation || '';
-
-    return { npcs, activeQuests, completedQuestNames, factions, currentLocation };
-  },
-
-  async compressOldScenes(gameState, provider, apiKey, language = 'en', modelTier = 'premium') {
-    const { scenes } = gameState;
-    const scenesToCompress = scenes.slice(0, -FULL_SCENE_COUNT - MEDIUM_SCENE_COUNT);
-    if (scenesToCompress.length === 0) return null;
-
-    const existingHistory = gameState.world?.compressedHistory || '';
-
-    const newScenes = existingHistory
-      ? scenesToCompress.slice(-INCREMENTAL_COMPRESSION_INTERVAL)
-      : scenesToCompress;
-
-    if (newScenes.length === 0) return null;
-
-    const scenesText = newScenes
-      .map((s, i) => `Scene ${i + 1}${s.chosenAction ? ` [Player: ${s.chosenAction}]` : ''}: ${s.narrative}`)
-      .join('\n\n');
-
-    const entitySnapshot = this.buildEntitySnapshot(gameState);
-    const snapshotText = `\n\nENTITY STATE SNAPSHOT (preserve these relationships and states in your summary):\n` +
-      `NPCs: ${entitySnapshot.npcs.map((n) => `${n.name}(${n.alive ? 'alive' : 'dead'}, disp:${n.disposition}, loc:"${n.lastLocation}"${n.factionId ? ', faction:' + n.factionId : ''})`).join('; ')}\n` +
-      `Active Quests: ${entitySnapshot.activeQuests.map((q) => `${q.name}(${q.objectivesCompleted}/${q.objectivesTotal})`).join('; ')}\n` +
-      `Completed Quests: ${entitySnapshot.completedQuestNames.join(', ') || 'none'}\n` +
-      `Factions: ${Object.entries(entitySnapshot.factions).map(([k, v]) => `${k}:${v}`).join(', ') || 'none'}\n` +
-      `Location: ${entitySnapshot.currentLocation}`;
-
-    const textToCompress = existingHistory
-      ? `EXISTING SUMMARY:\n${existingHistory}\n\nNEW SCENES TO INCORPORATE:\n${scenesText}${snapshotText}`
-      : `${scenesText}${snapshotText}`;
-
-    try {
-      const { result, usage } = await aiService.compressScenes(textToCompress, provider, apiKey, language, modelTier);
-      let summary = result?.summary || null;
-      if (summary && summary.length > MAX_COMPRESSED_HISTORY_LENGTH) {
-        summary = summary.substring(0, MAX_COMPRESSED_HISTORY_LENGTH);
-      }
-      const qualityScore = scoreCompressionQuality(summary, entitySnapshot, existingHistory);
-      if (!summary || qualityScore < MIN_COMPRESSION_QUALITY_SCORE) {
-        return {
-          summary: existingHistory || null,
-          entitySnapshot: gameState.world?.compressedEntityState || entitySnapshot,
-          usage,
-          qualityRejected: true,
-          qualityScore,
-        };
-      }
-      return { summary, entitySnapshot, usage };
-    } catch (err) {
-      console.warn('[contextManager] Scene compression failed:', err.message);
-      return null;
-    }
-  },
 };

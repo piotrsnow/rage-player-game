@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { assembleContext } from '../aiContextTools.js';
 import { classifyIntent } from '../intentClassifier.js';
+import { requireServerApiKey } from '../apiKeyService.js';
 import { compressSceneToSummary, generateLocationSummary, checkQuestObjectives } from '../memoryCompressor.js';
 import {
   resolveBackendDiceRollWithPreRoll,
@@ -48,6 +49,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     sceneCount = 0,
     isCustomAction = false,
     fromAutoPlayer = false,
+    userApiKeys = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
@@ -146,9 +148,14 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     });
 
     // 5. Streaming AI call
+    const providerApiKey = requireServerApiKey(
+      provider === 'anthropic' ? 'anthropic' : 'openai',
+      userApiKeys,
+      provider === 'anthropic' ? 'Anthropic' : 'OpenAI',
+    );
     const sceneResult = await runTwoStagePipelineStreaming(
       systemPromptParts, userPrompt, contextBlocks,
-      { provider, model },
+      { provider, model, apiKey: providerApiKey },
       (text) => onEvent({ type: 'chunk', text }),
     );
 

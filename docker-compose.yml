@@ -27,6 +27,11 @@ services:
       - mongodb
       - valkey
     environment:
+      # Dockerfile sets NODE_ENV=production since the image is built for
+      # prod. For local compose dev we override to development to relax
+      # CORS warnings and any other prod-strict behavior. The prod overlay
+      # (docker-compose.prod.yml) flips it back to production.
+      NODE_ENV: "${NODE_ENV:-development}"
       PORT: "8080"
       HOST: "0.0.0.0"
       DATABASE_URL: "mongodb://mongodb:27017/rpgon"
