@@ -56,7 +56,9 @@ function mergeSettingsWithDefaults(source) {
 }
 
 function shouldCheckBackendSession(settings) {
-  return Boolean(settings?.backendUrl && settings?.useBackend && apiClient.getToken());
+  // On mount, if backend is configured, we always kick off a bootstrap refresh
+  // attempt against the httpOnly cookie — surface the spinner until it resolves.
+  return Boolean(settings?.backendUrl && settings?.useBackend);
 }
 
 const defaultSettings = {
@@ -157,22 +159,32 @@ export function SettingsProvider({ children }) {
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend) {
       apiClient.configure({ baseUrl: settings.backendUrl });
-    } else {
-      apiClient.configure({ baseUrl: '', token: '' });
-      setBackendUser(null);
-      setBackendKeys(EMPTY_BACKEND_KEYS);
-      setBackendAuthChecking(false);
+      // /v2/auth holds the refresh token in an httpOnly cookie; on mount we
+      // exchange it for a fresh access token + user payload before rendering
+      // any authed UI. Silent failure just leaves the user logged out.
+      let cancelled = false;
+      setBackendAuthChecking(true);
+      (async () => {
+        try {
+          const data = await apiClient.bootstrapAuth();
+          if (cancelled) return;
+          if (data?.user) {
+            setBackendUser(data.user);
+          }
+        } catch {
+          /* refresh cookie missing/expired — user logged out */
+        } finally {
+          if (!cancelled) setBackendAuthChecking(false);
+        }
+      })();
+      return () => { cancelled = true; };
     }
+    apiClient.configure({ baseUrl: '', token: '' });
+    setBackendUser(null);
+    setBackendKeys(EMPTY_BACKEND_KEYS);
+    setBackendAuthChecking(false);
+    return undefined;
   }, [settings.backendUrl, settings.useBackend]);
-
-  useEffect(() => {
-    if (!settings.backendUrl || !settings.useBackend) return;
-    if (backendUser) {
-      setBackendAuthChecking(false);
-      return;
-    }
-    setBackendAuthChecking(Boolean(apiClient.getToken()));
-  }, [settings.backendUrl, settings.useBackend, backendUser]);
 
   const fetchBackendKeys = useCallback(async () => {
     if (!apiClient.isConnected()) {
@@ -188,16 +200,11 @@ export function SettingsProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (settings.backendUrl && settings.useBackend) {
-      const timer = setTimeout(() => {
-        if (apiClient.isConnected()) {
-          fetchBackendKeys();
-          gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
-        }
-      }, 100);
-      return () => clearTimeout(timer);
+    if (settings.backendUrl && settings.useBackend && backendUser) {
+      fetchBackendKeys();
+      gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, fetchBackendKeys]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -225,11 +232,6 @@ export function SettingsProvider({ children }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (settings.backendUrl && settings.useBackend && apiClient.isConnected()) {
-      loadBackendUser();
-    }
-  }, [settings.backendUrl, settings.useBackend, loadBackendUser]);
 
   const loadFromAccount = useCallback(async () => {
     const accountSettings = await storage.getSettingsFromAccount();

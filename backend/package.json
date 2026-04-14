@@ -22,6 +22,7 @@
     "@bull-board/api": "^7.0.0",
     "@bull-board/fastify": "^7.0.0",
     "@fastify/compress": "^8.3.1",
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/jwt": "^9.0.0",

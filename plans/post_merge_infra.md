@@ -1,16 +1,16 @@
 # Post-Merge Infra Backlog
 
 **Extracted from:** `plans/merge_status.md` (session 5, 2026-04-13)
-**Status (2026-04-14 night):** All small/medium items closed. Redis plumbing + 4 consumers live (embedding cache, rate-limit, idempotency, BullMQ queues). **Item 2 FULLY DONE** (BullMQ for campaign + scene gen with pub/sub streaming bridge). **No-BYOK cleanup DONE** — FE direct-dispatch removed, BE now resolves per-user keys properly, 3 new BE endpoints for recap/combat/verify. **Remaining heavy items: item 1 Stage 2 (roomManager → Redis + pub/sub), item 3 (refresh tokens + CSRF).** Plus item 6 (proxy middleware) needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
+**Status (2026-04-14 night):** All small/medium items closed. Redis plumbing + 5 consumers live (embedding cache, rate-limit, idempotency, BullMQ queues, refresh tokens). **Item 2 FULLY DONE** (BullMQ for campaign + scene gen with pub/sub streaming bridge). **Item 3 FULLY DONE** (refresh tokens via httpOnly cookie + double-submit CSRF + FE apiClient 401 retry, `/v2/auth/*` routes alongside `/v1/auth/*`). **No-BYOK cleanup DONE** — FE direct-dispatch removed, BE now resolves per-user keys properly, 3 new BE endpoints for recap/combat/verify. **Item 1 Stage 2 (roomManager → Redis) — DEFERRED INDEFINITELY** (2026-04-14 night): DB fallback already covers clean shutdowns, pub/sub is dead code on single-VM Prod-A, remaining gap (crash-survival for pending actions/typing state) has no concrete driver. Revisit only when (a) second backend instance is planned or (b) a bug report surfaces lost mid-scene state after a hard crash. Plus item 6 (proxy middleware) needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
 
 ## Progress snapshot
 
 | # | Item | Status |
 |---|---|---|
 | — | **Redis decision + plumbing (Stage 1)** | **✅ DONE 2026-04-14** — Prod-A (self-hosted Valkey in docker-compose on single VM), `redisClient.js` singleton with optional mode, `/health` reports redis status, graceful shutdown wired |
-| 1 | Redis room state | **TODO (Stage 2)** — plumbing unblocked but migration is heavy (roomManager has 675L with ws refs interleaved across 20+ functions) — see section 1 for handoff |
+| 1 | Redis room state | **DEFERRED INDEFINITELY 2026-04-14** — Stage 1 plumbing done, Stage 2 migration judged not worth the cost on single-VM Prod-A. DB fallback + clean-shutdown persist already covers the main failure mode; remaining gap needs a concrete driver before we pay the 2-3 session cost. See section 1. |
 | 2 | BullMQ for AI generation | **✅ DONE 2026-04-14** — Stage 1: bullmq + bull-board, per-provider queues, worker, /generate-campaign via queue, /ai/jobs/:id poller. Stage 2: /generate-scene-stream via queue + Redis pub/sub bridge to SSE, pre-generated jobId removes subscribe-after-publish race, FE unchanged (transparent migration). |
-| 3 | Refresh tokens + revocation | **TODO** — plumbing unblocked, see section 3 for handoff |
+| 3 | Refresh tokens + revocation | **✅ DONE 2026-04-14** — `/v2/auth/*` cookie-based refresh flow. refreshTokenService (Redis-backed, O(1) revoke), csrf plugin (double-submit cookie + constant-time compare), FE apiClient rewrite (credentials: include, in-memory access token, bootstrapAuth, auto-refresh on 401). 34 new tests. `/v1/auth/*` left alive for rollback. |
 | 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
 | 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
 | 6 | Proxy route middleware extraction | **TODO** — standalone, needs design session |
@@ -29,7 +29,7 @@
 
 ## Handoff for the remaining heavy tasks
 
-Each of the 2 remaining items (**1 Stage 2** — roomManager, **3** — refresh tokens) is self-contained enough to start a **fresh chat** with just its section of this doc plus the deployment context below. The intended flow is: open a new chat, point it at the specific section in this plan, and let it plan + execute against a clean working tree.
+The only remaining heavy item (**1 Stage 2** — roomManager) is self-contained enough to start a **fresh chat** with just its section of this doc plus the deployment context below. The intended flow is: open a new chat, point it at the specific section in this plan, and let it plan + execute against a clean working tree.
 
 **Shared context every new chat needs to know:**
 
@@ -53,6 +53,22 @@ Each of the 2 remaining items (**1 Stage 2** — roomManager, **3** — refresh 
 ---
 
 ## 1. Redis room state
+
+**Stage 2 deferred indefinitely (2026-04-14 night).** After Stage 1 plumbing landed and every other Redis consumer migrated, we re-scoped the roomManager migration and decided NOT to do it now. Rationale:
+
+- **Main failure mode is already covered.** `saveAllActiveRooms()` on SIGTERM + `saveRoomToDB()` after every major mutation (convert, disconnect, rejoin, start-game, post-scene-gen) + `loadActiveSessionsFromDB()` on boot already handle clean restarts and most mid-game state. DB persistence is coarse-grained but functional.
+- **Residual gap has no concrete driver.** What Redis write-through would add on top: pending-action / typing-state / character-update survival across hard crashes. Currently no incident report or playtest complaint tied to this.
+- **Pub/sub bridge is dead code on single-VM Prod-A.** The plan's own Phase 4 section calls this out: "Can be deferred indefinitely for single-VM Prod-A". Horizontal scale is not on the roadmap.
+- **Cost is real.** 2-3 focused sessions for the proper split (state store + socket registry + dual-write migration + async propagation through 20+ handler call sites).
+
+**Revisit trigger.** Pick this back up only when one of these happens:
+1. **Second backend instance is on the roadmap** — then pub/sub becomes load-bearing and the full split is mandatory.
+2. **Bug report surfaces** — e.g. "I lost my pending action when the backend crashed" — then we have a concrete driver for the write-through path.
+3. **Memorystore / Cloud Run migration** — if we move off the single VM, Stage 2 becomes a prerequisite for room-state consistency across instances.
+
+Everything below this deferral notice stays as the handoff doc for whoever picks this up later.
+
+---
 
 **Hosting decision (2026-04-14, Stage 1 DONE).** Picked **Prod-A: self-hosted Valkey via docker-compose on a single Compute Engine VM**, rejecting Memorystore (~$44/mo with VPC connector, overkill for pre-prod) and Upstash (vendor lock, per-request pricing scales badly with WS traffic). Tradeoff: lose Cloud Run autoscale (we only ran 1 instance anyway), gain simpler stack and ~$13/mo fixed cost on e2-small. When horizontal scale eventually matters, migration to Memorystore is `REDIS_URL=` env var swap + DNS cutover.
 
@@ -121,7 +137,46 @@ TTL                       → ROOM_INACTIVE_TTL_MS (30min) refreshed on every wr
 
 ---
 
-## 3. Refresh tokens + revocation
+## 3. Refresh tokens + revocation — ✅ DONE 2026-04-14
+
+**Delivered.** Cookie-based refresh token flow landed under `/v2/auth/*`, backed by Redis, with double-submit CSRF. FE apiClient rewritten to drop localStorage token persistence and auto-retry on 401. `/v1/auth/*` kept alive for rollback; no route removed.
+
+**Key files:**
+- [backend/src/services/refreshTokenService.js](../backend/src/services/refreshTokenService.js) — `issueRefreshToken` / `verifyRefreshToken` / `revokeRefreshToken` / `revokeAllUserRefreshTokens`. Cookie format `<userId>.<tokenId>`, row at `user:<userId>:refresh:<tokenId>` with 30d TTL. SCAN+DEL for bulk revoke.
+- [backend/src/plugins/csrf.js](../backend/src/plugins/csrf.js) — double-submit cookie plugin. Constant-time header/cookie compare. Opt-in via `config: { csrf: true }`. Exports `generateCsrfToken()` (32-byte base64url).
+- [backend/src/routes/authV2.js](../backend/src/routes/authV2.js) — `/register`, `/login`, `/refresh` (csrf), `/logout` (csrf), `/me` (bearer). Registered under `/v2/auth` prefix in server.js with 10 req/min rate limit. Returns 503 when Redis disabled. 15min access-token TTL via per-call `fastify.jwt.sign({}, { expiresIn: '15m' })`.
+- [backend/src/server.js](../backend/src/server.js) — registers `@fastify/cookie` + `csrfPlugin`. Routes /v2 scope added. 404 handler now short-circuits on both /v1 and /v2 prefixes.
+- [backend/src/plugins/cors.js](../backend/src/plugins/cors.js) — `allowedHeaders` extended with `X-CSRF-Token` and `Idempotency-Key`. `credentials: true` was already set.
+- [src/services/apiClient.js](../src/services/apiClient.js) — full rewrite of auth state:
+  - Access token now **in-memory only**, not localStorage (page reload → rely on refresh cookie).
+  - `credentials: 'include'` on every fetch.
+  - `X-CSRF-Token` auto-injected on mutating methods from the `csrf-token` cookie via `document.cookie`.
+  - `request()` does one-shot 401 retry via `refreshAccessToken()` (deduped via `_refreshInFlight` promise so React Strict Mode double-effect is safe). Defensive guard skips retry when path contains `/v2/auth/refresh`.
+  - `bootstrapAuth()` exposed for mount-time refresh cookie exchange; called by `SettingsContext`.
+  - `login` / `register` / `logout` rewritten to hit `/v2/auth/*` via raw fetch (not `request()`), return `{accessToken, csrfToken, user, token: accessToken}` — the `token` alias keeps old callers happy.
+  - `onAuthChange(listener)` subscription for external state sync.
+  - `/v2/*` paths pass through `withVersion()` verbatim (only `/v1` is prefixed automatically).
+- [src/contexts/SettingsContext.jsx](../src/contexts/SettingsContext.jsx) — bootstrap effect now awaits `apiClient.bootstrapAuth()` on mount, sets `backendUser` from the refresh response. Removed the now-redundant `loadBackendUser` mount effect. `fetchBackendKeys`+`gameData.loadAll` effect now depends on `backendUser` (fires when bootstrap populates it). `shouldCheckBackendSession` simplified to just check the backend-url config.
+
+**Tests (34 new, 183 total backend / 360 FE unit):**
+- [backend/src/services/refreshTokenService.test.js](../backend/src/services/refreshTokenService.test.js) — 8 tests: issue shape, verify round-trip, cookie parse guards, expired row auto-evict, revoke, revokeAll SCAN+DEL, Redis-disabled null return, per-user keyspace isolation.
+- [backend/src/plugins/csrf.test.js](../backend/src/plugins/csrf.test.js) — 8 tests: token shape/length, match/mismatch, missing header/cookie, safe-method bypass, non-opt-in bypass, length-mismatch constant-time edge.
+- [backend/src/routes/authV2.test.js](../backend/src/routes/authV2.test.js) — 10 tests: register+login happy paths, duplicate email 409, wrong password 401, refresh happy path, refresh without CSRF 403, refresh without cookie 401, logout revokes + clears cookies, 503 when Redis disabled, /me with bearer.
+- [src/services/apiClient.test.js](../src/services/apiClient.test.js) — 20 tests total (8 existing idempotency + 12 new for v2 auth): `credentials: include`, CSRF header injection on mutating + skip on safe, 401 retry flow with fresh bearer, refresh-itself failure path, no-infinite-loop on `/v2/auth/refresh`, `/v2/*` path passthrough vs `/v1` prefix, login stores access token, logout clears state + posts CSRF, `onAuthChange` observer.
+
+**Deliberately deferred (not scope for this session):**
+- **Admin revoke endpoint** (`/v2/admin/sessions/:userId/revoke`) — needs `admin` flag on User model. Skipped because no incident-response use case today. `revokeAllUserRefreshTokens()` is in place as the service primitive; wire the route later when needed.
+- **Refresh token rotation on use** — current impl keeps the same refresh token row alive until TTL. Rotating on every refresh adds stolen-token detection (old token used after refresh → alert) but complicates multi-tab scenarios (two tabs racing for refresh invalidate each other). Defer until there's a concrete threat model.
+- **SSE / WebSocket token expiry mid-connection** — snapshot-at-connect model unchanged. If a 15min access token expires mid-scene-stream, the stream continues (connection-level auth), but the next reconnect fails until the next apiClient.request() 401-refreshes. Acceptable for pre-prod; add reconnect logic if this becomes a pain.
+- **`/v1/auth/*` sunset** — still alive as the fallback path. Delete when there are no more users holding long-lived /v1 JWTs (natural TTL expiry: 7d after the last /v1 login). Combine with item 12 JWT_SECRET rotation for a clean cut.
+- **Playtest** — user will batch-playtest per `feedback_playtest_cadence` memory. Flows to exercise: first login (no cookie), page reload (valid cookie), page reload (expired cookie), logout, two-tab refresh race, long-session 401→refresh→retry.
+
+**Known constraints:**
+- Refresh token cookie path is `/v2/auth` — browser won't send it to `/v1/*` routes, which is correct (v1 uses bearer from the same /v2 access token, and /v1 auth endpoints don't need the refresh cookie).
+- CSRF cookie path is `/` so FE can read it via `document.cookie` from any route. Non-httpOnly by design.
+- `@fastify/cookie@^11` installed as the only new dep. Signed-cookie key not set; we don't rely on cookie signatures for security (refresh cookie value is already an opaque random token row in Redis).
+
+### Original plan follows for historical reference:
 
 **Status update 2026-04-14.** Redis plumbing is live, `/v1/` versioning is live (item 5 done). The breaking-change concern from the original plan is now cleanly solvable — new refresh-token endpoints land under `/v2/auth/*`, the old `/v1/auth/login` stays functional with long-lived JWT for old clients, and migration becomes a soft rollout rather than a flag day.
 
@@ -337,17 +392,9 @@ The right design probably looks like:
 
 ## Remaining work as of 2026-04-14 EOD
 
-Everything small/medium is closed. What's left, in recommended order of attack:
+Everything small/medium is closed. The last heavy item (item 1 Stage 2) was **deferred indefinitely** after re-scoping — see section 1 deferral notice. Items 2 (BullMQ) and 3 (refresh tokens + CSRF) both shipped 2026-04-14.
 
-### Heavy items — each gets its own fresh chat
-
-1. **Item 3 — Refresh tokens + CSRF.** Biggest user-visible security improvement. Redis is ready, `/v1` is live so this lands as `/v2/auth/*` without breaking old clients. Heavy because of the FE interceptor rework. 2-3 sessions. **Start here if security posture matters more than perf.**
-
-2. **Item 2 — BullMQ for AI generation.** Biggest latency + observability improvement. Redis is ready, need to install `bullmq` + `@bull-board/fastify`. Heavy because of the FE `useSceneGeneration` refactor from inline SSE to job + progress stream. 2 sessions. **Start here if handler-blocking on long generations is your current pain.**
-
-3. **Item 1 Stage 2 — roomManager → Redis + pub/sub.** Biggest restart-survival improvement for multiplayer. Redis is ready. Heavy because roomManager is 675L with ws refs threaded through 20+ functions — needs split into state store + socket registry + pub/sub bridge, dual-write migration, async propagation. 2-3 sessions. **Start here if you observe multiplayer sessions dying on backend restart.**
-
-Order is a value judgment, not a strict dependency. All three are independent of each other; you can pick whichever matches your current pain.
+**Nothing heavy remains in this plan.** What's left is all ops/design:
 
 ### Deferred items that aren't "heavy" but need attention later
 

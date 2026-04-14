@@ -1,23 +1,36 @@
-const TOKEN_KEY = 'nikczemny_krzemuch_auth_token';
 const SETTINGS_STORAGE_KEY = 'nikczemny_krzemuch_settings';
 export const API_VERSION = '/v1';
 
+// /v2/auth — cookie-based refresh flow (item 3 of post_merge_infra). FE holds
+// the short-lived access token in memory only and relies on the httpOnly
+// `refreshToken` cookie to survive page reloads. The `csrf-token` cookie is
+// readable by JS so we can echo it in `X-CSRF-Token` on mutating requests.
+const AUTH_V2_LOGIN = '/v2/auth/login';
+const AUTH_V2_REGISTER = '/v2/auth/register';
+const AUTH_V2_REFRESH = '/v2/auth/refresh';
+const AUTH_V2_LOGOUT = '/v2/auth/logout';
+const CSRF_COOKIE_NAME = 'csrf-token';
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 function withVersion(path) {
   if (!path) return API_VERSION;
+  // /v2/... paths are passed through verbatim so the refresh-token scope
+  // can live alongside the default /v1 prefix.
+  if (path.startsWith('/v2/') || path === '/v2') return path;
   if (path.startsWith(API_VERSION + '/') || path === API_VERSION) return path;
   return API_VERSION + (path.startsWith('/') ? path : `/${path}`);
 }
 
+function readCsrfTokenFromCookie() {
+  if (typeof document === 'undefined' || !document.cookie) return '';
+  const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
 // Build an Idempotency-Key header when the caller opted in. Two forms:
-//   { idempotent: true }            → generate a fresh UUID per call. Covers
-//                                     double-click and React Strict Mode
-//                                     double-render via the backend's SET NX
-//                                     pending lock (second concurrent call
-//                                     gets 409).
-//   { idempotencyKey: '<uuid>' }    → caller provides a stable key. Use this
-//                                     when you need "retry with the same key"
-//                                     across network failures — generate once
-//                                     and pass the same key on every attempt.
+//   { idempotent: true }            → generate a fresh UUID per call
+//   { idempotencyKey: '<uuid>' }    → caller provides a stable key
 function buildIdempotencyHeader(options = {}) {
   if (options.idempotencyKey) {
     return { 'Idempotency-Key': options.idempotencyKey };
@@ -46,18 +59,31 @@ function getSettingsBackendUrl() {
 }
 
 let _baseUrl = getSettingsBackendUrl();
-let _token = '';
+let _accessToken = '';
+let _user = null;
+let _refreshInFlight = null;
+let _authListeners = new Set();
+
+function notifyAuthChange() {
+  for (const listener of _authListeners) {
+    try { listener({ accessToken: _accessToken, user: _user }); }
+    catch { /* ignore */ }
+  }
+}
+
+function clearAuthState() {
+  _accessToken = '';
+  _user = null;
+  notifyAuthChange();
+}
 
 export const apiClient = {
   configure({ baseUrl, token }) {
     if (baseUrl !== undefined) _baseUrl = baseUrl.replace(/\/+$/, '');
     if (token !== undefined) {
-      _token = token;
-      if (token) {
-        localStorage.setItem(TOKEN_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_KEY);
-      }
+      _accessToken = token;
+      if (!token) _user = null;
+      notifyAuthChange();
     }
   },
 
@@ -65,42 +91,113 @@ export const apiClient = {
     return _baseUrl;
   },
 
+  // Return the current in-memory access token. Callers that snapshot this
+  // value (WebSocket upgrade, SSE query param) get whatever was freshest at
+  // call time; if the token later expires mid-connection, the snapshot is
+  // stale — refresh before reopening the connection.
   getToken() {
-    if (!_token) {
-      _token = localStorage.getItem(TOKEN_KEY) || '';
-    }
-    return _token;
+    return _accessToken;
   },
 
-  // After the no-BYOK cleanup, "connected" just means "authenticated". The
-  // backend is always at the same origin (empty baseUrl = relative URL) so
-  // the only gate is whether the user has a JWT token. Callers that used
-  // this to branch proxy-mode vs backend-mode no longer need the branch
-  // — every feature path goes through the backend now.
+  getUser() {
+    return _user;
+  },
+
+  onAuthChange(listener) {
+    _authListeners.add(listener);
+    return () => _authListeners.delete(listener);
+  },
+
   isConnected() {
-    return !!this.getToken();
+    return !!_accessToken;
   },
 
-  async request(path, options = {}) {
+  // On app boot, try to exchange the httpOnly refresh cookie for a fresh
+  // access token. Called by SettingsContext; callers outside the auth flow
+  // should just let the 401 retry in `request()` take care of refresh.
+  async bootstrapAuth() {
+    try {
+      return await this.refreshAccessToken();
+    } catch {
+      clearAuthState();
+      return null;
+    }
+  },
+
+  // Swap the refresh cookie for a new access token. Deduped via a shared
+  // in-flight promise so React Strict Mode double-effect or two parallel
+  // 401 retries only hit the backend once.
+  async refreshAccessToken() {
+    if (_refreshInFlight) return _refreshInFlight;
+    _refreshInFlight = (async () => {
+      try {
+        const csrf = readCsrfTokenFromCookie();
+        const res = await fetch(`${_baseUrl}${AUTH_V2_REFRESH}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+        });
+        if (!res.ok) {
+          throw new Error(`refresh failed: ${res.status}`);
+        }
+        const data = await res.json();
+        _accessToken = data.accessToken || '';
+        _user = data.user || null;
+        notifyAuthChange();
+        return data;
+      } finally {
+        _refreshInFlight = null;
+      }
+    })();
+    return _refreshInFlight;
+  },
+
+  async request(path, options = {}, _isRetry = false) {
     const url = `${_baseUrl}${withVersion(path)}`;
-    const token = this.getToken();
 
-    const headers = {
-      ...options.headers,
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+    const headers = { ...options.headers };
+    let body = options.body;
+    if (body && typeof body === 'object' && !(body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
-      options.body = JSON.stringify(options.body);
+      body = JSON.stringify(body);
+    }
+    if (_accessToken) {
+      headers['Authorization'] = `Bearer ${_accessToken}`;
     }
 
-    const response = await fetch(url, { ...options, headers });
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!SAFE_METHODS.has(method)) {
+      const csrf = readCsrfTokenFromCookie();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      method,
+      body,
+      headers,
+      credentials: 'include',
+    });
+
+    // Auto-refresh on 401, once. Skip the retry loop when the failing call
+    // IS the refresh endpoint itself (defensive — refreshAccessToken goes
+    // through raw fetch, not this method, but paranoia is cheap here).
+    if (
+      response.status === 401 &&
+      !_isRetry &&
+      !path.includes('/v2/auth/refresh')
+    ) {
+      try {
+        await this.refreshAccessToken();
+      } catch {
+        clearAuthState();
+        throw new Error('Session expired. Please log in again.');
+      }
+      return this.request(path, options, true);
+    }
 
     if (response.status === 401) {
-      _token = '';
-      localStorage.removeItem(TOKEN_KEY);
+      clearAuthState();
       throw new Error('Session expired. Please log in again.');
     }
 
@@ -152,28 +249,58 @@ export const apiClient = {
   },
 
   async login(email, password) {
-    const data = await this.request('/auth/login', {
+    const res = await fetch(`${_baseUrl}${AUTH_V2_LOGIN}`, {
       method: 'POST',
-      body: { email, password },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
-    this.configure({ token: data.token });
-    return data;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `Login failed: ${res.status}`);
+    }
+    const data = await res.json();
+    _accessToken = data.accessToken || '';
+    _user = data.user || null;
+    notifyAuthChange();
+    return { ...data, token: data.accessToken };
   },
 
   async register(email, password) {
-    const data = await this.request('/auth/register', {
+    const res = await fetch(`${_baseUrl}${AUTH_V2_REGISTER}`, {
       method: 'POST',
-      body: { email, password },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
-    this.configure({ token: data.token });
-    return data;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `Register failed: ${res.status}`);
+    }
+    const data = await res.json();
+    _accessToken = data.accessToken || '';
+    _user = data.user || null;
+    notifyAuthChange();
+    return { ...data, token: data.accessToken };
+  },
+
+  async logout() {
+    const csrf = readCsrfTokenFromCookie();
+    try {
+      await fetch(`${_baseUrl}${AUTH_V2_LOGOUT}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+      });
+    } catch {
+      /* best-effort; still clear local state */
+    }
+    clearAuthState();
   },
 
   resolveMediaUrl(url) {
     if (!url || url.startsWith('data:')) return url;
 
-    // Same source as CampaignViewer fetch: settings.backendUrl when "use backend" is off
-    // still leaves apiClient base empty — media must resolve against the API host anyway.
     const base = this.getBaseUrl() || getSettingsBackendUrl();
     const token = this.getToken();
 
@@ -204,7 +331,6 @@ export const apiClient = {
     if (base && url.startsWith(base)) {
       try {
         const u = new URL(url);
-        // Hoist legacy full URLs (stored pre-versioning) onto /v1.
         if (u.pathname.startsWith('/media/') || u.pathname.startsWith('/proxy/')) {
           u.pathname = API_VERSION + u.pathname;
         }
@@ -217,9 +343,5 @@ export const apiClient = {
     }
 
     return url;
-  },
-
-  logout() {
-    this.configure({ token: '' });
   },
 };

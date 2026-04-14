@@ -7,15 +7,18 @@ import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
+import fastifyCookie from '@fastify/cookie';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
+import { csrfPlugin } from './plugins/csrf.js';
 import { buildRateLimitKey } from './plugins/rateLimitKey.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
 import { bullBoardPlugin } from './plugins/bullBoard.js';
 import { startWorkers, stopWorkers } from './workers/aiWorker.js';
 import { closeAllQueues } from './services/queues/aiQueue.js';
 import { authRoutes } from './routes/auth.js';
+import { authV2Routes } from './routes/authV2.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { characterRoutes } from './routes/characters.js';
 import { mediaRoutes } from './routes/media.js';
@@ -65,7 +68,9 @@ await fastify.register(helmet, {
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 });
 await fastify.register(corsPlugin);
+await fastify.register(fastifyCookie);
 await fastify.register(authPlugin);
+await fastify.register(csrfPlugin);
 await fastify.register(websocket);
 
 // Rate limit keyed by userId when the JWT verifies, per-IP otherwise.
@@ -118,6 +123,16 @@ await fastify.register(async function authScope(app) {
   });
   app.register(authRoutes);
 }, { prefix: '/v1/auth' });
+
+// /v2/auth — cookie-based refresh token flow (item 3 of post_merge_infra).
+// Lives in parallel with /v1/auth/* so old clients keep working while FE
+// migrates to the new flow. Requires Redis for refresh token storage.
+await fastify.register(async function authV2Scope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: '1 minute' } };
+  });
+  app.register(authV2Routes);
+}, { prefix: '/v2/auth' });
 
 await fastify.register(async function dataScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -201,7 +216,11 @@ if (existsSync(STATIC_ROOT)) {
   });
 
   fastify.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith('/v1/') || request.url === '/v1' || request.url.startsWith('/health')) {
+    if (
+      request.url.startsWith('/v1/') || request.url === '/v1' ||
+      request.url.startsWith('/v2/') || request.url === '/v2' ||
+      request.url.startsWith('/health')
+    ) {
       return reply.code(404).send({ error: 'Not found' });
     }
     return reply.sendFile('index.html');
