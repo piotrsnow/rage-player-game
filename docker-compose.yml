@@ -9,6 +9,15 @@ services:
     environment:
       MONGO_INITDB_DATABASE: rpgon
 
+  valkey:
+    image: valkey/valkey:7-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "60", "1000", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+
   backend:
     build: .
     restart: unless-stopped
@@ -16,10 +25,12 @@ services:
       - "3001:8080"
     depends_on:
       - mongodb
+      - valkey
     environment:
       PORT: "8080"
       HOST: "0.0.0.0"
       DATABASE_URL: "mongodb://mongodb:27017/rpgon"
+      REDIS_URL: "redis://valkey:6379"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3001}"
@@ -38,4 +49,5 @@ services:
 
 volumes:
   mongo-data:
+  valkey-data:
   media-data:

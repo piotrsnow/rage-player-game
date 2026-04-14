@@ -32,6 +32,12 @@ import {
   saveAllActiveRooms,
   closeAllRoomSockets,
 } from './services/roomManager.js';
+import {
+  getRedisClient,
+  isRedisEnabled,
+  pingRedis,
+  closeRedis,
+} from './services/redisClient.js';
 import { prisma } from './lib/prisma.js';
 import { logger } from './lib/logger.js';
 
@@ -60,13 +66,26 @@ await fastify.register(websocket);
 await fastify.register(rateLimit, { global: false });
 
 fastify.get('/health', async (request, reply) => {
+  let dbOk = false;
   try {
     await prisma.$runCommandRaw({ ping: 1 });
-    return { status: 'ok', db: 'ok', timestamp: Date.now() };
+    dbOk = true;
   } catch (err) {
     fastify.log.warn({ err }, 'Health check DB ping failed');
-    return reply.code(503).send({ status: 'degraded', db: 'down', timestamp: Date.now() });
   }
+
+  // Redis is optional in Stage 1 — treat "disabled" and "connected" as healthy,
+  // "enabled but unreachable" as degraded (surface it in the response but don't
+  // 503 the whole backend, features have fallbacks).
+  const redisStatus = await pingRedis();
+  const redisField = redisStatus.enabled
+    ? (redisStatus.ok ? 'ok' : 'down')
+    : 'disabled';
+
+  if (!dbOk) {
+    return reply.code(503).send({ status: 'degraded', db: 'down', redis: redisField, timestamp: Date.now() });
+  }
+  return { status: 'ok', db: 'ok', redis: redisField, timestamp: Date.now() };
 });
 
 // All API routes live under /v1 so breaking changes can bump to /v2 later.
@@ -135,6 +154,16 @@ await fastify.register(async function gameDataScope(app) {
 
 startRoomCleanup();
 
+// Touch the Redis singleton so the lazy client kicks off its initial connect
+// attempt during boot instead of waiting for the first feature call. Safe
+// when REDIS_URL is empty — `getRedisClient()` just returns null.
+if (isRedisEnabled()) {
+  getRedisClient();
+  fastify.log.info('[redis] enabled — connecting in background');
+} else {
+  fastify.log.info('[redis] disabled (REDIS_URL not set) — features will use in-memory fallbacks');
+}
+
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
     root: STATIC_ROOT,
@@ -195,6 +224,12 @@ async function gracefulShutdown(signal) {
     fastify.log.info(`[shutdown] closed ${closedCount} WebSocket connections`);
   } catch (err) {
     fastify.log.warn({ err }, '[shutdown] failed to close sockets');
+  }
+
+  try {
+    await closeRedis();
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to close redis');
   }
 
   const forceExit = setTimeout(() => {

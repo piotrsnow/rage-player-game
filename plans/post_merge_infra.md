@@ -1,7 +1,30 @@
 # Post-Merge Infra Backlog
 
 **Extracted from:** `plans/merge_status.md` (session 5, 2026-04-13)
-**Status:** Deferred — tackle after the `new_rpg_system` → `main` merge lands.
+**Status:** Partially executed 2026-04-14. Redis decision made + infra plumbing landed + first real consumer (item 9b) migrated. Items 1/2/3/7/8 still on the runway.
+
+## Progress snapshot
+
+| # | Item | Status |
+|---|---|---|
+| — | **Redis decision + plumbing (Stage 1)** | **✅ DONE 2026-04-14** — Prod-A (self-hosted Valkey in docker-compose on single VM), `redisClient.js` singleton with optional mode, `/health` reports redis status, graceful shutdown wired |
+| 1 | Redis room state | **TODO** — plumbing unblocked but migration is heavy (roomManager has 675L with ws refs interleaved across 20+ functions) — deferred to dedicated session |
+| 2 | BullMQ for AI generation | **TODO** — plumbing unblocked (ioredis installed, ready for bull) |
+| 3 | Refresh tokens + revocation | **TODO** — plumbing unblocked |
+| 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
+| 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
+| 6 | Proxy route middleware extraction | **TODO** — standalone, needs design session |
+| 7 | Idempotency keys | **TODO** — plumbing unblocked |
+| 8 | Per-user rate limiting | **TODO** — plumbing unblocked, next small candidate after 9b |
+| 9a | Embedding LRU short-term TTL | **✅ DONE 2026-04-14** |
+| 9b | Embedding LRU Redis migration | **✅ DONE 2026-04-14** — two-tier L1+L2 cache, SHA256 keys, EX TTL, fallback on Redis errors, 6 new tests |
+| 10 | FE↔BE AI helper consolidation | **✅ DONE 2026-04-14** (fallbackActions + aiResponseParser + dialogueRepair → `shared/domain/`) |
+| 11 | WS message handler tests | **✅ DONE 2026-04-14** (64 tests across 6 handler files) |
+| 12 | Pre-merge deployment checklist | **TODO** — not Claude-implementable (JWT rotation, OpenAI model ID verify) |
+
+**What landed on 2026-04-14:** items 4 (audit), 5, 9a, 9b, 10 (a/b/c), 11, plus the Redis infra/plumbing layer (Stage 1 of item 1). Full test suite 509/509, build green. See `project_post_merge_progress` memory for the detailed handoff.
+
+**What's next when resuming:** the Redis plumbing is live and validated with one real consumer (9b). Cheapest follow-ups are **item 8** (per-user rate limiting, ~20 lines, validates Redis from a second angle) and **ops work** (provisioning the VM, deploying docker-compose, DNS cutover from Cloud Run). Heavy items 1/2/3 should each be their own session.
 
 ## Deployment context
 
@@ -14,23 +37,31 @@
 
 ## 1. Redis room state
 
-**Problem.** Multiplayer room state lives in-process inside `roomManager.js`. On Cloud Run this means:
-- Rooms die when the instance scales down.
-- A second instance cannot see rooms opened on the first instance → MP completely breaks once autoscaling kicks in.
-- Graceful-shutdown persistence (`saveAllActiveRooms()` → DB on SIGTERM, added in `e7cf2b6`) is a band-aid — it only works on *clean* shutdowns and forces full reload on cold starts.
+**Hosting decision (2026-04-14, Stage 1 DONE).** Picked **Prod-A: self-hosted Valkey via docker-compose on a single Compute Engine VM**, rejecting Memorystore (~$44/mo with VPC connector, overkill for pre-prod) and Upstash (vendor lock, per-request pricing scales badly with WS traffic). Tradeoff: lose Cloud Run autoscale (we only ran 1 instance anyway), gain simpler stack and ~$13/mo fixed cost on e2-small. When horizontal scale eventually matters, migration to Memorystore is `REDIS_URL=` env var swap + DNS cutover.
 
-**Solution shape.** Externalize room state to Redis.
-- **GCP option:** Memorystore for Redis (managed, VPC-attached). Cloud Run → Memorystore requires a Serverless VPC Access connector.
-- **Alt option:** Upstash Redis (HTTP-native, no VPC, pay-per-request). Simpler on Cloud Run but adds a vendor.
-- **Data model:** key per room (`room:<code>`), hash with members/state JSON, pub/sub channel per room for cross-instance broadcasts.
-- **WS broadcast pattern:** each Cloud Run instance subscribes to the relevant room's pub/sub channel when a socket joins. Emit → Redis pub → all instances fan out to their local sockets.
-- **Migration:** dual-write first (DB + Redis), switch reads to Redis, delete the in-memory `activeRooms` map last.
+**Stage 1 — plumbing (DONE 2026-04-14).** Infrastructure layer landed separately from the roomManager migration so consumers can adopt Redis independently:
+- **[docker-compose.yml](docker-compose.yml)** — `valkey:7-alpine` service, RDB snapshot 60s/1000 changes, volume `valkey-data`, port 6379. Backend gets `REDIS_URL=redis://valkey:6379` + `depends_on`.
+- **[docker-compose.prod.yml](docker-compose.prod.yml)** — Valkey bound to `127.0.0.1:6379` (not exposed publicly), backend talks to it via docker network.
+- **[backend/src/services/redisClient.js](../backend/src/services/redisClient.js)** — singleton ioredis client, lazy connect, exponential backoff (capped 10s), `READONLY` failover reconnect, graceful `closeRedis()` on SIGTERM. Exports `getRedisClient`, `isRedisEnabled`, `pingRedis`, `closeRedis`, `getRedisStatus`.
+- **[backend/src/config.js](../backend/src/config.js)** — `redisUrl` config (empty default = optional mode).
+- **[backend/src/server.js](../backend/src/server.js)** — boot triggers connect attempt, `/health` reports `redis: 'ok' | 'down' | 'disabled'`, shutdown hook calls `closeRedis()`.
+- **Optional mode** — when `REDIS_URL` is empty, backend logs `[redis] disabled` and every consumer must have an in-memory fallback. This lets devs run without Docker and keeps the 503-test suite hitting zero Redis.
 
-**Blockers.**
-- Decision: Memorystore vs Upstash. Memorystore is cheaper per MB but needs VPC + connector (+$9/mo min). Upstash is $0 idle but per-request pricing scales with WS activity.
-- Need to measure current room count + message volume first to model cost.
+**Stage 2 — roomManager migration (STILL TODO).** Plumbing is live but the actual roomManager work hasn't landed. Scope is heavy — the file has 675 lines, and `player.ws` (per-instance WebSocket refs that cannot be serialized) is threaded through `broadcast`, `sendTo`, `disconnectPlayer`, `sanitizeRoom.connected`, `closeAllRoomSockets`, `cleanupInactiveRooms`. Proper migration needs:
 
-**Dependency.** **Blocks** BullMQ (item 2) and per-user rate limiting (item 8). Both need the same Redis.
+1. **Split roomManager into two layers** — state store (Redis-backed) vs socket registry (per-instance `odId → ws` map that never leaves the process)
+2. **Pub/sub bridge** — each instance subscribes to `room:<code>` channel for rooms where it has at least one local socket; broadcasts publish to Redis, every subscriber fans out locally
+3. **Dual-write migration** — Redis + DB in parallel, then switch reads, then delete in-memory map last
+4. **Async conversion** — 20+ currently-sync functions become async
+
+For single-instance Prod-A, pub/sub is dead code right now (yields only restart-survival). The real win comes when you horizontally scale. Migration should happen in a dedicated session when there's a concrete driver.
+
+**Data model** (when Stage 2 lands):
+- Key per room: `room:<code>` — Redis hash with `{phase, hostId, settings, gameState, players}` JSON-encoded
+- Pub/sub: `room:<code>:events` channel for cross-instance broadcasts
+- TTL: `ROOM_INACTIVE_TTL_MS` (30min) refreshed on every touch
+
+**Dependency.** Plumbing (Stage 1) **unblocks** BullMQ (item 2), refresh tokens (item 3), idempotency (item 7), per-user RL (item 8), embedding Redis (item 9b — already done). Stage 2 (actual migration) is now self-contained.
 
 ---
 
@@ -72,7 +103,7 @@
 
 ---
 
-## 4. Basic CSP
+## 4. Basic CSP — AUDIT DONE 2026-04-14 (enable deferred)
 
 **Problem.** `backend/src/server.js:52` currently registers helmet with `contentSecurityPolicy: false` — disabled because we didn't know what external origins were needed. Without CSP, XSS in scene text or NPC names could execute arbitrary JS.
 
@@ -194,13 +225,21 @@ The right design probably looks like:
 - Not shared across instances.
 - Has no TTL — stale embeddings could persist forever if the underlying content changes.
 
-**Solution shape.**
-- **Short term:** add TTL to the existing in-memory LRU (e.g., 1h). Cheap win even without Redis.
-- **Long term:** Redis-backed LRU with proper TTL, shared across instances. Key: `embed:<sha256 of text>` → `{ vector, createdAt }`.
+**Solution — both phases DONE 2026-04-14:**
 
-**Blockers.**
-- Long-term solution depends on item 1 (Redis).
-- Short-term TTL fix is independent — could even slot into Group A.
+- **9a Short term (DONE)** — 1h TTL added to the in-memory LRU in [backend/src/services/embeddingService.js](../backend/src/services/embeddingService.js). Entries became `{value, expiresAt}`; expired reads evict. Test hook `__resetEmbeddingCacheForTests` exported; 5 tests covered TTL, expiry, cross-key behavior.
+
+- **9b Long term (DONE)** — migrated to **two-tier L1 + L2 cache**:
+  - **L1** — in-memory LRU (kept from 9a), 100 entries, 1h TTL, sub-microsecond hot reads
+  - **L2** — Redis-backed, key format `embed:<sha256 of text>`, `JSON.stringify(embedding)` value, EX TTL 3600s
+  - **Read path**: L1 hit → return. L1 miss → L2 GET → on hit, promote to L1 → return. Full miss → OpenAI API → populate L1 + L2
+  - **Write path**: `await cacheSet` writes L1 synchronously then L2 async (errors logged, not surfaced)
+  - **Batch parallelism**: `embedBatch` uses `Promise.all(texts.map(cacheGet))` to parallelize L2 reads instead of serializing on network RTT
+  - **Fallback behavior**: when `isRedisEnabled()` is false OR `getRedisClient()` returns null OR Redis throws, the service silently degrades to L1-only (i.e. exact 9a behavior). All 5 original 9a tests still pass unchanged under this mode.
+  - **New tests** (6): L2 write with SHA256 key + EX TTL format, L2 hit without OpenAI call + L1 promotion, L1 hit short-circuits L2 lookup, Redis GET failure falls through to OpenAI, Redis SET failure doesn't break L1 population, batch path parallelizes and mixes L1/L2/miss.
+  - **Tests file**: [backend/src/services/embeddingService.test.js](../backend/src/services/embeddingService.test.js) now at 11 tests, mocks `./redisClient.js` at module level so no real Redis traffic.
+
+**No blockers remaining.** This was the first real consumer of the Redis plumbing from Stage 1 of item 1 — validated end-to-end that `isRedisEnabled`/`getRedisClient`/error-fallback pattern works for production code paths.
 
 ---
 
@@ -235,7 +274,17 @@ Embedding TTL short-term (9a) ──> standalone, could slot into Group A if nee
 
 ---
 
-## 10. FE↔BE AI helper consolidation via `shared/`
+## 10. FE↔BE AI helper consolidation via `shared/` — ✅ DONE 2026-04-14
+
+**Delivered:**
+- [shared/domain/fallbackActions.js](../shared/domain/fallbackActions.js) — both `postProcessSuggestedActions` (FE entry, max 3) and `ensureSuggestedActions` (BE entry, 4-category variants) co-located; 11 tests in [shared/contracts/fallbackActions.test.js](../shared/contracts/fallbackActions.test.js).
+- [shared/domain/aiResponseParser.js](../shared/domain/aiResponseParser.js) — `safeParseJSON`, `stripMarkdownFences`, `parseAIResponseLean`; 13 tests in [shared/contracts/aiResponseParser.test.js](../shared/contracts/aiResponseParser.test.js).
+- [shared/domain/dialogueRepair.js](../shared/domain/dialogueRepair.js) — FE variant (hardDedupe, fuzzy name matching, player reattribution) won the reconcile — BE lost its simpler 282L copy. [shared/domain/dialogueSpeaker.js](../shared/domain/dialogueSpeaker.js) extracted for `hasNamedSpeaker`/`isGenericSpeakerName`. Existing 30+ FE tests still pass unchanged.
+- `aiClient.js` intentionally NOT consolidated — FE and BE clients differ materially (browser fetch vs node+retries, auth header shapes). Left duplicated.
+
+**Not landed (by design):** The 557L `src/services/aiResponse/parse.js` heavy Zod normalization path is still FE-only. It's used exclusively in FE proxy mode which is being removed (see `project_no_byok` memory) — when FE proxy mode dies, parse.js goes with it.
+
+### Original plan follows for historical reference:
 
 **Problem.** CLAUDE.md already flags: *"Frontend proxy mode duplicates prompt building from backend lean version"*. Session 6 B.3 audit confirmed four specific parallels where frontend and backend maintain independent copies of the same logic:
 
@@ -274,7 +323,19 @@ Frontend-proxy mode and backend-scene-gen mode both run the full pipeline end-to
 
 ---
 
-## 11. WS message handling tests
+## 11. WS message handling tests — ✅ DONE 2026-04-14
+
+**Delivered:** 64 tests across 6 handler files under [backend/src/routes/multiplayer/handlers/](../backend/src/routes/multiplayer/handlers/):
+- `lobby.test.js` — 15 tests (CREATE_ROOM, CONVERT_TO_MULTIPLAYER, JOIN_ROOM lobby+midgame, LEAVE_ROOM, REJOIN_ROOM via memory+DB, KICK_PLAYER host-only)
+- `roomState.test.js` — 14 tests (UPDATE_CHARACTER with fetchOwnedCharacter, UPDATE_SETTINGS, SYNC_CHARACTER merge+preserve, UPDATE_SCENE_IMAGE, TYPING, PING)
+- `gameplay.test.js` — 11 tests (START_GAME host-only+fail branch, SUBMIT/WITHDRAW, APPROVE_ACTIONS with restorePendingActions on failure, SOLO_ACTION)
+- `quests.test.js` — 9 tests (ACCEPT, DECLINE, VERIFY_OBJECTIVE with AI mocked for fulfilled/not-fulfilled/already-done branches)
+- `combat.test.js` — 8 tests (COMBAT_SYNC host-only, MANOEUVRE forward-to-host, COMBAT_ENDED with per-character wounds/xp + dead-player detection + journal)
+- `webrtc.test.js` — 7 tests (OFFER/ANSWER/ICE/TRACK_STATE passthrough + guard branches)
+
+All handlers mocked via `vi.mock('../../../services/roomManager.js')` + `vi.mock('../../../services/multiplayerSceneFlow.js')` — no real sockets, no DB. Dispatcher test skipped (7-line function, low ROI).
+
+### Original plan follows for historical reference:
 
 **Problem.** Carryover z merge_status.md Group A.3. Backend testy pokrywają dziś auth flow ([backend/src/routes/auth.test.js](../backend/src/routes/auth.test.js)), campaign save-state ([backend/src/routes/campaigns.saveState.test.js](../backend/src/routes/campaigns.saveState.test.js)), character mutations, apiKeyService i roomManager. Brakuje testów dla WS dispatcher + handlers pod [backend/src/routes/multiplayer/](../backend/src/routes/multiplayer/) — 21 typów wiadomości rozbitych na 6 handler-files po split B.2, zero automated coverage. Każda zmiana w handlerze wymaga dziś manual playtest.
 

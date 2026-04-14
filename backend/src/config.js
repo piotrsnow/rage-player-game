@@ -16,6 +16,8 @@ export const config = {
 
   databaseUrl: process.env.DATABASE_URL || 'mongodb://localhost:27017/rpgon',
 
+  redisUrl: process.env.REDIS_URL || '',
+
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: '7d',
 
