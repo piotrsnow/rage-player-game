@@ -23,10 +23,9 @@ RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an 
 ### Quick Start
 
 ```bash
-npm install && cd backend && npm install && cd ..
+npm run setup                          # root + backend deps, prisma generate
 cp backend/.env.example backend/.env   # fill in required variables
-cd backend && npx prisma generate && cd ..
-npm run dev                            # frontend :5173 + backend :3001
+npm run dev                            # docker compose up --build (mongo + valkey + backend on :3001)
 ```
 
 The game can run **without the backend** in solo mode — just enter API keys in the Settings page. The backend enables multiplayer, server-side API proxying, campaign persistence in MongoDB, and media storage.
@@ -338,29 +337,27 @@ RPGon/
 ## Uruchomienie
 
 ### Wymagania
-- Node.js 18+
-- MongoDB
+- Node.js 18+ (do testów lokalnych)
+- Docker + Docker Compose (do uruchomienia stacku)
 - Klucze API: OpenAI lub Anthropic (wymagane), ElevenLabs / Stability / Suno (opcjonalne)
 
 ### Instalacja
 
 ```bash
-# Instalacja zależności frontend + backend
-npm install
-cd backend && npm install
+# Instalacja zależności (do vitest / playwright lokalnie)
+npm run setup
 
 # Konfiguracja backendu
 cp backend/.env.example backend/.env
 # Uzupełnij zmienne w backend/.env
 
-# Wygeneruj klienta Prisma
-cd backend && npx prisma generate
-
-# Uruchom (frontend + backend jednocześnie)
-cd .. && npm run dev
+# Uruchom pełen stack (backend :3001 + mongo + valkey)
+npm run dev           # docker compose up --build --watch (auto-restart backendu na zmiany)
+npm run dev:down      # docker compose down
+npm run dev:logs      # docker compose logs -f backend
 ```
 
-Frontend uruchomi się na `http://localhost:5173`, backend na `http://localhost:3001`.
+Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do testów e2e lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright.
 
 ### Tryb bez backendu
 

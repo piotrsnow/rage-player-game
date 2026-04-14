@@ -1,7 +1,7 @@
 # Post-Merge Infra Backlog
 
 **Extracted from:** `plans/merge_status.md` (session 5, 2026-04-13)
-**Status:** Partially executed 2026-04-14. Redis decision made + infra plumbing landed + first real consumer (item 9b) migrated. Items 1/2/3/7/8 still on the runway.
+**Status (2026-04-14 late evening):** All small/medium items closed. Redis plumbing + 4 real consumers live (embedding cache, rate-limit, idempotency, BullMQ queues). **Item 2 Stage 1 (BullMQ backend infra + campaign-gen migration) DONE 2026-04-14.** Only 2 heavy items remain: 1 Stage 2 (roomManager → Redis + pub/sub), 3 (refresh tokens + CSRF). Scene-gen migration to BullMQ is a separate session (Item 2 Stage 2) since it preserves streaming UX and is deeper FE surgery. Plus item 6 (proxy middleware) still needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
 
 ## Progress snapshot
 
@@ -9,7 +9,7 @@
 |---|---|---|
 | — | **Redis decision + plumbing (Stage 1)** | **✅ DONE 2026-04-14** — Prod-A (self-hosted Valkey in docker-compose on single VM), `redisClient.js` singleton with optional mode, `/health` reports redis status, graceful shutdown wired |
 | 1 | Redis room state | **TODO** — plumbing unblocked but migration is heavy (roomManager has 675L with ws refs interleaved across 20+ functions) — deferred to dedicated session |
-| 2 | BullMQ for AI generation | **TODO** — plumbing unblocked (ioredis installed, ready for bull) |
+| 2 | BullMQ for AI generation | **STAGE 1 DONE 2026-04-14** — bullmq + bull-board installed, per-provider queues live, worker entrypoint, in-process + standalone modes, /generate-campaign enqueues via job queue, /ai/jobs/:id poller, FE dispatches on content-type. Scene-gen migration still TODO (Stage 2) |
 | 3 | Refresh tokens + revocation | **TODO** — plumbing unblocked |
 | 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
 | 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
@@ -22,16 +22,31 @@
 | 11 | WS message handler tests | **✅ DONE 2026-04-14** (64 tests across 6 handler files) |
 | 12 | Pre-merge deployment checklist | **TODO** — not Claude-implementable (JWT rotation, OpenAI model ID verify) |
 
-**What landed on 2026-04-14:** items 4 (audit), 5, 9a, 9b, 10 (a/b/c), 11, plus the Redis infra/plumbing layer (Stage 1 of item 1). Full test suite 509/509, build green. See `project_post_merge_progress` memory for the detailed handoff.
+**What landed on 2026-04-14 (cumulative across morning + afternoon sessions):** items 4 (audit), 5, 7, 8, 9a, 9b, 10 (a/b/c), 11, plus the Redis infra/plumbing layer (Stage 1 of item 1). Full test suite 532/532, build green. See `project_post_merge_progress` memory for the detailed handoff.
 
-**What's next when resuming:** the Redis plumbing is live and validated with three consumers (9b embedding cache, 8 rate-limit counters, and the `/health` probe). Ops reality check: user confirmed 2026-04-14 that the production VM + CI/CD from main is already live — pushing to main auto-updates the VM. Caveat: verify the pipeline actually starts the new `valkey` compose service on first deploy (if it's image-pull-only, someone may need to manually `docker compose up -d` once). Heavy items 1 Stage 2 (roomManager migration) / 2 (BullMQ) / 3 (refresh tokens) should each be their own dedicated session. Item 7 (idempotency keys) is the next small follow-up — similar shape to item 8 (small keyGenerator-ish helper + Redis GET/SET for cached responses).
+---
 
-## Deployment context
+## Handoff for the remaining heavy tasks
 
-- **Current host:** Google Cloud Run.
-- **Target host:** Google Cloud Platform (staying in GCP ecosystem).
-- **Container runtime:** Docker.
-- **Implication for every item below:** prefer GCP-native managed services over self-hosted alternatives where the cost/complexity tradeoff is reasonable. Cloud Run is stateless and scales to zero, so anything that assumes in-memory state across instances is broken today.
+Each of the 3 remaining items (1 Stage 2, 2, 3) is self-contained enough to start a **fresh chat** with just its section of this doc plus the deployment context below. The intended flow is: open a new chat, point it at the specific section in this plan, and let it plan + execute against a clean working tree.
+
+**Shared context every new chat needs to know:**
+
+- **Redis is live and optional.** `backend/src/services/redisClient.js` exposes `getRedisClient()` / `isRedisEnabled()` / `pingRedis()` / `closeRedis()`. Every consumer so far uses the pattern *"check `isRedisEnabled()`, call Redis, catch errors, fall back gracefully"*. Three production consumers already follow this pattern as reference: [backend/src/services/embeddingService.js](../backend/src/services/embeddingService.js) (L1+L2 cache), [backend/src/plugins/rateLimitKey.js](../backend/src/plugins/rateLimitKey.js) (keyGenerator), [backend/src/plugins/idempotency.js](../backend/src/plugins/idempotency.js) (full plugin with preHandler + onSend). A new consumer should copy this pattern, not invent a new one.
+- **Deployment reality.** Single Compute Engine VM running `docker compose` with backend + Valkey side-by-side. `REDIS_URL=redis://valkey:6379` comes from [docker-compose.prod.yml](../docker-compose.prod.yml). CI/CD from `main` auto-deploys. No VPC connector, no Cloud Run autoscale concerns — everything runs in one process space on one VM. This is Prod-A from the hosting decision in section 1.
+- **API versioning is in place.** All routes under `/v1/`. Any breaking change (notably item 3 refresh tokens) should register new routes under `/v2/` and leave `/v1/` running in parallel.
+- **No BYOK.** Frontend proxy mode is being removed (see `project_no_byok` memory). Backend scene generation is the sole AI path. Don't add features to FE proxy-mode code.
+- **Auto-memory exists.** Check `project_post_merge_progress` memory for the cumulative handoff. Read `user_profile` + `feedback_*` memories for working style (pragmatic, batched playtest cadence, right-sized commits).
+
+## Deployment context (updated 2026-04-14)
+
+- **Host:** Single Compute Engine VM on GCP. Was Cloud Run when this plan was written — swapped to a VM as part of the Redis decision (see section 1, "Hosting decision" / Prod-A).
+- **Pipeline:** CI/CD from `main` auto-updates the VM. Every push to main triggers a deploy. No manual steps, no Cloud Run revisions.
+- **Runtime:** `docker compose` with backend + Valkey as sibling services inside one compose network. Mongo lives external (Atlas). Media via GCS.
+- **Why this matters for remaining items:**
+  - **Horizontal scale is NOT currently a concern.** Everything runs in one process space on one VM. Pub/sub (item 1 Stage 2) only matters if you add a second backend instance.
+  - **Cloud Run cold start and stateless-instance problems are gone.** Room state surviving restarts now only matters for `docker compose restart backend` or a VM reboot, not autoscale.
+  - **Low-friction path back to managed services** — if/when you outgrow the single VM, migration to Memorystore + Cloud Run is mostly `REDIS_URL=` swap + VPC connector + DNS cutover. Every Redis consumer follows the optional-mode pattern, so flipping between hosts is low risk.
 
 ---
 
@@ -47,59 +62,162 @@
 - **[backend/src/server.js](../backend/src/server.js)** — boot triggers connect attempt, `/health` reports `redis: 'ok' | 'down' | 'disabled'`, shutdown hook calls `closeRedis()`.
 - **Optional mode** — when `REDIS_URL` is empty, backend logs `[redis] disabled` and every consumer must have an in-memory fallback. This lets devs run without Docker and keeps the 503-test suite hitting zero Redis.
 
-**Stage 2 — roomManager migration (STILL TODO).** Plumbing is live but the actual roomManager work hasn't landed. Scope is heavy — the file has 675 lines, and `player.ws` (per-instance WebSocket refs that cannot be serialized) is threaded through `broadcast`, `sendTo`, `disconnectPlayer`, `sanitizeRoom.connected`, `closeAllRoomSockets`, `cleanupInactiveRooms`. Proper migration needs:
+**Stage 2 — roomManager migration (STILL TODO — the heavy item).** Plumbing is live but the actual roomManager migration hasn't landed. This is the hardest remaining item.
 
-1. **Split roomManager into two layers** — state store (Redis-backed) vs socket registry (per-instance `odId → ws` map that never leaves the process)
-2. **Pub/sub bridge** — each instance subscribes to `room:<code>` channel for rooms where it has at least one local socket; broadcasts publish to Redis, every subscriber fans out locally
-3. **Dual-write migration** — Redis + DB in parallel, then switch reads, then delete in-memory map last
-4. **Async conversion** — 20+ currently-sync functions become async
+**Why it's heavy.** [backend/src/services/roomManager.js](../backend/src/services/roomManager.js) is 675 lines and the in-memory `Map<roomCode, room>` is doing **two jobs simultaneously**:
+1. **State store** — roomCode, hostId, phase, settings, players metadata, gameState. This IS serializable and belongs in Redis.
+2. **Socket registry** — `player.ws` references to live `WebSocket` instances. These are **per-instance runtime objects that CANNOT be serialized to Redis** under any circumstance.
 
-For single-instance Prod-A, pub/sub is dead code right now (yields only restart-survival). The real win comes when you horizontally scale. Migration should happen in a dedicated session when there's a concrete driver.
+The file intermixes these freely: `player.ws = ws`, `player.ws?.readyState === 1`, `player.ws.send(payload)`. Functions touching sockets directly: `sanitizeRoom` (reads `ws.readyState` for `connected` field), `disconnectPlayer` (nulls `ws`, checks readyState), `broadcast` (iterates and sends), `sendTo` (sends to one), `closeAllRoomSockets` (closes every ws), `cleanupInactiveRooms` (checks readyState), `loadActiveSessionsFromDB` (sets `ws: null` on rehydrate).
 
-**Data model** (when Stage 2 lands):
-- Key per room: `room:<code>` — Redis hash with `{phase, hostId, settings, gameState, players}` JSON-encoded
-- Pub/sub: `room:<code>:events` channel for cross-instance broadcasts
-- TTL: `ROOM_INACTIVE_TTL_MS` (30min) refreshed on every touch
+**Solution shape — split into two layers:**
 
-**Dependency.** Plumbing (Stage 1) **unblocks** BullMQ (item 2), refresh tokens (item 3), idempotency (item 7), per-user RL (item 8), embedding Redis (item 9b — already done). Stage 2 (actual migration) is now self-contained.
+- **Layer A — State store (Redis-backed).** Functions that only touch persistent state: `createRoom`, `createRoomWithGameState`, `joinRoom`, `leaveRoom`, `listUserRooms`, `updateCharacter`, `updateSettings`, `setPhase`, `setGameState`, `submitAction`, `withdrawAction`, `approveActions`, `executeSoloAction`, `getRoom`, `listJoinableRooms`, `touchRoom`, `saveRoomToDB`, `deleteRoomFromDB`, `loadActiveSessionsFromDB`, `findSessionInDB`, `restoreRoom`, `restorePendingActions`. All become async. Storage: Redis hash `room:<code>` with JSON-encoded `{phase, hostId, settings, gameState, players}`.
+- **Layer B — Socket registry (per-instance, process-local).** A `Map<odId, WebSocket>` that never leaves the process. Functions: `registerSocket(odId, ws)`, `unregisterSocket(odId)`, `getLocalSocket(odId)`, `iterateLocalSockets()`. Used only by the WS handlers that own the socket.
+- **Layer C — Pub/sub bridge.** When instance A wants to broadcast to room R: publish to Redis channel `room:<R>:events` with `{targetOdId?, message}`. Every instance subscribes to `room:<R>:events` when it has at least one socket for room R. On receive, each subscriber iterates its local registry and forwards the message to matching sockets. Unsubscribe when its last local socket for R disconnects.
+
+**Data model.**
+```
+room:<code>               → Redis hash, JSON-encoded room state minus ws refs
+room:<code>:lastActivity  → Redis string, UNIX ms, for cleanup
+room:<code>:events        → Redis pub/sub channel for broadcasts
+TTL                       → ROOM_INACTIVE_TTL_MS (30min) refreshed on every write
+```
+
+**Migration strategy — dual-write first, cut reads over, then delete the Map.**
+
+1. **Phase 1 — dual-write.** Every write to `rooms.set(...)` / mutation also writes to Redis. Reads still go to `rooms.get(...)`. Adds a `if (isRedisEnabled()) { await redis.hset(...) }` sidecar to every existing function. Risk: low, because the Map is still the source of truth. Test: existing tests should pass unchanged.
+2. **Phase 2 — cut reads over.** Flip the read path from `rooms.get(...)` to `await redisGet(...)`. Now all 20+ functions become async. Every caller of roomManager needs `await`. Frontend-facing WS handlers are the biggest call-site cluster. Risk: medium — async propagation is invasive and can introduce ordering bugs.
+3. **Phase 3 — delete the Map.** Once reads flow from Redis reliably (verified via playtest), remove `const rooms = new Map()` entirely. Layer B's socket registry replaces it for the local socket-lookup use case.
+4. **Phase 4 — pub/sub.** Add broadcast bridge. Only meaningful if/when you run >1 backend instance. Can be deferred indefinitely for single-VM Prod-A, but the code should be in place so the instance-count change is zero-risk later.
+
+**Testing strategy.** The existing 64 WS handler tests (item 11) mock `roomManager` at the module level — they should keep working throughout the migration if the function signatures stay the same (plus async). After Phase 2, some handler tests may need `await`-ing previously-sync mocks. Integration: ideally a playtest in a staging-like setup with 2 players in a room, one instance.
+
+**Value for current deployment (Prod-A single VM).** Restart survival: Valkey RDB snapshots every 60s mean `docker compose restart backend` preserves room state (today it does NOT — the Map is gone, and the DB fallback via `saveAllActiveRooms()`/`loadActiveSessionsFromDB()` only covers clean SIGTERM shutdowns). Pub/sub fan-out: zero value today, full value when horizontally scaling.
+
+**Estimated scope.** 2-3 focused sessions. Phase 1+2 is ~1 session if careful with async propagation. Phase 3+4 is another session. Playtest + bugfix is a third.
+
+**Dependency.** Plumbing (Stage 1) was the only prerequisite. Stage 2 is now self-contained — it does not block anything else on this plan.
 
 ---
 
 ## 2. BullMQ for AI generation
 
-**Problem.** Scene generation (10-30s), campaign generation (20-60s), and image generation (15-45s) all run synchronously inside request handlers. Cloud Run kills requests after the configured timeout (default 300s, can be bumped to 60min on gen2). Long generations:
-- Block the handler process — a single instance can't serve many parallel scene gens.
-- Have no retry/resume on instance restart.
-- Cannot be observed (no job UI).
+**Stage 1 DONE 2026-04-14 late evening.** Backend queue infra + campaign-gen migration landed. Stage 2 (scene-gen migration) deferred — see below.
+
+**What landed in Stage 1:**
+- `bullmq@5` and `@bull-board/fastify@7` installed in backend
+- [backend/src/services/queues/aiQueue.js](../backend/src/services/queues/aiQueue.js) — per-provider queues (`ai:openai`, `ai:anthropic`, `ai:gemini`, `ai:stability`, `ai:meshy`), reuses the singleton ioredis client from `redisClient.js`. `getQueue(provider)`, `enqueueJob`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Follows the `isRedisEnabled()` → fall back pattern — returns null when Redis is disabled so legacy inline SSE keeps working in dev/CI without Docker.
+- [backend/src/workers/aiWorker.js](../backend/src/workers/aiWorker.js) — worker entrypoint with two modes. In-process: `startWorkers()` is called from `server.js` when `WORKER_MODE` is not set and Redis is enabled. Standalone: `npm run worker` spawns a separate process (used by the `backend-worker` compose service under the `workers` profile). Handlers registered per job name; `generate-campaign` handler wraps the existing `generateCampaignStream` service and collects the `complete` event into `job.returnvalue`. Progress updates every 10 chunks.
+- [backend/src/plugins/bullBoard.js](../backend/src/plugins/bullBoard.js) — bull-board UI mounted under `/v1/admin/queues`, gated by `fastify.authenticate` + `request.user.admin` claim (403 for non-admins). No-op when Redis is disabled.
+- [backend/src/routes/ai.js](../backend/src/routes/ai.js) — `/ai/generate-campaign` now enqueues a job when Redis is enabled and returns `202 { jobId, queue }`. Falls through to legacy SSE when Redis is off or enqueue fails. New `GET /ai/jobs/:id` endpoint calls `findJobAcrossQueues` and returns state + result + progress.
+- [backend/src/server.js](../backend/src/server.js) — `startWorkers()` called on boot (non-worker mode, Redis enabled), `stopWorkers()` + `closeAllQueues()` wired into the graceful shutdown hook before Redis close.
+- [docker-compose.yml](../docker-compose.yml) — `backend-worker` service added under `profiles: ["workers"]`, shares the backend image and runs `npm run worker` with `WORKER_MODE=1`. Inactive by default on Prod-A single VM — activate with `docker compose --profile workers up` when you want worker isolation.
+- [src/services/aiJobPoller.js](../src/services/aiJobPoller.js) — FE polling helper with adaptive intervals (500ms → 2s). Returns `returnvalue` on `completed`, throws on `failed`.
+- [src/services/ai/service.js](../src/services/ai/service.js) — `aiService.generateCampaign` now POSTs via raw `fetch`, dispatches on content-type (JSON → `pollJob`, SSE → existing `drainCampaignStream` helper kept inline for the Redis-disabled path). `onPartialScene` callback is no-op in the queue path (spinner-only, per this plan).
+- [backend/src/services/queues/aiQueue.test.js](../backend/src/services/queues/aiQueue.test.js) — 9 unit tests covering provider mapping, caching, disabled-mode, enqueue + findJobAcrossQueues. Uses `vi.hoisted` for the BullMQ Queue factory mock.
+- Full backend test suite 152/152 green; FE unit suite 541 tests green; production build green.
+
+**Verification after landing:**
+- [ ] Boot `docker compose up` locally and POST to `/v1/ai/generate-campaign` with auth — should get `202 { jobId }`, then poll `/v1/ai/jobs/:id` returns `completed` with the campaign result in `returnvalue.result`.
+- [ ] Open bull-board at `http://localhost:3001/v1/admin/queues` with an admin-claim JWT and confirm queues + job history are visible.
+- [ ] Toggle `REDIS_URL=''` in env and confirm `/generate-campaign` falls back to SSE streaming without errors (legacy path).
+- [ ] End-to-end playtest: create a new campaign via the UI with the backend-mode path; confirm the spinner UX works (no progressive first-scene preview expected since streaming is dropped here).
+
+**Stage 2 — scene-gen migration (TODO, separate session).** The primary gameplay loop streams SSE with progressive partial JSON parsing in `useSceneBackendStream`. Migrating it requires publishing progress events from the worker to a Redis pub/sub channel per job, then subscribing via a new SSE endpoint (`/v1/ai/jobs/:id/stream`). The FE hook needs a deep refactor — roughly 2 hours of careful work plus a playtest. Plan a full read of `useSceneBackendStream.js` + `useSceneGeneration.js` consumers before touching it.
+
+**Status update 2026-04-14 (original, kept for context).** Redis plumbing is live (Stage 1 of item 1). BullMQ itself is NOT installed — a new chat starting this item should run `cd backend && npm install bullmq` as its first step. The dependency graph is clear now: BullMQ uses ioredis under the hood, and our `redisClient.js` already instantiates an ioredis client that can be reused for the queue.
+
+**Problem.** Scene generation (10-30s), campaign generation (20-60s), and image generation (15-45s) all run synchronously inside request handlers. Long generations:
+- Block the handler process — a single backend instance can't serve many parallel scene gens. On Prod-A single-VM deployment, this is already observable under multi-player load.
+- Have no retry/resume on instance restart. `docker compose restart backend` kills an in-flight generation and the client has to retry manually.
+- Cannot be observed — no job UI, no queue depth metric, no per-provider rate-limit visibility.
 
 **Solution shape.** BullMQ (Redis-backed) job queue.
-- Client submits `/ai/generate-scene` → backend enqueues a job, returns `{ jobId }`.
-- Client polls `/ai/jobs/:id` or subscribes via SSE for progress updates.
-- Worker process (separate Cloud Run service or same service with `WORKER_MODE=1`) consumes the queue.
-- Built-in retries, dead-letter queue, job UI via `@bull-board/fastify`.
+- Client submits `/v1/ai/generate-scene` → backend enqueues a job, returns `{ jobId }` immediately.
+- Client polls `/v1/ai/jobs/:id` or subscribes via SSE for progress updates.
+- Worker process consumes the queue. On Prod-A this can run as a second container in `docker-compose.yml` (just another service with `WORKER_MODE=1`), sharing the Valkey instance. No separate Cloud Run service needed.
+- Built-in retries, dead-letter queue, job UI via `@bull-board/fastify` mounted under `/v1/admin/queues` (authenticated).
+
+**Design questions the new chat will need to answer:**
+- **One queue or multiple?** Recommend multiple — one per provider (`ai:openai`, `ai:anthropic`, `ai:meshy`, `ai:stability`), because rate limits and failure modes differ per provider. Independent concurrency limits on each queue prevent one flaky provider from starving the others.
+- **Where does the worker run?** Option A: separate compose service `backend-worker` with `WORKER_MODE=1` env var, shares the repo image but different entrypoint. Option B: same backend container, just spawn worker threads on startup. Recommend A for isolation and ability to scale the worker independently.
+- **Streaming vs polling.** Current FE path in `useSceneGeneration` uses SSE streaming to show tokens as they arrive. Job queue breaks that UX by default. Two options:
+  - **Preserve streaming:** worker publishes progress events to a per-job Redis pub/sub channel; FE subscribes via SSE to `/v1/ai/jobs/:id/stream`. Complex but keeps the nice "watch the AI think" UX.
+  - **Drop streaming:** FE polls `/v1/ai/jobs/:id` every 500ms, shows a spinner instead of token-by-token text. Simpler but UX regression.
+  - Recommend: preserve streaming for scene gen (user-facing, visible wait), drop for campaign gen (less user-visible, OK to show spinner).
+
+**Scope.**
+
+- **Backend:**
+  - Install `bullmq` and `@bull-board/fastify`
+  - New `backend/src/services/queues/*` with per-provider queue definitions
+  - Refactor `backend/src/routes/ai.js` SSE endpoints to enqueue + return job ID (or keep both paths in parallel during migration)
+  - New worker entrypoint `backend/src/workers/aiWorker.js` that consumes jobs and calls the existing scene generator services
+  - `docker-compose.yml` + `docker-compose.prod.yml` — add `backend-worker` service with `WORKER_MODE=1` env var
+  - Mount bull-board under `/v1/admin/queues` behind auth
+- **Frontend:**
+  - Refactor [src/hooks/sceneGeneration/useSceneGeneration.js](../src/hooks/sceneGeneration/useSceneGeneration.js) — currently awaits SSE inline, needs to enqueue + subscribe to progress stream
+  - New status UI for "queued" vs "processing" states
+  - Graceful handling of worker disconnection mid-job
 
 **Blockers.**
-- Depends on item 1 (Redis).
-- Design question: one queue for all AI gen, or separate queues per provider (openai/anthropic/meshy/stability) with independent concurrency limits? Recommend: separate, because rate limits differ per provider.
-- Frontend work: refactor `useSceneGeneration` to poll/subscribe instead of awaiting the response. Non-trivial — current code assumes SSE streaming comes back inline.
+- **None for starting.** Redis is live, no missing infra.
+- **Risk:** FE refactor is the biggest unknown. Current SSE flow is deep in the hook and has assumptions about `await`-ing the streamed response. Plan a full read of `useSceneGeneration.js` + its consumers before writing code.
+- **Playtest required** before shipping — this touches the primary gameplay loop. Can't land without a multiplayer + solo end-to-end test.
+
+**Estimated scope.** 2 focused sessions. Session 1: backend queue setup + worker + one endpoint migrated (probably `/generate-campaign` since it's lower-traffic). Session 2: scene-gen migration + FE refactor + playtest.
 
 ---
 
 ## 3. Refresh tokens + revocation
 
-**Problem.** Current auth uses long-lived JWT bearer tokens (per `fc322a1` BE AUDIT). No revocation — if a token leaks we cannot kill it without rotating `JWT_SECRET` (which logs out everyone).
+**Status update 2026-04-14.** Redis plumbing is live, `/v1/` versioning is live (item 5 done). The breaking-change concern from the original plan is now cleanly solvable — new refresh-token endpoints land under `/v2/auth/*`, the old `/v1/auth/login` stays functional with long-lived JWT for old clients, and migration becomes a soft rollout rather than a flag day.
+
+**Problem.** Current auth uses long-lived JWT bearer tokens. No revocation — if a token leaks we cannot kill it without rotating `JWT_SECRET` (which logs out everyone simultaneously, see item 12 for the pending one-time rotation planned at deploy time).
 
 **Solution shape.** Short-lived access token + long-lived refresh token pattern.
-- Access token: JWT, 15min TTL, bearer-auth on every API call (as today).
-- Refresh token: opaque random string, 30-day TTL, stored in Redis with `user:<id>:refresh:<tokenId>` → `{expiresAt, deviceInfo}`.
-- Delivery: refresh token in **httpOnly SameSite=Strict cookie**, not localStorage. This is where the **CSRF posture changes**: cookie-based auth needs CSRF tokens on state-changing requests (POST/PUT/DELETE/PATCH).
-- Revocation: `DELETE` on the Redis key immediately kills the session. Admin endpoint `/admin/sessions/:userId/revoke` for incident response.
+
+- **Access token:** JWT, 15min TTL, bearer-auth on every API call (unchanged from today's pattern except for the shorter TTL).
+- **Refresh token:** opaque random string (not a JWT — no claims, no verification overhead), 30-day TTL, stored in Redis with key `user:<id>:refresh:<tokenId>` → value `{expiresAt, deviceInfo, createdAt}`. Single GET on refresh endpoint, O(1) revocation.
+- **Delivery:** refresh token in **httpOnly SameSite=Strict cookie**, NOT localStorage. This is the critical UX + security change — it prevents JS-level token exfil (XSS token theft) but forces CSRF protection for every state-changing request.
+- **Revocation:** `DEL user:<id>:refresh:<tokenId>` kills one session. `SCAN user:<id>:refresh:*` + `DEL` kills all sessions for a user ("log out everywhere"). Admin endpoint `/v2/admin/sessions/:userId/revoke` for incident response.
+
+**Why this is a breaking change** — cookie-based auth has different semantics from bearer-token auth:
+
+1. **CSRF posture flips.** Bearer tokens are immune to CSRF because attackers can't read them from a cross-origin form submission. Cookies are automatically attached to every request to their origin — which is exactly what CSRF exploits. Cookie-based auth MUST have a CSRF token on every POST/PUT/PATCH/DELETE. Standard pattern: double-submit cookie (server sets `csrf-token` cookie + client reads it + echoes it in an `X-CSRF-Token` header; server verifies both match). Touches every mutating route.
+2. **CORS `credentials: include` required.** Frontend `fetch` calls need `credentials: 'include'` to send the cookie. Backend CORS config needs `Access-Control-Allow-Credentials: true` and a specific `Access-Control-Allow-Origin` (wildcard is rejected by browsers when credentials are on).
+3. **Frontend retry interceptor.** Every authenticated request needs: if response is 401 and refresh hasn't been tried, call `POST /v2/auth/refresh` (cookie auto-attached, returns new access token), stash it, retry original request with new bearer. On refresh failure, hard-logout. This lives in `apiClient.request()`.
+
+**Scope.**
+
+- **Backend:**
+  - New routes under `/v2/auth/*`: `POST /login` (returns access token + sets refresh cookie), `POST /refresh` (reads refresh cookie, returns new access token), `POST /logout` (deletes refresh cookie + Redis row)
+  - Redis service helper `backend/src/services/refreshTokenService.js` — `issue`, `verify`, `revoke`, `revokeAllForUser`. Follows the optional-mode pattern: when Redis is disabled, refresh-token endpoints return 503 (this feature REQUIRES Redis).
+  - CSRF plugin — [backend/src/plugins/csrf.js](../backend/src/plugins/csrf.js) that adds `preHandler` hook checking `X-CSRF-Token` header against `csrf-token` cookie on all `config.csrf: true` routes. Double-submit cookie pattern.
+  - Update existing `fastify.authenticate` to also validate CSRF for cookie-authed requests
+  - Admin endpoint `/v2/admin/sessions/:userId/revoke` (requires admin claim in JWT — introduce admin flag on User model)
+  - Keep `/v1/auth/*` alive with current long-lived JWT behavior until every client has migrated
+- **Frontend:**
+  - [src/services/apiClient.js](../src/services/apiClient.js) — add 401-retry interceptor, CSRF header injection, `credentials: 'include'` on all fetches
+  - Auth store — handle refresh token lifecycle, fall back to login when refresh fails
+  - Every mutation call site — needs the CSRF header (can be automatic via apiClient, no per-site change)
+  - New `POST /v2/auth/logout` call on logout button (replaces current `localStorage.removeItem`)
+
+**Migration plan.**
+
+1. **Ship /v2/ routes + CSRF plugin.** `/v1/auth/*` keeps working for old clients.
+2. **Ship FE interceptor + cookie support.** On login, FE now talks to `/v2/auth/login` and stores access token in memory (not localStorage). Refresh cookie handles persistence.
+3. **Sunset `/v1/auth/*` after 30 days.** Old tokens naturally expire (per current JWT TTL). Force-logout any remaining clients on that date.
+4. **Bonus: revoke all active sessions** as part of the item 12 `JWT_SECRET` rotation. This flushes leaked tokens that may still be in the wild from pre-plan times.
 
 **Blockers.**
-- Depends on item 1 (Redis).
-- Breaking change: frontend `authStore` needs to handle 401 → call `/auth/refresh` → retry pattern. Every API client site needs an interceptor.
-- CSRF token implementation: double-submit cookie pattern or synchronizer token. Not hard, but touches every mutating route.
-- Migration: existing users keep their long-lived JWTs until they expire naturally, or force-logout everyone on deploy.
+- **None infra-wise.** Redis is live.
+- **Heavy FE work.** The interceptor + auth store rework is the biggest single chunk. Plan a full read of current `authStore` + every `apiClient.request` call path before writing code.
+- **CSRF test coverage.** Need tests that verify a request without the header gets rejected, and a request with a wrong header gets rejected. Easy with `fastify.inject()`.
+- **Playtest required.** Touches login flow, logout flow, token expiry flow. At least one multi-device test (log in on two devices, revoke one, confirm the other still works).
+
+**Estimated scope.** 2-3 focused sessions. Session 1: backend /v2/auth routes + refresh token service + CSRF plugin + tests. Session 2: FE apiClient interceptor + auth store rework + FE tests. Session 3: migration + playtest + any bugfixes.
 
 ---
 
@@ -266,34 +384,29 @@ The right design probably looks like:
 
 ---
 
-## Recommended ordering (post-merge)
+## Remaining work as of 2026-04-14 EOD
 
-The dependency graph is:
+Everything small/medium is closed. What's left, in recommended order of attack:
 
-```
-Redis (1) ──┬──> BullMQ (2)
-            ├──> Refresh tokens (3)
-            ├──> Idempotency (7)
-            ├──> Per-user RL (8)
-            └──> Embedding LRU long-term (9b)
+### Heavy items — each gets its own fresh chat
 
-CSP audit (4) ──> CSP enable (4)
-API versioning (5) ──┬──> (should bundle with breaking refresh-token change if both happen)
-Proxy middleware (6) ──> standalone, needs design session
-Embedding TTL short-term (9a) ──> standalone, could slot into Group A if needed
-```
+1. **Item 3 — Refresh tokens + CSRF.** Biggest user-visible security improvement. Redis is ready, `/v1` is live so this lands as `/v2/auth/*` without breaking old clients. Heavy because of the FE interceptor rework. 2-3 sessions. **Start here if security posture matters more than perf.**
 
-**Proposed execution order after merge:**
+2. **Item 2 — BullMQ for AI generation.** Biggest latency + observability improvement. Redis is ready, need to install `bullmq` + `@bull-board/fastify`. Heavy because of the FE `useSceneGeneration` refactor from inline SSE to job + progress stream. 2 sessions. **Start here if handler-blocking on long generations is your current pain.**
 
-1. **Redis setup (item 1)** — unblocks 5 of the 9 items. Biggest single-point unlock.
-2. **Refresh tokens + CSRF (item 3)** — biggest user-visible security improvement. Bundle with API versioning (item 5) as a single `/v2/` jump.
-3. **BullMQ (item 2)** — biggest latency improvement. Once this lands, scene gen stops blocking instances.
-4. **Per-user rate limiting (item 8) + Idempotency (item 7)** — small follow-ups once Redis is there.
-5. **CSP audit + enable (item 4)** — standalone, parallel-able with 2-4.
-6. **Embedding LRU Redis migration (item 9b)** — small follow-up.
-7. **Proxy route middleware extraction (item 6)** — standalone, needs its own design session.
+3. **Item 1 Stage 2 — roomManager → Redis + pub/sub.** Biggest restart-survival improvement for multiplayer. Redis is ready. Heavy because roomManager is 675L with ws refs threaded through 20+ functions — needs split into state store + socket registry + pub/sub bridge, dual-write migration, async propagation. 2-3 sessions. **Start here if you observe multiplayer sessions dying on backend restart.**
 
-**Total scope:** very rough estimate, 5-8 focused sessions. Not a single sprint.
+Order is a value judgment, not a strict dependency. All three are independent of each other; you can pick whichever matches your current pain.
+
+### Deferred items that aren't "heavy" but need attention later
+
+- **Item 4 (CSP enable)** — audit done, ready-to-ship policy drafted. Needs **staging environment** to exercise Three.js / WebRTC / ElevenLabs / image-gen flows with a report-only header before enforcing. Blocker is ops, not code.
+- **Item 6 (Proxy middleware extraction)** — plan itself flags *"variance too high for shallow refactor, needs dedicated design session"*. Text-gen / image-gen / TTS / 3D model routes all have different request/response shapes. Don't solo-attack. Open its own chat with *"here's the problem, design me a proxy route factory"* framing.
+- **Item 12 (Pre-merge deployment checklist)** — NOT Claude-implementable. `JWT_SECRET` rotation needs prod env access; OpenAI model ID verification needs a prod API key. Flag in a human ops ticket.
+
+### Estimated total scope for remaining heavy items
+
+5-8 focused sessions. Not a sprint. Spread across as many days as make sense.
 
 ---
 

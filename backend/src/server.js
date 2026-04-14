@@ -12,6 +12,9 @@ import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
 import { buildRateLimitKey } from './plugins/rateLimitKey.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
+import { bullBoardPlugin } from './plugins/bullBoard.js';
+import { startWorkers, stopWorkers } from './workers/aiWorker.js';
+import { closeAllQueues } from './services/queues/aiQueue.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { characterRoutes } from './routes/characters.js';
@@ -79,6 +82,10 @@ await fastify.register(rateLimit, {
 // Idempotency-Key support on opt-in mutating routes. Plugin installs
 // preHandler + onSend hooks; routes enable it via `config: { idempotency: true }`.
 await fastify.register(idempotencyPlugin);
+
+// BullMQ bull-board admin UI under /v1/admin/queues. No-op when Redis
+// is disabled. Must register BEFORE `aiRoutes` so its prefix lines up.
+await fastify.register(bullBoardPlugin);
 
 fastify.get('/health', async (request, reply) => {
   let dbOk = false;
@@ -179,6 +186,14 @@ if (isRedisEnabled()) {
   fastify.log.info('[redis] disabled (REDIS_URL not set) — features will use in-memory fallbacks');
 }
 
+// Start BullMQ workers in-process unless the process is the dedicated worker
+// container (WORKER_MODE=1 — handled by workers/aiWorker.js standalone
+// entrypoint). On single-VM Prod-A it's fine to run them alongside the HTTP
+// server; when scaling out, set WORKER_MODE=1 on a second container.
+if (!config.workerMode && isRedisEnabled()) {
+  startWorkers();
+}
+
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
     root: STATIC_ROOT,
@@ -239,6 +254,20 @@ async function gracefulShutdown(signal) {
     fastify.log.info(`[shutdown] closed ${closedCount} WebSocket connections`);
   } catch (err) {
     fastify.log.warn({ err }, '[shutdown] failed to close sockets');
+  }
+
+  try {
+    await stopWorkers();
+    fastify.log.info('[shutdown] workers stopped');
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to stop workers');
+  }
+
+  try {
+    await closeAllQueues();
+    fastify.log.info('[shutdown] queues closed');
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] failed to close queues');
   }
 
   try {

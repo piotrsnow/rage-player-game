@@ -1,6 +1,8 @@
 import { buildSystemPrompt, buildCampaignCreationPrompt, buildRecapPrompt, buildRecapMergePrompt } from '../prompts';
 import { apiClient } from '../apiClient';
 import { callBackendStream } from '../aiStream';
+import { pollJob } from '../aiJobPoller';
+import { parsePartialJson } from '../partialJsonParser';
 import {
   safeParseJSON, safeParseAIResponse, repairDialogueSegments,
   CampaignResponseSchema, CompressionResponseSchema,
@@ -223,16 +225,87 @@ function postProcessCampaignResult(raw, repairedSegments, settings, language) {
   };
 }
 
+async function drainCampaignStream(response, { onPartialJson } = {}) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let result = null;
+  let sseBuffer = '';
+  let rawAccumulated = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split('\n');
+    sseBuffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const event = JSON.parse(line.slice(6));
+        if (event.type === 'chunk' && event.text) {
+          rawAccumulated += event.text;
+          if (onPartialJson) {
+            const partial = parsePartialJson(rawAccumulated);
+            if (partial) onPartialJson(partial);
+          }
+        } else if (event.type === 'complete') {
+          result = event.data;
+        } else if (event.type === 'error') {
+          throw new Error(event.error || 'Campaign stream error');
+        }
+      } catch (e) {
+        if (e.message && !e.message.includes('JSON')) throw e;
+      }
+    }
+  }
+
+  if (!result) throw new Error('Campaign stream ended without complete event');
+  return result;
+}
+
 export const aiService = {
-  async generateCampaign(settings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null, explicitModel = null, onPartialScene = null } = {}) {
+  async generateCampaign(settings, provider, apiKey, language = 'en', modelTier = 'premium', { alternateApiKey = null, explicitModel = null, onPartialScene = null, onJobProgress = null } = {}) {
     if (apiClient.isConnected()) {
+      // Peek at the POST response shape. When Redis + BullMQ are live on the
+      // backend the endpoint returns 202 `{ jobId, queue }` and we poll the
+      // job; otherwise it streams SSE like before. Keeps the frontend
+      // compatible with both Redis-enabled and Redis-disabled deployments.
+      const baseUrl = apiClient.getBaseUrl();
+      const token = apiClient.getToken();
+      const response = await fetch(`${baseUrl}/v1/ai/generate-campaign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ settings, language, provider, model: explicitModel || null }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Campaign generation failed: ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        // Queue path — poll for completion. Streaming preview is dropped
+        // here (per plan item 2: campaign gen shows spinner only).
+        const { jobId } = await response.json();
+        if (!jobId) throw new Error('Campaign job response missing jobId');
+        const jobResult = await pollJob(jobId, { onProgress: onJobProgress });
+        const raw = jobResult?.result;
+        if (!raw) throw new Error('Campaign job completed without a result');
+        return { result: postProcessCampaignResult(raw, null, settings, language), usage: null };
+      }
+
+      // Streaming fallback path — drain the SSE body and reuse the legacy
+      // progressive-parse logic for `onPartialScene`. Kept so dev/CI without
+      // Docker (Redis disabled) still works.
       let repairedSegments = null;
       const knownNpcs = [];
-
-      const raw = await callBackendStream('/ai/generate-campaign', {
-        settings, language, provider,
-        model: explicitModel || null,
-      }, {
+      const raw = await drainCampaignStream(response, {
         onPartialJson(partial) {
           if (partial.initialNPCs) {
             for (const npc of partial.initialNPCs) {
@@ -248,7 +321,6 @@ export const aiService = {
             if (onPartialScene) onPartialScene({ ...fs, dialogueSegments: repairedSegments });
           }
         },
-        schema: CampaignResponseSchema,
       });
 
       return { result: postProcessCampaignResult(raw, repairedSegments, settings, language), usage: null };

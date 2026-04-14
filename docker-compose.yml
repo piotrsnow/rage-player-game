@@ -46,6 +46,59 @@ services:
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
     volumes:
       - media-data:/data/media
+    # Docker Compose Watch: `npm run dev:watch` syncs local source into the
+    # running container and restarts the backend process on change. Frontend
+    # assets are baked into the image at build time; a change under `src/`
+    # or `shared/` (consumed by the FE build) triggers a full rebuild so the
+    # new bundle lands in `public/dist`. For fast FE iteration use
+    # `npm run dev:frontend` (vite HMR on :5173) alongside the watched backend.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend/src
+          target: /app/backend/src
+        - action: sync+restart
+          path: ./shared
+          target: /app/shared
+        - action: rebuild
+          path: ./backend/package.json
+        - action: rebuild
+          path: ./backend/prisma
+        - action: rebuild
+          path: ./src
+        - action: rebuild
+          path: ./package.json
+
+  # BullMQ worker: dedicated process that consumes ai:* queues. Shares the
+  # backend image and runs `npm run worker` (src/workers/aiWorker.js). On
+  # single-VM Prod-A the main backend also starts workers in-process, so
+  # this container is optional — it becomes meaningful when you scale out
+  # or want worker isolation. Disabled by default via the `workers` profile;
+  # `docker compose --profile workers up` to activate.
+  backend-worker:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    profiles: ["workers"]
+    depends_on:
+      - mongodb
+      - valkey
+    environment:
+      WORKER_MODE: "1"
+      DATABASE_URL: "mongodb://mongodb:27017/rpgon"
+      REDIS_URL: "redis://valkey:6379"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
+      MEDIA_BACKEND: "${MEDIA_BACKEND:-local}"
+      MEDIA_LOCAL_PATH: "/data/media"
+      GCS_BUCKET_NAME: "${GCS_BUCKET_NAME:-}"
+      GCP_SERVICE_ACCOUNT_KEY: "${GCP_SERVICE_ACCOUNT_KEY:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
+      STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
+    volumes:
+      - media-data:/data/media
 
 volumes:
   mongo-data:

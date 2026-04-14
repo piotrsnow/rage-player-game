@@ -4,6 +4,8 @@ import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveSseCorsOrigin } from '../plugins/cors.js';
+import { enqueueJob, findJobAcrossQueues } from '../services/queues/aiQueue.js';
+import { isRedisEnabled } from '../services/redisClient.js';
 
 const log = childLogger({ module: 'ai' });
 import {
@@ -145,12 +147,32 @@ export async function aiRoutes(fastify) {
   /**
    * POST /ai/generate-campaign
    *
-   * Generate a new campaign with SSE streaming.
-   * Events: chunk (raw JSON text), complete (full parsed result), error
+   * Enqueue a campaign generation job. Returns `{ jobId, queue }` immediately
+   * so the frontend can poll `/ai/jobs/:id` for progress. Non-streaming —
+   * campaign creation is a one-shot "show spinner, reveal result" flow. The
+   * scene-gen path still streams (see /campaigns/:id/generate-scene-stream).
+   *
+   * When Redis is disabled, falls back to legacy inline SSE so dev/CI without
+   * Docker keeps working.
    */
   fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
 
+    if (isRedisEnabled()) {
+      try {
+        const { id, queue } = await enqueueJob(
+          'generate-campaign',
+          { settings: settings || {}, language, provider, model },
+          { provider, userId: request.user?.id },
+        );
+        return reply.code(202).send({ jobId: id, queue });
+      } catch (err) {
+        log.warn({ err }, 'Failed to enqueue campaign job — falling back to inline');
+        // fall through to legacy inline path
+      }
+    }
+
+    // Legacy inline SSE fallback (Redis disabled or enqueue failed).
     if (!writeSseHead(request, reply)) return;
 
     await generateCampaignStream(
@@ -164,6 +186,22 @@ export async function aiRoutes(fastify) {
     );
 
     reply.raw.end();
+  });
+
+  /**
+   * GET /ai/jobs/:id
+   *
+   * Poll a queued job's status. Returns state + result when complete.
+   * 404 if the job doesn't exist in any queue (expired or never created).
+   */
+  fastify.get('/jobs/:id', async (request, reply) => {
+    if (!isRedisEnabled()) {
+      return reply.code(503).send({ error: 'Job queue disabled — Redis unavailable' });
+    }
+    const jobId = request.params.id;
+    const status = await findJobAcrossQueues(jobId);
+    if (!status) return reply.code(404).send({ error: 'Job not found' });
+    return status;
   });
 
   /**

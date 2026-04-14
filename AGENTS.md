@@ -11,8 +11,11 @@
 - **Shared**: `shared/` directory with contracts and domain logic used by both frontend and backend
 
 ## Commands
-- `npm run dev` - Frontend + backend concurrently
-- `npm run build` - Vite production build
+- `npm run dev` - `docker compose up --build --watch` — boots the full stack (backend :3001 + mongo + valkey) with Docker Compose Watch: auto-restart backend on `backend/src` / `shared` changes, rebuild image on `package.json` / FE `src/` changes
+- `npm run dev:down` - `docker compose down`
+- `npm run dev:logs` - tail backend container logs
+- `npm run dev:frontend` - `vite` with HMR on :5173 (Playwright E2E + fast FE iteration alongside watched backend)
+- `npm run build` - Vite production build (used by the Dockerfile frontend-build stage)
 - `npm test` - Vitest unit tests
 - `npm run test:e2e` - Playwright e2e tests
 - `cd backend && npm run db:push` - Push Prisma schema to MongoDB

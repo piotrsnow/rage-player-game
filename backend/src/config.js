@@ -18,6 +18,10 @@ export const config = {
 
   redisUrl: process.env.REDIS_URL || '',
 
+  // Worker mode: when truthy, the process runs as a dedicated BullMQ worker
+  // (no HTTP server). Left empty on the main backend container.
+  workerMode: process.env.WORKER_MODE === '1' || process.env.WORKER_MODE === 'true',
+
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: '7d',
 
