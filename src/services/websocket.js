@@ -74,7 +74,7 @@ class WebSocketService {
     this._baseUrl = baseUrl;
     this._token = token;
     const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
-    this._url = `${wsUrl}/multiplayer?token=${encodeURIComponent(token)}`;
+    this._url = `${wsUrl}/v1/multiplayer?token=${encodeURIComponent(token)}`;
     if (this._ws) {
       this._ws.close();
       this._ws = null;

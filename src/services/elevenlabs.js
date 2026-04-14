@@ -133,7 +133,7 @@ export const elevenlabsService = {
     if (!base || !shareToken) return null;
 
     try {
-      const res = await fetch(`${base}/campaigns/share/${shareToken}/tts`, {
+      const res = await fetch(`${base}/v1/campaigns/share/${shareToken}/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ voiceId, text, modelId, campaignId }),

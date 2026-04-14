@@ -35,7 +35,7 @@ export default function CampaignViewerPage() {
     }
 
     try {
-      const res = await fetch(`${base}/campaigns/share/${shareToken}`);
+      const res = await fetch(`${base}/v1/campaigns/share/${shareToken}`);
       if (!res.ok) {
         setError(t('viewer.notFound'));
         setLoading(false);

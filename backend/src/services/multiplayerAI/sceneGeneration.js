@@ -2,8 +2,8 @@ import { generateStateChangeMessages } from '../stateChangeMessages.js';
 import { callAI } from './aiClient.js';
 import { buildMultiplayerSystemPrompt } from './systemPrompt.js';
 import { buildMultiplayerScenePrompt } from './scenePrompt.js';
-import { repairDialogueSegments, ensurePlayerDialogue } from './dialogueRepair.js';
-import { ensureSuggestedActions } from './fallbackActions.js';
+import { repairDialogueSegments, ensurePlayerDialogue } from '../../../../shared/domain/dialogueRepair.js';
+import { ensureSuggestedActions } from '../../../../shared/domain/fallbackActions.js';
 import { normalizeDiceRoll, recalcDiceRoll, rollD50 } from './diceNormalization.js';
 
 export async function generateMultiplayerScene(gameState, settings, players, actions, _encryptedApiKeys, language = 'en', dmSettings = null, characterMomentum = null) {

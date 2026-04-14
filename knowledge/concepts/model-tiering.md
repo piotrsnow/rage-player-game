@@ -14,7 +14,7 @@ Multi-provider via `src/services/ai/providers.js`: OpenAI, Anthropic. Retry + fa
 ## Module structure (`src/services/ai/`)
 - `models.js` — AI_MODELS, MODEL_MAP, TASK_TIER_OVERRIDE, selectModel, resolveModel
 - `providers.js` — callAI (OpenAI/Anthropic direct + via proxy), retry + provider fallback
-- `suggestedActions.js` — postProcessSuggestedActions, fallback action generation (PL/EN)
+- Fallback/post-process helpers live in `shared/domain/fallbackActions.js` (FE entry `postProcessSuggestedActions`, BE entry `ensureSuggestedActions`)
 - `service.js` — aiService object: generateCampaign, generateSceneViaBackendStream, generateRecap, compressScenes, generateStoryPrompt, generateCombatCommentary, verifyObjective, inferSkillCheck
 - `index.js` — barrel re-export
 

@@ -9,7 +9,7 @@ import {
 } from '../aiResponse';
 import { selectModel } from './models';
 import { callAI } from './providers';
-import { postProcessSuggestedActions, buildFallbackActions, buildFallbackNarrative } from './suggestedActions';
+import { postProcessSuggestedActions, buildFallbackActions, buildFallbackNarrative } from '../../../shared/domain/fallbackActions.js';
 
 function normalizeRecapNarrative(text) {
   const raw = typeof text === 'string' ? text.trim() : '';
@@ -282,7 +282,7 @@ export const aiService = {
     const baseUrl = apiClient.getBaseUrl();
     const token = apiClient.getToken();
 
-    const response = await fetch(`${baseUrl}/ai/campaigns/${campaignId}/generate-scene-stream`, {
+    const response = await fetch(`${baseUrl}/v1/ai/campaigns/${campaignId}/generate-scene-stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

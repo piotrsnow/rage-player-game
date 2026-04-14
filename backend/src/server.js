@@ -69,17 +69,19 @@ fastify.get('/health', async (request, reply) => {
   }
 });
 
+// All API routes live under /v1 so breaking changes can bump to /v2 later.
+// /health stays at root (standard practice for orchestrator health probes).
 await fastify.register(async function authScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: '1 minute' } };
   });
   app.register(authRoutes);
-}, { prefix: '/auth' });
+}, { prefix: '/v1/auth' });
 
 await fastify.register(async function dataScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
-    if (routeOptions.url?.startsWith('/media')) {
+    if (routeOptions.url?.includes('/media')) {
       routeOptions.bodyLimit = MEDIA_BODY_LIMIT;
     }
   });
@@ -87,7 +89,7 @@ await fastify.register(async function dataScope(app) {
   app.register(characterRoutes, { prefix: '/characters' });
   app.register(mediaRoutes, { prefix: '/media' });
   app.register(wanted3dRoutes, { prefix: '/wanted3d' });
-});
+}, { prefix: '/v1' });
 
 await fastify.register(async function proxyScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -99,21 +101,21 @@ await fastify.register(async function proxyScope(app) {
   app.register(stabilityProxyRoutes, { prefix: '/stability' });
   app.register(geminiProxyRoutes, { prefix: '/gemini' });
   app.register(meshyProxyRoutes, { prefix: '/meshy' });
-}, { prefix: '/proxy' });
+}, { prefix: '/v1/proxy' });
 
 await fastify.register(async function musicScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
   });
   app.register(musicRoutes);
-}, { prefix: '/music' });
+}, { prefix: '/v1/music' });
 
 await fastify.register(async function aiScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 20, timeWindow: '1 minute' } };
   });
   app.register(aiRoutes, { prefix: '/ai' });
-});
+}, { prefix: '/v1' });
 
 await fastify.register(async function multiplayerScope(app) {
   app.addHook('onRoute', (routeOptions) => {
@@ -121,7 +123,7 @@ await fastify.register(async function multiplayerScope(app) {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
   });
   app.register(multiplayerRoutes);
-}, { prefix: '/multiplayer' });
+}, { prefix: '/v1/multiplayer' });
 
 // Static game rules data — no auth, generous rate limit
 await fastify.register(async function gameDataScope(app) {
@@ -129,7 +131,7 @@ await fastify.register(async function gameDataScope(app) {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 120, timeWindow: '1 minute' } };
   });
   app.register(gameDataRoutes);
-}, { prefix: '/game-data' });
+}, { prefix: '/v1/game-data' });
 
 startRoomCleanup();
 
@@ -140,11 +142,7 @@ if (existsSync(STATIC_ROOT)) {
   });
 
   fastify.setNotFoundHandler((request, reply) => {
-    if (request.url.startsWith('/auth') || request.url.startsWith('/campaigns') ||
-        request.url.startsWith('/characters') || request.url.startsWith('/media') ||
-        request.url.startsWith('/proxy') || request.url.startsWith('/music') ||
-        request.url.startsWith('/multiplayer') || request.url.startsWith('/ai') ||
-        request.url.startsWith('/health')) {
+    if (request.url.startsWith('/v1/') || request.url === '/v1' || request.url.startsWith('/health')) {
       return reply.code(404).send({ error: 'Not found' });
     }
     return reply.sendFile('index.html');

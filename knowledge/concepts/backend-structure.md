@@ -51,8 +51,8 @@ Handlers share a `session = { odId, roomCode }` object mutated in place + `ctx =
 
 ### Multiplayer AI pipeline
 - `multiplayerAI.js` (thin facade, 7L) re-exports: `generateMultiplayerCampaign`, `generateMultiplayerScene`, `needsCompression`, `compressOldScenes`, `verifyMultiplayerQuestObjective`
-- `multiplayerAI/fallbackActions.js` — `FALLBACK_ACTION_VARIANTS` (pl/en) + `ensureSuggestedActions`, `normalizeSuggestedActions`
-- `multiplayerAI/dialogueRepair.js` — regex-heavy quote parser + speaker attribution (`repairDialogueSegments`, `ensurePlayerDialogue`)
+- Fallback suggested-actions live in `shared/domain/fallbackActions.js` — BE entry `ensureSuggestedActions`, shared helpers (FE imports `postProcessSuggestedActions` from same file)
+- Dialogue repair lives in `shared/domain/dialogueRepair.js` — single source of truth (previously FE/BE duplicated, reconciled to FE variant which had more bugfixes: hardDedupe, fuzzy name matching, player reattribution, generic-speaker safe-mode)
 - `multiplayerAI/diceNormalization.js` — `normalizeDifficultyModifier`, `snapDifficultyModifier`, `normalizeDiceRoll`, `recalcDiceRoll`, `computeNewMomentum`, re-exports `rollD50` from `diceResolver.js`
 - `multiplayerAI/systemPrompt.js` — `buildMultiplayerSystemPrompt` + `NEEDS_LABELS` + `buildMultiplayerUnmetNeedsBlock`
 - `multiplayerAI/scenePrompt.js` — `buildMultiplayerScenePrompt`
@@ -70,7 +70,7 @@ Handlers share a `session = { odId, roomCode }` object mutated in place + `ctx =
 - `sceneGenerator/systemPrompt.js` — `buildLeanSystemPrompt` + `buildAnthropicSystemBlocks` (large prompt template, ~400L — cohesive single file per project decision)
 - `sceneGenerator/userPrompt.js` — `buildUserPrompt` + `buildPreRollInstructions` (imports `detectCombatIntent` from `shared/domain/`)
 - `sceneGenerator/contextSection.js` — `buildContextSection` (formats `assembleContext` output into prompt suffix)
-- `sceneGenerator/streamingClient.js` — `callOpenAIStreaming`, `callAnthropicStreaming`, `runTwoStagePipelineStreaming`, `parseAIResponse` (SSE parsing with markdown-fence tolerance)
+- `sceneGenerator/streamingClient.js` — `callOpenAIStreaming`, `callAnthropicStreaming`, `runTwoStagePipelineStreaming`. `parseAIResponse` re-exported from `shared/domain/aiResponseParser.js` (`parseAIResponseLean`).
 - `sceneGenerator/diceResolution.js` — `applyCreativityToRoll`, `isCreativityEligible`, `resolveModelDiceRolls`, `calculateFreeformSkillXP`, `DIFFICULTY_SKILL_XP`
 - `sceneGenerator/enemyFill.js` — `fillEnemiesFromBestiary` (enemyHints + name matching)
 - `sceneGenerator/processStateChanges.js` — `processStateChanges` (NPCs, knowledge, codex, quests via inline sub-functions) + `generateSceneEmbedding`

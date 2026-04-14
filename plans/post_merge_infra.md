@@ -74,45 +74,73 @@
 
 ## 4. Basic CSP
 
-**Problem.** `backend/src/plugins/helmet.js` currently has `contentSecurityPolicy: false` — disabled because we didn't know what external origins were needed. Without CSP, XSS in scene text or NPC names could execute arbitrary JS.
+**Problem.** `backend/src/server.js:52` currently registers helmet with `contentSecurityPolicy: false` — disabled because we didn't know what external origins were needed. Without CSP, XSS in scene text or NPC names could execute arbitrary JS.
 
-**Solution shape.** Audit external origins first, then enable CSP with an allowlist.
+**Status (2026-04-14).** Audit done. Enable deferred until we can verify in a staging environment — there is too much risk of breaking font loading, Three.js shader compilation, or WebRTC connection setup to ship without a playtest pass.
 
-**Audit checklist — need to inventory before writing CSP:**
-- **Images:** OpenAI CDN, Stability CDN, Gemini CDN, user-uploaded media (GCS bucket), meshy preview URLs, local `/media/*`.
-- **Fonts:** Google Fonts? Bunny Fonts? Self-hosted?
-- **Scripts:** analytics? Sentry? any `<script src>` in `index.html`?
-- **Connect:** backend API origin, WS origin, proxy origins (openai/anthropic/elevenlabs/meshy), possibly ElevenLabs media CDN for TTS playback.
-- **Frame:** YouTube embeds? None I think, but confirm.
-- **Media:** ElevenLabs audio URLs, local music under `/music/*`, GCS audio objects.
+**Audit results.**
 
-**Starting CSP draft** (to tighten after audit):
+| Category | Origins found | Source |
+|---|---|---|
+| Scripts | `'self'` only — single `<script type="module" src="/src/main.jsx">` in [index.html:19](../index.html#L19). No analytics, no Sentry, no external CDN scripts. | grep `<script` in index.html |
+| Styles | `'self'` + Google Fonts CSS (`https://fonts.googleapis.com`). Tailwind emits classes at build time, no runtime injection. `'unsafe-inline'` needed only if any runtime `<style>` tags exist (Three.js etc. — need to verify). | [index.html:8-14](../index.html#L8-L14) |
+| Fonts | `https://fonts.gstatic.com` (fetched by Google Fonts CSS via @font-face) | implied by fonts.googleapis.com |
+| Images | `'self'`, `data:`, `blob:`, `/media/*` (backend), `https://oaidalleapiprodscus.blob.core.windows.net` (DALL-E), `https://storage.googleapis.com/*` (GCS user uploads), `https://*.meshy.ai` (3D preview thumbnails), Stability AI output URLs | FE proxy-mode generates images directly; backend-mode serves via `/media/*` |
+| Connect (FE proxy mode) | `https://api.openai.com`, `https://api.anthropic.com`, `https://api.stability.ai`, `https://api.elevenlabs.io`, `https://api.meshy.ai`, `https://generativelanguage.googleapis.com` (Gemini) | [src/services/ai/providers.js](../src/services/ai/providers.js), [src/services/imageGen.js](../src/services/imageGen.js), [src/services/meshyClient.js](../src/services/meshyClient.js) |
+| Connect (BE mode) | backend origin (same-origin in prod, `http://localhost:3001` in dev), WebSocket `wss://<backend>` or `ws://localhost:3001` | default in prod |
+| Media (audio) | `/music/*` (local), ElevenLabs audio URLs via backend proxy, GCS audio objects | [backend/src/routes/proxy/elevenlabs.js](../backend/src/routes/proxy/elevenlabs.js) |
+| Frame | None (no iframes, no YouTube embeds) | confirmed via grep |
+
+**Notes on backend CSP.**
+- The backend is API-only (returns JSON, WebSocket). Setting `contentSecurityPolicy` via helmet on backend responses has minimal defensive value — CSP is a browser-side directive applied to documents, not JSON fetches. The useful location is the frontend (index.html meta tag or whatever serves the static dist in prod).
+- Re-enabling `contentSecurityPolicy: true` with helmet defaults on backend is still cheap defense-in-depth for the edge case where someone browses to a backend URL directly.
+
+**Ready-to-ship policy** (dev variant commented for localhost):
 ```
 default-src 'self';
-img-src 'self' data: blob: https://*.googleusercontent.com https://cdn.openai.com https://oaidalleapiprodscus.blob.core.windows.net;
+img-src 'self' data: blob: https://*.googleusercontent.com https://oaidalleapiprodscus.blob.core.windows.net https://storage.googleapis.com https://*.meshy.ai;
 script-src 'self';
-style-src 'self' 'unsafe-inline';
-connect-src 'self' wss://<backend-host> https://api.openai.com https://api.anthropic.com https://api.elevenlabs.io https://api.meshy.ai;
-media-src 'self' https://*.elevenlabs.io blob:;
-font-src 'self';
+style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+font-src 'self' https://fonts.gstatic.com;
+connect-src 'self' wss: https://api.openai.com https://api.anthropic.com https://api.stability.ai https://api.elevenlabs.io https://api.meshy.ai https://generativelanguage.googleapis.com;
+media-src 'self' https://*.elevenlabs.io blob: https://storage.googleapis.com;
+frame-ancestors 'none';
+base-uri 'self';
+form-action 'self';
 ```
 
+Caveats to verify in staging before flipping from report-only to enforce:
+1. **`script-src 'self'` without `unsafe-eval`** — Three.js/R3F does not use eval for GLSL but some build tools do. If Scene3D breaks on load, add `'unsafe-eval'` reluctantly.
+2. **`style-src 'unsafe-inline'`** — Tailwind is build-time, but React sometimes injects inline styles (style attributes are NOT covered by `'unsafe-inline'` in modern CSP; inline `<style>` tags are). If material-symbols or glassmorphism effects break, investigate.
+3. **`connect-src wss:`** — permissive on WebSocket origin because prod hostname varies. Can tighten to `wss://nikczemny-krzemuch.run.app` or whatever the actual prod URL is.
+4. **Frontend proxy mode** — every user-supplied API key direct fetch goes from `connect-src`. If a user configures a local LLM (Ollama/LM Studio at `http://localhost:11434`), they need `connect-src 'self' http://localhost:*` added for their session. Either document this or drop local LLM support (deprecated anyway per [backend/src/services/localAI.js deletion](../backend/src/services/localAI.js)).
+
+**Deployment plan when ready:**
+1. Ship CSP as `Content-Security-Policy-Report-Only` header first (via helmet on backend — even though backend is API-only, we can set the report-only header on the document that serves `index.html`, wherever that is).
+2. Wire a report endpoint (`/csp-report`) that just logs violations to pino.
+3. Watch logs for a week, tighten based on real violations.
+4. Flip to enforcing `Content-Security-Policy`.
+
 **Blockers.**
-- CSP audit (the inventory above). Can be done in 1-2h by grepping `index.html`, `vite.config.js`, and all `fetch`/`<img src>` call sites.
-- `style-src 'unsafe-inline'` is a concession to Tailwind/emotion if used. Check what the actual styling stack needs.
+- Need staging env to exercise Three.js scene rendering, ElevenLabs TTS playback, WebRTC voice/video, and image generation with the report-only policy.
+- Need to confirm where frontend HTML is served in prod to decide between `<meta http-equiv>` in `index.html` vs HTTP header from static server.
 
 ---
 
-## 5. API versioning (`/v1/`)
+## 5. API versioning (`/v1/`) — DONE 2026-04-14
 
 **Problem.** No versioning scheme on API routes. Any breaking change requires frontend + backend deploy atomicity.
 
 **Solution shape.** Prefix all routes with `/v1/` via Fastify prefix plugin. Introduce `/v2/` only when a breaking change is needed; old clients keep working against `/v1/`.
 
-**Blockers.**
-- Frontend: every API client call site needs to prepend `/v1/`. Probably handled with a single base-URL constant, easy grep.
-- This is a breaking change for any external consumers (viewer share links? admin scripts?). Inventory consumers first.
-- Decision: do it before or after refresh-tokens (item 3)? If refresh-tokens is a breaking change anyway, bundle them in the same `/v1/ → /v2/` bump.
+**Implementation notes.**
+- Backend: every scope in [backend/src/server.js](../backend/src/server.js) registers under `/v1/*` prefix. `/health` stays at root for orchestrator probes.
+- Frontend: [src/services/apiClient.js](../src/services/apiClient.js) exports `API_VERSION = '/v1'` and prepends it inside `request()`. `resolveMediaUrl` also hoists legacy `/media/` and `/proxy/` paths (including full-URL DB records) onto `/v1` for backward compat with pre-versioning data.
+- Hard-coded fetch call sites updated: [websocket.js](../src/services/websocket.js) (`/v1/multiplayer`), [ai/service.js](../src/services/ai/service.js) (`/v1/ai/campaigns/.../generate-scene-stream`), [CampaignViewerPage.jsx](../src/components/viewer/CampaignViewerPage.jsx) (`/v1/campaigns/share/...`), [elevenlabs.js](../src/services/elevenlabs.js) (`/v1/campaigns/share/.../tts`).
+- `notFoundHandler` simplified: only `/v1/*` and `/health` return JSON 404; everything else falls through to `index.html` for React Router.
+- Not bundled with refresh-token breaking change (item 3) because item 3 is Redis-blocked — doing versioning now means item 3 can land as a non-breaking addition.
+
+**Remaining work for /v2/ bump.** When we need to break the API (refresh-tokens, etc.), register new scopes under `/v2/*` and keep `/v1/*` running in parallel.
 
 ---
 

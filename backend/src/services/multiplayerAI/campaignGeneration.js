@@ -1,6 +1,6 @@
 import { callAI } from './aiClient.js';
-import { repairDialogueSegments } from './dialogueRepair.js';
-import { ensureSuggestedActions } from './fallbackActions.js';
+import { repairDialogueSegments } from '../../../../shared/domain/dialogueRepair.js';
+import { ensureSuggestedActions } from '../../../../shared/domain/fallbackActions.js';
 
 export async function generateMultiplayerCampaign(settings, players, _encryptedApiKeys, language = 'en') {
   const playerCharList = players.map((p) => {

@@ -1,23 +1,9 @@
 import { hasNamedSpeaker } from '../dialogueSegments.js';
 import { SceneResponseSchema, CampaignResponseSchema } from './schemas.js';
 import { shortId } from '../../utils/ids';
+import { safeParseJSON } from '../../../shared/domain/aiResponseParser.js';
 
-export function safeParseJSON(raw) {
-  if (typeof raw === 'object' && raw !== null) return { ok: true, data: raw };
-  try {
-    return { ok: true, data: JSON.parse(raw) };
-  } catch {
-    const jsonMatch = String(raw).match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return { ok: true, data: JSON.parse(jsonMatch[0]) };
-      } catch {
-        return { ok: false, error: 'Failed to extract JSON from response' };
-      }
-    }
-    return { ok: false, error: 'Response is not valid JSON' };
-  }
-}
+export { safeParseJSON };
 
 export function safeParseAIResponse(raw, schema, { language } = {}) {
   const jsonResult = safeParseJSON(raw);

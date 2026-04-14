@@ -4,26 +4,40 @@ const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSIONS = 1536;
 const MAX_BATCH_SIZE = 2048;
 
-// Simple LRU cache for recent embeddings
+// LRU cache for recent embeddings with TTL.
+// Short-term fix ahead of the Redis migration (see plans/post_merge_infra.md item 9).
+// Cache is in-memory per-instance, lost on Cloud Run cold start. TTL prevents
+// stale embeddings from persisting forever if the underlying content changes.
 const cache = new Map();
 const CACHE_MAX_SIZE = 100;
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 function cacheSet(key, value) {
-  if (cache.size >= CACHE_MAX_SIZE) {
+  if (cache.has(key)) {
+    cache.delete(key);
+  } else if (cache.size >= CACHE_MAX_SIZE) {
     const firstKey = cache.keys().next().value;
     cache.delete(firstKey);
   }
-  cache.set(key, value);
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
 function cacheGet(key) {
-  const value = cache.get(key);
-  if (value !== undefined) {
-    // Move to end (most recently used)
+  const entry = cache.get(key);
+  if (entry === undefined) return undefined;
+  if (entry.expiresAt < Date.now()) {
     cache.delete(key);
-    cache.set(key, value);
+    return undefined;
   }
-  return value;
+  // Move to end (most recently used)
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry.value;
+}
+
+// Test hook: reset cache between runs.
+export function __resetEmbeddingCacheForTests() {
+  cache.clear();
 }
 
 /**

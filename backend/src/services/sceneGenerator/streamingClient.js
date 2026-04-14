@@ -4,6 +4,7 @@ import { requireServerApiKey } from '../apiKeyService.js';
 import { parseProviderError } from '../aiErrors.js';
 import { buildContextSection } from './contextSection.js';
 import { buildAnthropicSystemBlocks } from './systemPrompt.js';
+import { parseAIResponseLean as parseAIResponse } from '../../../../shared/domain/aiResponseParser.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -204,51 +205,4 @@ export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt
   return parseAIResponse(fullText);
 }
 
-/**
- * Parse AI response text as JSON, with basic cleanup. Extracts from markdown
- * code blocks if the model wrapped the JSON in ``` fences. Derives `narrative`
- * from dialogueSegments narration text — the model no longer emits a separate
- * narrative field, but legacy cached responses may still have one.
- */
-export function parseAIResponse(text) {
-  if (!text) throw new Error('Empty AI response');
-
-  let jsonStr = text;
-  const jsonMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[1];
-  }
-
-  try {
-    const parsed = JSON.parse(jsonStr.trim());
-
-    const derivedNarrative = Array.isArray(parsed.dialogueSegments)
-      ? parsed.dialogueSegments
-        .filter(s => s && s.type === 'narration' && typeof s.text === 'string')
-        .map(s => s.text.trim())
-        .filter(Boolean)
-        .join(' ')
-      : '';
-
-    return {
-      narrative: derivedNarrative || parsed.narrative || '',
-      suggestedActions: parsed.suggestedActions || ['Look around', 'Move forward', 'Wait'],
-      stateChanges: parsed.stateChanges || {},
-      dialogueSegments: parsed.dialogueSegments || [],
-      scenePacing: parsed.scenePacing || 'exploration',
-      diceRoll: parsed.diceRoll || null,
-      diceRolls: Array.isArray(parsed.diceRolls) ? parsed.diceRolls : undefined,
-      creativityBonus: Number.isFinite(parsed.creativityBonus) ? parsed.creativityBonus : 0,
-      atmosphere: parsed.atmosphere || { weather: 'clear', mood: 'peaceful', lighting: 'natural' },
-      sceneGrid: parsed.sceneGrid || null,
-      imagePrompt: parsed.imagePrompt || null,
-      soundEffect: parsed.soundEffect || null,
-      musicPrompt: parsed.musicPrompt || null,
-      questOffers: parsed.questOffers || [],
-      cutscene: parsed.cutscene || null,
-      dilemma: parsed.dilemma || null,
-    };
-  } catch (err) {
-    throw new Error(`Failed to parse AI response as JSON: ${err.message}\nResponse: ${text.slice(0, 500)}`);
-  }
-}
+export { parseAIResponse };

@@ -1,3 +1,8 @@
+// Shared fallback/post-process helpers for AI suggested actions.
+// Used by FE (src/services/ai/service.js) and BE (backend/src/services/multiplayerAI/*).
+
+// ── Low-level helpers ──
+
 function normalizeActionForComparison(action) {
   return String(action || '')
     .toLowerCase()
@@ -16,68 +21,54 @@ function pickVariant(variants, seed, offset = 0) {
   return variants[(seed + offset) % variants.length];
 }
 
-export function collectRecentActionSet(gameState, sceneWindow = 3) {
-  return (gameState?.scenes || [])
-    .slice(-Math.max(1, sceneWindow))
-    .flatMap((scene) => (Array.isArray(scene?.actions) ? scene.actions : []))
-    .map((action) => (typeof action === 'string' ? action.trim() : ''))
-    .filter(Boolean);
+export function normalizeSuggestedActions(actions, max = 8) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .map((action) => (typeof action === 'string' ? action.trim() : String(action ?? '').trim()))
+    .filter(Boolean)
+    .filter((action, index, arr) => arr.indexOf(action) === index)
+    .slice(0, max);
 }
 
-export function isGenericFillerAction(action, language = 'en') {
-  const normalized = normalizeActionForComparison(action);
-  if (!normalized) return true;
-  const enPatterns = [
-    /^i look around$/,
-    /^look around$/,
-    /^i move on$/,
-    /^move on$/,
-    /^i continue$/,
-    /^continue$/,
-    /^i wait$/,
-    /^wait$/,
-    /^i observe$/,
-    /^observe$/,
-    /^i talk to someone$/,
-    /^talk to someone$/,
-    /^i investigate$/,
-    /^investigate$/,
-    /^i proceed$/,
-    /^proceed$/,
-    /^i press forward$/,
-    /^press forward$/,
-  ];
-  const plPatterns = [
-    /^rozgladam sie$/,
-    /^rozgladam sie uwaznie po okolicy$/,
-    /^idę dalej$/,
-    /^ide dalej$/,
-    /^ruszam dalej$/,
-    /^kontynuuje$/,
-    /^czekam$/,
-    /^obserwuje$/,
-    /^obserwuję$/,
-    /^rozmawiam z kims$/,
-    /^rozmawiam z kimś$/,
-    /^badam sytuacje$/,
-    /^badam sytuację$/,
-    /^idziemy dalej$/,
-    /^idzmy dalej$/,
-    /^idźmy dalej$/,
-  ];
-  const patterns = language === 'pl' ? plPatterns : enPatterns;
-  return patterns.some((pattern) => pattern.test(normalized));
+function inferLanguageFromText(text = '') {
+  if (!text || typeof text !== 'string') return 'en';
+  if (/[ąćęłńóśźż]/i.test(text)) return 'pl';
+  return /\b(i|oraz|się|jest|nie|czy|który|gdzie|teraz|wokół|ostrożnie|chwila)\b/i.test(text)
+    ? 'pl'
+    : 'en';
 }
 
-export function isDialogueStyleAction(action, language = 'en') {
-  const text = String(action || '').trim();
-  if (!text) return false;
-  if (/[""„].+[""]/.test(text)) return true;
-  if (language === 'pl') {
-    return /^(mówię|pytam|szepczę|krzyczę|wołam|mowie|pytam)\b/i.test(text);
+function sanitizePolishAction(action) {
+  let text = action;
+  text = text.replace(/^I say:\s*/i, 'Mówię: ');
+  text = text.replace(/^I tell\s+([^:]+):\s*/i, 'Mówię do $1: ');
+  text = text.replace(/^I ask\s+([^:]+):\s*/i, 'Pytam $1: ');
+  text = text.replace(/^I shout(?:\s+(?:to|at)\s+([^:]+))?:\s*/i, (_, name) =>
+    (name ? `Krzyczę do ${name}: ` : 'Krzyczę: '));
+  text = text.replace(/^I whisper(?:\s+to\s+([^:]+))?:\s*/i, (_, name) =>
+    (name ? `Szepczę do ${name}: ` : 'Szepczę: '));
+  const polishVerbAfterI = /^I\s+([a-ząćęłńóśźż])/i;
+  if (polishVerbAfterI.test(text)) {
+    text = text.replace(polishVerbAfterI, (_, firstChar) => firstChar.toUpperCase());
   }
-  return /^(i say|i ask|i whisper|i shout|i call out|i tell)\b/i.test(text);
+  return text;
 }
+
+function prioritizeNovelActions(actions, previousActions = [], minNovel = 2) {
+  const previousSet = new Set(
+    previousActions.map((a) => (typeof a === 'string' ? a : a?.text || '')),
+  );
+  const novel = [];
+  const repeated = [];
+  for (const action of actions) {
+    if (previousSet.has(action)) repeated.push(action);
+    else novel.push(action);
+  }
+  if (novel.length >= minNovel) return [...novel, ...repeated];
+  return actions;
+}
+
+// ── FE-style fallback builder (dialogue + NPC/location inline) ──
 
 function buildDialogueFallbackActions(language = 'en', { npcs = [] } = {}) {
   const npcName = npcs[0]?.name || npcs[0] || null;
@@ -101,7 +92,11 @@ function buildDialogueFallbackActions(language = 'en', { npcs = [] } = {}) {
   ];
 }
 
-export function buildFallbackActions(language = 'en', { narrative = '', currentLocation = '', npcs = [] } = {}, { sceneIndex = 0 } = {}) {
+export function buildFallbackActions(
+  language = 'en',
+  { narrative = '', currentLocation = '', npcs = [] } = {},
+  { sceneIndex = 0 } = {},
+) {
   const npcName = npcs[0]?.name || npcs[0] || null;
   const location = typeof currentLocation === 'string' ? currentLocation.trim() : '';
   const narrativeHint = typeof narrative === 'string' ? narrative.trim() : '';
@@ -147,7 +142,9 @@ export function buildFallbackActions(language = 'en', { narrative = '', currentL
           'Sprawdzam otoczenie, czy coś nie pasuje do sytuacji',
           'Badam najbliższe miejsce, gdzie mogło dojść do zdarzenia',
         ], seed, 1),
-      narrativeHint ? pickVariant(investigateVariants, seed, 2) : 'Wybieram ostrożniejszą pozycję i obserwuję reakcje otoczenia',
+      narrativeHint
+        ? pickVariant(investigateVariants, seed, 2)
+        : 'Wybieram ostrożniejszą pozycję i obserwuję reakcje otoczenia',
       pickVariant(tacticalVariants, seed, 3),
       ...(buildDialogueFallbackActions(language, { npcs })),
     ];
@@ -191,11 +188,115 @@ export function buildFallbackActions(language = 'en', { narrative = '', currentL
         'I check the area for anything that does not fit',
         'I examine the closest likely scene for evidence',
       ], seed, 1),
-    narrativeHint ? pickVariant(investigateVariants, seed, 2) : 'I shift to a safer position and watch how others react',
+    narrativeHint
+      ? pickVariant(investigateVariants, seed, 2)
+      : 'I shift to a safer position and watch how others react',
     pickVariant(tacticalVariants, seed, 3),
     ...(buildDialogueFallbackActions(language, { npcs })),
   ];
 }
+
+// ── BE-style fallback builder (4-category variants with progression) ──
+
+const FALLBACK_ACTION_VARIANTS = {
+  pl: {
+    investigate: [
+      'Sprawdzam dokładnie, co tu się naprawdę wydarzyło',
+      'Analizuję sytuację i szukam ukrytych szczegółów',
+      'Badam miejsce zdarzenia, zanim wykonam kolejny ruch',
+      'Próbuję odtworzyć przebieg wydarzeń z dostępnych śladów',
+    ],
+    social: [
+      'Wypytuję świadków o to, co widzieli',
+      'Nawiązuję rozmowę i próbuję wyciągnąć konkrety',
+      'Zadaję kilka celnych pytań, by odsłonić prawdę',
+      'Słucham uważnie plotek i wychwytuję sprzeczności',
+    ],
+    tactical: [
+      'Szukam bezpiecznej pozycji i planuję kolejny krok',
+      'Zabezpieczam się na wypadek, gdyby sprawa się zaogniła',
+      'Sprawdzam drogi odwrotu i możliwe zasadzki',
+      'Ustawiam się tak, by kontrolować sytuację w razie walki',
+    ],
+    progression: [
+      'Ruszam w stronę celu, który obraliśmy wcześniej',
+      'Pcham historię do przodu, zanim zniknie okazja',
+      'Skupiam się na tym, co zbliża nas do rozstrzygnięcia',
+      'Robię decydujący krok, by nie tracić tempa',
+    ],
+  },
+  en: {
+    investigate: [
+      'I look for what actually happened here',
+      'I examine the details nobody else noticed yet',
+      'I piece together the scene before moving on',
+      'I search the area for tracks and hidden clues',
+    ],
+    social: [
+      'I question the witnesses about what they saw',
+      'I strike up a conversation and press for specifics',
+      'I ask pointed questions to draw out the truth',
+      'I listen to the rumours and watch for contradictions',
+    ],
+    tactical: [
+      'I find a secure angle and plan the next move',
+      'I brace for trouble before committing further',
+      'I check escape routes and potential ambush spots',
+      'I position myself to control the fight if it breaks out',
+    ],
+    progression: [
+      'I head toward the goal we decided on earlier',
+      'I push the story forward before the chance slips away',
+      'I focus on what brings us closer to the resolution',
+      'I take the decisive step to keep our momentum',
+    ],
+  },
+};
+
+function buildFallbackSuggestedActions({
+  narrative = '',
+  currentLocation = '',
+  npcsHere = [],
+  language = 'en',
+  previousActions = [],
+  sceneIndex = 0,
+} = {}) {
+  const inferredLanguage = language === 'pl' || language === 'en'
+    ? language
+    : inferLanguageFromText(narrative);
+
+  const seed = hashTextSeed(
+    `${narrative}|${currentLocation}|${npcsHere.map((n) => n?.name || '').join('|')}|${sceneIndex}`,
+  );
+  const templates = FALLBACK_ACTION_VARIANTS[inferredLanguage] || FALLBACK_ACTION_VARIANTS.en;
+
+  const actions = [];
+  const firstNpc = npcsHere[0]?.name;
+  if (firstNpc) {
+    actions.push(
+      inferredLanguage === 'pl'
+        ? `Podchodzę do ${firstNpc} i pytam, co się dzieje`
+        : `I approach ${firstNpc} and ask what is going on`,
+    );
+  }
+  if (currentLocation) {
+    actions.push(
+      inferredLanguage === 'pl'
+        ? `Rozglądam się po ${currentLocation} i szukam tropów`
+        : `I look around ${currentLocation} for useful clues`,
+    );
+  }
+
+  actions.push(pickVariant(templates.investigate, seed, 0));
+  actions.push(pickVariant(templates.social, seed, 1));
+  actions.push(pickVariant(templates.tactical, seed, 2));
+  actions.push(pickVariant(templates.progression, seed, 3));
+
+  const prioritized = prioritizeNovelActions(actions, previousActions, 2);
+  return normalizeSuggestedActions(prioritized, 4);
+}
+
+// ── NPC context helper (FE-style) ──
 
 function pickContextualNpcs(gameState = null, stateChanges = null) {
   const currentLocation = stateChanges?.currentLocation || gameState?.world?.currentLocation || '';
@@ -212,6 +313,8 @@ function pickContextualNpcs(gameState = null, stateChanges = null) {
   return atCurrentLocation.length > 0 ? atCurrentLocation : merged;
 }
 
+// ── Narrative fallback ──
+
 export function buildFallbackNarrative(language = 'en') {
   if (language === 'pl') {
     return 'Sytuacja wokół ciebie pozostaje napięta, ale czytelna. Zbierasz myśli, oceniasz zagrożenia i możliwości, a świat reaguje na twoją obecność subtelnymi sygnałami. To dobry moment, by świadomie wybrać kolejny krok.';
@@ -219,21 +322,7 @@ export function buildFallbackNarrative(language = 'en') {
   return 'The situation around you stays tense but readable. You gather your thoughts, assess risks and opportunities, and notice subtle reactions in the world around you. This is a good moment to choose your next move deliberately.';
 }
 
-function sanitizePolishAction(action) {
-  let text = action;
-  text = text.replace(/^I say:\s*/i, 'Mówię: ');
-  text = text.replace(/^I tell\s+([^:]+):\s*/i, 'Mówię do $1: ');
-  text = text.replace(/^I ask\s+([^:]+):\s*/i, 'Pytam $1: ');
-  text = text.replace(/^I shout(?:\s+(?:to|at)\s+([^:]+))?:\s*/i, (_, name) =>
-    name ? `Krzyczę do ${name}: ` : 'Krzyczę: ');
-  text = text.replace(/^I whisper(?:\s+to\s+([^:]+))?:\s*/i, (_, name) =>
-    name ? `Szepczę do ${name}: ` : 'Szepczę: ');
-  const polishVerbAfterI = /^I\s+([a-ząćęłńóśźż])/i;
-  if (polishVerbAfterI.test(text)) {
-    text = text.replace(polishVerbAfterI, (_, firstChar) => firstChar.toUpperCase());
-  }
-  return text;
-}
+// ── FE entry: post-process AI suggestions (max 3, PL sanitize) ──
 
 export function postProcessSuggestedActions({
   suggestedActions,
@@ -259,6 +348,32 @@ export function postProcessSuggestedActions({
   const currentLocation = stateChanges?.currentLocation || gameState?.world?.currentLocation || '';
   const npcs = pickContextualNpcs(gameState, stateChanges);
   const sceneIndex = (gameState?.scenes?.length || 0) + 1;
-  const contextualFallback = buildFallbackActions(language, { narrative, currentLocation, npcs }, { sceneIndex });
+  const contextualFallback = buildFallbackActions(
+    language,
+    { narrative, currentLocation, npcs },
+    { sceneIndex },
+  );
   return contextualFallback.slice(0, 3);
+}
+
+// ── BE entry: ensure payload has suggestedActions (4-category fallback) ──
+
+export function ensureSuggestedActions(payload, {
+  language = 'en',
+  currentLocation = '',
+  npcsHere = [],
+  previousActions = [],
+  sceneIndex = 0,
+} = {}) {
+  const normalized = normalizeSuggestedActions(payload?.suggestedActions, 8);
+  if (normalized.length > 0) return normalized;
+
+  return buildFallbackSuggestedActions({
+    narrative: payload?.narrative || '',
+    currentLocation,
+    npcsHere,
+    language,
+    previousActions,
+    sceneIndex,
+  });
 }

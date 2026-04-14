@@ -1,5 +1,12 @@
 const TOKEN_KEY = 'nikczemny_krzemuch_auth_token';
 const SETTINGS_STORAGE_KEY = 'nikczemny_krzemuch_settings';
+export const API_VERSION = '/v1';
+
+function withVersion(path) {
+  if (!path) return API_VERSION;
+  if (path.startsWith(API_VERSION + '/') || path === API_VERSION) return path;
+  return API_VERSION + (path.startsWith('/') ? path : `/${path}`);
+}
 
 function getSettingsBackendUrl() {
   if (typeof window === 'undefined') return '';
@@ -47,7 +54,7 @@ export const apiClient = {
   },
 
   async request(path, options = {}) {
-    const url = `${_baseUrl}${path}`;
+    const url = `${_baseUrl}${withVersion(path)}`;
     const token = this.getToken();
 
     const headers = {
@@ -127,14 +134,17 @@ export const apiClient = {
     const base = this.getBaseUrl() || getSettingsBackendUrl();
     const token = this.getToken();
 
-    // Convert legacy GCS signed URLs to stable /media/file/ paths.
-    // Signed URLs expire after 24h; the /media/file/* route proxies from GCS indefinitely.
+    // Convert legacy GCS signed URLs to stable /v1/media/file/ paths.
+    // Signed URLs expire after 24h; the /v1/media/file/* route proxies from GCS indefinitely.
     const gcsMatch = url.match(/^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+?)(?:\?|$)/);
     if (gcsMatch) {
-      url = `/media/file/${gcsMatch[1]}`;
+      url = `${API_VERSION}/media/file/${gcsMatch[1]}`;
+    } else if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
+      // Legacy DB records may hold pre-versioned paths. Hoist them onto /v1.
+      url = `${API_VERSION}${url}`;
     }
 
-    if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
+    if (url.startsWith(`${API_VERSION}/media/`) || url.startsWith(`${API_VERSION}/proxy/`)) {
       const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
       if (!origin) return url;
 
@@ -151,6 +161,10 @@ export const apiClient = {
     if (base && url.startsWith(base)) {
       try {
         const u = new URL(url);
+        // Hoist legacy full URLs (stored pre-versioning) onto /v1.
+        if (u.pathname.startsWith('/media/') || u.pathname.startsWith('/proxy/')) {
+          u.pathname = API_VERSION + u.pathname;
+        }
         u.searchParams.delete('token');
         if (token) u.searchParams.set('token', token);
         return u.toString();
