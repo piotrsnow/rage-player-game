@@ -7,9 +7,14 @@ Detailed file inventory for `backend/` and `shared/`. For high-level architectur
 ## Routes (`backend/src/routes/`)
 
 ### Flat routes
-- `auth.js` + `auth.test.js` — /register, /login, /me, /settings, /api-keys
+- `auth.js` + `auth.test.js` — cookie-based refresh flow under `/v1/auth`: /register, /login, /refresh (CSRF), /logout (CSRF), /me (bearer), /settings (bearer), /api-keys (bearer). Access token 15min, refresh cookie 30d in Redis. Redis REQUIRED — register/login/refresh return 503 when disabled. See [[../../memory pointer: project_auth_v2_refresh]].
 - `characters.js` — Character library CRUD
-- `ai.js` — AI endpoints: generate-scene-stream (SSE), scenes CRUD, core state patch
+- `ai.js` — All AI endpoints in one (~760L — on the edge of the size budget, split candidate):
+  - Simple single-shot: /generate-story-prompt, /combat-commentary, /verify-objective, /generate-recap (all use `aiJsonCall.js`)
+  - Streaming: /generate-campaign (inline SSE), /campaigns/:id/generate-scene-stream (BullMQ + pub/sub bridge, inline SSE fallback)
+  - Job polling: /jobs/:id (scans all BullMQ queues)
+  - Scene persistence: /campaigns/:id/scenes, /campaigns/:id/scenes/bulk (both opt-in idempotency), GET /campaigns/:id/scenes, PATCH /campaigns/:id/core
+  - See [[../patterns/sse-streaming]] and [[../decisions/bullmq-vs-sse-routes]]
 - `gameData.js` — Static game data API (equipment, etc.)
 - `media.js` — Media upload/serve (local or GCS)
 - `music.js` — Music generation proxy
@@ -78,11 +83,15 @@ Handlers share a `session = { odId, roomCode }` object mutated in place + `ctx =
 - `sceneGenerator/inlineKeys.js` — `getInlineEntityKeys` (used by `assembleContext` to skip entities already inlined in the system prompt)
 
 ### Other AI services
+- `aiJsonCall.js` — Shared helper for single-shot JSON AI calls (OpenAI + Anthropic non-streaming). Used by `combatCommentary.js`, `objectiveVerifier.js`, `recapGenerator.js`, `storyPromptGenerator.js`. Accepts `userApiKeys` for per-user key resolution via `requireServerApiKey`.
+- `combatCommentary.js` — POST /v1/ai/combat-commentary — mid-combat narration + battle cries (single-shot JSON, premium tier)
+- `objectiveVerifier.js` — POST /v1/ai/verify-objective — fulfillment classifier (single-shot JSON, low temp)
+- `recapGenerator.js` — POST /v1/ai/generate-recap — campaign recap with chunking (25 scenes per chunk) + merge step. Modes: story/dialogue/poem/report.
 - `intentClassifier.js` — Two-stage intent classification: heuristic regex (~70%) + nano model fallback. Output: context selection flags for `assembleContext()`. Imports `detectCombatIntent` from `shared/domain/`.
 - `aiContextTools.js` — AI function calling tools + `assembleContext()` for two-stage pipeline context assembly
 - `memoryCompressor.js` — Post-scene fact extraction via nano model. Running summary after each scene + location summary when player moves
 - `aiErrors.js` — Structured AI error handling (`AIServiceError`, `AI_ERROR_CODES`, `parseProviderError`, `toClientAiError`)
-- `campaignGenerator.js` — Legacy single-player campaign generator
+- `campaignGenerator.js` — Streaming single-player campaign generator (inline SSE path, NOT via BullMQ — see [[../decisions/bullmq-vs-sse-routes]])
 - `storyPromptGenerator.js` — Nano-model story prompt generator with input sanitization
 
 ### Dice / mechanics
@@ -104,10 +113,22 @@ Handlers share a `session = { odId, roomCode }` object mutated in place + `ctx =
 - `gcpStore.js` — Google Cloud Storage
 
 ### Auth & utilities
-- `apiKeyService.js` + `apiKeyService.test.js` — API key encryption/decryption (AES-256)
+- `apiKeyService.js` + `apiKeyService.test.js` — API key encryption/decryption (AES-256). Exports `encrypt`, `decrypt`, `resolveApiKey(encryptedUserKeys, keyName)` (per-user precedence with env fallback), `requireServerApiKey(keyName, encryptedKeys?, providerLabel)` (throws 503 if neither configured), `loadUserApiKeys(prisma, userId)` (fetches `User.apiKeys` row).
+- `refreshTokenService.js` + `refreshTokenService.test.js` — Opaque random refresh tokens in Redis. Key pattern `user:<userId>:refresh:<tokenId>`, cookie format `<userId>.<tokenId>`, 30d TTL. Exports `issueRefreshToken`, `verifyRefreshToken`, `revokeRefreshToken`, `revokeAllUserRefreshTokens` (SCAN+DEL). Returns null when Redis disabled (caller returns 503).
 - `hashService.js` — Content-addressable hashing for media
 - `imageResize.js` — Image resizing with Sharp
 - `timeUtils.js` — Time/period utilities (`hourToPeriod`, `decayNeeds`)
+
+### Queues + workers
+- `services/queues/aiQueue.js` + test — BullMQ per-provider queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`). Exports `getQueue(provider)`, `enqueueJob(name, data, { provider, userId, jobId? })`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Fallback-safe: returns null when `isRedisEnabled()` is false.
+- `workers/aiWorker.js` + test — Worker pool (concurrency 4 text / 2 media), handler registry keyed by `job.name`. Registered: `generate-scene` (streaming via Redis pub/sub bridge on channel `scene-job:<jobId>:events`). Dual-mode: in-process (default) or standalone (`WORKER_MODE=1 npm run worker`). Exports `sceneJobChannel(jobId)` helper that must be shared with the route handler.
+- `services/redisClient.js` — Singleton ioredis clients. `getRedisClient()` (regular: retries 3, readyCheck on) vs `getBullMQConnection()` (null retries, no ready check — required for BLPOP blocking reads). `isRedisEnabled()`, `pingRedis()`, `closeRedis()`, `getRedisStatus()`.
+
+### Plugins (new in post-merge infra push)
+- `plugins/csrf.js` + test — Double-submit cookie CSRF. Opt-in per route via `config: { csrf: true }`. Constant-time compare. Applied to `/v1/auth/refresh` and `/v1/auth/logout`.
+- `plugins/idempotency.js` + test — `Idempotency-Key` header support, Redis-backed SET NX claim + 60s pending → 24h completed cache. Opt-in via `config: { idempotency: true }`. 409 on concurrent races, replay with `idempotent-replay: true` header. Opted in on `POST /v1/campaigns`, `POST /v1/ai/campaigns/:id/scenes`, `POST /v1/ai/campaigns/:id/scenes/bulk`.
+- `plugins/rateLimitKey.js` + test — Custom keyGenerator for `@fastify/rate-limit`. Returns `u:<userId>` when JWT verifies, `ip:<address>` fallback. Double-verifies JWT because the rate-limit onRequest hook fires before route-level `authenticate` (~100μs HMAC × 2).
+- `plugins/bullBoard.js` — Bull-board UI at `/v1/admin/queues`, gated by `fastify.authenticate` + `request.user.admin` (admin flag on User model NOT yet implemented — effectively locked).
 
 ## Infrastructure
 - `backend/src/lib/prisma.js` — Prisma client singleton
