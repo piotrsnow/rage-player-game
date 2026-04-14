@@ -14,8 +14,8 @@
 | 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
 | 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
 | 6 | Proxy route middleware extraction | **TODO** — standalone, needs design session |
-| 7 | Idempotency keys | **TODO** — plumbing unblocked |
-| 8 | Per-user rate limiting | **TODO** — plumbing unblocked, next small candidate after 9b |
+| 7 | Idempotency keys | **✅ DONE 2026-04-14** — backend plugin (9 tests) + FE apiClient extension (8 tests) + opt-in on all 5 mutation call sites (3× POST /campaigns, 1× POST /scenes, 1× POST /scenes/bulk) |
+| 8 | Per-user rate limiting | **✅ DONE 2026-04-14** — custom keyGenerator (userId when authed, IP fallback), Redis store when enabled, 6 tests |
 | 9a | Embedding LRU short-term TTL | **✅ DONE 2026-04-14** |
 | 9b | Embedding LRU Redis migration | **✅ DONE 2026-04-14** — two-tier L1+L2 cache, SHA256 keys, EX TTL, fallback on Redis errors, 6 new tests |
 | 10 | FE↔BE AI helper consolidation | **✅ DONE 2026-04-14** (fallbackActions + aiResponseParser + dialogueRepair → `shared/domain/`) |
@@ -24,7 +24,7 @@
 
 **What landed on 2026-04-14:** items 4 (audit), 5, 9a, 9b, 10 (a/b/c), 11, plus the Redis infra/plumbing layer (Stage 1 of item 1). Full test suite 509/509, build green. See `project_post_merge_progress` memory for the detailed handoff.
 
-**What's next when resuming:** the Redis plumbing is live and validated with one real consumer (9b). Cheapest follow-ups are **item 8** (per-user rate limiting, ~20 lines, validates Redis from a second angle) and **ops work** (provisioning the VM, deploying docker-compose, DNS cutover from Cloud Run). Heavy items 1/2/3 should each be their own session.
+**What's next when resuming:** the Redis plumbing is live and validated with three consumers (9b embedding cache, 8 rate-limit counters, and the `/health` probe). Ops reality check: user confirmed 2026-04-14 that the production VM + CI/CD from main is already live — pushing to main auto-updates the VM. Caveat: verify the pipeline actually starts the new `valkey` compose service on first deploy (if it's image-pull-only, someone may need to manually `docker compose up -d` once). Heavy items 1 Stage 2 (roomManager migration) / 2 (BullMQ) / 3 (refresh tokens) should each be their own dedicated session. Item 7 (idempotency keys) is the next small follow-up — similar shape to item 8 (small keyGenerator-ish helper + Redis GET/SET for cached responses).
 
 ## Deployment context
 
@@ -191,30 +191,53 @@ The right design probably looks like:
 
 ---
 
-## 7. Idempotency keys on critical endpoints
+## 7. Idempotency keys — ✅ DONE 2026-04-14
 
-**Problem.** POST `/campaigns`, POST `/campaigns/:id/scenes`, POST `/ai/generate-scene` are all non-idempotent. A retry after a flaky network can create duplicate campaigns or scenes. Frontend has some client-side dedup via `optimisticId`, but it's not airtight.
+**Delivered.** Fastify plugin [backend/src/plugins/idempotency.js](../backend/src/plugins/idempotency.js) with opt-in route config. When a route has `config: { idempotency: true }` and the request carries a non-empty `Idempotency-Key` header from an authenticated user, the plugin caches the response in Redis keyed `idem:<userId>:<headerValue>`. Retries replay the cached body+status instead of re-executing the handler.
 
-**Solution shape.** Accept `Idempotency-Key: <client-uuid>` header on mutating endpoints. Backend stores `(key, userId) → response` in Redis for 24h. Second request with same key returns the cached response instead of re-executing.
+**Lifecycle.**
 
-**Blockers.**
-- Depends on item 1 (Redis).
-- Frontend work: generate + send idempotency keys from every mutation call site. Small but touches many files.
+1. **preHandler** — atomic `SET NX` with `__pending__` marker + 60s TTL to claim the key. If claim succeeds, stash the redis key on `request.idempotencyRedisKey` and let the handler run.
+2. **preHandler (claim fails)** — GET the existing value. If it's still `__pending__`, return **409 Conflict** with the original idempotency key echoed back. If it's a completed response, replay it (restore statusCode + content-type, add `idempotent-replay: true` header).
+3. **onSend** — if the request claimed a key and the handler returned 2xx, overwrite the pending marker with the serialized response `{statusCode, contentType, body}` and bump TTL to 24h. If the handler returned non-2xx, DEL the pending marker so retries can proceed immediately.
+
+**Opt-in routes (backend).**
+- [POST /v1/campaigns](../backend/src/routes/campaigns/crud.js) — creates campaign row
+- [POST /v1/ai/campaigns/:id/scenes](../backend/src/routes/ai.js) — persists scene + triggers async embedding
+- [POST /v1/ai/campaigns/:id/scenes/bulk](../backend/src/routes/ai.js) — persists multiple scenes in one request (added during FE integration — same bounded-concurrency DB writes had the same duplicate-save risk)
+
+**What FE semantics this actually buys us.**
+- **Double-click / React Strict Mode double-render within the same session**: each call generates its own UUID, but both requests race on the backend — first wins the SET NX, second sees `__pending__` and gets 409 Conflict. Frontend surfaces the 409 as a user-facing error (current behavior — `apiClient.request` throws on non-ok status). This prevents duplicate row creation, which is the primary goal.
+- **Network flake with automatic retry**: NOT handled by `{ idempotent: true }` because each attempt generates a fresh UUID — the backend treats them as independent requests. To get retry-with-same-key, callers must use `{ idempotencyKey: stableKey }` and generate the UUID once per logical operation. Deferred until a concrete use case emerges (the storage.js auto-save flow already has its own dedup via `sceneIndex`/`_sceneIndexCache`).
+- **Network flake + user manually clicks "retry"**: user hits the button, FE fires a new call with a new UUID → backend runs fresh. This is an explicit new attempt, duplicates are on the user. Backend dedup does not apply.
+
+**Deliberately out of scope for v1 (known limitations).**
+- **SSE routes** — `/v1/ai/generate-campaign` and `/v1/ai/campaigns/:id/generate-scene-stream` stream `text/event-stream`. Idempotency + streaming is a different design problem (cache vs re-stream vs replay accumulated tokens). Deferred to when SSE becomes a user-visible retry problem.
+- **Binary responses** — the plugin checks payload type in onSend; non-JSON bodies cause it to DEL the claim and skip caching (so the handler still runs and the client can retry).
+- **Unauthenticated requests** — plugin no-ops when `request.user` is missing. Per-IP idempotency would risk cross-user cache poisoning on shared IPs.
+- **Frontend integration — DONE 2026-04-14.** [src/services/apiClient.js](../src/services/apiClient.js) gained a `buildIdempotencyHeader` helper and both `post`, `put`, `patch` now accept an options object with two mutually exclusive forms: `{ idempotent: true }` auto-generates a fresh UUID per call via `crypto.randomUUID()` (fallback: `idem-<ts>-<rand>` for exotic environments without WebCrypto), and `{ idempotencyKey: '<stable>' }` lets the caller provide a stable key for retry-with-same-key flows. Explicit key wins when both are passed. All 5 mutation call sites opted in with `{ idempotent: true }`: 3× `POST /campaigns` ([storage.js:245](../src/services/storage.js#L245), [storage.js:369](../src/services/storage.js#L369), [useSceneGeneration.js:111](../src/hooks/sceneGeneration/useSceneGeneration.js#L111)), 1× `POST /ai/campaigns/:id/scenes` ([storage.js:299](../src/services/storage.js#L299)), 2× `POST /ai/campaigns/:id/scenes/bulk` ([storage.js:274](../src/services/storage.js#L274), [storage.js:378](../src/services/storage.js#L378)). 8 new tests in [src/services/apiClient.test.js](../src/services/apiClient.test.js) cover: no header by default, auto-UUID per call, unique UUIDs across successive calls, explicit key passthrough, explicit wins over auto, Authorization header survives, PUT/PATCH parity, backward compat without options.
+
+**Race handling.**
+- Retry-after-timeout (primary case): sequential, first request caches, second replays. Works perfectly.
+- Truly concurrent (two parallel requests with the same key): first SET NX wins, second sees `__pending__` and gets 409. Client retries in ~100ms and hits the now-completed cache.
+- Crashed first request: pending marker expires after 60s, next retry re-claims.
+
+**Tests** (9, in [backend/src/plugins/idempotency.test.js](../backend/src/plugins/idempotency.test.js)): skip when `config.idempotency` absent, skip when header missing, skip when unauthenticated, claim-key flow (SET NX + pending + completed overwrite), cached replay with `idempotent-replay` header, 409 on pending, lock release on non-2xx, per-user key namespace (same uuid across users does not collide), graceful degradation when Redis throws.
+
+**Redis disabled fallback.** Plugin is a transparent no-op when `isRedisEnabled()` is false — routes with the config still work, they just lose dedup. Same pattern as rate-limit store and embedding cache.
 
 ---
 
-## 8. Per-user rate limiting
+## 8. Per-user rate limiting — ✅ DONE 2026-04-14
 
-**Problem.** Current rate limits (in `server.js`, `@fastify/rate-limit`) are **per-IP**. Problems:
-- Shared IPs (VPN, corporate NAT) → legitimate users rate-limit each other.
-- Authenticated users can burst their own account from many IPs.
-- No way to enforce per-tier limits (free vs paid) once that exists.
+**Delivered.** Custom `keyGenerator` in [backend/src/plugins/rateLimitKey.js](../backend/src/plugins/rateLimitKey.js) that returns `u:<userId>` when the JWT verifies and the payload has an `id` field, `ip:<address>` fallback otherwise. Wired into the global `@fastify/rate-limit` registration in [backend/src/server.js](../backend/src/server.js) alongside a Redis store (`redis: isRedisEnabled() ? getRedisClient() : undefined`) and a `rl:` namespace to avoid colliding with other Redis keys. 6 tests in [backend/src/plugins/rateLimitKey.test.js](../backend/src/plugins/rateLimitKey.test.js) cover: valid JWT → `u:<id>`, missing header → `ip:`, bad signature → `ip:`, expired token → `ip:`, payload missing `id` → `ip:`, namespace separation (user `id` equal to an IP string does not collide with that IP's bucket).
 
-**Solution shape.** Replace the default `keyGenerator` with one that returns `userId` (from the bearer token) when authenticated, falling back to IP for unauthenticated endpoints. Store counters in Redis instead of the current in-memory backend.
+**Notable design decisions.**
+- **Double-verify is acceptable.** The global rate-limit `onRequest` hook fires before route-level `onRequest: [authenticate]`, so `request.user` is not populated when the keyGenerator runs. It does its own `request.jwtVerify()`; authenticated routes then verify a second time in their own hook. HMAC cost is ~50-200μs/request — not the hot path, not worth plumbing order dependencies between plugins and routes.
+- **Namespace prefix on the key.** Keys are `u:<id>` or `ip:<address>`, not raw ids. Prevents a user whose id happens to equal some other user's IP address from sharing a bucket. Also makes it trivial to scan/flush user-only or ip-only buckets in Redis.
+- **Redis store is conditional.** When `isRedisEnabled()` is false, we pass `redis: undefined` and `@fastify/rate-limit` falls back to its built-in in-memory LRU — byte-for-byte identical behavior to pre-change state.
 
-**Blockers.**
-- Depends on item 1 (Redis).
-- Trivial code change (~20 lines) once Redis is in place.
+**Result.** Authenticated users are no longer rate-limited against each other when sharing an IP (corporate NAT, VPN, mobile carrier). Once Redis is live in prod, counters survive backend restarts and are shared across instances. Per-tier limits (free vs paid) would be a straight-line extension — the keyGenerator has `request.user` at its disposal and can inspect a tier field when billing ships.
 
 ---
 

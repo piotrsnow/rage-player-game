@@ -99,7 +99,10 @@ export async function crudCampaignRoutes(app) {
     };
   });
 
-  app.post('/', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request, reply) => {
+  app.post('/', {
+    schema: { body: CAMPAIGN_WRITE_SCHEMA },
+    config: { idempotency: true },
+  }, async (request, reply) => {
     const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
     const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 

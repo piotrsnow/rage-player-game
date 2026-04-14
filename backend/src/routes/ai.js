@@ -243,7 +243,10 @@ export async function aiRoutes(fastify) {
    * Save a scene (created by frontend) to the normalized collection.
    * Generates embedding asynchronously.
    */
-  fastify.post('/campaigns/:id/scenes', { schema: { body: SCENE_BODY_SCHEMA } }, async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes', {
+    schema: { body: SCENE_BODY_SCHEMA },
+    config: { idempotency: true },
+  }, async (request, reply) => {
     const campaignId = request.params.id;
     const scene = request.body;
 
@@ -308,7 +311,10 @@ export async function aiRoutes(fastify) {
    * Save multiple scenes in one request. DB writes run with bounded
    * concurrency (5) instead of sequentially. Embeddings are fire-and-forget.
    */
-  fastify.post('/campaigns/:id/scenes/bulk', { schema: { body: SCENE_BULK_SCHEMA } }, async (request, reply) => {
+  fastify.post('/campaigns/:id/scenes/bulk', {
+    schema: { body: SCENE_BULK_SCHEMA },
+    config: { idempotency: true },
+  }, async (request, reply) => {
     const campaignId = request.params.id;
     const scenes = request.body?.scenes;
 

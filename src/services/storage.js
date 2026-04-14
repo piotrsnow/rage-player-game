@@ -242,7 +242,7 @@ export const storage = {
       await apiClient.put(`/campaigns/${backendId}`, payload);
       await this._saveNewScenes(backendId, scenes);
     } else {
-      const created = await apiClient.post('/campaigns', payload);
+      const created = await apiClient.post('/campaigns', payload, { idempotent: true });
       if (gameState.campaign) {
         gameState.campaign.backendId = created.id;
         if (Array.isArray(created.characterIds)) {
@@ -273,7 +273,7 @@ export const storage = {
       try {
         const res = await apiClient.post(`/ai/campaigns/${backendId}/scenes/bulk`, {
           scenes: chunk.map(({ scene, i }) => ({ ...scene, sceneIndex: i })),
-        });
+        }, { idempotent: true });
         const lastInChunk = chunk[chunk.length - 1].i;
         if (res.saved > 0 && lastInChunk > highestSaved) {
           highestSaved = lastInChunk;
@@ -299,7 +299,7 @@ export const storage = {
         await apiClient.post(`/ai/campaigns/${backendId}/scenes`, {
           ...scene,
           sceneIndex: i,
-        });
+        }, { idempotent: true });
         highestSaved = i;
       } catch (err) {
         console.warn('[storage] Scene save failed at index %d:', i, err.message);
@@ -372,12 +372,12 @@ export const storage = {
           tone: entry.campaign?.tone || '',
           coreState,
           characterState,
-        });
+        }, { idempotent: true });
         if (scenes?.length) {
           try {
             await apiClient.post(`/ai/campaigns/${created.id}/scenes/bulk`, {
               scenes: scenes.map((s, i) => ({ ...s, sceneIndex: i })),
-            });
+            }, { idempotent: true });
           } catch { /* best-effort */ }
         }
       } catch (err) {

@@ -10,6 +10,8 @@ import compress from '@fastify/compress';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
+import { buildRateLimitKey } from './plugins/rateLimitKey.js';
+import { idempotencyPlugin } from './plugins/idempotency.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { characterRoutes } from './routes/characters.js';
@@ -63,7 +65,20 @@ await fastify.register(corsPlugin);
 await fastify.register(authPlugin);
 await fastify.register(websocket);
 
-await fastify.register(rateLimit, { global: false });
+// Rate limit keyed by userId when the JWT verifies, per-IP otherwise.
+// Counters live in Redis when it's wired up (shared across instances + survive
+// restart); when Redis is disabled, @fastify/rate-limit falls back to its
+// built-in in-memory LRU store — same behavior as before this change.
+await fastify.register(rateLimit, {
+  global: false,
+  keyGenerator: buildRateLimitKey,
+  redis: isRedisEnabled() ? getRedisClient() : undefined,
+  nameSpace: 'rl:',
+});
+
+// Idempotency-Key support on opt-in mutating routes. Plugin installs
+// preHandler + onSend hooks; routes enable it via `config: { idempotency: true }`.
+await fastify.register(idempotencyPlugin);
 
 fastify.get('/health', async (request, reply) => {
   let dbOk = false;

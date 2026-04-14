@@ -8,6 +8,29 @@ function withVersion(path) {
   return API_VERSION + (path.startsWith('/') ? path : `/${path}`);
 }
 
+// Build an Idempotency-Key header when the caller opted in. Two forms:
+//   { idempotent: true }            → generate a fresh UUID per call. Covers
+//                                     double-click and React Strict Mode
+//                                     double-render via the backend's SET NX
+//                                     pending lock (second concurrent call
+//                                     gets 409).
+//   { idempotencyKey: '<uuid>' }    → caller provides a stable key. Use this
+//                                     when you need "retry with the same key"
+//                                     across network failures — generate once
+//                                     and pass the same key on every attempt.
+function buildIdempotencyHeader(options = {}) {
+  if (options.idempotencyKey) {
+    return { 'Idempotency-Key': options.idempotencyKey };
+  }
+  if (options.idempotent) {
+    const key = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return { 'Idempotency-Key': key };
+  }
+  return null;
+}
+
 function getSettingsBackendUrl() {
   if (typeof window === 'undefined') return '';
   try {
@@ -92,16 +115,31 @@ export const apiClient = {
     return this.request(path, { method: 'GET' });
   },
 
-  post(path, body) {
-    return this.request(path, { method: 'POST', body });
+  post(path, body, options = {}) {
+    const idemHeader = buildIdempotencyHeader(options);
+    return this.request(path, {
+      method: 'POST',
+      body,
+      headers: idemHeader || undefined,
+    });
   },
 
-  put(path, body) {
-    return this.request(path, { method: 'PUT', body });
+  put(path, body, options = {}) {
+    const idemHeader = buildIdempotencyHeader(options);
+    return this.request(path, {
+      method: 'PUT',
+      body,
+      headers: idemHeader || undefined,
+    });
   },
 
-  patch(path, body) {
-    return this.request(path, { method: 'PATCH', body });
+  patch(path, body, options = {}) {
+    const idemHeader = buildIdempotencyHeader(options);
+    return this.request(path, {
+      method: 'PATCH',
+      body,
+      headers: idemHeader || undefined,
+    });
   },
 
   del(path) {

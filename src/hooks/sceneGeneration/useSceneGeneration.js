@@ -112,7 +112,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               name: state.campaign?.name || '', genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '', coreState,
               characterIds: characterBackendId ? [characterBackendId] : [],
-            });
+            }, { idempotent: true });
             backendCampaignId = created.id;
             state.campaign.backendId = created.id;
             if (Array.isArray(created.characterIds)) state.campaign.characterIds = created.characterIds;
