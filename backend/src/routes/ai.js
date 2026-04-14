@@ -29,17 +29,29 @@ function writeSseHead(request, reply) {
     reply.code(403).send({ error: 'Origin not allowed' });
     return false;
   }
+  // Tell Fastify we're taking over this response — stops the onSend
+  // lifecycle from running, which is what @fastify/compress hooks into.
+  // Without hijack, compress buffers all writes and only flushes on
+  // response end, making SSE look like a one-shot JSON response to the
+  // browser (the whole stream arrives at once after ~30s).
+  reply.hijack();
   const headers = {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
+    // Defense-in-depth: explicitly opt out of any compression middleware
+    // that might still see the response.
+    'Content-Encoding': 'identity',
   };
   if (origin) {
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Credentials'] = 'true';
   }
   reply.raw.writeHead(200, headers);
+  // Disable Nagle's algorithm so small SSE frames flush immediately
+  // instead of waiting for ~40ms to batch with the next write.
+  request.raw.socket?.setNoDelay(true);
   return true;
 }
 
@@ -286,33 +298,18 @@ export async function aiRoutes(fastify) {
   /**
    * POST /ai/generate-campaign
    *
-   * Enqueue a campaign generation job. Returns `{ jobId, queue }` immediately
-   * so the frontend can poll `/ai/jobs/:id` for progress. Non-streaming —
-   * campaign creation is a one-shot "show spinner, reveal result" flow. The
-   * scene-gen path still streams (see /campaigns/:id/generate-scene-stream).
-   *
-   * When Redis is disabled, falls back to legacy inline SSE so dev/CI without
-   * Docker keeps working.
+   * Inline SSE — streams campaign generation chunks directly to the client
+   * so the FE can reveal `firstScene` as soon as it's parseable mid-stream
+   * (typically ~20-30s in) instead of waiting for the full 8k-token payload.
+   * Originally migrated to BullMQ for retry/observability, reverted because
+   * the spinner-only delay that came with the queue path (60-200s) crushed
+   * the campaign-creator UX. Scene-gen stays on the queue because its
+   * pub/sub bridge preserves streaming.
    */
   fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
 
-    if (isRedisEnabled()) {
-      try {
-        const { id, queue } = await enqueueJob(
-          'generate-campaign',
-          { settings: settings || {}, language, provider, model, userApiKeys },
-          { provider, userId: request.user?.id },
-        );
-        return reply.code(202).send({ jobId: id, queue });
-      } catch (err) {
-        log.warn({ err }, 'Failed to enqueue campaign job — falling back to inline');
-        // fall through to legacy inline path
-      }
-    }
-
-    // Legacy inline SSE fallback (Redis disabled or enqueue failed).
     if (!writeSseHead(request, reply)) return;
 
     await generateCampaignStream(

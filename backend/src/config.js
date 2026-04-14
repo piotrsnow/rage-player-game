@@ -51,10 +51,17 @@ export const config = {
   // compression/recaps/combat commentary, nano for intent classification +
   // fact extraction. Override via env vars for staging/dev without editing
   // code. See CLAUDE.md "AI Architecture — Two-Stage Pipeline".
+  //
+  // Anthropic premium is Sonnet 4.0 (sonnet-4-20250514) instead of 4.6
+  // because 4.6 is ~2x more verbose for the same structured JSON output
+  // at identical per-token pricing — effectively 2x the cost per request
+  // with marginal quality gains for our schema-driven prompts. Flip to
+  // `claude-sonnet-4-6` via AI_MODEL_PREMIUM_ANTHROPIC if a specific
+  // quality issue actually justifies the cost hit.
   aiModels: {
     premium: {
       openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-5.4',
-      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-6',
+      anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-20250514',
     },
     standard: {
       openai: process.env.AI_MODEL_STANDARD_OPENAI || 'gpt-5.4-mini',

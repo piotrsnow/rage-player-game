@@ -6,7 +6,6 @@ import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
-import compress from '@fastify/compress';
 import fastifyCookie from '@fastify/cookie';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
@@ -61,7 +60,6 @@ const fastify = Fastify({
   bodyLimit: DEFAULT_BODY_LIMIT,
 });
 
-await fastify.register(compress, { global: true });
 await fastify.register(helmet, {
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },

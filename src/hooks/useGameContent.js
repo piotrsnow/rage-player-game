@@ -11,7 +11,7 @@ export function useGameContent() {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, language, aiModelTier = 'premium', aiModel = '' } = settings;
+  const { aiProvider, openaiApiKey, anthropicApiKey, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
   const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
   const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
 
@@ -21,7 +21,7 @@ export function useGameContent() {
 
       try {
         const { result, usage } = await aiService.generateCampaign(
-          campaignSettings,
+          { ...campaignSettings, sceneVisualization },
           aiProvider,
           apiKey,
           language,
@@ -37,7 +37,7 @@ export function useGameContent() {
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     },
-    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, aiModel, dispatch]
+    [aiProvider, apiKey, alternateApiKey, language, aiModelTier, aiModel, sceneVisualization, dispatch]
   );
 
   const generateStoryPrompt = useCallback(

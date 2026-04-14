@@ -1,7 +1,6 @@
 import { Worker } from 'bullmq';
-import { getRedisClient, isRedisEnabled, closeRedis } from '../services/redisClient.js';
+import { getRedisClient, getBullMQConnection, isRedisEnabled, closeRedis } from '../services/redisClient.js';
 import { QUEUE_NAMES } from '../services/queues/aiQueue.js';
-import { generateCampaignStream } from '../services/campaignGenerator.js';
 import { generateSceneStream } from '../services/sceneGenerator.js';
 import { logger } from '../lib/logger.js';
 
@@ -55,7 +54,7 @@ export function startWorkers() {
   }
   if (workers.size > 0) return;
 
-  const connection = getRedisClient();
+  const connection = getBullMQConnection();
   if (!connection) {
     logger.warn('[worker] no redis connection — workers not started');
     return;
@@ -122,45 +121,6 @@ registerHandler('generate-scene', async (job) => {
   });
 
   if (streamError) throw streamError;
-  return { result: completeData };
-});
-
-// Campaign generation: non-streaming (drop streaming per plan — spinner OK).
-// Input: { settings, language, provider, model }
-// Output: { result } — fully parsed campaign object
-registerHandler('generate-campaign', async (job) => {
-  const { settings = {}, language = 'en', provider = 'openai', model = null, userApiKeys = null } = job.data || {};
-
-  let completeData = null;
-  let streamError = null;
-  let lastChunkAt = Date.now();
-  let chunkCount = 0;
-
-  await generateCampaignStream(
-    settings,
-    { provider, model, language, userApiKeys },
-    (event) => {
-      if (event.type === 'chunk') {
-        chunkCount += 1;
-        // Coarse progress reporting every ~10 chunks so polling clients can
-        // show a live percentage estimate without us knowing the total.
-        if (chunkCount % 10 === 0) {
-          const now = Date.now();
-          job.updateProgress({ chunks: chunkCount, lastChunkAtMs: now - lastChunkAt }).catch(() => {});
-          lastChunkAt = now;
-        }
-      } else if (event.type === 'complete') {
-        completeData = event.data;
-      } else if (event.type === 'error') {
-        streamError = new Error(event.error || 'Campaign generation failed');
-        streamError.code = event.code || 'STREAM_ERROR';
-      }
-    },
-  );
-
-  if (streamError) throw streamError;
-  if (!completeData) throw new Error('Campaign generation produced no result');
-
   return { result: completeData };
 });
 

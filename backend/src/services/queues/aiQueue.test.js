@@ -61,6 +61,7 @@ vi.mock('bullmq', () => ({
 vi.mock('../redisClient.js', () => ({
   isRedisEnabled: (...args) => hoisted.redisEnabled(...args),
   getRedisClient: (...args) => hoisted.redisClient(...args),
+  getBullMQConnection: (...args) => hoisted.redisClient(...args),
 }));
 
 import {

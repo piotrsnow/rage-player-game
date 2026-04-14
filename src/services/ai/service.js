@@ -1,5 +1,4 @@
 import { apiClient } from '../apiClient';
-import { pollJob } from '../aiJobPoller';
 import { parsePartialJson } from '../partialJsonParser';
 import { repairDialogueSegments } from '../aiResponse';
 import { postProcessSuggestedActions, buildFallbackActions, buildFallbackNarrative } from '../../../shared/domain/fallbackActions.js';
@@ -118,7 +117,7 @@ async function drainCampaignStream(response, { onPartialJson } = {}) {
 }
 
 export const aiService = {
-  async generateCampaign(settings, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium', { explicitModel = null, onPartialScene = null, onJobProgress = null } = {}) {
+  async generateCampaign(settings, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium', { explicitModel = null, onPartialScene = null } = {}) {
     const baseUrl = apiClient.getBaseUrl();
     const token = apiClient.getToken();
     const response = await fetch(`${baseUrl}/v1/ai/generate-campaign`, {
@@ -135,20 +134,10 @@ export const aiService = {
       throw new Error(err.error || `Campaign generation failed: ${response.status}`);
     }
 
-    const contentType = response.headers.get('content-type') || '';
-
-    if (contentType.includes('application/json')) {
-      // Queue path — poll for completion. Streaming preview dropped per plan.
-      const { jobId } = await response.json();
-      if (!jobId) throw new Error('Campaign job response missing jobId');
-      const jobResult = await pollJob(jobId, { onProgress: onJobProgress });
-      const raw = jobResult?.result;
-      if (!raw) throw new Error('Campaign job completed without a result');
-      return { result: postProcessCampaignResult(raw, null, settings, language), usage: null };
-    }
-
-    // Legacy SSE fallback path (backend without Redis). Progressive parse
-    // for `onPartialScene` is still useful here.
+    // Inline SSE — drain chunks and surface `firstScene` progressively via
+    // `onPartialScene` as soon as it's parseable mid-stream (typically
+    // ~20-30s in). Lets the campaign creator reveal early instead of
+    // waiting for the full 8k-token payload.
     let repairedSegments = null;
     const knownNpcs = [];
     const raw = await drainCampaignStream(response, {

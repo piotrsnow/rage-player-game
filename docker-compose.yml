@@ -1,14 +1,10 @@
 services:
-  mongodb:
-    image: mongo:7
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo-data:/data/db
-    environment:
-      MONGO_INITDB_DATABASE: rpgon
-
+  # MongoDB lives on Atlas (managed replica set). Set DATABASE_URL in
+  # `.env` to your Atlas SRV string — the backend service reads it
+  # directly. No local mongo service in this file; Prisma transactions
+  # need a real replica set and running a single-node RS in docker just
+  # to mimic Atlas wasn't worth the operational weight for a solo dev
+  # who already has an Atlas cluster.
   valkey:
     image: valkey/valkey:7-alpine
     restart: unless-stopped
@@ -24,7 +20,6 @@ services:
     ports:
       - "3001:8080"
     depends_on:
-      - mongodb
       - valkey
     environment:
       # Dockerfile sets NODE_ENV=production since the image is built for
@@ -34,7 +29,8 @@ services:
       NODE_ENV: "${NODE_ENV:-development}"
       PORT: "8080"
       HOST: "0.0.0.0"
-      DATABASE_URL: "mongodb://mongodb:27017/rpgon"
+      # Atlas SRV connection string — mandatory. No local mongo fallback.
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env to your Atlas SRV connection string}"
       REDIS_URL: "redis://valkey:6379"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
@@ -86,11 +82,10 @@ services:
     command: ["npm", "run", "worker"]
     profiles: ["workers"]
     depends_on:
-      - mongodb
       - valkey
     environment:
       WORKER_MODE: "1"
-      DATABASE_URL: "mongodb://mongodb:27017/rpgon"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env to your Atlas SRV connection string}"
       REDIS_URL: "redis://valkey:6379"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
@@ -106,6 +101,5 @@ services:
       - media-data:/data/media
 
 volumes:
-  mongo-data:
   valkey-data:
   media-data:

@@ -12,6 +12,7 @@ import { logger } from '../lib/logger.js';
 // REDIS_URL is a no-op.
 
 let client = null;
+let bullmqClient = null;
 let connecting = false;
 let connected = false;
 let lastConnectError = null;
@@ -83,6 +84,33 @@ export function getRedisClient() {
   return client;
 }
 
+// BullMQ requires its own connection with `maxRetriesPerRequest: null` and
+// `enableReadyCheck: false` so Worker BLPOP-style blocking reads can hang
+// waiting for jobs without tripping the retry cap. Regular consumers (cache,
+// rate limit, idempotency) keep using getRedisClient() with fail-fast
+// semantics — sharing one connection with both worlds is not possible.
+export function getBullMQConnection() {
+  if (!isRedisEnabled()) return null;
+  if (bullmqClient) return bullmqClient;
+
+  bullmqClient = new Redis(config.redisUrl, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    retryStrategy(times) {
+      return Math.min(times * 200, 10_000);
+    },
+    reconnectOnError(err) {
+      return err.message.includes('READONLY');
+    },
+  });
+
+  bullmqClient.on('error', (err) => {
+    logger.warn({ err }, '[redis:bullmq] connection error');
+  });
+
+  return bullmqClient;
+}
+
 export async function pingRedis() {
   if (!isRedisEnabled()) return { enabled: false, ok: false };
   const redis = getRedisClient();
@@ -96,15 +124,29 @@ export async function pingRedis() {
 }
 
 export async function closeRedis() {
-  if (!client) return;
+  const closers = [];
+  if (client) {
+    closers.push(
+      client.quit().catch((err) => {
+        logger.warn({ err }, '[redis] quit failed — forcing disconnect');
+        client.disconnect();
+      }),
+    );
+  }
+  if (bullmqClient) {
+    closers.push(
+      bullmqClient.quit().catch((err) => {
+        logger.warn({ err }, '[redis:bullmq] quit failed — forcing disconnect');
+        bullmqClient.disconnect();
+      }),
+    );
+  }
   try {
-    await client.quit();
-    logger.info('[redis] client quit cleanly');
-  } catch (err) {
-    logger.warn({ err }, '[redis] quit failed — forcing disconnect');
-    client.disconnect();
+    await Promise.allSettled(closers);
+    if (client) logger.info('[redis] client quit cleanly');
   } finally {
     client = null;
+    bullmqClient = null;
     connected = false;
     connecting = false;
   }

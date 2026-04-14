@@ -1,15 +1,11 @@
-# Production override — GCP Cloud Run compatible
+# Production override — single-VM Prod-A compatible.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 #
-# For Cloud Run you only need the single container (backend service).
-# MongoDB should be an external managed instance (MongoDB Atlas).
+# MongoDB is always external (Atlas) — same as dev now. No local mongo
+# container exists in either overlay.
 # Media storage should use GCS (MEDIA_BACKEND=gcp).
 
 services:
-  mongodb:
-    profiles:
-      - disabled
-
   # Valkey stays active in prod (Prod-A: backend + valkey on same VM via
   # docker-compose). Port 6379 is bound to 127.0.0.1 only so it is not
   # reachable from the public internet — backend reaches it through the

@@ -1,11 +1,12 @@
 import { Queue, QueueEvents } from 'bullmq';
-import { getRedisClient, isRedisEnabled } from '../redisClient.js';
+import { getBullMQConnection, isRedisEnabled } from '../redisClient.js';
 import { logger } from '../../lib/logger.js';
 
 // BullMQ-backed AI job queues. One queue per provider so rate-limit failures
 // on one provider don't starve the others (OpenAI flake shouldn't block
-// Anthropic campaign generation). All queues share the singleton ioredis
-// client from redisClient.js — no extra connections.
+// Anthropic campaign generation). All queues share a dedicated BullMQ
+// connection from redisClient.js (separate from the app connection because
+// BullMQ requires maxRetriesPerRequest: null + enableReadyCheck: false).
 //
 // Optional mode: when REDIS_URL is empty, getQueue() returns null and the
 // route handler falls back to the legacy inline path. This keeps dev + CI
@@ -49,7 +50,7 @@ export function getQueue(provider) {
   const name = resolveQueueName(provider);
   if (queues.has(name)) return queues.get(name);
 
-  const connection = getRedisClient();
+  const connection = getBullMQConnection();
   if (!connection) return null;
 
   const queue = new Queue(name, {
@@ -67,7 +68,7 @@ export function getAllQueues() {
   if (!isRedisEnabled()) return [];
   return Object.values(QUEUE_NAMES).map((name) => {
     if (queues.has(name)) return queues.get(name);
-    const connection = getRedisClient();
+    const connection = getBullMQConnection();
     if (!connection) return null;
     const q = new Queue(name, { connection, defaultJobOptions: DEFAULT_JOB_OPTS });
     q.on('error', (err) => logger.warn({ err, queue: name }, '[queue] error'));
@@ -81,7 +82,7 @@ export function getQueueEvents(provider) {
   const name = resolveQueueName(provider);
   if (queueEvents.has(name)) return queueEvents.get(name);
 
-  const connection = getRedisClient();
+  const connection = getBullMQConnection();
   if (!connection) return null;
 
   const events = new QueueEvents(name, { connection });
@@ -129,7 +130,7 @@ export async function getJobStatus(jobId, provider) {
 export async function findJobAcrossQueues(jobId) {
   if (!isRedisEnabled()) return null;
   for (const name of Object.values(QUEUE_NAMES)) {
-    const connection = getRedisClient();
+    const connection = getBullMQConnection();
     if (!connection) return null;
     let queue = queues.get(name);
     if (!queue) {

@@ -17,6 +17,7 @@ const hoisted = vi.hoisted(() => {
 vi.mock('../services/redisClient.js', () => ({
   isRedisEnabled: (...args) => hoisted.redisEnabled(...args),
   getRedisClient: (...args) => hoisted.redisClient(...args),
+  getBullMQConnection: (...args) => hoisted.redisClient(...args),
   closeRedis: vi.fn().mockResolvedValue(),
 }));
 
