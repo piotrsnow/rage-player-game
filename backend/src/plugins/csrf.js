@@ -14,8 +14,8 @@ import crypto from 'node:crypto';
 // forge a matching request even though the browser would attach our
 // refresh cookie automatically.
 //
-// Opt-in per route via `config: { csrf: true }`. Applied to /v2/auth/refresh
-// and /v2/auth/logout where the refresh cookie is the authentication
+// Opt-in per route via `config: { csrf: true }`. Applied to /v1/auth/refresh
+// and /v1/auth/logout where the refresh cookie is the authentication
 // material. Pure bearer-token routes do not need CSRF because cross-origin
 // JS cannot read the in-memory access token.
 

@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import { getRedisClient, isRedisEnabled } from './redisClient.js';
 import { logger } from '../lib/logger.js';
 
-// Refresh-token service backing the /v2/auth/* routes. Opaque random tokens
-// (NOT JWTs) stored in Redis so revocation is O(1): DEL the key.
+// Refresh-token service backing the /v1/auth/* cookie flow. Opaque random
+// tokens (NOT JWTs) stored in Redis so revocation is O(1): DEL the key.
 //
 // Storage layout:
 //   user:<userId>:refresh:<tokenId> → JSON { userId, createdAt, expiresAt, deviceInfo }
@@ -14,7 +14,7 @@ import { logger } from '../lib/logger.js';
 // never derivable from userId, so possession of a cookie is still proof of
 // authentication (owner of the refresh token row).
 //
-// Redis is REQUIRED — v2 auth routes return 503 when disabled. This is the
+// Redis is REQUIRED — auth routes return 503 when disabled. This is the
 // intentional break from the rest of the post-merge infra which runs with
 // optional Redis + fallbacks: refresh tokens have no sensible in-memory
 // fallback (would be lost on restart, defeating the point of refresh).

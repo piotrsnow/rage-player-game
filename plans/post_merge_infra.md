@@ -1,7 +1,7 @@
 # Post-Merge Infra Backlog
 
 **Extracted from:** `plans/merge_status.md` (session 5, 2026-04-13)
-**Status (2026-04-14 night):** All small/medium items closed. Redis plumbing + 5 consumers live (embedding cache, rate-limit, idempotency, BullMQ queues, refresh tokens). **Item 2 FULLY DONE** (BullMQ for campaign + scene gen with pub/sub streaming bridge). **Item 3 FULLY DONE** (refresh tokens via httpOnly cookie + double-submit CSRF + FE apiClient 401 retry, `/v2/auth/*` routes alongside `/v1/auth/*`). **No-BYOK cleanup DONE** — FE direct-dispatch removed, BE now resolves per-user keys properly, 3 new BE endpoints for recap/combat/verify. **Item 1 Stage 2 (roomManager → Redis) — DEFERRED INDEFINITELY** (2026-04-14 night): DB fallback already covers clean shutdowns, pub/sub is dead code on single-VM Prod-A, remaining gap (crash-survival for pending actions/typing state) has no concrete driver. Revisit only when (a) second backend instance is planned or (b) a bug report surfaces lost mid-scene state after a hard crash. Plus item 6 (proxy middleware) needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
+**Status (2026-04-14 night):** All small/medium items closed. Redis plumbing + 5 consumers live (embedding cache, rate-limit, idempotency, BullMQ queues, refresh tokens). **Item 2 FULLY DONE** (BullMQ for campaign + scene gen with pub/sub streaming bridge). **Item 3 FULLY DONE** (refresh tokens via httpOnly cookie + double-submit CSRF + FE apiClient 401 retry). **`/v2/auth` collapsed back to `/v1/auth` 2026-04-14 night** — no prod, no backward-compat constraint, so the dual-namespace rollback rail was dead weight. Cookie flow lives under `/v1/auth/*` alone. **No-BYOK cleanup DONE** — FE direct-dispatch removed, BE now resolves per-user keys properly, 3 new BE endpoints for recap/combat/verify. **Item 1 Stage 2 (roomManager → Redis) — DEFERRED INDEFINITELY** (2026-04-14 night): DB fallback already covers clean shutdowns, pub/sub is dead code on single-VM Prod-A, remaining gap (crash-survival for pending actions/typing state) has no concrete driver. Revisit only when (a) second backend instance is planned or (b) a bug report surfaces lost mid-scene state after a hard crash. Plus item 6 (proxy middleware) needs a dedicated design session, item 4 (CSP enable) needs staging playtest, item 12 (JWT rotation + OpenAI model verify) is ops-only.
 
 ## Progress snapshot
 
@@ -10,7 +10,7 @@
 | — | **Redis decision + plumbing (Stage 1)** | **✅ DONE 2026-04-14** — Prod-A (self-hosted Valkey in docker-compose on single VM), `redisClient.js` singleton with optional mode, `/health` reports redis status, graceful shutdown wired |
 | 1 | Redis room state | **DEFERRED INDEFINITELY 2026-04-14** — Stage 1 plumbing done, Stage 2 migration judged not worth the cost on single-VM Prod-A. DB fallback + clean-shutdown persist already covers the main failure mode; remaining gap needs a concrete driver before we pay the 2-3 session cost. See section 1. |
 | 2 | BullMQ for AI generation | **✅ DONE 2026-04-14** — Stage 1: bullmq + bull-board, per-provider queues, worker, /generate-campaign via queue, /ai/jobs/:id poller. Stage 2: /generate-scene-stream via queue + Redis pub/sub bridge to SSE, pre-generated jobId removes subscribe-after-publish race, FE unchanged (transparent migration). |
-| 3 | Refresh tokens + revocation | **✅ DONE 2026-04-14** — `/v2/auth/*` cookie-based refresh flow. refreshTokenService (Redis-backed, O(1) revoke), csrf plugin (double-submit cookie + constant-time compare), FE apiClient rewrite (credentials: include, in-memory access token, bootstrapAuth, auto-refresh on 401). 34 new tests. `/v1/auth/*` left alive for rollback. |
+| 3 | Refresh tokens + revocation | **✅ DONE 2026-04-14** — `/v1/auth/*` cookie-based refresh flow (originally landed at `/v2/auth/*`, collapsed 2026-04-14 night). refreshTokenService (Redis-backed, O(1) revoke), csrf plugin (double-submit cookie + constant-time compare), FE apiClient rewrite (credentials: include, in-memory access token, bootstrapAuth, auto-refresh on 401). Old bearer-only auth routes deleted. |
 | 4 | Basic CSP | **AUDIT DONE** — enable deferred pending staging playtest |
 | 5 | API versioning (`/v1/`) | **✅ DONE 2026-04-14** |
 | 6 | Proxy route middleware extraction | **TODO** — standalone, needs design session |
@@ -36,7 +36,7 @@ The only remaining heavy item (**1 Stage 2** — roomManager) is self-contained 
 - **Redis is live and optional.** `backend/src/services/redisClient.js` exposes `getRedisClient()` / `isRedisEnabled()` / `pingRedis()` / `closeRedis()`. Every consumer so far uses the pattern *"check `isRedisEnabled()`, call Redis, catch errors, fall back gracefully"*. Four production consumers already follow this pattern as reference: [backend/src/services/embeddingService.js](../backend/src/services/embeddingService.js) (L1+L2 cache), [backend/src/plugins/rateLimitKey.js](../backend/src/plugins/rateLimitKey.js) (keyGenerator), [backend/src/plugins/idempotency.js](../backend/src/plugins/idempotency.js) (full plugin), [backend/src/services/queues/aiQueue.js](../backend/src/services/queues/aiQueue.js) + [backend/src/workers/aiWorker.js](../backend/src/workers/aiWorker.js) (BullMQ queue + worker + pub/sub bridge for scene-gen). A new consumer should copy this pattern, not invent a new one.
 - **BullMQ is live.** Per-provider queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`), in-process workers by default, standalone mode via `WORKER_MODE=1` + `docker compose --profile workers up`. `enqueueJob(name, data, { provider, userId, jobId? })` supports pre-generated jobIds for subscribe-before-publish patterns. Bull-board UI at `/v1/admin/queues` (admin JWT claim required). For scene-gen, the handler publishes stream events to `scene-job:<jobId>:events` and the route handler subscribes + bridges to SSE — see [backend/src/routes/ai.js](../backend/src/routes/ai.js) `/campaigns/:id/generate-scene-stream` for the full pattern.
 - **Deployment reality.** Single Compute Engine VM running `docker compose` with backend + Valkey side-by-side. `REDIS_URL=redis://valkey:6379` comes from [docker-compose.prod.yml](../docker-compose.prod.yml). CI/CD from `main` auto-deploys. No VPC connector, no Cloud Run autoscale concerns — everything runs in one process space on one VM. This is Prod-A from the hosting decision in section 1. Local dev: `npm run dev` (= `docker compose up --build --watch`) with auto-restart of backend on `backend/src` / `shared` edits.
-- **API versioning is in place.** All routes under `/v1/`. Any breaking change (notably item 3 refresh tokens) should register new routes under `/v2/` and leave `/v1/` running in parallel.
+- **API versioning is in place.** All routes under `/v1/`. Any future breaking change can register new routes under `/v2/` and leave `/v1/` running in parallel — but we are NOT currently maintaining a parallel /v2 rail. Item 3 originally landed there and was collapsed back to /v1 on 2026-04-14 night after we confirmed there's no prod to keep backward-compat for.
 - **No BYOK cleanup DONE.** Backend is the sole AI dispatch path. FE `src/services/ai/service.js`, `imageGen.js`, `meshyClient.js` all go through BE. Per-user API keys work end-to-end: KeysModal posts to `PUT /v1/auth/settings`, BE encrypts and stores on `User.apiKeys`, `resolveApiKey(encryptedBundle, keyName)` decrypts and falls back to env when the user hasn't set a key. New AI services must accept `userApiKeys` in options and pass it to `requireServerApiKey(keyName, userApiKeys, providerLabel)`. The pattern is threaded through `sceneGenerator`, `campaignGenerator`, `storyPromptGenerator`, plus 3 new services wired in the no-BYOK pass: `combatCommentary.js`, `objectiveVerifier.js`, `recapGenerator.js`. See [backend/src/services/aiJsonCall.js](../backend/src/services/aiJsonCall.js) for the shared helper.
 - **Auto-memory exists.** Check `project_post_merge_progress` and `project_no_byok` memories for the cumulative handoff. Read `user_profile` + `feedback_*` memories for working style (pragmatic, batched playtest cadence, right-sized commits).
 
@@ -139,41 +139,38 @@ TTL                       → ROOM_INACTIVE_TTL_MS (30min) refreshed on every wr
 
 ## 3. Refresh tokens + revocation — ✅ DONE 2026-04-14
 
-**Delivered.** Cookie-based refresh token flow landed under `/v2/auth/*`, backed by Redis, with double-submit CSRF. FE apiClient rewritten to drop localStorage token persistence and auto-retry on 401. `/v1/auth/*` kept alive for rollback; no route removed.
+**Delivered.** Cookie-based refresh token flow under `/v1/auth/*`, backed by Redis, with double-submit CSRF. FE apiClient rewritten to drop localStorage token persistence and auto-retry on 401. The old bearer-only register/login were deleted entirely — no rollback rail. (Flow originally landed at `/v2/auth/*` on 2026-04-14 afternoon as a breaking-change dual-rail; collapsed back to `/v1/auth/*` the same night after we confirmed there's no prod to keep backward-compat for.)
 
 **Key files:**
 - [backend/src/services/refreshTokenService.js](../backend/src/services/refreshTokenService.js) — `issueRefreshToken` / `verifyRefreshToken` / `revokeRefreshToken` / `revokeAllUserRefreshTokens`. Cookie format `<userId>.<tokenId>`, row at `user:<userId>:refresh:<tokenId>` with 30d TTL. SCAN+DEL for bulk revoke.
 - [backend/src/plugins/csrf.js](../backend/src/plugins/csrf.js) — double-submit cookie plugin. Constant-time header/cookie compare. Opt-in via `config: { csrf: true }`. Exports `generateCsrfToken()` (32-byte base64url).
-- [backend/src/routes/authV2.js](../backend/src/routes/authV2.js) — `/register`, `/login`, `/refresh` (csrf), `/logout` (csrf), `/me` (bearer). Registered under `/v2/auth` prefix in server.js with 10 req/min rate limit. Returns 503 when Redis disabled. 15min access-token TTL via per-call `fastify.jwt.sign({}, { expiresIn: '15m' })`.
-- [backend/src/server.js](../backend/src/server.js) — registers `@fastify/cookie` + `csrfPlugin`. Routes /v2 scope added. 404 handler now short-circuits on both /v1 and /v2 prefixes.
+- [backend/src/routes/auth.js](../backend/src/routes/auth.js) — `/register`, `/login`, `/refresh` (csrf), `/logout` (csrf), `/me` (bearer), `/settings` (bearer), `/api-keys` (bearer). Registered under `/v1/auth` prefix in server.js with 10 req/min rate limit. Register/login/refresh return 503 when Redis disabled. 15min access-token TTL via per-call `fastify.jwt.sign({}, { expiresIn: '15m' })`.
+- [backend/src/server.js](../backend/src/server.js) — registers `@fastify/cookie` + `csrfPlugin`. Single `/v1/auth` scope. 404 handler short-circuits only on `/v1/*` + `/health`.
 - [backend/src/plugins/cors.js](../backend/src/plugins/cors.js) — `allowedHeaders` extended with `X-CSRF-Token` and `Idempotency-Key`. `credentials: true` was already set.
 - [src/services/apiClient.js](../src/services/apiClient.js) — full rewrite of auth state:
   - Access token now **in-memory only**, not localStorage (page reload → rely on refresh cookie).
   - `credentials: 'include'` on every fetch.
   - `X-CSRF-Token` auto-injected on mutating methods from the `csrf-token` cookie via `document.cookie`.
-  - `request()` does one-shot 401 retry via `refreshAccessToken()` (deduped via `_refreshInFlight` promise so React Strict Mode double-effect is safe). Defensive guard skips retry when path contains `/v2/auth/refresh`.
+  - `request()` does one-shot 401 retry via `refreshAccessToken()` (deduped via `_refreshInFlight` promise so React Strict Mode double-effect is safe). Defensive guard skips retry when path contains `/auth/refresh`.
   - `bootstrapAuth()` exposed for mount-time refresh cookie exchange; called by `SettingsContext`.
-  - `login` / `register` / `logout` rewritten to hit `/v2/auth/*` via raw fetch (not `request()`), return `{accessToken, csrfToken, user, token: accessToken}` — the `token` alias keeps old callers happy.
+  - `login` / `register` / `logout` hit `/v1/auth/*` via raw fetch (not `request()`), return `{accessToken, csrfToken, user, token: accessToken}` — the `token` alias keeps old callers happy.
   - `onAuthChange(listener)` subscription for external state sync.
-  - `/v2/*` paths pass through `withVersion()` verbatim (only `/v1` is prefixed automatically).
 - [src/contexts/SettingsContext.jsx](../src/contexts/SettingsContext.jsx) — bootstrap effect now awaits `apiClient.bootstrapAuth()` on mount, sets `backendUser` from the refresh response. Removed the now-redundant `loadBackendUser` mount effect. `fetchBackendKeys`+`gameData.loadAll` effect now depends on `backendUser` (fires when bootstrap populates it). `shouldCheckBackendSession` simplified to just check the backend-url config.
 
-**Tests (34 new, 183 total backend / 360 FE unit):**
+**Tests:**
 - [backend/src/services/refreshTokenService.test.js](../backend/src/services/refreshTokenService.test.js) — 8 tests: issue shape, verify round-trip, cookie parse guards, expired row auto-evict, revoke, revokeAll SCAN+DEL, Redis-disabled null return, per-user keyspace isolation.
 - [backend/src/plugins/csrf.test.js](../backend/src/plugins/csrf.test.js) — 8 tests: token shape/length, match/mismatch, missing header/cookie, safe-method bypass, non-opt-in bypass, length-mismatch constant-time edge.
-- [backend/src/routes/authV2.test.js](../backend/src/routes/authV2.test.js) — 10 tests: register+login happy paths, duplicate email 409, wrong password 401, refresh happy path, refresh without CSRF 403, refresh without cookie 401, logout revokes + clears cookies, 503 when Redis disabled, /me with bearer.
-- [src/services/apiClient.test.js](../src/services/apiClient.test.js) — 20 tests total (8 existing idempotency + 12 new for v2 auth): `credentials: include`, CSRF header injection on mutating + skip on safe, 401 retry flow with fresh bearer, refresh-itself failure path, no-infinite-loop on `/v2/auth/refresh`, `/v2/*` path passthrough vs `/v1` prefix, login stores access token, logout clears state + posts CSRF, `onAuthChange` observer.
+- [backend/src/routes/auth.test.js](../backend/src/routes/auth.test.js) — merged v1-legacy + v2 tests at `/v1/auth/` prefix: register+login happy paths, duplicate 409, short-password schema 400, wrong-password 401, unknown-email 401, refresh happy path, refresh without CSRF 403, refresh without cookie 401, logout revokes + clears cookies, 503 when Redis disabled, `/me` bearer + unauth, `/settings` 64KB size guard.
+- [src/services/apiClient.test.js](../src/services/apiClient.test.js) — cookie-auth suite: `credentials: include`, CSRF header injection on mutating + skip on safe, 401 retry flow with fresh bearer, refresh-itself failure path, no-infinite-loop on `/v1/auth/refresh`, `/v1` prefix remains for unversioned paths, login stores access token, logout clears state + posts CSRF, `onAuthChange` observer — plus the existing idempotency suite.
 
 **Deliberately deferred (not scope for this session):**
-- **Admin revoke endpoint** (`/v2/admin/sessions/:userId/revoke`) — needs `admin` flag on User model. Skipped because no incident-response use case today. `revokeAllUserRefreshTokens()` is in place as the service primitive; wire the route later when needed.
-- **Refresh token rotation on use** — current impl keeps the same refresh token row alive until TTL. Rotating on every refresh adds stolen-token detection (old token used after refresh → alert) but complicates multi-tab scenarios (two tabs racing for refresh invalidate each other). Defer until there's a concrete threat model.
+- **Admin revoke endpoint** — needs `admin` flag on User model. Skipped because no incident-response use case today. `revokeAllUserRefreshTokens()` is in place as the service primitive; wire the route later when needed.
+- **Refresh token rotation on use** — current impl keeps the same refresh token row alive until TTL. Rotating on every refresh adds stolen-token detection but complicates multi-tab scenarios (two tabs racing for refresh invalidate each other). Defer until there's a concrete threat model.
 - **SSE / WebSocket token expiry mid-connection** — snapshot-at-connect model unchanged. If a 15min access token expires mid-scene-stream, the stream continues (connection-level auth), but the next reconnect fails until the next apiClient.request() 401-refreshes. Acceptable for pre-prod; add reconnect logic if this becomes a pain.
-- **`/v1/auth/*` sunset** — still alive as the fallback path. Delete when there are no more users holding long-lived /v1 JWTs (natural TTL expiry: 7d after the last /v1 login). Combine with item 12 JWT_SECRET rotation for a clean cut.
 - **Playtest** — user will batch-playtest per `feedback_playtest_cadence` memory. Flows to exercise: first login (no cookie), page reload (valid cookie), page reload (expired cookie), logout, two-tab refresh race, long-session 401→refresh→retry.
 
 **Known constraints:**
-- Refresh token cookie path is `/v2/auth` — browser won't send it to `/v1/*` routes, which is correct (v1 uses bearer from the same /v2 access token, and /v1 auth endpoints don't need the refresh cookie).
-- CSRF cookie path is `/` so FE can read it via `document.cookie` from any route. Non-httpOnly by design.
+- Refresh token cookie path is `/v1/auth` — browser only sends it to `/v1/auth/*` routes (not `/v1/campaigns`, etc.). CSRF cookie path is `/` so FE can read it via `document.cookie` from any route. Non-httpOnly by design.
 - `@fastify/cookie@^11` installed as the only new dep. Signed-cookie key not set; we don't rely on cookie signatures for security (refresh cookie value is already an opaque random token row in Redis).
 
 ### Original plan follows for historical reference:
@@ -295,7 +292,7 @@ Caveats to verify in staging before flipping from report-only to enforce:
 - `notFoundHandler` simplified: only `/v1/*` and `/health` return JSON 404; everything else falls through to `index.html` for React Router.
 - Not bundled with refresh-token breaking change (item 3) because item 3 is Redis-blocked — doing versioning now means item 3 can land as a non-breaking addition.
 
-**Remaining work for /v2/ bump.** When we need to break the API (refresh-tokens, etc.), register new scopes under `/v2/*` and keep `/v1/*` running in parallel.
+**Remaining work for /v2/ bump.** When we need a real breaking change (not just "item 3 shipped cookie-based auth"), register new scopes under `/v2/*` and leave `/v1/*` running in parallel. Note: item 3 briefly lived at `/v2/auth/*` as a dual rail on 2026-04-14 afternoon, then collapsed back to `/v1/auth/*` the same night after we confirmed there's no prod to keep backward-compat for.
 
 ---
 
@@ -402,9 +399,9 @@ Everything small/medium is closed. The last heavy item (item 1 Stage 2) was **de
 - **Item 6 (Proxy middleware extraction)** — plan itself flags *"variance too high for shallow refactor, needs dedicated design session"*. Text-gen / image-gen / TTS / 3D model routes all have different request/response shapes. Don't solo-attack. Open its own chat with *"here's the problem, design me a proxy route factory"* framing.
 - **Item 12 (Pre-merge deployment checklist)** — NOT Claude-implementable. `JWT_SECRET` rotation needs prod env access; OpenAI model ID verification needs a prod API key. Flag in a human ops ticket.
 
-### Estimated total scope for remaining heavy items
+### Estimated total scope for remaining items
 
-5-8 focused sessions. Not a sprint. Spread across as many days as make sense.
+Zero Claude-implementable work. Item 4 needs staging, item 6 needs a design session, item 12 is human ops.
 
 ---
 

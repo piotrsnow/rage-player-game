@@ -1,23 +1,19 @@
 const SETTINGS_STORAGE_KEY = 'nikczemny_krzemuch_settings';
 export const API_VERSION = '/v1';
 
-// /v2/auth — cookie-based refresh flow (item 3 of post_merge_infra). FE holds
-// the short-lived access token in memory only and relies on the httpOnly
-// `refreshToken` cookie to survive page reloads. The `csrf-token` cookie is
-// readable by JS so we can echo it in `X-CSRF-Token` on mutating requests.
-const AUTH_V2_LOGIN = '/v2/auth/login';
-const AUTH_V2_REGISTER = '/v2/auth/register';
-const AUTH_V2_REFRESH = '/v2/auth/refresh';
-const AUTH_V2_LOGOUT = '/v2/auth/logout';
-const CSRF_COOKIE_NAME = 'csrf-token';
+// /v1/auth — cookie-based refresh flow. FE holds the short-lived access
+// token in memory only and relies on the httpOnly `refreshToken` cookie to
+// survive page reloads. The `csrf-token` cookie is readable by JS so we can
+// echo it in `X-CSRF-Token` on mutating requests.
+const AUTH_LOGIN = '/v1/auth/login';
+const AUTH_REGISTER = '/v1/auth/register';
+const AUTH_REFRESH = '/v1/auth/refresh';
+const AUTH_LOGOUT = '/v1/auth/logout';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 function withVersion(path) {
   if (!path) return API_VERSION;
-  // /v2/... paths are passed through verbatim so the refresh-token scope
-  // can live alongside the default /v1 prefix.
-  if (path.startsWith('/v2/') || path === '/v2') return path;
   if (path.startsWith(API_VERSION + '/') || path === API_VERSION) return path;
   return API_VERSION + (path.startsWith('/') ? path : `/${path}`);
 }
@@ -132,7 +128,7 @@ export const apiClient = {
     _refreshInFlight = (async () => {
       try {
         const csrf = readCsrfTokenFromCookie();
-        const res = await fetch(`${_baseUrl}${AUTH_V2_REFRESH}`, {
+        const res = await fetch(`${_baseUrl}${AUTH_REFRESH}`, {
           method: 'POST',
           credentials: 'include',
           headers: csrf ? { 'X-CSRF-Token': csrf } : {},
@@ -185,7 +181,7 @@ export const apiClient = {
     if (
       response.status === 401 &&
       !_isRetry &&
-      !path.includes('/v2/auth/refresh')
+      !path.includes('/auth/refresh')
     ) {
       try {
         await this.refreshAccessToken();
@@ -249,7 +245,7 @@ export const apiClient = {
   },
 
   async login(email, password) {
-    const res = await fetch(`${_baseUrl}${AUTH_V2_LOGIN}`, {
+    const res = await fetch(`${_baseUrl}${AUTH_LOGIN}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -267,7 +263,7 @@ export const apiClient = {
   },
 
   async register(email, password) {
-    const res = await fetch(`${_baseUrl}${AUTH_V2_REGISTER}`, {
+    const res = await fetch(`${_baseUrl}${AUTH_REGISTER}`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -287,7 +283,7 @@ export const apiClient = {
   async logout() {
     const csrf = readCsrfTokenFromCookie();
     try {
-      await fetch(`${_baseUrl}${AUTH_V2_LOGOUT}`, {
+      await fetch(`${_baseUrl}${AUTH_LOGOUT}`, {
         method: 'POST',
         credentials: 'include',
         headers: csrf ? { 'X-CSRF-Token': csrf } : {},

@@ -159,7 +159,7 @@ export function SettingsProvider({ children }) {
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend) {
       apiClient.configure({ baseUrl: settings.backendUrl });
-      // /v2/auth holds the refresh token in an httpOnly cookie; on mount we
+      // /v1/auth holds the refresh token in an httpOnly cookie; on mount we
       // exchange it for a fresh access token + user payload before rendering
       // any authed UI. Silent failure just leaves the user logged out.
       let cancelled = false;

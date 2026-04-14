@@ -1,9 +1,94 @@
-import { prisma } from '../lib/prisma.js';
 import bcrypt from 'bcrypt';
 import { ObjectId } from 'mongodb';
+import { prisma } from '../lib/prisma.js';
 import { resolveApiKey } from '../services/apiKeyService.js';
 import { getCollection } from '../services/mongoNative.js';
+import {
+  issueRefreshToken,
+  verifyRefreshToken,
+  revokeRefreshToken,
+} from '../services/refreshTokenService.js';
+import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
+import { isRedisEnabled } from '../services/redisClient.js';
+
+// /v1/auth — cookie-based refresh token flow (formerly /v2/auth, collapsed
+// 2026-04-14 since there's no prod to maintain backward compat for).
+//
+//   - POST /register, /login → returns short-lived access token in JSON body,
+//     sets httpOnly `refreshToken` cookie + non-httpOnly `csrf-token` cookie
+//   - POST /refresh           → CSRF-protected, swaps refresh cookie for new
+//     access token (+ rotated CSRF cookie)
+//   - POST /logout            → CSRF-protected, revokes the refresh token row
+//     from Redis and clears both cookies
+//   - GET  /me                → bearer-auth, returns the authed user
+//   - PUT  /settings          → bearer-auth, patches user settings + API keys
+//   - GET  /api-keys          → bearer-auth, returns masked key previews
+//
+// Refresh flow REQUIRES Redis. When Redis is disabled the register/login/
+// refresh endpoints return 503 — there's no sensible in-memory fallback for
+// refresh token storage (would be lost on restart, defeating the point).
+
 const SALT_ROUNDS = 12;
+const ACCESS_TOKEN_TTL = '15m';
+const REFRESH_COOKIE = 'refreshToken';
+const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60; // 30d in seconds
+const REFRESH_COOKIE_PATH = '/v1/auth';
+
+function cookieBase() {
+  return {
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+  };
+}
+
+function setRefreshCookie(reply, cookieValue) {
+  reply.setCookie(REFRESH_COOKIE, cookieValue, {
+    ...cookieBase(),
+    httpOnly: true,
+    path: REFRESH_COOKIE_PATH,
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+  });
+}
+
+function setCsrfCookie(reply, csrfToken) {
+  reply.setCookie(CSRF_COOKIE, csrfToken, {
+    ...cookieBase(),
+    httpOnly: false,
+    path: '/',
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+  });
+}
+
+function clearAuthCookies(reply) {
+  reply.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+  reply.clearCookie(CSRF_COOKIE, { path: '/' });
+}
+
+function signAccessToken(fastify, user) {
+  return fastify.jwt.sign(
+    { id: user.id, email: user.email },
+    { expiresIn: ACCESS_TOKEN_TTL },
+  );
+}
+
+async function completeAuthResponse(fastify, reply, user, deviceInfo) {
+  const refresh = await issueRefreshToken(user.id, { deviceInfo });
+  if (!refresh) {
+    return reply.code(503).send({ error: 'Failed to issue refresh token' });
+  }
+
+  const accessToken = signAccessToken(fastify, user);
+  const csrfToken = generateCsrfToken();
+
+  setRefreshCookie(reply, refresh.cookieValue);
+  setCsrfCookie(reply, csrfToken);
+
+  return {
+    accessToken,
+    csrfToken,
+    user: { id: user.id, email: user.email },
+  };
+}
 
 async function updateUserSettingsDocument(userId, data) {
   const users = await getCollection('User');
@@ -48,20 +133,20 @@ export async function authRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    const { email, password } = request.body;
+    if (!isRedisEnabled()) {
+      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
+    }
 
+    const { email, password } = request.body;
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return reply.code(409).send({ error: 'Email already registered' });
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = await prisma.user.create({
-      data: { email, passwordHash },
-    });
+    const user = await prisma.user.create({ data: { email, passwordHash } });
 
-    const token = fastify.jwt.sign({ id: user.id, email: user.email });
-    return { token, user: { id: user.id, email: user.email } };
+    return completeAuthResponse(fastify, reply, user, request.headers['user-agent'] || '');
   });
 
   fastify.post('/login', {
@@ -76,8 +161,11 @@ export async function authRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    const { email, password } = request.body;
+    if (!isRedisEnabled()) {
+      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
+    }
 
+    const { email, password } = request.body;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return reply.code(401).send({ error: 'Invalid credentials' });
@@ -88,8 +176,57 @@ export async function authRoutes(fastify) {
       return reply.code(401).send({ error: 'Invalid credentials' });
     }
 
-    const token = fastify.jwt.sign({ id: user.id, email: user.email });
-    return { token, user: { id: user.id, email: user.email } };
+    return completeAuthResponse(fastify, reply, user, request.headers['user-agent'] || '');
+  });
+
+  fastify.post('/refresh', {
+    config: { csrf: true },
+  }, async (request, reply) => {
+    if (!isRedisEnabled()) {
+      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
+    }
+
+    const cookieValue = request.cookies?.[REFRESH_COOKIE];
+    if (!cookieValue) {
+      return reply.code(401).send({ error: 'No refresh token' });
+    }
+
+    const verified = await verifyRefreshToken(cookieValue);
+    if (!verified) {
+      clearAuthCookies(reply);
+      return reply.code(401).send({ error: 'Invalid or expired refresh token' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: verified.userId },
+      select: { id: true, email: true },
+    });
+    if (!user) {
+      await revokeRefreshToken(cookieValue);
+      clearAuthCookies(reply);
+      return reply.code(401).send({ error: 'User not found' });
+    }
+
+    const accessToken = signAccessToken(fastify, user);
+    const csrfToken = generateCsrfToken();
+    setCsrfCookie(reply, csrfToken);
+
+    return {
+      accessToken,
+      csrfToken,
+      user: { id: user.id, email: user.email },
+    };
+  });
+
+  fastify.post('/logout', {
+    config: { csrf: true },
+  }, async (request, reply) => {
+    const cookieValue = request.cookies?.[REFRESH_COOKIE];
+    if (cookieValue) {
+      await revokeRefreshToken(cookieValue).catch(() => {});
+    }
+    clearAuthCookies(reply);
+    return { ok: true };
   });
 
   fastify.get('/me', { onRequest: [fastify.authenticate] }, async (request) => {

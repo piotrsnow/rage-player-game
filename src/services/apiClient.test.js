@@ -115,7 +115,7 @@ describe('apiClient.post idempotency', () => {
   });
 });
 
-describe('apiClient cookie-based auth (v2)', () => {
+describe('apiClient cookie-based auth', () => {
   it('attaches credentials: include on every fetch', async () => {
     await apiClient.get('/campaigns');
     expect(lastCallInit().credentials).toBe('include');
@@ -153,7 +153,7 @@ describe('apiClient cookie-based auth (v2)', () => {
     expect(fetchMock.mock.calls.length).toBe(3);
 
     // Second call was to the refresh endpoint
-    expect(fetchMock.mock.calls[1][0]).toContain('/v2/auth/refresh');
+    expect(fetchMock.mock.calls[1][0]).toContain('/v1/auth/refresh');
     // Third call (retry) carries the fresh access token
     expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer fresh');
   });
@@ -169,8 +169,8 @@ describe('apiClient cookie-based auth (v2)', () => {
     expect(apiClient.getToken()).toBe('');
   });
 
-  it('does not infinite-loop on a 401 from /v2/auth/refresh itself', async () => {
-    // direct call through request() to /v2/auth/refresh returning 401
+  it('does not infinite-loop on a 401 from /v1/auth/refresh itself', async () => {
+    // direct call through request() to /v1/auth/refresh returning 401
     fetchMock.mockImplementation(() =>
       Promise.resolve({
         ok: false,
@@ -179,14 +179,8 @@ describe('apiClient cookie-based auth (v2)', () => {
         json: async () => ({ error: 'no cookie' }),
       }),
     );
-    await expect(apiClient.request('/v2/auth/refresh', { method: 'POST' })).rejects.toThrow(/session expired/i);
+    await expect(apiClient.request('/v1/auth/refresh', { method: 'POST' })).rejects.toThrow(/session expired/i);
     expect(fetchMock.mock.calls.length).toBe(1);
-  });
-
-  it('/v2/... paths are passed through without the /v1 prefix', async () => {
-    await apiClient.request('/v2/auth/me', { method: 'GET' });
-    const [url] = lastCall();
-    expect(url).toBe('http://test/v2/auth/me');
   });
 
   it('/v1 paths remain prefixed as before', async () => {
@@ -195,7 +189,7 @@ describe('apiClient cookie-based auth (v2)', () => {
     expect(url).toBe('http://test/v1/campaigns');
   });
 
-  it('login() POSTs /v2/auth/login and stores the access token in memory', async () => {
+  it('login() POSTs /v1/auth/login and stores the access token in memory', async () => {
     fetchMock.mockImplementation(() =>
       Promise.resolve({
         ok: true,
@@ -209,16 +203,16 @@ describe('apiClient cookie-based auth (v2)', () => {
     expect(data.accessToken).toBe('new-access');
     expect(data.token).toBe('new-access'); // back-compat alias
     expect(apiClient.getToken()).toBe('new-access');
-    expect(fetchMock.mock.calls[0][0]).toContain('/v2/auth/login');
+    expect(fetchMock.mock.calls[0][0]).toContain('/v1/auth/login');
     expect(fetchMock.mock.calls[0][1].credentials).toBe('include');
   });
 
-  it('logout() POSTs /v2/auth/logout and clears in-memory state', async () => {
+  it('logout() POSTs /v1/auth/logout and clears in-memory state', async () => {
     cookieValue = 'csrf-token=my-csrf';
     apiClient.configure({ token: 'still-valid' });
     await apiClient.logout();
     expect(apiClient.getToken()).toBe('');
-    expect(fetchMock.mock.calls[0][0]).toContain('/v2/auth/logout');
+    expect(fetchMock.mock.calls[0][0]).toContain('/v1/auth/logout');
     expect(fetchMock.mock.calls[0][1].headers['X-CSRF-Token']).toBe('my-csrf');
   });
 
