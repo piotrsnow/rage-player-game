@@ -1,6 +1,6 @@
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
-import { SKILL_CAPS, createStartingSkills } from '../../data/rpgSystem';
+import { createStartingSkills } from '../../data/rpgSystem';
 import { shortId } from '../../utils/ids';
 
 export function createDefaultNeeds() {
@@ -63,7 +63,6 @@ export function createDefaultCharacter() {
     characterLevel: 1,
     characterXp: 0,
     attributePoints: 0,
-    lastTrainingScene: -SKILL_CAPS.basic,
   };
 }
 

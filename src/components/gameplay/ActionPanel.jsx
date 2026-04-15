@@ -9,6 +9,7 @@ import PendingActions from '../multiplayer/PendingActions';
 import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.js';
 import CombatTargetPicker from './action/CombatTargetPicker';
 import TradeNpcPicker from './action/TradeNpcPicker';
+import TrainerNpcPicker from './action/TrainerNpcPicker';
 import DilemmaPanel from './action/DilemmaPanel';
 import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
@@ -33,6 +34,7 @@ export default function ActionPanel({
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
+  const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -287,6 +289,15 @@ export default function ActionPanel({
               onCancel={() => setTradePickerOpen(false)}
             />
           )}
+
+          {trainerPickerOpen && dispatch && (
+            <TrainerNpcPicker
+              trainers={npcs.filter((n) => Array.isArray(n.canTrain) && n.canTrain.length > 0)}
+              character={character}
+              dispatch={dispatch}
+              onCancel={() => setTrainerPickerOpen(false)}
+            />
+          )}
         </div>
       )}
 
@@ -340,6 +351,7 @@ export default function ActionPanel({
             onSuggestedAction={handleSuggestedAction}
             onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
+            onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
           />
           <CustomActionForm
             textareaRef={textareaRef}

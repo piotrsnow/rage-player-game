@@ -301,6 +301,7 @@ export function applyStateChangesHandler(draft, action) {
           factionId: incoming.factionId || null,
           relatedQuestIds: incoming.relatedQuestIds || [],
           relationships: incoming.relationships || [],
+          canTrain: Array.isArray(incoming.canTrain) ? incoming.canTrain : [],
         });
         continue;
       }
@@ -313,6 +314,10 @@ export function applyStateChangesHandler(draft, action) {
       if (incoming.attitude) npc.attitude = incoming.attitude;
       if (incoming.location) npc.lastLocation = incoming.location;
       if (incoming.notes) npc.notes = incoming.notes;
+      if (Array.isArray(incoming.canTrain)) {
+        const existing = Array.isArray(npc.canTrain) ? npc.canTrain : [];
+        npc.canTrain = [...new Set([...existing, ...incoming.canTrain])];
+      }
 
       // Non-introduce updates carry more fields
       if (incoming.action !== 'introduce') {

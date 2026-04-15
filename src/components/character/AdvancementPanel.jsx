@@ -4,7 +4,7 @@ import { useGameCharacter, useGameDispatch, useGameAutoSave } from '../../stores
 import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
-  TRAINING_COOLDOWN_SCENES, getSkillAttribute,
+  getSkillAttribute,
   xpForSkillLevel, charLevelCost, CREATION_LIMITS,
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
@@ -76,7 +76,7 @@ function AttributesTab({ character, dispatch }) {
   );
 }
 
-function SkillsTab({ character, dispatch }) {
+function SkillsTab({ character }) {
   const { t } = useTranslation();
   const skills = character.skills || {};
 
@@ -100,14 +100,12 @@ function SkillsTab({ character, dispatch }) {
           <span className="w-10 text-center">{t('advancement.level', 'Poz.')}</span>
           <span className="w-16 text-center">{t('advancement.progress', 'Progres')}</span>
           <span className="w-10 text-center">{t('advancement.cap', 'Cap')}</span>
-          <span className="w-16 text-center">{t('advancement.train', 'Trening')}</span>
         </div>
       </div>
       {sortedSkills.map(({ name, level, xp, cap, attribute }) => {
         const needed = xpForSkillLevel(level + 1);
         const xpPct = needed > 0 && level < cap ? Math.min(100, (xp / needed) * 100) : (level >= cap ? 100 : 0);
         const atCap = level >= cap;
-        const canTrain = atCap && cap < SKILL_CAPS.max;
 
         return (
           <div
@@ -135,26 +133,12 @@ function SkillsTab({ character, dispatch }) {
                 )}
               </div>
               <span className="text-[10px] text-outline w-10 text-center">{cap}</span>
-              <div className="w-16 text-center">
-                {canTrain ? (
-                  <button
-                    onClick={() => dispatch({ type: 'TRAIN_SKILL', payload: { skill: name } })}
-                    className="px-2 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary hover:bg-primary/30 active:scale-95 transition-all"
-                  >
-                    +Cap
-                  </button>
-                ) : atCap ? (
-                  <span className="text-[9px] text-green-400">{t('advancement.maxed', 'MAX')}</span>
-                ) : (
-                  <span className="text-[9px] text-outline">—</span>
-                )}
-              </div>
             </div>
           </div>
         );
       })}
       <p className="text-[10px] text-on-surface-variant/60 mt-3 px-3">
-        {t('advancement.trainingCooldown', { scenes: TRAINING_COOLDOWN_SCENES, defaultValue: `Trening mozliwy raz na ${TRAINING_COOLDOWN_SCENES} scen` })}
+        {t('advancement.trainingHint', 'Podniesienie cap ponad 10 wymaga nauki od NPC-trenera napotkanego w świecie.')}
       </p>
     </div>
   );
@@ -381,7 +365,7 @@ export default function AdvancementPanel({ onClose }) {
             <AttributesTab character={character} dispatch={(action) => { dispatch(action); autoSave(); }} />
           )}
           {activeTab === 'skills' && (
-            <SkillsTab character={character} dispatch={(action) => { dispatch(action); autoSave(); }} />
+            <SkillsTab character={character} />
           )}
           {activeTab === 'spellTrees' && (
             <SpellTreesTab character={character} />

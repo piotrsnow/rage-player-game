@@ -14,11 +14,13 @@ export default function QuickActionsBar({
   onSuggestedAction,
   onToggleCombatPicker,
   onToggleTradePicker,
+  onToggleTrainerPicker,
 }) {
   const { t } = useTranslation();
   const tradeActive = useGameSlice((s) => s.trade?.active);
   const craftingActive = useGameSlice((s) => s.crafting?.active);
   const alchemyActive = useGameSlice((s) => s.alchemy?.active);
+  const hasTrainer = npcs.some((n) => Array.isArray(n.canTrain) && n.canTrain.length > 0);
 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
@@ -64,6 +66,16 @@ export default function QuickActionsBar({
           onClick={onToggleTradePicker}
           disabled={disabled || hasPendingAction}
           tone="tertiary"
+        />
+      )}
+      {hasTrainer && dispatch && onToggleTrainerPicker && (
+        <QuickActionButton
+          icon="school"
+          label={t('training.trainButton', 'Trening')}
+          description={t('training.trainWith', 'Trenuj z...')}
+          onClick={onToggleTrainerPicker}
+          disabled={disabled || hasPendingAction}
+          tone="primary"
         />
       )}
       {dispatch && !craftingActive && getSkillLevel(character?.skills, 'Rzemioslo') > 0 && (

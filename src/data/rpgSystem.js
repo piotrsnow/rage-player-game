@@ -59,8 +59,6 @@ export const SKILL_CAPS = {
   max: 25,
 };
 
-export const TRAINING_COOLDOWN_SCENES = 20;
-
 export const SKILL_LEVEL_INTERPRETATIONS = [
   { min: 0, max: 5, label: 'Poczatkujacy' },
   { min: 6, max: 10, label: 'Praktyk' },

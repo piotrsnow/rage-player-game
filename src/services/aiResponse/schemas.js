@@ -47,6 +47,7 @@ const NpcChangeSchema = z.object({
   factionId: z.string().nullable().optional(),
   relatedQuestIds: z.array(z.string()).optional().default([]),
   relationships: z.array(NpcRelationshipSchema).optional().default([]),
+  canTrain: z.array(z.string()).optional(),
 }).passthrough();
 
 const TimeAdvanceSchema = z.object({

@@ -119,7 +119,6 @@ export function randomizeFullCharacter(genre) {
     characterLevel: 1,
     characterXp: 0,
     attributePoints: 0,
-    lastTrainingScene: -10,
   };
 }
 

@@ -25,10 +25,8 @@ export const characterHandlers = {
       ),
     });
     // Preserve FE-only session fields the backend doesn't track.
-    const lastTrainingScene = draft.character?.lastTrainingScene;
     const fallbackMaterialBag = draft.character?.materialBag;
     draft.character = merged;
-    if (lastTrainingScene !== undefined) draft.character.lastTrainingScene = lastTrainingScene;
     if (action.payload.materialBag === undefined && fallbackMaterialBag !== undefined) {
       draft.character.materialBag = fallbackMaterialBag;
     }
@@ -75,16 +73,23 @@ export const characterHandlers = {
   },
 
   TRAIN_SKILL: (draft, action) => {
-    const { skillName, sceneCount } = action.payload;
+    const { skillName, npcId } = action.payload || {};
     const char = draft.character;
-    if (!char) return;
-    const skill = char.skills?.[skillName];
-    if (!skill) return;
-    const scenesSinceTraining = sceneCount - (char.lastTrainingScene || 0);
-    if (scenesSinceTraining < 20) return;
+    if (!char || !skillName) return;
+    if (!char.skills) char.skills = {};
+    if (!char.skills[skillName]) {
+      char.skills[skillName] = { level: 0, xp: 0, cap: SKILL_CAPS.basic };
+    }
+    const skill = char.skills[skillName];
     if (skill.cap >= SKILL_CAPS.max) return;
-    char.lastTrainingScene = sceneCount;
     skill.cap = Math.min(SKILL_CAPS.max, skill.cap + 1);
+
+    if (npcId && Array.isArray(draft.world?.npcs)) {
+      const npc = draft.world.npcs.find((n) => n.id === npcId);
+      if (npc && Array.isArray(npc.canTrain)) {
+        npc.canTrain = npc.canTrain.filter((s) => s !== skillName);
+      }
+    }
   },
 
   SPEND_ATTRIBUTE_POINT: (draft, action) => {
