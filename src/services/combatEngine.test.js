@@ -250,7 +250,7 @@ describe('isCombatOver', () => {
 });
 
 describe('endCombat', () => {
-  it('returns combat summary with XP and wounds', () => {
+  it('returns combat summary with outcome, wounds, and stats (no direct xp field)', () => {
     const combat = makeCombatState({
       target: { isDefeated: true },
     });
@@ -261,7 +261,9 @@ describe('endCombat', () => {
     const summary = endCombat(combat, playerChar);
 
     expect(summary.woundsChange).toBe(-3);
-    expect(summary.xp).toBeGreaterThan(0);
+    expect(summary.xp).toBeUndefined();
+    expect(summary.outcome).toBe('victory');
+    expect(summary.combatStats).toBeDefined();
     expect(summary.enemiesDefeated).toBe(1);
     expect(summary.playerSurvived).toBe(true);
   });

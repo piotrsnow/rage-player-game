@@ -61,6 +61,7 @@ export function useSceneBackendStream() {
     isFirstScene,
     isCustomAction,
     fromAutoPlayer,
+    combatResult = null,
   }) => {
     let rawAccumulated = '';
 
@@ -77,6 +78,8 @@ export function useSceneBackendStream() {
       fromAutoPlayer,
       sceneCount: state.scenes?.length || 0,
       gameState: state,
+      combatResult,
+      achievementState: state.achievements || null,
       onEvent: (event) => {
         if (event.type === 'intent') {
           console.log('[useAI] Stream intent:', event.data?.intent);

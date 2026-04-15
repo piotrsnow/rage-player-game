@@ -49,7 +49,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   }, []);
 
   const generateScene = useEvent(
-    async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false) => {
+    async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false, sceneOptions = {}) => {
+      const { combatResult = null } = sceneOptions || {};
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       stream.resetStreamState();
@@ -123,12 +124,16 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         // Stream scene from backend
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
-          resolved, isFirstScene, isCustomAction, fromAutoPlayer,
+          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult,
         });
         const result = backendResult.result;
         const usage = backendResult.usage;
         if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
         const authoritativeCharacterSnapshot = backendResult.character || null;
+        const newlyUnlockedAchievements = Array.isArray(backendResult.newlyUnlockedAchievements)
+          ? backendResult.newlyUnlockedAchievements
+          : [];
+        const updatedAchievementState = backendResult.updatedAchievementState || null;
 
         const serverSceneId = backendResult.sceneId || null;
         const serverSceneIndex = Number.isInteger(backendResult.sceneIndex) ? backendResult.sceneIndex : null;
@@ -235,8 +240,9 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         // State changes
         applyNeedsAndRest(result, resolved, needsSystemEnabled);
         applySceneStateChanges({
-          result, resolved, effectiveDiceRolls, state, dispatch,
+          result, state, dispatch,
           authoritativeCharacterSnapshot, ensureMissingInventoryImages, t,
+          newlyUnlockedAchievements, updatedAchievementState,
         });
 
         recordCompletedSceneGenTiming();

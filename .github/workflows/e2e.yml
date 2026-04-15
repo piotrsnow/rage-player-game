@@ -12,6 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      valkey:
+        image: valkey/valkey:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +47,9 @@ jobs:
       - name: Generate Prisma client
         run: cd backend && npx prisma generate
 
+      - name: Build frontend into backend/public/dist
+        run: npx vite build --outDir backend/public/dist --emptyOutDir
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
@@ -44,9 +58,10 @@ jobs:
         env:
           CI: true
           DATABASE_URL: mongodb://localhost:27017/rpgon_test?replicaSet=rs0
+          REDIS_URL: redis://localhost:6379
           JWT_SECRET: ci-jwt-secret-e2e-playwright-2026
           API_KEY_ENCRYPTION_SECRET: ci-encryption-key-e2e-playwright-2026!!
-          CORS_ORIGIN: http://localhost:5173
+          CORS_ORIGIN: http://localhost:3001
           MEDIA_BACKEND: local
           PORT: 3001
 

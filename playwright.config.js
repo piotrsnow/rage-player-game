@@ -13,7 +13,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: process.env.CI ? 'http://localhost:3001' : 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -40,32 +40,19 @@ export default defineConfig({
   ],
 
   // Locally: start backend & frontend yourself (`npm run dev`) before running tests.
-  // CI: webServer starts them automatically.
+  // CI: webServer starts backend only — it serves the pre-built frontend from
+  // `backend/public/dist`, so FE and BE are same-origin on :3001 and the
+  // CSRF double-submit cookie read by `document.cookie` works. A split
+  // :5173/:3001 setup breaks CSRF on `/v1/auth/refresh` because the csrf
+  // cookie set on :3001 isn't visible to JS on :5173.
   webServer: process.env.CI
-    ? [
-        {
-          command: 'node backend/src/server.js',
-          port: 3001,
-          reuseExistingServer: false,
-          timeout: 30_000,
-          stdout: 'pipe',
-          stderr: 'pipe',
-          env: {
-            ...process.env,
-            DATABASE_URL: process.env.E2E_DATABASE_URL || 'mongodb://localhost:27017/rpgon_test',
-            JWT_SECRET: 'e2e-test-jwt-secret-playwright-2026',
-            API_KEY_ENCRYPTION_SECRET: 'e2e-test-encryption-key-2026!!',
-            CORS_ORIGIN: 'http://localhost:5173',
-            MEDIA_BACKEND: 'local',
-            PORT: '3001',
-          },
-        },
-        {
-          command: 'npm run dev:frontend',
-          port: 5173,
-          reuseExistingServer: false,
-          timeout: 30_000,
-        },
-      ]
+    ? {
+        command: 'node backend/src/server.js',
+        port: 3001,
+        reuseExistingServer: false,
+        timeout: 60_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }
     : undefined,
 });

@@ -1,10 +1,17 @@
 import { useMemo } from 'react';
 
-function pickStateChanges(summary) {
-  const stateChanges = {};
-  if (summary.woundsChange) stateChanges.woundsChange = summary.woundsChange;
-  if (summary.xp) stateChanges.xp = summary.xp;
-  return stateChanges;
+function buildCombatResult(summary) {
+  return {
+    outcome: summary.outcome || (summary.playerSurvived ? 'victory' : 'defeat'),
+    woundsChange: summary.woundsChange || 0,
+    skillProgress: summary.skillProgress || null,
+    combatStats: summary.combatStats || null,
+    enemiesDefeated: summary.enemiesDefeated || 0,
+    totalEnemies: summary.totalEnemies || 0,
+    rounds: summary.rounds || 0,
+    playerSurvived: !!summary.playerSurvived,
+    flawless: summary.flawless === true,
+  };
 }
 
 function soloPerCharForServer(perChar) {
@@ -42,6 +49,9 @@ export function useCombatResolution({
 }) {
   return useMemo(() => {
     // --- Solo handlers --------------------------------------------------
+    // Combat XP is computed on the backend from the combatResult payload.
+    // Frontend only emits the journal entry + chat message and forwards the
+    // summary; backend applies wounds, skillProgress, and tier-based char XP.
     const handleEndCombat = (summary) => {
       dispatch({ type: 'END_COMBAT' });
 
@@ -49,14 +59,12 @@ export function useCombatResolution({
         ? `Combat: Victory — ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`
         : `Combat: Defeat — fell after ${summary.rounds} rounds against ${summary.totalEnemies} enemies.`;
 
-      const stateChanges = pickStateChanges(summary);
-      stateChanges.journalEntries = [combatJournal];
-      if (!summary.playerSurvived) stateChanges.forceStatus = 'dead';
-
-      dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
-
-      const isDead = stateChanges.forceStatus === 'dead';
-      const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
+      const isDead = !summary.playerSurvived;
+      if (isDead) {
+        dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal], forceStatus: 'dead' } });
+      } else {
+        dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal] } });
+      }
 
       dispatch({
         type: 'ADD_CHAT_MESSAGE',
@@ -66,7 +74,7 @@ export function useCombatResolution({
           subtype: isDead ? 'combat_death' : 'combat_end',
           content: isDead
             ? t('combat.playerDied', 'Your character has fallen in combat. Death is final.')
-            : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${summary.playerSurvived ? t('combat.youSurvived', 'You survived!') : t('combat.youWereDefeated', 'You were defeated!')}${xpRewardText}`,
+            : `${t('combat.endedAfterRounds', 'Combat ended after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}. ${t('combat.youSurvived', 'You survived!')}`,
           timestamp: Date.now(),
         },
       });
@@ -77,11 +85,10 @@ export function useCombatResolution({
         return;
       }
 
-      const combatActionText = summary.playerSurvived
-        ? `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}]`
-        : `[Combat resolved: the player LOST the fight after ${summary.rounds} rounds against ${summary.totalEnemies} enemies. They were reduced to 0 wounds and did NOT win. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies were defeated before the loss.${summary.woundsChange ? ` The player took ${Math.abs(summary.woundsChange)} wounds.` : ''} Narrate ONLY the defeat aftermath: capture, rescue, being left for dead, waking up wounded, losing gear, or enemies taking control. NEVER describe this as a victory, clean escape, or total enemy defeat.]`;
+      const combatResult = buildCombatResult(summary);
+      const combatActionText = `[Combat resolved: defeated ${summary.enemiesDefeated}/${summary.totalEnemies} enemies in ${summary.rounds} rounds.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ' Unscathed.'}]`;
 
-      generateScene(combatActionText, false, false).catch(() => {});
+      generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
     };
 
     const handleSurrender = (summary) => {
@@ -90,25 +97,23 @@ export function useCombatResolution({
       const remainingList = formatRemainingEnemies(summary.remainingEnemies);
       const combatJournal = `Combat: Surrender — yielded after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
 
-      const stateChanges = pickStateChanges(summary);
-      stateChanges.journalEntries = [combatJournal];
-      dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+      dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal] } });
 
-      const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
       dispatch({
         type: 'ADD_CHAT_MESSAGE',
         payload: {
           id: `msg_${Date.now()}_combat_surrender`,
           role: 'system',
           subtype: 'combat_end',
-          content: `${t('combat.youSurrenderedAfterRounds', 'You surrendered after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
+          content: `${t('combat.youSurrenderedAfterRounds', 'You surrendered after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.`,
           timestamp: Date.now(),
         },
       });
       autoSave();
 
+      const combatResult = { ...buildCombatResult(summary), outcome: 'surrender' };
       const combatActionText = `[Combat resolved: player surrendered after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
-      generateScene(combatActionText, false, false).catch(() => {});
+      generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
     };
 
     const handleForceTruce = (summary) => {
@@ -117,25 +122,23 @@ export function useCombatResolution({
       const remainingList = formatRemainingEnemies(summary.remainingEnemies);
       const combatJournal = `Combat: Truce — forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}.${summary.woundsChange ? ` Took ${Math.abs(summary.woundsChange)} wounds.` : ''}`;
 
-      const stateChanges = pickStateChanges(summary);
-      stateChanges.journalEntries = [combatJournal];
-      dispatch({ type: 'APPLY_STATE_CHANGES', payload: stateChanges });
+      dispatch({ type: 'APPLY_STATE_CHANGES', payload: { journalEntries: [combatJournal] } });
 
-      const xpRewardText = summary.xp ? ` +${summary.xp} ${t('common.xp')}` : '';
       dispatch({
         type: 'ADD_CHAT_MESSAGE',
         payload: {
           id: `msg_${Date.now()}_combat_truce`,
           role: 'system',
           subtype: 'combat_end',
-          content: `${t('combat.youForcedTruceAfterRounds', 'You forced a truce after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.${xpRewardText}`,
+          content: `${t('combat.youForcedTruceAfterRounds', 'You forced a truce after {{rounds}} rounds.', { rounds: summary.rounds })} ${summary.enemiesDefeated}/${summary.totalEnemies} ${t('combat.enemiesDefeated', 'enemies defeated')}.`,
           timestamp: Date.now(),
         },
       });
       autoSave();
 
+      const combatResult = { ...buildCombatResult(summary), outcome: 'truce' };
       const combatActionText = `[Combat resolved: player forced a truce after ${summary.rounds} rounds. ${summary.enemiesDefeated}/${summary.totalEnemies} enemies defeated. Remaining enemies: ${remainingList}. The player had the upper hand and demanded the enemies stand down. Reason for combat: ${summary.reason || 'unknown'}.${summary.woundsChange ? ` Player took ${Math.abs(summary.woundsChange)} wounds.` : ' Player unscathed.'}]`;
-      generateScene(combatActionText, false, false).catch(() => {});
+      generateScene(combatActionText, false, false, false, { combatResult }).catch(() => {});
     };
 
     // --- Multiplayer handlers (host-only) --------------------------------

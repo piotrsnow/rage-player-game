@@ -305,6 +305,16 @@ export function createCombatState(playerCharacter, enemies, allies = []) {
     combatants,
     log: ['Combat begins! Round 1.'],
     resolved: false,
+    playerStats: {
+      hits: 0,
+      misses: 0,
+      dodges: 0,
+      kills: 0,
+      killsByTier: { weak: 0, medium: 0, hard: 0, boss: 0 },
+      damageDealt: 0,
+      damageTaken: 0,
+      startingWounds: playerCharacter.wounds ?? playerCharacter.maxWounds ?? 10,
+    },
   };
 }
 
@@ -519,21 +529,40 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
 
     target.conditions = target.conditions.filter((c) => c !== 'defending' && c !== 'dodging');
 
-    // Track combat skill XP for player attacks
+    // Track combat skill XP + playerStats for player attacks
     if (actor.type === 'player') {
       const weaponSkill = getWeaponSkillName(actor);
+      if (!state.playerStats) {
+        state.playerStats = { hits: 0, misses: 0, dodges: 0, kills: 0, killsByTier: { weak: 0, medium: 0, hard: 0, boss: 0 }, damageDealt: 0, damageTaken: 0 };
+      }
       if (result.outcome === 'hit') {
+        const tier = getEnemyTier(target);
         const xp = result.targetDefeated
-          ? COMBAT_SKILL_XP.kill[getEnemyTier(target)] || COMBAT_SKILL_XP.kill.medium
+          ? COMBAT_SKILL_XP.kill[tier] || COMBAT_SKILL_XP.kill.medium
           : COMBAT_SKILL_XP.hit;
         addCombatSkillXp(state, actor.id, weaponSkill, xp);
+        state.playerStats.hits += 1;
+        state.playerStats.damageDealt += result.damage || 0;
+        if (result.targetDefeated) {
+          state.playerStats.kills += 1;
+          state.playerStats.killsByTier[tier] = (state.playerStats.killsByTier[tier] || 0) + 1;
+        }
       } else {
         addCombatSkillXp(state, actor.id, weaponSkill, COMBAT_SKILL_XP.miss);
+        state.playerStats.misses += 1;
       }
     }
-    // Track Uniki XP when player dodges (enemy attacks player who is dodging)
-    if (target?.type === 'player' && target.conditions.includes('dodging') && result.outcome === 'miss') {
-      addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.miss);
+    // Track enemy attack on player → damage taken + dodge tracking
+    if (target?.type === 'player') {
+      if (!state.playerStats) {
+        state.playerStats = { hits: 0, misses: 0, dodges: 0, kills: 0, killsByTier: { weak: 0, medium: 0, hard: 0, boss: 0 }, damageDealt: 0, damageTaken: 0 };
+      }
+      if (result.outcome === 'hit') {
+        state.playerStats.damageTaken += result.damage || 0;
+      } else if (target.conditions.includes('dodging') && result.outcome === 'miss') {
+        state.playerStats.dodges += 1;
+        addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.miss);
+      }
     }
   }
 
@@ -669,6 +698,19 @@ export function resolveEnemyTurns(combat) {
 
 // --- Combat end ---
 
+function buildCombatStats(combat) {
+  const ps = combat.playerStats || {};
+  return {
+    hits: ps.hits || 0,
+    misses: ps.misses || 0,
+    dodges: ps.dodges || 0,
+    kills: ps.kills || 0,
+    killsByTier: { ...(ps.killsByTier || { weak: 0, medium: 0, hard: 0, boss: 0 }) },
+    damageDealt: ps.damageDealt || 0,
+    damageTaken: ps.damageTaken || 0,
+  };
+}
+
 export function endCombat(combat, playerCharacter) {
   const playerCombatant = combat.combatants.find((c) => c.type === 'player');
   const woundsLost = playerCombatant ? playerCharacter.wounds - playerCombatant.wounds : 0;
@@ -680,14 +722,20 @@ export function endCombat(combat, playerCharacter) {
     ? { ...combat.skillXpAccumulator[playerCombatant.id] }
     : null;
 
+  const playerSurvived = playerCombatant ? !playerCombatant.isDefeated : false;
+  const isVictory = playerSurvived && enemiesDefeated === totalEnemies && totalEnemies > 0;
+  const combatStats = buildCombatStats(combat);
+
   return {
+    outcome: isVictory ? 'victory' : 'defeat',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
-    xp: Math.max(10, enemiesDefeated * 15 + combat.round * 5),
     skillProgress: playerSkillXp,
+    combatStats,
     enemiesDefeated,
     totalEnemies,
     rounds: combat.round,
-    playerSurvived: playerCombatant ? !playerCombatant.isDefeated : false,
+    playerSurvived,
+    flawless: isVictory && combatStats.damageTaken === 0,
   };
 }
 
@@ -707,8 +755,8 @@ export function surrenderCombat(combat, playerCharacter) {
   return {
     outcome: 'surrender',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
-    xp: Math.max(5, Math.floor((enemiesDefeated * 15 + combat.round * 3) * 0.5)),
     skillProgress: playerSkillXp,
+    combatStats: buildCombatStats(combat),
     enemiesDefeated, totalEnemies, remainingEnemies,
     rounds: combat.round, playerSurvived: true, reason: combat.reason || '',
   };
@@ -730,8 +778,8 @@ export function forceTruceCombat(combat, playerCharacter) {
   return {
     outcome: 'truce',
     woundsChange: woundsLost > 0 ? -woundsLost : 0,
-    xp: Math.max(8, Math.floor((enemiesDefeated * 15 + combat.round * 5) * 0.75)),
     skillProgress: playerSkillXp,
+    combatStats: buildCombatStats(combat),
     enemiesDefeated, totalEnemies, remainingEnemies,
     rounds: combat.round, playerSurvived: true, reason: combat.reason || '',
   };

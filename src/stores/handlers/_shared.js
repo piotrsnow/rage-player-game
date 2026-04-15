@@ -1,6 +1,6 @@
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
-import { SKILL_CAPS, createStartingSkills, charLevelCost } from '../../data/rpgSystem';
+import { SKILL_CAPS, createStartingSkills } from '../../data/rpgSystem';
 import { shortId } from '../../utils/ids';
 
 export function createDefaultNeeds() {
@@ -115,26 +115,6 @@ export function createDefaultAchievementState() {
       lowestWounds: 999, npcDispositions: {},
     },
   };
-}
-
-/**
- * Apply character XP gain with potential multiple level-ups.
- * Mutates the character draft in-place. Each level-up grants +1 attribute point.
- * Used in 3+ places inside APPLY_STATE_CHANGES (woundsChange+xp, skillProgress, completedQuests).
- */
-export function applyCharacterXpGain(characterDraft, xpGain) {
-  if (!characterDraft || xpGain <= 0) return;
-  let charXp = (characterDraft.characterXp || 0) + xpGain;
-  let charLevel = characterDraft.characterLevel || 1;
-  let attrPoints = characterDraft.attributePoints || 0;
-  while (charXp >= charLevelCost(charLevel + 1)) {
-    charXp -= charLevelCost(charLevel + 1);
-    charLevel++;
-    attrPoints++;
-  }
-  characterDraft.characterXp = charXp;
-  characterDraft.characterLevel = charLevel;
-  characterDraft.attributePoints = attrPoints;
 }
 
 export const initialState = {

@@ -28,6 +28,8 @@ import {
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { generateSceneEmbedding, processStateChanges } from './processStateChanges.js';
+import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
+import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -50,6 +52,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     isCustomAction = false,
     fromAutoPlayer = false,
     userApiKeys = null,
+    combatResult = null,
+    achievementState = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
@@ -224,6 +228,37 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 6d. Resolve abstract rewards into concrete items/materials/money
     resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
 
+    // 6e. Merge combat result into stateChanges (if provided). Combat is resolved
+    // deterministically on FE; BE is responsible for applying its XP + wounds.
+    if (combatResult) {
+      sceneResult.stateChanges = sceneResult.stateChanges || {};
+      if (typeof combatResult.woundsChange === 'number' && combatResult.woundsChange !== 0) {
+        sceneResult.stateChanges.woundsChange =
+          (sceneResult.stateChanges.woundsChange || 0) + combatResult.woundsChange;
+      }
+      if (combatResult.skillProgress && typeof combatResult.skillProgress === 'object') {
+        sceneResult.stateChanges.skillProgress = {
+          ...(sceneResult.stateChanges.skillProgress || {}),
+        };
+        for (const [skill, xp] of Object.entries(combatResult.skillProgress)) {
+          sceneResult.stateChanges.skillProgress[skill] =
+            (sceneResult.stateChanges.skillProgress[skill] || 0) + (xp || 0);
+        }
+      }
+      const bonusXp = computeCombatCharXp(combatResult);
+      if (bonusXp > 0) {
+        sceneResult.stateChanges.xp = (sceneResult.stateChanges.xp || 0) + bonusXp;
+      }
+      // Derive combatVictory marker for achievement tracker (combat_victory / flawless_victory)
+      if (combatResult.outcome === 'victory') {
+        sceneResult.stateChanges.combatVictory = {
+          enemiesDefeated: combatResult.enemiesDefeated || 0,
+          damageTaken: combatResult.combatStats?.damageTaken || 0,
+          flawless: combatResult.flawless === true,
+        };
+      }
+    }
+
     const savedScene = await prisma.campaignScene.create({
       data: {
         campaignId,
@@ -260,9 +295,38 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 9a. Apply character state changes + persist (runs in parallel with nano)
     let updatedCharacter = activeCharacter;
+    let newlyUnlockedAchievements = [];
+    let updatedAchievementState = achievementState;
     if (activeCharacterId && activeCharacter && sceneResult.stateChanges) {
       try {
         updatedCharacter = applyCharacterStateChanges(activeCharacter, sceneResult.stateChanges);
+
+        // 9a2. Process achievement unlocks — authoritative on BE.
+        // Runs against the post-change character so wounds/skills/etc. reflect the scene.
+        if (achievementState && typeof achievementState === 'object') {
+          const gameStateForAchievements = {
+            ...coreState,
+            character: updatedCharacter,
+            scenes: Array.from({ length: newSceneIndex + 1 }, () => ({})),
+          };
+          const achResult = processAchievementEvents(
+            achievementState,
+            sceneResult.stateChanges,
+            gameStateForAchievements,
+          );
+          newlyUnlockedAchievements = achResult.newlyUnlocked || [];
+          updatedAchievementState = achResult.updatedAchievementState;
+
+          // Apply xpReward from newly unlocked achievements as additional char XP
+          const totalAchievementXp = newlyUnlockedAchievements.reduce(
+            (sum, a) => sum + (a.xpReward || 0),
+            0,
+          );
+          if (totalAchievementXp > 0) {
+            updatedCharacter = applyCharacterStateChanges(updatedCharacter, { xp: totalAchievementXp });
+          }
+        }
+
         await prisma.character.update({
           where: { id: activeCharacterId },
           data: characterToPrismaUpdate(updatedCharacter),
@@ -300,6 +364,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         sceneIndex: newSceneIndex,
         sceneId: savedScene.id,
         character: updatedCharacter,
+        newlyUnlockedAchievements,
+        updatedAchievementState,
       },
     });
 

@@ -145,6 +145,8 @@ const GENERATE_SCENE_SCHEMA = {
     sceneCount: { type: 'number' },
     isCustomAction: { type: 'boolean' },
     fromAutoPlayer: { type: 'boolean' },
+    combatResult: { type: ['object', 'null'] },
+    achievementState: { type: ['object', 'null'] },
   },
 };
 
@@ -362,6 +364,8 @@ export async function aiRoutes(fastify) {
       sceneCount = 0,
       isCustomAction = false,
       fromAutoPlayer = false,
+      combatResult = null,
+      achievementState = null,
     } = request.body;
 
     if ((playerAction === undefined || playerAction === null) && !isFirstScene) {
@@ -399,6 +403,8 @@ export async function aiRoutes(fastify) {
       isCustomAction,
       fromAutoPlayer,
       userApiKeys,
+      combatResult,
+      achievementState,
     };
 
     const writeEvent = (event) => {

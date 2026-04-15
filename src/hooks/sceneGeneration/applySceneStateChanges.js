@@ -1,6 +1,4 @@
 import { validateStateChanges } from '../../services/stateValidator';
-import { calculateDiceRollSkillXP } from '../../data/rpgSystem';
-import { processStateChanges as processAchievements } from '../../services/achievementTracker';
 import { generateStateChangeMessages } from '../../services/stateChangeMessages';
 import { checkWorldConsistency, applyConsistencyPatches } from '../../services/worldConsistency';
 import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
@@ -99,22 +97,14 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
 }
 
 export function applySceneStateChanges({
-  result, resolved, effectiveDiceRolls, state, dispatch,
+  result, state, dispatch,
   authoritativeCharacterSnapshot, ensureMissingInventoryImages, t,
+  newlyUnlockedAchievements = [], updatedAchievementState = null,
 }) {
   if (!result.stateChanges || Object.keys(result.stateChanges).length === 0) return;
 
   const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
   result.stateChanges = validated;
-
-  const diceRollsForXp = effectiveDiceRolls.length > 0 ? effectiveDiceRolls : (resolved.diceRoll ? [resolved.diceRoll] : []);
-  for (const diceForXp of diceRollsForXp) {
-    if (diceForXp?.skill && diceForXp?.difficulty) {
-      const skillXp = calculateDiceRollSkillXP(diceForXp.difficulty, diceForXp.success);
-      if (!validated.skillProgress) validated.skillProgress = {};
-      validated.skillProgress[diceForXp.skill] = (validated.skillProgress[diceForXp.skill] || 0) + skillXp;
-    }
-  }
 
   const previousFactions = { ...(state.world?.factions || {}) };
 
@@ -156,10 +146,14 @@ export function applySceneStateChanges({
     dispatch({ type: 'ADD_CHAT_MESSAGE', payload: msg });
   }
 
-  const { newlyUnlocked, updatedAchievementState } = processAchievements(state.achievements, validated, state);
-  if (updatedAchievementState) dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
-  for (const ach of newlyUnlocked) {
-    if (ach.xpReward && state.character) dispatch({ type: 'APPLY_STATE_CHANGES', payload: { xp: ach.xpReward } });
-    if (ach.grantsTitle && state.character) dispatch({ type: 'ADD_TITLE', payload: { ...ach.grantsTitle, sourceAchievementId: ach.id } });
+  // Achievement unlocks are computed server-side and arrive pre-resolved.
+  // FE just reconciles the updated state and grants titles locally.
+  if (updatedAchievementState) {
+    dispatch({ type: 'UPDATE_ACHIEVEMENTS', payload: updatedAchievementState });
+  }
+  for (const ach of newlyUnlockedAchievements) {
+    if (ach.grantsTitle && state.character) {
+      dispatch({ type: 'ADD_TITLE', payload: { ...ach.grantsTitle, sourceAchievementId: ach.id } });
+    }
   }
 }

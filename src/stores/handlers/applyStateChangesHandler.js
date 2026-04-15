@@ -1,4 +1,4 @@
-import { SKILL_CAPS, xpForSkillLevel, charXpFromSkillLevelUp } from '../../data/rpgSystem';
+import { SKILL_CAPS, xpForSkillLevel } from '../../data/rpgSystem';
 import { calculateMaxWounds, normalizeMoney } from '../../services/gameState';
 import { createCombatState } from '../../services/combatEngine';
 import { hourToPeriod, decayNeeds } from '../../services/timeUtils';
@@ -9,7 +9,6 @@ import {
   createDefaultNeeds,
   stackMaterials,
   ensureMapContainsLocationDraft,
-  applyCharacterXpGain,
 } from './_shared';
 
 /**
@@ -28,16 +27,17 @@ export function applyStateChangesHandler(draft, action) {
     draft.campaign.epilogue = changes.campaignEnd.epilogue || '';
   }
 
-  // --- Wounds + XP (combined because the old code coupled them) ---
+  // --- Wounds ---
+  // NOTE: changes.xp is intentionally ignored on the FE. Character XP is
+  // authoritative on the backend and arrives via RECONCILE_CHARACTER_FROM_BACKEND.
+  // Scene messages still read changes.xp to display "+X XP" toasts, but the
+  // character state itself is not mutated here.
   if (changes.woundsChange !== undefined && draft.character) {
     const newWounds = Math.max(0, Math.min(draft.character.maxWounds, draft.character.wounds + changes.woundsChange));
     draft.character.wounds = newWounds;
     if (newWounds === 0 && changes.woundsChange < 0) {
       draft.character.status = 'dead';
     }
-  }
-  if (changes.xp !== undefined && changes.xp > 0 && draft.character) {
-    applyCharacterXpGain(draft.character, changes.xp);
   }
 
   if (changes.forceStatus && draft.character) {
@@ -64,9 +64,11 @@ export function applyStateChangesHandler(draft, action) {
     draft.character.wounds = Math.min(draft.character.wounds, newMaxWounds);
   }
 
-  // --- Skill XP + level-ups + Oblivion-style char XP cascade ---
+  // --- Skill XP + level-ups ---
+  // Skill xp/level is applied locally so the UI can show the progress bar
+  // during the brief window before RECONCILE_CHARACTER_FROM_BACKEND overwrites
+  // the whole character. Char XP cascade happens on BE and arrives via RECONCILE.
   if (changes.skillProgress && draft.character) {
-    let charXpGained = 0;
     for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
       if (!draft.character.skills[skillName]) {
         draft.character.skills[skillName] = { level: 0, xp: 0, cap: SKILL_CAPS.basic };
@@ -74,17 +76,12 @@ export function applyStateChangesHandler(draft, action) {
       const skill = draft.character.skills[skillName];
       skill.xp = (skill.xp ?? skill.progress ?? 0) + xpGain;
 
-      // Level-up loop (possibly multiple levels from large XP gains)
       while (skill.level < skill.cap) {
         const needed = xpForSkillLevel(skill.level + 1);
         if (needed <= 0 || skill.xp < needed) break;
         skill.xp -= needed;
         skill.level += 1;
-        charXpGained += charXpFromSkillLevelUp(skill.level);
       }
-    }
-    if (charXpGained > 0) {
-      applyCharacterXpGain(draft.character, charXpGained);
     }
   }
 
@@ -227,9 +224,9 @@ export function applyStateChangesHandler(draft, action) {
         }
       }
 
-      if (totalRewardXp > 0 && draft.character) {
-        applyCharacterXpGain(draft.character, totalRewardXp);
-      }
+      // Quest reward XP is applied on BE; RECONCILE brings the authoritative total.
+      // `totalRewardXp` stays around only so message generation can surface it as a toast.
+      void totalRewardXp;
       if ((rewardMoney.gold || rewardMoney.silver || rewardMoney.copper) && draft.character) {
         const cur = draft.character.money || { gold: 0, silver: 0, copper: 0 };
         draft.character.money = normalizeMoney({

@@ -174,6 +174,8 @@ export const aiService = {
     isCustomAction = false,
     fromAutoPlayer = false,
     gameState = null,
+    combatResult = null,
+    achievementState = null,
     onEvent = null,
   } = {}) {
     const baseUrl = apiClient.getBaseUrl();
@@ -198,6 +200,8 @@ export const aiService = {
         sceneCount,
         isCustomAction,
         fromAutoPlayer,
+        combatResult,
+        achievementState,
       }),
     });
 
@@ -291,6 +295,8 @@ export const aiService = {
       sceneIndex: result.sceneIndex,
       sceneId: result.sceneId,
       character: result.character || null,
+      newlyUnlockedAchievements: result.newlyUnlockedAchievements || [],
+      updatedAchievementState: result.updatedAchievementState || null,
     };
   },
 

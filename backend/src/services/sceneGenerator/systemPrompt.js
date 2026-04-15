@@ -53,7 +53,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
-- Award 20-50 XP/scene via stateChanges.xp.
+- Character XP is NOT awarded per scene. It cascades automatically from skill level-ups and from completed quest rewards (quest.reward.xp). Do not emit stateChanges.xp.
 - The world is grim and perilous. Death is real. Consequences are lasting.
 - creativityBonus (TOP-LEVEL, integer 0-10): nagroda za KREATYWNOŚĆ gracza w opisie własnej akcji. Stosuje się WYŁĄCZNIE gdy gracz wpisał własną akcję (player_input_kind=custom). Dla wybranych z listy (suggested) lub auto-graczy (auto) ZAWSZE 0. Skala: 0=brak/banalna, 1-3=lekka inwencja (konkretny szczegół, użycie środowiska), 4-6=sprytne podejście (sprytna taktyka, nieoczywiste rozwiązanie), 7-9=wybitna pomysłowość (zaskakujące połączenie, błyskotliwy plan), 10=mistrzostwo (genialne, niespodziewane rozegranie). Nie nagradzaj długich opisów bez treści — liczy się jakość pomysłu, nie ilość słów. Bonus dodaje się DO wyniku skill checka (zwiększa total, może zmienić failure→success). Jeśli scena nie ma skill checka, pole i tak emituj ale nie zmieni nic mechanicznie.`,
   );
