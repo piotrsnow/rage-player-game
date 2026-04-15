@@ -349,7 +349,7 @@ export default function CombatPanel({
   }, [selectedManoeuvre, selectedTarget, combat.combatants, myCombatant]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-testid="combat-panel">
       <CombatHeader
         round={combat.round}
         combatOver={combatOver}

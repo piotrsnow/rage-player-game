@@ -6,6 +6,7 @@ import InventoryImage from './inventory/InventoryImage';
 import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
 import ItemDetailBox from './inventory/ItemDetailBox';
 import ItemTooltip from './inventory/ItemTooltip';
+import CrystalUseModal from './inventory/CrystalUseModal';
 import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippableSlots, getEquippedSlot } from './inventory/constants';
 
 function CoinDisplay({ value, label, color }) {
@@ -19,10 +20,11 @@ function CoinDisplay({ value, label, color }) {
   );
 }
 
-export default function Inventory({ items = [], money, equipped = {}, onEquipItem, onUnequipItem, materialBag = [] }) {
+export default function Inventory({ character, items = [], money, equipped = {}, onEquipItem, onUnequipItem, onUseManaCrystal, materialBag = [] }) {
   const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [showMaterialBag, setShowMaterialBag] = useState(false);
+  const [crystalItemId, setCrystalItemId] = useState(null);
   const maxSlots = 40;
   const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
@@ -135,6 +137,19 @@ export default function Inventory({ items = [], money, equipped = {}, onEquipIte
           equippableSlots={getEquippableSlots(selectedItem)}
           onEquipItem={onEquipItem}
           onUnequipItem={onUnequipItem}
+          onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+        />
+      )}
+
+      {crystalItemId && character && (
+        <CrystalUseModal
+          character={character}
+          onClose={() => setCrystalItemId(null)}
+          onChoose={(choice) => {
+            onUseManaCrystal?.(crystalItemId, choice);
+            setCrystalItemId(null);
+            setSelectedItemId(null);
+          }}
         />
       )}
     </div>

@@ -33,6 +33,7 @@ export const typeIcons = {
   trinket: 'token',
   currency: 'paid',
   shield: 'shield_with_heart',
+  manaCrystal: 'auto_awesome',
   misc: 'category',
 };
 

@@ -520,8 +520,12 @@
       "trinket": "Drobiazg",
       "currency": "Waluta",
       "shield": "Tarcza",
+      "manaCrystal": "Kryształ Many",
       "misc": "Różne"
-    }
+    },
+    "useCrystal": "Użyj kryształu",
+    "crystalModalTitle": "Kryształ Many",
+    "crystalModalDesc": "Wybierz co ulepszyć. Efekt jest trwały i zużywa kryształ."
   },
   "materialBag": {
     "title": "Materiały",

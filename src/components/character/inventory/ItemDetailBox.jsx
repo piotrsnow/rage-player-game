@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 import { gameData } from '../../../services/gameDataService';
+import { isManaCrystal } from '../../../data/rpgMagic';
 import InventoryImage from './InventoryImage';
 import { rarityColors, typeIcons, SLOT_CONFIG, rarityLabels, rarityBadgeColors } from './constants';
 
@@ -157,6 +158,7 @@ export default function ItemDetailBox({
   equippableSlots,
   onEquipItem,
   onUnequipItem,
+  onUseManaCrystal,
 }) {
   const { t } = useTranslation();
 
@@ -178,6 +180,7 @@ export default function ItemDetailBox({
   const compareItem = compareSlot ? findEquippedForSlot(compareSlot, items, equipped) : null;
   const compareResolved = getResolved(compareItem);
   const compareCombat = (compareResolved?.combatSource === combatSource) ? compareResolved.combat : null;
+  const isCrystal = isManaCrystal(item);
 
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
@@ -262,7 +265,15 @@ export default function ItemDetailBox({
       )}
 
       <div className="border-t border-outline-variant/10 pt-3 mt-3">
-        {equippedSlot ? (
+        {isCrystal ? (
+          <button
+            onClick={() => onUseManaCrystal?.(item.id)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-tertiary/15 text-tertiary border border-tertiary/30 rounded-sm hover:bg-tertiary/25 transition-colors shadow-[0_0_10px_rgba(197,154,255,0.2)]"
+          >
+            <span className="material-symbols-outlined text-sm">auto_awesome</span>
+            {t('inventory.useCrystal', 'Użyj kryształu')}
+          </button>
+        ) : equippedSlot ? (
           <button
             onClick={() => onUnequipItem(equippedSlot)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20 rounded-sm hover:bg-error/20 transition-colors"

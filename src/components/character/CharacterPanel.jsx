@@ -252,12 +252,14 @@ export default function CharacterPanel({
 
         <div className="lg:col-span-4 space-y-6 animate-fade-in">
           <Inventory
+            character={character}
             items={character.inventory}
             money={character.money}
             equipped={character.equipped}
             materialBag={character.materialBag}
             onEquipItem={(itemId, slot) => { dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } }); if (autoSave) autoSave(); }}
             onUnequipItem={(slot) => { dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } }); if (autoSave) autoSave(); }}
+            onUseManaCrystal={(itemId, choice) => { dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } }); if (autoSave) autoSave(); }}
           />
 
           <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">

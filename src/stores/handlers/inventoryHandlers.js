@@ -1,3 +1,9 @@
+import { isManaCrystal } from '../../data/rpgMagic';
+import { calculateMaxWounds } from '../../services/gameState';
+
+const ATTRIBUTE_KEYS = ['sila', 'inteligencja', 'charyzma', 'zrecznosc', 'wytrzymalosc', 'szczescie'];
+const ATTRIBUTE_CAP = 25;
+
 export const inventoryHandlers = {
   EQUIP_ITEM: (draft, action) => {
     const { itemId, slot } = action.payload || {};
@@ -24,5 +30,31 @@ export const inventoryHandlers = {
     if (!itemId || !draft.character?.inventory?.length) return;
     const item = draft.character.inventory.find((i) => i?.id === itemId);
     if (item) item.imageUrl = imageUrl;
+  },
+
+  USE_MANA_CRYSTAL: (draft, action) => {
+    const { itemId, choice } = action.payload || {};
+    const char = draft.character;
+    if (!itemId || !choice || !char?.inventory?.length) return;
+    const item = char.inventory.find((i) => i?.id === itemId);
+    if (!item || !isManaCrystal(item)) return;
+
+    if (choice === 'mana') {
+      if (!char.mana) char.mana = { current: 0, max: 0 };
+      char.mana.max = (char.mana.max || 0) + 1;
+      char.mana.current = (char.mana.current || 0) + 1;
+    } else if (ATTRIBUTE_KEYS.includes(choice)) {
+      if (!char.attributes) return;
+      const current = char.attributes[choice] ?? 0;
+      if (current >= ATTRIBUTE_CAP) return;
+      char.attributes[choice] = current + 1;
+      if (choice === 'wytrzymalosc') {
+        char.maxWounds = calculateMaxWounds(char.attributes.wytrzymalosc);
+      }
+    } else {
+      return;
+    }
+
+    char.inventory = char.inventory.filter((i) => i?.id !== itemId);
   },
 };

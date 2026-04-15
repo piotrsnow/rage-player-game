@@ -277,6 +277,21 @@ export const MANA_BALANCE = {
   manaGrowth: 'Mana rosnie wylacznie przez magiczne kamienie (rzadki zasob)',
 };
 
+// ── MANA CRYSTALS ──
+
+export const CRYSTAL_ITEM_TYPE = 'manaCrystal';
+
+export const MANA_CRYSTAL = {
+  type: CRYSTAL_ITEM_TYPE,
+  name: 'Kryształ Many',
+  rarity: 'rare',
+  description: 'Pulsujący rzadki kryształ. Po skonsumowaniu trwale zwiększa jeden atrybut o 1 albo maksymalną manę o 1 — do wyboru.',
+};
+
+export function isManaCrystal(item) {
+  return item?.type === CRYSTAL_ITEM_TYPE;
+}
+
 // ── HELPER FUNCTIONS ──
 
 /**

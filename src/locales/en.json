@@ -527,8 +527,12 @@
       "trinket": "Trinket",
       "currency": "Currency",
       "shield": "Shield",
+      "manaCrystal": "Mana Crystal",
       "misc": "Miscellaneous"
-    }
+    },
+    "useCrystal": "Use crystal",
+    "crystalModalTitle": "Mana Crystal",
+    "crystalModalDesc": "Choose what to improve. The effect is permanent and consumes the crystal."
   },
   "materialBag": {
     "title": "Materials",

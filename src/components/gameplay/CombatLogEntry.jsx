@@ -248,7 +248,7 @@ function CombatLogEntry({ entry, t }) {
 
   if (entry.type === 'round') {
     return (
-      <div className="flex items-center gap-3 py-1.5">
+      <div className="flex items-center gap-3 py-1.5" data-testid="combat-log-round">
         <div className="flex-1 h-px bg-outline-variant/20" />
         <span className="text-[11px] text-outline-variant font-label uppercase tracking-widest shrink-0">
           {entry.text}
@@ -262,6 +262,8 @@ function CombatLogEntry({ entry, t }) {
 
   const content = (
     <div
+      data-testid="combat-log-entry"
+      data-combat-log-type={entry.type}
       className={`flex items-start gap-2 px-3 py-2 rounded-sm animate-fade-in transition-colors ${
         tooltipContent ? 'hover:bg-surface-container/30' : ''
       }`}

@@ -27,6 +27,12 @@ export class GameplayPage {
   // Panels/modals
   get characterSheet() { return this.page.locator('[data-testid="character-sheet"]'); }
   get combatPanel() { return this.page.locator('[data-testid="combat-panel"]'); }
+  get combatHeader() { return this.page.locator('[data-testid="combat-header"]'); }
+  get combatRound() { return this.page.locator('[data-testid="combat-round"]'); }
+  get combatSurrenderButton() { return this.page.locator('[data-testid="combat-surrender-button"]'); }
+  get combatTruceButton() { return this.page.locator('[data-testid="combat-truce-button"]'); }
+  get combatEndButton() { return this.page.locator('[data-testid="combat-end-button"]'); }
+  get combatLogEntries() { return this.page.locator('[data-testid="combat-log-entry"]'); }
   get questLog() { return this.page.locator('[data-testid="quest-log"]'); }
 
   async typeAction(text) {

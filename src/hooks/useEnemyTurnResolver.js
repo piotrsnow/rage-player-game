@@ -4,6 +4,51 @@ import { useEvent } from './useEvent';
 
 const AI_TURN_DELAY_MS = 2500;
 
+/**
+ * Pure resolver step — runs the enemy turn logic and routes side effects
+ * through injected callbacks. Extracted so it can be tested without React.
+ * Returns `{ afterEnemies, enemyResults }` for introspection.
+ */
+export function resolveEnemyTurnStep({
+  combat,
+  isMultiplayer,
+  dispatch,
+  onHostResolve,
+  addResultToLog,
+  dispatchCombatChatMessage,
+  setIsAwaitingAiTurn,
+  now = () => Date.now(),
+}) {
+  setIsAwaitingAiTurn(false);
+  const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(combat);
+  for (const er of enemyResults) {
+    if (!isMultiplayer) dispatchCombatChatMessage(er);
+    addResultToLog(er);
+  }
+  if (isMultiplayer) {
+    afterEnemies.lastResults = enemyResults;
+    afterEnemies.lastResultsTs = now();
+    onHostResolve?.(afterEnemies);
+  } else {
+    dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
+  }
+  return { afterEnemies, enemyResults };
+}
+
+/**
+ * Decides whether the enemy turn resolver should fire for the given combat
+ * state. Exposed so tests can verify gating without spinning up React.
+ */
+export function shouldScheduleEnemyTurn({ combat, combatOver, isMultiplayer, isHost }) {
+  if (combatOver) return false;
+  if (isMultiplayer && !isHost) return false;
+  const current = getCurrentTurnCombatant(combat);
+  if (!current || current.type === 'player') return false;
+  return true;
+}
+
+export { AI_TURN_DELAY_MS };
+
 // Auto-resolves enemy turns when the current combatant is not a player.
 // Fixes deadlock when enemies win initiative or are first in a new round.
 //
@@ -22,26 +67,19 @@ export function useEnemyTurnResolver({
   setIsAwaitingAiTurn,
 }) {
   const runEnemyTurn = useEvent(() => {
-    setIsAwaitingAiTurn(false);
-    const { combat: afterEnemies, results: enemyResults } = resolveEnemyTurns(combat);
-    for (const er of enemyResults) {
-      if (!isMultiplayer) dispatchCombatChatMessage(er);
-      addResultToLog(er);
-    }
-    if (isMultiplayer) {
-      afterEnemies.lastResults = enemyResults;
-      afterEnemies.lastResultsTs = Date.now();
-      onHostResolve?.(afterEnemies);
-    } else {
-      dispatch({ type: 'UPDATE_COMBAT', payload: afterEnemies });
-    }
+    resolveEnemyTurnStep({
+      combat,
+      isMultiplayer,
+      dispatch,
+      onHostResolve,
+      addResultToLog,
+      dispatchCombatChatMessage,
+      setIsAwaitingAiTurn,
+    });
   });
 
   useEffect(() => {
-    if (combatOver) return;
-    if (isMultiplayer && !isHost) return;
-    const current = getCurrentTurnCombatant(combat);
-    if (!current || current.type === 'player') {
+    if (!shouldScheduleEnemyTurn({ combat, combatOver, isMultiplayer, isHost })) {
       setIsAwaitingAiTurn(false);
       return;
     }
