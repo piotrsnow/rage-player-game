@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
-export default function Tooltip({ children, content, className = '', tooltipClassName = '' }) {
+export default function Tooltip({ children, content, className = '', tooltipClassName = '', delay = 300 }) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
@@ -46,7 +46,7 @@ export default function Tooltip({ children, content, className = '', tooltipClas
 
   const show = () => {
     clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setVisible(true), 300);
+    timeoutRef.current = setTimeout(() => setVisible(true), delay);
   };
 
   const hide = () => {

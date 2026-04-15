@@ -5,7 +5,8 @@ import MaterialBagPanel from './MaterialBagPanel';
 import InventoryImage from './inventory/InventoryImage';
 import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
 import ItemDetailBox from './inventory/ItemDetailBox';
-import { rarityColors, typeIcons, SLOT_CONFIG, getEquippableSlots, getEquippedSlot } from './inventory/constants';
+import ItemTooltip from './inventory/ItemTooltip';
+import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippableSlots, getEquippedSlot } from './inventory/constants';
 
 function CoinDisplay({ value, label, color }) {
   return (
@@ -74,7 +75,9 @@ export default function Inventory({ items = [], money, equipped = {}, onEquipIte
 
       <div className="grid grid-cols-4 gap-3">
         {items.map((item) => {
-          const rarity = rarityColors[item.rarity || item.availability] || rarityColors.common;
+          const rarityKey = item.rarity || item.availability || 'common';
+          const rarity = rarityColors[rarityKey] || rarityColors.common;
+          const glow = rarityGlows[rarityKey] || '';
           const icon = typeIcons[item.type] || typeIcons.misc;
           const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
@@ -82,7 +85,7 @@ export default function Inventory({ items = [], money, equipped = {}, onEquipIte
           return (
             <div
               key={item.id}
-              className={`aspect-square bg-surface-container-highest border ${rarity} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+              className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
               onClick={() => setSelectedItemId(isSelected ? null : item.id)}
             >
               <InventoryImage
@@ -93,7 +96,8 @@ export default function Inventory({ items = [], money, equipped = {}, onEquipIte
                 fallbackIconClass="text-base"
                 imageClassName="group-hover:scale-110 transition-transform"
                 wrapperClassName="flex items-center justify-center"
-                showLargePreview
+                tooltipContent={<ItemTooltip item={item} />}
+                tooltipDelay={400}
               />
               <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
                 {item.name}
@@ -125,6 +129,8 @@ export default function Inventory({ items = [], money, equipped = {}, onEquipIte
       {selectedItem && (
         <ItemDetailBox
           item={selectedItem}
+          items={items}
+          equipped={equipped}
           equippedSlot={getEquippedSlot(selectedItem, equipped)}
           equippableSlots={getEquippableSlots(selectedItem)}
           onEquipItem={onEquipItem}

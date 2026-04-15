@@ -8,6 +8,14 @@ export const rarityColors = {
   legendary: 'border-tertiary/50 text-tertiary shadow-[0_0_12px_rgba(255,239,213,0.3)]',
 };
 
+export const rarityGlows = {
+  common: '',
+  uncommon: 'shadow-[inset_0_0_8px_rgba(147,130,220,0.12)]',
+  rare: 'shadow-[inset_0_0_10px_rgba(147,130,220,0.22)]',
+  epic: 'shadow-[inset_0_0_12px_rgba(197,154,255,0.28)]',
+  legendary: 'shadow-[inset_0_0_14px_rgba(255,239,213,0.35)]',
+};
+
 export const typeIcons = {
   weapon: 'swords',
   armor: 'shield',

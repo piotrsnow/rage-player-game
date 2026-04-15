@@ -9,8 +9,8 @@ export default function InventoryImage({
   fallbackIconClass = 'text-xl',
   wrapperClassName = '',
   imageClassName = '',
-  showLargePreview = false,
-  previewSizeClass = 'w-[360px] h-[360px]',
+  tooltipContent = null,
+  tooltipDelay = 300,
 }) {
   const [isLoading, setIsLoading] = useState(Boolean(imageUrl));
   const [hasError, setHasError] = useState(false);
@@ -20,28 +20,18 @@ export default function InventoryImage({
     setIsLoading(Boolean(imageUrl));
   }, [imageUrl]);
 
-  const previewContent = (showLargePreview && imageUrl && !hasError)
-    ? (
-      <div className={previewSizeClass}>
-        <img src={imageUrl} alt={alt} className="w-full h-full object-cover rounded-sm border border-outline-variant/20" />
-      </div>
-    )
-    : null;
+  const fallbackNode = (
+    <div className={`relative ${sizeClass} ${wrapperClassName}`}>
+      <span
+        className={`material-symbols-outlined ${fallbackIconClass} text-on-surface-variant/80`}
+        style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
+      >
+        {fallbackIcon}
+      </span>
+    </div>
+  );
 
-  if (!imageUrl || hasError) {
-    return (
-      <div className={`relative ${sizeClass} ${wrapperClassName}`}>
-        <span
-          className={`material-symbols-outlined ${fallbackIconClass} text-on-surface-variant/80`}
-          style={{ fontVariationSettings: "'FILL' 1, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}
-        >
-          {fallbackIcon}
-        </span>
-      </div>
-    );
-  }
-
-  const imageNode = (
+  const imageNode = (!imageUrl || hasError) ? fallbackNode : (
     <div className={`relative ${sizeClass} ${wrapperClassName}`}>
       {isLoading && (
         <div className="absolute inset-0 bg-surface-container-highest/80 rounded-sm flex items-center justify-center z-10">
@@ -61,9 +51,9 @@ export default function InventoryImage({
     </div>
   );
 
-  if (!previewContent) return imageNode;
+  if (!tooltipContent) return imageNode;
   return (
-    <Tooltip content={previewContent} tooltipClassName="!max-w-none !p-2">
+    <Tooltip content={tooltipContent} delay={tooltipDelay} tooltipClassName="!max-w-none !p-3">
       {imageNode}
     </Tooltip>
   );
