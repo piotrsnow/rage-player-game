@@ -8,8 +8,10 @@ const TYPE_COLORS = {
 };
 
 export default function QuestsTab({ quests, npcs, navigateTo, t }) {
-  const active = quests?.active || [];
-  const completed = quests?.completed || [];
+  const rawActive = quests?.active || [];
+  const rawCompleted = quests?.completed || [];
+  const active = [...rawActive].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const completed = [...rawCompleted].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
   const [showCompleted, setShowCompleted] = useState(false);
 
   if (active.length === 0 && completed.length === 0) {

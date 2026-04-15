@@ -16,5 +16,6 @@ Embedding vectors are written using the native `mongodb` driver instead of Prism
 Atlas vector indexes are created via `backend/src/scripts/createVectorIndexes.js`.
 
 ## Related
-- [[mongodb-prisma]]
-- [[../concepts/vector-search]]
+- [atlas-only-no-local-mongo.md](atlas-only-no-local-mongo.md) — why dev requires Atlas
+- [concepts/persistence.md](../concepts/persistence.md) — Prisma + Atlas + native driver split
+- [concepts/ai-context-assembly.md](../concepts/ai-context-assembly.md) — where vector search is consumed

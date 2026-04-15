@@ -12,6 +12,7 @@ import NarrativeAnchorsSection from './sections/NarrativeAnchorsSection';
 import NarratorStyleSection from './sections/NarratorStyleSection';
 import SceneVisualizationSection from './sections/SceneVisualizationSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
+import LLMTimeoutSection from './sections/LLMTimeoutSection';
 import NarratorVoicesSection from './sections/NarratorVoicesSection';
 import { SfxSection, MusicSection } from './sections/AudioSections';
 
@@ -147,6 +148,11 @@ export default function DMSettingsPage({ onClose }) {
                 <EffectIntensitySection
                   settings={settings}
                   updateSettings={updateSettings}
+                />
+
+                <LLMTimeoutSection
+                  dmSettings={settings.dmSettings}
+                  updateDMSettings={updateDMSettings}
                 />
               </section>
 

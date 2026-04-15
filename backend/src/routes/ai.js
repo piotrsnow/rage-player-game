@@ -154,7 +154,18 @@ const GENERATE_SCENE_SCHEMA = {
     provider: PROVIDER_SCHEMA,
     model: MODEL_SCHEMA,
     language: LANGUAGE_SCHEMA,
-    dmSettings: { type: 'object' },
+    dmSettings: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        // LLM timeouts — validated here so garbage from older clients falls
+        // back to generateSceneStream defaults instead of passing through as
+        // strings. Wide bounds: UI slider narrows to a sane range, schema only
+        // guards against obvious misuse.
+        llmPremiumTimeoutMs: { type: 'integer', minimum: 5000, maximum: 300000 },
+        llmNanoTimeoutMs: { type: 'integer', minimum: 1000, maximum: 120000 },
+      },
+    },
     resolvedMechanics: { type: ['object', 'null'] },
     needsSystemEnabled: { type: 'boolean' },
     characterNeeds: { type: ['object', 'null'] },

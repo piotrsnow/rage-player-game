@@ -548,6 +548,11 @@
     "reducedPrompt": "Używaj skróconych promptów (zalecane dla modeli 7B-13B)",
     "title": "Ustawienia Mistrza Gry",
     "subtitle": "Skalibruj arkaniczną maszynę. Twoje wybory przeformują tkankę narracji krainy.",
+    "llmTimeouts": "Limity czasu AI",
+    "llmPremiumTimeout": "Limit generacji sceny",
+    "llmPremiumTimeoutDesc": "Maks. czas na odpowiedź dużego modelu (scena). Po przekroczeniu pipeline zwraca błąd LLM_TIMEOUT. Domyślnie 45s.",
+    "llmNanoTimeout": "Limit modeli nano",
+    "llmNanoTimeoutDesc": "Maks. czas na odpowiedź modeli nano (intent, kompresja, questy). Po przekroczeniu używany jest fallback. Domyślnie 15s.",
     "narrativeAnchors": "Kotwice Narracji",
     "storyChaos": "Poziom Chaosu Fabuły",
     "storyChaosDesc": "Entropia zwrotów akcji AI",
@@ -1106,7 +1111,13 @@
     "xpLabel": "PD",
     "campaigns": "kampanii",
     "deselect": "Odznacz",
-    "selectedCharacter": "Wybrana postać"
+    "selectedCharacter": "Wybrana postać",
+    "lockedTooltip": "Postać musi znaleźć się w bezpiecznym miejscu (karczma, tawerna, świątynia) w kampanii \"{{campaign}}\" żeby przejść do innej kampanii. {{location}}.",
+    "lockedBadge": "W kampanii: {{name}}",
+    "lockedAtLocation": "obecnie w: {{loc}}",
+    "lockedNoLocation": "bez znanej bezpiecznej lokalizacji",
+    "lockedFallbackCampaign": "innej kampanii",
+    "lockedBlockedJoin": "Wybrana postać jest zablokowana w innej kampanii. Wybierz inną postać."
   },
   "system": {
     "diceRollMessage": "Test {{skill}}: k100 wynik {{roll}} vs cel {{target}} — PS {{sl}} — {{result}}",

@@ -1,177 +1,184 @@
-# Backend File Structure
+# Backend Structure — subdomain map
 
-Detailed file inventory for `backend/` and `shared/`. For high-level architecture see [AGENTS.md](../../AGENTS.md).
+High-level map of `backend/src/` and `shared/`. Not a file-by-file inventory. Each row points at the entry file when you start working on that subdomain.
 
-**April 2026 split sweep (session 6):** four monoliths (`campaigns.js` 935L, `multiplayer.js` 1291L, `multiplayerAI.js` 1615L, `sceneGenerator.js` 1901L) were broken into thin facades + submodule folders. See [[../patterns/backend-monolith-split]] for the recurring pattern.
+## Routes
 
-## Routes (`backend/src/routes/`)
+All routes mount under `/v1/*`. Health check at `/health` (outside the `/v1` scope).
 
-### Flat routes
-- `auth.js` + `auth.test.js` — cookie-based refresh flow under `/v1/auth`: /register, /login, /refresh (CSRF), /logout (CSRF), /me (bearer), /settings (bearer), /api-keys (bearer). Access token 15min, refresh cookie 30d in Redis. Redis REQUIRED — register/login/refresh return 503 when disabled. See [[../../memory pointer: project_auth_v2_refresh]].
+- `auth.js` — `/v1/auth/*` (register, login, refresh, logout, /me, /settings, /api-keys). Cookie-based refresh + double-submit CSRF. See [auth.md](auth.md).
+- `ai.js` — all AI endpoints (~865L). Simple single-shot (`/generate-story-prompt`, `/combat-commentary`, `/verify-objective`, `/generate-recap`), streaming (`/generate-campaign`, `/campaigns/:id/generate-scene-stream`), job polling (`/jobs/:id`), scene persistence (`/campaigns/:id/scenes`, `/scenes/bulk`, GET `/scenes`, PATCH `/core`). See [scene-generation.md](scene-generation.md) and [patterns/sse-streaming.md](../patterns/sse-streaming.md).
 - `characters.js` — Character library CRUD
-- `ai.js` — All AI endpoints in one (~760L — on the edge of the size budget, split candidate):
-  - Simple single-shot: /generate-story-prompt, /combat-commentary, /verify-objective, /generate-recap (all use `aiJsonCall.js`)
-  - Streaming: /generate-campaign (inline SSE), /campaigns/:id/generate-scene-stream (BullMQ + pub/sub bridge, inline SSE fallback)
-  - Job polling: /jobs/:id (scans all BullMQ queues)
-  - Scene persistence: /campaigns/:id/scenes, /campaigns/:id/scenes/bulk (both opt-in idempotency), GET /campaigns/:id/scenes, PATCH /campaigns/:id/core
-  - See [[../patterns/sse-streaming]] and [[../decisions/bullmq-vs-sse-routes]]
-- `gameData.js` — Static game data API (equipment, etc.)
-- `media.js` — Media upload/serve (local or GCS)
-- `music.js` — Music generation proxy
-- `wanted3d.js` — Wanted 3D model requests management
-- `proxy/openai.js` — Proxied OpenAI chat + image
-- `proxy/anthropic.js` — Proxied Anthropic chat
-- `proxy/gemini.js` — Proxied Gemini chat + image
-- `proxy/elevenlabs.js` — Proxied ElevenLabs TTS
-- `proxy/stability.js` — Proxied Stability AI image generation
-- `proxy/meshy.js` — Proxied Meshy 3D model generation
+- `gameData.js` — static game data API (equipment, etc.)
+- `media.js` — media upload/serve (local or GCS)
+- `music.js` — music generation proxy
+- `wanted3d.js` — 3D model request management
+- `campaigns.js` — thin facade, registers `campaigns/` submodules: `public.js`, `crud.js`, `sharing.js`, `recaps.js`, `schemas.js`. See [persistence.md](persistence.md).
+- `multiplayer.js` — thin facade, registers `multiplayer/` submodules: `http.js` (HTTP), `connection.js` (WS auth + heartbeat + rate limit + dispatcher), `handlers/lobby.js`, `handlers/roomState.js`, `handlers/gameplay.js`, `handlers/quests.js`, `handlers/combat.js`, `handlers/webrtc.js`. See [multiplayer.md](multiplayer.md).
+- `proxy/` — `openai.js`, `anthropic.js`, `gemini.js`, `elevenlabs.js`, `stability.js`, `meshy.js`. Centralized upstream API calls with per-user key resolution.
 
-### Split routes
+## Services
 
-**`campaigns.js`** (thin facade, 7L) re-exports `extractTotalCost` + `stripNormalizedFromCoreState` so `campaigns.saveState.test.js` still works unchanged. Registers:
-- `campaigns/public.js` — GET /public, GET /public/:id, GET /share/:token, POST /share/:token/tts (unauth'd)
-- `campaigns/crud.js` — GET /, GET /:id, POST /, PUT /:id, DELETE /:id (authed child scope)
-- `campaigns/sharing.js` — POST /:id/share, DELETE /:id/share, PATCH /:id/publish
-- `campaigns/recaps.js` — GET /:id/recaps, POST /:id/recaps
-- `campaigns/schemas.js` — `CAMPAIGN_WRITE_SCHEMA`, `RECAP_SAVE_SCHEMA`
+### Scene generation pipeline
 
-**`multiplayer.js`** (thin facade, 7L) registers:
-- `multiplayer/http.js` — GET /rooms, GET /my-sessions
-- `multiplayer/connection.js` — WS auth, heartbeat (30s), rate limit (30/s normal, 60/s hard-close), sequential message queue, close handler, **inline dispatcher** (Map lookup over handler modules)
-- `multiplayer/handlers/lobby.js` — CREATE_ROOM, CONVERT_TO_MULTIPLAYER, JOIN_ROOM, LEAVE_ROOM, REJOIN_ROOM, KICK_PLAYER
-- `multiplayer/handlers/roomState.js` — UPDATE_CHARACTER, UPDATE_SETTINGS, SYNC_CHARACTER, UPDATE_SCENE_IMAGE, TYPING, PING
-- `multiplayer/handlers/gameplay.js` — START_GAME, SUBMIT_ACTION, WITHDRAW_ACTION, APPROVE_ACTIONS, SOLO_ACTION (last two deduped via `runMultiplayerSceneFlow`)
-- `multiplayer/handlers/quests.js` — ACCEPT_QUEST_OFFER, DECLINE_QUEST_OFFER, VERIFY_QUEST_OBJECTIVE
-- `multiplayer/handlers/combat.js` — COMBAT_SYNC, COMBAT_MANOEUVRE, COMBAT_ENDED
-- `multiplayer/handlers/webrtc.js` — WEBRTC_OFFER/ANSWER/ICE/TRACK_STATE (signal forwarding)
+`sceneGenerator.js` (1L facade) → `sceneGenerator/`:
 
-Handlers share a `session = { odId, roomCode }` object mutated in place + `ctx = { fastify, ws, uid, sendWs, log }` set up once per connection.
+- [generateSceneStream.js](../../backend/src/services/sceneGenerator/generateSceneStream.js) — orchestrator (load, intent, shortcuts, pre-roll, context, prompts, streaming, post-process, save, side effects, complete)
+- `campaignLoader.js` — parallel DB load + coreState hydration
+- `shortcuts.js` — `tryTradeShortcut`, `tryCombatFastPath` (early-return paths that skip the large model)
+- `systemPrompt.js` — `buildLeanSystemPrompt` + `buildAnthropicSystemBlocks`
+- `userPrompt.js` — `buildUserPrompt` + `buildPreRollInstructions`
+- `contextSection.js` — formats `assembleContext` output into the prompt suffix
+- `streamingClient.js` — OpenAI/Anthropic streaming + `runTwoStagePipelineStreaming` + `parseAIResponseLean` re-export
+- `diceResolution.js` — `applyCreativityToRoll`, `isCreativityEligible`, `resolveModelDiceRolls`, `calculateFreeformSkillXP`
+- `enemyFill.js` — `fillEnemiesFromBestiary`
+- `processStateChanges.js` — applies NPCs / knowledge / codex / quests + generates scene embeddings
+- `labels.js` — DM settings label helpers + `formatMoney`
+- `inlineKeys.js` — `getInlineEntityKeys`
 
-## Services (`backend/src/services/`)
+See [scene-generation.md](scene-generation.md).
 
-### Campaign serialization / persistence helpers
-- `campaignSerialize.js` — pure helpers: `extractTotalCost`, `stripNormalizedFromCoreState`, `SCENE_CLIENT_SELECT`, `dedupeScenesByIndexAsc`, `buildDistinctSceneCountMap`
-- `campaignSync.js` — DB side-effects: `withRetry` (P2034/P2028 retry), `fetchCampaignCharacters`, `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `reconstructFromNormalized`
-- `campaignRecap.js` — recap cache helpers: `normalizeRecapCacheKey`, `buildRecapAssetKey`, `parseRecapMetadata`, `SUMMARY_CACHE_MAX_ITEMS`
+### AI helpers
+
+- [intentClassifier.js](../../backend/src/services/intentClassifier.js) — Stage 1 of two-stage pipeline (heuristic + nano fallback)
+- [aiContextTools.js](../../backend/src/services/aiContextTools.js) — Stage 2 (`assembleContext`) + legacy tool-use definitions
+- [memoryCompressor.js](../../backend/src/services/memoryCompressor.js) — post-scene nano fact extraction + running summaries + location summaries + quest objective checks
+- [aiJsonCall.js](../../backend/src/services/aiJsonCall.js) — shared single-shot JSON call helper (OpenAI + Anthropic non-streaming) with per-user key resolution
+- [aiErrors.js](../../backend/src/services/aiErrors.js) — `AIServiceError`, `AI_ERROR_CODES`, `parseProviderError`, `toClientAiError`
+
+### Single-shot AI services
+
+- [combatCommentary.js](../../backend/src/services/combatCommentary.js) — mid-combat narration + battle cries
+- [objectiveVerifier.js](../../backend/src/services/objectiveVerifier.js) — quest objective fulfillment classifier (low temp)
+- [recapGenerator.js](../../backend/src/services/recapGenerator.js) — campaign recap with chunking (25 scenes/chunk) + merge. Modes: story / dialogue / poem / report.
+- [storyPromptGenerator.js](../../backend/src/services/storyPromptGenerator.js) — nano-model premise generator
 
 ### Multiplayer AI pipeline
-- `multiplayerAI.js` (thin facade, 7L) re-exports: `generateMultiplayerCampaign`, `generateMultiplayerScene`, `needsCompression`, `compressOldScenes`, `verifyMultiplayerQuestObjective`
-- Fallback suggested-actions live in `shared/domain/fallbackActions.js` — BE entry `ensureSuggestedActions`, shared helpers (FE imports `postProcessSuggestedActions` from same file)
-- Dialogue repair lives in `shared/domain/dialogueRepair.js` — single source of truth (previously FE/BE duplicated, reconciled to FE variant which had more bugfixes: hardDedupe, fuzzy name matching, player reattribution, generic-speaker safe-mode)
-- `multiplayerAI/diceNormalization.js` — `normalizeDifficultyModifier`, `snapDifficultyModifier`, `normalizeDiceRoll`, `recalcDiceRoll`, `computeNewMomentum`, re-exports `rollD50` from `diceResolver.js`
-- `multiplayerAI/systemPrompt.js` — `buildMultiplayerSystemPrompt` + `NEEDS_LABELS` + `buildMultiplayerUnmetNeedsBlock`
-- `multiplayerAI/scenePrompt.js` — `buildMultiplayerScenePrompt`
-- `multiplayerAI/aiClient.js` — `callAI` (OpenAI → Anthropic fallback + retry) + private `safeParseJSONContent`
-- `multiplayerAI/campaignGeneration.js` — `generateMultiplayerCampaign` orchestrator
-- `multiplayerAI/sceneGeneration.js` — `generateMultiplayerScene` orchestrator
-- `multiplayerAI/compression.js` — `needsCompression`, `compressOldScenes`, `verifyMultiplayerQuestObjective`
-- `multiplayerSceneFlow.js` — shared flow used by WS handlers: `runMultiplayerSceneFlow`, `persistMultiplayerCharactersToDB`, `fetchOwnedCharacter`, `calcNextMomentum`, `computeNewMomentum`, `applySceneStateChanges`, `buildArrivalNarrative`
 
-### Single-player AI pipeline
-- `sceneGenerator.js` (thin facade, 1L) re-exports `generateSceneStream`
-- `sceneGenerator/generateSceneStream.js` — orchestrator (phases: load, intent, shortcuts, pre-roll, context, prompts, streaming, post-process, save, side-effects, complete)
-- `sceneGenerator/campaignLoader.js` — `loadCampaignState`: parallel DB load (campaign + NPCs + quests + codex + knowledge) + coreState hydration
-- `sceneGenerator/shortcuts.js` — `tryTradeShortcut`, `tryCombatFastPath`, `findCombatTargetNpc`, `generateShortNarrative` (trade intent + combat fast-path early-returns that skip the large model)
-- `sceneGenerator/systemPrompt.js` — `buildLeanSystemPrompt` + `buildAnthropicSystemBlocks` (large prompt template, ~400L — cohesive single file per project decision)
-- `sceneGenerator/userPrompt.js` — `buildUserPrompt` + `buildPreRollInstructions` (imports `detectCombatIntent` from `shared/domain/`)
-- `sceneGenerator/contextSection.js` — `buildContextSection` (formats `assembleContext` output into prompt suffix)
-- `sceneGenerator/streamingClient.js` — `callOpenAIStreaming`, `callAnthropicStreaming`, `runTwoStagePipelineStreaming`. `parseAIResponse` re-exported from `shared/domain/aiResponseParser.js` (`parseAIResponseLean`).
-- `sceneGenerator/diceResolution.js` — `applyCreativityToRoll`, `isCreativityEligible`, `resolveModelDiceRolls`, `calculateFreeformSkillXP`, `DIFFICULTY_SKILL_XP`
-- `sceneGenerator/enemyFill.js` — `fillEnemiesFromBestiary` (enemyHints + name matching)
-- `sceneGenerator/processStateChanges.js` — `processStateChanges` (NPCs, knowledge, codex, quests via inline sub-functions) + `generateSceneEmbedding`
-- `sceneGenerator/labels.js` — DM settings label helpers + `formatMoney`
-- `sceneGenerator/inlineKeys.js` — `getInlineEntityKeys` (used by `assembleContext` to skip entities already inlined in the system prompt)
+`multiplayerAI.js` (7L facade) → `multiplayerAI/`:
 
-### Other AI services
-- `aiJsonCall.js` — Shared helper for single-shot JSON AI calls (OpenAI + Anthropic non-streaming). Used by `combatCommentary.js`, `objectiveVerifier.js`, `recapGenerator.js`, `storyPromptGenerator.js`. Accepts `userApiKeys` for per-user key resolution via `requireServerApiKey`.
-- `combatCommentary.js` — POST /v1/ai/combat-commentary — mid-combat narration + battle cries (single-shot JSON, premium tier)
-- `objectiveVerifier.js` — POST /v1/ai/verify-objective — fulfillment classifier (single-shot JSON, low temp)
-- `recapGenerator.js` — POST /v1/ai/generate-recap — campaign recap with chunking (25 scenes per chunk) + merge step. Modes: story/dialogue/poem/report.
-- `intentClassifier.js` — Two-stage intent classification: heuristic regex (~70%) + nano model fallback. Output: context selection flags for `assembleContext()`. Imports `detectCombatIntent` from `shared/domain/`.
-- `aiContextTools.js` — AI function calling tools + `assembleContext()` for two-stage pipeline context assembly
-- `memoryCompressor.js` — Post-scene fact extraction via nano model. Running summary after each scene + location summary when player moves
-- `aiErrors.js` — Structured AI error handling (`AIServiceError`, `AI_ERROR_CODES`, `parseProviderError`, `toClientAiError`)
-- `campaignGenerator.js` — Streaming single-player campaign generator (inline SSE path, NOT via BullMQ — see [[../decisions/bullmq-vs-sse-routes]])
-- `storyPromptGenerator.js` — Nano-model story prompt generator with input sanitization
+- `aiClient.js` — `callAI` with OpenAI → Anthropic fallback + retry
+- `systemPrompt.js` — `buildMultiplayerSystemPrompt` + needs block helpers
+- `scenePrompt.js` — `buildMultiplayerScenePrompt`
+- `campaignGeneration.js` — `generateMultiplayerCampaign`
+- `sceneGeneration.js` — `generateMultiplayerScene`
+- `compression.js` — `needsCompression`, `compressOldScenes`, `verifyMultiplayerQuestObjective`
+- `diceNormalization.js` — `normalizeDifficultyModifier`, `snapDifficultyModifier`, `normalizeDiceRoll`, `recalcDiceRoll`, `computeNewMomentum`
+- [multiplayerSceneFlow.js](../../backend/src/services/multiplayerSceneFlow.js) — shared flow: `runMultiplayerSceneFlow`, `persistMultiplayerCharactersToDB`, `fetchOwnedCharacter`, `applySceneStateChanges`, `buildArrivalNarrative`
+
+See [multiplayer.md](multiplayer.md).
+
+### Campaign serialization / persistence
+
+- [campaignSerialize.js](../../backend/src/services/campaignSerialize.js) — pure helpers: `extractTotalCost`, `stripNormalizedFromCoreState`, `SCENE_CLIENT_SELECT`, `dedupeScenesByIndexAsc`, `buildDistinctSceneCountMap`
+- [campaignSync.js](../../backend/src/services/campaignSync.js) — DB side effects: `withRetry` (P2034/P2028 retry), `fetchCampaignCharacters`, `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `reconstructFromNormalized`
+- [campaignRecap.js](../../backend/src/services/campaignRecap.js) — recap cache helpers
+- [campaignGenerator.js](../../backend/src/services/campaignGenerator.js) — streaming single-player campaign generator
 
 ### Dice / mechanics
-- `diceResolver.js` — d50 skill check resolution. Exports `rollD50`, `clamp`, `resolveBackendDiceRoll`, `resolveBackendDiceRollWithPreRoll`, `generatePreRolls`, `CREATIVITY_BONUS_MAX`, `SKILL_BY_NAME`, `DIFFICULTY_THRESHOLDS`, `getSkillLevel`
-- `rewardResolver.js` — Converts abstract reward tags (`type: 'weapon', rarity: 'uncommon'`) into concrete items/materials/money
-- `characterMutations.js` + `characterMutations.test.js` — `applyCharacterStateChanges`, `deserializeCharacterRow`, `characterToPrismaUpdate`. 19 unit tests covering wound clamping, death, xp/level cascade, mana clamping, attribute changes + maxWounds recalc.
 
-### Multiplayer infrastructure
-- `roomManager.js` + `roomManager.test.js` — In-memory rooms + Prisma persistence for crash recovery. Exports room lifecycle (`createRoom`, `joinRoom`, `leaveRoom`, `restoreRoom`, `disconnectPlayer`) + state mutation (`updateCharacter`, `updateSettings`, `submitAction`, `approveActions`, `executeSoloAction`, `setPhase`, `setGameState`, `restorePendingActions`) + query (`getRoom`, `listJoinableRooms`, `listUserRooms`, `findSessionInDB`, `sanitizeRoom`) + IO (`broadcast`, `sendTo`, `saveRoomToDB`, `deleteRoomFromDB`, `touchRoom`, `closeAllRoomSockets`).
-- `stateValidator.js` — Multiplayer state change validation (separate from FE version — known dedup candidate in post_merge_infra)
-- `stateChangeMessages.js` — Human-readable state change messages (`formatMoneyDelta` helper)
+- [diceResolver.js](../../backend/src/services/diceResolver.js) — d50 skill check resolution: `rollD50`, `clamp`, `resolveBackendDiceRoll`, `resolveBackendDiceRollWithPreRoll`, `generatePreRolls`, `CREATIVITY_BONUS_MAX`, `SKILL_BY_NAME`, `DIFFICULTY_THRESHOLDS`, `getSkillLevel`
+- [rewardResolver.js](../../backend/src/services/rewardResolver.js) — abstract reward tags → concrete items/materials/money
+- [characterMutations.js](../../backend/src/services/characterMutations.js) — `applyCharacterStateChanges`, `deserializeCharacterRow`, `characterToPrismaUpdate` (+ test)
+
+### Room management (multiplayer)
+
+- [roomManager.js](../../backend/src/services/roomManager.js) — in-memory `Map<roomCode, room>` + Prisma persistence for crash recovery. Room lifecycle, state mutation, query, IO (broadcast/sendTo/etc.). (+ test)
+
+### State validation (MP path)
+
+- [stateValidator.js](../../backend/src/services/stateValidator.js) — `validateMultiplayerStateChanges` using shared helpers from `shared/domain/stateValidation.js`
+- [stateChangeMessages.js](../../backend/src/services/stateChangeMessages.js) — human-readable messages + `formatMoneyDelta`
 
 ### Data & storage
-- `embeddingService.js` — OpenAI text-embedding-3-small wrapper
-- `vectorSearchService.js` — MongoDB Atlas Vector Search
-- `mongoNative.js` — Native MongoDB driver for embeddings (BSON arrays — Prisma can't handle them, see [[../decisions/embeddings-native-driver]])
-- `mediaStore.js` — Media storage abstraction (local / GCS)
-- `localStore.js` — Local filesystem storage
-- `gcpStore.js` — Google Cloud Storage
 
-### Auth & utilities
-- `apiKeyService.js` + `apiKeyService.test.js` — API key encryption/decryption (AES-256). Exports `encrypt`, `decrypt`, `resolveApiKey(encryptedUserKeys, keyName)` (per-user precedence with env fallback), `requireServerApiKey(keyName, encryptedKeys?, providerLabel)` (throws 503 if neither configured), `loadUserApiKeys(prisma, userId)` (fetches `User.apiKeys` row).
-- `refreshTokenService.js` + `refreshTokenService.test.js` — Opaque random refresh tokens in Redis. Key pattern `user:<userId>:refresh:<tokenId>`, cookie format `<userId>.<tokenId>`, 30d TTL. Exports `issueRefreshToken`, `verifyRefreshToken`, `revokeRefreshToken`, `revokeAllUserRefreshTokens` (SCAN+DEL). Returns null when Redis disabled (caller returns 503).
-- `hashService.js` — Content-addressable hashing for media
-- `imageResize.js` — Image resizing with Sharp
-- `timeUtils.js` — Time/period utilities (`hourToPeriod`, `decayNeeds`)
+- [embeddingService.js](../../backend/src/services/embeddingService.js) — OpenAI text-embedding-3-small wrapper with L1 + L2 (Redis) cache
+- [vectorSearchService.js](../../backend/src/services/vectorSearchService.js) — Atlas Vector Search
+- [mongoNative.js](../../backend/src/services/mongoNative.js) — native MongoDB driver for embeddings (BSON arrays that Prisma can't represent)
+- [mediaStore.js](../../backend/src/services/mediaStore.js) — media storage abstraction
+- [localStore.js](../../backend/src/services/localStore.js), [gcpStore.js](../../backend/src/services/gcpStore.js)
+- [hashService.js](../../backend/src/services/hashService.js) — content-addressable hashing
+- [imageResize.js](../../backend/src/services/imageResize.js) — Sharp-based resize
+- [timeUtils.js](../../backend/src/services/timeUtils.js) — `hourToPeriod`, `decayNeeds`
+
+### Auth
+
+- [apiKeyService.js](../../backend/src/services/apiKeyService.js) — AES-256 key encryption, `encrypt`, `decrypt`, `resolveApiKey`, `requireServerApiKey`, `loadUserApiKeys` (+ test)
+- [refreshTokenService.js](../../backend/src/services/refreshTokenService.js) — opaque refresh tokens in Redis, O(1) revoke (+ test)
 
 ### Queues + workers
-- `services/queues/aiQueue.js` + test — BullMQ per-provider queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`). Exports `getQueue(provider)`, `enqueueJob(name, data, { provider, userId, jobId? })`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Fallback-safe: returns null when `isRedisEnabled()` is false.
-- `workers/aiWorker.js` + test — Worker pool (concurrency 4 text / 2 media), handler registry keyed by `job.name`. Registered: `generate-scene` (streaming via Redis pub/sub bridge on channel `scene-job:<jobId>:events`). Dual-mode: in-process (default) or standalone (`WORKER_MODE=1 npm run worker`). Exports `sceneJobChannel(jobId)` helper that must be shared with the route handler.
-- `services/redisClient.js` — Singleton ioredis clients. `getRedisClient()` (regular: retries 3, readyCheck on) vs `getBullMQConnection()` (null retries, no ready check — required for BLPOP blocking reads). `isRedisEnabled()`, `pingRedis()`, `closeRedis()`, `getRedisStatus()`.
 
-### Plugins (new in post-merge infra push)
-- `plugins/csrf.js` + test — Double-submit cookie CSRF. Opt-in per route via `config: { csrf: true }`. Constant-time compare. Applied to `/v1/auth/refresh` and `/v1/auth/logout`.
-- `plugins/idempotency.js` + test — `Idempotency-Key` header support, Redis-backed SET NX claim + 60s pending → 24h completed cache. Opt-in via `config: { idempotency: true }`. 409 on concurrent races, replay with `idempotent-replay: true` header. Opted in on `POST /v1/campaigns`, `POST /v1/ai/campaigns/:id/scenes`, `POST /v1/ai/campaigns/:id/scenes/bulk`.
-- `plugins/rateLimitKey.js` + test — Custom keyGenerator for `@fastify/rate-limit`. Returns `u:<userId>` when JWT verifies, `ip:<address>` fallback. Double-verifies JWT because the rate-limit onRequest hook fires before route-level `authenticate` (~100μs HMAC × 2).
-- `plugins/bullBoard.js` — Bull-board UI at `/v1/admin/queues`, gated by `fastify.authenticate` + `request.user.admin` (admin flag on User model NOT yet implemented — effectively locked).
+- [services/queues/aiQueue.js](../../backend/src/services/queues/aiQueue.js) — per-provider BullMQ queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`). `getQueue`, `enqueueJob`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Redis-off safe.
+- [workers/aiWorker.js](../../backend/src/workers/aiWorker.js) — worker pool + handler registry by `job.name`. Registered: `generate-scene`, `generate-campaign` (both stream via pub/sub bridge). Dual mode: in-process (default) or standalone (`WORKER_MODE=1`). Exports `sceneJobChannel`, `campaignJobChannel`.
+- [services/redisClient.js](../../backend/src/services/redisClient.js) — singleton ioredis clients. `getRedisClient()` (regular: retries 3, readyCheck on) vs `getBullMQConnection()` (null retries, no ready check — for BLPOP). `isRedisEnabled`, `pingRedis`, `closeRedis`, `getRedisStatus`.
 
-## Infrastructure
-- `backend/src/lib/prisma.js` — Prisma client singleton
-- `backend/src/lib/logger.js` — Shared pino instance (`logger` + `childLogger({ bindings })` helper). JSON output, `LOG_LEVEL` env override.
-- `backend/src/middleware/requireAuth.js` — JWT auth middleware
-- `backend/src/plugins/auth.js` — Fastify auth plugin
-- `backend/src/plugins/cors.js` — CORS plugin + `resolveSseCorsOrigin()` allowlist helper
+See [patterns/bullmq-queues.md](../patterns/bullmq-queues.md).
+
+### Plugins
+
+- [plugins/csrf.js](../../backend/src/plugins/csrf.js) — double-submit cookie CSRF. Opt-in via `config: { csrf: true }`. Constant-time compare.
+- [plugins/idempotency.js](../../backend/src/plugins/idempotency.js) — `Idempotency-Key` header, Redis-backed SET NX + 60s pending → 24h completed cache. Opt-in via `config: { idempotency: true }`. 409 on concurrent races, replay with `idempotent-replay: true`.
+- [plugins/rateLimitKey.js](../../backend/src/plugins/rateLimitKey.js) — custom keyGenerator for `@fastify/rate-limit`. Returns `u:<userId>` when JWT verifies, `ip:<address>` fallback.
+- [plugins/bullBoard.js](../../backend/src/plugins/bullBoard.js) — bull-board UI at `/v1/admin/queues`, gated by `authenticate` + `admin` claim. Admin flag not yet on User model → effectively locked.
+- [plugins/auth.js](../../backend/src/plugins/auth.js) — JWT plugin + `fastify.authenticate` decorator
+- [plugins/cors.js](../../backend/src/plugins/cors.js) — CORS + `resolveSseCorsOrigin()` allowlist for SSE raw writes
+
+### Infrastructure
+
+- [backend/src/lib/prisma.js](../../backend/src/lib/prisma.js) — Prisma client singleton
+- [backend/src/lib/logger.js](../../backend/src/lib/logger.js) — pino + `childLogger({ bindings })`
+- [backend/src/middleware/requireAuth.js](../../backend/src/middleware/requireAuth.js) — JWT middleware
+- [backend/src/server.js](../../backend/src/server.js) — boot: plugin registration, queue startup, graceful shutdown ordering (rooms → sockets → workers → queues → redis → fastify)
 
 ## Data
-- `backend/src/data/equipment/index.js` — Server-side equipment + bestiary exports
+
+- `backend/src/data/equipment/` — server-side equipment + bestiary. `index.js` exports `searchBestiary`, `selectBestiaryEncounter`, `getBestiaryLocationSummary`, `applyAttributeVariance`, `THREAT_COSTS`. See [bestiary.md](bestiary.md).
 
 ## Scripts
-- `backend/src/scripts/migrateCoreState.js` — DB migration script
-- `backend/src/scripts/createVectorIndexes.js` — Create Atlas Vector Search indexes
+
+- `backend/src/scripts/createVectorIndexes.js` — one-time: creates Atlas Vector Search indexes
+- `backend/src/scripts/migrateCoreState.js` — DB migration script (ad hoc)
 
 ## Shared (`shared/`)
 
-### Domain (pure logic, used by FE and BE)
-- `domain/arrays.js` — Array helpers (Set add/delete spread → `addToSet`/`removeFromSet`)
-- `domain/combatIntent.js` — `detectCombatIntent` + `COMBAT_INTENT_REGEX` (Polish conjugations, weapon-draw patterns, system-tag handling) — used by FE scene state hook, BE `intentClassifier`, BE `sceneGenerator/userPrompt`
-- `domain/diceRollInference.js` — `resolveDiceRollAttribute` — maps skill/action text to RPGon attribute
-- `domain/ids.js` — `shortId(len)` + `prefixedId(prefix, len)` — single source of short-ID generation
-- `domain/luck.js` — `rollLuckCheck(szczescie, rollPercentageFn)` + `isLuckySuccess` — szczescie auto-success mechanic
-- `domain/multiplayerState.js` — `applyMultiplayerSceneStateChanges` pipeline
-- `domain/pricing.js` — Currency conversion (1 GC = 10 SS = 100 CP) + `normalizeCoins`
-- `domain/skills.js` — `getSkillLevel(skills, skillName)` — single source of skill-level lookup
-- `domain/stateValidation.js` — Validators for state-change payloads
+Pure logic used by both FE and BE. No React, no fastify. Safe to import from either side.
 
-### Contracts (FE/BE WebSocket messages)
-- `contracts/multiplayer.js` — WS message types, `createWsMessage`, `normalizeClientWsType`, `normalizeMultiplayerStateChanges`, `TYPING_DRAFT_MAX_LENGTH`, `WS_SERVER_TYPES`
-- `contracts/multiplayer.test.js` — Schema + normalization unit tests
+### `shared/domain/`
 
-### Map tiles
-- `map_tiles/modelCatalog3d.js` — 3D model catalog for tile map rendering
+- [combatIntent.js](../../shared/domain/combatIntent.js) — `detectCombatIntent` + `COMBAT_INTENT_REGEX` (Polish conjugations, weapon-draw patterns)
+- [combatXp.js](../../shared/domain/combatXp.js) — `computeCombatCharXp`
+- [diceRollInference.js](../../shared/domain/diceRollInference.js) — `resolveDiceRollAttribute`
+- [ids.js](../../shared/domain/ids.js) — `shortId(len)` + `prefixedId(prefix, len)`
+- [luck.js](../../shared/domain/luck.js) — `rollLuckCheck`, `isLuckySuccess`
+- [multiplayerState.js](../../shared/domain/multiplayerState.js) — `applyMultiplayerSceneStateChanges` pipeline
+- [pricing.js](../../shared/domain/pricing.js) — currency conversion (1 ZK = 20 SK = 240 MK) + `normalizeCoins`
+- [skills.js](../../shared/domain/skills.js) — `getSkillLevel(skills, skillName)`
+- [stateValidation.js](../../shared/domain/stateValidation.js) — 12 validators + `STATE_CHANGE_LIMITS`
+- [safeLocation.js](../../shared/domain/safeLocation.js) — `isSafeLocation` + `SAFE_LOCATION_RE` (character-to-campaign lock release check)
+- [dialogueRepair.js](../../shared/domain/dialogueRepair.js) — single source of truth for dialogue repair (hardDedupe, fuzzy name matching, player reattribution, generic-speaker safe-mode)
+- [fallbackActions.js](../../shared/domain/fallbackActions.js) — fallback suggested actions. BE entry `ensureSuggestedActions`, FE entry `postProcessSuggestedActions`
+- [aiResponseParser.js](../../shared/domain/aiResponseParser.js) — `parseAIResponseLean` (shared by `streamingClient.js` and FE scene hook)
+- [achievementTracker.js](../../shared/domain/achievementTracker.js) — achievement state machine (shared between FE and BE)
+- [arrays.js](../../shared/domain/arrays.js) — `addToSet`, `removeFromSet`
 
-## Test inventory
+### `shared/contracts/`
 
-Backend unit tests (53 total):
-- `auth.test.js`
-- `campaigns.saveState.test.js` — tests `extractTotalCost` + `stripNormalizedFromCoreState` re-exported from `campaigns.js` facade
-- `apiKeyService.test.js`
-- `characterMutations.test.js` — 19 tests
-- `roomManager.test.js`
+- [multiplayer.js](../../shared/contracts/multiplayer.js) — WS message schemas, `createWsMessage`, `normalizeClientWsType`, `normalizeMultiplayerStateChanges`, `TYPING_DRAFT_MAX_LENGTH`, `WS_SERVER_TYPES`
 
-Shared contract test:
-- `shared/contracts/multiplayer.test.js`
+### `shared/map_tiles/`
+
+- `modelCatalog3d.js` — 3D model catalog for tile map rendering
+
+## Entry-point cheat sheet
+
+| Task | Start here |
+|---|---|
+| Scene generation change | [backend/src/services/sceneGenerator/generateSceneStream.js](../../backend/src/services/sceneGenerator/generateSceneStream.js) |
+| Intent classifier tuning | [backend/src/services/intentClassifier.js](../../backend/src/services/intentClassifier.js) |
+| Context assembly | [backend/src/services/aiContextTools.js](../../backend/src/services/aiContextTools.js) `assembleContext` |
+| New AI single-shot endpoint | Add handler in `ai.js` + service via `aiJsonCall.js` |
+| New WS message | Add handler in `multiplayer/handlers/<group>.js`, register in `connection.js` dispatcher `HANDLERS` map |
+| Queue / worker change | [backend/src/services/queues/aiQueue.js](../../backend/src/services/queues/aiQueue.js), [backend/src/workers/aiWorker.js](../../backend/src/workers/aiWorker.js) |
+| Auth flow | [backend/src/routes/auth.js](../../backend/src/routes/auth.js) + [backend/src/services/refreshTokenService.js](../../backend/src/services/refreshTokenService.js) |
+| SSE plumbing | [backend/src/routes/ai.js](../../backend/src/routes/ai.js) `writeSseHead` + [patterns/sse-streaming.md](../patterns/sse-streaming.md) |
+| Bestiary / encounter | [backend/src/data/equipment/bestiary.js](../../backend/src/data/equipment/bestiary.js) + `sceneGenerator/enemyFill.js` |

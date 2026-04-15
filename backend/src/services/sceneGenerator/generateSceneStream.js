@@ -58,6 +58,14 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
 
+  // LLM timeouts — bounds tail latency when a provider hangs. User-tunable via
+  // DM Settings UI (llmPremiumTimeoutMs, llmNanoTimeoutMs). Defaults match a
+  // typical scene gen (5-15s normal, 30s+ spike on Claude Sonnet with full
+  // sceneGrid) plus a generous buffer. On timeout: premium emits LLM_TIMEOUT
+  // SSE error; nano calls fall back silently (heuristic intent, skip summary).
+  const llmPremiumTimeoutMs = Number(dmSettings?.llmPremiumTimeoutMs) || 45000;
+  const llmNanoTimeoutMs = Number(dmSettings?.llmNanoTimeoutMs) || 15000;
+
   try {
     // 1. Load campaign data (DB → hydrated coreState)
     const {
@@ -73,6 +81,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
       isFirstScene,
       provider,
+      timeoutMs: llmNanoTimeoutMs,
     });
     onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
 
@@ -157,11 +166,19 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       userApiKeys,
       provider === 'anthropic' ? 'Anthropic' : 'OpenAI',
     );
-    const sceneResult = await runTwoStagePipelineStreaming(
-      systemPromptParts, userPrompt, contextBlocks,
-      { provider, model, apiKey: providerApiKey },
-      (text) => onEvent({ type: 'chunk', text }),
-    );
+    const premiumController = new AbortController();
+    const premiumTimeoutHandle = setTimeout(() => premiumController.abort(), llmPremiumTimeoutMs);
+    premiumTimeoutHandle.unref?.();
+    let sceneResult;
+    try {
+      sceneResult = await runTwoStagePipelineStreaming(
+        systemPromptParts, userPrompt, contextBlocks,
+        { provider, model, apiKey: providerApiKey, signal: premiumController.signal },
+        (text) => onEvent({ type: 'chunk', text }),
+      );
+    } finally {
+      clearTimeout(premiumTimeoutHandle);
+    }
 
     // 5b. Validate creativity bonus awarded by the model.
     // Anti-cheat: only hand-typed player actions get a bonus; suggestedActions /
@@ -232,9 +249,11 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // deterministically on FE; BE is responsible for applying its XP + wounds.
     if (combatResult) {
       sceneResult.stateChanges = sceneResult.stateChanges || {};
-      if (typeof combatResult.woundsChange === 'number' && combatResult.woundsChange !== 0) {
-        sceneResult.stateChanges.woundsChange =
-          (sceneResult.stateChanges.woundsChange || 0) + combatResult.woundsChange;
+      // Combat engine is the authoritative source for wounds. Overwrite any
+      // model-emitted value — the model often mirrors the action text
+      // ("Took 7 wounds") back as woundsChange, which would double-count.
+      if (typeof combatResult.woundsChange === 'number') {
+        sceneResult.stateChanges.woundsChange = combatResult.woundsChange;
       }
       if (combatResult.skillProgress && typeof combatResult.skillProgress === 'object') {
         sceneResult.stateChanges.skillProgress = {
@@ -289,7 +308,8 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           playerAction,
           activeQuests,
           sceneResult.stateChanges?.questUpdates || [],
-          provider
+          provider,
+          { timeoutMs: llmNanoTimeoutMs },
         ).catch((err) => { log.error({ err, campaignId }, 'Quest objective check failed'); return []; })
       : Promise.resolve([]);
 
@@ -345,13 +365,13 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         log.error({ err, campaignId }, 'Failed to process state changes')
       );
     }
-    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider).catch((err) =>
+    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider, { timeoutMs: llmNanoTimeoutMs }).catch((err) =>
       log.error({ err, campaignId }, 'Failed to compress scene to summary')
     );
     const newLoc = sceneResult.stateChanges?.currentLocation;
     const prevLoc = coreState.world?.currentLocation;
     if (newLoc && prevLoc && newLoc !== prevLoc) {
-      generateLocationSummary(campaignId, newLoc, prevLoc, provider).catch((err) =>
+      generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }).catch((err) =>
         log.error({ err, campaignId, newLoc, prevLoc }, 'Failed to generate location summary')
       );
     }
@@ -384,6 +404,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
   } catch (err) {
-    onEvent({ type: 'error', error: err.message || 'Stream generation failed', code: err.code || 'STREAM_ERROR' });
+    const isAbort = err?.name === 'AbortError';
+    onEvent({
+      type: 'error',
+      error: isAbort ? 'Scene generation timed out' : (err.message || 'Stream generation failed'),
+      code: isAbort ? 'LLM_TIMEOUT' : (err.code || 'STREAM_ERROR'),
+      ...(isAbort ? { phase: 'scene_generation' } : {}),
+    });
   }
 }

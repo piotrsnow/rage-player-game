@@ -81,6 +81,16 @@ export function buildCombatLogDetails(result, t) {
     );
   }
 
+  if (result.damageBreakdown) {
+    const db = result.damageBreakdown;
+    const parts = [`${t('combat.logWeaponDmg', 'broń')} ${db.weaponDmg ?? 0}`];
+    if (db.marginBonus) parts.push(`${t('combat.logMarginBonus', 'margines')} ${formatSignedNumber(db.marginBonus)}`);
+    if (db.blocked) parts.push(t('combat.logBlocked', 'blok'));
+    if (db.dr) parts.push(`${t('combat.logDR', 'DR')} -${db.dr}`);
+    parts.push(`= ${db.totalDamage ?? 0}`);
+    details.push(`${t('combat.logDamage', 'Obrażenia')}: ${parts.join(' | ')}`);
+  }
+
   return details;
 }
 

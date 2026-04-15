@@ -558,6 +558,10 @@ export const storage = {
           money: character.money || { gold: 0, silver: 0, copper: 0 },
           equipped: character.equipped || { mainHand: null, offHand: null, armour: null },
           // Status & needs
+          status: character.status || null,
+          lockedCampaignId: character.lockedCampaignId || null,
+          lockedCampaignName: character.lockedCampaignName || null,
+          lockedLocation: character.lockedLocation || null,
           statuses: character.statuses || [],
           needs: character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
           // Narrative

@@ -937,7 +937,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           <div className="px-2 animate-fade-in">
             <CombatPanel
               combat={isMultiplayer ? mpGameState.combat : sCombat}
-              gameState={isMultiplayer ? mpGameState : state}
+              gameState={isMultiplayer ? mpGameState : getGameState()}
               dispatch={dispatch}
               onEndCombat={combatHandlers.onEndCombat}
               onSurrender={combatHandlers.onSurrender}

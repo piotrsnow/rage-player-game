@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useAI } from '../../hooks/useAI';
 import QuestListItem, { CompletedQuestItem } from './quest/QuestListItem';
 import QuestDetailPanel from './quest/QuestDetailPanel';
-import { isReadyToTurnIn } from './quest/helpers';
 
 export default function QuestLog({ active = [], completed = [], npcs = [], onVerifyObjective = null }) {
   const { t } = useTranslation();
@@ -11,15 +10,14 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
   const [selectedId, setSelectedId] = useState(null);
   const [showCompleted, setShowCompleted] = useState(false);
 
-  const sortedActive = [...active].sort((a, b) => {
-    const aReady = isReadyToTurnIn(a) ? 0 : 1;
-    const bReady = isReadyToTurnIn(b) ? 0 : 1;
-    return aReady - bReady;
-  });
+  // Newest first within each section. Legacy quests without createdAt/completedAt
+  // sort to the bottom (fallback 0) so they stay predictable after migration.
+  const sortedActive = [...active].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const sortedCompleted = [...completed].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
   const allQuests = [
     ...sortedActive.map((q) => ({ ...q, _status: 'active' })),
-    ...completed.map((q) => ({ ...q, _status: 'completed' })),
+    ...sortedCompleted.map((q) => ({ ...q, _status: 'completed' })),
   ];
   const selected = allQuests.find((q) => q.id === selectedId);
 
@@ -87,7 +85,7 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
                 </span>
                 <span className="text-[10px] text-outline">({completed.length})</span>
               </button>
-              {showCompleted && completed.map((quest) => (
+              {showCompleted && sortedCompleted.map((quest) => (
                 <CompletedQuestItem
                   key={quest.id}
                   quest={quest}

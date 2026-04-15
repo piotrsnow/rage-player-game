@@ -28,4 +28,14 @@ Postać identyfikuje się tytułami zdobywanymi za odblokowanie achievementów. 
 - `Smokobójca` (legendary) — pokonanie smoka
 - `Bohater` (legendary) — ukończenie głównego wątku
 
-Powiązane: [[../concepts/achievements-system]], [[luck-as-attribute-only]]
+## Implementacja
+
+- `src/data/achievements.js` — katalog achievementów z opcjonalnym `grantsTitle`
+- `shared/domain/achievementTracker.js` — state machine (unlock detection)
+- `src/stores/handlers/characterHandlers.js` — akcja `ADD_TITLE`, obsługa `activeTitleId`
+- `src/services/characterHistory.js` — `getTopTitles`, `getActiveTitle`
+
+## Powiązane
+
+- [rpgon-custom-system.md](rpgon-custom-system.md)
+- [concepts/rpgon-mechanics.md](../concepts/rpgon-mechanics.md)

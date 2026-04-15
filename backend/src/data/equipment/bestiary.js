@@ -393,34 +393,27 @@ export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, c
     ? BESTIARY_DIFFICULTIES.indexOf(maxDifficulty)
     : BESTIARY_DIFFICULTIES.length - 1;
 
-  // Build filtered pool
-  let pool = Object.entries(BESTIARY).filter(([, entry]) => {
-    if (location && !entry.locations.includes(location)) return false;
-    if (race && entry.race !== race) return false;
+  const filterPool = ({ race: r, location: loc }) => Object.entries(BESTIARY).filter(([, entry]) => {
+    if (loc && !entry.locations.includes(loc)) return false;
+    if (r && entry.race !== r) return false;
     if (BESTIARY_DIFFICULTIES.indexOf(entry.difficulty) > maxTierIdx) return false;
     return true;
   });
 
-  // Fallback: if pool is empty after location filter, drop location
-  if (pool.length === 0 && location) {
-    pool = Object.entries(BESTIARY).filter(([, entry]) => {
-      if (race && entry.race !== race) return false;
-      if (BESTIARY_DIFFICULTIES.indexOf(entry.difficulty) > maxTierIdx) return false;
-      return true;
-    });
-  }
-
-  // Fallback: if still empty, use everything up to maxDifficulty
+  // Try filters from strictest to loosest. Never drop race before location —
+  // race mismatch is a bigger gameplay issue than location mismatch. When no
+  // race was specified, default to 'ludzie' before opening the full pool so a
+  // generic brawl in any location still pulls a humanoid enemy.
+  let pool = filterPool({ race, location });
+  if (pool.length === 0 && location) pool = filterPool({ race, location: null });
+  if (pool.length === 0 && !race) pool = filterPool({ race: 'ludzie', location });
+  if (pool.length === 0 && !race) pool = filterPool({ race: 'ludzie', location: null });
   if (pool.length === 0) {
-    pool = Object.entries(BESTIARY).filter(([, entry]) => {
-      return BESTIARY_DIFFICULTIES.indexOf(entry.difficulty) <= maxTierIdx;
-    });
+    pool = Object.entries(BESTIARY).filter(
+      ([, entry]) => BESTIARY_DIFFICULTIES.indexOf(entry.difficulty) <= maxTierIdx,
+    );
   }
-
-  // Ultimate fallback
-  if (pool.length === 0) {
-    pool = Object.entries(BESTIARY);
-  }
+  if (pool.length === 0) pool = Object.entries(BESTIARY);
 
   // Sort pool by threat cost descending for greedy fill
   pool.sort(([, a], [, b]) => {

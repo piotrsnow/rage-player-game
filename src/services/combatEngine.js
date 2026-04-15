@@ -391,6 +391,12 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const test = resolveCombatTest(actor, zrecznosc, skillLevel, 0, DIFFICULTY_THRESHOLDS.medium);
 
     result.rolls.push({ skill: 'Atletyka', ...test, side: 'actor' });
+    result.checkBreakdown = {
+      attribute: zrecznosc,
+      skillLevel,
+      baseTarget: DIFFICULTY_THRESHOLDS.medium,
+      target: DIFFICULTY_THRESHOLDS.medium,
+    };
 
     if (test.success) {
       actor.isDefeated = true;
@@ -431,6 +437,11 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     const inteligencja = actor.attributes?.inteligencja || 10;
     const test = resolveCombatTest(actor, inteligencja, 0, 0, DIFFICULTY_THRESHOLDS.medium);
     result.rolls.push({ skill: 'Inteligencja', ...test, side: 'caster' });
+    result.castBreakdown = {
+      attribute: inteligencja,
+      baseTarget: DIFFICULTY_THRESHOLDS.medium,
+      target: DIFFICULTY_THRESHOLDS.medium,
+    };
 
     if (test.success) {
       const baseDamage = Math.max(1, Math.floor(inteligencja / 2));
@@ -476,8 +487,20 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
     });
     result.customDescription = customDescription || null;
     result.creativityBonus = creativityBonus;
-    result.attackBreakdown = { attribute: attackAttr, skillLevel: attackSkillLevel, creativityBonus, threshold: effectiveThreshold };
-    result.defenseBreakdown = { attribute: defenseAttr, skillLevel: defenseSkillLevel, defendBonus };
+    result.attackBreakdown = {
+      attribute: attackAttr,
+      skillLevel: attackSkillLevel,
+      creativityBonus,
+      baseTarget: DIFFICULTY_THRESHOLDS.medium,
+      target: effectiveThreshold,
+    };
+    result.defenseBreakdown = {
+      attribute: defenseAttr,
+      skillLevel: defenseSkillLevel,
+      defendBonus,
+      baseTarget: DIFFICULTY_THRESHOLDS.medium,
+      target: DIFFICULTY_THRESHOLDS.medium + defendBonus + defenseAttr + defenseSkillLevel,
+    };
 
     if (test.success) {
       // Damage: weapon formula + margin bonus → shield block → armour DR
@@ -561,7 +584,7 @@ export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, option
         state.playerStats.damageTaken += result.damage || 0;
       } else if (target.conditions.includes('dodging') && result.outcome === 'miss') {
         state.playerStats.dodges += 1;
-        addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.miss);
+        addCombatSkillXp(state, target.id, 'Uniki', COMBAT_SKILL_XP.dodge);
       }
     }
   }

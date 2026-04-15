@@ -1,21 +1,20 @@
-# Testing React hooks without `@testing-library/react`
+# Pattern — Testing hooks via pure-factory extraction
 
-This project runs plain vitest with **no `@testing-library/react`** and no custom `renderHook` helper. `package.json` has `vitest` only — no `@testing-library/*` anywhere. Adding the dep for the sake of a handful of hook tests is overkill, so the canonical pattern is different: **refactor the hook to expose its pure logic as a named-export factory, then test the factory directly**.
+This project runs plain vitest with **no `@testing-library/react`** and no custom `renderHook` helper. Adding the dep for a handful of hook tests is overkill. The canonical pattern is: **refactor the hook to expose its pure logic as a named-export factory, then test the factory directly**.
 
 ## The pattern
 
-A typical hook in this codebase has two layers:
+A typical hook has two layers:
 
 1. **Pure logic** — closures that compute results, dispatch actions, call back into injected services. No `useState`, no `useEffect`, no React — just plain functions over the hook's props.
 2. **React plumbing** — `useMemo`, `useEffect`, `useRef`, `useEvent` wrappers around that pure logic.
 
-Extract layer 1 as a named export. The hook then becomes a thin wrapper that calls the factory from inside `useMemo`/`useEffect`. Tests import the factory and exercise it directly with vitest spies in place of the real props.
+Extract layer 1 as a named export. The hook becomes a thin wrapper that calls the factory from inside `useMemo`/`useEffect`. Tests import the factory and exercise it directly with vitest spies in place of real props.
 
-## Worked example — `useCombatResolution`
-
-Before:
+## Worked example — handlers factory
 
 ```js
+// Before — logic buried inside the hook
 export function useCombatResolution({ dispatch, autoSave, generateScene, ... }) {
   return useMemo(() => {
     const handleEndCombat = (summary) => {
@@ -27,9 +26,8 @@ export function useCombatResolution({ dispatch, autoSave, generateScene, ... }) 
 }
 ```
 
-After:
-
 ```js
+// After — pure factory + thin hook wrapper
 export function buildCombatResolutionHandlers({ dispatch, autoSave, generateScene, ... }) {
   const handleEndCombat = (summary) => {
     dispatch({ type: 'END_COMBAT' });
@@ -46,7 +44,7 @@ export function useCombatResolution(deps) {
 }
 ```
 
-Test:
+### Test
 
 ```js
 import { buildCombatResolutionHandlers } from './useCombatResolution.js';
@@ -75,11 +73,11 @@ it('dispatches END_COMBAT + journal on victory', () => {
 });
 ```
 
-No render, no act, no mount — just synchronous function calls with spies.
+No render, no `act`, no mount — synchronous function calls with spies.
 
 ## When the pure factory needs its own mocks
 
-Some hooks import collaborators that can't run under vitest (e.g. `combatEngine` which pulls `gameDataService`, which expects backend data loaded at runtime). Use vitest's module-level `vi.mock()` to stub the collaborator instead of trying to load real game data:
+Some hooks import collaborators that can't run under vitest (e.g. `combatEngine` pulls `gameDataService`, which expects backend data loaded at runtime). Use vitest's module-level `vi.mock()`:
 
 ```js
 vi.mock('../services/combatEngine', () => ({
@@ -102,16 +100,14 @@ it('dispatches UPDATE_COMBAT in solo mode', () => {
 });
 ```
 
-This keeps the hook's own logic under test while isolating it from heavy dependencies.
+Keeps the hook's own logic under test while isolating it from heavy dependencies.
 
 ## Splitting `useEffect` logic
 
-When the hook's `useEffect` does real work (scheduling timers, running side effects, computing whether to fire at all), split it into **two** pure helpers:
+When the hook's `useEffect` does real work (timers, side effects, computing whether to fire), split into **two** pure helpers:
 
-- A **gate function** that returns `true`/`false`/plan-object from plain inputs (no side effects).
-- A **step function** that performs the side effects via injected callbacks.
-
-Example from [useEnemyTurnResolver.js](../../src/hooks/useEnemyTurnResolver.js):
+- **Gate function** — returns `true/false/plan-object` from plain inputs. No side effects.
+- **Step function** — performs side effects via injected callbacks.
 
 ```js
 // Gate — pure, returns boolean
@@ -124,7 +120,7 @@ export function shouldScheduleEnemyTurn({ combat, combatOver, isMultiplayer, isH
 }
 
 // Step — impure, routes side effects through callbacks
-export function resolveEnemyTurnStep({ combat, isMultiplayer, dispatch, addResultToLog, ... }) {
+export function resolveEnemyTurnStep({ combat, isMultiplayer, dispatch, addResultToLog, onHostResolve }) {
   const { combat: after, results } = resolveEnemyTurns(combat);
   for (const r of results) addResultToLog(r);
   if (isMultiplayer) onHostResolve?.(after);
@@ -142,16 +138,14 @@ export function useEnemyTurnResolver(deps) {
 }
 ```
 
-Now the tests can cover gating (`shouldScheduleEnemyTurn` → 6 cases) and side-effect routing (`resolveEnemyTurnStep` → 2 cases: solo vs MP) in total isolation. The hook wrapper itself is two lines of `useEffect` plumbing — trivial enough that a smoke playwright test covers it.
+Tests can now cover gating (6 cases) and side-effect routing (solo vs MP) in total isolation. The hook wrapper is two lines of `useEffect` plumbing — trivial enough that a smoke playwright test covers it.
 
 ## Refs with the `planX` pattern
 
-When the hook relies on a `useRef` for state that persists across renders (e.g. "last processed timestamp"), the factory should **accept the current ref value as a plain prop** and **return the next value** instead of mutating the ref. The hook itself is responsible for reading/writing the ref.
-
-From [useCombatResultSync.js](../../src/hooks/useCombatResultSync.js):
+When the hook relies on a `useRef` for state persisting across renders (e.g. "last processed timestamp"), the factory should **accept the current ref value as a plain prop** and **return the next value** instead of mutating the ref. The hook itself owns reading/writing the ref.
 
 ```js
-// Pure — takes current processed-ts as an input, returns what to do next
+// Pure — takes current processed-ts as input, returns what to do next
 export function planCombatResultDrain({ combat, lastProcessedTs, isMultiplayer, isHost }) {
   if (!combat?.lastResults?.length) return { shouldApply: false, nextTs: lastProcessedTs, results: [] };
   if (combat.lastResultsTs === lastProcessedTs) return { shouldApply: false, nextTs: lastProcessedTs, results: [] };
@@ -173,26 +167,32 @@ export function useCombatResultSync({ combat, isMultiplayer, isHost, addResultTo
 }
 ```
 
-The pure plan function can now be tested for every combination of `(combat.lastResultsTs, lastProcessedTs, isMultiplayer, isHost)` without touching React at all.
+The pure plan function can be tested for every combination of `(combat.lastResultsTs, lastProcessedTs, isMultiplayer, isHost)` without touching React.
 
 ## Naming conventions
 
-- **Factory for handlers**: `buildXHandlers(deps)` → returns `{ onA, onB, onC }`. Used when the hook produces callback objects. Example: `buildCombatResolutionHandlers`.
-- **Gate function**: `shouldDoX(inputs)` → returns boolean. Example: `shouldScheduleEnemyTurn`.
-- **Plan function**: `planX(inputs)` → returns `{ shouldApply, ...nextState, ...payload }`. Example: `planCombatResultDrain`. Preferred when the decision carries data the hook needs to apply.
-- **Step function**: `resolveXStep(deps)` → runs side effects via callbacks, returns introspection data. Example: `resolveEnemyTurnStep`.
+- **Handler factory:** `buildXHandlers(deps)` → returns `{ onA, onB, onC }`. Used when the hook produces a callback object.
+- **Gate function:** `shouldDoX(inputs)` → returns boolean.
+- **Plan function:** `planX(inputs)` → returns `{ shouldApply, ...nextState, ...payload }`. Preferred when the decision carries data the hook needs to apply.
+- **Step function:** `resolveXStep(deps)` → runs side effects via callbacks, returns introspection data.
 
 ## When NOT to apply this pattern
 
-- Hooks that only call other hooks with no branching logic (e.g. a composition of selectors). There's nothing to test — the only behaviour is "it rerenders when the store changes", which is Zustand's contract.
-- Hooks that deeply use ref arrays + `useLayoutEffect` + DOM measurements. These genuinely need a real render to test. If such a hook needs coverage, install `@testing-library/react` for that one case — don't contort the factory to avoid it.
-- Existing hooks with no tests. Don't refactor pre-emptively. Extract the factory only when you're writing the test.
+- **Hooks that only call other hooks** with no branching logic (e.g. a composition of selectors). Nothing to test — the only behavior is "it re-renders when the store changes," which is Zustand's contract.
+- **Hooks that deeply use `useLayoutEffect` + DOM measurements.** These need a real render to test. If such a hook needs coverage, install `@testing-library/react` for that one case — don't contort the factory.
+- **Existing hooks with no tests.** Don't refactor pre-emptively. Extract the factory only when you're writing the test.
 
-## Prior art
+## Prior art in this codebase
 
-- [getAutoPlayerAdvanceDelay](../../src/hooks/useAutoPlayer.js) — the original example. A pure function inside `useAutoPlayer.js`, tested in [useAutoPlayer.test.js](../../src/hooks/useAutoPlayer.test.js).
-- [buildCombatResolutionHandlers](../../src/hooks/useCombatResolution.js) — 11 tests in [useCombatResolution.test.js](../../src/hooks/useCombatResolution.test.js).
-- [resolveEnemyTurnStep + shouldScheduleEnemyTurn](../../src/hooks/useEnemyTurnResolver.js) — 9 tests in [useEnemyTurnResolver.test.js](../../src/hooks/useEnemyTurnResolver.test.js).
-- [planCombatResultDrain](../../src/hooks/useCombatResultSync.js) — 9 tests in [useCombatResultSync.test.js](../../src/hooks/useCombatResultSync.test.js).
+- `getAutoPlayerAdvanceDelay` — pure function inside [src/hooks/useAutoPlayer.js](../../src/hooks/useAutoPlayer.js), tested in `useAutoPlayer.test.js`
+- `buildCombatResolutionHandlers` — [src/hooks/useCombatResolution.js](../../src/hooks/useCombatResolution.js), 11 tests
+- `resolveEnemyTurnStep` + `shouldScheduleEnemyTurn` — [src/hooks/useEnemyTurnResolver.js](../../src/hooks/useEnemyTurnResolver.js), 9 tests
+- `planCombatResultDrain` — [src/hooks/useCombatResultSync.js](../../src/hooks/useCombatResultSync.js), 9 tests
 
-Shared fixtures live in [src/test-fixtures/combatState.js](../../src/test-fixtures/combatState.js) — `buildCombatState({ overrides })` and `buildCombatSummary({ overrides })` are the source of truth for combat test data.
+Shared fixtures: [src/test-fixtures/combatState.js](../../src/test-fixtures/combatState.js) — `buildCombatState({overrides})` + `buildCombatSummary({overrides})`. Default combatant is the RPGon baseline character (all attrs 1, szczęście 0).
+
+## Related
+
+- [pure-lift-refactoring.md](pure-lift-refactoring.md) — the lift pattern that produces testable boundaries
+- [concepts/combat-system.md](../concepts/combat-system.md) — the subsystem most covered by this pattern today
+- [e2e-campaign-seeding.md](e2e-campaign-seeding.md) — the companion Playwright pattern

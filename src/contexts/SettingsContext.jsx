@@ -122,6 +122,8 @@ const defaultSettings = {
     darkPalette: false,
     contextDepth: 100,
     promptProfile: 'balanced',
+    llmPremiumTimeoutMs: 45000,
+    llmNanoTimeoutMs: 15000,
   },
 };
 

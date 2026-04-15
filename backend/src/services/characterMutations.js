@@ -99,6 +99,12 @@ export function applyCharacterStateChanges(character, changes) {
     next.status = changes.forceStatus;
   }
 
+  // Propagate campaign's current location into the character record so the
+  // character picker can tell if this character is in a safe spot to release.
+  if (typeof changes.currentLocation === 'string' && changes.currentLocation) {
+    next.lockedLocation = changes.currentLocation;
+  }
+
   // ── Character XP / level (raw xp delta) ──
   // Frontend uses changes.xp; sceneGenerator reward branch uses xpDelta as alias.
   const xpDelta = changes.xpDelta ?? changes.xp;
@@ -325,7 +331,8 @@ export function characterToPrismaUpdate(snapshot) {
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
     'backstory', 'portraitUrl', 'voiceId', 'voiceName',
-    'campaignCount', 'xp', 'xpSpent',
+    'campaignCount', 'xp', 'xpSpent', 'status',
+    'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   ];
   for (const key of scalars) {
     if (snapshot[key] !== undefined) data[key] = snapshot[key];

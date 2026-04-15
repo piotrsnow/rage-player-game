@@ -58,6 +58,10 @@ function buildCreatePayload(userId, body) {
     advances: JSON.stringify(body.advances || {}),
     xp: body.xp ?? 0,
     xpSpent: body.xpSpent ?? 0,
+    status: body.status ?? null,
+    lockedCampaignId: body.lockedCampaignId ?? null,
+    lockedCampaignName: body.lockedCampaignName ?? null,
+    lockedLocation: body.lockedLocation ?? null,
   };
   return payload;
 }
@@ -73,7 +77,8 @@ function buildUpdatePayload(body) {
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
     'backstory', 'portraitUrl', 'voiceId', 'voiceName',
-    'campaignCount', 'xp', 'xpSpent',
+    'campaignCount', 'xp', 'xpSpent', 'status',
+    'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   ];
   for (const key of scalarPassthrough) {
     if (body[key] !== undefined) data[key] = body[key];
@@ -126,6 +131,10 @@ const CHARACTER_BODY_SCHEMA = {
     advances: { type: 'object' },
     xp: { type: 'number' },
     xpSpent: { type: 'number' },
+    status: { type: ['string', 'null'], maxLength: 50 },
+    lockedCampaignId: { type: ['string', 'null'], maxLength: 100 },
+    lockedCampaignName: { type: ['string', 'null'], maxLength: 200 },
+    lockedLocation: { type: ['string', 'null'], maxLength: 200 },
   },
 };
 

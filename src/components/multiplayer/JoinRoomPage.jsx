@@ -3,11 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useModals } from '../../contexts/ModalContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import { translateSkill } from '../../utils/rpgTranslate';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { isSafeLocation } from '../../../shared/domain/safeLocation';
 import Button from '../ui/Button';
+
+function isCharacterLocked(ch) {
+  return !!ch?.lockedCampaignId && !isSafeLocation(ch?.lockedLocation);
+}
 
 export default function JoinRoomPage() {
   const navigate = useNavigate();
@@ -16,6 +22,7 @@ export default function JoinRoomPage() {
   useDocumentTitle(t('multiplayer.joinTitle'));
   const mp = useMultiplayer();
   const { openSettings } = useModals();
+  const { backendUser, backendAuthChecking } = useSettings();
 
   const [roomCode, setRoomCode] = useState(code || '');
   const [error, setError] = useState(null);
@@ -24,7 +31,7 @@ export default function JoinRoomPage() {
   const [joining, setJoining] = useState(false);
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState('');
-  const isConnected = apiClient.isConnected();
+  const isConnected = !!backendUser;
 
   useEffect(() => {
     let cancelled = false;
@@ -33,17 +40,17 @@ export default function JoinRoomPage() {
         const chars = await storage.getCharactersAsync();
         if (cancelled) return;
         setSavedCharacters(chars || []);
-        if ((chars || []).length > 0) {
-          const firstId = chars[0].backendId || chars[0].localId || chars[0].id || '';
-          setSelectedCharacterId(firstId);
+        const firstFree = (chars || []).find((c) => !isCharacterLocked(c));
+        if (firstFree) {
+          setSelectedCharacterId(firstFree.backendId || firstFree.localId || firstFree.id || '');
         }
       } catch {
         if (cancelled) return;
         const chars = storage.getCharacters();
         setSavedCharacters(chars || []);
-        if ((chars || []).length > 0) {
-          const firstId = chars[0].backendId || chars[0].localId || chars[0].id || '';
-          setSelectedCharacterId(firstId);
+        const firstFree = (chars || []).find((c) => !isCharacterLocked(c));
+        if (firstFree) {
+          setSelectedCharacterId(firstFree.backendId || firstFree.localId || firstFree.id || '');
         }
       }
     })();
@@ -96,6 +103,13 @@ export default function JoinRoomPage() {
 
   const handleJoin = async () => {
     if (!roomCode.trim()) return;
+    if (isCharacterLocked(selectedCharacterForJoin)) {
+      setError(t(
+        'characterPicker.lockedBlockedJoin',
+        'Wybrana postać jest zablokowana w innej kampanii. Wybierz inną postać.',
+      ));
+      return;
+    }
     setError(null);
     setJoining(true);
     try {
@@ -111,6 +125,13 @@ export default function JoinRoomPage() {
   };
 
   const handleJoinFromList = async (code) => {
+    if (isCharacterLocked(selectedCharacterForJoin)) {
+      setError(t(
+        'characterPicker.lockedBlockedJoin',
+        'Wybrana postać jest zablokowana w innej kampanii. Wybierz inną postać.',
+      ));
+      return;
+    }
     setError(null);
     setRoomCode(code);
     setJoining(true);
@@ -130,7 +151,7 @@ export default function JoinRoomPage() {
     if (e.key === 'Enter') handleJoin();
   };
 
-  if (!isConnected) {
+  if (!isConnected && !backendAuthChecking) {
     return (
       <div className="max-w-md mx-auto px-6 py-24 text-center">
         <span className="material-symbols-outlined text-5xl text-outline/30 block mb-4">cloud_off</span>
@@ -186,14 +207,32 @@ export default function JoinRoomPage() {
               >
                 {savedCharacters.map((ch) => {
                   const charId = ch.backendId || ch.localId || ch.id;
+                  const locked = isCharacterLocked(ch);
+                  const lockSuffix = locked
+                    ? ` · 🔒 ${t('characterPicker.lockedBadge', 'W kampanii: {{name}}', { name: ch.lockedCampaignName || '?' })}`
+                    : '';
                   return (
-                    <option key={charId} value={charId}>
-                      {`${ch.name} · ${t(`species.${ch.species}`, { defaultValue: ch.species })}`}
+                    <option key={charId} value={charId} disabled={locked}>
+                      {`${ch.name} · ${t(`species.${ch.species}`, { defaultValue: ch.species })}${lockSuffix}`}
                     </option>
                   );
                 })}
               </select>
-              {selectedCharacter && (
+              {isCharacterLocked(selectedCharacter) && (
+                <div className="text-[11px] text-error/90 border border-error/20 bg-error-container/10 rounded-sm px-3 py-2">
+                  {t(
+                    'characterPicker.lockedTooltip',
+                    'Postać musi znaleźć się w bezpiecznym miejscu (karczma, tawerna, świątynia) w kampanii "{{campaign}}" żeby przejść do innej kampanii. {{location}}.',
+                    {
+                      campaign: selectedCharacter?.lockedCampaignName || '?',
+                      location: selectedCharacter?.lockedLocation
+                        ? t('characterPicker.lockedAtLocation', 'obecnie w: {{loc}}', { loc: selectedCharacter.lockedLocation })
+                        : t('characterPicker.lockedNoLocation', 'bez znanej bezpiecznej lokalizacji'),
+                    },
+                  )}
+                </div>
+              )}
+              {selectedCharacter && !isCharacterLocked(selectedCharacter) && (
                 <div className="text-xs text-on-surface-variant">
                   {t('multiplayer.joinAs', 'Joining as')}: <span className="text-on-surface font-semibold">{selectedCharacter.name}</span>
                 </div>

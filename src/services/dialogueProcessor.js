@@ -57,6 +57,26 @@ export function enrichDialogueSpeakers({
       .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim().toLowerCase() : ''))
       .filter(Boolean)
   );
+  const validGender = (g) => (g === 'male' || g === 'female' ? g : null);
+  // Trusted gender source: first the persisted world NPC record, then the
+  // stateChanges introduce/update payload for this scene. The AI-provided
+  // segment.gender is used only when no trusted source exists (unknown NPC).
+  const worldNpcGenderByName = new Map();
+  for (const npc of Array.isArray(worldNpcs) ? worldNpcs : []) {
+    if (typeof npc?.name !== 'string') continue;
+    const key = npc.name.trim().toLowerCase();
+    if (!key) continue;
+    const g = validGender(npc.gender);
+    if (g) worldNpcGenderByName.set(key, g);
+  }
+  const stateChangeGenderByName = new Map();
+  for (const npc of npcChanges) {
+    if (typeof npc?.name !== 'string') continue;
+    const key = npc.name.trim().toLowerCase();
+    if (!key) continue;
+    const g = validGender(npc.gender);
+    if (g) stateChangeGenderByName.set(key, g);
+  }
   const knownNpcNames = new Set(
     (Array.isArray(worldNpcs) ? worldNpcs : [])
       .map((npc) => (typeof npc?.name === 'string' ? npc.name.trim().toLowerCase() : ''))
@@ -76,9 +96,14 @@ export function enrichDialogueSpeakers({
     const speakerKey = speakerName.toLowerCase();
     if (playerNameSet.has(speakerKey)) return segment;
 
-    const speakerGender = segment.gender === 'male' || segment.gender === 'female'
-      ? segment.gender
-      : null;
+    // Trust worldNpc.gender first, then stateChange gender, then what the
+    // model wrote on the segment. Models occasionally mislabel gender which
+    // used to route known NPCs to the wrong voice pool.
+    const trustedGender =
+      worldNpcGenderByName.get(speakerKey) ||
+      stateChangeGenderByName.get(speakerKey) ||
+      validGender(segment.gender);
+    const speakerGender = trustedGender;
     const hasKnownNpc = knownNpcNames.has(speakerKey) || existingNpcChangeNames.has(speakerKey);
 
     let voiceId = characterVoiceMap?.[speakerName]?.voiceId || null;

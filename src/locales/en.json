@@ -555,6 +555,11 @@
     "reducedPrompt": "Use reduced prompts (recommended for 7B-13B models)",
     "title": "Dungeon Master Settings",
     "subtitle": "Calibrate the arcane engine. Your choices here will reshape the narrative fabric of the realm.",
+    "llmTimeouts": "AI Timeouts",
+    "llmPremiumTimeout": "Scene generation timeout",
+    "llmPremiumTimeoutDesc": "Max wait for premium model response (scene). On timeout the pipeline emits an LLM_TIMEOUT error. Default 45s.",
+    "llmNanoTimeout": "Nano model timeout",
+    "llmNanoTimeoutDesc": "Max wait for nano model responses (intent, compression, quests). On timeout the pipeline falls back. Default 15s.",
     "narrativeAnchors": "Narrative Anchors",
     "storyChaos": "Story Chaos Level",
     "storyChaosDesc": "The entropy of AI plot twists",
@@ -1133,7 +1138,13 @@
     "xpLabel": "XP",
     "campaigns": "campaigns",
     "deselect": "Deselect",
-    "selectedCharacter": "Selected character"
+    "selectedCharacter": "Selected character",
+    "lockedTooltip": "This character must be in a safe location (tavern, inn, temple) in campaign \"{{campaign}}\" before joining another one. {{location}}.",
+    "lockedBadge": "In campaign: {{name}}",
+    "lockedAtLocation": "currently at: {{loc}}",
+    "lockedNoLocation": "no known safe location",
+    "lockedFallbackCampaign": "another campaign",
+    "lockedBlockedJoin": "The selected character is locked in another campaign. Pick a different one."
   },
   "system": {
     "diceRollMessage": "{{skill}} test: d100 roll {{roll}} vs target {{target}} — SL {{sl}} — {{result}}",

@@ -8,32 +8,46 @@
 
 ## English
 
-RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an AI Game Master, inspired by **Warhammer Fantasy Roleplay** (WFRP) mechanics. An LLM-driven GM narrates the story, resolves d100 tests, manages quests and the living world — in solo mode or multiplayer with up to 6 players.
+RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an AI Game Master running on a **custom d50 system**. A multi-model LLM pipeline narrates the story, resolves mechanics, manages quests and a living world — in solo mode or multiplayer with up to 6 players.
 
 ### Key Features
 
-- **AI Dungeon Master** — GPT-4o / Claude generates narrative, suggests actions, resolves dice checks, and manages world state via structured JSON
-- **WFRP 4e Mechanics** — d100 system with Success Levels, careers (4 tiers), skills, talents, critical wounds, magic (8 Winds + petty spells), economy (GC/SS/CP)
-- **Multiplayer** — up to 6 players via WebSocket, host-approved actions, mid-game join, solo-to-multiplayer conversion
-- **Rich Media** — AI-generated scene illustrations (Stability AI), voice narrator (ElevenLabs TTS with word highlighting), background music (Suno)
-- **Living World** — NPCs with attitudes, faction reputation, weather simulation, day/night cycle, needs system (hunger, fatigue), world map with fog of war
-- **Public Gallery** — publish campaigns for others to browse and fork
+- **AI Dungeon Master** — two-stage pipeline: nano model picks what context the scene needs, code assembles it in parallel, premium model writes the scene in one streamed call
+- **RPGon d50 system** — custom rules designed for AI-GM play: 6 attributes (1-25), ~31 skills, 9 spell trees with mana-based magic, d50 resolution with margins, `szczęście` as auto-success chance, titles from achievements (no classes), three-tier Polish currency (Złota/Srebrna/Miedziana Korona)
+- **Multi-provider AI** — OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini, with nano/standard/premium tiering to keep costs bounded
+- **Streaming UX** — scenes stream narrative chunks via SSE while still queuing through BullMQ for concurrency control and retry semantics
+- **Multiplayer** — up to 6 players via WebSocket, host-authoritative state, mid-game join, solo → multiplayer conversion, optional WebRTC voice chat
+- **3D scene rendering** — React Three Fiber with procedural foliage, GLB models, ambient weather/particle effects
+- **Rich media** — AI-generated scene illustrations (Stability AI), voice narrator (ElevenLabs TTS with word highlighting), on-demand 3D model generation (Meshy)
+- **Living world** — NPCs with dispositions, faction reputation, weather + day/night, needs system (hunger, fatigue), vector-searchable campaign memory
+- **Public gallery** — publish campaigns for others to browse and fork
 - **Bilingual** — Polish (default) and English UI
 
 ### Quick Start
 
 ```bash
 npm run setup                          # root + backend deps, prisma generate
-cp backend/.env.example backend/.env   # fill in required variables
-npm run dev                            # docker compose up --build (mongo + valkey + backend on :3001)
+cp backend/.env.example backend/.env   # fill in DATABASE_URL (Atlas SRV), JWT_SECRET, keys
+npm run dev                            # docker compose up --build --watch (backend :3001 + valkey)
 ```
 
-The game can run **without the backend** in solo mode — just enter API keys in the Settings page. The backend enables multiplayer, server-side API proxying, campaign persistence in MongoDB, and media storage.
+**MongoDB is Atlas-only** — set `DATABASE_URL` to an Atlas SRV string in `.env` before booting. The backend is the sole AI dispatch path; users can paste their own provider keys in Settings which are stored encrypted server-side.
+
+For vector search, run once per Atlas cluster:
+
+```bash
+cd backend && node src/scripts/createVectorIndexes.js
+```
 
 ### Documentation
 
-- **[AGENTS.md](./AGENTS.md)** — comprehensive project guide for AI agents (architecture, data flow, conventions)
-- **[Cursor Rules](./.cursor/rules/)** — context-specific rules for AI-assisted development
+- **[CLAUDE.md](./CLAUDE.md)** — terse top-level guide (stack, commands, architecture, critical-path files)
+- **[knowledge/](./knowledge/)** — detailed subsystem docs
+  - [concepts/](./knowledge/concepts/) — how each subsystem works
+  - [patterns/](./knowledge/patterns/) — reusable code patterns
+  - [decisions/](./knowledge/decisions/) — why we picked option B over A/C
+  - [ideas/](./knowledge/ideas/) — future concepts not yet built
+- **[RPG_SYSTEM.md](./RPG_SYSTEM.md)** — full RPGon rules specification
 
 ---
 
@@ -41,84 +55,118 @@ The game can run **without the backend** in solo mode — just enter API keys in
 
 ## Polski
 
-RPGon to przeglądarkowa gra RPG z narratorem AI, inspirowana mechanikami **Warhammer Fantasy Roleplay** (WFRP). Mistrz Gry sterowany przez LLM prowadzi fabułę, rozstrzyga testy d100, zarządza questami i światem — w trybie solo lub multiplayer do 6 graczy.
+RPGon to przeglądarkowa gra RPG z narratorem AI, zbudowana na **autorskim systemie d50** (RPGon). Pipeline wielomodelowy prowadzi fabułę, rozstrzyga mechaniki, zarządza questami i żywym światem — w trybie solo lub multiplayer do 6 graczy.
 
 ### Spis treści
 
 - [Architektura](#architektura)
 - [Przepływ gry](#przepływ-gry)
-- [Integracja AI](#integracja-ai)
+- [Pipeline AI (dwuetapowy)](#pipeline-ai-dwuetapowy)
 - [Multiplayer](#multiplayer)
+- [System RPGon](#system-rpgon)
 - [Funkcjonalności](#funkcjonalności)
 - [Stos technologiczny](#stos-technologiczny)
 - [Struktura projektu](#struktura-projektu)
 - [Uruchomienie](#uruchomienie)
+- [Dokumentacja](#dokumentacja)
 
 ---
 
 ## Architektura
 
+Backend jest jedyną ścieżką dispatcha AI — frontend nie rozmawia bezpośrednio z providerami. Strumieniowanie scen idzie przez kolejkę BullMQ z mostkiem pub/sub po Redisie, żeby utrzymać progresywny UX razem z backpressure i retry.
+
 ```mermaid
 graph TB
-    subgraph Frontend ["Frontend (React + Vite)"]
-        UI[Interfejs gracza]
-        GC[GameContext<br/>useReducer]
-        MC[MultiplayerContext]
-        SC[SettingsContext]
-        AI_SVC[ai.js — AI Service]
-        WS[websocket.js]
-        PROMPTS[prompts.js<br/>Context Manager]
+    subgraph Frontend ["Frontend — React + Vite"]
+        UI[Panele gameplay<br/>Scene/Chat/Combat/Action]
+        ZS[Zustand store<br/>gameStore + handlers]
+        SEL[Granularne selektory]
+        SCN[useSceneGeneration<br/>+ sceneGeneration/]
+        HOOKS[Combat hooks<br/>4 pure-factory + test]
+        API[apiClient.js<br/>JWT + refresh + CSRF]
+        WS_C[websocket.js<br/>multiplayer client]
     end
 
-    subgraph Backend ["Backend (Fastify)"]
-        SERVER[server.js]
-        AUTH[/auth]
-        PROXY["/proxy/*<br/>(OpenAI, Anthropic,<br/>ElevenLabs, Stability, Suno)"]
-        MP_ROUTE[/multiplayer<br/>WebSocket]
-        CAMP[/campaigns]
-        ROOM[RoomManager]
-        MP_AI[multiplayerAI.js]
+    subgraph Backend ["Backend — Fastify"]
+        ROUTE_AI[/v1/ai/*<br/>SSE + single-shot + jobs]
+        ROUTE_MP[/v1/multiplayer<br/>WebSocket]
+        ROUTE_AUTH[/v1/auth<br/>cookie refresh + CSRF]
+        ROUTE_CAMP[/v1/campaigns<br/>CRUD + share + recaps]
+        SCENE_GEN[sceneGenerator/<br/>generateSceneStream]
+        INTENT[intentClassifier<br/>heuristic + nano]
+        CTX[aiContextTools<br/>assembleContext]
+        COMP[memoryCompressor<br/>nano facts + summaries]
+        MP_FLOW[multiplayerSceneFlow<br/>+ multiplayerAI/]
+        ROOM[roomManager<br/>in-memory + DB backup]
     end
 
-    subgraph External ["Usługi zewnętrzne"]
-        OPENAI[OpenAI<br/>GPT-4o]
-        ANTHROPIC[Anthropic<br/>Claude]
+    subgraph Queue ["BullMQ + Valkey/Redis"]
+        QUEUE[Per-provider queues<br/>ai-openai / ai-anthropic<br/>ai-gemini / ai-stability<br/>ai-meshy]
+        WORKER[aiWorker<br/>handler registry]
+        PUBSUB[(Pub/sub bridge<br/>scene-job:ID:events<br/>campaign-job:ID:events)]
+    end
+
+    subgraph Providers ["Providers"]
+        OPENAI[OpenAI<br/>GPT-5.4/4.1/4o/o3]
+        ANTHROPIC[Anthropic<br/>Claude Sonnet 4 + Haiku 4.5]
+        GEMINI[Google Gemini]
+        STABILITY[Stability AI<br/>obrazy scen]
         ELEVEN[ElevenLabs<br/>TTS]
-        STABILITY[Stability AI<br/>Obrazy]
-        SUNO[Suno<br/>Muzyka]
+        MESHY[Meshy<br/>modele 3D]
     end
 
-    subgraph Storage ["Przechowywanie danych"]
-        MONGO[(MongoDB<br/>via Prisma)]
-        LOCAL[localStorage<br/>kampanie solo]
+    subgraph Storage ["MongoDB Atlas + Valkey"]
+        ATLAS[(MongoDB Atlas<br/>Prisma: User, Campaign,<br/>Scene, NPC, Quest,<br/>Knowledge, Codex)]
+        VECTOR[(Atlas Vector Search<br/>embeddings via<br/>native driver)]
+        VALKEY[(Valkey<br/>refresh tokens, cache,<br/>BullMQ, idempotency)]
     end
 
-    UI --> GC
-    UI --> MC
-    UI --> SC
-    GC --> AI_SVC
-    AI_SVC --> PROMPTS
-    AI_SVC -->|klucze lokalne| OPENAI
-    AI_SVC -->|klucze lokalne| ANTHROPIC
-    AI_SVC -->|przez proxy| PROXY
-    PROXY --> OPENAI
-    PROXY --> ANTHROPIC
-    PROXY --> ELEVEN
-    PROXY --> STABILITY
-    PROXY --> SUNO
-    WS <-->|WebSocket| MP_ROUTE
-    MC --> WS
-    MP_ROUTE --> ROOM
-    ROOM --> MP_AI
-    MP_AI --> OPENAI
-    MP_AI --> ANTHROPIC
-    SERVER --> AUTH
-    SERVER --> PROXY
-    SERVER --> MP_ROUTE
-    SERVER --> CAMP
-    AUTH --> MONGO
-    CAMP --> MONGO
-    GC -->|zapis/odczyt| LOCAL
+    UI --> ZS
+    ZS --> SEL
+    SEL --> UI
+    UI --> SCN
+    SCN --> HOOKS
+    SCN --> API
+
+    API --> ROUTE_AI
+    API --> ROUTE_AUTH
+    API --> ROUTE_CAMP
+    WS_C <-->|WebSocket| ROUTE_MP
+
+    ROUTE_AI -->|enqueue + subscribe| QUEUE
+    QUEUE --> WORKER
+    WORKER --> SCENE_GEN
+    WORKER --> PUBSUB
+    PUBSUB -.->|SSE forward| ROUTE_AI
+
+    SCENE_GEN --> INTENT
+    SCENE_GEN --> CTX
+    SCENE_GEN -.->|post-scene async| COMP
+    SCENE_GEN --> OPENAI
+    SCENE_GEN --> ANTHROPIC
+
+    ROUTE_MP --> ROOM
+    ROOM --> MP_FLOW
+    MP_FLOW --> OPENAI
+    MP_FLOW --> ANTHROPIC
+
+    INTENT --> OPENAI
+    INTENT --> ANTHROPIC
+    CTX --> ATLAS
+    CTX --> VECTOR
+    COMP --> ATLAS
+
+    ROUTE_AUTH --> VALKEY
+    ROUTE_AUTH --> ATLAS
+    ROUTE_CAMP --> ATLAS
+    QUEUE --> VALKEY
+    PUBSUB --> VALKEY
+
+    ROUTE_AI -.->|proxy| ELEVEN
+    ROUTE_AI -.->|proxy| STABILITY
+    ROUTE_AI -.->|proxy| MESHY
+    ROUTE_AI -.->|proxy| GEMINI
 ```
 
 ---
@@ -127,114 +175,173 @@ graph TB
 
 ```mermaid
 flowchart TD
-    START([Gracz otwiera aplikację]) --> LOBBY[Lobby — lista kampanii]
+    START([Gracz otwiera aplikację]) --> AUTH_CHECK{Sesja aktywna?}
+    AUTH_CHECK -->|Nie| LOGIN[Logowanie / rejestracja<br/>cookie refresh + CSRF]
+    AUTH_CHECK -->|Tak| LOBBY[Lobby — kampanie + galeria]
+    LOGIN --> LOBBY
 
-    LOBBY -->|Nowa kampania| CREATE[Kreator kampanii<br/>gatunek, ton, tło]
-    LOBBY -->|Wczytaj kampanię| PLAY
-    LOBBY -->|Dołącz do pokoju| JOIN[Dołączanie multiplayer<br/>/join/:code]
+    LOBBY -->|Nowa kampania| CREATE[Kreator kampanii<br/>AI generuje fundament<br/>przez SSE]
+    LOBBY -->|Wczytaj kampanię| LOAD[storage.loadCampaign<br/>GET /v1/campaigns/:id]
+    LOBBY -->|Dołącz do pokoju| JOIN[JoinRoomPage<br/>/join/:code]
+    LOBBY -->|Przeglądaj galerię| GALLERY[Publiczne kampanie<br/>+ fork-to-play]
 
-    CREATE -->|AI generuje fundament| CHAR[Tworzenie postaci<br/>WFRP: cechy, kariera,<br/>ekwipunek, talenty]
-    CHAR --> PLAY[Rozgrywka — /play]
+    CREATE --> CHAR[Tworzenie postaci<br/>RPGon: 6 atrybutów,<br/>umiejętności, tytuły]
+    CHAR --> PLAY[Rozgrywka /play/:id]
+    LOAD --> PLAY
 
     JOIN -->|WebSocket| MP_LOBBY[Lobby multiplayer<br/>oczekiwanie na graczy]
     MP_LOBBY -->|Host startuje| PLAY
 
     subgraph GAMEPLAY ["Pętla rozgrywki"]
-        PLAY --> SCENE[AI generuje scenę<br/>narracja + sugestie akcji]
-        SCENE --> ACTION[Gracz wybiera akcję<br/>lub pisze własną]
-        ACTION --> DICE{Test d100?}
-        DICE -->|Tak| ROLL[Rzut kośćmi<br/>obliczanie SL]
-        DICE -->|Nie| AI_PROC
-        ROLL --> AI_PROC[AI przetwarza wynik]
-        AI_PROC --> STATE[Aktualizacja stanu:<br/>questy, świat, NPC,<br/>postać, ekwipunek]
-        STATE --> SCENE
+        PLAY --> ACTION[Gracz wybiera akcję<br/>lub wpisuje własną]
+        ACTION --> MECH[resolveMechanics — deterministic<br/>d50 + momentum + szczęście<br/>magic / combat / rest]
+        MECH --> STREAM[SSE scene stream<br/>POST /generate-scene-stream]
+        STREAM -->|chunk| REVEAL[Progresywne ujawnianie<br/>narracji w ChatPanel]
+        STREAM -->|complete| APPLY[stateValidator →<br/>applyStateChangesHandler]
+        APPLY --> SAVE[autoSave<br/>PUT /v1/campaigns/:id]
+        SAVE --> ACTION
     end
 
-    PLAY -.->|Opcjonalnie| IMG[Generowanie<br/>ilustracji sceny]
-    PLAY -.->|Opcjonalnie| TTS[Narrator głosowy<br/>ElevenLabs]
-    PLAY -.->|Opcjonalnie| MUSIC[Muzyka tła<br/>Suno]
+    PLAY -.->|Opcjonalnie| IMG[Ilustracja sceny<br/>Stability AI via proxy]
+    PLAY -.->|Opcjonalnie| TTS[Narrator głosowy<br/>ElevenLabs TTS]
+    PLAY -.->|Opcjonalnie| MODEL3D[Modele 3D<br/>Meshy + katalog prefabs]
 ```
 
 ---
 
-## Integracja AI
+## Pipeline AI (dwuetapowy)
+
+Zamiast wypychać cały stan kampanii do każdego zapytania ani wymagać żeby duży model wywoływał tools w pętli, używamy dwóch etapów: **nano wybiera**, **kod składa**, **premium narracja**.
 
 ```mermaid
 sequenceDiagram
     participant G as Gracz
-    participant UI as React UI
-    participant P as prompts.js
-    participant AI as ai.js
-    participant LLM as OpenAI / Anthropic
-    participant CTX as GameContext
+    participant FE as Frontend<br/>(useSceneGeneration)
+    participant R as Route<br/>(/generate-scene-stream)
+    participant Q as BullMQ + pub/sub
+    participant W as Worker<br/>(generateSceneStream)
+    participant N as Nano<br/>(intent + compression)
+    participant DB as Atlas<br/>(+ Vector Search)
+    participant P as Premium<br/>(scene narrative)
 
-    G->>UI: Wybiera akcję
-    UI->>P: Buduje prompt<br/>(kampania, postać, świat,<br/>questy, mapa, potrzeby,<br/>ustawienia MG)
-    P-->>AI: System prompt + User prompt
-    AI->>LLM: Zapytanie API<br/>(response_format: JSON)
-    LLM-->>AI: Odpowiedź JSON
-    Note over AI: { narrative, actions,<br/>diceCheck, stateChanges }
-    AI->>CTX: dispatch(ADD_SCENE)
-    AI->>CTX: dispatch(APPLY_STATE_CHANGES)
-    CTX-->>UI: Nowa scena + zaktualizowany stan
-    UI-->>G: Wyświetla narrację,<br/>sugerowane akcje, efekty
+    G->>FE: Wybiera akcję
+    FE->>FE: resolveMechanics<br/>(d50 + momentum + szczęście)
+    FE->>R: POST /generate-scene-stream
+    R->>R: writeSseHead (hijack, CORS)
+    R->>Q: subscribe(channel) + enqueueJob(jobId)
+    Q->>W: dispatch handler
+    W->>DB: loadCampaignState<br/>(parallel: NPCs, Quests, Codex)
+    W->>N: classifyIntent<br/>(heuristic → nano fallback)
+    N-->>W: {expand_npcs, expand_quests, roll_skill, ...}
+    W->>DB: assembleContext<br/>(parallel fetches + vector search)
+    W->>W: buildLeanSystemPrompt + userPrompt
+    W->>P: runTwoStagePipelineStreaming
+    loop Streaming
+        P-->>W: chunk
+        W-->>Q: publish(event)
+        Q-->>R: pub/sub message
+        R-->>FE: data: {type: 'chunk', text}
+        FE-->>G: Progresywne ujawnianie
+    end
+    P-->>W: final JSON
+    W->>W: parse + validate + reconcile dice<br/>+ fillEnemiesFromBestiary<br/>+ processStateChanges
+    W-->>Q: publish(complete)
+    Q-->>R: pub/sub
+    R-->>FE: data: {type: 'complete', scene, sceneIndex}
+
+    par Post-scene (async, fire-and-forget)
+        W->>N: compressSceneToSummary
+        N-->>W: 3-7 key facts
+        W->>N: generateLocationSummary<br/>(if location changed)
+        W->>N: checkQuestObjectives
+    and Persist
+        W->>DB: POST scenes + sync normalized
+    end
 ```
 
 ### Co zawiera odpowiedź AI
 
 | Pole | Opis |
-|------|------|
+|---|---|
 | `narrative` | Tekst narracji opisujący scenę |
-| `actions` | Lista sugerowanych akcji do wyboru |
-| `diceCheck` | Opcjonalny test d100 — cecha, trudność, kontekst |
-| `stateChanges` | Zmiany stanu gry: nowe questy, fakty o świecie, zmiany NPC, ekwipunek, rany, pieniądze |
+| `dialogueSegments` | Segmenty dialogu z przypisanymi postaciami (do TTS + chat) |
+| `suggestedActions` | Sugerowane akcje do wyboru |
+| `stateChanges` | Zmiany stanu: questy, fakty o świecie, NPC, ekwipunek, rany, pieniądze, XP umiejętności |
+| `diceRolls` | Max 3 rzuty d50 z pre-rolled pool (fallback gdy nano przeoczył test) |
+| `combatUpdate` | `enemyHints`, `budget`, `maxDifficulty` — backend dobiera statystyki z bestiariusza |
+| `scenePacing`, `atmosphere` | Metadane do muzyki / efektów wizualnych |
+
+### Model tiering
+
+| Tier | Modele | Używany do |
+|---|---|---|
+| **nano** | gpt-5.4-nano, gpt-4.1-nano, claude-haiku-4-5 | Klasyfikacja intencji, kompresja faktów, check celów questa, inferencja skill check |
+| **standard** | gpt-5.4-mini, claude-haiku-4-5 | Combat commentary, story prompt, recap generation, weryfikacja celów |
+| **premium** | gpt-5.4, claude-sonnet-4 | Generowanie scen, tworzenie kampanii |
 
 ### Typy zapytań AI
 
-- **`generateCampaign`** — tworzenie fundamentu kampanii (gatunek, świat, antagonista, questy startowe)
-- **`generateScene`** — główna pętla gry: narracja + rozstrzygnięcie akcji
-- **`generateRecap`** — podsumowanie dotychczasowej fabuły
-- **`compressScenes`** — kompresja starych scen (oszczędność tokenów)
-- **`verifyObjective`** — weryfikacja wykonania celu questa
+- **`generateCampaign`** — fundament kampanii (SSE stream z BullMQ + pub/sub bridge)
+- **`generateSceneStream`** — główna pętla (SSE stream z BullMQ + pub/sub bridge)
+- **`generateStoryPrompt`** — nano-model premise generator
+- **`generateRecap`** — podsumowanie kampanii (chunking 25 scen/chunk)
+- **`combatCommentary`** — śródwalkowa narracja i battle cries
+- **`verifyObjective`** — klasyfikator spełnienia celu questa
 
 ---
 
 ## Multiplayer
 
+**Host-authoritative state** — kanoniczny stan gry żyje w przeglądarce hosta; backend jest warstwą relay + persystencji na wypadek crashu, nie silnikiem gry.
+
 ```mermaid
 sequenceDiagram
     participant H as Host
-    participant S as Serwer (Fastify)
-    participant RM as RoomManager
+    participant S as Backend<br/>(multiplayer/connection.js)
+    participant RM as roomManager
+    participant DB as Atlas
     participant P as Gracz 2..6
-    participant AI as multiplayerAI.js
+    participant MP as multiplayerSceneFlow
 
-    H->>S: CREATE_ROOM (WebSocket)
-    S->>RM: Utwórz pokój
-    RM-->>H: Kod pokoju
+    H->>S: CREATE_ROOM (WS)
+    S->>RM: createRoom
+    RM->>DB: saveRoomToDB (persystencja)
+    RM-->>H: roomCode
 
     P->>S: JOIN_ROOM (kod)
-    S->>RM: Dodaj gracza
-    RM-->>P: Stan lobby
-    RM-->>H: Aktualizacja graczy
+    S->>RM: joinRoom
+    RM->>DB: saveRoomToDB
+    RM-->>P: roomState
+    RM-->>H: player list update
 
     H->>S: START_GAME
-    S->>AI: Generuj kampanię + sceny
-    AI-->>S: Początkowy stan gry
-    S->>RM: setGameState
-    RM-->>H: GAME_STATE
-    RM-->>P: GAME_STATE
+    S->>MP: generateMultiplayerCampaign
+    MP-->>S: initial game state
+    S->>RM: setGameState + broadcast
 
-    loop Pętla tur
+    loop Runda
         P->>S: SUBMIT_ACTION
-        S->>RM: pendingAction
+        S->>RM: pendingActions[playerId]
         RM-->>H: PENDING_ACTION
-        H->>S: HOST_APPROVE
-        S->>AI: Generuj scenę (akcja gracza)
-        AI-->>S: Nowa scena + stateChanges
+        H->>S: APPROVE_ACTIONS
+        S->>MP: runMultiplayerSceneFlow<br/>(shared z SOLO_ACTION)
+        MP->>MP: generateMultiplayerScene<br/>+ applySceneStateChanges
+        MP->>DB: persistMultiplayerCharactersToDB
+        MP-->>S: scene + stateChanges
         S->>RM: broadcast SCENE_UPDATE
-        RM-->>H: SCENE_UPDATE
-        RM-->>P: SCENE_UPDATE
+    end
+
+    alt Walka
+        H->>H: combatEngine.resolveManoeuvre<br/>(lokalnie, host-authoritative)
+        H->>S: COMBAT_SYNC (lastResults + ts)
+        S-->>P: broadcast
+        P->>P: planCombatResultDrain<br/>(ref-based dedup)
+    end
+
+    alt WebRTC voice (opcjonalne)
+        H->>S: WEBRTC_OFFER
+        S-->>P: relay
+        Note over H,P: P2P media stream (pomija backend)
     end
 ```
 
@@ -242,94 +349,213 @@ sequenceDiagram
 
 1. Host tworzy pokój lub konwertuje kampanię solo (`CONVERT_TO_MULTIPLAYER`)
 2. Gracze dołączają po kodzie — lobby aktualizuje się w czasie rzeczywistym
-3. Gracz może dołączyć w trakcie gry — AI generuje mu postać wpasowaną w fabułę
-4. Akcje graczy wymagają zatwierdzenia hosta
-5. Pokoje bez aktywności są automatycznie czyszczone (TTL)
-6. Stan multiplayer jest przechowywany w pamięci serwera (nie w DB)
+3. Nowy gracz może dołączyć w trakcie gry — host widzi PENDING_ACTION i zatwierdza
+4. Akcje graczy wymagają zatwierdzenia hosta (`APPROVE_ACTIONS`) albo są wykonywane solo (`SOLO_ACTION`) — oba path'y przechodzą przez ten sam `runMultiplayerSceneFlow`
+5. Stan pokoju jest zapisywany do DB przy każdej istotnej mutacji — przeżywa czysty restart backendu (`loadActiveSessionsFromDB` na boot)
+6. Pokoje bez aktywności są automatycznie czyszczone po TTL
+7. **Host migration nie jest zaimplementowana** — rozłączenie hosta w trakcie walki zamraża stan do jego powrotu
+
+---
+
+## System RPGon
+
+Autorski system d50 zaprojektowany pod AI-GM. Pełna specyfikacja w [RPG_SYSTEM.md](./RPG_SYSTEM.md), pointer do kodu w [knowledge/concepts/rpgon-mechanics.md](./knowledge/concepts/rpgon-mechanics.md).
+
+### Podstawy
+
+- **Kości:** d50 vs `atrybut + umiejętność + modyfikatory`. Rzut 1 = sukces krytyczny, rzut 50 = fiasko krytyczne.
+- **Atrybuty (1-25):** `siła`, `inteligencja`, `charyzma`, `zręczność`, `wytrzymałość`, `szczęście`. Baseline — wszystkie na 1 oprócz szczęścia (0).
+- **Umiejętności:** ~31 umiejętności, każda powiązana z jednym atrybutem, poziomy 0-25. **Learn-by-doing XP** — umiejętności rosną od używania, bez trenera.
+- **Magia:** 9 drzewek zaklęć, system many (bez testu rzucania), zaklęcia ze zwojów, koszt 1-5 many na zaklęcie.
+- **Walka:** `obrażenia = Siła + broń - Wytrzymałość - AP`. Margines sukcesu zamiast SL.
+- **Szczęście = X%** automatycznego sukcesu na dowolnym rzucie. Wartość atrybutu **jest** szansą na auto-sukces.
+- **Waluta:** trójpoziomowa Korona — Złota / Srebrna / Miedziana. `1 ZK = 20 SK = 240 MK`, `1 SK = 12 MK`.
+- **Tożsamość postaci:** tytuły odblokowywane z osiągnięć. Brak klas / karier.
+
+Czego **nie ma** w przeciwieństwie do WFRP: kariery, talenty, punkty losu/fortuny, odporność/determinacja, tabela ran krytycznych, channelling, advantage.
+
+### Pre-rolled dice fallback
+
+Nano klasyfikator intencji przeoczy ~20% akcji wymagających testów umiejętności. Backend generuje 3 wstępnie rzucone d50 na każdą scenę — duży model może użyć ich do self-resolve testów, a backend rekoncyliuje wynik z regułami mechanicznymi. Max 3 rzuty na scenę; thresholdy trudności: easy=20, medium=35, hard=50, veryHard=65, extreme=80.
 
 ---
 
 ## Funkcjonalności
 
 ### Rozgrywka
-- Narracja prowadzona przez AI (GPT-4o / Claude)
-- System d100 z poziomami sukcesu (SL) i momentum
-- Questy z celami, śledzenie postępu, weryfikacja AI
-- Mapa świata z NPC i lokacjami
-- System potrzeb postaci (głód, zmęczenie itp.)
-- Ilustracje scen (Stability AI)
-- Narrator głosowy (ElevenLabs TTS)
-- Muzyka tła generowana przez AI (Suno)
-- Efekty wizualne (pogoda, mgła, cząsteczki, przejścia)
+- Narracja AI (OpenAI / Anthropic / Gemini z tieringiem)
+- System d50 z marginesem sukcesu i momentum
+- Questy z celami, śledzenie postępu, weryfikacja przez nano
+- Bestiariusz RPGon (36 jednostek, 11 ras) z budżetem spotkań i fast-path walk dla trywialnych encounterów
+- Mapa świata z NPC, fakcjami, dyspozycjami
+- Pole bitwy w 3D (React Three Fiber) z proceduralną flora + modelami GLB
+- System potrzeb postaci (głód, zmęczenie)
+- Ilustracje scen (Stability AI via proxy)
+- Narrator głosowy (ElevenLabs TTS z podświetlaniem słów)
+- Modele 3D generowane na żądanie (Meshy)
+- Efekty wizualne (pogoda, cząsteczki, przejścia)
 
-### Postać (WFRP)
-- Cechy: WW, US, S, Wt, I, Zw, Zr, Int, SW, Ogd
-- Kariery i tiry (1–4)
-- Umiejętności i talenty
-- Ekwipunek i pieniądze (GC/SS/CP)
-- Punkty losu/fortuny, determinacji/hart ducha
-- Panel rozwoju postaci
+### Postać (RPGon)
+- 6 atrybutów (1-25): siła, inteligencja, charyzma, zręczność, wytrzymałość, szczęście
+- ~31 umiejętności z learn-by-doing XP
+- 9 drzewek zaklęć, mana, zwoje
+- Ekwipunek z rarity modifierami (common / uncommon / rare / exotic)
+- Waluta ZK/SK/MK
+- Charakter level w stylu Oblivion (akumulowany z poziomów umiejętności)
+- Tytuły z osiągnięć
+- Blokada postaci do jednej aktywnej kampanii naraz (release przy safe-location)
 
 ### Multiplayer
-- Do 6 graczy w pokoju
+- Do 6 graczy w pokoju przez WebSocket
+- Host-authoritative state z persystencją pokoju do DB (crash recovery)
 - System zatwierdzania akcji przez hosta
 - Dołączanie w trakcie rozgrywki
 - Konwersja kampanii solo → multiplayer
 - Akcje solo z cooldownem
+- Opcjonalny czat głosowy WebRTC (peer-to-peer)
+
+### Infra
+- Per-user szyfrowane klucze API (AES-256 na serwerze)
+- Cookie-based refresh tokens (15min access JWT, 30d refresh w Valkey)
+- Double-submit CSRF
+- Per-user rate limiting (Valkey backed)
+- Idempotency keys na krytycznych endpointach (POST /campaigns, /scenes, /scenes/bulk)
+- BullMQ per-provider queues z bull-board UI na `/v1/admin/queues`
+- LLM timeouts tunowalne w DM Settings (domyślnie 45s premium / 15s nano)
+- Graceful fallback gdy Redis off (tylko auth wymaga Redisa)
 
 ### Zarządzanie
-- Zapis/wczytywanie kampanii (lokalnie i na serwerze)
-- Eksport logów rozgrywki
-- Ustawienia Mistrza Gry (trudność, styl narracji, częstotliwość testów)
-- Śledzenie kosztów API
-- Dwujęzyczność: polski i angielski
+- Zapis/wczytywanie kampanii (auto-save queue + idempotency)
+- Normalizowany schemat MongoDB (Scene, NPC, Quest, Knowledge, Codex) z Atlas Vector Search
+- Eksport logów rozgrywki do markdown
+- Ustawienia Mistrza Gry (styl narracji, grittiness, humor, dramat, tempo, częstotliwość testów)
+- Śledzenie kosztów API per model
+- Publiczna galeria kampanii z fork-to-play
+- Dwujęzyczność: polski (domyślny) i angielski
 
 ---
 
 ## Stos technologiczny
 
 | Warstwa | Technologie |
-|---------|-------------|
-| **Frontend** | React 18, Vite 6, React Router 6, Tailwind CSS 3, i18next |
-| **Backend** | Fastify 5, WebSocket, JWT, Prisma |
-| **Baza danych** | MongoDB |
-| **AI** | OpenAI (GPT-4o), Anthropic (Claude) |
-| **Media** | ElevenLabs (TTS), Stability AI (obrazy), Suno (muzyka) |
-| **Przechowywanie mediów** | Google Cloud Storage / system plików |
+|---|---|
+| **Frontend** | React 18, Vite 6, React Router 6, Tailwind CSS 3, Zustand 5 + Immer, Zod 4, i18next |
+| **3D** | Three.js, React Three Fiber, @react-three/drei |
+| **Backend** | Fastify 5, Prisma (MongoDB), WebSocket (ws), BullMQ, ioredis |
+| **Baza danych** | MongoDB Atlas (replica set + Atlas Vector Search) |
+| **Cache / kolejki** | Valkey (Redis-compatible) |
+| **AI** | OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini |
+| **Media** | Sharp (image resize), ElevenLabs (TTS), Stability AI (obrazy), Meshy (modele 3D) |
+| **Przechowywanie mediów** | Local filesystem lub Google Cloud Storage |
+| **Auth** | JWT (15min access) + opaque refresh tokens w Valkey, double-submit CSRF |
+| **Testing** | Vitest (unit), Playwright (e2e) |
 
 ---
 
 ## Struktura projektu
 
 ```
-RPGon/
-├── src/                          # Frontend
-│   ├── App.jsx                   # Routing (/, /create, /play, /join/:code)
-│   ├── main.jsx                  # Providery kontekstów
+rage-player-game/
+├── src/                                # Frontend
+│   ├── App.jsx                         # Routing (/, /create, /play/:id, /join/:code, /view/:token)
+│   ├── main.jsx                        # Providery (Settings, Multiplayer, Music, Modal)
+│   ├── stores/                         # Zustand store
+│   │   ├── gameStore.js                # Store + autoSave + getGameState + gameDispatch
+│   │   ├── gameReducer.js              # Thin dispatcher merging handler maps
+│   │   ├── gameSelectors.js            # Granularne selektory
+│   │   └── handlers/                   # Per-domain action handlers (Immer)
+│   ├── contexts/                       # SettingsContext, MultiplayerContext (+ slices), Music, Modal
+│   ├── hooks/
+│   │   ├── sceneGeneration/            # useSceneGeneration + backend stream + dialogue repair
+│   │   ├── useCombatResolution.js      # + useEnemyTurnResolver, useCombatResultSync, useCombatHostResolve
+│   │   └── useNarrator / useSummary / useImageRepairQueue / useViewerMode / ...
+│   ├── services/
+│   │   ├── ai/                         # service.js + models.js (backend dispatch)
+│   │   ├── aiResponse/                 # Zod schemas + parser + dialogue repair
+│   │   ├── mechanics/                  # d50Test, skillCheck, momentumTracker, dispositionBonus, restRecovery
+│   │   ├── combatEngine.js             # Tactical combat
+│   │   ├── magicEngine.js              # Mana-based spellcasting
+│   │   ├── stateValidator.js           # AI state-change validation (+ shared/domain helpers)
+│   │   ├── storage.js                  # Campaign save/load/queue
+│   │   ├── apiClient.js                # JWT + refresh + CSRF + idempotency
+│   │   └── fieldMap/                   # A* pathfinding + tile rules + chunk generator
 │   ├── components/
-│   │   ├── gameplay/             # ScenePanel, ActionPanel, ChatPanel, MapCanvas
-│   │   ├── character/            # CharacterSheet, QuestLog, Inventory, Advancement
-│   │   ├── lobby/                # LobbyPage, CampaignCard
-│   │   ├── creator/              # CampaignCreatorPage
-│   │   ├── multiplayer/          # PlayerLobby, JoinRoomPage, PendingActions
-│   │   ├── settings/             # DMSettingsPage
-│   │   ├── layout/               # Header, Sidebar, Layout, MobileNav
-│   │   └── ui/                   # Button, GlassCard, LoadingSpinner, Slider
-│   ├── contexts/                 # GameContext, MultiplayerContext, SettingsContext
-│   ├── hooks/                    # useAI, useGameState, useNarrator, useMusic
-│   ├── services/                 # ai, prompts, websocket, apiClient, storage
-│   ├── effects/                  # EffectEngine, warstwy wizualne
-│   ├── data/                     # wfrp.js — tabele i reguły WFRP
-│   └── locales/                  # en.json, pl.json
-├── backend/                      # Backend
-│   ├── prisma/schema.prisma      # Modele: User, Campaign, Character, MediaAsset
+│   │   ├── gameplay/                   # GameplayPage + ScenePanel/ChatPanel/CombatPanel/ActionPanel/...
+│   │   │   ├── chat/                   # ChatMessageParts, ChatMessages, DiceRollMessage
+│   │   │   ├── combat/                 # Combat UI sub-components
+│   │   │   ├── scene/                  # OverlayDiceCard, HighlightedNarrative
+│   │   │   └── Scene3D/                # Environment3D, Character3D, GLBModel, ProceduralFoliage, ...
+│   │   ├── character/                  # CharacterSheet, Library, Advancement, Inventory, Quests, Codex
+│   │   ├── creator/                    # Campaign creation wizard
+│   │   ├── lobby/, gallery/, viewer/   # Lobby, public gallery, shared-campaign viewer
+│   │   ├── multiplayer/                # Lobby, JoinRoomPage, PendingActions
+│   │   ├── settings/sections/          # DM settings split into focused sections
+│   │   ├── layout/                     # Header, Sidebar, Layout, MobileNav
+│   │   └── ui/                         # Button, GlassCard, Slider, Toggle, ...
+│   ├── data/                           # rpgSystem.js, rpgMagic.js, rpgFactions.js, achievements.js, prefabs.js
+│   ├── effects/                        # EffectEngine, DiceRoller, biomeResolver
+│   ├── utils/                          # rpgTranslate, ids, retry
+│   └── locales/                        # en.json, pl.json
+│
+├── backend/                            # Backend
+│   ├── prisma/schema.prisma            # User, Campaign, CampaignScene/NPC/Knowledge/Codex/Quest, Character, ...
 │   └── src/
-│       ├── server.js             # Punkt wejścia Fastify
-│       ├── routes/               # auth, campaigns, characters, media, multiplayer
-│       │   └── proxy/            # openai, anthropic, elevenlabs, stability, suno
-│       └── services/             # roomManager, multiplayerAI, mediaStore
-├── package.json
-└── vite.config.js
+│       ├── server.js                   # Fastify boot, plugin registration, graceful shutdown
+│       ├── config.js                   # Env config (single source)
+│       ├── routes/
+│       │   ├── auth.js                 # /v1/auth/* (register, login, refresh, logout, settings, api-keys)
+│       │   ├── ai.js                   # /v1/ai/* (scene SSE + campaign SSE + single-shots + jobs)
+│       │   ├── campaigns.js            # Facade → campaigns/{public,crud,sharing,recaps,schemas}.js
+│       │   ├── multiplayer.js          # Facade → multiplayer/{http,connection,handlers/*}.js
+│       │   ├── characters.js, gameData.js, media.js, music.js, wanted3d.js
+│       │   └── proxy/                  # openai, anthropic, gemini, elevenlabs, stability, meshy
+│       ├── services/
+│       │   ├── sceneGenerator.js       # Facade → sceneGenerator/generateSceneStream.js (+ phases)
+│       │   ├── multiplayerAI.js        # Facade → multiplayerAI/{aiClient,sceneGeneration,...}.js
+│       │   ├── intentClassifier.js     # Stage 1 — heuristic + nano
+│       │   ├── aiContextTools.js       # Stage 2 — assembleContext
+│       │   ├── memoryCompressor.js     # Post-scene nano summaries + quest checks
+│       │   ├── aiJsonCall.js           # Shared single-shot JSON helper
+│       │   ├── combatCommentary.js, objectiveVerifier.js, recapGenerator.js, storyPromptGenerator.js
+│       │   ├── campaignGenerator.js    # Streaming single-player campaign gen
+│       │   ├── diceResolver.js         # d50 resolver + pre-roll generator
+│       │   ├── characterMutations.js   # applyCharacterStateChanges, deserializeCharacterRow
+│       │   ├── roomManager.js          # Multiplayer room lifecycle + DB persistence
+│       │   ├── multiplayerSceneFlow.js # Shared flow for APPROVE_ACTIONS + SOLO_ACTION
+│       │   ├── stateValidator.js       # MP state-change validation
+│       │   ├── embeddingService.js     # OpenAI embeddings + L1/L2 cache
+│       │   ├── vectorSearchService.js  # Atlas Vector Search
+│       │   ├── mongoNative.js          # Raw driver (for BSON embedding arrays)
+│       │   ├── redisClient.js          # Dual ioredis (regular + BullMQ)
+│       │   ├── apiKeyService.js        # AES-256 key encryption
+│       │   ├── refreshTokenService.js  # Opaque refresh tokens in Valkey
+│       │   └── queues/aiQueue.js       # Per-provider BullMQ queues
+│       ├── workers/aiWorker.js         # Handler registry + pub/sub bridge
+│       ├── plugins/                    # csrf, idempotency, rateLimitKey, bullBoard, cors, auth
+│       ├── lib/                        # prisma, logger
+│       ├── data/equipment/             # Bestiary, weapons, armour
+│       └── scripts/                    # createVectorIndexes, migrateCoreState
+│
+├── shared/                             # Domain logic used by FE and BE
+│   ├── domain/                         # combatIntent, luck, pricing, stateValidation, dialogueRepair,
+│   │                                   # skills, ids, safeLocation, achievementTracker, ...
+│   ├── contracts/                      # multiplayer.js — WS message schemas
+│   └── map_tiles/                      # modelCatalog3d.js
+│
+├── knowledge/                          # Codebase knowledge for AI agents + contributors
+│   ├── concepts/                       # How subsystems work (scene-gen, combat, MP, auth, ...)
+│   ├── patterns/                       # Reusable code patterns (SSE, BullMQ, pure-lift, ...)
+│   ├── decisions/                      # Settled debates (two-stage pipeline, no-BYOK, RPGon, ...)
+│   ├── ideas/                          # Future concepts not yet built (with "when it becomes relevant")
+│   └── index.md
+│
+├── e2e/                                # Playwright specs + helpers + fixtures
+├── CLAUDE.md                           # Top-level guide for AI agents
+├── RPG_SYSTEM.md                       # RPGon rules specification
+├── docker-compose.yml                  # Dev stack (backend + valkey)
+├── docker-compose.prod.yml             # Prod overlay
+├── package.json, vite.config.js
+└── README.md
 ```
 
 ---
@@ -337,59 +563,83 @@ RPGon/
 ## Uruchomienie
 
 ### Wymagania
-- Node.js 18+ (do testów lokalnych)
-- Docker + Docker Compose (do uruchomienia stacku)
-- Klucze API: OpenAI lub Anthropic (wymagane), ElevenLabs / Stability / Suno (opcjonalne)
+
+- **Node.js 18+** (lokalne testy vitest / playwright)
+- **Docker + Docker Compose** (uruchomienie stacku)
+- **MongoDB Atlas** — klaster (free tier wystarcza na pre-prod)
+- **Klucze API:** OpenAI lub Anthropic (wymagane), Gemini / ElevenLabs / Stability / Meshy (opcjonalne)
 
 ### Instalacja
 
 ```bash
-# Instalacja zależności (do vitest / playwright lokalnie)
+# Zależności (root + backend + prisma generate)
 npm run setup
 
 # Konfiguracja backendu
 cp backend/.env.example backend/.env
-# Uzupełnij zmienne w backend/.env
+# Uzupełnij DATABASE_URL (Atlas SRV), JWT_SECRET, API_KEY_ENCRYPTION_SECRET + klucze
 
-# Uruchom pełen stack (backend :3001 + mongo + valkey)
-npm run dev           # docker compose up --build --watch (auto-restart backendu na zmiany)
+# Uruchom pełen stack (backend :3001 + valkey)
+npm run dev           # docker compose up --build --watch
 npm run dev:down      # docker compose down
-npm run dev:logs      # docker compose logs -f backend
+npm run dev:logs      # tail backend logs
 ```
 
-Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do testów e2e lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright.
+Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do e2e / szybkiej iteracji FE lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright.
 
-### Tryb bez backendu
+### Jednorazowy setup — Atlas Vector Search
 
-Gra może działać w trybie solo bez backendu — wystarczy podać klucze API w ustawieniach aplikacji. Backend jest potrzebny do:
-- Multiplayer (WebSocket)
-- Proxy API (klucze po stronie serwera)
-- Persystencji kampanii i postaci w MongoDB
-- Generowania i przechowywania mediów
+```bash
+cd backend && node src/scripts/createVectorIndexes.js
+```
+
+Tworzy indeksy vector search na kolekcjach `CampaignScene`, `CampaignNPC`, `CampaignKnowledge`, `CampaignCodex`. Konieczne do semantycznego przeszukiwania pamięci kampanii przez AI.
 
 ### Zmienne środowiskowe (`backend/.env`)
 
 | Zmienna | Wymagana | Opis |
-|---------|----------|------|
-| `DATABASE_URL` | Tak | Connection string MongoDB |
-| `JWT_SECRET` | Tak | Silny sekret do podpisywania tokenów JWT |
-| `API_KEY_ENCRYPTION_SECRET` | Tak | Sekret do szyfrowania kluczy API w bazie |
+|---|---|---|
+| `DATABASE_URL` | **Tak** | Connection string MongoDB Atlas (SRV). Hard-failuje boot jeśli nie jest ustawiona. |
+| `JWT_SECRET` | **Tak** | Sekret do podpisywania JWT access tokenów |
+| `API_KEY_ENCRYPTION_SECRET` | **Tak** | 32 hex chars, do szyfrowania kluczy API przechowywanych w DB |
 | `PORT` | Nie | Port serwera (domyślnie 3001) |
-| `CORS_ORIGIN` | Nie | Dozwolone origin (domyślnie `true` w dev) |
-| `MEDIA_BACKEND` | Nie | `local` lub `gcp` |
-| `OPENAI_API_KEY` | Nie | Domyślny klucz OpenAI |
-| `ANTHROPIC_API_KEY` | Nie | Domyślny klucz Anthropic |
-| `ELEVENLABS_API_KEY` | Nie | Domyślny klucz ElevenLabs |
-| `STABILITY_API_KEY` | Nie | Domyślny klucz Stability AI |
-| `SUNO_API_KEY` | Nie | Domyślny klucz Suno |
+| `HOST` | Nie | Host binding (domyślnie 0.0.0.0) |
+| `REDIS_URL` | Nie | URL do Valkey (domyślnie `redis://valkey:6379` w compose). Gdy puste = tryb fallback (auth zwraca 503) |
+| `CORS_ORIGIN` | Nie | `true` dla dev albo lista originów |
+| `MEDIA_BACKEND` | Nie | `local` (domyślnie) lub `gcp` |
+| `MEDIA_LOCAL_PATH` | Nie | Ścieżka dla lokalnego storage mediów |
+| `GCS_BUCKET_NAME`, `GOOGLE_APPLICATION_CREDENTIALS` | Nie | GCP storage gdy `MEDIA_BACKEND=gcp` |
+| `OPENAI_API_KEY` | Nie | Domyślny klucz (użytkownicy mogą podać własne w Settings) |
+| `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `STABILITY_API_KEY` | Nie | j.w. — fallback dla użytkowników bez własnych kluczy |
+| `AI_QUEUE_CONCURRENCY_OPENAI`, `..._ANTHROPIC`, `..._GEMINI`, `..._STABILITY`, `..._MESHY` | Nie | Per-kolejka concurrency w BullMQ (default: 100 dla text, 10 dla media) |
+| `WORKER_MODE` | Nie | `1` = uruchom standalone worker zamiast in-process |
 
 ### Testy
 
 ```bash
-npm test    # Vitest — uruchamia wszystkie *.test.js
+npm test               # Vitest unit tests
+npm run test:watch     # Watch mode
+npm run test:e2e       # Playwright (wymaga `npm run dev:frontend` i działającego backendu)
+npm run test:e2e:ui    # Playwright UI mode
 ```
 
-### Dokumentacja
+### Tryb bez Redisa
 
-- **[AGENTS.md](./AGENTS.md)** — pełny przewodnik po projekcie dla agentów AI (architektura, przepływ danych, konwencje)
-- **[Cursor Rules](./.cursor/rules/)** — kontekstowe reguły do wspomaganego AI rozwoju kodu
+Stos działa bez Valkey — z dwoma wyjątkami:
+
+- **Auth wymaga Redisa.** `/v1/auth/register|login|refresh` zwracają 503 gdy Redis off (refresh tokeny nie mają sensownego in-memory fallbacku).
+- **BullMQ queues off** — streaming scen przechodzi na inline SSE fallback. Mniejsza concurrency control, ale działa.
+
+Wszystkie inne warstwy (embedding cache, rate limiter, idempotency plugin) mają graceful degradation.
+
+---
+
+## Dokumentacja
+
+- **[CLAUDE.md](./CLAUDE.md)** — zwięzły przewodnik top-level (stack, komendy, architektura, krytyczne pliki)
+- **[knowledge/](./knowledge/)** — szczegółowa dokumentacja subsystemów:
+  - **[concepts/](./knowledge/concepts/)** — jak działa dany subsystem i gdzie jest kod (scene-generation, combat, multiplayer, auth, persistence, RPGon mechanics, AI context assembly, ...)
+  - **[patterns/](./knowledge/patterns/)** — wzorce kodu do ponownego użycia (SSE streaming, BullMQ, pure-lift refactoring, hook testing, e2e seeding, ...)
+  - **[decisions/](./knowledge/decisions/)** — zapadłe decyzje projektowe z alternatywami (two-stage pipeline, no-BYOK, BullMQ vs SSE, Atlas-only, custom RPGon, ...)
+  - **[ideas/](./knowledge/ideas/)** — pomysły na przyszłość nieprzyjęte jeszcze do kodu (autonomous NPCs, combat auto-resolve, prompt fragment system, ...) z opisem **kiedy stają się istotne**
+- **[RPG_SYSTEM.md](./RPG_SYSTEM.md)** — pełna specyfikacja reguł RPGon

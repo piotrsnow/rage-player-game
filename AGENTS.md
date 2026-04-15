@@ -1,154 +1,194 @@
-# RPGON / Nikczemny Krzemuch — RPGon (custom RPG system) AI RPG Game
+# RPGON / Nikczemny Krzemuch — AI RPG game on a custom d50 system
 
 ## Stack
+
 - **Frontend**: React 18 + Vite 6, Tailwind CSS, React Three Fiber (3D scenes), i18next, Zod 4
-- **Backend**: Fastify 5, Prisma (MongoDB), JWT auth, WebSocket (multiplayer)
-- **Database**: MongoDB Atlas (normalized collections + vector search)
-- **AI**: OpenAI (GPT-5.4/mini/nano, 4.1/mini/nano, 4o/mini, o3/o4-mini) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini — multi-provider, nano/standard/premium tiering
+- **Backend**: Fastify 5, Prisma (MongoDB), JWT + refresh cookies, WebSocket (multiplayer), BullMQ (Valkey/Redis)
+- **Database**: MongoDB Atlas (normalized collections + Atlas Vector Search)
+- **AI**: OpenAI (GPT-5.4/mini/nano, 4.1/mini/nano, 4o/mini, o3/o4-mini) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini. Nano/standard/premium tiering via `src/services/ai/models.js`.
 - **3D**: Three.js / React Three Fiber — procedural scene rendering with GLB model support
 - **Media**: Sharp (image resize), ElevenLabs (TTS), Stability AI (scene images), Meshy (3D models), GCP Storage
 - **Testing**: Vitest (unit), Playwright (e2e)
-- **Shared**: `shared/` directory with contracts and domain logic used by both frontend and backend
+- **Shared**: `shared/` — domain logic and contracts used by both frontend and backend
 
 ## Commands
-- `npm run dev` - `docker compose up --build --watch` — boots the full stack (backend :3001 + mongo + valkey) with Docker Compose Watch: auto-restart backend on `backend/src` / `shared` changes, rebuild image on `package.json` / FE `src/` changes
-- `npm run dev:down` - `docker compose down`
-- `npm run dev:logs` - tail backend container logs
-- `npm run dev:frontend` - `vite` with HMR on :5173 (Playwright E2E + fast FE iteration alongside watched backend)
-- `npm run build` - Vite production build (used by the Dockerfile frontend-build stage)
-- `npm test` - Vitest unit tests
-- `npm run test:e2e` - Playwright e2e tests
-- `cd backend && npm run db:push` - Push Prisma schema to MongoDB
-- `cd backend && npx prisma generate` - Regenerate Prisma client
+
+- `npm run dev` — `docker compose up --build --watch`: boots backend :3001 + valkey, auto-restarts backend on changes in `backend/src` / `shared`, rebuilds image on package.json or frontend `src/` changes. MongoDB is Atlas-only (`DATABASE_URL` SRV string required in `.env`).
+- `npm run dev:down` — `docker compose down`
+- `npm run dev:logs` — tail backend container logs
+- `npm run dev:frontend` — `vite` with HMR on :5173 (Playwright E2E + fast FE iteration alongside watched backend)
+- `npm run build` — Vite production build
+- `npm test` — Vitest unit tests
+- `npm run test:e2e` — Playwright e2e tests
+- `cd backend && npm run db:push` — push Prisma schema to MongoDB
+- `cd backend && npx prisma generate` — regenerate Prisma client
 
 ## Conventions
+
 - ES Modules everywhere (`"type": "module"`)
-- No ESLint/Prettier config - use sensible defaults
+- No ESLint/Prettier config — use sensible defaults
 - Polish language in UI (i18next), English in code/comments
 - No TypeScript — plain JavaScript with `.jsx` extensions
-- React: Functional components only, hooks for all logic
+- React: functional components only, hooks for all logic
 - State: Zustand store (`src/stores/gameStore.js`) with Immer-based reducer handlers, granular selectors. Legacy `useGame()` facade in `GameContext.jsx`.
-- AI responses: Always validated with Zod before dispatch
-- Game mechanics: Engines in `src/services/*Engine.js`, data in `src/data/rpg*.js`
-- Deterministic mechanics separated in `src/services/mechanics/`
+- AI responses: always validated with Zod before dispatch
+- Game mechanics: engines in `src/services/*Engine.js`, data in `src/data/rpg*.js`, deterministic helpers in `src/services/mechanics/`
 - Styling: Tailwind utility classes, dark theme with glassmorphism (`backdrop-blur`, `bg-opacity`)
 - File naming: React components `PascalCase.jsx`, services/hooks/data `camelCase.js`, tests `*.test.js` next to source
 - Embeddings stored as native BSON arrays via mongodb driver (not Prisma)
 - JSON fields stored as strings in Prisma (MongoDB limitation), parsed on read
-- **Dedup direction**: logic used by BOTH frontend and backend lives in `shared/domain/*.js`. Backend-only dedup stays in `backend/src/services/`. Don't create parallel copies — if you spot a helper that belongs on both sides, lift it to `shared/domain/` with the richer version as canonical.
-- **Large file splits**: when a route / service exceeds ~800L or has clearly separable phases, split into thin facade (`routes/foo.js`, `services/foo.js`) + submodule folder (`routes/foo/*`, `services/foo/*`). See `knowledge/patterns/backend-monolith-split.md`. Facade must preserve the external import path.
 
-## Architecture Overview
+## Architecture overview
 
 ### Frontend (`src/`)
-- **State**: Zustand store + Immer reducer handlers in `src/stores/`. Contexts for Settings, Multiplayer, Music, Modals.
-- **Hooks**: `useAI.js` (main AI integration), `useGameState.js` (campaign lifecycle), `useSceneGeneration.js` (scene gen orchestration), `useGameContent.js` (quest/NPC updates), `useCombatResolution.js`, `useNarrator.js` (TTS)
-- **Services**: AI providers (`src/services/ai/`), game engines (`*Engine.js`), deterministic mechanics (`mechanics/`), storage/sync (`storage.js`), field map (`fieldMap/`)
-- **Components**: `GameplayPage` orchestrates panels (Scene, Action, Chat, Combat, Magic, Trade, Party). Character sheet, campaign creator, lobby, gallery, multiplayer, settings, 3D scene rendering (`Scene3D/`)
-- **Data**: RPGon rules (`rpgSystem.js`, `rpgMagic.js`, `rpgFactions.js`), equipment, achievements, 3D prefabs
+
+- **State** — Zustand store + Immer handlers in `src/stores/`. Non-game contexts (Settings, Multiplayer, Music, Modals) stay on React Context.
+- **Hooks** — scene generation (`src/hooks/sceneGeneration/`), combat (4 pure-factory hooks), narration, campaign lifecycle, image repair, summary modal, viewer mode, multiplayer glue.
+- **Services** — AI dispatch (`src/services/ai/`), AI response parsing (`src/services/aiResponse/`), game engines (combat/magic/trade/crafting/alchemy), deterministic mechanics (`mechanics/`), storage/sync (`storage.js`), API client (`apiClient.js`), field map (`fieldMap/`).
+- **Components** — `GameplayPage` orchestrates panels (Scene, Action, Chat, Combat, Magic, Trade, Party). Character sheet, campaign creator, lobby, gallery, multiplayer, settings, 3D scene rendering (`Scene3D/`).
+- **Data** — RPGon rules (`rpgSystem.js`, `rpgMagic.js`, `rpgFactions.js`), equipment, achievements, 3D prefabs.
 
 ### Backend (`backend/`)
-- **Routes**: auth, characters, AI endpoints (generate-scene SSE stream), game data, media, music, wanted3d, proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). Two large route families are **split into thin facades + submodule folders** (see [[knowledge/patterns/backend-monolith-split]]):
-  - `routes/campaigns.js` → `routes/campaigns/{public,crud,sharing,recaps,schemas}.js`
-  - `routes/multiplayer.js` → `routes/multiplayer/{http,connection}.js` + `routes/multiplayer/handlers/{lobby,roomState,gameplay,quests,combat,webrtc}.js`
-- **Services**: Two AI pipelines are similarly split into thin facades + folders:
-  - `services/sceneGenerator.js` (single-player) → `services/sceneGenerator/{generateSceneStream,campaignLoader,shortcuts,systemPrompt,userPrompt,contextSection,streamingClient,diceResolution,enemyFill,processStateChanges,labels,inlineKeys}.js`
-  - `services/multiplayerAI.js` → `services/multiplayerAI/{aiClient,systemPrompt,scenePrompt,dialogueRepair,fallbackActions,diceNormalization,campaignGeneration,sceneGeneration,compression}.js`
-- **Campaign helpers**: `campaignSerialize.js` (pure) + `campaignSync.js` (DB) + `campaignRecap.js` — extracted during the campaigns split
-- **Shared multiplayer flow**: `multiplayerSceneFlow.js` — deduped `runMultiplayerSceneFlow()` used by both APPROVE_ACTIONS and SOLO_ACTION handlers
-- **Other AI services**: `intentClassifier.js` (heuristic + nano fallback), `aiContextTools.js` (`assembleContext()` for the two-stage pipeline), `memoryCompressor.js` (post-scene fact extraction), `aiErrors.js` (structured AI error handling)
-- **Infra**: `roomManager.js` (in-memory + Prisma persistence), `mediaStore.js` (local/GCS), `vectorSearchService.js` (Atlas Vector Search), `diceResolver.js` (d50 skill check + pre-rolls)
+
+- **Routes** — `/v1/auth` (cookie refresh flow), campaigns CRUD (split), characters, `ai.js` (scene SSE + campaign SSE + single-shots + job polling), game data, media, multiplayer WebSocket (split), proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). All under `/v1/*`; `/health` at root.
+- **Services** — scene generation pipeline (`sceneGenerator/`), intent classification, context assembly (`aiContextTools.js`), memory compression, shared `aiJsonCall.js` for single-shot calls, multiplayer AI pipeline (`multiplayerAI/`), vector search, room manager, media storage.
+- **Infrastructure** — `redisClient.js` (regular + BullMQ connections), `queues/aiQueue.js` (per-provider BullMQ queues), `workers/aiWorker.js` (handler registry with pub/sub bridge for streaming jobs), `plugins/csrf.js`, `plugins/idempotency.js`, `plugins/rateLimitKey.js`, `plugins/bullBoard.js`, `refreshTokenService.js`.
 
 ### Database (MongoDB via Prisma)
+
 | Model | Purpose |
 |---|---|
 | `User` | Auth, encrypted API keys, settings |
-| `Campaign` | coreState (lean JSON), metadata |
+| `Campaign` | `coreState` (lean JSON string), metadata |
 | `CampaignScene/NPC/Knowledge/Codex/Quest` | Normalized with Atlas Vector Search embeddings |
-| `Character` | Reusable character library |
+| `Character` | Reusable character library (with campaign lock fields) |
 | `MultiplayerSession` | Room state backup for crash recovery |
 | `MediaAsset` | User-generated images/music/TTS |
 | `PrefabAsset` / `Wanted3D` | 3D model catalog |
 | `Achievement` | Per-user unlocked achievements |
 
-## AI Architecture — Two-Stage Pipeline
+## AI pipeline (summary)
 
-### Design Principles
-1. **Context selection over tool calling** — nano model determines what context is needed, backend assembles it, then one large model call (not AI->tool->AI loops)
-2. **Game state over history** — structured state over raw scene history. Reduces tokens, improves consistency
-3. **Memory compression** — nano model extracts key facts after each scene. Full history NOT in prompt
-4. **Nano for planning** — cheap/fast model handles intent classification + fact extraction
-5. **Tool-use is a fallback** — legacy loop exists but two-stage pipeline is primary
+Every scene generation goes through a two-stage pipeline: nano model selects what context is needed, backend assembles it in parallel, premium model runs once with a lean prompt (~3.5-7k tokens).
 
-### Flow (Backend Mode — Primary)
 ```
-Player Action
-  → [Frontend] resolveMechanics() — deterministic d50/combat/magic
-  → [Backend POST /ai/campaigns/:id/generate-scene]
-      Stage 1: classifyIntent() — heuristic regex ~70% free; nano for freeform
-      Stage 2: assembleContext() — parallel DB queries for needed categories
-      Stage 3: runTwoStagePipeline() — single large model call, lean prompt ~3.5k tokens
-  → [AI Response] → validateStateChanges() → processStateChanges()
-  → [Post-scene async] compressSceneToSummary() — nano extracts facts
+Player action
+  → [FE] resolveMechanics()                    — deterministic d50/combat/magic
+  → [FE] useSceneGeneration → SSE stream       — POST /v1/ai/campaigns/:id/generate-scene-stream
+  → [BE route] writeSseHead + BullMQ enqueue   — pre-generated jobId, subscribe-before-enqueue
+  → [Worker] generateSceneStream phases:
+      1. load campaign state (parallel DB)
+      2. classifyIntent (heuristic → nano)
+      3. tryTradeShortcut / tryCombatFastPath (early return)
+      4. generatePreRolls (3 d50 values for fallback)
+      5. assembleContext (parallel DB for selected categories)
+      6. build prompts + runTwoStagePipelineStreaming (premium)
+      7. parse + validate + reconcile dice + fill enemies + process state changes
+      8. post-scene async: compress facts, location summary, quest objectives, embedding
+  → [FE] applySceneStateChanges → stateValidator → gameDispatch
 ```
 
-### Model Tiering
-- **nano** (gpt-5.4-nano / gpt-4.1-nano): intent classification, fact extraction, skill check inference
-- **standard** (gpt-5.4-mini / haiku-4.5): compression, recaps, combat commentary
-- **premium** (gpt-5.4 / claude-sonnet-4): scene generation, campaign creation
+Full detail: [knowledge/concepts/scene-generation.md](knowledge/concepts/scene-generation.md).
 
-### RPGon Game System (custom, replaces WFRP)
-- **Dice**: d50 (not d100). Roll d50 vs attribute + skill + modifiers
-- **Attributes**: 6 stats (Siła, Inteligencja, Charyzma, Zręczność, Wytrzymałość, Szczęście), scale 1-25
-- **Skills**: ~60 skills, each tied to one attribute. Levels 0-25, cap system
-- **Magic**: 9 spell trees, mana-based (no casting test), spells from scrolls, cost 1-5 mana
-- **Combat**: d50-based, damage = Siła + weapon - Wytrzymałość - AP, margin instead of SL
-- **Szczęście**: X% auto-success chance on any roll
-- **No**: careers, talents, fate/fortune/resolve/resilience, critical wounds table, channelling, advantage
-- Full spec: `RPG_SYSTEM.md`
+### Design principles
 
-## Known Gaps / Consolidation Candidates
-- No token budget enforcement in `assembleContext()`
-- State changes still AI-driven — no mechanical validation for buying items etc.
-- `diceRollInference.js` — frontend copy has extras vs `shared/domain/` version. Merge.
-- `stateValidator.js` exists in frontend + backend — extract shared logic to `shared/domain/`
-- Frontend proxy mode duplicates prompt building from backend lean version — 4 specific parallels tracked as item 10 in [plans/post_merge_infra.md](plans/post_merge_infra.md): dialogue repair, fallback actions, lean response parser, AI client
+1. **Context selection over tool calling** — nano picks, code assembles, premium runs once. Not a loop.
+2. **Game state over history** — structured state in the prompt, not raw scene history.
+3. **Bounded memory compression** — 15-fact cap per campaign → stable ~7k input regardless of length.
+4. **Nano for planning** — intent, fact extraction, skill inference, quest checks. Premium is for narration only.
 
-## Knowledge Base — `knowledge/`
+### RPGon game system
 
-**When working on a subsystem, read the relevant knowledge file first.** These files contain detailed information that CLAUDE.md intentionally omits to save context.
+Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code pointer: [knowledge/concepts/rpgon-mechanics.md](knowledge/concepts/rpgon-mechanics.md).
 
-### File Inventory (read when looking for specific files)
-- `concepts/frontend-structure.md` — full file listing: contexts, stores, hooks, services, components, data, effects
-- `concepts/backend-structure.md` — full file listing: routes, services, shared/ (**updated session 6** after the 4 monolith splits), scripts
+- **Dice:** d50 vs `attribute + skill + modifiers`. Roll 1 = crit success, roll 50 = crit failure.
+- **Attributes:** 6 stats 1-25 (`sila`, `inteligencja`, `charyzma`, `zrecznosc`, `wytrzymalosc`, `szczescie`). Baseline character: all 1 except szczęście (0).
+- **Skills:** ~31 skills, each tied to one attribute, levels 0-25.
+- **Magic:** 9 spell trees, mana-based, spells from scrolls, 1-5 mana per spell.
+- **Combat:** d50-based, `damage = Siła + weapon - Wytrzymałość - AP`, margin instead of SL.
+- **Szczęście:** attribute value IS the % chance of auto-success on any roll.
+- **Currency:** 3-tier Korona (ZK/SK/MK), `1 ZK = 20 SK = 240 MK`.
+- **Character identity:** titles unlocked from achievements; no careers/classes.
 
-### State Management & Refactoring
-- `concepts/game-context.md` — Zustand facade architecture, selectors API, `getGameState()` pattern
-- `concepts/context-migration-plan.md` — which contexts → Zustand (Modal, Music) vs stay (Settings, Multiplayer)
-- `concepts/frontend-refactor-2026-04.md` — god-component decomposition: 6 components before/after, 10 PRs, 13 extracted hooks
-- `concepts/frontend-refactor-regressions.md` — **READ BEFORE TESTING**: manual test watchlist, 7 open questions
-- `patterns/reducer-context.md` — Zustand facade + granular selectors pattern
-- `patterns/component-decomposition.md` — 5-step pure-lift refactoring ladder, naming conventions
+## Knowledge base — `knowledge/`
 
-### Game Systems
-- `concepts/bestiary.md` — 36 units, 11 races, encounter budget system, fast-path combat
-- `concepts/model-tiering.md` — ai/ submodule structure (models.js, providers.js, service.js)
-- `decisions/currency-three-tier-pl.md` — 3 denominations + exchange rates
-- `decisions/titles-from-achievements.md` — 12 example achievement titles with rarity + conditions
-- `decisions/embeddings-native-driver.md` — why native MongoDB driver (BSON array requirement)
+**When working on a subsystem, read the relevant knowledge file first.** CLAUDE.md is kept terse on purpose; knowledge files expand on the why and how.
 
-### Patterns
-- `patterns/backend-monolith-split.md` — thin facade + submodule folder split. Applied 4× in session 6 (campaigns / multiplayer / multiplayerAI / sceneGenerator). Read before splitting any large backend file.
-- `patterns/backend-proxy.md` — SSE endpoints (generate-scene-stream), `callBackendStream()` pattern
-- `patterns/prerolled-dice-fallback.md` — pre-rolled d50 fallback: max 3 rolls/scene, thresholds 20/35/50/65/80
+### Concepts — subsystems
 
-When coding:
-- follow patterns
-- reuse decisions
-- avoid repeated bugs
+- `knowledge/concepts/scene-generation.md` — two-stage pipeline, SSE events, LLM timeouts, debugging order
+- `knowledge/concepts/ai-context-assembly.md` — intent classifier, `assembleContext`, memory compression
+- `knowledge/concepts/game-state.md` — Zustand store + handlers + selectors
+- `knowledge/concepts/persistence.md` — `coreState`, normalized collections, save queue, idempotency, char lock
+- `knowledge/concepts/combat-system.md` — d50 resolution, hooks, solo vs MP flow
+- `knowledge/concepts/multiplayer.md` — host-owned state, WS handlers, room manager
+- `knowledge/concepts/auth.md` — cookie refresh + JWT + CSRF + per-user keys
+- `knowledge/concepts/rpgon-mechanics.md` — d50, pre-rolled dice fallback, state change limits
+- `knowledge/concepts/bestiary.md` — encounter budget, fast-path combat, disposition guard
+- `knowledge/concepts/model-tiering.md` — nano / standard / premium tiers
+- `knowledge/concepts/frontend-structure.md` — `src/` subdomain map + entry-point cheat sheet
+- `knowledge/concepts/backend-structure.md` — `backend/` + `shared/` subdomain map + entry-point cheat sheet
 
-## Important Notes
-- No production backward compatibility constraints
-- Frontend works in two modes: backend scene generation (preferred) or proxy (legacy, heavier)
-- Vector search indexes: `cd backend && node src/scripts/createVectorIndexes.js`
-- Multiplayer contracts shared via `shared/contracts/multiplayer.js`
+### Patterns — reusable code shapes
+
+- `knowledge/patterns/sse-streaming.md` — **MANDATORY** before touching any SSE route
+- `knowledge/patterns/bullmq-queues.md` — per-provider queues, pub/sub bridge, dual-mode workers
+- `knowledge/patterns/zustand-facade.md` — facade + granular selectors
+- `knowledge/patterns/pure-lift-refactoring.md` — lift ladder for components, thin-facade split for backend
+- `knowledge/patterns/hook-pure-factory-testing.md` — **MANDATORY** before writing hook tests
+- `knowledge/patterns/e2e-campaign-seeding.md` — **MANDATORY** before writing Playwright specs that need a loaded campaign
+- `knowledge/patterns/backend-proxy.md` — backend is the sole AI dispatch path
+
+### Decisions — settled debates
+
+- `knowledge/decisions/two-stage-pipeline.md` — nano selection + code assembly (not tool calling)
+- `knowledge/decisions/no-byok.md` — backend is the sole AI dispatch path
+- `knowledge/decisions/bullmq-vs-sse-routes.md` — BullMQ + pub/sub bridge + SSE (not poll-only)
+- `knowledge/decisions/atlas-only-no-local-mongo.md` — Atlas SRV everywhere
+- `knowledge/decisions/embeddings-native-driver.md` — native MongoDB driver for BSON arrays
+- `knowledge/decisions/rpgon-custom-system.md` — custom d50 system, not WFRP
+- `knowledge/decisions/currency-three-tier-pl.md` — ZK/SK/MK exchange rates
+- `knowledge/decisions/titles-from-achievements.md` — character identity via titles
+
+### Ideas — future concepts (not adopted)
+
+**If you recommend something from `knowledge/ideas/`, ALWAYS name the file path** (e.g. `knowledge/ideas/autonomous-npcs.md`) so the user knows to read it before deciding. These are sketches with "when it becomes relevant" triggers — never act on them as if they were decided patterns.
+
+Current ideas (all from a `gradient-bang` review): async-tool-pattern, autonomous-npcs, combat-auto-resolve, declarative-event-routing, deferred-event-batching, prompt-fragment-system. See [knowledge/ideas/README.md](knowledge/ideas/README.md).
+
+## Critical-path files (when in doubt, start here)
+
+| Task | Entry file |
+|---|---|
+| Scene generation bug | [backend/src/services/sceneGenerator/generateSceneStream.js](backend/src/services/sceneGenerator/generateSceneStream.js) |
+| Scene gen FE orchestration | [src/hooks/sceneGeneration/useSceneGeneration.js](src/hooks/sceneGeneration/useSceneGeneration.js) |
+| AI context selection | [backend/src/services/intentClassifier.js](backend/src/services/intentClassifier.js) + [aiContextTools.js](backend/src/services/aiContextTools.js) |
+| AI response validation | [src/services/stateValidator.js](src/services/stateValidator.js) + [shared/domain/stateValidation.js](shared/domain/stateValidation.js) |
+| State change application | [src/stores/handlers/applyStateChangesHandler.js](src/stores/handlers/applyStateChangesHandler.js) |
+| Combat mechanics | [src/services/combatEngine.js](src/services/combatEngine.js) |
+| Save/load | [src/services/storage.js](src/services/storage.js) |
+| Multiplayer WS | [backend/src/routes/multiplayer/connection.js](backend/src/routes/multiplayer/connection.js) + `handlers/` |
+| Auth flow | [src/services/apiClient.js](src/services/apiClient.js) + [backend/src/routes/auth.js](backend/src/routes/auth.js) |
+| BullMQ queues | [backend/src/services/queues/aiQueue.js](backend/src/services/queues/aiQueue.js) + [workers/aiWorker.js](backend/src/workers/aiWorker.js) |
+| SSE routes | [backend/src/routes/ai.js](backend/src/routes/ai.js) `writeSseHead` |
+| Prisma schema | [backend/prisma/schema.prisma](backend/prisma/schema.prisma) |
+| RPGon rules | [src/data/rpgSystem.js](src/data/rpgSystem.js) |
+
+## Known gaps / technical debt
+
+- **`backend/src/routes/ai.js` is ~865L** — over the 600L hard cap. Split into `routes/ai/` folder (schemas / simple / campaign / scene / scenes-crud subfiles) before adding more endpoints.
+- **`deepMerge` helper duplicated** at the bottom of `backend/src/routes/ai.js`. Move to a util file on next touch.
+- **OpenAI/Anthropic dispatchers in 3 places**: `aiJsonCall.js` (single-shot), `campaignGenerator.js` (streaming), `sceneGenerator/streamingClient.js` (streaming). Acceptable — streaming vs non-streaming APIs are genuinely different shapes.
+- **`src/hooks/useNarrator.js` is ~945L** — biggest remaining monolith hook. Split is playtest-driven, not urgent.
+- **No token budget enforcement in `assembleContext()`.** Total prompt stays in ~3.5-7k tokens in practice thanks to upstream caps, but a runaway selection could blow past that. Add explicit counting if scenes start hitting model context limits or cost spikes.
+- **`src/services/diceRollInference.js` has legacy aliases** not in `shared/domain/diceRollInference.js`. Fold into the shared version when convenient.
+- **MP guest join doesn't write character campaign lock.** Only host's characters get locked via `POST /v1/campaigns`. Fix in `backend/src/routes/multiplayer/handlers/lobby.js` if guests report losing characters.
+
+## Important notes
+
+- **No production backward-compat constraints** — we're pre-prod, no v1 users.
+- **Backend is the sole AI dispatch path.** No FE proxy/BYOK mode. Users can store per-user keys via `PUT /v1/auth/settings`; backend decrypts and threads them through via `loadUserApiKeys(prisma, userId)` → `userApiKeys` option → `requireServerApiKey(keyName, userApiKeys, label)`. See [knowledge/decisions/no-byok.md](knowledge/decisions/no-byok.md).
+- **Redis is optional but load-bearing.** Every consumer (embeddings L2 cache, rate limiter, idempotency plugin, BullMQ queues) checks `isRedisEnabled()` and falls back gracefully. **Exception:** `/v1/auth/register|login|refresh` return 503 when Redis is disabled — refresh tokens have no sensible in-memory fallback.
+- **Vector search indexes:** `cd backend && node src/scripts/createVectorIndexes.js` (one-time setup per Atlas cluster).
+- **Multiplayer contracts shared via `shared/contracts/multiplayer.js`** — WS message schemas, normalizers, constants.
+- **LLM timeouts user-tunable** via DM Settings (`llmPremiumTimeoutMs`, `llmNanoTimeoutMs`). Premium timeout emits SSE `error` with `code: 'LLM_TIMEOUT'`; nano timeout falls back silently.

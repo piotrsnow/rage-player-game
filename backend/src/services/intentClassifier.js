@@ -231,11 +231,11 @@ roll_skill rules — MOST actions do NOT need a dice roll. Set roll_skill to nul
 When in doubt, use null.
 
 combat_enemies rules — set when the player is CLEARLY initiating combat (attacking, fighting, provoking a brawl):
-- location: infer from current game location. Valid: ${BESTIARY_LOCATIONS_FOR_NANO}
+- location: infer from current game location. Valid: ${BESTIARY_LOCATIONS_FOR_NANO}. Urban venues (karczma, tawerna, zajazd, dom publiczny, rynek, ulica) → "miasto". Rural settlements → "wioska". Unknown/outdoor → best match.
 - budget: encounter threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). Scale with context.
-- maxDifficulty: cap on individual enemy tier. Valid: trivial, low, medium, high, deadly. E.g. bar fight → "low", dragon lair → "deadly".
+- maxDifficulty: cap on individual enemy tier. Valid: trivial, low, medium, high, deadly. Tavern brawl / drunken scuffle → "low". Dragon lair → "deadly".
 - count: how many enemies (1-8).
-- race: if specific creature type implied (e.g. "goblin raid" → "gobliny"). Valid: ${BESTIARY_RACES_FOR_NANO}. null if generic.
+- race: infer from descriptors. ALWAYS set to 'ludzie' when the target is humanoid and nothing indicates otherwise — this includes: osiłek, chłop, gbur, karczmarz, pijak, rycerz, strażnik, bandyta, rozbójnik, najemnik, kultysta, żebrak, łotr, opryszek, cywil, wieśniak. Only set non-human race when explicitly mentioned: goblin/goblins → "gobliny", ork/orki → "orkowie", szkielet/zombie/upiór → "nieumarli", wilk/niedźwiedź/dzik → "zwierzeta", pająk → "pajaki", troll → "trolle", krasnolud → "krasnoludy", elf → "elfy", niziolek → "niziolki", demon/diabeł → "demony". When in doubt between race=null and race='ludzie', choose 'ludzie'. Valid values: ${BESTIARY_RACES_FOR_NANO}.
 - Set combat_enemies to null if no combat is intended.
 
 clear_combat rules — set to true ONLY when the player action is an UNAMBIGUOUS direct attack on a visible target (e.g. "atakuję bandytę", "bijatyka w karczmie"). This allows skipping the large AI model. Set false when:
@@ -247,25 +247,36 @@ When in doubt, set false.`;
 /**
  * Call nano model to select which context to expand for a freeform player action.
  */
-export async function selectContextWithNano(playerAction, availableSummary, { provider = 'openai' } = {}) {
+export async function selectContextWithNano(playerAction, availableSummary, { provider = 'openai', timeoutMs } = {}) {
   const userPrompt = `Player action: "${playerAction}"\n\nAvailable data:\n${availableSummary}`;
+
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  timeoutHandle?.unref?.();
+  const signal = controller?.signal;
 
   try {
     if (provider === 'anthropic' && config.apiKeys.anthropic) {
-      return await callNanoAnthropic(userPrompt);
+      return await callNanoAnthropic(userPrompt, signal);
     }
     if (config.apiKeys.openai) {
-      return await callNanoOpenAI(userPrompt);
+      return await callNanoOpenAI(userPrompt, signal);
     }
     // No API keys available
     return fallbackSelection(playerAction);
   } catch (err) {
-    log.warn({ err }, 'Nano context selector failed, using fallback');
+    if (err?.name === 'AbortError') {
+      log.warn({ timeoutMs }, 'Nano context selector timed out, using fallback');
+    } else {
+      log.warn({ err }, 'Nano context selector failed, using fallback');
+    }
     return fallbackSelection(playerAction);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 }
 
-async function callNanoOpenAI(userPrompt) {
+async function callNanoOpenAI(userPrompt, signal) {
   const apiKey = config.apiKeys.openai;
   if (!apiKey) throw new Error('No OpenAI API key for nano model');
 
@@ -285,6 +296,7 @@ async function callNanoOpenAI(userPrompt) {
       max_tokens: 250,
       response_format: { type: 'json_object' },
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -300,7 +312,7 @@ async function callNanoOpenAI(userPrompt) {
   return normalizeSelection(parsed);
 }
 
-async function callNanoAnthropic(userPrompt) {
+async function callNanoAnthropic(userPrompt, signal) {
   const apiKey = config.apiKeys.anthropic;
   if (!apiKey) throw new Error('No Anthropic API key for nano model');
 
@@ -319,6 +331,7 @@ async function callNanoAnthropic(userPrompt) {
         { role: 'user', content: userPrompt },
       ],
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -411,6 +424,7 @@ export async function classifyIntent(playerAction, coreState, availableData, opt
   const availableSummary = buildAvailableSummary(coreState, availableData);
   const nanoResult = await selectContextWithNano(playerAction, availableSummary, {
     provider: options.provider || 'openai',
+    timeoutMs: options.timeoutMs,
   });
 
   return { ...nanoResult, _intent: 'freeform' };

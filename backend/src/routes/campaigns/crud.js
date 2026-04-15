@@ -137,6 +137,20 @@ export async function crudCampaignRoutes(app) {
       },
     });
 
+    // Bind characters to this campaign. Lock is cleared on campaign delete
+    // or when the character is released from a safe location in-game.
+    if (characterIds.length > 0) {
+      const initialLocation = typeof slim?.world?.currentLocation === 'string' ? slim.world.currentLocation : null;
+      await prisma.character.updateMany({
+        where: { id: { in: characterIds } },
+        data: {
+          lockedCampaignId: campaign.id,
+          lockedCampaignName: campaign.name || '',
+          lockedLocation: initialLocation,
+        },
+      }).catch((err) => log.error({ err, campaignId: campaign.id }, 'Failed to lock characters to campaign'));
+    }
+
     await syncNPCsToNormalized(campaign.id, npcs).catch((err) => log.error({ err, campaignId: campaign.id }, 'NPC sync wrapper failed'));
     await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId: campaign.id }, 'Knowledge sync wrapper failed'));
     await syncQuestsToNormalized(campaign.id, quests).catch((err) => log.error({ err, campaignId: campaign.id }, 'Quest sync wrapper failed'));
@@ -162,6 +176,15 @@ export async function crudCampaignRoutes(app) {
     if (name !== undefined) updateData.name = name;
     if (genre !== undefined) updateData.genre = genre;
     if (tone !== undefined) updateData.tone = tone;
+
+    // Keep the character's cached lockedCampaignName in sync if the campaign
+    // was renamed. Non-critical — ignore failure.
+    if (name !== undefined && name !== existing.name) {
+      await prisma.character.updateMany({
+        where: { lockedCampaignId: request.params.id },
+        data: { lockedCampaignName: name || '' },
+      }).catch((err) => log.error({ err, campaignId: request.params.id }, 'Failed to sync lockedCampaignName'));
+    }
 
     if (Array.isArray(rawCharIds)) {
       const ids = rawCharIds.filter((id) => typeof id === 'string' && id);
@@ -224,6 +247,11 @@ export async function crudCampaignRoutes(app) {
       prisma.campaignKnowledge.deleteMany({ where: { campaignId: request.params.id } }),
       prisma.campaignCodex.deleteMany({ where: { campaignId: request.params.id } }),
       prisma.campaignQuest.deleteMany({ where: { campaignId: request.params.id } }),
+      // Release any characters locked to this campaign back into the library.
+      prisma.character.updateMany({
+        where: { lockedCampaignId: request.params.id },
+        data: { lockedCampaignId: null, lockedCampaignName: null, lockedLocation: null },
+      }),
     ]);
     await prisma.campaign.delete({ where: { id: request.params.id } });
     return { success: true };

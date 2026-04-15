@@ -1,9 +1,9 @@
-const SAFE_LOCATION_RE = /\b(town|city|village|market|shop|tavern|inn|port|harbor|harbour|forge|smithy|store|emporium|bazaar|karczma|miasto|wioska|targ|sklep|kuźnia|gospoda|oberża|osada|zamek|castle|camp|obóz|sanctuary|świątynia|temple|guild|gildia)\b/i;
+import { isSafeLocation } from '../../shared/domain/safeLocation.js';
 
 const LEAVE_BLOCKED_MESSAGES = {
   combat: 'Nie możesz opuścić kampanii podczas walki!',
   dialogue: 'Nie możesz opuścić kampanii podczas rozmowy!',
-  unsafeLocation: 'Musisz być w bezpiecznym miejscu (karczma, miasto) żeby opuścić kampanię.',
+  unsafeLocation: 'Musisz być w karczmie, tawernie lub świątyni żeby opuścić kampanię.',
 };
 
 export function canLeaveCampaign(state) {
@@ -21,8 +21,7 @@ export function canLeaveCampaign(state) {
   if (state.dialogue) return { allowed: false, reason: 'dialogue' };
 
   // Blocked: unsafe location
-  const loc = (state.world?.currentLocation || '').toLowerCase();
-  if (!SAFE_LOCATION_RE.test(loc)) return { allowed: false, reason: 'unsafeLocation' };
+  if (!isSafeLocation(state.world?.currentLocation)) return { allowed: false, reason: 'unsafeLocation' };
 
   return { allowed: true };
 }

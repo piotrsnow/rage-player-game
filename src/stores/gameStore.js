@@ -42,6 +42,9 @@ export function flushPendingSave() {
   if (current.campaign) {
     storage.saveCampaign(current).catch(() => {});
   }
+  if (current.character) {
+    storage.saveCharacter({ ...current.character }).catch(() => {});
+  }
 }
 
 export function getGameState() {

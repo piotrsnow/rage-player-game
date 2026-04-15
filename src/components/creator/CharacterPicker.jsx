@@ -2,7 +2,26 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
+import { isSafeLocation } from '../../../shared/domain/safeLocation';
 import PortraitGenerator from '../character/PortraitGenerator';
+
+function getCharacterLockInfo(ch, t) {
+  if (!ch?.lockedCampaignId) return { locked: false };
+  if (isSafeLocation(ch.lockedLocation)) return { locked: false };
+  const campaignName = ch.lockedCampaignName || t('characterPicker.lockedFallbackCampaign', 'innej kampanii');
+  const locationLabel = ch.lockedLocation
+    ? t('characterPicker.lockedAtLocation', 'obecnie w: {{loc}}', { loc: ch.lockedLocation })
+    : t('characterPicker.lockedNoLocation', 'bez znanej bezpiecznej lokalizacji');
+  return {
+    locked: true,
+    tooltip: t(
+      'characterPicker.lockedTooltip',
+      'Postać musi znaleźć się w bezpiecznym miejscu (karczma, tawerna, świątynia) w kampanii "{{campaign}}" żeby przejść do innej kampanii. {{location}}.',
+      { campaign: campaignName, location: locationLabel },
+    ),
+    campaignName,
+  };
+}
 
 export default function CharacterPicker({
   charMode,
@@ -131,15 +150,20 @@ export default function CharacterPicker({
                 const career = ch.careerData || ch.career || {};
                 const charId = ch.backendId || ch.localId || ch.id;
                 const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
+                const lockInfo = getCharacterLockInfo(ch, t);
+                const cardClasses = lockInfo.locked
+                  ? 'bg-surface-container-high/20 border-outline-variant/10 opacity-40 cursor-not-allowed'
+                  : isSelected
+                    ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)] cursor-pointer'
+                    : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60 cursor-pointer';
                 return (
                   <div
                     key={charId}
-                    className={`p-4 rounded-sm border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-primary/10 border-primary/30 shadow-[0_0_15px_rgba(197,154,255,0.2)]'
-                        : 'bg-surface-container-high/40 border-outline-variant/10 hover:border-primary/20 hover:bg-surface-container-high/60'
-                    }`}
+                    title={lockInfo.locked ? lockInfo.tooltip : undefined}
+                    aria-disabled={lockInfo.locked ? 'true' : undefined}
+                    className={`p-4 rounded-sm border transition-all ${cardClasses}`}
                     onClick={async () => {
+                      if (lockInfo.locked) return;
                       if (isSelected) {
                         onSelectedCharacterChange(null);
                         onEditingSelectedPortraitChange(false);
@@ -182,10 +206,23 @@ export default function CharacterPicker({
                           <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
                         </div>
                       </div>
-                      {isSelected && (
+                      {isSelected && !lockInfo.locked && (
                         <span className="material-symbols-outlined text-primary text-lg shrink-0">check_circle</span>
                       )}
+                      {lockInfo.locked && (
+                        <span
+                          className="material-symbols-outlined text-outline text-lg shrink-0"
+                          aria-label={lockInfo.tooltip}
+                        >
+                          lock
+                        </span>
+                      )}
                     </div>
+                    {lockInfo.locked && (
+                      <p className="mt-2 text-[9px] text-outline/80 italic truncate">
+                        {t('characterPicker.lockedBadge', 'W kampanii: {{name}}', { name: lockInfo.campaignName })}
+                      </p>
+                    )}
                   </div>
                 );
               })}

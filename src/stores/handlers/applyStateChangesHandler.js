@@ -185,6 +185,7 @@ export function applyStateChangesHandler(draft, action) {
 
   // --- Quests: new, completed, updates ---
   if (changes.newQuests) {
+    const now = Date.now();
     const normalized = changes.newQuests.map((q) => ({
       ...q,
       objectives: (q.objectives || []).map((obj) => ({ ...obj, completed: obj.completed ?? false })),
@@ -194,6 +195,7 @@ export function applyStateChangesHandler(draft, action) {
       prerequisiteQuestIds: q.prerequisiteQuestIds || [],
       reward: q.reward || null,
       type: q.type || 'side',
+      createdAt: q.createdAt ?? now,
     }));
     draft.quests.active.push(...normalized);
     for (const quest of normalized) {

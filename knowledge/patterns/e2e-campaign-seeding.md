@@ -1,26 +1,24 @@
-# Seeding campaigns for Playwright e2e tests — mock `GET /campaigns/:id`, don't POST
+# Pattern — Seeding campaigns for Playwright via `page.route()`
 
-The obvious way to get a Playwright test "into" a loaded campaign is to POST `/v1/campaigns` with a pre-built `coreState`, persist a real `Character` row (ownership constraint requires it), then navigate to `/play/:id`. The plan in `plans/combat_e2e_tests.md` (now deleted) originally suggested that approach.
-
-**Don't do that.** For smoke tests it's far simpler — and faster — to **mock the loader endpoint** via `page.route()` and skip the DB entirely.
+The obvious way to get a Playwright test "into" a loaded campaign is to POST `/v1/campaigns` with a pre-built `coreState`, persist a real `Character` row, then navigate to `/play/:id`. **Don't do that.** For smoke tests, mocking the loader endpoint via `page.route()` is far simpler and faster — it skips the DB entirely and stays on the production code path.
 
 ## Why the route mock works
 
 The frontend loads a campaign on navigation to `/play/:campaignId` via this chain:
 
-1. [GameplayPage.jsx](../../src/components/gameplay/GameplayPage.jsx) pulls `urlCampaignId` from `useParams()`.
-2. [useCampaignLoader.js](../../src/hooks/useCampaignLoader.js) fires `storage.loadCampaign(urlCampaignId)` when `campaign` is null.
-3. [storage.loadCampaign](../../src/services/storage.js) calls `apiClient.get('/campaigns/:id')`.
-4. `_parseBackendCampaign(full)` shapes the response into the Zustand state.
-5. `dispatch({ type: 'LOAD_CAMPAIGN', payload: data })` injects the state.
+1. [GameplayPage.jsx](../../src/components/gameplay/GameplayPage.jsx) pulls `urlCampaignId` from `useParams()`
+2. [useCampaignLoader.js](../../src/hooks/useCampaignLoader.js) fires `storage.loadCampaign(urlCampaignId)` when `campaign` is null
+3. [storage.loadCampaign](../../src/services/storage.js) calls `apiClient.get('/campaigns/:id')`
+4. `_parseBackendCampaign(full)` shapes the response into the Zustand state
+5. `dispatch({ type: 'LOAD_CAMPAIGN', payload: data })` injects the state
 
-Crucially, there is **no Zustand persistence** — all state comes from the backend call on every load (see `project_frontend_refactor` memory and `concepts/frontend-refactor-regressions.md`). If we intercept step 3 with a Playwright route mock, the frontend still follows its production code path all the way to the `LOAD_CAMPAIGN` dispatch, we just control the shape of the payload.
+Crucially, **there is no Zustand persistence** — all state comes from the backend call on every load. If we intercept step 3 with a Playwright route mock, the frontend still follows its production code path all the way to the `LOAD_CAMPAIGN` dispatch — we just control the shape of the payload.
 
-This is the single biggest lever for cheap e2e tests in this codebase. The character-ownership constraint from `JOIN_ROOM` doesn't apply to solo campaigns, and mocking the GET bypasses it entirely.
+This is the single biggest lever for cheap e2e tests in this codebase.
 
 ## The minimal payload shape
 
-From [`_parseBackendCampaign()`](../../src/services/storage.js) — the parser expects:
+From `_parseBackendCampaign()` — the parser expects:
 
 ```js
 {
@@ -46,39 +44,41 @@ From [`_parseBackendCampaign()`](../../src/services/storage.js) — the parser e
 }
 ```
 
-Key quirks:
+### Key quirks
 
-- **`coreState` is a JSON string**, not an object. The parser runs `typeof full.coreState === 'string' ? JSON.parse(...) : (full.coreState || {})`, so either works, but the real backend returns a string — match that for realism.
+- **`coreState` is a JSON string**, not an object. The parser runs `typeof full.coreState === 'string' ? JSON.parse(...) : (full.coreState || {})`, so either works — but the real backend returns a string, so match that for realism.
 - **`characters` is a top-level array**, not nested inside `coreState`. `_parseBackendCampaign` copies `full.characters[0]` onto `state.character`. Skip this and the frontend will have `state.character = null` and redirect.
 - **`combat` lives inside `coreState`**. Put `active: true, round: 1, turnIndex: 0, combatants: [...]` there to land in gameplay with CombatPanel rendered.
 
 ## Combatant shape
 
-Each entry in `coreState.combat.combatants` needs to match what `combatEngine.js` expects:
+Each entry in `coreState.combat.combatants` must match what `combatEngine.js` expects:
 
 ```js
 {
-  id: 'player',                 // string, must be unique in array
+  id: 'player',                 // unique within array
   name: 'Hero',
-  type: 'player' | 'enemy',     // player-controlled vs NPC
-  attributes: { sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie }, // all 0-25
+  type: 'player' | 'enemy',
+  attributes: { sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie }, // 0-25
   skills: { 'Walka bronia jednoreczna': 5 },
   inventory: [],
-  weapons: ['Hand Weapon'],     // string array of weapon names from weapons catalog
+  weapons: ['Hand Weapon'],     // string array of weapon names from catalog
   equipped: { mainHand: null, offHand: null, armour: null },
   armour: {},
   conditions: [],
   wounds: 12,
   maxWounds: 12,
   isDefeated: false,
-  position: 2,                  // battlefield position, 0-20
+  position: 2,                  // battlefield position 0-20
   movementUsed: 0,
   movementAllowance: 4,
   traits: [],
 }
 ```
 
-Full reference fixture: [src/test-fixtures/combatState.js](../../src/test-fixtures/combatState.js). The Playwright seed helper ([e2e/helpers/seedCombatCampaign.js](../../e2e/helpers/seedCombatCampaign.js)) imports nothing from src/ — it has its own `buildCombatCampaignPayload` duplicate because Playwright tests run in Node context without the src/ module graph. Keep the two in sync when the combatant shape changes.
+Full reference fixture: [src/test-fixtures/combatState.js](../../src/test-fixtures/combatState.js).
+
+**The Playwright seed helper ([e2e/helpers/seedCombatCampaign.js](../../e2e/helpers/seedCombatCampaign.js)) imports nothing from `src/`** — it has its own `buildCombatCampaignPayload` duplicate because Playwright tests run in Node without Vite's bundler, so relative imports out of `e2e/` into `src/` trip on module resolution. Keep the two copies in sync when the combatant shape changes.
 
 ## The route mock
 
@@ -134,19 +134,25 @@ test('combat panel loads on a combat-active campaign', async ({ page, gameplayPa
 });
 ```
 
-## Matching the PUT/PATCH autosave
+## Stubbing the PUT/PATCH autosave
 
-`autoSave()` (wired through `CharacterPanel` / `GameplayPage`) fires `storage.saveCampaign()` which PUTs to the same `/campaigns/:id` endpoint. If you don't stub that in the same route handler (see `method === 'PUT'` branch above), the first autosave after a dispatch returns a 404 through `apiClient`, logs a warning, and sometimes surfaces as a toast. Not fatal but noisy — stub it.
+`autoSave()` fires `storage.saveCampaign()` which PUTs to the same `/campaigns/:id` endpoint. If you don't stub the PUT branch in the same route handler (see the `method === 'PUT'` check above), the first autosave after a dispatch returns 404 through `apiClient`, logs a warning, and sometimes surfaces as a toast. Not fatal but noisy — stub it.
 
-## What you still can't test with mocks alone
+## What route mocks alone can't test
 
-Once the test actually dispatches an action that calls `generateScene()` (e.g. post-combat scene gen), the frontend hits `/ai/campaigns/:id/generate-scene-stream` which is SSE. Mock that separately via the `interceptBackendSceneStream()` helper in [api-mocks.fixture.js](../../e2e/fixtures/api-mocks.fixture.js) — see [sse-streaming.md](./sse-streaming.md) for the event shape expected by the frontend parser.
+Once the test dispatches an action that calls `generateScene()` (e.g. post-combat scene gen), the frontend hits `/ai/campaigns/:id/generate-scene-stream` which is SSE. Mock that separately via `interceptBackendSceneStream()` in [e2e/fixtures/api-mocks.fixture.js](../../e2e/fixtures/api-mocks.fixture.js) — see [sse-streaming.md](sse-streaming.md) for the event shape.
 
-If a test needs multiple sequential scenes or stateful backend behaviour (quest state persisting across scenes, NPC dispositions evolving), route mocks get clunky. At that point bite the bullet and use real seeded data via a test-only endpoint or direct DB insert — but do that as a last resort, not a first resort.
+If a test needs multiple sequential scenes or stateful backend behavior (quest state persisting across scenes, NPC dispositions evolving), route mocks get clunky. At that point use real seeded data via a test-only endpoint or direct DB insert — but only as a last resort.
 
 ## Don't
 
 - **Don't rely on `localStorage` injection** — there is no `persist` middleware in the Zustand store, so `localStorage.setItem('game-store', ...)` is a no-op.
 - **Don't try to dispatch `LOAD_CAMPAIGN` from outside the app** — there's no exposed `window.__store__` hook, and adding one just for tests is worse than the route mock.
-- **Don't forget to mock `GET /v1/campaigns` (list)** — some components fetch the list on mount, and an unmocked 404 causes visible console noise that flakes tests looking for "no errors".
-- **Don't build the seed helper as an `import` from `src/test-fixtures/`** — Playwright tests run in Node without Vite's bundler, so relative imports out of `e2e/` into `src/` will trip on module resolution. Keep `e2e/helpers/seedCombatCampaign.js` self-contained, even if it means duplicating the combatant shape.
+- **Don't forget to mock `GET /v1/campaigns`** — some components fetch the list on mount; an unmocked 404 causes console noise that flakes tests looking for "no errors."
+- **Don't build the seed helper as an `import` from `src/test-fixtures/`** — Playwright runs in Node without Vite's bundler; relative imports out of `e2e/` into `src/` trip on module resolution. Keep `e2e/helpers/seedCombatCampaign.js` self-contained even if it means duplicating the combatant shape.
+
+## Related
+
+- [sse-streaming.md](sse-streaming.md) — how to mock the SSE stream the scene generator opens after load
+- [hook-pure-factory-testing.md](hook-pure-factory-testing.md) — unit test companion for hook logic
+- [concepts/combat-system.md](../concepts/combat-system.md) — where most combat e2e coverage lives today

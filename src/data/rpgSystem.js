@@ -177,6 +177,7 @@ export function calculateDiceRollSkillXP(difficulty, success) {
 export const COMBAT_SKILL_XP = {
   miss: 10,
   hit: 20,
+  dodge: 15,
   kill: {
     weak: 50,
     easy: 50,

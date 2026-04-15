@@ -1,183 +1,124 @@
-# Frontend File Structure
+# Frontend Structure — subdomain map
 
-Detailed file inventory for `src/`. For high-level architecture see CLAUDE.md.
+High-level map of `src/`. Not a file-by-file inventory — grep for the entry point and follow imports. Each row tells you where to start when working in that subdomain.
 
-## Contexts (`src/contexts/`)
-- `GameContext.jsx` - Thin Zustand facade (22 lines), re-exports `useGame()`. See [[game-context]].
-- `SettingsContext.jsx` - User preferences, API keys, DM settings, i18n (352 lines, 28 consumers). Stays as Context.
-- `MultiplayerContext.jsx` - WebSocket room state, player management. Stays as Context.
-- `MusicContext.jsx` - Background music state. Migration candidate to Zustand.
-- `ModalContext.jsx` - Modal management. Migration candidate to Zustand.
-- `slices/multiplayerSlice.js` - Multiplayer state slice
+## State
 
-## State Management (`src/stores/`)
-- `gameStore.js` - Zustand store: `autoSave`, `flushPendingSave`, `getGameState`, `gameDispatch`
-- `gameReducer.js` - ~1790-line reducer (extracted from old GameContext)
-- `gameSelectors.js` - Granular selectors: `useGameCampaign`, `useGameCharacter`, `useGameCombat`, `useGameSlice(selector)`, ~15 others
-- `handlers/` - Immer-based domain handlers split from reducer: `campaignHandlers.js`, `characterHandlers.js`, `combatHandlers.js`, `questHandlers.js`, `worldHandlers.js`, `sceneHandlers.js`, etc.
+- `src/stores/` — Zustand store + Immer handlers. Entry: [gameStore.js](../../src/stores/gameStore.js), [gameSelectors.js](../../src/stores/gameSelectors.js). Handlers split by domain in `handlers/`. See [game-state.md](game-state.md).
+- `src/contexts/` — sibling contexts that stay on React Context (not Zustand):
+  - [SettingsContext.jsx](../../src/contexts/SettingsContext.jsx) — prefs, API keys, DM settings, i18n, auth bootstrap (~352L, ~28 consumers)
+  - [MultiplayerContext.jsx](../../src/contexts/MultiplayerContext.jsx) — composition shell
+  - `multiplayer/` — `mpReducer.js`, `useMpActions.js`, `useMpWsSubscription.js`
+  - `MusicContext.jsx`, `ModalContext.jsx` — small utility contexts
+  - [GameContext.jsx](../../src/contexts/GameContext.jsx) — 22L backward-compat facade over `gameStore`
 
-## Hooks (`src/hooks/`)
-- `useAI.js` - Main AI integration hook (~1600 lines, game mechanics + AI calls)
-- `useGameState.js` - Campaign state management (start/load/save)
-- `useActiveGameState.js` - Active character state helpers
-- `useAutoPlayer.js` - AI auto-play mode
-- `useNarrator.js` - ElevenLabs TTS with word highlighting, voice queue
-- `useLocalMusic.js` - Background music management
-- `useCombatAudio.js` - Combat sound effects
-- `useWebRTC.js` - WebRTC for multiplayer voice
-- `useSpeechRecognition.js` - Browser speech-to-text input
-- `useIdleTimer.js` - Idle detection for auto-play
-- `useSoloActionCooldown.js` - Rate limiting for solo actions
-- `useDocumentTitle.js` - Dynamic page title
-- `useModalA11y.js` - Modal accessibility
-- `useCampaignLoader.js` - Loads campaign from URL param when none active
-- `useGameContent.js` - Game content actions (quest updates, NPC changes, etc.)
-- `useCombatResolution.js` - Combat resolution logic
-- `useImageGeneration.js` - Scene image generation hook
-- `sceneGeneration/useSceneGeneration.js` - Scene generation orchestration
-- `sceneGeneration/useSceneBackendStream.js` - SSE streaming from backend
+## Hooks
 
-## Services (`src/services/`)
+Entry-point hooks (things pages/components actually reach for):
 
-### AI & Prompts
-- `ai/service.js` - LLM calls (OpenAI + Anthropic + Gemini), retry, fallback, model selection
-- `ai/models.js` - Model definitions and selection logic
-- `ai/providers.js` - Provider abstraction (OpenAI, Anthropic, Gemini)
-- `ai/suggestedActions.js` - Generate suggested actions
-- `prompts.js` - System/user prompt construction (~1800 lines, proxy mode)
-- `promptGovernance.js` - Prompt quality/safety rules
-- `contextManager.js` - Long-context: compression, knowledge retrieval, memory
+- **Scene generation** — `src/hooks/sceneGeneration/` (orchestrator, backend stream, dialogue repair, state-change apply)
+- **Campaign lifecycle** — `useGameState.js` (start/load/save), `useCampaignLoader.js` (URL-driven load)
+- **Game content** — `useGameContent.js` (quest/NPC updates)
+- **Combat** — `useCombatResolution.js`, `useEnemyTurnResolver.js`, `useCombatResultSync.js`, `useCombatHostResolve.js`, `useMultiplayerCombatSceneDetect.js`, `useCombatAudio.js`, `useCombatCommentary.js`
+- **Image gen** — `useImageGeneration.js`, `useImageRepairQueue.js`
+- **Narration** — `useNarrator.js` (TTS + word highlight + queue, ~945L — biggest remaining monolith), `useStreamingNarrator.js`, `useChatAutoNarration.js`
+- **Viewer mode** — `useViewerMode.js` (read-only shared campaign mode)
+- **Summary modal** — `useSummary.js` (recap state machine + narration + cache)
+- **Multiplayer glue** — `useMultiplayerVoiceSync.js`, `useMultiplayerSceneGenTimer.js`, `useWebRTC.js`
+- **Other** — `useActiveGameState.js`, `useActionTyping.js`, `useAutoPlayer.js`, `usePlayTimeTracker.js`, `useSoloActionCooldown.js`, `useIdleTimer.js`, `useModalA11y.js`, `useLocalMusic.js`, `useSpeechRecognition.js`, `useChatScrollSync.js`, `useSceneScrollSync.js`, `useDocumentTitle.js`, `useElevenlabsVoices.js`, `useMediaCacheStats.js`, `useConfigImportExport.js`, `useEvent.js` (stable callback polyfill)
 
-### Validation
-- `aiResponseValidator.js` - Zod schemas for AI JSON responses, safe parsing
-- `stateValidator.js` - Validates AI stateChanges (caps, clamps, RPGon rules)
+## Services
 
-### Game Engines
-- `combatEngine.js` - RPGon tactical combat resolution (d50, margin-based)
-- `magicEngine.js` - Spellcasting: mana-based, spell trees, scrolls
-- `weatherEngine.js` - Weather simulation (season, region, transitions)
-- `tradeEngine.js` - Economy: haggling, crafting, availability (NOT IMPORTED yet)
-- `reputationEngine.js` - Faction reputation and NPC reactions
+### AI
 
-### Deterministic Mechanics (`src/services/mechanics/`)
-- `skillCheck.js` - d50 skill test resolution (attribute + skill + momentum + creativity vs difficulty)
-- `momentumTracker.js` - Momentum system (+-10 range)
-- `dispositionBonus.js` - NPC disposition modifiers
-- `restRecovery.js` - Rest and wound recovery
+- `src/services/ai/` — `service.js` (backend dispatch), `models.js`, `index.js`
+- `src/services/aiResponse/` — Zod schemas + parser: `schemas.js`, `parse.js`, `dialogueRepair.js`, `index.js`
+- [apiClient.js](../../src/services/apiClient.js) — JWT + refresh + CSRF + idempotency
+- [localAI.js](../../src/services/localAI.js) — Ollama / LM Studio (dev path)
+- [partialJsonParser.js](../../src/services/partialJsonParser.js) — streaming JSON reconciliation
 
-### Persistence & Networking
-- `storage.js` - localStorage persistence + backend campaign sync (save queue, dedup)
-- `apiClient.js` - Backend REST client with JWT auth
-- `websocket.js` - WebSocket client for multiplayer
-- `webrtc.js` - WebRTC peer connections
-- `gameDataService.js` - Fetch game data from backend
+### Game engines
+
+- [combatEngine.js](../../src/services/combatEngine.js) — RPGon tactical combat
+- [magicEngine.js](../../src/services/magicEngine.js) — mana-based spellcasting
+- [tradeEngine.js](../../src/services/tradeEngine.js), [craftingEngine.js](../../src/services/craftingEngine.js), [alchemyEngine.js](../../src/services/alchemyEngine.js) — economy systems
+- [reputationEngine.js](../../src/services/reputationEngine.js), [narrativeEngine.js](../../src/services/narrativeEngine.js)
+- `src/services/mechanics/` — deterministic helpers: `skillCheck.js`, `d50Test.js`, `momentumTracker.js`, `dispositionBonus.js`, `restRecovery.js`, `creativityBonus.js`, `index.js` (resolveMechanics orchestrator)
+
+### Persistence & networking
+
+- [storage.js](../../src/services/storage.js) — campaign save/load/queue
+- [websocket.js](../../src/services/websocket.js) — WS client for multiplayer
+- [webrtc.js](../../src/services/webrtc.js) — peer connections for voice chat
+- [gameDataService.js](../../src/services/gameDataService.js) — fetches static game data from backend
 
 ### Media
-- `elevenlabs.js` - ElevenLabs TTS + SFX API
-- `imageGen.js` - Scene image generation (Stability AI)
-- `meshyClient.js` - Meshy 3D model generation API client
-- `modelResolver3d.js` - Resolve 3D models for scene objects
-- `wanted3dClient.js` - Client for wanted 3D model requests
-- `assetManager.js` - Media asset management
-- `assetCache.js` - Asset caching layer
 
-### Narrative & Parsing
-- `narrativeEngine.js` - Narrative structure and pacing
-- `dialogueSegments.js` - Narration <-> spoken-line splitting (NOT a dialogue mode)
-- `scenePlanner.js` - Scene planning and sequencing
-- `tensionTracker.js` - Story tension/pacing tracking
-- `worldConsistency.js` - World state consistency checks
-- `diceRollInference.js` - Infer dice checks from AI narrative (has extras vs shared/)
-- `actionParser.js` - Parse player action text into structured actions
+- [imageGen.js](../../src/services/imageGen.js) — scene images (via backend proxy)
+- [imagePrompts.js](../../src/services/imagePrompts.js) — image prompt builders
+- [elevenlabs.js](../../src/services/elevenlabs.js) — TTS (via backend proxy except public share-token)
+- [meshyClient.js](../../src/services/meshyClient.js) — 3D model gen (via backend proxy)
+- [modelResolver3d.js](../../src/services/modelResolver3d.js) — 3D model lookup for scene objects
+- [assetManager.js](../../src/services/assetManager.js), [assetCache.js](../../src/services/assetCache.js)
 
-### Other Services
-- `autoPlayer.js` - AI auto-play logic
-- `characterAge.js` - Character aging mechanics
-- `characterVoiceResolver.js` - Map characters to TTS voices
-- `stateChangeMessages.js` - Human-readable messages for state changes
-- `achievementTracker.js` - Achievement state machine
-- `costTracker.js` - API usage cost calculation per model/service
-- `exportLog.js` - Gameplay log export to markdown
-- `characterHistory.js` - Character history/timeline construction
-- `gameState.js` - Game state utilities
-- `gmDataTransformer.js` - Transform data for GM modal display
-- `graphLayout.js` - Graph layout for relationship visualizations
-- `localAI.js` - Ollama / LM Studio integration for local LLMs
-- `timeUtils.js` - Time/period utilities
+### Validation & state change
 
-### Field Map (`src/services/fieldMap/`)
-- `index.js`, `constants.js`, `chunkGenerator.js`, `tileRules.js`
-- `pathfinding.js` - A* pathfinding on tile grid
-- `atlasIndex.js`, `prng.js` - Tile atlas + seeded PRNG
+- [stateValidator.js](../../src/services/stateValidator.js) — clamps/validates AI-emitted state changes (solo path). Shares helpers with backend via `shared/domain/stateValidation.js`.
+- [stateChangeMessages.js](../../src/services/stateChangeMessages.js) — human-readable messages for state change chat entries
+- [actionParser.js](../../src/services/actionParser.js) — parse player text into structured actions
+- [achievementTracker.js](../../src/services/achievementTracker.js) — achievement state machine
+- [campaignGuard.js](../../src/services/campaignGuard.js) — `canLeaveCampaign` (safe-location check)
 
-## Components (`src/components/`)
+### Other
 
-### Gameplay (`gameplay/`)
-- `GameplayPage.jsx` - Central play screen, orchestrates all panels
-- `ScenePanel.jsx` - Scene narrative with narrator highlighting
-- `ActionPanel.jsx` - Player action selection / free-text input
-- `ChatPanel.jsx` - Chat / game log
-- `CombatPanel.jsx` - Tactical RPGon combat UI
-- `CombatCanvas.jsx` - Visual combat map
-- `CombatDetailPanel.jsx` - Combat detail overlay
-- `CutscenePanel.jsx` - Cutscene presentation
-- `MagicPanel.jsx` - Spellcasting UI
-- `TradePanel.jsx`, `CraftingPanel.jsx`, `AlchemyPanel.jsx` - Economy panels
-- `PartyPanel.jsx` - Party management
-- `MapCanvas.jsx` - Force-directed world map (canvas)
-- `FieldMapCanvas.jsx` - Tile-based field map (canvas)
-- `SceneCanvas.jsx` - 2D scene illustration
-- `SceneGridMap.jsx` - Grid-based scene map
-- `WorldStateModal.jsx` - World overview modal
-- `NeedsPanel.jsx` - Character needs (hunger, fatigue)
-- `QuestOffersPanel.jsx` - Quest offer display
-- `AutoPlayerPanel.jsx` - Auto-play controls
-- `IdleTimer.jsx`, `DiceRollAnimationOverlay.jsx`, `TypewriterActionOverlay.jsx`
-- `SceneGenerationProgress.jsx` - AI generation progress indicator
-- `SummaryModal.jsx` - Session summary
-- `GameplayModals.jsx` - Modal orchestration
-- `GameplayHeader.jsx` - Header for gameplay page
-- `gm/` - GM debug modal: `GMModal`, `GMOverviewTab`, `GMEntitiesTab`, `GMEntityDetail`, `GMQuestsTab`, `GMJournalTab`, `GMGraphTab`, `GMAssetsTab`
-- `world/NpcTab.jsx` - NPC management tab
+- [costTracker.js](../../src/services/costTracker.js), [performanceTracker.js](../../src/services/performanceTracker.js)
+- [exportLog.js](../../src/services/exportLog.js), [characterHistory.js](../../src/services/characterHistory.js)
+- [characterVoiceResolver.js](../../src/services/characterVoiceResolver.js) — character → TTS voice mapping
+- [dialogueSegments.js](../../src/services/dialogueSegments.js) — narration ↔ spoken-line splitting
+- [diceRollInference.js](../../src/services/diceRollInference.js) — FE-side skill inference (has legacy aliases not in shared/)
+- [summaryBlockBuilder.js](../../src/services/summaryBlockBuilder.js) — recap modal block builder
+- [scenePlanner.js](../../src/services/scenePlanner.js), [tensionTracker.js](../../src/services/tensionTracker.js), [worldConsistency.js](../../src/services/worldConsistency.js)
+- `src/services/fieldMap/` — tile-based field map: A* pathfinding, chunk generator, tile rules, seeded PRNG
 
-### Scene 3D (`gameplay/Scene3D/`)
-- `Scene3DPanel.jsx`, `Environment3D.jsx`, `Lighting3D.jsx`, `CameraController.jsx`
-- `Character3D.jsx`, `Object3D.jsx`, `GLBModel.jsx`, `PlaceholderMesh.jsx`
-- `ProceduralFoliage3D.jsx`, `ProceduralStructures3D.jsx`, `DistantBackdrop3D.jsx`
-- `AmbientEffects3D.jsx` - Weather/particle effects
-- `proceduralSceneUtils.js`, `useSceneCommands.js`
+## Components
 
-### Character (`character/`)
-- `CharacterSheet.jsx` - Full character sheet modal
-- `CharacterCreationModal.jsx` - Character creation flow
-- `CharacterPanel.jsx` - Compact character view
-- `AdvancementPanel.jsx` - XP spending / attribute & skill advancement, spell trees
-- `Inventory.jsx`, `StatsGrid.jsx`, `QuestLog.jsx`, `CodexPanel.jsx`
-- `AchievementsPanel.jsx`, `PortraitGenerator.jsx`
+- `gameplay/` — main play screen. Entry: [GameplayPage.jsx](../../src/components/gameplay/GameplayPage.jsx). Panels: Scene, Action, Chat, Combat, Magic, Trade, Party, Needs, Autoplayer. Sub-folders: `chat/`, `scene/`, `combat/`, `action/`, `field/`, `gm/`, `world/`, `summary/`, `Scene3D/`
+- `character/` — character sheet, creator, library, advancement, inventory, codex, quests, achievements, portrait generator
+- `creator/` — campaign creation wizard
+- `lobby/` — lobby page + campaign cards + auth panel
+- `viewer/` — public campaign viewer (read-only)
+- `gallery/` — public campaign gallery with fork-to-play
+- `settings/` — all settings pages. Sections split under `settings/sections/`
+- `multiplayer/` — lobby, join room, pending actions
+- `layout/` — Header, Sidebar, Layout, MobileNav
+- `ui/` — shared primitives (Button, GlassCard, Slider, Toggle, etc.)
 
-### Other Pages
-- `lobby/LobbyPage.jsx`, `CampaignCard.jsx`, `AuthPanel.jsx`
-- `creator/CampaignCreatorPage.jsx` - Campaign creation wizard
-- `viewer/CampaignViewerPage.jsx` - Public campaign viewer (read-only)
-- `gallery/GalleryPage.jsx` - Public campaign gallery with fork-to-play
-- `settings/DMSettingsPage.jsx` - All settings
-- `multiplayer/` - Multiplayer lobby, join room, pending actions
-- `layout/` - Header, Sidebar, Layout, MobileNav
-- `ui/` - Shared UI primitives (Button, GlassCard, Slider, etc.)
+## Data
 
-## Data (`src/data/`)
-- `rpgSystem.js` - Core: 6 attributes (1-25), ~60 skills, species, difficulty thresholds
-- `rpgMagic.js` - 9 spell trees, scroll mechanics, mana progression
-- `rpgFactions.js` - Faction definitions with Polish names
-- `wfrpEquipment.js` - Equipment catalog with pricing (legacy, to be migrated)
-- `achievements.js` - Achievement catalog, categories, conditions
-- `prefabs.js` - 3D prefab asset catalog
-- `sceneAnchors.js` - Scene anchor point definitions for 3D
+- [src/data/rpgSystem.js](../../src/data/rpgSystem.js) — core rules, attributes, skills, limits, XP formulas
+- [src/data/rpgMagic.js](../../src/data/rpgMagic.js) — spell trees, mana progression
+- [src/data/rpgFactions.js](../../src/data/rpgFactions.js) — factions
+- [src/data/achievements.js](../../src/data/achievements.js) — achievement catalog
+- [src/data/prefabs.js](../../src/data/prefabs.js) — 3D prefab asset catalog
+- [src/data/sceneAnchors.js](../../src/data/sceneAnchors.js) — scene anchor points for 3D
 
-## Effects (`src/effects/`)
-- `EffectEngine.js`, `SceneRenderer.js`, `DiceRoller.jsx`
-- `biomeResolver.js`, `resolveEffects.js`
-- `sceneData.js`, `sceneSprites.js`, `layers/`
+## Effects (3D + particles)
 
-## Utils (`src/utils/`)
-- `rpgTranslate.js` - RPGon PL<->EN translations for attributes, skills, spell names
+- `src/effects/` — `EffectEngine.js`, `SceneRenderer.js`, `DiceRoller.jsx`, `biomeResolver.js`, `resolveEffects.js`, `sceneData.js`, `sceneSprites.js`, `layers/`
+
+## Utils
+
+- `src/utils/` — `rpgTranslate.js`, `ids.js` (shortId), `retry.js` (withRetry)
+
+## Entry-point cheat sheet
+
+| Task | Start here |
+|---|---|
+| Scene generation bug | [src/hooks/sceneGeneration/useSceneGeneration.js](../../src/hooks/sceneGeneration/useSceneGeneration.js) → [backend/src/services/sceneGenerator/generateSceneStream.js](../../backend/src/services/sceneGenerator/generateSceneStream.js) |
+| Combat logic | [src/services/combatEngine.js](../../src/services/combatEngine.js) + the 4 combat hooks |
+| AI state change didn't apply | [src/services/stateValidator.js](../../src/services/stateValidator.js) → [src/stores/handlers/applyStateChangesHandler.js](../../src/stores/handlers/applyStateChangesHandler.js) |
+| Save/load bug | [src/services/storage.js](../../src/services/storage.js) |
+| Auth issue | [src/services/apiClient.js](../../src/services/apiClient.js) + [src/contexts/SettingsContext.jsx](../../src/contexts/SettingsContext.jsx) bootstrap effect |
+| Multiplayer desync | `src/contexts/multiplayer/` + [backend/src/routes/multiplayer/handlers/](../../backend/src/routes/multiplayer/handlers/) |
+| Dice wrong | `src/services/mechanics/` + [shared/domain/luck.js](../../shared/domain/luck.js) |
+| Image gen failing | [src/services/imageGen.js](../../src/services/imageGen.js) + [src/hooks/useImageRepairQueue.js](../../src/hooks/useImageRepairQueue.js) |

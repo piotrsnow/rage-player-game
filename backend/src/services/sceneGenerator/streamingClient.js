@@ -11,7 +11,7 @@ const log = childLogger({ module: 'sceneGenerator' });
  * Call OpenAI with streaming enabled. Yields text chunks via callback.
  * Returns the full accumulated text.
  */
-async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, apiKey } = {}, onChunk) {
+async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, apiKey, signal } = {}, onChunk) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -26,6 +26,7 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
       response_format: { type: 'json_object' },
       stream: true,
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -99,7 +100,7 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
  * Call Anthropic with streaming enabled. Yields text chunks via callback.
  * Returns the full accumulated text.
  */
-async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, system = null, apiKey } = {}, onChunk) {
+async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxTokens = 4096, system = null, apiKey, signal } = {}, onChunk) {
   const body = {
     model: model || config.aiModels.premium.anthropic,
     max_tokens: maxTokens,
@@ -117,6 +118,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -173,7 +175,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
 /**
  * Run the 2-stage pipeline with streaming. Returns parsed scene via callback events.
  */
-export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model, apiKey } = {}, onChunk) {
+export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt, contextBlocks, { provider = 'openai', model, apiKey, signal } = {}, onChunk) {
   const contextSection = buildContextSection(contextBlocks);
   const dynamicFull = (systemPromptParts.dynamicSuffix || '') + (contextSection || '');
 
@@ -185,14 +187,14 @@ export async function runTwoStagePipelineStreaming(systemPromptParts, userPrompt
         { role: 'system', content: combinedPrompt },
         { role: 'user', content: userPrompt },
       ],
-      { model, apiKey },
+      { model, apiKey, signal },
       onChunk,
     );
   } else {
     const systemBlocks = buildAnthropicSystemBlocks(systemPromptParts.staticPrefix, dynamicFull);
     fullText = await callAnthropicStreaming(
       [{ role: 'user', content: userPrompt }],
-      { system: systemBlocks, model, apiKey },
+      { system: systemBlocks, model, apiKey, signal },
       onChunk,
     );
   }

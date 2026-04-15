@@ -202,6 +202,14 @@ model Character {
   money           String   @default("{\"gold\":0,\"silver\":0,\"copper\":0}") // JSON: { gold, silver, copper }
   equipped        String   @default("{\"mainHand\":null,\"offHand\":null,\"armour\":null}") // JSON: { mainHand, offHand, armour }
   // Status & needs
+  status          String?  // "alive" | "dead" | "unconscious" — null == alive
+  // Campaign lock — a character belongs to at most one campaign at a time.
+  // Cleared on campaign delete; updated when the campaign's currentLocation
+  // changes so pickers can decide if the character is in a safe spot to
+  // release.
+  lockedCampaignId   String?
+  lockedCampaignName String?
+  lockedLocation     String?
   statuses        String   @default("[]") // JSON array of active statuses
   needs           String   @default("{\"hunger\":100,\"thirst\":100,\"bladder\":100,\"hygiene\":100,\"rest\":100}") // JSON
   // Narrative
