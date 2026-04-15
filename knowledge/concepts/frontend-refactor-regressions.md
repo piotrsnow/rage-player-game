@@ -4,14 +4,18 @@ Manual test checklist and open questions flagged by the [[frontend-refactor-2026
 
 ## Priority — high risk, untested
 
-### Combat — solo + multiplayer (biggest gap)
+### Combat — solo + multiplayer (mostly covered as of 2026-04-15)
 
-No combat e2e fixture exists. The plan at `shimmering-inventing-cosmos.md` explicitly flagged this gap. Changes touching combat:
+The three resolution hooks now have **Vitest coverage via pure-factory extraction** — see [[../patterns/hook-pure-factory-testing]]. 29 unit tests across [useCombatResolution.test.js](../../src/hooks/useCombatResolution.test.js), [useEnemyTurnResolver.test.js](../../src/hooks/useEnemyTurnResolver.test.js), [useCombatResultSync.test.js](../../src/hooks/useCombatResultSync.test.js). Two Playwright smoke specs in [e2e/specs/combat.spec.js](../../e2e/specs/combat.spec.js) seed a combat-active campaign via [[../patterns/e2e-campaign-seeding]] and verify CombatPanel renders.
 
-- **`useCombatResolution`** merged 6 End/Surrender/Truce handlers from GameplayPage into one hook (`src/hooks/useCombatResolution.js`). Shared helpers: `pickStateChanges`, `soloPerCharForServer`, `formatRemainingEnemies`. Verify: solo victory/defeat flow, solo surrender flow, solo truce flow, MP host equivalents. Watch for `stateChanges.forceStatus = 'dead'` path and post-combat `generateScene(...)` with aftermath narration.
-- **`useEnemyTurnResolver`** — auto-resolves enemy turns on a 2.5s delay. Owns `AI_TURN_DELAY_MS`. Receives `addResultToLog` + `dispatchCombatChatMessage` as callbacks (CombatPanel still owns their implementation). Watch for: enemy winning initiative, first-round enemies, MP host gating, round transitions.
-- **`useCombatResultSync`** — non-host consumer of `combat.lastResults` keyed on `lastResultsTs`. Owns its own `lastProcessedTsRef`. Watch for: duplicate result application, missed results, stale ts after reconnect.
-- **`CombatLogEntry.jsx`** — pure lift of 285L of log rendering. Zero-logic intent but verify: hit/miss/critical/fled/defeat/defensive entries, tooltip popups (attack/defense/cast/check breakdowns), animated character-by-character reveal, location chip, critical-name line.
+Still needs manual verification (Vitest covers pure logic, not CombatPanel UI wiring):
+
+- **`useCombatResolution`** — solo victory/defeat/surrender/truce flows are unit-tested, but the UI path (CombatHeader buttons → dispatch → state update → navigation) isn't. Verify by hand: click End Combat after killing all enemies, watch for `generateScene(...)` with aftermath, watch for `stateChanges.forceStatus = 'dead'` path.
+- **`useEnemyTurnResolver`** — gating + step are unit-tested, but the 2.5s `setTimeout` itself and the `useEvent` wrapper aren't. Verify: enemy-initiative-first combats auto-advance after exactly ~2.5s, cleanup on combat end doesn't leak timers.
+- **`useCombatResultSync`** — `planCombatResultDrain` is unit-tested. MP integration still needs a live 2-client playtest (deferred — see Phase 3 notes below).
+- **`CombatLogEntry.jsx`** — pure lift of 285L of log rendering. Still no tests. Verify by hand: hit/miss/critical/fled/defeat/defensive entries, tooltip popups (attack/defense/cast/check breakdowns), animated character-by-character reveal, location chip, critical-name line.
+
+**Deferred — combat e2e Phase 3 (MP):** 2-browser-context tests for MP combat (host/guest sync, non-host result consumption, join-in-progress). Deferred until there's a concrete MP combat bug to reproduce.
 
 ### Scene image repair
 

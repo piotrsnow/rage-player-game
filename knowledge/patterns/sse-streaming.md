@@ -88,3 +88,75 @@ Both routes use the same `writeSseHead` helper + the same subscribe-before-enque
 - Don't forget to clear the safety timeout (`setTimeout + clearTimeout`) on `request.raw.on('close')` or you leak timers per disconnect.
 - Don't gzip SSE upstream of Fastify (nginx, cloud load balancer). `identity` in the response headers is advisory — actual compression happens at the proxy layer and must be disabled there separately.
 - Don't remove hijack "because compress is gone" — the three defensive reasons above still apply. If a concrete future incident shows it's causing problems, that's a separate decision.
+
+## Client parser and test mocks
+
+The frontend SSE reader lives in [src/services/ai/service.js](../../src/services/ai/service.js). It reads the stream line-by-line, **only consumes lines starting with `data: `**, and completely **ignores `event: ` prefix lines**. The `event.type` is carried inside the JSON payload, not as an SSE event name:
+
+```js
+for (const line of lines) {
+  if (!line.startsWith('data: ')) continue;
+  const event = JSON.parse(line.slice(6));           // strip "data: "
+  if (event.type === 'chunk' && event.text) { /* partial parse */ }
+  else if (event.type === 'complete') { result = event.data; gotComplete = true; }
+  else if (event.type === 'error') { throw new Error(event.error); }
+}
+```
+
+### Event shapes the parser recognises
+
+```
+data: {"type":"intent","data":{"intent":"explore"}}
+data: {"type":"context_ready","data":{}}
+data: {"type":"dice_early","data":{"diceRoll":{...}}}
+data: {"type":"chunk","text":"<partial JSON fragment>"}
+data: {"type":"quest_nano_update","data":{"questUpdates":[...]}}    # post-complete
+data: {"type":"complete","data":{"scene":{...},"sceneIndex":N,"sceneId":"..."}}
+data: {"type":"error","error":"message","code":"optional"}
+```
+
+The backend writes both `event: TYPE\ndata: {...}\n\n` pairs; the `event:` line is belt-and-braces for SSE-strict clients but currently ignored. **When mocking SSE for tests, emit only `data: {...}\n\n` — skip the `event:` prefix.**
+
+### Termination contract
+
+The parser breaks out of the main read loop the moment it sees `type: 'complete'`. Post-complete events (`quest_nano_update`) are consumed asynchronously in a background reader that doesn't block the caller's promise. If your mock emits `complete` first and then additional events, the main code path returns immediately and the extras are best-effort; if you want them to take effect, they must arrive in the same stream chunk **before** `complete`.
+
+The stream MUST contain a `complete` event — otherwise the parser throws `"Stream ended without complete event"` after the reader closes. Tests that want to exercise the error path should emit `{type:'error', error:'...'}` instead of just closing.
+
+### Mocking SSE in Playwright
+
+`page.route()` can fulfil the full stream in one `body` payload. The frontend parser works on whole lines so emitting all events concatenated is fine:
+
+```js
+// e2e/fixtures/api-mocks.fixture.js
+async interceptBackendSceneStream(sceneOverrides = {}) {
+  const scene = { narrative: '...', dialogueSegments: [...], stateChanges: {...}, ...sceneOverrides };
+  const events = [
+    { type: 'intent', data: { intent: 'explore' } },
+    { type: 'context_ready', data: {} },
+    { type: 'chunk', text: JSON.stringify({ narrative: scene.narrative }) },
+    { type: 'complete', data: { scene, sceneIndex: scene.sceneIndex, sceneId: scene.sceneId } },
+  ];
+  const body = events.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join('');
+  await page.route('**/ai/campaigns/*/generate-scene-stream', (route) => {
+    return route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+      body,
+    });
+  });
+},
+```
+
+Notes:
+
+- **Don't use `route.continue()` to stream in chunks** — Playwright's route API doesn't support progressive writes well, and the frontend tolerates the whole-body variant because it accumulates `chunk.text` into `rawAccumulated` before parsing anyway.
+- **`complete.data.scene`** must have the fields the downstream code reads: at minimum `dialogueSegments`, `suggestedActions`, `scenePacing`, `atmosphere`, `stateChanges`. Skipping them often makes the scene render blank instead of erroring — brittle. Use a realistic minimal payload like the one in `interceptBackendSceneStream()` as the baseline.
+- **The scene object flows through `postProcessSuggestedActions()`** after `complete`, which needs `gameState` and localised strings. If your test doesn't provide suggestedActions, this is a no-op; if it does, make sure they're strings, not objects.
+
+Worked example with full test setup: [e2e/specs/combat.spec.js](../../e2e/specs/combat.spec.js) + [e2e/helpers/seedCombatCampaign.js](../../e2e/helpers/seedCombatCampaign.js). See also [e2e-campaign-seeding.md](./e2e-campaign-seeding.md) for the companion pattern that mocks `GET /campaigns/:id`.
