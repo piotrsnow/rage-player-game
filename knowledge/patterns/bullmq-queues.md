@@ -7,19 +7,23 @@ Backend AI jobs run through BullMQ on a Valkey/Redis instance. Canonical files:
 
 ## Per-provider queues (not per-job-type)
 
-Five queues split by provider, not by job kind:
+Five queues split by provider, not by job kind. Default concurrency (env-tunable via `AI_QUEUE_CONCURRENCY_*` per [config.js](../../backend/src/config.js)):
 
 ```
-ai-openai     — concurrency 4
-ai-anthropic  — concurrency 4
-ai-gemini     — concurrency 4
-ai-stability  — concurrency 2
-ai-meshy      — concurrency 2
+ai-openai     — concurrency 100  (text gen — I/O-bound, upstream rate limit is the ceiling)
+ai-anthropic  — concurrency 100
+ai-gemini     — concurrency 100
+ai-stability  — concurrency 10   (image gen — heavier per-job memory + tighter upstream limits)
+ai-meshy      — concurrency 10   (3D model gen — same)
 ```
 
-Reason: provider rate-limit / outage on OpenAI must not starve Anthropic-backed jobs. One flaky provider only affects its own queue. Job kind is differentiated by `job.name` (`generate-campaign`, `generate-scene`, etc.) via a handler registry inside one worker process per queue.
+Reason for high text concurrency: each job is ~95% `await fetch` to the provider — Node event loop is free during the wait. Per-job CPU is trivial (parse SSE chunk, JSON.parse, Redis publish). Per-job memory is ~30KB (token accumulator). Local resources (CPU, RAM, FDs) are not the bottleneck — provider rate limits are. At Tier 3+ (5000 RPM per model) concurrency 100 uses ~2% of the RPM budget while letting a 100-user spike start with zero queueing.
+
+Reason for per-provider split: provider rate-limit / outage on OpenAI must not starve Anthropic-backed jobs. One flaky provider only affects its own queue. Job kind is differentiated by `job.name` (`generate-campaign`, `generate-scene`, etc.) via a handler registry inside one worker process per queue.
 
 **Queue naming constraint:** BullMQ forbids `:` in queue names — it's the internal Redis key separator. Use `-` (`ai-openai`, not `ai:openai`). Enforced by `QUEUE_NAMES` in `aiQueue.js`.
+
+**Tuning knob:** For a higher-tier provider account or a horizontally scaled deployment, set `AI_QUEUE_CONCURRENCY_OPENAI=500` (or higher) without a code change. For dev/CI backpressure testing, drop to 4. Defaults assume Tier 3+ — adjust if your account is lower.
 
 ## Separate Redis connection for BullMQ
 
@@ -43,21 +47,26 @@ For streaming via pub/sub bridge, the caller MUST subscribe to the pub/sub chann
 
 ```js
 const jobId = crypto.randomUUID();
-const channel = sceneJobChannel(jobId);
+const channel = sceneJobChannel(jobId);          // or campaignJobChannel(jobId)
 const subscriber = getRedisClient().duplicate();
 
 await subscriber.subscribe(channel);                       // subscribe first
 await enqueueJob('generate-scene', data, { jobId });       // THEN enqueue
 ```
 
-`enqueueJob(name, data, { provider, userId, jobId? })` forwards `jobId` to `queue.add(name, data, { jobId })` when provided. Pattern validated by [backend/src/routes/ai.js](../../backend/src/routes/ai.js) `/generate-scene-stream`. Any new streaming queue consumer should copy this shape — don't invent another sequencing scheme.
+`enqueueJob(name, data, { provider, userId, jobId? })` forwards `jobId` to `queue.add(name, data, { jobId })` when provided. Pattern validated by both streaming routes in [backend/src/routes/ai.js](../../backend/src/routes/ai.js): `/generate-campaign` and `/campaigns/:id/generate-scene-stream`. Any new streaming queue consumer should copy this shape — don't invent another sequencing scheme.
+
+**Per-job-kind channel helpers.** Each streaming job kind has its own helper (`sceneJobChannel`, `campaignJobChannel`) exported from `aiWorker.js`. We deliberately keep them per-kind instead of a generic `jobChannel(kind, id)` because:
+- Easier to grep across logs and bull-board (`scene-job:` vs `campaign-job:` are immediately distinct)
+- Smaller blast radius for typos (kind string lives in one place per channel)
+- Trivial code duplication — each helper is one line
 
 ## Pub/sub bridge for streaming jobs
 
 When a worker wants to stream progress back to the HTTP handler that enqueued the job:
 
 ```js
-// Worker side (aiWorker.js handler for generate-scene)
+// Worker side (aiWorker.js handler — same shape for both job kinds)
 registerHandler('generate-scene', async (job) => {
   const redis = getRedisClient();
   const channel = sceneJobChannel(job.id);
@@ -75,8 +84,10 @@ registerHandler('generate-scene', async (job) => {
 });
 ```
 
+The `generate-campaign` handler is structurally identical — only the helper name (`campaignJobChannel`) and the underlying generator function (`generateCampaignStream`) differ.
+
 ```js
-// Route side (ai.js generate-scene-stream)
+// Route side (ai.js — same for both routes)
 subscriber.on('message', (ch, msg) => {
   reply.raw.write(`data: ${msg}\n\n`);
   const event = JSON.parse(msg);
@@ -87,9 +98,18 @@ subscriber.on('message', (ch, msg) => {
 Fire-and-forget publish is acceptable because:
 1. ioredis buffers on disconnect, most drops are transient.
 2. The `complete` event is authoritative — the subscriber closes on receipt.
-3. A 5-minute safety timeout catches dead jobs that never emit `complete`.
+3. A safety timeout catches dead jobs that never emit `complete` (5min for scene-gen, 8min for campaign-gen — campaigns can spike longer on Anthropic premium with full sceneGrid).
 
-**Channel naming helper must be shared:** `sceneJobChannel(jobId)` is exported from `aiWorker.js` and imported by `ai.js`. Both sides must agree on the key format or messages never route.
+**Channel naming helper must be shared:** Both `sceneJobChannel(jobId)` and `campaignJobChannel(jobId)` are exported from `aiWorker.js` and imported by `ai.js`. Both sides must agree on the key format or messages never route.
+
+## Current handlers
+
+| Job name | Handler | Channel helper | Generator | Timeout |
+|---|---|---|---|---|
+| `generate-scene` | `aiWorker.js` | `sceneJobChannel` | `generateSceneStream` | 5 min |
+| `generate-campaign` | `aiWorker.js` | `campaignJobChannel` | `generateCampaignStream` | 8 min |
+
+Both routes have an inline SSE fallback path when `isRedisEnabled()` returns false or `enqueueJob` throws — dev/CI without Redis still works unchanged.
 
 ## Dual-mode workers: in-process vs standalone
 

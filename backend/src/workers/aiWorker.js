@@ -2,10 +2,16 @@ import { Worker } from 'bullmq';
 import { getRedisClient, getBullMQConnection, isRedisEnabled, closeRedis } from '../services/redisClient.js';
 import { QUEUE_NAMES } from '../services/queues/aiQueue.js';
 import { generateSceneStream } from '../services/sceneGenerator.js';
+import { generateCampaignStream } from '../services/campaignGenerator.js';
+import { config } from '../config.js';
 import { logger } from '../lib/logger.js';
 
 export function sceneJobChannel(jobId) {
   return `scene-job:${jobId}:events`;
+}
+
+export function campaignJobChannel(jobId) {
+  return `campaign-job:${jobId}:events`;
 }
 
 // BullMQ workers. Each worker binds to one queue and runs jobs on the
@@ -24,12 +30,17 @@ export function sceneJobChannel(jobId) {
 // Handlers must be registered here — the registry is a plain map keyed by
 // job name. Queue-specific concurrency caps live in WORKER_OPTS below.
 
+// Concurrency is env-configurable via config.aiQueueConcurrency. Text
+// providers default to 100 (I/O-bound streaming jobs; upstream rate limit
+// is the real ceiling, not local CPU/memory). Image providers default to
+// 10 because per-job memory and upstream limits are tighter. See
+// config.js for the rationale.
 const WORKER_OPTS = {
-  [QUEUE_NAMES.OPENAI]: { concurrency: 4 },
-  [QUEUE_NAMES.ANTHROPIC]: { concurrency: 4 },
-  [QUEUE_NAMES.GEMINI]: { concurrency: 4 },
-  [QUEUE_NAMES.STABILITY]: { concurrency: 2 },
-  [QUEUE_NAMES.MESHY]: { concurrency: 2 },
+  [QUEUE_NAMES.OPENAI]: { concurrency: config.aiQueueConcurrency.openai },
+  [QUEUE_NAMES.ANTHROPIC]: { concurrency: config.aiQueueConcurrency.anthropic },
+  [QUEUE_NAMES.GEMINI]: { concurrency: config.aiQueueConcurrency.gemini },
+  [QUEUE_NAMES.STABILITY]: { concurrency: config.aiQueueConcurrency.stability },
+  [QUEUE_NAMES.MESHY]: { concurrency: config.aiQueueConcurrency.meshy },
 };
 
 const handlers = new Map();
@@ -115,6 +126,39 @@ registerHandler('generate-scene', async (job) => {
     if (event.type === 'complete') completeData = event.data;
     if (event.type === 'error') {
       streamError = Object.assign(new Error(event.error || 'Scene generation failed'), {
+        code: event.code || 'STREAM_ERROR',
+      });
+    }
+  });
+
+  if (streamError) throw streamError;
+  return { result: completeData };
+});
+
+// Campaign generation: structurally identical to the scene handler. The
+// route opens `campaign-job:<jobId>:events`, subscribes before enqueue,
+// forwards every message verbatim as SSE `data:` lines. Originally this
+// handler was reverted along with the queue migration in 281a826; it's
+// back now because concurrency + backpressure + FIFO queueing are the
+// real value of the BullMQ layer, not just retry/observability. See
+// knowledge/decisions/bullmq-vs-sse-routes.md for the full rationale.
+registerHandler('generate-campaign', async (job) => {
+  const { settings, opts = {} } = job.data || {};
+  const redis = getRedisClient();
+  const channel = campaignJobChannel(job.id);
+
+  let completeData = null;
+  let streamError = null;
+
+  await generateCampaignStream(settings, opts, (event) => {
+    if (redis) {
+      redis.publish(channel, JSON.stringify(event)).catch((err) => {
+        logger.warn({ err, jobId: job.id }, '[worker] campaign event publish failed');
+      });
+    }
+    if (event.type === 'complete') completeData = event.data;
+    if (event.type === 'error') {
+      streamError = Object.assign(new Error(event.error || 'Campaign generation failed'), {
         code: event.code || 'STREAM_ERROR',
       });
     }

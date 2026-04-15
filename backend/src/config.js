@@ -22,6 +22,22 @@ export const config = {
   // (no HTTP server). Left empty on the main backend container.
   workerMode: process.env.WORKER_MODE === '1' || process.env.WORKER_MODE === 'true',
 
+  // BullMQ worker concurrency per provider queue. Text providers can run
+  // high concurrency because jobs are I/O-bound (95% await fetch → event
+  // loop free), memory per job ~30KB, and upstream rate limits are the
+  // real ceiling (Tier 3+ OpenAI/Anthropic = 5000 RPM per model). Default
+  // 100 for text handles a 100-user spike with zero queueing at ~2% of
+  // the rate-limit budget. Image providers stay lower because per-job
+  // memory (base64 blobs) and upstream limits are tighter. Env-tunable
+  // so prod can burst higher without a redeploy.
+  aiQueueConcurrency: {
+    openai: parseInt(process.env.AI_QUEUE_CONCURRENCY_OPENAI || '100', 10),
+    anthropic: parseInt(process.env.AI_QUEUE_CONCURRENCY_ANTHROPIC || '100', 10),
+    gemini: parseInt(process.env.AI_QUEUE_CONCURRENCY_GEMINI || '100', 10),
+    stability: parseInt(process.env.AI_QUEUE_CONCURRENCY_STABILITY || '10', 10),
+    meshy: parseInt(process.env.AI_QUEUE_CONCURRENCY_MESHY || '10', 10),
+  },
+
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: '7d',
 

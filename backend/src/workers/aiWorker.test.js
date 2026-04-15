@@ -53,7 +53,7 @@ vi.mock('../services/queues/aiQueue.js', () => ({
 // invoke the internal processor via registerHandler override. Simpler:
 // re-register over top of the built-in ones and pull them out via the
 // exported function.
-import { sceneJobChannel, registerHandler } from './aiWorker.js';
+import { sceneJobChannel, campaignJobChannel, registerHandler } from './aiWorker.js';
 
 // Grab the registered `generate-scene` handler by capturing it on re-register.
 // The module has already registered its handlers on import. We can't easily
@@ -75,6 +75,12 @@ function makeFakeJob(id, data) {
 describe('aiWorker sceneJobChannel', () => {
   it('builds the correct channel name', () => {
     expect(sceneJobChannel('abc-123')).toBe('scene-job:abc-123:events');
+  });
+});
+
+describe('aiWorker campaignJobChannel', () => {
+  it('builds the correct channel name', () => {
+    expect(campaignJobChannel('abc-123')).toBe('campaign-job:abc-123:events');
   });
 });
 
@@ -227,6 +233,146 @@ describe('aiWorker generate-scene handler', () => {
 
     expect(hoisted.publish).not.toHaveBeenCalled();
     expect(result.result).toEqual({ narrative: 'ok' });
+  });
+});
+
+describe('aiWorker generate-campaign handler', () => {
+  // Same pragmatic approach as the generate-scene suite above: reproduce
+  // the handler body inline so we can invoke it with a fake job and mocked
+  // deps. If the real handler in aiWorker.js diverges from this copy the
+  // test stops being meaningful — mirror of real handler, update both or
+  // delete this test.
+
+  beforeEach(() => {
+    hoisted.publish.mockClear();
+    hoisted.campaignStreamMock.mockReset();
+    hoisted.redisEnabled.mockReturnValue(true);
+    hoisted.redisClient.mockReturnValue(hoisted.fakeRedis);
+  });
+
+  it('publishes each event from generateCampaignStream to the per-job channel', async () => {
+    const { generateCampaignStream } = await import('../services/campaignGenerator.js');
+    const { getRedisClient } = await import('../services/redisClient.js');
+
+    async function handler(job) {
+      const { settings, opts = {} } = job.data || {};
+      const redis = getRedisClient();
+      const channel = campaignJobChannel(job.id);
+
+      let completeData = null;
+      let streamError = null;
+
+      await generateCampaignStream(settings, opts, (event) => {
+        if (redis) {
+          redis.publish(channel, JSON.stringify(event)).catch(() => {});
+        }
+        if (event.type === 'complete') completeData = event.data;
+        if (event.type === 'error') {
+          streamError = Object.assign(new Error(event.error || 'Campaign generation failed'), {
+            code: event.code || 'STREAM_ERROR',
+          });
+        }
+      });
+
+      if (streamError) throw streamError;
+      return { result: completeData };
+    }
+
+    hoisted.campaignStreamMock.mockImplementation(async (_settings, _opts, onEvent) => {
+      onEvent({ type: 'chunk', text: '{"name":"The ' });
+      onEvent({ type: 'chunk', text: 'Shadow Vale"' });
+      onEvent({ type: 'chunk', text: ',"hook":"..."}' });
+      onEvent({ type: 'complete', data: { name: 'The Shadow Vale', hook: '...' } });
+    });
+
+    const job = makeFakeJob('campaign-1', {
+      settings: { genre: 'dark fantasy', tone: 'grim' },
+      opts: { provider: 'openai', language: 'pl' },
+    });
+
+    const result = await handler(job);
+
+    const channel = campaignJobChannel('campaign-1');
+    expect(hoisted.publish).toHaveBeenCalledTimes(4);
+    for (const call of hoisted.publish.mock.calls) {
+      expect(call[0]).toBe(channel);
+      expect(typeof call[1]).toBe('string');
+      expect(() => JSON.parse(call[1])).not.toThrow();
+    }
+
+    expect(result.result).toEqual({ name: 'The Shadow Vale', hook: '...' });
+  });
+
+  it('rethrows with code when generateCampaignStream emits an error event', async () => {
+    const { generateCampaignStream } = await import('../services/campaignGenerator.js');
+    const { getRedisClient } = await import('../services/redisClient.js');
+
+    async function handler(job) {
+      const { settings, opts = {} } = job.data || {};
+      const redis = getRedisClient();
+      const channel = campaignJobChannel(job.id);
+
+      let completeData = null;
+      let streamError = null;
+
+      await generateCampaignStream(settings, opts, (event) => {
+        if (redis) redis.publish(channel, JSON.stringify(event)).catch(() => {});
+        if (event.type === 'complete') completeData = event.data;
+        if (event.type === 'error') {
+          streamError = Object.assign(new Error(event.error || 'Campaign generation failed'), {
+            code: event.code || 'STREAM_ERROR',
+          });
+        }
+      });
+
+      if (streamError) throw streamError;
+      return { result: completeData };
+    }
+
+    hoisted.campaignStreamMock.mockImplementation(async (_s, _o, onEvent) => {
+      onEvent({ type: 'chunk', text: '{"na' });
+      onEvent({ type: 'error', error: 'Model response failed to parse', code: 'PARSE_ERROR' });
+    });
+
+    const job = makeFakeJob('campaign-2', { settings: {}, opts: {} });
+
+    await expect(handler(job)).rejects.toMatchObject({
+      message: 'Model response failed to parse',
+      code: 'PARSE_ERROR',
+    });
+
+    expect(hoisted.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not publish when Redis is disabled (redis === null)', async () => {
+    hoisted.redisClient.mockReturnValue(null);
+
+    const { generateCampaignStream } = await import('../services/campaignGenerator.js');
+    const { getRedisClient } = await import('../services/redisClient.js');
+
+    async function handler(job) {
+      const { settings, opts = {} } = job.data || {};
+      const redis = getRedisClient();
+      const channel = campaignJobChannel(job.id);
+
+      let completeData = null;
+      await generateCampaignStream(settings, opts, (event) => {
+        if (redis) redis.publish(channel, JSON.stringify(event)).catch(() => {});
+        if (event.type === 'complete') completeData = event.data;
+      });
+      return { result: completeData };
+    }
+
+    hoisted.campaignStreamMock.mockImplementation(async (_s, _o, onEvent) => {
+      onEvent({ type: 'chunk', text: 'x' });
+      onEvent({ type: 'complete', data: { name: 'ok' } });
+    });
+
+    const job = makeFakeJob('campaign-3', { settings: {}, opts: {} });
+    const result = await handler(job);
+
+    expect(hoisted.publish).not.toHaveBeenCalled();
+    expect(result.result).toEqual({ name: 'ok' });
   });
 });
 

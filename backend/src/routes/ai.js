@@ -10,7 +10,7 @@ import { resolveSseCorsOrigin } from '../plugins/cors.js';
 import crypto from 'crypto';
 import { enqueueJob, findJobAcrossQueues } from '../services/queues/aiQueue.js';
 import { isRedisEnabled, getRedisClient } from '../services/redisClient.js';
-import { sceneJobChannel } from '../workers/aiWorker.js';
+import { sceneJobChannel, campaignJobChannel } from '../workers/aiWorker.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 
 const log = childLogger({ module: 'ai' });
@@ -29,28 +29,45 @@ function writeSseHead(request, reply) {
     reply.code(403).send({ error: 'Origin not allowed' });
     return false;
   }
-  // Tell Fastify we're taking over this response — stops the onSend
-  // lifecycle from running, which is what @fastify/compress hooks into.
-  // Without hijack, compress buffers all writes and only flushes on
-  // response end, making SSE look like a one-shot JSON response to the
-  // browser (the whole stream arrives at once after ~30s).
+  // SSE writes directly to reply.raw — we hijack the reply to take
+  // ownership of the socket and cancel Fastify's onSend lifecycle. Three
+  // reasons hijack stays even though @fastify/compress was removed in
+  // 281a826 (originally installed to prevent its onSend buffering):
+  //   1. Clean lifecycle handoff — writing to reply.raw without calling
+  //      reply.send() leaves Fastify in "handler didn't respond" state,
+  //      which triggers log warnings and potential response timeouts.
+  //   2. Defense against future onSend hooks — any plugin added later
+  //      (audit log, metrics, compress redux, auth rewrite) with an
+  //      onSend hook would silently buffer SSE writes unless we hijack.
+  //   3. Structural decoupling from idempotency.js onSend — it currently
+  //      short-circuits on missing `config.idempotency` so SSE routes
+  //      are accidentally safe. Hijack makes that structural, not
+  //      accidental: a future dev who adds `idempotency: true` to an
+  //      SSE route won't break the stream.
   reply.hijack();
   const headers = {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
     Connection: 'keep-alive',
     'X-Accel-Buffering': 'no',
-    // Defense-in-depth: explicitly opt out of any compression middleware
-    // that might still see the response.
+    // Defense-in-depth pair with hijack — opts out of any upstream
+    // compression (nginx/CDN gzip, future in-process compress middleware)
+    // that might still see the raw response. Zero cost when no compressor
+    // is in the stack.
     'Content-Encoding': 'identity',
   };
   if (origin) {
+    // Manual CORS is required because reply.raw.writeHead bypasses
+    // Fastify's header pipeline entirely — corsPlugin never runs on raw
+    // writes. We resolve the allowlist via resolveSseCorsOrigin and write
+    // the header directly here.
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Credentials'] = 'true';
   }
   reply.raw.writeHead(200, headers);
   // Disable Nagle's algorithm so small SSE frames flush immediately
-  // instead of waiting for ~40ms to batch with the next write.
+  // instead of waiting ~40ms to batch with the next write. Unrelated to
+  // hijack/compress — purely a latency-per-frame concern.
   request.raw.socket?.setNoDelay(true);
   return true;
 }
@@ -300,13 +317,23 @@ export async function aiRoutes(fastify) {
   /**
    * POST /ai/generate-campaign
    *
-   * Inline SSE — streams campaign generation chunks directly to the client
-   * so the FE can reveal `firstScene` as soon as it's parseable mid-stream
-   * (typically ~20-30s in) instead of waiting for the full 8k-token payload.
-   * Originally migrated to BullMQ for retry/observability, reverted because
-   * the spinner-only delay that came with the queue path (60-200s) crushed
-   * the campaign-creator UX. Scene-gen stays on the queue because its
-   * pub/sub bridge preserves streaming.
+   * SSE stream of campaign generation events. Flow (Redis on):
+   *   1. Pre-generate jobId + subscribe to `campaign-job:<jobId>:events`
+   *      BEFORE enqueueing (prevents subscribe-after-publish race).
+   *   2. Worker runs `generateCampaignStream`, publishes every event to
+   *      the per-job pub/sub channel fire-and-forget.
+   *   3. This handler forwards every message verbatim as SSE `data:`.
+   *   4. Cleanup on `complete`/`error` event, client disconnect, or
+   *      8-min safety timeout.
+   *
+   * Why BullMQ instead of plain inline SSE: per-provider queue concurrency
+   * gives natural backpressure + fair FIFO + retry + observability under
+   * spike loads. The pub/sub bridge preserves streaming UX (progressive
+   * firstScene reveal ~20-30s in) so migration is transparent to the FE.
+   * See knowledge/decisions/bullmq-vs-sse-routes.md.
+   *
+   * Falls back to inline SSE when Redis is disabled or enqueue throws —
+   * dev/CI without docker still works unchanged.
    */
   fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
@@ -314,16 +341,75 @@ export async function aiRoutes(fastify) {
 
     if (!writeSseHead(request, reply)) return;
 
-    await generateCampaignStream(
-      settings || {},
-      { provider, model, language, userApiKeys },
-      (event) => {
-        try {
-          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-        } catch { /* client disconnected */ }
-      },
-    );
+    const opts = { provider, model, language, userApiKeys };
+    const writeEvent = (event) => {
+      try {
+        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch { /* client disconnected */ }
+    };
 
+    if (isRedisEnabled()) {
+      const jobId = crypto.randomUUID();
+      const channel = campaignJobChannel(jobId);
+      const subscriber = getRedisClient().duplicate();
+
+      let closed = false;
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+
+      const cleanup = async () => {
+        if (closed) return;
+        closed = true;
+        try { await subscriber.unsubscribe(channel); } catch { /* ignore */ }
+        try { await subscriber.quit(); } catch { /* ignore */ }
+        try { reply.raw.end(); } catch { /* ignore */ }
+        resolveDone();
+      };
+
+      subscriber.on('message', (ch, msg) => {
+        if (ch !== channel) return;
+        try { reply.raw.write(`data: ${msg}\n\n`); } catch { /* ignore */ }
+        try {
+          const event = JSON.parse(msg);
+          if (event.type === 'complete' || event.type === 'error') cleanup();
+        } catch { /* ignore */ }
+      });
+
+      request.raw.on('close', () => { cleanup(); });
+
+      // 8-minute safety timeout — campaign gen is 30-90s typically but
+      // Anthropic premium + full sceneGrid can spike to ~5min. If nothing
+      // arrives for 8min the worker crashed or got stuck on a retry.
+      const timeoutHandle = setTimeout(() => {
+        writeEvent({ type: 'error', error: 'Campaign job timed out', code: 'JOB_TIMEOUT' });
+        cleanup();
+      }, 8 * 60 * 1000);
+      timeoutHandle.unref?.();
+
+      let enqueueFailed = false;
+      try {
+        await subscriber.subscribe(channel);
+        await enqueueJob(
+          'generate-campaign',
+          { settings: settings || {}, opts },
+          { provider, userId: request.user?.id, jobId },
+        );
+      } catch (err) {
+        log.warn({ err }, 'Failed to start campaign job — falling back to inline');
+        enqueueFailed = true;
+        clearTimeout(timeoutHandle);
+        await cleanup();
+      }
+
+      if (!enqueueFailed) {
+        await done;
+        clearTimeout(timeoutHandle);
+        return;
+      }
+    }
+
+    // Legacy inline fallback (Redis disabled or enqueue failed).
+    await generateCampaignStream(settings || {}, opts, writeEvent);
     reply.raw.end();
   });
 
