@@ -5,38 +5,28 @@ services:
   # need a real replica set and running a single-node RS in docker just
   # to mimic Atlas wasn't worth the operational weight for a solo dev
   # who already has an Atlas cluster.
-  valkey:
-    image: valkey/valkey:7-alpine
-    restart: unless-stopped
-    command: ["valkey-server", "--save", "60", "1000", "--appendonly", "no"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - valkey-data:/data
 
   backend:
     build: .
     restart: unless-stopped
     ports:
       - "3001:8080"
-    depends_on:
-      - valkey
     environment:
       # Dockerfile sets NODE_ENV=production since the image is built for
       # prod. For local compose dev we override to development to relax
-      # CORS warnings and any other prod-strict behavior. The prod overlay
-      # (docker-compose.prod.yml) flips it back to production.
+      # CORS warnings and any other prod-strict behavior.
       NODE_ENV: "${NODE_ENV:-development}"
       PORT: "8080"
       HOST: "0.0.0.0"
       # Atlas SRV connection string — mandatory. No local mongo fallback.
       DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env to your Atlas SRV connection string}"
-      REDIS_URL: "redis://valkey:6379"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3001}"
       MEDIA_BACKEND: "${MEDIA_BACKEND:-local}"
       MEDIA_LOCAL_PATH: "/data/media"
+      # Cloud Tasks: disabled in local dev — post-scene work runs inline
+      CLOUD_TASKS_ENABLED: "false"
       # GCP (optional, only when MEDIA_BACKEND=gcp)
       GCS_BUCKET_NAME: "${GCS_BUCKET_NAME:-}"
       GCP_SERVICE_ACCOUNT_KEY: "${GCP_SERVICE_ACCOUNT_KEY:-}"
@@ -70,36 +60,5 @@ services:
         - action: rebuild
           path: ./package.json
 
-  # BullMQ worker: dedicated process that consumes ai:* queues. Shares the
-  # backend image and runs `npm run worker` (src/workers/aiWorker.js). On
-  # single-VM Prod-A the main backend also starts workers in-process, so
-  # this container is optional — it becomes meaningful when you scale out
-  # or want worker isolation. Disabled by default via the `workers` profile;
-  # `docker compose --profile workers up` to activate.
-  backend-worker:
-    build: .
-    restart: unless-stopped
-    command: ["npm", "run", "worker"]
-    profiles: ["workers"]
-    depends_on:
-      - valkey
-    environment:
-      WORKER_MODE: "1"
-      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env to your Atlas SRV connection string}"
-      REDIS_URL: "redis://valkey:6379"
-      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
-      API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
-      MEDIA_BACKEND: "${MEDIA_BACKEND:-local}"
-      MEDIA_LOCAL_PATH: "/data/media"
-      GCS_BUCKET_NAME: "${GCS_BUCKET_NAME:-}"
-      GCP_SERVICE_ACCOUNT_KEY: "${GCP_SERVICE_ACCOUNT_KEY:-}"
-      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
-      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
-      STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
-    volumes:
-      - media-data:/data/media
-
 volumes:
-  valkey-data:
   media-data:

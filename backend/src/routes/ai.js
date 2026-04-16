@@ -7,10 +7,6 @@ import { generateRecap } from '../services/recapGenerator.js';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveSseCorsOrigin } from '../plugins/cors.js';
-import crypto from 'crypto';
-import { enqueueJob, findJobAcrossQueues } from '../services/queues/aiQueue.js';
-import { isRedisEnabled, getRedisClient } from '../services/redisClient.js';
-import { sceneJobChannel, campaignJobChannel } from '../workers/aiWorker.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 
 const log = childLogger({ module: 'ai' });
@@ -328,23 +324,8 @@ export async function aiRoutes(fastify) {
   /**
    * POST /ai/generate-campaign
    *
-   * SSE stream of campaign generation events. Flow (Redis on):
-   *   1. Pre-generate jobId + subscribe to `campaign-job:<jobId>:events`
-   *      BEFORE enqueueing (prevents subscribe-after-publish race).
-   *   2. Worker runs `generateCampaignStream`, publishes every event to
-   *      the per-job pub/sub channel fire-and-forget.
-   *   3. This handler forwards every message verbatim as SSE `data:`.
-   *   4. Cleanup on `complete`/`error` event, client disconnect, or
-   *      8-min safety timeout.
-   *
-   * Why BullMQ instead of plain inline SSE: per-provider queue concurrency
-   * gives natural backpressure + fair FIFO + retry + observability under
-   * spike loads. The pub/sub bridge preserves streaming UX (progressive
-   * firstScene reveal ~20-30s in) so migration is transparent to the FE.
-   * See knowledge/decisions/bullmq-vs-sse-routes.md.
-   *
-   * Falls back to inline SSE when Redis is disabled or enqueue throws —
-   * dev/CI without docker still works unchanged.
+   * SSE stream of campaign generation events. Inline — generateCampaignStream
+   * runs in-process and streams events directly to the client.
    */
   fastify.post('/generate-campaign', { schema: { body: GENERATE_CAMPAIGN_SCHEMA } }, async (request, reply) => {
     const { settings, language, provider, model } = request.body || {};
@@ -359,85 +340,8 @@ export async function aiRoutes(fastify) {
       } catch { /* client disconnected */ }
     };
 
-    if (isRedisEnabled()) {
-      const jobId = crypto.randomUUID();
-      const channel = campaignJobChannel(jobId);
-      const subscriber = getRedisClient().duplicate();
-
-      let closed = false;
-      let resolveDone;
-      const done = new Promise((resolve) => { resolveDone = resolve; });
-
-      const cleanup = async () => {
-        if (closed) return;
-        closed = true;
-        try { await subscriber.unsubscribe(channel); } catch { /* ignore */ }
-        try { await subscriber.quit(); } catch { /* ignore */ }
-        try { reply.raw.end(); } catch { /* ignore */ }
-        resolveDone();
-      };
-
-      subscriber.on('message', (ch, msg) => {
-        if (ch !== channel) return;
-        try { reply.raw.write(`data: ${msg}\n\n`); } catch { /* ignore */ }
-        try {
-          const event = JSON.parse(msg);
-          if (event.type === 'complete' || event.type === 'error') cleanup();
-        } catch { /* ignore */ }
-      });
-
-      request.raw.on('close', () => { cleanup(); });
-
-      // 8-minute safety timeout — campaign gen is 30-90s typically but
-      // Anthropic premium + full sceneGrid can spike to ~5min. If nothing
-      // arrives for 8min the worker crashed or got stuck on a retry.
-      const timeoutHandle = setTimeout(() => {
-        writeEvent({ type: 'error', error: 'Campaign job timed out', code: 'JOB_TIMEOUT' });
-        cleanup();
-      }, 8 * 60 * 1000);
-      timeoutHandle.unref?.();
-
-      let enqueueFailed = false;
-      try {
-        await subscriber.subscribe(channel);
-        await enqueueJob(
-          'generate-campaign',
-          { settings: settings || {}, opts },
-          { provider, userId: request.user?.id, jobId },
-        );
-      } catch (err) {
-        log.warn({ err }, 'Failed to start campaign job — falling back to inline');
-        enqueueFailed = true;
-        clearTimeout(timeoutHandle);
-        await cleanup();
-      }
-
-      if (!enqueueFailed) {
-        await done;
-        clearTimeout(timeoutHandle);
-        return;
-      }
-    }
-
-    // Legacy inline fallback (Redis disabled or enqueue failed).
     await generateCampaignStream(settings || {}, opts, writeEvent);
     reply.raw.end();
-  });
-
-  /**
-   * GET /ai/jobs/:id
-   *
-   * Poll a queued job's status. Returns state + result when complete.
-   * 404 if the job doesn't exist in any queue (expired or never created).
-   */
-  fastify.get('/jobs/:id', async (request, reply) => {
-    if (!isRedisEnabled()) {
-      return reply.code(503).send({ error: 'Job queue disabled — Redis unavailable' });
-    }
-    const jobId = request.params.id;
-    const status = await findJobAcrossQueues(jobId);
-    if (!status) return reply.code(404).send({ error: 'Job not found' });
-    return status;
   });
 
   /**
@@ -512,77 +416,6 @@ export async function aiRoutes(fastify) {
       }
     };
 
-    // Queue path — worker runs generateSceneStream and publishes every
-    // event to a per-job Redis pub/sub channel. This handler subscribes
-    // to that channel (BEFORE enqueueing, with a pre-generated jobId, so
-    // there is no subscribe-after-publish race) and forwards each event
-    // to the SSE client. Closes the stream on `complete` or `error`.
-    //
-    // When Redis is off, falls back to the legacy inline path below.
-    if (isRedisEnabled()) {
-      const jobId = crypto.randomUUID();
-      const channel = sceneJobChannel(jobId);
-      const subscriber = getRedisClient().duplicate();
-
-      let closed = false;
-      let resolveDone;
-      const done = new Promise((resolve) => { resolveDone = resolve; });
-
-      const cleanup = async () => {
-        if (closed) return;
-        closed = true;
-        try { await subscriber.unsubscribe(channel); } catch { /* ignore */ }
-        try { await subscriber.quit(); } catch { /* ignore */ }
-        try { reply.raw.end(); } catch { /* ignore */ }
-        resolveDone();
-      };
-
-      subscriber.on('message', (ch, msg) => {
-        if (ch !== channel) return;
-        try {
-          reply.raw.write(`data: ${msg}\n\n`);
-        } catch { /* ignore */ }
-        try {
-          const event = JSON.parse(msg);
-          if (event.type === 'complete' || event.type === 'error') {
-            cleanup();
-          }
-        } catch { /* ignore */ }
-      });
-
-      request.raw.on('close', () => { cleanup(); });
-
-      // 5-minute safety timeout — scene gen is usually 15-30s, if nothing
-      // arrives in 5min the worker crashed or got stuck on a retry.
-      const timeoutHandle = setTimeout(() => {
-        writeEvent({ type: 'error', error: 'Scene job timed out', code: 'JOB_TIMEOUT' });
-        cleanup();
-      }, 5 * 60 * 1000);
-      timeoutHandle.unref?.();
-
-      let enqueueFailed = false;
-      try {
-        await subscriber.subscribe(channel);
-        await enqueueJob(
-          'generate-scene',
-          { campaignId, playerAction: playerAction || '[FIRST_SCENE]', opts },
-          { provider, userId: request.user?.id, jobId },
-        );
-      } catch (err) {
-        log.warn({ err }, 'Failed to start scene job — falling back to inline');
-        enqueueFailed = true;
-        clearTimeout(timeoutHandle);
-        await cleanup();
-      }
-
-      if (!enqueueFailed) {
-        await done;
-        clearTimeout(timeoutHandle);
-        return;
-      }
-    }
-
-    // Legacy inline fallback (Redis disabled or enqueue failed).
     await generateSceneStream(
       campaignId,
       playerAction || '[FIRST_SCENE]',

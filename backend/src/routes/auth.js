@@ -9,7 +9,6 @@ import {
   revokeRefreshToken,
 } from '../services/refreshTokenService.js';
 import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
-import { isRedisEnabled } from '../services/redisClient.js';
 
 // /v1/auth — cookie-based refresh token flow (formerly /v2/auth, collapsed
 // 2026-04-14 since there's no prod to maintain backward compat for).
@@ -24,9 +23,7 @@ import { isRedisEnabled } from '../services/redisClient.js';
 //   - PUT  /settings          → bearer-auth, patches user settings + API keys
 //   - GET  /api-keys          → bearer-auth, returns masked key previews
 //
-// Refresh flow REQUIRES Redis. When Redis is disabled the register/login/
-// refresh endpoints return 503 — there's no sensible in-memory fallback for
-// refresh token storage (would be lost on restart, defeating the point).
+// Refresh tokens are stored in MongoDB with a TTL index — no Redis dependency.
 
 const SALT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
@@ -133,10 +130,6 @@ export async function authRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    if (!isRedisEnabled()) {
-      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
-    }
-
     const { email, password } = request.body;
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
@@ -161,10 +154,6 @@ export async function authRoutes(fastify) {
       },
     },
   }, async (request, reply) => {
-    if (!isRedisEnabled()) {
-      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
-    }
-
     const { email, password } = request.body;
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -182,10 +171,6 @@ export async function authRoutes(fastify) {
   fastify.post('/refresh', {
     config: { csrf: true },
   }, async (request, reply) => {
-    if (!isRedisEnabled()) {
-      return reply.code(503).send({ error: 'Auth unavailable (Redis disabled)' });
-    }
-
     const cookieValue = request.cookies?.[REFRESH_COOKIE];
     if (!cookieValue) {
       return reply.code(401).send({ error: 'No refresh token' });

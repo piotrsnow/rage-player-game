@@ -99,14 +99,8 @@ vi.mock('../services/refreshTokenService.js', () => ({
   revokeAllUserRefreshTokens: vi.fn(async () => 0),
 }));
 
-vi.mock('../services/redisClient.js', () => ({
-  isRedisEnabled: vi.fn(() => true),
-  getRedisClient: vi.fn(() => null),
-}));
-
 import { authRoutes } from './auth.js';
 import { csrfPlugin } from '../plugins/csrf.js';
-import { isRedisEnabled } from '../services/redisClient.js';
 
 async function buildApp() {
   const app = Fastify();
@@ -141,7 +135,6 @@ describe('/v1/auth routes', () => {
   beforeEach(() => {
     userStore.clear();
     refreshStore.clear();
-    isRedisEnabled.mockReturnValue(true);
   });
 
   it('POST /v1/auth/register returns access+csrf tokens and sets both cookies', async () => {
@@ -333,18 +326,6 @@ describe('/v1/auth routes', () => {
     const flat = Array.isArray(cleared) ? cleared.join('|') : cleared;
     expect(flat).toMatch(/refreshToken=/);
     expect(flat).toMatch(/csrf-token=/);
-    await app.close();
-  });
-
-  it('POST /v1/auth/login returns 503 when Redis is disabled', async () => {
-    isRedisEnabled.mockReturnValue(false);
-    const app = await buildApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/login',
-      payload: { email: 'x@example.com', password: 'whatever' },
-    });
-    expect(res.statusCode).toBe(503);
     await app.close();
   });
 

@@ -1,50 +1,18 @@
-import crypto from 'crypto';
 import { config } from '../config.js';
-import { getRedisClient, isRedisEnabled } from './redisClient.js';
 import { logger } from '../lib/logger.js';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSIONS = 1536;
 const MAX_BATCH_SIZE = 2048;
 
-// Two-tier cache for recent embeddings.
-//
-// L1 — in-memory LRU per instance, capped at 100 entries, 1h TTL. Kept from
-// the short-term fix in 9a so hot reads stay sub-microsecond without a
-// network round trip. Small by design; purpose is "don't hit Redis for
-// the same text 50 times in one scene".
-//
-// L2 — Redis (when enabled). Shared across instances, survives restarts,
-// same 1h TTL enforced via EX. L2 is the long-term cache that makes embed
-// reuse work across deploys and Cloud Run cold starts. If Redis is
-// disabled or errors, L2 is a silent no-op and we fall back to L1-only
-// behavior (which is exactly how 9a worked).
-//
-// Read path: L1 hit → return. L1 miss → try L2 → on hit, populate L1 → return.
-// Full miss → OpenAI API → populate L1 + L2.
+// In-memory LRU cache for recent embeddings. Capped at 100 entries, 1h TTL.
+// Purpose: avoid re-embedding the same text during a single session/scene.
 
 const cache = new Map();
 const CACHE_MAX_SIZE = 100;
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const CACHE_TTL_SEC = 60 * 60;
-const REDIS_KEY_PREFIX = 'embed:';
 
-function redisKeyFor(text) {
-  const hash = crypto.createHash('sha256').update(text).digest('hex');
-  return REDIS_KEY_PREFIX + hash;
-}
-
-function cacheSetLocal(key, value) {
-  if (cache.has(key)) {
-    cache.delete(key);
-  } else if (cache.size >= CACHE_MAX_SIZE) {
-    const firstKey = cache.keys().next().value;
-    cache.delete(firstKey);
-  }
-  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
-}
-
-function cacheGetLocal(key) {
+function cacheGet(key) {
   const entry = cache.get(key);
   if (entry === undefined) return undefined;
   if (entry.expiresAt < Date.now()) {
@@ -57,50 +25,17 @@ function cacheGetLocal(key) {
   return entry.value;
 }
 
-async function cacheGetRedis(text) {
-  if (!isRedisEnabled()) return undefined;
-  const client = getRedisClient();
-  if (!client) return undefined;
-  try {
-    const raw = await client.get(redisKeyFor(text));
-    if (!raw) return undefined;
-    return JSON.parse(raw);
-  } catch (err) {
-    logger.warn({ err }, '[embeddingService] redis get failed — falling back to L1/API');
-    return undefined;
+function cacheSet(key, value) {
+  if (cache.has(key)) {
+    cache.delete(key);
+  } else if (cache.size >= CACHE_MAX_SIZE) {
+    const firstKey = cache.keys().next().value;
+    cache.delete(firstKey);
   }
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function cacheSetRedis(text, value) {
-  if (!isRedisEnabled()) return;
-  const client = getRedisClient();
-  if (!client) return;
-  try {
-    await client.set(redisKeyFor(text), JSON.stringify(value), 'EX', CACHE_TTL_SEC);
-  } catch (err) {
-    logger.warn({ err }, '[embeddingService] redis set failed — L1 only');
-  }
-}
-
-async function cacheGet(key) {
-  const local = cacheGetLocal(key);
-  if (local !== undefined) return local;
-  const remote = await cacheGetRedis(key);
-  if (remote !== undefined) {
-    cacheSetLocal(key, remote);
-    return remote;
-  }
-  return undefined;
-}
-
-async function cacheSet(key, value) {
-  cacheSetLocal(key, value);
-  await cacheSetRedis(key, value);
-}
-
-// Test hook: reset in-memory cache between runs. Redis cache is NOT touched
-// here — tests that exercise the Redis path should mock `./redisClient.js`
-// at the module level so no real Redis traffic happens.
+// Test hook: reset in-memory cache between runs.
 export function __resetEmbeddingCacheForTests() {
   cache.clear();
 }
@@ -113,7 +48,7 @@ export async function embedText(text, apiKey = null) {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const cached = await cacheGet(trimmed);
+  const cached = cacheGet(trimmed);
   if (cached) return cached;
 
   const key = apiKey || config.apiKeys.openai;
@@ -142,7 +77,7 @@ export async function embedText(text, apiKey = null) {
   const data = await response.json();
   const embedding = data.data[0].embedding;
 
-  await cacheSet(trimmed, embedding);
+  cacheSet(trimmed, embedding);
   return embedding;
 }
 

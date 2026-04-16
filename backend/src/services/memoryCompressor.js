@@ -126,7 +126,19 @@ Rules:
  * Compress a scene narrative into running summary facts.
  * Called async after each scene generation.
  */
+function isDominatedScene(narrative, playerAction) {
+  if (!narrative || narrative.length < 100) return true;
+  if (playerAction === '[WAIT]' || playerAction?.startsWith('[IDLE')) return true;
+  // No dialogue and short narrative — likely trivial
+  if (!narrative.includes('"') && narrative.length < 300) return true;
+  return false;
+}
+
 export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs } = {}) {
+  if (isDominatedScene(narrative, playerAction)) {
+    return;
+  }
+
   try {
     // Load current summary
     const campaign = await prisma.campaign.findUnique({

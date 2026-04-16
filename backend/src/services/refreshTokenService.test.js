@@ -1,29 +1,40 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// In-memory fake redis used by the mocked redisClient. Mirrors the subset of
-// ioredis we actually use: set/get/del/scan.
+// In-memory fake Prisma store for RefreshToken collection.
 const store = new Map();
-const fakeRedis = {
-  set: vi.fn(async (key, value /*, 'EX', _ttl */) => {
-    store.set(key, value);
-    return 'OK';
-  }),
-  get: vi.fn(async (key) => (store.has(key) ? store.get(key) : null)),
-  del: vi.fn(async (...keys) => {
-    let count = 0;
-    for (const k of keys) if (store.delete(k)) count++;
-    return count;
-  }),
-  scan: vi.fn(async (cursor, _match, pattern /*, 'COUNT', 100 */) => {
-    const prefix = pattern.replace(/\*$/, '');
-    const keys = [...store.keys()].filter((k) => k.startsWith(prefix));
-    return ['0', keys];
-  }),
-};
+let idCounter = 0;
 
-vi.mock('./redisClient.js', () => ({
-  isRedisEnabled: vi.fn(() => true),
-  getRedisClient: vi.fn(() => fakeRedis),
+vi.mock('../lib/prisma.js', () => ({
+  prisma: {
+    refreshToken: {
+      create: vi.fn(async ({ data }) => {
+        const id = `rt_${++idCounter}`;
+        const record = { id, ...data, createdAt: new Date() };
+        store.set(data.tokenId, record);
+        return record;
+      }),
+      findUnique: vi.fn(async ({ where }) => {
+        if (where.tokenId) return store.get(where.tokenId) || null;
+        return null;
+      }),
+      delete: vi.fn(async ({ where }) => {
+        const existed = store.has(where.tokenId);
+        store.delete(where.tokenId);
+        return existed ? { tokenId: where.tokenId } : null;
+      }),
+      deleteMany: vi.fn(async ({ where }) => {
+        let count = 0;
+        if (where.tokenId) {
+          if (store.delete(where.tokenId)) count++;
+        } else if (where.userId) {
+          for (const [key, val] of store) {
+            if (val.userId === where.userId) { store.delete(key); count++; }
+          }
+        }
+        return { count };
+      }),
+    },
+  },
 }));
 
 import {
@@ -33,32 +44,23 @@ import {
   revokeAllUserRefreshTokens,
   __testInternals,
 } from './refreshTokenService.js';
-import { isRedisEnabled, getRedisClient } from './redisClient.js';
 
-describe('refreshTokenService', () => {
+describe('refreshTokenService (Mongo-backed)', () => {
   beforeEach(() => {
     store.clear();
-    fakeRedis.set.mockClear();
-    fakeRedis.get.mockClear();
-    fakeRedis.del.mockClear();
-    fakeRedis.scan.mockClear();
-    isRedisEnabled.mockReturnValue(true);
-    getRedisClient.mockReturnValue(fakeRedis);
+    idCounter = 0;
   });
 
-  it('issues a token, stores a Redis row, and returns a dot-joined cookie value', async () => {
-    const out = await issueRefreshToken('user_1', { deviceInfo: 'jest' });
+  it('issues a token, stores a Mongo row, and returns a dot-joined cookie value', async () => {
+    const out = await issueRefreshToken('user_1', { deviceInfo: 'vitest' });
     expect(out).toBeTruthy();
     expect(out.cookieValue).toMatch(/^user_1\.[0-9a-f-]{36}$/);
     expect(out.ttlSec).toBe(30 * 24 * 60 * 60);
-    expect(fakeRedis.set).toHaveBeenCalledOnce();
-    const [key, payload, ex, ttl] = fakeRedis.set.mock.calls[0];
-    expect(key).toBe(__testInternals.buildKey('user_1', out.tokenId));
-    expect(ex).toBe('EX');
-    expect(ttl).toBe(30 * 24 * 60 * 60);
-    const parsed = JSON.parse(payload);
-    expect(parsed.userId).toBe('user_1');
-    expect(parsed.deviceInfo).toBe('jest');
+    expect(store.size).toBe(1);
+    const record = store.get(out.tokenId);
+    expect(record.userId).toBe('user_1');
+    expect(record.deviceInfo).toBe('vitest');
+    expect(record.expiresAt).toBeInstanceOf(Date);
   });
 
   it('verifyRefreshToken returns the userId for a valid, unexpired token', async () => {
@@ -74,29 +76,33 @@ describe('refreshTokenService', () => {
     expect(await verifyRefreshToken('.missing-user')).toBeNull();
   });
 
-  it('verifyRefreshToken returns null and evicts when the row has expired', async () => {
+  it('verifyRefreshToken returns null and cleans up when the row has expired', async () => {
     const issued = await issueRefreshToken('user_3');
-    // Hand-rewrite the stored value with expiresAt in the past
-    const key = __testInternals.buildKey('user_3', issued.tokenId);
-    const raw = JSON.parse(store.get(key));
-    raw.expiresAt = Date.now() - 1000;
-    store.set(key, JSON.stringify(raw));
+    // Hand-rewrite the stored record with expiresAt in the past
+    const record = store.get(issued.tokenId);
+    record.expiresAt = new Date(Date.now() - 1000);
 
     const verified = await verifyRefreshToken(issued.cookieValue);
     expect(verified).toBeNull();
-    expect(store.has(key)).toBe(false);
+    expect(store.has(issued.tokenId)).toBe(false);
   });
 
-  it('revokeRefreshToken deletes the Redis row for the given cookie', async () => {
+  it('verifyRefreshToken returns null if cookie userId mismatches stored userId', async () => {
+    const issued = await issueRefreshToken('user_real');
+    // Forge a cookie with a different userId but same tokenId
+    const forgedCookie = `user_fake.${issued.tokenId}`;
+    const verified = await verifyRefreshToken(forgedCookie);
+    expect(verified).toBeNull();
+  });
+
+  it('revokeRefreshToken deletes the Mongo row for the given cookie', async () => {
     const issued = await issueRefreshToken('user_4');
-    const before = await verifyRefreshToken(issued.cookieValue);
-    expect(before).not.toBeNull();
+    expect(await verifyRefreshToken(issued.cookieValue)).not.toBeNull();
 
     const ok = await revokeRefreshToken(issued.cookieValue);
     expect(ok).toBe(true);
 
-    const after = await verifyRefreshToken(issued.cookieValue);
-    expect(after).toBeNull();
+    expect(await verifyRefreshToken(issued.cookieValue)).toBeNull();
   });
 
   it('revokeAllUserRefreshTokens wipes every active session for a user', async () => {
@@ -107,19 +113,11 @@ describe('refreshTokenService', () => {
 
     const deleted = await revokeAllUserRefreshTokens('user_5');
     expect(deleted).toBe(3);
-    expect([...store.keys()].some((k) => k.startsWith('user:user_5:'))).toBe(false);
-    expect([...store.keys()].some((k) => k.startsWith('user:user_6:'))).toBe(true);
+    expect([...store.values()].some((r) => r.userId === 'user_5')).toBe(false);
+    expect([...store.values()].some((r) => r.userId === 'user_6')).toBe(true);
   });
 
-  it('returns null when Redis is disabled', async () => {
-    isRedisEnabled.mockReturnValue(false);
-    expect(await issueRefreshToken('user_7')).toBeNull();
-    expect(await verifyRefreshToken('user_7.abc')).toBeNull();
-    expect(await revokeRefreshToken('user_7.abc')).toBe(false);
-    expect(await revokeAllUserRefreshTokens('user_7')).toBe(0);
-  });
-
-  it('distinct users with distinct tokens do not collide in the keyspace', async () => {
+  it('distinct users with distinct tokens do not collide', async () => {
     const a = await issueRefreshToken('user_A');
     const b = await issueRefreshToken('user_B');
     expect(a.cookieValue).not.toBe(b.cookieValue);

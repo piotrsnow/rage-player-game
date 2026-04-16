@@ -3,7 +3,7 @@ import { childLogger } from '../../lib/logger.js';
 import { assembleContext } from '../aiContextTools.js';
 import { classifyIntent } from '../intentClassifier.js';
 import { requireServerApiKey } from '../apiKeyService.js';
-import { compressSceneToSummary, generateLocationSummary, checkQuestObjectives } from '../memoryCompressor.js';
+import { checkQuestObjectives } from '../memoryCompressor.js';
 import {
   resolveBackendDiceRollWithPreRoll,
   generatePreRolls,
@@ -27,7 +27,7 @@ import {
   calculateFreeformSkillXP,
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
-import { generateSceneEmbedding, processStateChanges } from './processStateChanges.js';
+import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
 
@@ -356,25 +356,19 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
 
-    // 9b. Async fire-and-forget: embedding + NPC/codex/quest sync + memory compression
-    generateSceneEmbedding(savedScene).catch((err) =>
-      log.error({ err, sceneId: savedScene.id }, 'Failed to generate scene embedding')
+    // 9b. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
+    // Fire-and-forget: don't block the 'complete' event on enqueue failure.
+    enqueuePostSceneWork({
+      sceneId: savedScene.id,
+      campaignId,
+      playerAction,
+      provider,
+      newLoc: sceneResult.stateChanges?.currentLocation || null,
+      prevLoc: coreState.world?.currentLocation || null,
+      llmNanoTimeoutMs,
+    }).catch((err) =>
+      log.error({ err, sceneId: savedScene.id }, 'Failed to enqueue post-scene work')
     );
-    if (sceneResult.stateChanges) {
-      processStateChanges(campaignId, sceneResult.stateChanges).catch((err) =>
-        log.error({ err, campaignId }, 'Failed to process state changes')
-      );
-    }
-    compressSceneToSummary(campaignId, sceneResult.narrative, playerAction, provider, { timeoutMs: llmNanoTimeoutMs }).catch((err) =>
-      log.error({ err, campaignId }, 'Failed to compress scene to summary')
-    );
-    const newLoc = sceneResult.stateChanges?.currentLocation;
-    const prevLoc = coreState.world?.currentLocation;
-    if (newLoc && prevLoc && newLoc !== prevLoc) {
-      generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }).catch((err) =>
-        log.error({ err, campaignId, newLoc, prevLoc }, 'Failed to generate location summary')
-      );
-    }
 
     // 10. Complete — emit immediately so frontend can render the scene
     onEvent({

@@ -24,6 +24,17 @@ model User {
   wanted3dEntries       Wanted3D[]
 }
 
+model RefreshToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  tokenId    String   @unique
+  userId     String   @db.ObjectId
+  deviceInfo String   @default("")
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime                   // TTL index target (expireAfterSeconds: 0)
+
+  @@index([userId])
+}
+
 model Achievement {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   userId         String   @db.ObjectId

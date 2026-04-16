@@ -56,24 +56,29 @@ async function processNpcChanges(campaignId, npcs) {
           if (emb) writeEmbedding('CampaignNPC', updated.id, emb, embText);
         }
       } else if (npcChange.action === 'introduce' || !existing) {
-        const created = await prisma.campaignNPC.create({
-          data: {
-            campaignId,
-            npcId,
-            name: npcChange.name,
-            gender: npcChange.gender || 'unknown',
-            role: npcChange.role || null,
-            personality: npcChange.personality || null,
-            attitude: npcChange.attitude || 'neutral',
-            disposition: npcChange.disposition ?? 0,
-            factionId: npcChange.factionId || null,
-            relationships: JSON.stringify(npcChange.relationships || []),
-            relatedQuestIds: JSON.stringify(npcChange.relatedQuestIds || []),
-          },
-        });
-        const embText = buildNPCEmbeddingText(created);
-        const emb = await embedText(embText);
-        if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
+        try {
+          const created = await prisma.campaignNPC.create({
+            data: {
+              campaignId,
+              npcId,
+              name: npcChange.name,
+              gender: npcChange.gender || 'unknown',
+              role: npcChange.role || null,
+              personality: npcChange.personality || null,
+              attitude: npcChange.attitude || 'neutral',
+              disposition: npcChange.disposition ?? 0,
+              factionId: npcChange.factionId || null,
+              relationships: JSON.stringify(npcChange.relationships || []),
+              relatedQuestIds: JSON.stringify(npcChange.relatedQuestIds || []),
+            },
+          });
+          const embText = buildNPCEmbeddingText(created);
+          const emb = await embedText(embText);
+          if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
+        } catch (createErr) {
+          // P2002 = unique constraint (campaignId+npcId) — retry created it already, safe to skip
+          if (createErr.code !== 'P2002') throw createErr;
+        }
       }
     } catch (err) {
       log.error({ err, campaignId, npcName: npcChange.name }, 'Failed to process NPC change');
@@ -133,20 +138,25 @@ async function processCodexUpdates(campaignId, codexUpdates) {
         const emb = await embedText(embText);
         if (emb) writeEmbedding('CampaignCodex', updated.id, emb, embText);
       } else {
-        const created = await prisma.campaignCodex.create({
-          data: {
-            campaignId,
-            codexKey: cu.id,
-            name: cu.name,
-            category: cu.category || 'concept',
-            tags: JSON.stringify(cu.tags || []),
-            fragments: JSON.stringify(cu.fragment ? [cu.fragment] : []),
-            relatedEntries: JSON.stringify(cu.relatedEntries || []),
-          },
-        });
-        const embText = buildCodexEmbeddingText(created);
-        const emb = await embedText(embText);
-        if (emb) writeEmbedding('CampaignCodex', created.id, emb, embText);
+        try {
+          const created = await prisma.campaignCodex.create({
+            data: {
+              campaignId,
+              codexKey: cu.id,
+              name: cu.name,
+              category: cu.category || 'concept',
+              tags: JSON.stringify(cu.tags || []),
+              fragments: JSON.stringify(cu.fragment ? [cu.fragment] : []),
+              relatedEntries: JSON.stringify(cu.relatedEntries || []),
+            },
+          });
+          const embText = buildCodexEmbeddingText(created);
+          const emb = await embedText(embText);
+          if (emb) writeEmbedding('CampaignCodex', created.id, emb, embText);
+        } catch (createErr) {
+          // P2002 = unique constraint (campaignId+codexKey) — retry created it already, safe to skip
+          if (createErr.code !== 'P2002') throw createErr;
+        }
       }
     } catch (err) {
       log.error({ err, campaignId, codexId: cu.id }, 'Failed to process codex update');

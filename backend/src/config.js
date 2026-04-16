@@ -16,28 +16,6 @@ export const config = {
 
   databaseUrl: process.env.DATABASE_URL || 'mongodb://localhost:27017/rpgon',
 
-  redisUrl: process.env.REDIS_URL || '',
-
-  // Worker mode: when truthy, the process runs as a dedicated BullMQ worker
-  // (no HTTP server). Left empty on the main backend container.
-  workerMode: process.env.WORKER_MODE === '1' || process.env.WORKER_MODE === 'true',
-
-  // BullMQ worker concurrency per provider queue. Text providers can run
-  // high concurrency because jobs are I/O-bound (95% await fetch → event
-  // loop free), memory per job ~30KB, and upstream rate limits are the
-  // real ceiling (Tier 3+ OpenAI/Anthropic = 5000 RPM per model). Default
-  // 100 for text handles a 100-user spike with zero queueing at ~2% of
-  // the rate-limit budget. Image providers stay lower because per-job
-  // memory (base64 blobs) and upstream limits are tighter. Env-tunable
-  // so prod can burst higher without a redeploy.
-  aiQueueConcurrency: {
-    openai: parseInt(process.env.AI_QUEUE_CONCURRENCY_OPENAI || '100', 10),
-    anthropic: parseInt(process.env.AI_QUEUE_CONCURRENCY_ANTHROPIC || '100', 10),
-    gemini: parseInt(process.env.AI_QUEUE_CONCURRENCY_GEMINI || '100', 10),
-    stability: parseInt(process.env.AI_QUEUE_CONCURRENCY_STABILITY || '10', 10),
-    meshy: parseInt(process.env.AI_QUEUE_CONCURRENCY_MESHY || '10', 10),
-  },
-
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: '7d',
 
@@ -60,6 +38,16 @@ export const config = {
   elevenlabsDefaultVoiceId: "HnELITaEvp7a0HOmfoBo",
 
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,
+
+  // Cloud Run / Cloud Tasks — used for post-scene async work dispatch.
+  // CLOUD_TASKS_ENABLED=false → inline fire-and-forget fallback (local dev).
+  gcpProjectId: process.env.GCP_PROJECT_ID || '',
+  gcpRegion: process.env.GCP_REGION || 'europe-central2',
+  cloudTasksEnabled: process.env.CLOUD_TASKS_ENABLED === 'true',
+  // Cloud Run service URL — needed for Cloud Tasks callback. Set once after first deploy:
+  //   gcloud run services describe rage-player-game --region europe-central2 --format 'value(status.url)'
+  selfUrl: process.env.SELF_URL || '',
+  runtimeServiceAccount: process.env.RUNTIME_SERVICE_ACCOUNT || '',
 
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
 

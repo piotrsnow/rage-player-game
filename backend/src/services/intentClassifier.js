@@ -129,6 +129,27 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
     };
   }
 
+  // Stealth / sneaking — needs location + memory context
+  if (/\b(sneak|hide|skulk|crouch|stealth|skradam|chowam|ukrywam|skr[aą]da[ćm])\b/i.test(playerAction)) {
+    return { ...emptySelection(), expand_location: true, needs_memory_search: true, memory_query: 'guards and patrols', _intent: 'stealth' };
+  }
+
+  // Persuasion / diplomacy — needs NPC context
+  if (/\b(persuade|convince|negotiate|charm|bribe|przekonuj|negocjuj|namawiam|łapówk)\b/i.test(playerAction)) {
+    const npcMatch = playerAction.match(/\[TALK:([^\]]+)\]/);
+    return { ...emptySelection(), expand_npcs: npcMatch ? [npcMatch[1]] : [], _intent: 'persuade' };
+  }
+
+  // Search / examine — needs location context
+  if (/\b(search|examine|investigate|inspect|look around|szukam|badam|ogl[aą]dam|przeszukuj)\b/i.test(playerAction)) {
+    return { ...emptySelection(), expand_location: true, _intent: 'search' };
+  }
+
+  // Rest / sleep / wait — minimal context
+  if (/\b(rest|sleep|make camp|camp|nap|odpoczywam|[sś]pi[eę]|rozbijam obóz|drzemk)\b/i.test(playerAction)) {
+    return { ...emptySelection(), _intent: 'rest' };
+  }
+
   // Freeform action — needs nano model
   return null;
 }

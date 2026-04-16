@@ -25,6 +25,7 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
       max_completion_tokens: maxTokens,
       response_format: { type: 'json_object' },
       stream: true,
+      stream_options: { include_usage: true },
     }),
     signal,
   });
@@ -34,6 +35,7 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
   }
 
   let accumulated = '';
+  let streamUsage = null;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -47,6 +49,9 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
     } catch {
       if (debug) log.debug({ data }, 'openai-stream UNPARSEABLE');
       return;
+    }
+    if (parsed.usage) {
+      streamUsage = parsed.usage;
     }
     const choice = parsed.choices?.[0];
     if (!choice) return;
@@ -93,6 +98,16 @@ async function callOpenAIStreaming(messages, { model, temperature = 0.8, maxToke
     handleDataLine(buffer.slice(6));
   }
 
+  if (streamUsage) {
+    log.info({
+      provider: 'openai',
+      model: model || config.aiModels.premium.openai,
+      inputTokens: streamUsage.prompt_tokens,
+      outputTokens: streamUsage.completion_tokens,
+      cacheReadTokens: streamUsage.prompt_tokens_details?.cached_tokens || 0,
+    }, 'llm-streaming-usage');
+  }
+
   return accumulated;
 }
 
@@ -126,6 +141,7 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
   }
 
   let accumulated = '';
+  let anthropicUsage = null;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -138,11 +154,11 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
         accumulated += parsed.delta.text;
         if (onChunk) onChunk(parsed.delta.text);
       }
+      if (parsed.type === 'message_start' && parsed.message?.usage) {
+        anthropicUsage = { ...parsed.message.usage };
+      }
       if (parsed.type === 'message_delta' && parsed.usage) {
-        const u = parsed.usage;
-        if (u.cache_read_input_tokens > 0 || u.cache_creation_input_tokens > 0) {
-          log.debug({ cacheRead: u.cache_read_input_tokens || 0, cacheCreated: u.cache_creation_input_tokens || 0 }, 'anthropic-stream cache hit');
-        }
+        anthropicUsage = { ...anthropicUsage, ...parsed.usage };
       }
     } catch {
       // skip malformed SSE lines
@@ -167,6 +183,17 @@ async function callAnthropicStreaming(messages, { model, temperature = 0.8, maxT
 
   if (buffer.startsWith('data: ')) {
     handleDataLine(buffer.slice(6));
+  }
+
+  if (anthropicUsage) {
+    log.info({
+      provider: 'anthropic',
+      model: model || config.aiModels.premium.anthropic,
+      inputTokens: anthropicUsage.input_tokens || 0,
+      outputTokens: anthropicUsage.output_tokens || 0,
+      cacheReadTokens: anthropicUsage.cache_read_input_tokens || 0,
+      cacheCreationTokens: anthropicUsage.cache_creation_input_tokens || 0,
+    }, 'llm-streaming-usage');
   }
 
   return accumulated;

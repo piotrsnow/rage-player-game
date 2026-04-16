@@ -13,9 +13,6 @@ import { authPlugin } from './plugins/auth.js';
 import { csrfPlugin } from './plugins/csrf.js';
 import { buildRateLimitKey } from './plugins/rateLimitKey.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
-import { bullBoardPlugin } from './plugins/bullBoard.js';
-import { startWorkers, stopWorkers } from './workers/aiWorker.js';
-import { closeAllQueues } from './services/queues/aiQueue.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { characterRoutes } from './routes/characters.js';
@@ -31,6 +28,7 @@ import { musicRoutes } from './routes/music.js';
 import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
+import { internalRoutes } from './routes/internal.js';
 import {
   startRoomCleanup,
   stopRoomCleanup,
@@ -38,12 +36,6 @@ import {
   saveAllActiveRooms,
   closeAllRoomSockets,
 } from './services/roomManager.js';
-import {
-  getRedisClient,
-  isRedisEnabled,
-  pingRedis,
-  closeRedis,
-} from './services/redisClient.js';
 import { prisma } from './lib/prisma.js';
 import { logger } from './lib/logger.js';
 
@@ -71,23 +63,16 @@ await fastify.register(csrfPlugin);
 await fastify.register(websocket);
 
 // Rate limit keyed by userId when the JWT verifies, per-IP otherwise.
-// Counters live in Redis when it's wired up (shared across instances + survive
-// restart); when Redis is disabled, @fastify/rate-limit falls back to its
-// built-in in-memory LRU store — same behavior as before this change.
+// In-memory store — sufficient for single-instance Cloud Run.
 await fastify.register(rateLimit, {
   global: false,
   keyGenerator: buildRateLimitKey,
-  redis: isRedisEnabled() ? getRedisClient() : undefined,
   nameSpace: 'rl:',
 });
 
 // Idempotency-Key support on opt-in mutating routes. Plugin installs
 // preHandler + onSend hooks; routes enable it via `config: { idempotency: true }`.
 await fastify.register(idempotencyPlugin);
-
-// BullMQ bull-board admin UI under /v1/admin/queues. No-op when Redis
-// is disabled. Must register BEFORE `aiRoutes` so its prefix lines up.
-await fastify.register(bullBoardPlugin);
 
 fastify.get('/health', async (request, reply) => {
   let dbOk = false;
@@ -98,24 +83,16 @@ fastify.get('/health', async (request, reply) => {
     fastify.log.warn({ err }, 'Health check DB ping failed');
   }
 
-  // Redis is optional in Stage 1 — treat "disabled" and "connected" as healthy,
-  // "enabled but unreachable" as degraded (surface it in the response but don't
-  // 503 the whole backend, features have fallbacks).
-  const redisStatus = await pingRedis();
-  const redisField = redisStatus.enabled
-    ? (redisStatus.ok ? 'ok' : 'down')
-    : 'disabled';
-
   if (!dbOk) {
-    return reply.code(503).send({ status: 'degraded', db: 'down', redis: redisField, timestamp: Date.now() });
+    return reply.code(503).send({ status: 'degraded', db: 'down', timestamp: Date.now() });
   }
-  return { status: 'ok', db: 'ok', redis: redisField, timestamp: Date.now() };
+  return { status: 'ok', db: 'ok', timestamp: Date.now() };
 });
 
 // All API routes live under /v1 so a future breaking change can bump to /v2.
 // /health stays at root (standard practice for orchestrator health probes).
-// /v1/auth runs the cookie-based refresh-token flow; refresh storage lives in
-// Redis so register/login/refresh return 503 when Redis is disabled.
+// /v1/auth runs the cookie-based refresh-token flow (Mongo-backed).
+// /v1/internal routes are Cloud Tasks handlers (OIDC-authenticated, no rate limit).
 await fastify.register(async function authScope(app) {
   app.addHook('onRoute', (routeOptions) => {
     routeOptions.config = { ...routeOptions.config, rateLimit: { max: 10, timeWindow: '1 minute' } };
@@ -178,25 +155,10 @@ await fastify.register(async function gameDataScope(app) {
   app.register(gameDataRoutes);
 }, { prefix: '/v1/game-data' });
 
+// Cloud Tasks handler (OIDC-auth, no rate limit — dispatch rate controlled by queue config)
+await fastify.register(internalRoutes, { prefix: '/v1/internal' });
+
 startRoomCleanup();
-
-// Touch the Redis singleton so the lazy client kicks off its initial connect
-// attempt during boot instead of waiting for the first feature call. Safe
-// when REDIS_URL is empty — `getRedisClient()` just returns null.
-if (isRedisEnabled()) {
-  getRedisClient();
-  fastify.log.info('[redis] enabled — connecting in background');
-} else {
-  fastify.log.info('[redis] disabled (REDIS_URL not set) — features will use in-memory fallbacks');
-}
-
-// Start BullMQ workers in-process unless the process is the dedicated worker
-// container (WORKER_MODE=1 — handled by workers/aiWorker.js standalone
-// entrypoint). On single-VM Prod-A it's fine to run them alongside the HTTP
-// server; when scaling out, set WORKER_MODE=1 on a second container.
-if (!config.workerMode && isRedisEnabled()) {
-  startWorkers();
-}
 
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
@@ -261,26 +223,6 @@ async function gracefulShutdown(signal) {
     fastify.log.info(`[shutdown] closed ${closedCount} WebSocket connections`);
   } catch (err) {
     fastify.log.warn({ err }, '[shutdown] failed to close sockets');
-  }
-
-  try {
-    await stopWorkers();
-    fastify.log.info('[shutdown] workers stopped');
-  } catch (err) {
-    fastify.log.warn({ err }, '[shutdown] failed to stop workers');
-  }
-
-  try {
-    await closeAllQueues();
-    fastify.log.info('[shutdown] queues closed');
-  } catch (err) {
-    fastify.log.warn({ err }, '[shutdown] failed to close queues');
-  }
-
-  try {
-    await closeRedis();
-  } catch (err) {
-    fastify.log.warn({ err }, '[shutdown] failed to close redis');
   }
 
   const forceExit = setTimeout(() => {

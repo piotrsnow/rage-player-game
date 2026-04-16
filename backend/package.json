@@ -6,7 +6,6 @@
     "setup": "node scripts/setup.js",
     "postinstall": "npx prisma generate",
     "start": "node src/server.js",
-    "worker": "node src/workers/aiWorker.js",
     "db:migrate": "npx prisma migrate dev",
     "db:push": "npx prisma db push",
     "db:studio": "npx prisma studio",
@@ -19,8 +18,6 @@
     "import:prefabs:scan-gcp:dry": "node scripts/importPrefabsFromModels3d.js --scan-gcp --dry-run"
   },
   "dependencies": {
-    "@bull-board/api": "^7.0.0",
-    "@bull-board/fastify": "^7.0.0",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/helmet": "^13.0.2",
@@ -32,11 +29,11 @@
     "@google-cloud/storage": "^7.0.0",
     "@prisma/client": "^6.0.0",
     "bcrypt": "^5.1.1",
-    "bullmq": "^5.73.5",
     "dotenv": "^16.4.0",
     "fastify": "^5.0.0",
     "fastify-plugin": "^5.1.0",
-    "ioredis": "^5.10.1",
+    "@google-cloud/tasks": "^5.0.0",
+    "jose": "^6.0.0",
     "mongodb": "^7.1.1",
     "node-fetch": "^3.3.2",
     "sharp": "^0.34.5"

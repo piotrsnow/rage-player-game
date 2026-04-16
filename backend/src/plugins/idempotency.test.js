@@ -1,18 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify from 'fastify';
 
-// Fake Redis client shared across tests. Reset in beforeEach.
-const fakeRedis = {
-  set: vi.fn(),
-  get: vi.fn(),
-  del: vi.fn(),
-};
-
-vi.mock('../services/redisClient.js', () => ({
-  isRedisEnabled: vi.fn(() => true),
-  getRedisClient: vi.fn(() => fakeRedis),
-}));
-
 import { idempotencyPlugin } from './idempotency.js';
 
 // Build a tiny Fastify app with:
@@ -52,13 +40,10 @@ async function buildApp() {
   return app;
 }
 
-describe('idempotencyPlugin', () => {
+describe('idempotencyPlugin (in-memory)', () => {
   let app;
 
   beforeEach(async () => {
-    fakeRedis.set.mockReset();
-    fakeRedis.get.mockReset();
-    fakeRedis.del.mockReset();
     app = await buildApp();
   });
 
@@ -74,8 +59,6 @@ describe('idempotencyPlugin', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(200);
-    expect(fakeRedis.set).not.toHaveBeenCalled();
-    expect(fakeRedis.get).not.toHaveBeenCalled();
   });
 
   it('skips the plugin when header is missing', async () => {
@@ -86,7 +69,6 @@ describe('idempotencyPlugin', () => {
       payload: { hello: 'world' },
     });
     expect(res.statusCode).toBe(200);
-    expect(fakeRedis.set).not.toHaveBeenCalled();
   });
 
   it('skips the plugin for unauthenticated requests even with header', async () => {
@@ -97,132 +79,68 @@ describe('idempotencyPlugin', () => {
       payload: { hello: 'world' },
     });
     expect(res.statusCode).toBe(200);
-    expect(fakeRedis.set).not.toHaveBeenCalled();
   });
 
-  it('first request claims the key with SET NX + pending marker', async () => {
-    fakeRedis.set.mockResolvedValueOnce('OK'); // the NX claim
-    fakeRedis.set.mockResolvedValueOnce('OK'); // the completed write in onSend
+  it('first request succeeds and second replays the cached response', async () => {
+    const headers = { 'x-test-user-id': 'u1', 'idempotency-key': 'key1' };
 
-    const res = await app.inject({
+    const first = await app.inject({
       method: 'POST',
       url: '/idem',
-      headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'abc' },
+      headers,
       payload: { hello: 'world' },
     });
+    expect(first.statusCode).toBe(200);
+    expect(JSON.parse(first.payload)).toEqual({ ok: true, received: { hello: 'world' } });
 
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual({ ok: true, received: { hello: 'world' } });
-
-    // First call: the NX claim with pending marker, 60s TTL.
-    const [claimKey, claimValue, ex1, ttl1, nx] = fakeRedis.set.mock.calls[0];
-    expect(claimKey).toBe('idem:u1:abc');
-    expect(claimValue).toBe('__pending__');
-    expect(ex1).toBe('EX');
-    expect(ttl1).toBe(60);
-    expect(nx).toBe('NX');
-
-    // Second call: the completed cache write, 24h TTL, no NX (overwrite).
-    const [cacheKey, cacheValue, ex2, ttl2] = fakeRedis.set.mock.calls[1];
-    expect(cacheKey).toBe('idem:u1:abc');
-    const parsed = JSON.parse(cacheValue);
-    expect(parsed.statusCode).toBe(200);
-    expect(parsed.body).toEqual({ ok: true, received: { hello: 'world' } });
-    expect(ex2).toBe('EX');
-    expect(ttl2).toBe(24 * 60 * 60);
-  });
-
-  it('second request with completed cache replays the cached response', async () => {
-    // Claim fails (NX returns null) — key already exists.
-    fakeRedis.set.mockResolvedValueOnce(null);
-    // GET returns the completed cache.
-    fakeRedis.get.mockResolvedValueOnce(JSON.stringify({
-      statusCode: 200,
-      contentType: 'application/json; charset=utf-8',
-      body: { ok: true, received: { replayed: true } },
-    }));
-
-    const res = await app.inject({
+    const second = await app.inject({
       method: 'POST',
       url: '/idem',
-      headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'abc' },
-      payload: { hello: 'world' },
+      headers,
+      payload: { different: 'body' },
     });
-
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual({ ok: true, received: { replayed: true } });
-    expect(res.headers['idempotent-replay']).toBe('true');
-  });
-
-  it('second request while first is pending returns 409 Conflict', async () => {
-    fakeRedis.set.mockResolvedValueOnce(null);
-    fakeRedis.get.mockResolvedValueOnce('__pending__');
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/idem',
-      headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'abc' },
-      payload: { hello: 'world' },
-    });
-
-    expect(res.statusCode).toBe(409);
-    const body = JSON.parse(res.payload);
-    expect(body.error).toBe('Conflict');
-    expect(body.idempotencyKey).toBe('abc');
+    expect(second.statusCode).toBe(200);
+    expect(JSON.parse(second.payload)).toEqual({ ok: true, received: { hello: 'world' } });
+    expect(second.headers['idempotent-replay']).toBe('true');
   });
 
   it('releases the pending lock on non-2xx response so retries can proceed', async () => {
-    fakeRedis.set.mockResolvedValueOnce('OK');
-    fakeRedis.del.mockResolvedValueOnce(1);
+    const headers = { 'x-test-user-id': 'u1', 'idempotency-key': 'err-key' };
 
-    const res = await app.inject({
+    const first = await app.inject({
       method: 'POST',
       url: '/idem-400',
-      headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'abc' },
+      headers,
       payload: {},
     });
+    expect(first.statusCode).toBe(400);
 
-    expect(res.statusCode).toBe(400);
-    expect(fakeRedis.del).toHaveBeenCalledWith('idem:u1:abc');
-    // Only the initial claim — no completed write.
-    expect(fakeRedis.set).toHaveBeenCalledTimes(1);
+    // Retry should be able to run the handler again (not replay)
+    const second = await app.inject({
+      method: 'POST',
+      url: '/idem-400',
+      headers,
+      payload: {},
+    });
+    expect(second.statusCode).toBe(400);
+    expect(second.headers['idempotent-replay']).toBeUndefined();
   });
 
   it('namespaces key per user — same idempotency-key for different users does not collide', async () => {
-    fakeRedis.set.mockResolvedValue('OK');
-
-    await app.inject({
+    const res1 = await app.inject({
       method: 'POST',
       url: '/idem',
       headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'same-uuid' },
-      payload: {},
+      payload: { user: 'one' },
     });
-    await app.inject({
+    const res2 = await app.inject({
       method: 'POST',
       url: '/idem',
       headers: { 'x-test-user-id': 'u2', 'idempotency-key': 'same-uuid' },
-      payload: {},
+      payload: { user: 'two' },
     });
 
-    const claimKeys = fakeRedis.set.mock.calls
-      .filter((call) => call[4] === 'NX')
-      .map((call) => call[0]);
-    expect(claimKeys).toContain('idem:u1:same-uuid');
-    expect(claimKeys).toContain('idem:u2:same-uuid');
-  });
-
-  it('falls through without dedup when redis.set throws during claim', async () => {
-    fakeRedis.set.mockRejectedValueOnce(new Error('connection refused'));
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/idem',
-      headers: { 'x-test-user-id': 'u1', 'idempotency-key': 'abc' },
-      payload: { hello: 'world' },
-    });
-
-    // Handler still ran — plugin degraded gracefully.
-    expect(res.statusCode).toBe(200);
-    expect(JSON.parse(res.payload)).toEqual({ ok: true, received: { hello: 'world' } });
+    expect(JSON.parse(res1.payload).received.user).toBe('one');
+    expect(JSON.parse(res2.payload).received.user).toBe('two');
   });
 });
