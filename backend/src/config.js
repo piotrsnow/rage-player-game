@@ -42,10 +42,10 @@ export const config = {
   // Cloud Run / Cloud Tasks — used for post-scene async work dispatch.
   // CLOUD_TASKS_ENABLED=false → inline fire-and-forget fallback (local dev).
   gcpProjectId: process.env.GCP_PROJECT_ID || '',
-  gcpRegion: process.env.GCP_REGION || 'europe-central2',
+  gcpRegion: process.env.GCP_REGION || 'europe-west1',
   cloudTasksEnabled: process.env.CLOUD_TASKS_ENABLED === 'true',
   // Cloud Run service URL — needed for Cloud Tasks callback. Set once after first deploy:
-  //   gcloud run services describe rage-player-game --region europe-central2 --format 'value(status.url)'
+  //   gcloud run services describe rage-player-game --region europe-west1 --format 'value(status.url)'
   selfUrl: process.env.SELF_URL || '',
   runtimeServiceAccount: process.env.RUNTIME_SERVICE_ACCOUNT || '',
 

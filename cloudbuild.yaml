@@ -27,10 +27,10 @@ steps:
       - '--port=8080'
       - '--service-account=rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com'
       - '--min-instances=0'
-      - '--max-instances=3'
+      - '--max-instances=1'
       - '--concurrency=80'
       - '--cpu=2'
-      - '--memory=2Gi'
+      - '--memory=512Mi'
       - '--timeout=3600'
       - '--session-affinity'
       - '--cpu-boost'
@@ -39,9 +39,8 @@ steps:
       - '--set-secrets=JWT_SECRET=rpgon-jwt-secret:latest,API_KEY_ENCRYPTION_SECRET=rpgon-encryption-secret:latest,DATABASE_URL=rpgon-database-url:latest,GCS_BUCKET_NAME=rpgon-gcs-bucket:latest,OPENAI_API_KEY=rpgon-openai-api-key:latest,ANTHROPIC_API_KEY=rpgon-anthropic-api-key:latest,ELEVENLABS_API_KEY=rpgon-elevenlabs-api-key:latest,STABILITY_API_KEY=rpgon-stability-api-key:latest,GEMINI_API_KEY=rpgon-gemini-api-key:latest,MESHY_API_KEY=rpgon-meshy-api-key:latest'
 
 substitutions:
-  _REGION: 'europe-central2'
-  # Set after first deploy: gcloud run services describe rage-player-game --region europe-central2 --format 'value(status.url)'
-  _SELF_URL: ''
+  _REGION: 'europe-west1'
+  _SELF_URL: 'https://rage-player-game-152180839448.europe-west1.run.app'
 
 images:
   - 'gcr.io/$PROJECT_ID/rpgon:$SHORT_SHA'
