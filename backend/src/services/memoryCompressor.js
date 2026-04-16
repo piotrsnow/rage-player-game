@@ -15,7 +15,7 @@ const log = childLogger({ module: 'memoryCompressor' });
 
 // ── NANO MODEL CALLER (provider-aware) ──
 
-async function callNano(systemPrompt, userPrompt, provider, { timeoutMs } = {}) {
+async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200 } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();
@@ -26,18 +26,18 @@ async function callNano(systemPrompt, userPrompt, provider, { timeoutMs } = {}) 
     // never triggers Claude Haiku calls and vice versa. If the preferred provider
     // has no key configured, fall back to whichever key is available.
     if (provider === 'anthropic') {
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal);
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal);
+      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
       return null;
     }
     if (provider === 'openai') {
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal);
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
+      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
       return null;
     }
     // No explicit preference — keep legacy behavior (Anthropic first)
-    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal);
-    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal);
+    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
+    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
     return null;
   } catch (err) {
     if (err?.name === 'AbortError') {
@@ -50,7 +50,7 @@ async function callNano(systemPrompt, userPrompt, provider, { timeoutMs } = {}) 
   }
 }
 
-async function callNanoOpenAI(systemPrompt, userPrompt, signal) {
+async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens = 200) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -64,7 +64,7 @@ async function callNanoOpenAI(systemPrompt, userPrompt, signal) {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0,
-      max_tokens: 200,
+      max_tokens: maxTokens,
       response_format: { type: 'json_object' },
     }),
     signal,
@@ -77,7 +77,7 @@ async function callNanoOpenAI(systemPrompt, userPrompt, signal) {
   return JSON.parse(content);
 }
 
-async function callNanoAnthropic(systemPrompt, userPrompt, signal) {
+async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens = 200) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -87,7 +87,7 @@ async function callNanoAnthropic(systemPrompt, userPrompt, signal) {
     },
     body: JSON.stringify({
       model: config.aiModels.nano.anthropic,
-      max_tokens: 200,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
         { role: 'user', content: userPrompt },
@@ -107,20 +107,37 @@ async function callNanoAnthropic(systemPrompt, userPrompt, signal) {
 
 // ── RUNNING SUMMARY ──
 
-const RUNNING_SUMMARY_SYSTEM = `You extract key story facts from RPG scene narratives.
-Given the narrative and current summary, return JSON:
+const RUNNING_SUMMARY_SYSTEM = `You extract PLOT-RELEVANT facts and state changes from RPG scene narratives.
+Return JSON:
 {
-  "new_facts": ["fact1", "fact2"],
-  "remove_facts": ["outdated fact to remove"],
-  "dominated": true/false
+  "new_facts": ["fact1"],
+  "remove_facts": ["outdated fact"],
+  "dominated": true/false,
+  "journal": "summary" or null,
+  "knowledge_events": [{"summary":"","importance":"low/medium/high","tags":[]}],
+  "knowledge_decisions": [{"choice":"","consequence":""}],
+  "world_facts": [""],
+  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|faction|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
+  "needs_restoration": {"hunger":50} or null
 }
 
+CRITICAL — what IS a fact vs what is NOT:
+- FACT: "Grimwald learned from Marta that Barbara lives in Czarnokorzeń" (new information, plot progress)
+- FACT: "Grimwald defeated 3 bandits on the road to Brost" (state change, combat consequence)
+- FACT: "Marta refused to reveal how she knows about Barbara" (NPC relationship change, blocked info)
+- NOT A FACT: "People at the fire flinched" (atmospheric description, no plot impact)
+- NOT A FACT: "Grimwald asked about Mazak" (player action with no answer/result = nothing happened)
+- NOT A FACT: "The wind tugged at banners" (scenery, literary flavor)
+
 Rules:
-- "dominated": true if the scene has NO plot impact (e.g. "I do a backflip", "I look around", "I drink beer" with no new info). Set new_facts to [] for dominated scenes.
-- "dominated": false if the scene advances plot, introduces NPCs, reveals info, changes character state, or has combat/quest consequences.
-- Each fact should be 1 short sentence capturing what happened and why it matters.
-- Max 3 new_facts per scene.
-- remove_facts: only list facts from the current summary that are now contradicted or superseded.`;
+- "dominated": true if scene has NO new information, NO state change, NO NPC reveals, NO combat result. A dramatic question with no answer = dominated.
+- new_facts: max 3. Each must contain WHO did WHAT with WHAT RESULT. If no result → no fact.
+- remove_facts: only facts now contradicted/superseded by this scene.
+- journal: null unless scene had significant plot events. 1-2 sentences max.
+- knowledge_events/decisions: only for key story moments with consequences. [] if nothing.
+- world_facts: concrete new world information (place names, political facts, lore). NOT atmosphere or description. [] if nothing.
+- codex_fragments: lore explicitly revealed through NPC dialogue. [] if no NPC shared knowledge.
+- needs_restoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.`;
 
 /**
  * Compress a scene narrative into running summary facts.
@@ -134,9 +151,15 @@ function isDominatedScene(narrative, playerAction) {
   return false;
 }
 
+/**
+ * Compress a scene narrative into running summary facts AND extract state
+ * changes (journal, knowledge, world facts, codex, needs restoration).
+ * Called async after each scene generation. Returns extracted state for
+ * the caller to process.
+ */
 export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs } = {}) {
   if (isDominatedScene(narrative, playerAction)) {
-    return;
+    return null;
   }
 
   try {
@@ -145,10 +168,24 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
       where: { id: campaignId },
       select: { coreState: true },
     });
-    if (!campaign) return;
+    if (!campaign) return null;
 
     const coreState = JSON.parse(campaign.coreState);
     const currentSummary = coreState.gameStateSummary || [];
+
+    // Include codex summary so nano avoids duplicate fragments
+    const codexSummary = (coreState.world?.codexSummary || [])
+      .slice(0, 5)
+      .map(e => `${e.name}: known=${(e.knownAspects || []).join(',')}`)
+      .join('; ');
+
+    // Include active quest names + current objectives for context
+    const activeQuests = coreState.quests?.active || [];
+    const questContext = activeQuests.slice(0, 3).map(q => {
+      const remaining = (q.objectives || []).filter(o => !o.completed);
+      const nextObj = remaining.length > 0 ? remaining[0].description : 'all done';
+      return `${q.name}: ${nextObj}`;
+    }).join('; ');
 
     const userPrompt = `Player action: "${playerAction || 'N/A'}"
 
@@ -156,26 +193,23 @@ Narrative:
 ${(narrative || '').slice(0, 1000)}
 
 Current summary (${currentSummary.length} facts):
-${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}`;
+${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}`;
 
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs });
-    if (!result) return;
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500 });
+    if (!result) return null;
 
     if (result.dominated) {
-      // Trivial scene — don't update summary
-      return;
+      return null;
     }
 
-    // Apply updates
+    // Apply summary updates
     let updated = [...currentSummary];
 
-    // Remove superseded facts
     if (result.remove_facts?.length) {
       const toRemove = new Set(result.remove_facts.map(f => f.toLowerCase()));
       updated = updated.filter(f => !toRemove.has(f.toLowerCase()));
     }
 
-    // Add new facts
     if (result.new_facts?.length) {
       for (const fact of result.new_facts) {
         if (typeof fact === 'string' && fact.trim()) {
@@ -184,19 +218,56 @@ ${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}`;
       }
     }
 
-    // Cap at 15 most recent facts
     if (updated.length > 15) {
       updated = updated.slice(-15);
     }
 
-    // Save back to coreState
     coreState.gameStateSummary = updated;
+
+    // Apply world facts to coreState
+    if (result.world_facts?.length) {
+      if (!coreState.world) coreState.world = {};
+      if (!coreState.world.worldFacts) coreState.world.worldFacts = [];
+      for (const wf of result.world_facts) {
+        if (typeof wf === 'string' && wf.trim()) {
+          coreState.world.worldFacts.push(wf.trim());
+        }
+      }
+    }
+
+    // Apply journal entries to coreState
+    if (result.journal && typeof result.journal === 'string') {
+      if (!coreState.journalEntries) coreState.journalEntries = [];
+      coreState.journalEntries.push(result.journal);
+    }
+
+    // Apply needs restoration to character
+    if (result.needs_restoration && typeof result.needs_restoration === 'object') {
+      const char = coreState.character;
+      if (char?.needs) {
+        for (const [key, delta] of Object.entries(result.needs_restoration)) {
+          if (key in char.needs && typeof delta === 'number' && delta > 0) {
+            char.needs[key] = Math.min(100, (char.needs[key] ?? 0) + delta);
+          }
+        }
+      }
+    }
+
     await prisma.campaign.update({
       where: { id: campaignId },
       data: { coreState: JSON.stringify(coreState) },
     });
+
+    // Return extracted state for further processing (knowledge, codex)
+    return {
+      knowledgeUpdates: (result.knowledge_events?.length || result.knowledge_decisions?.length)
+        ? { events: result.knowledge_events || [], decisions: result.knowledge_decisions || [] }
+        : null,
+      codexUpdates: result.codex_fragments || [],
+    };
   } catch (err) {
     log.error({ err }, 'Memory compression failed');
+    return null;
   }
 }
 

@@ -146,7 +146,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       needsSystemEnabled,
       characterNeeds,
       sceneCount,
-      skipToolProtocol: true,
+      intentResult,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {

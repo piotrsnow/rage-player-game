@@ -1,4 +1,5 @@
 import { BESTIARY_RACES } from '../../data/equipment/index.js';
+import { SKILL_BY_NAME } from '../diceResolver.js';
 import {
   difficultyLabel,
   narrativeLabel,
@@ -8,6 +9,7 @@ import {
 } from './labels.js';
 
 const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
+const ATTR_SHORT = { sila: 'SIL', inteligencja: 'INT', charyzma: 'CHA', zrecznosc: 'ZRC', wytrzymalosc: 'WYT', szczescie: 'SZC' };
 
 /**
  * Build a lean system prompt from the campaign's core state and recent scenes.
@@ -19,9 +21,10 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   needsSystemEnabled = false,
   characterNeeds = null,
   sceneCount = 0,
-  skipToolProtocol = false,
+  intentResult = {},
 } = {}) {
   const cs = coreState;
+  const intent = intentResult._intent || 'freeform';
   const campaign = cs.campaign || {};
   const character = cs.character || {};
   const world = cs.world || {};
@@ -39,23 +42,17 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     `CORE RULES:
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill, find its level from PC Skills above, find its linked attribute value from PC Attributes above. Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success.
-- Skill→Attribute lookup: find the skill name in PC Skills (e.g. Skradanie:4 → skill_level=4). Linked attribute:
-  SIL: Walka wrecz, Walka bronia jednoręczna, Walka bronia dwureczna, Zastraszanie, Atletyka
-  ZRC: Strzelectwo, Uniki, Akrobatyka, Jezdziectwo, Skradanie, Otwieranie zamkow, Kradziez kieszonkowa, Pulapki i mechanizmy
-  CHA: Perswazja, Blef, Handel, Przywodztwo, Wystepy
-  INT: Wiedza ogolna, Wiedza o potworach, Wiedza o naturze, Medycyna, Alchemia, Rzemioslo, Spostrzegawczosc, Tropienie
-  WYT: Przetrwanie, Odpornosc
-  SZC: Fart, Hazard, Przeczucie
-  Read attribute value from PC Attributes (e.g. ZRC:13 → attr=13). If skill not in PC Skills → skill_level=0.
-- Include results in TOP-LEVEL diceRolls array (max 3): [{skill, difficulty, success}]. Backend calculates full details. diceRolls is NOT nested in stateChanges.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
+- Include results in diceRolls array (max 3) — format in RESPONSE section.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
 - NPC disposition: engine calculates bonuses. Reflect attitude in narration (≥15=friendly, ≤-15=hostile). Trust builds slow, breaks fast.
 - Currency: 1GC=10SS=100CP. stateChanges.moneyChange for purchase costs (negative deltas). For income/loot use stateChanges.rewards with type:'money'. Engine validates affordability.
 - Character XP is NOT awarded per scene. It cascades automatically from skill level-ups and from completed quest rewards (quest.reward.xp). Do not emit stateChanges.xp.
 - The world is grim and perilous. Death is real. Consequences are lasting.
-- creativityBonus (TOP-LEVEL, integer 0-10): nagroda za KREATYWNOŚĆ gracza w opisie własnej akcji. Stosuje się WYŁĄCZNIE gdy gracz wpisał własną akcję (player_input_kind=custom). Dla wybranych z listy (suggested) lub auto-graczy (auto) ZAWSZE 0. Skala: 0=brak/banalna, 1-3=lekka inwencja (konkretny szczegół, użycie środowiska), 4-6=sprytne podejście (sprytna taktyka, nieoczywiste rozwiązanie), 7-9=wybitna pomysłowość (zaskakujące połączenie, błyskotliwy plan), 10=mistrzostwo (genialne, niespodziewane rozegranie). Nie nagradzaj długich opisów bez treści — liczy się jakość pomysłu, nie ilość słów. Bonus dodaje się DO wyniku skill checka (zwiększa total, może zmienić failure→success). Jeśli scena nie ma skill checka, pole i tak emituj ale nie zmieni nic mechanicznie.`,
+- creativityBonus (TOP-LEVEL, int 0-10): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
+  0=none | 1-3=detail/environment use | 4-6=clever tactic | 7-9=brilliant combo | 10=genius.
+  Quality > length. Adds to skill check total.`,
   );
 
   // ── SCENE PACING ──
@@ -98,83 +95,25 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
 - questUpdates: after writing dialogueSegments, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
 - Quest completion: ONLY add to completedQuests when ALL objectives done AND player talked to turn-in NPC in this scene. Never auto-complete.
-- rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare' (optional — engine picks if omitted). category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'quest_reward'|'found'|'gift'. Engine resolves into concrete items. Do NOT specify item names — just type and tier. Examples: [{type:'weapon',rarity:'uncommon',context:'loot'}], [{type:'material',category:'herb',quantity:'few',context:'found'}], [{type:'money',context:'quest_reward'}].
-- newItems: ONLY for unique quest/story items not in catalogs (quest MacGuffins, keys, letters, named artifacts). Include {id,name,type,description,rarity}. For weapons/armor quest rewards: name MUST match get_equipment_catalog.
-- MANA CRYSTALS: rare consumable that lets the player choose ONE of: +1 max mana OR +1 to any attribute (Siła/Inteligencja/Charyzma/Zręczność/Wytrzymałość/Szczęście, cap 25). Format: {id,name:"Kryształ Many",type:"manaCrystal",rarity:"rare",description:"..."}. Mana.max and attributes NEVER grow from leveling, training, or spellcasting — attribute growth happens ONLY via crystals (or character creation points). Drop rarely (roughly 1 in 20 rare-tier loot rolls) in magical/dungeon/ancient/planar locations or from wizard/cultist/magical-creature defeats. Do NOT drop in mundane contexts (taverns, farms, common bandits). Emit via newItems, not rewards.
+- rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'quest_reward'|'found'|'gift'. Do NOT specify item names — just type and tier.
+- newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
 - removeItems: only items in character's inventory.
-- moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. Engine validates affordability. For income/loot use rewards with type:'money'.
-- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, factionId, relationships:[{npcName,type}], canTrain}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
-- canTrain: array of skill names (from the skill list) this NPC can teach the PC. ONLY emit when narratively justified: the NPC is an experienced practitioner (veteran warrior, master smith, old scout, temple adept, guild instructor) AND is disposed friendly enough to accept a student. Pick 1-3 skills that match their background. Do NOT set canTrain on random merchants, peasants, or hostile NPCs. Once set, the player gets a UI button to train with them — treat it as a persistent offer.
-- combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. PREFERRED: use enemyHints and let the engine select enemies from the bestiary. budget=threat points (1-2 trivial, 3-4 low, 5-7 medium, 8-12 hard, 13-20 deadly). maxDifficulty=cap on individual enemy tier. race=optional filter (${BESTIARY_RACES_STR}). Fallback: {active:true, enemies:[{name}], reason} with exact bestiary names.
-- pendingThreat: {race,budget,maxDifficulty,count,description}. Use when building tension ("something approaches") without starting combat yet. Backend stores this and uses it when combat actually triggers.
-- codexUpdates: [{id, name, category, fragment:{content,source,aspect}, tags}] when player learns lore.
-- knowledgeUpdates: {events:[{summary, importance, tags}], decisions:[{choice, consequence}]} for key story moments.
-- journalEntries: 1-3 concise summaries of important events only.
+- moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
+- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - currentLocation: update when player moves.
-- factionChanges: {faction_id: delta} when actions affect a faction. IDs: merchants_guild, thieves_guild, temple_sigmar, temple_morr, military, noble_houses, chaos_cults, witch_hunters, wizards_college, peasant_folk.
-- worldFacts: strings of new information for world state.
-- woundsChange: delta (negative=damage, positive=healing).
-- manaChange: delta for mana (negative when casting). spellUsage: {"spellName": 1}.
-- skillsUsed: ["SkillName"] — skills the PC used in this action. Pick from known RPG skills. Max 3.
-- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme" — estimated difficulty of the PC's action.
-- diceRolls (TOP-LEVEL field, not nested here): [{skill, difficulty, success}] — self-resolved skill checks using pre-rolled d50 (see user prompt). Max 3. Only include if pre-rolled values were provided and action has genuine risk.
-- needsChanges: DELTAS when character eats/drinks/rests/bathes/toilets. {hunger,thirst,bladder,hygiene,rest}. Only apply if needs system is active (see dynamic state below).
-- campaignEnd: {status:"completed"|"failed", epilogue:"2-3 para"} — only for definitive campaign conclusions.`,
+- skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".`,
   );
 
   // ── ACTION FEASIBILITY ──
   staticSections.push(
     `ACTION RULES:
 - Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
-- Routine (eating, resting, looking): auto-success, apply needsChanges if needs system active.
+- Routine (eating, resting, looking): auto-success.
 - Uncertain: engine resolves checks. Narrate the result from user prompt.
 - Item validation: character can ONLY use items in their Inventory. Fail if item not possessed.
 - Item/money acquisition: if dialogueSegments say character gains anything, stateChanges MUST match. No exceptions.`,
   );
-
-  // ── CODEX RULES ──
-  staticSections.push(
-    `CODEX RULES:
-- Each NPC reveals ONE fragment per interaction. Never dump lore — drip-feed it.
-- Aspect depends on NPC role: scholars/wizards→history/technical/political, peasants→rumor (may be inaccurate), soldiers/guards→location/weakness, merchants→technical/description, nobles→political/history.
-- Some knowledge (especially weaknesses) requires the RIGHT source NPC — not everyone knows everything.
-- The "ALREADY DISCOVERED" section below lists what the player has previously uncovered. Do NOT repeat known aspects — reveal NEW information only.
-- Call get_codex_entry() to check full fragment details before adding codexUpdates to existing entries.
-- Use relatedEntries to link connected codex items (weapon→creator, place→faction, etc.).
-- Max 10 fragments per entry.`,
-  );
-
-  // ── MANDATORY TOOL PROTOCOL (skipped in 2-stage pipeline) ──
-  if (!skipToolProtocol) {
-    staticSections.push(
-      `MANDATORY TOOL PROTOCOL:
-MUST call before generating the scene:
-1. Combat start → prefer enemyHints in combatUpdate (engine selects from bestiary). Use get_bestiary() only if you need to review available enemies.
-2. First visit at new location → get_location_history()
-3. Player references past events (not in Recent History) → search_campaign_memory()
-4. Player asks about lore/artifacts → get_codex_entry()
-5. Adding codexUpdates to existing entry → get_codex_entry() to check existing fragments
-6. Item reward or loot with weapons/armor → get_equipment_catalog()
-SHOULD call when beneficial:
-7. Extended NPC dialogue (3+ rounds) → get_npc_details() for personality/speech patterns
-8. Quest-related scenes → get_quest_details() for full objective details
-DO NOT call tools for:
-- Basic narration without NPC interaction
-- Actions in current location (use inline discoveries above)
-- NPCs already listed in "Key NPCs" section below
-IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems (quest items only) MUST exactly match names from get_equipment_catalog. For standard loot use stateChanges.rewards instead.`,
-    );
-
-    // ── PRE-FLIGHT CHECKLIST ──
-    staticSections.push(
-      `BEFORE GENERATING RESPONSE, check:
-- Am I at a new location? → call get_location_history()
-- Is an NPC speaking that I have no details for? → call get_npc_details()
-- Does the player reference old events not in Recent History? → call search_campaign_memory()
-- Is combat starting? → use enemyHints in combatUpdate (preferred) or get_bestiary() to review
-- Am I adding codexUpdates for an existing entry? → call get_codex_entry() first`,
-    );
-  }
 
   // ── RESPONSE FORMAT ──
   // FIELD ORDER MATTERS for streaming UX:
@@ -189,7 +128,7 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   //    the model rolls mechanics AFTER it has written the prose, so rewards /
   //    journal / questUpdates stay consistent with what was actually narrated.
   staticSections.push(
-    `RESPONSE: Return ONLY valid JSON. EMIT FIELDS IN THIS EXACT ORDER:
+    `RESPONSE: Return ONLY valid JSON in this field order:
 {
   "creativityBonus": 0,
   "diceRolls": [{"skill":"","difficulty":"","success":true}],
@@ -204,21 +143,78 @@ IMPORTANT: Weapon/armor names in combatUpdate.enemies and stateChanges.newItems 
   "questOffers": [],
   "cutscene": null,
   "dilemma": null,
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], journalEntries:[], currentLocation:"", ...}
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], currentLocation:"", ...}
 }
-diceRolls is a TOP-LEVEL field, NOT nested inside stateChanges. Emit it FIRST so the frontend can start the dice animation in parallel.
-npcsIntroduced comes SECOND. Include one entry for EVERY NPC who speaks in this scene for the first time (not listed in the NPCs section below). MUST be emitted BEFORE dialogueSegments so the frontend can assign a TTS voice based on gender before that NPC's first dialogue line streams in. Omit or use [] if no new NPCs speak. Do NOT include returning NPCs that already exist in the world.
-dialogueSegments comes THIRD so scene prose streams to the player immediately — write it BEFORE stateChanges, not after.
-stateChanges MUST be the LAST field. Fill it out AFTER you have written the full dialogueSegments, cross-checking rewards / journalEntries / questUpdates / newItems / moneyChange against what actually happens in the prose. Never emit stateChanges before the narrative prose is complete.
-There is NO separate "narrative" field — all scene prose lives in dialogueSegments. Do not emit narrative.
+diceRolls is TOP-LEVEL — NOT inside stateChanges.
+npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Omit or [] if none.
+stateChanges: cross-check rewards/quests against narrated prose.
 ${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest text in Polish. Only imagePrompt/soundEffect/musicPrompt in English.' : 'Write all text in English.'}`,
   );
+
+  // ── WORLD SETTING (campaign-constant, safe to cache) ──
+  const worldDesc = campaign.worldDescription || 'A dark fantasy world.';
+  staticSections.push(`World: ${worldDesc}${campaign.hook ? `\nHook: ${campaign.hook}` : ''}`);
 
   // ═══════════════════════════════════════════════════════════════
   // DYNAMIC SECTIONS — change per scene (character, world, quests).
   // Placed AFTER static prefix so caching works.
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
+
+  // ── CONDITIONAL RULES (intent-driven) ──
+  const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_scene']);
+  const LORE_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
+  const conditionalRules = [];
+
+  if (COMBAT_INTENTS.has(intent)) {
+    conditionalRules.push(
+      `COMBAT stateChanges:\n` +
+      `- combatUpdate: {active:true, enemyHints:{location,budget,maxDifficulty,count,race}, reason}. ` +
+      `budget: 1-2 trivial, 3-7 medium, 8-12 hard, 13-20 deadly. race: optional (${BESTIARY_RACES_STR}). ` +
+      `Fallback: {active:true, enemies:[{name}], reason}.\n` +
+      `- pendingThreat: {race,budget,maxDifficulty,count,description} for tension without combat.\n` +
+      `- woundsChange: delta (negative=damage, positive=healing).`,
+    );
+  }
+
+  if (LORE_INTENTS.has(intent)) {
+    conditionalRules.push(
+      `CODEX RULES:\n` +
+      `- Each NPC reveals ONE fragment per interaction. Drip-feed, never dump.\n` +
+      `- Aspect by NPC role: scholars→history/technical, peasants→rumor, soldiers→location/weakness, merchants→description, nobles→political.\n` +
+      `- DO NOT repeat already-discovered aspects — reveal NEW only. Max 10 fragments/entry.`,
+    );
+  }
+
+  const loc = (world.currentLocation || '').toLowerCase();
+  const magicalCtx = /jaskini|dungeon|ruin|wież|tower|crypt|temple|świątyni|portal|magiczn|arcane|nekromant|podziemn/.test(loc);
+  if (magicalCtx) {
+    conditionalRules.push(
+      `MANA CRYSTALS: rare consumable → +1 max mana OR +1 attribute (cap 25). ` +
+      `newItems type:"manaCrystal". Drop rarely (~1/20 rare loot) in magical/dungeon contexts only. ` +
+      `Attributes grow ONLY via crystals.`,
+    );
+  }
+
+  if (intent === 'talk' || intent === 'first_scene') {
+    conditionalRules.push(
+      `canTrain: in npcs stateChange, 1-3 skill names NPC can teach. ` +
+      `Only experienced, friendly NPCs. Not merchants/peasants/hostile.`,
+    );
+  }
+
+  const mainQuest = (quests.active || []).find(q => q.type === 'main');
+  const allMainDone = mainQuest?.objectives?.length > 0 && mainQuest.objectives.every(o => o.completed);
+  if (allMainDone) {
+    conditionalRules.push(
+      `MAIN QUEST COMPLETED. Focus on: side quests, character growth, loose ends, exploration. ` +
+      `No major plot progression. The world reacts to the hero's success.`,
+    );
+  }
+
+  if (conditionalRules.length > 0) {
+    dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
+  }
 
   // ── CAMPAIGN & DM SETTINGS ──
   const poeticism = sliderLabel(dmSettings.narratorPoeticism ?? 50, ['dry', 'moderate', 'poetic', 'lyrical']);
@@ -243,27 +239,29 @@ NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
 - Each NPC's speech derives from their own personality and notes fields below — NOT from narrator sliders.
 - Overall flavor follows the campaign tone "${campaign.tone || 'Dark'}" (Dark=grim/terse/weighted, Epic=grand/formal/heroic, Humorous=witty/playful/irreverent).
 - A peasant does not sound like a scholar. Match vocabulary and register to role/personality/notes.
-- Narrator poeticism/drama/humor DO NOT apply here — NPCs have their own voices.
-
-World: ${campaign.worldDescription || 'A dark fantasy world.'}
-${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
+- Narrator poeticism/drama/humor DO NOT apply here — NPCs have their own voices.`,
   );
 
   // ── CHARACTER STATE ──
   const charLines = [`PC: ${character.name || 'Unknown'} (${character.species || 'Human'})`];
-  if (character.attributes) {
-    const a = character.attributes;
-    charLines.push(`Attributes: SIL:${a.sila||0} INT:${a.inteligencja||0} CHA:${a.charyzma||0} ZRC:${a.zrecznosc||0} WYT:${a.wytrzymalosc||0} SZC:${a.szczescie||0}`);
-  }
+  const a = character.attributes || {};
   const mana = character.mana || { current: 0, max: 0 };
   charLines.push(`Wounds: ${character.wounds ?? 0}/${character.maxWounds ?? 0} | Mana: ${mana.current}/${mana.max}`);
   charLines.push(`Level: ${character.characterLevel || 1}`);
   if (character.skills && Object.keys(character.skills).length > 0) {
     const skillEntries = Object.entries(character.skills)
       .filter(([, v]) => (typeof v === 'object' ? v.level : v) > 0)
-      .map(([k, v]) => `${k}:${typeof v === 'object' ? v.level : v}`);
-    if (skillEntries.length) charLines.push(`Skills: ${skillEntries.join(', ')}`);
+      .map(([name, v]) => {
+        const level = typeof v === 'object' ? v.level : v;
+        const skill = SKILL_BY_NAME[name];
+        const attrKey = skill?.attribute;
+        const attrVal = attrKey ? (a[attrKey] || 0) : '?';
+        const short = ATTR_SHORT[attrKey] || '?';
+        return `${name}:${level}→${short}:${attrVal}`;
+      });
+    if (skillEntries.length) charLines.push(`Skills (skill:level→ATTR:value): ${skillEntries.join(', ')}`);
   }
+  charLines.push(`Attributes: SIL:${a.sila||0} INT:${a.inteligencja||0} CHA:${a.charyzma||0} ZRC:${a.zrecznosc||0} WYT:${a.wytrzymalosc||0} SZC:${a.szczescie||0}`);
   if (character.spells?.known?.length) {
     charLines.push(`Known spells: ${character.spells.known.join(', ')}`);
   }
@@ -335,7 +333,7 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
     dynamicSections.push(codexLines.join('\n'));
   }
 
-  // ── NEEDS SYSTEM ──
+  // ── NEEDS SYSTEM (crisis only — restoration handled by nano post-scene) ──
   if (needsSystemEnabled && characterNeeds) {
     const needNames = ['hunger', 'thirst', 'bladder', 'hygiene', 'rest'];
     const critNeeds = needNames.filter(k => (characterNeeds[k] ?? 100) < 10);
@@ -343,8 +341,6 @@ ${campaign.hook ? `Hook: ${campaign.hook}` : ''}`,
       const critLines = critNeeds.map(k => `${k}: ${characterNeeds[k] ?? 0}/100 CRITICAL`);
       dynamicSections.push(`NEEDS CRISIS: ${critLines.join(', ')}
 Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to related tests. At least 1 suggestedAction must address the most urgent need.`);
-    } else {
-      dynamicSections.push('Needs system active. All needs OK (>=10). Use stateChanges.needsChanges DELTAS when character eats/drinks/rests/bathes/toilets. Typical: meal +50-70 hunger, drink +40-60 thirst, sleep at inn→all 100.');
     }
   }
 
@@ -358,11 +354,15 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
       const turnIn = q.turnInNpcId || q.questGiverId;
       if (turnIn && turnIn !== q.questGiverId) line += ` | Turn in: ${turnIn}`;
       if (q.objectives?.length) {
-        const allDone = q.objectives.every(o => o.completed);
-        for (const obj of q.objectives) {
-          line += `\n  [${obj.completed ? 'X' : ' '}] ${obj.description}`;
+        const done = q.objectives.filter(o => o.completed);
+        const remaining = q.objectives.filter(o => !o.completed);
+        if (done.length > 0 && remaining.length > 0) {
+          line += `\n  (${done.length}/${q.objectives.length} completed)`;
         }
-        if (allDone) line += '\n  ALL DONE — ready to turn in';
+        for (const obj of remaining) {
+          line += `\n  [ ] ${obj.description}`;
+        }
+        if (remaining.length === 0) line += '\n  COMPLETED';
       }
       questLines.push(line);
     }
@@ -376,18 +376,28 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
     dynamicSections.push(`Recent Story Facts:\n${gameStateSummary.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
     if (recentScenes.length > 0) {
       const last = recentScenes[recentScenes.length - 1];
-      const action = last.chosenAction ? `Player: ${last.chosenAction}\n` : '';
-      const narrative = (last.narrative || '').length > 300
-        ? last.narrative.slice(0, 300) + '...'
-        : last.narrative;
-      dynamicSections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
+      if (gameStateSummary.length >= 5) {
+        // Facts are rich enough — just show what the player did
+        if (last.chosenAction) dynamicSections.push(`Last action: ${last.chosenAction}`);
+      } else {
+        // Early game — include short narrative for continuity
+        const action = last.chosenAction ? `Player: ${last.chosenAction}\n` : '';
+        const narrative = (last.narrative || '').length > 300
+          ? last.narrative.slice(0, 300) + '...'
+          : last.narrative;
+        dynamicSections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
+      }
     }
   } else if (recentScenes.length > 0) {
+    // Fallback for early game: 3 scenes, 300 chars, skip trivial
+    const TRIVIAL = new Set(['[WAIT]', '[CONTINUE]', '[IDLE_WORLD_EVENT]']);
+    const meaningful = recentScenes.filter(s => !TRIVIAL.has(s.chosenAction));
+    const scenes = (meaningful.length > 0 ? meaningful : recentScenes).slice(-3);
     const sceneLines = ['Recent History:'];
-    for (const scene of recentScenes) {
+    for (const scene of scenes) {
       const action = scene.chosenAction ? `Player: ${scene.chosenAction}\n` : '';
-      const narrative = (scene.narrative || '').length > 500
-        ? scene.narrative.slice(0, 500) + '...'
+      const narrative = (scene.narrative || '').length > 300
+        ? scene.narrative.slice(0, 300) + '...'
         : scene.narrative;
       sceneLines.push(`[Scene ${scene.sceneIndex}] ${action}${narrative}`);
     }

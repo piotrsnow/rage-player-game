@@ -28,22 +28,41 @@ export async function handlePostSceneWork({
   const stateChanges = scene.stateChanges ? JSON.parse(scene.stateChanges) : null;
   const narrative = scene.narrative;
 
-  const tasks = [
+  // Phase 1: parallel tasks — embedding, premium stateChanges, memory compression, location summary
+  const phase1Tasks = [
     generateSceneEmbedding(scene),
   ];
   if (stateChanges) {
-    tasks.push(processStateChanges(campaignId, stateChanges));
+    phase1Tasks.push(processStateChanges(campaignId, stateChanges));
   }
-  tasks.push(
+  phase1Tasks.push(
     compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs: llmNanoTimeoutMs }),
   );
   if (newLoc && prevLoc && newLoc !== prevLoc) {
-    tasks.push(
+    phase1Tasks.push(
       generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }),
     );
   }
 
-  const results = await Promise.allSettled(tasks);
+  const results = await Promise.allSettled(phase1Tasks);
+
+  // Phase 2: process nano-extracted knowledge/codex from compressSceneToSummary
+  // The compress call is at index 1 (if stateChanges) or 1 (if no stateChanges) — find it
+  const compressIdx = stateChanges ? 2 : 1;
+  const compressResult = results[compressIdx];
+  if (compressResult?.status === 'fulfilled' && compressResult.value) {
+    const nanoState = compressResult.value;
+    const nanoChanges = {};
+    if (nanoState.knowledgeUpdates) nanoChanges.knowledgeUpdates = nanoState.knowledgeUpdates;
+    if (nanoState.codexUpdates?.length) nanoChanges.codexUpdates = nanoState.codexUpdates;
+    if (Object.keys(nanoChanges).length > 0) {
+      try {
+        await processStateChanges(campaignId, nanoChanges);
+      } catch (err) {
+        log.warn({ err, campaignId }, 'Nano state extraction processing failed (non-fatal)');
+      }
+    }
+  }
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
     log.error(
