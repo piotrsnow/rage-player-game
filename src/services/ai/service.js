@@ -215,11 +215,6 @@ export const aiService = {
     let result = null;
     let buffer = '';
 
-    // Read until `complete` event, then return immediately. Post-complete
-    // events (quest_nano_update) are consumed in the background via onEvent
-    // so the frontend doesn't block on the nano model call.
-    let backgroundReader = null;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -246,32 +241,8 @@ export const aiService = {
         }
       }
 
-      if (gotComplete) {
-        backgroundReader = (async () => {
-          let bg = buffer;
-          try {
-            while (true) {
-              const { done: d, value: v } = await reader.read();
-              if (d) break;
-              bg += decoder.decode(v, { stream: true });
-              const bgLines = bg.split('\n');
-              bg = bgLines.pop();
-              for (const ln of bgLines) {
-                if (!ln.startsWith('data: ')) continue;
-                try {
-                  const ev = JSON.parse(ln.slice(6));
-                  if (onEvent) onEvent(ev);
-                } catch { /* skip */ }
-              }
-            }
-          } catch { /* stream closed */ }
-        })();
-        break;
-      }
+      if (gotComplete) break;
     }
-
-    // Silence unused-var lint; backgroundReader is intentionally orphaned.
-    void backgroundReader;
 
     if (!result) throw new Error('Stream ended without complete event');
 

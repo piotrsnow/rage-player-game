@@ -42,7 +42,7 @@ See [scene-generation.md](scene-generation.md).
 
 - [intentClassifier.js](../../backend/src/services/intentClassifier.js) — Stage 1 of two-stage pipeline (heuristic + nano fallback)
 - [aiContextTools.js](../../backend/src/services/aiContextTools.js) — Stage 2 (`assembleContext`) + legacy tool-use definitions
-- [memoryCompressor.js](../../backend/src/services/memoryCompressor.js) — post-scene nano fact extraction + running summaries + location summaries + quest objective checks
+- [memoryCompressor.js](../../backend/src/services/memoryCompressor.js) — post-scene nano: running summary facts + state extraction (journal, knowledge, codex, worldFacts, needs) in a single call + location summaries + quest objective checks
 - [aiJsonCall.js](../../backend/src/services/aiJsonCall.js) — shared single-shot JSON call helper (OpenAI + Anthropic non-streaming) with per-user key resolution
 - [aiErrors.js](../../backend/src/services/aiErrors.js) — `AIServiceError`, `AI_ERROR_CODES`, `parseProviderError`, `toClientAiError`
 

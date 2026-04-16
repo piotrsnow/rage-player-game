@@ -59,11 +59,11 @@ Runs **parallel** DB fetches (`Promise.all`) for exactly the categories the sele
 
 Runs **after** the scene completes (best-effort, fire-and-forget):
 
-- **`compressSceneToSummary(scene, coreState)`** — nano extracts 3-7 key facts from the scene narrative, appends to running facts list. **Hard cap: 15 facts per campaign** — stable input size (~7k tokens) regardless of campaign length. `Why 15`: past this cap, fact retention doesn't improve — nano drops the oldest facts naturally, and per-scene cost is <1¢.
+- **`compressSceneToSummary(campaignId, narrative, playerAction, ...)`** — nano extracts plot-relevant facts AND state changes from the scene narrative in a single call. Extracts: `new_facts` (max 3, appended to running summary), `journal` (1-2 sentence summary), `knowledge_events`/`knowledge_decisions`, `world_facts`, `codex_fragments` (lore from NPC dialogue), `needs_restoration` (eating/drinking/sleeping deltas). **Hard cap: 15 facts per campaign** — stable input size regardless of length. Returns extracted knowledge/codex for `processStateChanges` to persist to DB. The nano prompt includes active quest names + next objectives for context, and existing codex summary to avoid duplicates.
 - **`generateLocationSummary(locationName)`** — triggers on location change. Nano summarizes everything known about the new location into a terse block cached in `CampaignKnowledge`.
-- **`checkQuestObjectives(scene, activeQuests)`** — nano classifies whether any active quest objective was fulfilled by the scene's events. Emits `quest_nano_update` SSE event when matches found.
+Quest objective completion is now handled entirely by the large model via `questUpdates` in `stateChanges`. A deterministic safety-net on both FE (`applyStateChangesHandler`) and BE (`processQuestObjectiveUpdates`) auto-completes quests when all objectives are marked done. Manual `verifyQuestObjective` (FE) remains as a player-facing fallback.
 
-All three: silent on nano timeout, return empty/null.
+Both: silent on nano timeout, return empty/null.
 
 ## Why no token budget enforcement yet
 
@@ -76,9 +76,9 @@ All three: silent on nano timeout, return empty/null.
 
 Net effect: total prompt stays in the ~3.5-7k token range for typical scenes. A runaway selection could blow past that, but hasn't happened in practice. **Add explicit budget enforcement if scenes start hitting model context limits or cost spikes**.
 
-## Legacy tool-use loop
+## Legacy tool-use definitions
 
-`aiContextTools.js` also exports `CONTEXT_TOOLS_OPENAI` / `CONTEXT_TOOLS_ANTHROPIC` — tool definitions for the older AI→tool→AI function calling loop. **Not used by the current scene-gen pipeline** but kept around because a few non-scene paths (campaign creation, recap generation) still use it. When refactoring, preserve the exports.
+`aiContextTools.js` also exports `CONTEXT_TOOLS_OPENAI` / `CONTEXT_TOOLS_ANTHROPIC` — tool definitions for the older AI→tool→AI function calling loop. **Not used by the scene-gen pipeline** (tool protocol was removed — 2-stage nano+assembleContext is the only path). Kept around because a few non-scene paths (campaign creation, recap generation) still reference them. When refactoring, consider whether those paths can also switch to nano selection.
 
 ## When debugging context issues
 

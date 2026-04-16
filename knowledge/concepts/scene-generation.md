@@ -35,7 +35,7 @@ File: [backend/src/services/sceneGenerator/generateSceneStream.js](../../backend
 | 7 | Build prompts | `buildLeanSystemPrompt()` + `buildUserPrompt()` + `buildPreRollInstructions()` + `buildContextSection()` |
 | 8 | Streaming large model call | `runTwoStagePipelineStreaming()` — streams chunks via `onEvent({type:'chunk', text})` |
 | 9 | Post-parse | Backend parses the final JSON (`parseAIResponseLean`), validates via shared schemas, reconciles dice rolls, fills enemy stats from bestiary, processes state changes |
-| 10 | Side effects (async, best-effort) | `compressSceneToSummary()` (facts), `generateLocationSummary()` (on location change), `checkQuestObjectives()`, `generateSceneEmbedding()` |
+| 10 | Side effects (async, best-effort) | `compressSceneToSummary()` (facts + journal/knowledge/codex/worldFacts/needs extraction), `generateLocationSummary()` (on location change), `generateSceneEmbedding()`. Nano-extracted knowledge/codex is persisted via `processStateChanges()` in phase 2 of postSceneWork. Quest objective auto-completion is deterministic — when all objectives are marked done, the quest is auto-completed by the FE handler + BE `processQuestObjectiveUpdates()`. |
 | 11 | Complete event | `onEvent({type:'complete', data:{scene, sceneIndex, sceneId}})` |
 
 ## SSE event shapes
@@ -47,7 +47,6 @@ data: {"type":"intent","data":{"intent":"explore","selection":{...}}}
 data: {"type":"context_ready","data":{}}
 data: {"type":"dice_early","data":{"diceRoll":{...}}}
 data: {"type":"chunk","text":"<partial JSON fragment>"}
-data: {"type":"quest_nano_update","data":{"questUpdates":[...]}}
 data: {"type":"complete","data":{"scene":{...},"sceneIndex":N,"sceneId":"..."}}
 data: {"type":"error","error":"message","code":"LLM_TIMEOUT"}
 ```
@@ -55,7 +54,7 @@ data: {"type":"error","error":"message","code":"LLM_TIMEOUT"}
 Parser rules:
 
 - Reads line-by-line. Only `data: ` prefixed lines are consumed; `event: ` lines are ignored.
-- Breaks out of the read loop on `complete`. Post-complete events (`quest_nano_update`) are best-effort — emit them **before** `complete` if you want them applied.
+- Breaks out of the read loop on `complete`. No post-complete events are emitted.
 - Throws `Stream ended without complete event` if the stream closes without `complete`. Tests that exercise error paths should emit `{type:'error', error, code}` instead of closing.
 - `chunk.text` is accumulated into `rawAccumulated` and progressively parsed for partial narrative reveal in ChatPanel.
 
@@ -99,7 +98,7 @@ Check in this order:
 ## Gotchas
 
 - **`coreState` is a JSON string in Prisma**, not an object. `loadCampaignState` parses it. Don't accidentally double-parse.
-- **Post-complete events are best-effort.** If `quest_nano_update` arrives after `complete`, the main promise has already returned — it's applied asynchronously and may race with the next scene. Emit quest updates before `complete` if ordering matters.
+- **Quest auto-completion is deterministic.** When `questUpdates` marks all objectives done, both FE handler and BE `processQuestObjectiveUpdates` auto-complete the quest. No nano safety-net — manual `verifyQuestObjective` is the player-facing fallback.
 - **Backend is the sole AI path.** Don't reintroduce a FE-direct dispatch path. Per-user keys flow through: `loadUserApiKeys(prisma, userId)` → `userApiKeys` option → `requireServerApiKey(keyName, userApiKeys, label)`.
 - **`sceneGenerator.js` (1L) is a thin facade** re-exporting `generateSceneStream`. Don't add logic there.
 

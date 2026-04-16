@@ -266,7 +266,11 @@ NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
     charLines.push(`Known spells: ${character.spells.known.join(', ')}`);
   }
   if (character.inventory?.length) {
-    charLines.push(`Inventory: ${character.inventory.map((i) => typeof i === 'string' ? i : `${i.name} (${i.type})`).join(', ')}`);
+    charLines.push(`Inventory: ${character.inventory.map((i) => {
+      if (typeof i === 'string') return i;
+      const base = `${i.name} (${i.type})`;
+      return i.description ? `${base} — ${i.description}` : base;
+    }).join(', ')}`);
   }
   charLines.push(`Money: ${formatMoney(character.money)}`);
   if (character.statuses?.length) charLines.push(`Statuses: ${character.statuses.join(', ')}`);

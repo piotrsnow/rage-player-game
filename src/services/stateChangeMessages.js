@@ -140,14 +140,13 @@ export function generateStateChangeMessages(stateChanges, state, t) {
     for (const update of stateChanges.questUpdates) {
       const quest = activeQuests.find((q) => q.id === update.questId);
       const questName = quest?.name || update.questId;
-      const sourceTag = update.source === 'nano' ? ' [nano]' : update.source === 'large' ? ' [large]' : '';
 
       if (update.completed) {
         const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
         const objDesc = obj?.description || update.objectiveId;
-        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }) + sourceTag, timestamp: ts });
+        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }), timestamp: ts });
       } else if (update.addProgress) {
-        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_progress', content: t('system.questObjectiveProgress', { quest: questName, progress: update.addProgress }) + sourceTag, timestamp: ts });
+        msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_progress', content: t('system.questObjectiveProgress', { quest: questName, progress: update.addProgress }), timestamp: ts });
       }
     }
   }

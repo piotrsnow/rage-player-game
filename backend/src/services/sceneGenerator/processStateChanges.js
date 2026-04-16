@@ -164,7 +164,8 @@ async function processCodexUpdates(campaignId, codexUpdates) {
   }
 }
 
-async function processQuestObjectiveUpdates(campaignId, questUpdates) {
+async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCompletedQuestIds = []) {
+  const touchedQuestIds = new Set();
   for (const update of questUpdates) {
     try {
       const quest = await prisma.campaignQuest.findFirst({
@@ -186,8 +187,31 @@ async function processQuestObjectiveUpdates(campaignId, questUpdates) {
         where: { id: quest.id },
         data: { objectives: JSON.stringify(updated) },
       });
+      if (update.completed) touchedQuestIds.add(update.questId);
     } catch (err) {
       log.error({ err, campaignId, questId: update.questId, objectiveId: update.objectiveId }, 'Failed to update quest objective');
+    }
+  }
+
+  // Auto-complete quests where all objectives are now done.
+  const skip = new Set(alreadyCompletedQuestIds);
+  for (const questId of touchedQuestIds) {
+    if (skip.has(questId)) continue;
+    try {
+      const quest = await prisma.campaignQuest.findFirst({
+        where: { campaignId, questId },
+      });
+      if (!quest || quest.status === 'completed') continue;
+      const objectives = JSON.parse(quest.objectives || '[]');
+      if (objectives.length > 0 && objectives.every(o => o.completed)) {
+        await prisma.campaignQuest.update({
+          where: { id: quest.id },
+          data: { status: 'completed', completedAt: new Date() },
+        });
+        log.info({ campaignId, questId }, 'Quest auto-completed — all objectives done');
+      }
+    } catch (err) {
+      log.error({ err, campaignId, questId }, 'Failed to auto-complete quest');
     }
   }
 }
@@ -224,7 +248,7 @@ export async function processStateChanges(campaignId, stateChanges) {
   }
 
   if (stateChanges.questUpdates?.length) {
-    await processQuestObjectiveUpdates(campaignId, stateChanges.questUpdates);
+    await processQuestObjectiveUpdates(campaignId, stateChanges.questUpdates, stateChanges.completedQuests || []);
   }
 
   if (stateChanges.completedQuests?.length) {

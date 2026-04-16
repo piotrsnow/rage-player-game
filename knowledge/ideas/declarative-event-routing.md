@@ -21,9 +21,7 @@ We have 7 SSE event types hardcoded in [generateSceneStream.js](../../backend/sr
 - `chunk` — streaming narrative chunks
 - `complete` — final scene data
 - `error` — structured error with code
-- `quest_nano_update` — post-scene quest objective detection
-
-Each event is emitted from exactly one place that knows when it should fire. For 7 types, a procedural approach is cleaner than a config table.
+Each event is emitted from exactly one place that knows when it should fire. For 6 types, a procedural approach is cleaner than a config table.
 
 ## When it becomes relevant
 

@@ -264,6 +264,50 @@ export function applyStateChangesHandler(draft, action) {
         obj.progress = prev ? `${prev}; ${update.addProgress}` : update.addProgress;
       }
     }
+
+    // Auto-complete quests where ALL objectives are now done (deterministic safety-net).
+    // Only considers quests not already moved by completedQuests above.
+    const alreadyCompleted = new Set(changes.completedQuests || []);
+    const autoCompleteIds = [];
+    for (const quest of draft.quests.active) {
+      if (alreadyCompleted.has(quest.id)) continue;
+      if (!quest.objectives?.length) continue;
+      if (quest.objectives.every((o) => o.completed)) {
+        autoCompleteIds.push(quest.id);
+      }
+    }
+    if (autoCompleteIds.length > 0) {
+      const now = Date.now();
+      const autoCompleted = draft.quests.active.filter((q) => autoCompleteIds.includes(q.id));
+      // Apply rewards from auto-completed quests
+      for (const q of autoCompleted) {
+        if (q.reward) {
+          if ((q.reward.money?.gold || q.reward.money?.silver || q.reward.money?.copper) && draft.character) {
+            const cur = draft.character.money || { gold: 0, silver: 0, copper: 0 };
+            draft.character.money = normalizeMoney({
+              gold: (cur.gold || 0) + (q.reward.money.gold || 0),
+              silver: (cur.silver || 0) + (q.reward.money.silver || 0),
+              copper: (cur.copper || 0) + (q.reward.money.copper || 0),
+            });
+          }
+          if (q.reward.items?.length > 0 && draft.character) {
+            if (!draft.character.inventory) draft.character.inventory = [];
+            draft.character.inventory.push(...q.reward.items);
+          }
+        }
+      }
+      draft.quests.active = draft.quests.active.filter((q) => !autoCompleteIds.includes(q.id));
+      draft.quests.completed.push(...autoCompleted.map((q) => ({ ...q, completedAt: now, rewardGranted: true })));
+      // Surface auto-completions so stateChangeMessages can generate quest_completed toasts.
+      // We stash the IDs on the changes object — it's the same reference the caller passes
+      // to generateStateChangeMessages, so they'll pick it up.
+      if (!changes.completedQuests) changes.completedQuests = [];
+      changes.completedQuests.push(...autoCompleteIds);
+
+      if (autoCompleted.some((q) => q.type === 'main')) {
+        draft.mainQuestJustCompleted = true;
+      }
+    }
   }
 
   // --- World facts + journal ---

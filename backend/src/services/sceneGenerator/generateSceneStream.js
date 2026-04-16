@@ -3,7 +3,7 @@ import { childLogger } from '../../lib/logger.js';
 import { assembleContext } from '../aiContextTools.js';
 import { classifyIntent } from '../intentClassifier.js';
 import { requireServerApiKey } from '../apiKeyService.js';
-import { checkQuestObjectives } from '../memoryCompressor.js';
+
 import {
   resolveBackendDiceRollWithPreRoll,
   generatePreRolls,
@@ -294,26 +294,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       },
     });
 
-    // 8. Tag large model quest updates + kick off nano safety net in parallel
-    if (sceneResult.stateChanges?.questUpdates?.length) {
-      for (const u of sceneResult.stateChanges.questUpdates) u.source = 'large';
-    }
-
-    // Start nano quest check NOW — runs in parallel with DB writes below.
-    // It only needs narrative + quests, not the DB results.
-    const activeQuests = coreState.quests?.active || [];
-    const nanoQuestPromise = activeQuests.length > 0
-      ? checkQuestObjectives(
-          sceneResult.narrative,
-          playerAction,
-          activeQuests,
-          sceneResult.stateChanges?.questUpdates || [],
-          provider,
-          { timeoutMs: llmNanoTimeoutMs },
-        ).catch((err) => { log.error({ err, campaignId }, 'Quest objective check failed'); return []; })
-      : Promise.resolve([]);
-
-    // 9a. Apply character state changes + persist (runs in parallel with nano)
+    // 8. Apply character state changes + persist
     let updatedCharacter = activeCharacter;
     let newlyUnlockedAchievements = [];
     let updatedAchievementState = achievementState;
@@ -321,7 +302,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       try {
         updatedCharacter = applyCharacterStateChanges(activeCharacter, sceneResult.stateChanges);
 
-        // 9a2. Process achievement unlocks — authoritative on BE.
+        // 8b. Process achievement unlocks — authoritative on BE.
         // Runs against the post-change character so wounds/skills/etc. reflect the scene.
         if (achievementState && typeof achievementState === 'object') {
           const gameStateForAchievements = {
@@ -356,7 +337,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
 
-    // 9b. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
+    // 9. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
     // Fire-and-forget: don't block the 'complete' event on enqueue failure.
     enqueuePostSceneWork({
       sceneId: savedScene.id,
@@ -383,20 +364,6 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       },
     });
 
-    // 11. Await nano quest result (started in step 8, likely already done by now)
-    //     and emit follow-up event if it found new completions.
-    const nanoQuestUpdates = await nanoQuestPromise;
-    if (nanoQuestUpdates.length > 0) {
-      const largeKeys = new Set(
-        (sceneResult.stateChanges?.questUpdates || [])
-          .filter(u => u.completed)
-          .map(u => `${u.questId}/${u.objectiveId}`)
-      );
-      const unique = nanoQuestUpdates.filter(u => !largeKeys.has(`${u.questId}/${u.objectiveId}`));
-      if (unique.length > 0) {
-        onEvent({ type: 'quest_nano_update', data: { questUpdates: unique } });
-      }
-    }
   } catch (err) {
     const isAbort = err?.name === 'AbortError';
     onEvent({

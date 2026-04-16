@@ -110,7 +110,6 @@ data: {"type":"intent","data":{"intent":"explore"}}
 data: {"type":"context_ready","data":{}}
 data: {"type":"dice_early","data":{"diceRoll":{...}}}
 data: {"type":"chunk","text":"<partial JSON fragment>"}
-data: {"type":"quest_nano_update","data":{"questUpdates":[...]}}    # post-complete
 data: {"type":"complete","data":{"scene":{...},"sceneIndex":N,"sceneId":"..."}}
 data: {"type":"error","error":"message","code":"optional"}
 ```
@@ -119,7 +118,7 @@ The backend writes both `event: TYPE\ndata: {...}\n\n` pairs; the `event:` line 
 
 ### Termination contract
 
-The parser breaks out of the main read loop the moment it sees `type: 'complete'`. Post-complete events (`quest_nano_update`) are consumed asynchronously by a background reader that doesn't block the caller's promise. If your mock emits `complete` first and then extras, the main code path has already returned — the extras are best-effort. To guarantee they're applied, emit them **before** `complete`.
+The parser breaks out of the main read loop the moment it sees `type: 'complete'`. No post-complete events are emitted — `complete` is always the last meaningful event.
 
 The stream MUST contain a `complete` event — otherwise the parser throws `Stream ended without complete event`. Tests exercising error paths should emit `{type:'error', error:'...'}` instead of just closing.
 
