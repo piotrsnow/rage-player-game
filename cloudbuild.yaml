@@ -35,7 +35,7 @@ steps:
       - '--session-affinity'
       - '--cpu-boost'
       - '--execution-environment=gen2'
-      - '--set-env-vars=NODE_ENV=production,MEDIA_BACKEND=gcp,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=${_REGION},CLOUD_TASKS_ENABLED=true,SELF_URL=${_SELF_URL},RUNTIME_SERVICE_ACCOUNT=rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=NODE_ENV=production,MEDIA_BACKEND=gcp,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=${_REGION},CLOUD_TASKS_ENABLED=true,SELF_URL=${_SELF_URL},RUNTIME_SERVICE_ACCOUNT=rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com,CORS_ORIGIN=https://rage-player-game-152180839448.europe-west1.run.app'
       - '--set-secrets=JWT_SECRET=rpgon-jwt-secret:latest,API_KEY_ENCRYPTION_SECRET=rpgon-encryption-secret:latest,DATABASE_URL=rpgon-database-url:latest,GCS_BUCKET_NAME=rpgon-gcs-bucket:latest,OPENAI_API_KEY=rpgon-openai-api-key:latest,ANTHROPIC_API_KEY=rpgon-anthropic-api-key:latest,ELEVENLABS_API_KEY=rpgon-elevenlabs-api-key:latest,STABILITY_API_KEY=rpgon-stability-api-key:latest,GEMINI_API_KEY=rpgon-gemini-api-key:latest,MESHY_API_KEY=rpgon-meshy-api-key:latest'
 
 substitutions:
