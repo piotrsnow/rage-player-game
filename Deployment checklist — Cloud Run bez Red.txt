@@ -1,0 +1,108 @@
+Deployment checklist — Cloud Run bez Redisa
+Ustaw swój project ID na start:
+
+
+export PROJECT_ID=$(gcloud config get-value project)
+export REGION=europe-west1
+export SA_EMAIL="rage-player-game-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
+Krok 1 — Service Account
+
+gcloud iam service-accounts create rage-player-game-runtime \
+  --display-name="RPGON Cloud Run runtime"
+IAM roles:
+
+
+# Może generować OIDC tokeny dla Cloud Tasks callbacków
+gcloud iam service-accounts add-iam-policy-binding $SA_EMAIL \
+  --member="serviceAccount:$SA_EMAIL" \
+  --role="roles/iam.serviceAccountTokenCreator"
+
+# GCS — na konkretnym buckecie, nie project-wide
+gsutil iam ch serviceAccount:$SA_EMAIL:roles/storage.objectAdmin \
+  gs://TWOJ_BUCKET_NAME
+
+# Logi (zwykle już jest z defaultu Cloud Run, ale verify)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:$SA_EMAIL" \
+  --role="roles/logging.logWriter"
+Krok 2 — Włącz API (jeśli jeszcze nie)
+
+gcloud services enable cloudtasks.googleapis.com
+gcloud services enable secretmanager.googleapis.com
+gcloud services enable run.googleapis.com
+gcloud services enable cloudbuild.googleapis.com
+Krok 3 — Cloud Tasks queue
+
+gcloud tasks queues create post-scene-work \
+  --location=$REGION \
+  --max-concurrent-dispatches=20 \
+  --max-attempts=10 \
+  --min-backoff=1s \
+  --max-backoff=1h \
+  --max-doublings=5
+
+# SA może enqueue'ować do tej kolejki
+gcloud tasks queues add-iam-policy-binding post-scene-work \
+  --location=$REGION \
+  --member="serviceAccount:$SA_EMAIL" \
+  --role="roles/cloudtasks.enqueuer"
+Krok 4 — Sekrety w Secret Manager
+4 już istnieją (sprawdź: gcloud secrets list):
+
+rpgon-jwt-secret
+rpgon-encryption-secret
+rpgon-database-url
+rpgon-gcs-bucket
+6 do stworzenia — podmień wartości na swoje klucze:
+
+
+echo -n "sk-..." | gcloud secrets create rpgon-openai-api-key --data-file=-
+echo -n "sk-ant-..." | gcloud secrets create rpgon-anthropic-api-key --data-file=-
+echo -n "..." | gcloud secrets create rpgon-elevenlabs-api-key --data-file=-
+echo -n "sk-..." | gcloud secrets create rpgon-stability-api-key --data-file=-
+echo -n "..." | gcloud secrets create rpgon-gemini-api-key --data-file=-
+echo -n "..." | gcloud secrets create rpgon-meshy-api-key --data-file=-
+Daj SA read na każdy sekret:
+
+
+for SECRET in rpgon-jwt-secret rpgon-encryption-secret rpgon-database-url \
+  rpgon-gcs-bucket rpgon-openai-api-key rpgon-anthropic-api-key \
+  rpgon-elevenlabs-api-key rpgon-stability-api-key rpgon-gemini-api-key \
+  rpgon-meshy-api-key; do
+  gcloud secrets add-iam-policy-binding $SECRET \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="roles/secretmanager.secretAccessor"
+done
+Krok 5 — Database (Atlas)
+
+# Prisma push — dodaje model RefreshToken
+cd backend && npx prisma db push
+
+# TTL index — Mongo reapuje expired tokeny co ~60s
+node src/scripts/createRefreshTokenTtlIndex.js
+Krok 6 — Deploy
+
+# Trigger Cloud Build (albo git push jeśli masz trigger na repo)
+gcloud builds submit --config cloudbuild.yaml
+Jeśli nie masz triggera to po prostu push na branch który triggeruje Cloud Build, albo ręcznie powyższe.
+
+Krok 7 — Smoke test
+Po deployu sprawdź:
+
+Test	Jak
+Health	curl https://rage-player-game-152180839448.europe-west1.run.app/health → {"status":"ok","db":"ok"}
+Register	POST /v1/auth/register z email+password → 200 + cookie
+Login	POST /v1/auth/login → 200 + accessToken
+Refresh	POST /v1/auth/refresh z cookie+CSRF → 200 + nowy token
+Scene gen	Normalny gameplay — wygeneruj scenę, sprawdź SSE stream
+Cloud Tasks	Po scene-gen sprawdź Console → Cloud Tasks → queue post-scene-work → powinna być task history
+Post-scene	Po ~5s od scene-gen: embedding w Mongo (CampaignScene.embeddingText), compressed facts w Campaign.coreState
+Logi	Cloud Logging → szukaj llm-streaming-usage → cache hit rate widoczny
+Krok 8 — Jeśli coś nie działa
+Problem	Fix
+OOM kill (512MB)	--memory=1Gi w cloudbuild, redeploy
+Cloud Tasks 401	Sprawdź IAM: serviceAccountTokenCreator na SA, SELF_URL poprawny
+Cloud Tasks nie odpala	Sprawdź czy queue istnieje: gcloud tasks queues describe post-scene-work --location=$REGION
+Auth 500	prisma db push nie poszedł, albo brak TTL indexu
+Scene gen timeout	Klucze AI nie wstrzyknięte — gcloud run services describe rage-player-game --region=$REGION i sprawdź env vars
+Rollback	gcloud run services update-traffic rage-player-game --to-revisions=PREVIOUS=100 --region=$REGION
