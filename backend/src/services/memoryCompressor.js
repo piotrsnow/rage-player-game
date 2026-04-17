@@ -15,29 +15,37 @@ const log = childLogger({ module: 'memoryCompressor' });
 
 // ── NANO MODEL CALLER (provider-aware) ──
 
-async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200 } = {}) {
+// `reasoning: true` routes to the nanoReasoning tier (gpt-5.4-nano) for tasks
+// where importance judgment matters and async latency is free — memory/location
+// compression. `reasoning: false` routes to the fast nano tier (gpt-4.1-nano)
+// for classification-shaped tasks on the critical path — quest objective check.
+async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();
   const signal = controller?.signal;
+
+  const tier = reasoning ? 'nanoReasoning' : 'nano';
+  const openaiModel = config.aiModels[tier].openai;
+  const anthropicModel = config.aiModels[tier].anthropic;
 
   try {
     // Match nano provider to the main scene provider so that choosing Chat (OpenAI)
     // never triggers Claude Haiku calls and vice versa. If the preferred provider
     // has no key configured, fall back to whichever key is available.
     if (provider === 'anthropic') {
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
+      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
       return null;
     }
     if (provider === 'openai') {
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
+      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
       return null;
     }
     // No explicit preference — keep legacy behavior (Anthropic first)
-    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens);
-    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens);
+    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
+    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
     return null;
   } catch (err) {
     if (err?.name === 'AbortError') {
@@ -50,7 +58,7 @@ async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxToke
   }
 }
 
-async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens = 200) {
+async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, model) {
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -58,7 +66,7 @@ async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens = 200)
       Authorization: `Bearer ${config.apiKeys.openai}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4.1-nano',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -77,7 +85,7 @@ async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens = 200)
   return JSON.parse(content);
 }
 
-async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens = 200) {
+async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, model) {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -86,7 +94,7 @@ async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens = 2
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: config.aiModels.nano.anthropic,
+      model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
@@ -157,7 +165,7 @@ function isDominatedScene(narrative, playerAction) {
  * Called async after each scene generation. Returns extracted state for
  * the caller to process.
  */
-export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs } = {}) {
+export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs, sceneIndex } = {}) {
   if (isDominatedScene(narrative, playerAction)) {
     return null;
   }
@@ -172,6 +180,9 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
 
     const coreState = JSON.parse(campaign.coreState);
     const currentSummary = coreState.gameStateSummary || [];
+    // Back-compat: summary can be legacy string[] or new [{fact, sceneIndex}].
+    // Normalize for prompt display and remove-match.
+    const factText = (item) => (typeof item === 'string' ? item : item?.fact || '');
 
     // Include codex summary so nano avoids duplicate fragments
     const codexSummary = (coreState.world?.codexSummary || [])
@@ -193,9 +204,11 @@ Narrative:
 ${(narrative || '').slice(0, 1000)}
 
 Current summary (${currentSummary.length} facts):
-${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}`;
+${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}`;
 
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500 });
+    // Reasoning tier + bumped maxTokens: 5.4-nano spends thinking tokens before
+    // the JSON output, so cap needs headroom or output gets truncated.
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1200, reasoning: true });
     if (!result) return null;
 
     if (result.dominated) {
@@ -207,13 +220,17 @@ ${currentSummary.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(empty)'}${quest
 
     if (result.remove_facts?.length) {
       const toRemove = new Set(result.remove_facts.map(f => f.toLowerCase()));
-      updated = updated.filter(f => !toRemove.has(f.toLowerCase()));
+      updated = updated.filter(item => !toRemove.has(factText(item).toLowerCase()));
     }
 
     if (result.new_facts?.length) {
       for (const fact of result.new_facts) {
         if (typeof fact === 'string' && fact.trim()) {
-          updated.push(fact.trim());
+          // Tag with sceneIndex so the prompt assembler can exclude facts from
+          // the last scene (which is shown in full narrative form — no need to
+          // duplicate as compressed fact). Unknown sceneIndex (undefined) means
+          // always include — used by legacy entries without metadata.
+          updated.push({ fact: fact.trim(), sceneIndex: typeof sceneIndex === 'number' ? sceneIndex : null });
         }
       }
     }
@@ -367,7 +384,9 @@ ${existing ? `Previous summary: "${existing.summary}"\n` : ''}
 Scenes at this location (${scenesAtLocation.length}):
 ${scenesAtLocation.join('\n\n')}`;
 
-    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs });
+    // Reasoning tier — location summary is synthesis + unresolved-thread
+    // detection; async, no latency concern.
+    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true });
     if (!result?.summary) return;
 
     const data = {
@@ -531,7 +550,10 @@ Unchecked objectives:
 ${objectiveLines}`;
 
   try {
-    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs });
+    // Fast nano tier — quest check is semi-blocking (200-500ms budget before
+    // final SSE event). Classification-shaped task; non-reasoner is the right
+    // trade-off. Pre-filter (narrativeMentionsAnyQuest) guards against false positives.
+    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false });
     if (!result?.updates?.length) return [];
 
     // Validate and normalize updates — only return valid ones matching known objectives

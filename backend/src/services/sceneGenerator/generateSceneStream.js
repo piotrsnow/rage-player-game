@@ -134,10 +134,15 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     onEvent({ type: 'context_ready' });
 
     // 4. Build prompts
+    // Only the immediate previous scene goes into the prompt in full. Earlier
+    // scenes are represented by compressed gameStateSummary facts. Fetching 1
+    // scene (not 5) because we also use lastScene.sceneIndex to compute the
+    // next scene index below — the full narrative + action are injected by
+    // buildLeanSystemPrompt and nothing else reads this list.
     const recentScenes = await prisma.campaignScene.findMany({
       where: { campaignId },
       orderBy: { sceneIndex: 'desc' },
-      take: 5,
+      take: 1,
     });
     recentScenes.reverse();
 

@@ -56,6 +56,13 @@ export const config = {
   // fact extraction. Override via env vars for staging/dev without editing
   // code. See CLAUDE.md "AI Architecture — Two-Stage Pipeline".
   //
+  // OpenAI premium is gpt-4.1 (not gpt-5.4) because the two-stage pipeline
+  // offloads all reasoning to nano + deterministic code assembly — the
+  // premium model's job is creative writing + structured JSON streaming,
+  // not reasoning. GPT-5.4's reasoning tokens add latency, cost, and
+  // visible verbosity to dialogue without narrative benefit. Users can
+  // still opt into gpt-5.4 via the FE scene-model picker.
+  //
   // Anthropic premium is Sonnet 4.0 (sonnet-4-20250514) instead of 4.6
   // because 4.6 is ~2x more verbose for the same structured JSON output
   // at identical per-token pricing — effectively 2x the cost per request
@@ -64,16 +71,37 @@ export const config = {
   // quality issue actually justifies the cost hit.
   aiModels: {
     premium: {
-      openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-5.4',
+      openai: process.env.AI_MODEL_PREMIUM_OPENAI || 'gpt-4.1',
       anthropic: process.env.AI_MODEL_PREMIUM_ANTHROPIC || 'claude-sonnet-4-20250514',
     },
     standard: {
-      openai: process.env.AI_MODEL_STANDARD_OPENAI || 'gpt-5.4-mini',
+      // gpt-4.1-mini (non-reasoner) instead of 5.4-mini for standard tier —
+      // shortcuts.js uses it for 2-3 sentence fast-path narrative where
+      // reasoning tokens waste latency without narrative gain.
+      openai: process.env.AI_MODEL_STANDARD_OPENAI || 'gpt-4.1-mini',
       anthropic: process.env.AI_MODEL_STANDARD_ANTHROPIC || 'claude-haiku-4-5-20251001',
     },
     nano: {
-      openai: process.env.AI_MODEL_NANO_OPENAI || 'gpt-5.4-nano',
+      // Fast nano — critical-path classifier (intent, quest-check). Non-reasoner
+      // family because reasoning tokens add visible latency on pre-scene path.
+      openai: process.env.AI_MODEL_NANO_OPENAI || 'gpt-4.1-nano',
       anthropic: process.env.AI_MODEL_NANO_ANTHROPIC || 'claude-haiku-4-5-20251001',
+    },
+    nanoReasoning: {
+      // Reasoning-family nano for async extraction tasks (memory compression,
+      // location summary). The task is "what matters?" judgment — reasoning
+      // helps. Async post-scene path → thinking-token latency is free. At
+      // $0.20/$1.25 per 1M it's also cheaper than 4.1-mini.
+      openai: process.env.AI_MODEL_NANO_REASONING_OPENAI || 'gpt-5.4-nano',
+      anthropic: process.env.AI_MODEL_NANO_REASONING_ANTHROPIC || 'claude-haiku-4-5-20251001',
+    },
+    // Reasoning-family premium — registered so we can A/B against 4.1 easily.
+    // Not routed by default; flip via env `AI_MODEL_PREMIUM_OPENAI=gpt-5.4`
+    // OR select gpt-5.4 in the FE scene-model picker (AiProviderSection).
+    // Kept here so the set of "blessed" models is centralized in one place.
+    premiumReasoning: {
+      openai: process.env.AI_MODEL_PREMIUM_REASONING_OPENAI || 'gpt-5.4',
+      anthropic: process.env.AI_MODEL_PREMIUM_REASONING_ANTHROPIC || 'claude-sonnet-4-20250514',
     },
   },
 };

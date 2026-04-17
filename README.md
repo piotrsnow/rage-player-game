@@ -15,7 +15,7 @@ RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an 
 - **AI Dungeon Master** — two-stage pipeline: nano model picks what context the scene needs, code assembles it in parallel, premium model writes the scene in one streamed call
 - **RPGon d50 system** — custom rules designed for AI-GM play: 6 attributes (1-25), ~31 skills, 9 spell trees with mana-based magic, d50 resolution with margins, `szczęście` as auto-success chance, titles from achievements (no classes), three-tier Polish currency (Złota/Srebrna/Miedziana Korona)
 - **Multi-provider AI** — OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini, with nano/standard/premium tiering to keep costs bounded
-- **Streaming UX** — scenes stream narrative chunks via SSE while still queuing through BullMQ for concurrency control and retry semantics
+- **Streaming UX** — scenes stream narrative chunks via SSE directly from the backend route; post-scene async work (embeddings, memory compression, location summary) is dispatched to Cloud Tasks (prod) or runs inline (dev)
 - **Multiplayer** — up to 6 players via WebSocket, host-authoritative state, mid-game join, solo → multiplayer conversion, optional WebRTC voice chat
 - **3D scene rendering** — React Three Fiber with procedural foliage, GLB models, ambient weather/particle effects
 - **Rich media** — AI-generated scene illustrations (Stability AI), voice narrator (ElevenLabs TTS with word highlighting), on-demand 3D model generation (Meshy)
@@ -28,7 +28,7 @@ RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an 
 ```bash
 npm run setup                          # root + backend deps, prisma generate
 cp backend/.env.example backend/.env   # fill in DATABASE_URL (Atlas SRV), JWT_SECRET, keys
-npm run dev                            # docker compose up --build --watch (backend :3001 + valkey)
+npm run dev                            # docker compose up --build --watch (backend :3001)
 ```
 
 **MongoDB is Atlas-only** — set `DATABASE_URL` to an Atlas SRV string in `.env` before booting. The backend is the sole AI dispatch path; users can paste their own provider keys in Settings which are stored encrypted server-side.
@@ -74,7 +74,7 @@ RPGon to przeglądarkowa gra RPG z narratorem AI, zbudowana na **autorskim syste
 
 ## Architektura
 
-Backend jest jedyną ścieżką dispatcha AI — frontend nie rozmawia bezpośrednio z providerami. Strumieniowanie scen idzie przez kolejkę BullMQ z mostkiem pub/sub po Redisie, żeby utrzymać progresywny UX razem z backpressure i retry.
+Backend jest jedyną ścieżką dispatcha AI — frontend nie rozmawia bezpośrednio z providerami. Scena streamuje się bezpośrednio z route'a (Fastify SSE), a post-scene work (embedding, kompresja pamięci, podsumowania) jedzie przez Cloud Tasks (prod) albo inline fire-and-forget (dev). Bez Redisa — refresh tokeny w Mongo (TTL index), rate-limit + idempotency in-memory per-instance.
 
 ```mermaid
 graph TB
@@ -88,23 +88,23 @@ graph TB
         WS_C[websocket.js<br/>multiplayer client]
     end
 
-    subgraph Backend ["Backend — Fastify"]
-        ROUTE_AI[/v1/ai/*<br/>SSE + single-shot + jobs]
+    subgraph Backend ["Backend — Fastify (Cloud Run)"]
+        ROUTE_AI[/v1/ai/*<br/>SSE + single-shot]
         ROUTE_MP[/v1/multiplayer<br/>WebSocket]
         ROUTE_AUTH[/v1/auth<br/>cookie refresh + CSRF]
         ROUTE_CAMP[/v1/campaigns<br/>CRUD + share + recaps]
+        ROUTE_POST[/v1/internal/<br/>post-scene-work<br/>+ OIDC verify]
         SCENE_GEN[sceneGenerator/<br/>generateSceneStream]
         INTENT[intentClassifier<br/>heuristic + nano]
         CTX[aiContextTools<br/>assembleContext]
         COMP[memoryCompressor<br/>nano facts + summaries]
+        POST[postSceneWork<br/>embedding + sync + compress]
         MP_FLOW[multiplayerSceneFlow<br/>+ multiplayerAI/]
         ROOM[roomManager<br/>in-memory + DB backup]
     end
 
-    subgraph Queue ["BullMQ + Valkey/Redis"]
-        QUEUE[Per-provider queues<br/>ai-openai / ai-anthropic<br/>ai-gemini / ai-stability<br/>ai-meshy]
-        WORKER[aiWorker<br/>handler registry]
-        PUBSUB[(Pub/sub bridge<br/>scene-job:ID:events<br/>campaign-job:ID:events)]
+    subgraph Async ["Post-scene dispatch"]
+        CT[Cloud Tasks queue<br/>prod: OIDC-signed POST<br/>dev: inline fire-and-forget]
     end
 
     subgraph Providers ["Providers"]
@@ -116,10 +116,9 @@ graph TB
         MESHY[Meshy<br/>modele 3D]
     end
 
-    subgraph Storage ["MongoDB Atlas + Valkey"]
-        ATLAS[(MongoDB Atlas<br/>Prisma: User, Campaign,<br/>Scene, NPC, Quest,<br/>Knowledge, Codex)]
+    subgraph Storage ["MongoDB Atlas"]
+        ATLAS[(MongoDB Atlas<br/>Prisma: User, Campaign,<br/>Scene, NPC, Quest,<br/>Knowledge, Codex, RefreshToken)]
         VECTOR[(Atlas Vector Search<br/>embeddings via<br/>native driver)]
-        VALKEY[(Valkey<br/>refresh tokens, cache,<br/>BullMQ, idempotency)]
     end
 
     UI --> ZS
@@ -134,15 +133,19 @@ graph TB
     API --> ROUTE_CAMP
     WS_C <-->|WebSocket| ROUTE_MP
 
-    ROUTE_AI -->|enqueue + subscribe| QUEUE
-    QUEUE --> WORKER
-    WORKER --> SCENE_GEN
-    WORKER --> PUBSUB
-    PUBSUB -.->|SSE forward| ROUTE_AI
+    ROUTE_AI --> SCENE_GEN
+    SCENE_GEN -->|SSE chunks| ROUTE_AI
+    ROUTE_AI -.->|SSE stream| API
 
     SCENE_GEN --> INTENT
     SCENE_GEN --> CTX
-    SCENE_GEN -.->|post-scene async| COMP
+    SCENE_GEN -->|enqueue| CT
+    CT -.->|OIDC POST| ROUTE_POST
+    ROUTE_POST --> POST
+    POST --> COMP
+    POST --> ATLAS
+    POST --> VECTOR
+
     SCENE_GEN --> OPENAI
     SCENE_GEN --> ANTHROPIC
 
@@ -157,11 +160,8 @@ graph TB
     CTX --> VECTOR
     COMP --> ATLAS
 
-    ROUTE_AUTH --> VALKEY
     ROUTE_AUTH --> ATLAS
     ROUTE_CAMP --> ATLAS
-    QUEUE --> VALKEY
-    PUBSUB --> VALKEY
 
     ROUTE_AI -.->|proxy| ELEVEN
     ROUTE_AI -.->|proxy| STABILITY
@@ -218,44 +218,41 @@ sequenceDiagram
     participant G as Gracz
     participant FE as Frontend<br/>(useSceneGeneration)
     participant R as Route<br/>(/generate-scene-stream)
-    participant Q as BullMQ + pub/sub
-    participant W as Worker<br/>(generateSceneStream)
     participant N as Nano<br/>(intent + compression)
     participant DB as Atlas<br/>(+ Vector Search)
     participant P as Premium<br/>(scene narrative)
+    participant CT as Cloud Tasks<br/>(or inline in dev)
+    participant POST as Post-scene worker<br/>(/v1/internal/post-scene-work)
 
     G->>FE: Wybiera akcję
     FE->>FE: resolveMechanics<br/>(d50 + momentum + szczęście)
     FE->>R: POST /generate-scene-stream
     R->>R: writeSseHead (hijack, CORS)
-    R->>Q: subscribe(channel) + enqueueJob(jobId)
-    Q->>W: dispatch handler
-    W->>DB: loadCampaignState<br/>(parallel: NPCs, Quests, Codex)
-    W->>N: classifyIntent<br/>(heuristic → nano fallback)
-    N-->>W: {expand_npcs, expand_quests, roll_skill, ...}
-    W->>DB: assembleContext<br/>(parallel fetches + vector search)
-    W->>W: buildLeanSystemPrompt + userPrompt
-    W->>P: runTwoStagePipelineStreaming
+    R->>DB: loadCampaignState<br/>(parallel: NPCs, Quests, Codex)
+    R->>N: classifyIntent<br/>(heuristic → nano fallback)
+    N-->>R: {expand_npcs, expand_quests, roll_skill, ...}
+    R->>R: tryTradeShortcut / tryCombatFastPath<br/>(early return jeśli match)
+    R->>DB: assembleContext<br/>(parallel fetches + vector search)
+    R->>R: buildLeanSystemPrompt + userPrompt
+    R->>P: runTwoStagePipelineStreaming
     loop Streaming
-        P-->>W: chunk
-        W-->>Q: publish(event)
-        Q-->>R: pub/sub message
+        P-->>R: chunk
         R-->>FE: data: {type: 'chunk', text}
         FE-->>G: Progresywne ujawnianie
     end
-    P-->>W: final JSON
-    W->>W: parse + validate + reconcile dice<br/>+ fillEnemiesFromBestiary<br/>+ processStateChanges
-    W-->>Q: publish(complete)
-    Q-->>R: pub/sub
+    P-->>R: final JSON
+    R->>R: parse + validate + reconcile dice<br/>+ fillEnemiesFromBestiary<br/>+ processStateChanges
+    R->>DB: POST scene + sync normalized
     R-->>FE: data: {type: 'complete', scene, sceneIndex}
 
-    par Post-scene (async, fire-and-forget)
-        W->>N: compressSceneToSummary
-        N-->>W: 3-7 key facts
-        W->>N: generateLocationSummary<br/>(if location changed)
-        W->>N: checkQuestObjectives
-    and Persist
-        W->>DB: POST scenes + sync normalized
+    R->>CT: enqueue post-scene work<br/>(scene + context)
+    Note over CT,POST: Cloud Tasks OIDC-signs<br/>retry on 5xx<br/>(dev: inline await)
+    CT-->>POST: POST /v1/internal/post-scene-work
+    par Post-scene async
+        POST->>N: compressSceneToSummary
+        N-->>POST: 3-7 key facts (tagged w/ sceneIndex)
+        POST->>N: generateLocationSummary<br/>(if location changed)
+        POST->>DB: embedding + normalize sync<br/>+ journal/knowledge/codex/worldFacts
     end
 ```
 
@@ -273,20 +270,26 @@ sequenceDiagram
 
 ### Model tiering
 
-| Tier | Modele | Używany do |
-|---|---|---|
-| **nano** | gpt-5.4-nano, gpt-4.1-nano, claude-haiku-4-5 | Klasyfikacja intencji, kompresja faktów, check celów questa, inferencja skill check |
-| **standard** | gpt-5.4-mini, claude-haiku-4-5 | Combat commentary, story prompt, recap generation, weryfikacja celów |
-| **premium** | gpt-5.4, claude-sonnet-4 | Generowanie scen, tworzenie kampanii |
+5 tierów. Reasoning na async, non-reasoning na ścieżce krytycznej. Szczegóły w [knowledge/concepts/model-tiering.md](./knowledge/concepts/model-tiering.md).
+
+| Tier | OpenAI default | Anthropic default | Używany do |
+|---|---|---|---|
+| **nano** | gpt-4.1-nano | claude-haiku-4-5 | Klasyfikacja intencji, quest check, skill-check inference — **ścieżka krytyczna** |
+| **nanoReasoning** | gpt-5.4-nano | claude-haiku-4-5 | Memory compression, location summary — **async post-scene**, reasoning pomaga |
+| **standard** | gpt-4.1-mini | claude-haiku-4-5 | Combat fast-path narrative, recapy, story prompts, weryfikacja celów |
+| **premium** | gpt-4.1 | claude-sonnet-4 | Generowanie scen, tworzenie kampanii — kreatywne pisanie + streaming JSON |
+| **premiumReasoning** | gpt-5.4 | claude-sonnet-4 | Zarejestrowany pod A/B, domyślnie nieroutowany. Przełącz przez `AI_MODEL_PREMIUM_OPENAI` albo FE picker |
+
+Dlaczego premium to 4.1, nie 5.4: dwuetapowy pipeline offloaduje całe myślenie do nano + deterministycznego kodu. Premium tylko pisze prozę i streamuje JSON — reasoning tokens dokładają latencji i influją dialogi bez zysku narracyjnego.
 
 ### Typy zapytań AI
 
-- **`generateCampaign`** — fundament kampanii (SSE stream z BullMQ + pub/sub bridge)
-- **`generateSceneStream`** — główna pętla (SSE stream z BullMQ + pub/sub bridge)
+- **`generateCampaign`** — fundament kampanii (SSE stream bezpośrednio z route)
+- **`generateSceneStream`** — główna pętla (SSE stream bezpośrednio z route; post-scene przez Cloud Tasks)
 - **`generateStoryPrompt`** — nano-model premise generator
 - **`generateRecap`** — podsumowanie kampanii (chunking 25 scen/chunk)
 - **`combatCommentary`** — śródwalkowa narracja i battle cries
-- **`verifyObjective`** — klasyfikator spełnienia celu questa
+- **`verifyObjective`** — klasyfikator spełnienia celu questa (on-demand z UI, nie per scene)
 
 ---
 
@@ -416,13 +419,13 @@ Nano klasyfikator intencji przeoczy ~20% akcji wymagających testów umiejętno�
 
 ### Infra
 - Per-user szyfrowane klucze API (AES-256 na serwerze)
-- Cookie-based refresh tokens (15min access JWT, 30d refresh w Valkey)
+- Cookie-based refresh tokens (15min access JWT, 30d refresh w MongoDB + TTL index)
 - Double-submit CSRF
-- Per-user rate limiting (Valkey backed)
-- Idempotency keys na krytycznych endpointach (POST /campaigns, /scenes, /scenes/bulk)
-- BullMQ per-provider queues z bull-board UI na `/v1/admin/queues`
+- Per-instance rate limiting (in-memory — nadaje się do Cloud Run bo ruch per-user jest mały)
+- Idempotency keys na krytycznych endpointach (POST /campaigns, /scenes, /scenes/bulk) — in-memory
+- Cloud Tasks do post-scene async (embedding, memory compression, location summary) z OIDC-signed callback; inline fire-and-forget w dev
 - LLM timeouts tunowalne w DM Settings (domyślnie 45s premium / 15s nano)
-- Graceful fallback gdy Redis off (tylko auth wymaga Redisa)
+- Zero zewnętrznych zależności runtime poza Atlas + providerami AI — idealne pod Cloud Run (scale-to-zero)
 
 ### Zarządzanie
 - Zapis/wczytywanie kampanii (auto-save queue + idempotency)
@@ -441,13 +444,14 @@ Nano klasyfikator intencji przeoczy ~20% akcji wymagających testów umiejętno�
 |---|---|
 | **Frontend** | React 18, Vite 6, React Router 6, Tailwind CSS 3, Zustand 5 + Immer, Zod 4, i18next |
 | **3D** | Three.js, React Three Fiber, @react-three/drei |
-| **Backend** | Fastify 5, Prisma (MongoDB), WebSocket (ws), BullMQ, ioredis |
+| **Backend** | Fastify 5, Prisma (MongoDB), WebSocket (ws) |
 | **Baza danych** | MongoDB Atlas (replica set + Atlas Vector Search) |
-| **Cache / kolejki** | Valkey (Redis-compatible) |
+| **Async post-scene** | Google Cloud Tasks (prod) lub inline fire-and-forget (dev) — brak Redis/BullMQ |
+| **Hosting** | Google Cloud Run (native, scale-to-zero) |
 | **AI** | OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini |
 | **Media** | Sharp (image resize), ElevenLabs (TTS), Stability AI (obrazy), Meshy (modele 3D) |
 | **Przechowywanie mediów** | Local filesystem lub Google Cloud Storage |
-| **Auth** | JWT (15min access) + opaque refresh tokens w Valkey, double-submit CSRF |
+| **Auth** | JWT (15min access) + opaque refresh tokens w MongoDB (TTL index), double-submit CSRF |
 | **Testing** | Vitest (unit), Playwright (e2e) |
 
 ---
@@ -510,12 +514,15 @@ rage-player-game/
 │       │   ├── characters.js, gameData.js, media.js, music.js, wanted3d.js
 │       │   └── proxy/                  # openai, anthropic, gemini, elevenlabs, stability, meshy
 │       ├── services/
-│       │   ├── sceneGenerator.js       # Facade → sceneGenerator/generateSceneStream.js (+ phases)
-│       │   ├── multiplayerAI.js        # Facade → multiplayerAI/{aiClient,sceneGeneration,...}.js
+│       │   ├── sceneGenerator/         # generateSceneStream + phases (systemPrompt, streamingClient, shortcuts)
+│       │   ├── multiplayerAI/          # aiClient, sceneGeneration, campaignGeneration
 │       │   ├── intentClassifier.js     # Stage 1 — heuristic + nano
 │       │   ├── aiContextTools.js       # Stage 2 — assembleContext
-│       │   ├── memoryCompressor.js     # Post-scene nano summaries + quest checks
+│       │   ├── memoryCompressor.js     # Post-scene nano summaries + quest checks (reasoning tier)
 │       │   ├── aiJsonCall.js           # Shared single-shot JSON helper
+│       │   ├── cloudTasks.js           # Enqueue post-scene work (prod) / inline (dev)
+│       │   ├── postSceneWork.js        # Cloud Tasks handler — embedding + compress + sync
+│       │   ├── oidcVerify.js           # Google OIDC token verification for Cloud Tasks callback
 │       │   ├── combatCommentary.js, objectiveVerifier.js, recapGenerator.js, storyPromptGenerator.js
 │       │   ├── campaignGenerator.js    # Streaming single-player campaign gen
 │       │   ├── diceResolver.js         # d50 resolver + pre-roll generator
@@ -523,18 +530,15 @@ rage-player-game/
 │       │   ├── roomManager.js          # Multiplayer room lifecycle + DB persistence
 │       │   ├── multiplayerSceneFlow.js # Shared flow for APPROVE_ACTIONS + SOLO_ACTION
 │       │   ├── stateValidator.js       # MP state-change validation
-│       │   ├── embeddingService.js     # OpenAI embeddings + L1/L2 cache
+│       │   ├── embeddingService.js     # OpenAI embeddings + in-memory cache
 │       │   ├── vectorSearchService.js  # Atlas Vector Search
 │       │   ├── mongoNative.js          # Raw driver (for BSON embedding arrays)
-│       │   ├── redisClient.js          # Dual ioredis (regular + BullMQ)
 │       │   ├── apiKeyService.js        # AES-256 key encryption
-│       │   ├── refreshTokenService.js  # Opaque refresh tokens in Valkey
-│       │   └── queues/aiQueue.js       # Per-provider BullMQ queues
-│       ├── workers/aiWorker.js         # Handler registry + pub/sub bridge
-│       ├── plugins/                    # csrf, idempotency, rateLimitKey, bullBoard, cors, auth
+│       │   └── refreshTokenService.js  # Opaque refresh tokens in MongoDB (TTL index)
+│       ├── plugins/                    # auth, csrf, idempotency (in-memory), rateLimitKey (in-memory), cors
 │       ├── lib/                        # prisma, logger
 │       ├── data/equipment/             # Bestiary, weapons, armour
-│       └── scripts/                    # createVectorIndexes, migrateCoreState
+│       └── scripts/                    # createVectorIndexes, createRefreshTokenTtlIndex
 │
 ├── shared/                             # Domain logic used by FE and BE
 │   ├── domain/                         # combatIntent, luck, pricing, stateValidation, dialogueRepair,
@@ -544,7 +548,7 @@ rage-player-game/
 │
 ├── knowledge/                          # Codebase knowledge for AI agents + contributors
 │   ├── concepts/                       # How subsystems work (scene-gen, combat, MP, auth, ...)
-│   ├── patterns/                       # Reusable code patterns (SSE, BullMQ, pure-lift, ...)
+│   ├── patterns/                       # Reusable code patterns (SSE streaming, pure-lift, hook testing, ...)
 │   ├── decisions/                      # Settled debates (two-stage pipeline, no-BYOK, RPGon, ...)
 │   ├── ideas/                          # Future concepts not yet built (with "when it becomes relevant")
 │   └── index.md
@@ -552,7 +556,7 @@ rage-player-game/
 ├── e2e/                                # Playwright specs + helpers + fixtures
 ├── CLAUDE.md                           # Top-level guide for AI agents
 ├── RPG_SYSTEM.md                       # RPGon rules specification
-├── docker-compose.yml                  # Dev stack (backend + valkey)
+├── docker-compose.yml                  # Dev stack (backend only — post-scene inline)
 ├── docker-compose.prod.yml             # Prod overlay
 ├── package.json, vite.config.js
 └── README.md
@@ -579,21 +583,22 @@ npm run setup
 cp backend/.env.example backend/.env
 # Uzupełnij DATABASE_URL (Atlas SRV), JWT_SECRET, API_KEY_ENCRYPTION_SECRET + klucze
 
-# Uruchom pełen stack (backend :3001 + valkey)
-npm run dev           # docker compose up --build --watch
+# Uruchom backend w Dockerze
+npm run dev           # docker compose up --build --watch (backend :3001)
 npm run dev:down      # docker compose down
 npm run dev:logs      # tail backend logs
 ```
 
-Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do e2e / szybkiej iteracji FE lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright.
+Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do e2e / szybkiej iteracji FE lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright. W dev post-scene work idzie inline — bez Cloud Tasks.
 
-### Jednorazowy setup — Atlas Vector Search
+### Jednorazowy setup — Atlas
 
 ```bash
-cd backend && node src/scripts/createVectorIndexes.js
+cd backend && node src/scripts/createVectorIndexes.js        # vector search indexes
+cd backend && node src/scripts/createRefreshTokenTtlIndex.js # TTL index dla refresh tokenów
 ```
 
-Tworzy indeksy vector search na kolekcjach `CampaignScene`, `CampaignNPC`, `CampaignKnowledge`, `CampaignCodex`. Konieczne do semantycznego przeszukiwania pamięci kampanii przez AI.
+Pierwszy skrypt tworzy indeksy vector search na kolekcjach `CampaignScene`, `CampaignNPC`, `CampaignKnowledge`, `CampaignCodex`. Drugi włącza automatyczny cleanup wygasłych refresh tokenów.
 
 ### Zmienne środowiskowe (`backend/.env`)
 
@@ -602,17 +607,20 @@ Tworzy indeksy vector search na kolekcjach `CampaignScene`, `CampaignNPC`, `Camp
 | `DATABASE_URL` | **Tak** | Connection string MongoDB Atlas (SRV). Hard-failuje boot jeśli nie jest ustawiona. |
 | `JWT_SECRET` | **Tak** | Sekret do podpisywania JWT access tokenów |
 | `API_KEY_ENCRYPTION_SECRET` | **Tak** | 32 hex chars, do szyfrowania kluczy API przechowywanych w DB |
-| `PORT` | Nie | Port serwera (domyślnie 3001) |
+| `PORT` | Nie | Port serwera (domyślnie 3001, 8080 w compose) |
 | `HOST` | Nie | Host binding (domyślnie 0.0.0.0) |
-| `REDIS_URL` | Nie | URL do Valkey (domyślnie `redis://valkey:6379` w compose). Gdy puste = tryb fallback (auth zwraca 503) |
 | `CORS_ORIGIN` | Nie | `true` dla dev albo lista originów |
 | `MEDIA_BACKEND` | Nie | `local` (domyślnie) lub `gcp` |
 | `MEDIA_LOCAL_PATH` | Nie | Ścieżka dla lokalnego storage mediów |
 | `GCS_BUCKET_NAME`, `GOOGLE_APPLICATION_CREDENTIALS` | Nie | GCP storage gdy `MEDIA_BACKEND=gcp` |
 | `OPENAI_API_KEY` | Nie | Domyślny klucz (użytkownicy mogą podać własne w Settings) |
-| `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `STABILITY_API_KEY` | Nie | j.w. — fallback dla użytkowników bez własnych kluczy |
-| `AI_QUEUE_CONCURRENCY_OPENAI`, `..._ANTHROPIC`, `..._GEMINI`, `..._STABILITY`, `..._MESHY` | Nie | Per-kolejka concurrency w BullMQ (default: 100 dla text, 10 dla media) |
-| `WORKER_MODE` | Nie | `1` = uruchom standalone worker zamiast in-process |
+| `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `STABILITY_API_KEY`, `MESHY_API_KEY` | Nie | j.w. — fallback dla użytkowników bez własnych kluczy |
+| `AI_MODEL_PREMIUM_OPENAI`, `AI_MODEL_PREMIUM_ANTHROPIC` | Nie | Override premium modelu bez ruszania kodu (np. `gpt-5.4` do A/B) |
+| `AI_MODEL_STANDARD_*`, `AI_MODEL_NANO_*`, `AI_MODEL_NANO_REASONING_*` | Nie | j.w. dla pozostałych tierów (patrz [config.js](./backend/src/config.js)) |
+| `CLOUD_TASKS_ENABLED` | Nie | `true` w prod → async post-scene przez Cloud Tasks; inaczej inline fire-and-forget |
+| `GCP_PROJECT_ID`, `GCP_REGION` | Tylko prod | Projekt + region Cloud Tasks (region domyślnie `europe-west1`) |
+| `SELF_URL` | Tylko prod | URL Cloud Run serwisu dla Cloud Tasks callback. Po pierwszym deployu: `gcloud run services describe rage-player-game --region europe-west1 --format 'value(status.url)'` |
+| `RUNTIME_SERVICE_ACCOUNT` | Tylko prod | Service account używany do OIDC-signing callbacków Cloud Tasks |
 
 ### Testy
 
@@ -623,14 +631,16 @@ npm run test:e2e       # Playwright (wymaga `npm run dev:frontend` i działając
 npm run test:e2e:ui    # Playwright UI mode
 ```
 
-### Tryb bez Redisa
+### Deployment — Cloud Run
 
-Stos działa bez Valkey — z dwoma wyjątkami:
+Stos jest projektowany pod Google Cloud Run (scale-to-zero, native HTTP/2, brak Redisa).
 
-- **Auth wymaga Redisa.** `/v1/auth/register|login|refresh` zwracają 503 gdy Redis off (refresh tokeny nie mają sensownego in-memory fallbacku).
-- **BullMQ queues off** — streaming scen przechodzi na inline SSE fallback. Mniejsza concurrency control, ale działa.
+- **Post-scene work** — w prod przez Cloud Tasks (OIDC-signed POST na `/v1/internal/post-scene-work`). W dev `CLOUD_TASKS_ENABLED=false` → inline fire-and-forget. Retry logic daje Cloud Tasks za darmo.
+- **Refresh tokeny** — w MongoDB z TTL index (automatyczny cleanup). Żaden external cache nie jest potrzebny.
+- **Rate limiting + idempotency** — in-memory per-instance. Przy scale-to-zero + niskim ruchu per-user to akceptowalne; gdy ruch urośnie, trzeba będzie pomyśleć o external store.
+- **Media** — `MEDIA_BACKEND=gcp` + Cloud Storage bucket (ephemeral filesystem na Cloud Run nie przeżywa restartu).
 
-Wszystkie inne warstwy (embedding cache, rate limiter, idempotency plugin) mają graceful degradation.
+Checklist deploymentu: [Deployment checklist — Cloud Run bez Red.txt](./Deployment%20checklist%20—%20Cloud%20Run%20bez%20Red.txt).
 
 ---
 
@@ -639,7 +649,7 @@ Wszystkie inne warstwy (embedding cache, rate limiter, idempotency plugin) mają
 - **[CLAUDE.md](./CLAUDE.md)** — zwięzły przewodnik top-level (stack, komendy, architektura, krytyczne pliki)
 - **[knowledge/](./knowledge/)** — szczegółowa dokumentacja subsystemów:
   - **[concepts/](./knowledge/concepts/)** — jak działa dany subsystem i gdzie jest kod (scene-generation, combat, multiplayer, auth, persistence, RPGon mechanics, AI context assembly, ...)
-  - **[patterns/](./knowledge/patterns/)** — wzorce kodu do ponownego użycia (SSE streaming, BullMQ, pure-lift refactoring, hook testing, e2e seeding, ...)
-  - **[decisions/](./knowledge/decisions/)** — zapadłe decyzje projektowe z alternatywami (two-stage pipeline, no-BYOK, BullMQ vs SSE, Atlas-only, custom RPGon, ...)
+  - **[patterns/](./knowledge/patterns/)** — wzorce kodu do ponownego użycia (SSE streaming, pure-lift refactoring, hook testing, e2e seeding, backend proxy, ...)
+  - **[decisions/](./knowledge/decisions/)** — zapadłe decyzje projektowe z alternatywami (two-stage pipeline, no-BYOK, Cloud Run bez Redis, Atlas-only, custom RPGon, ...)
   - **[ideas/](./knowledge/ideas/)** — pomysły na przyszłość nieprzyjęte jeszcze do kodu (autonomous NPCs, combat auto-resolve, prompt fragment system, ...) z opisem **kiedy stają się istotne**
 - **[RPG_SYSTEM.md](./RPG_SYSTEM.md)** — pełna specyfikacja reguł RPGon

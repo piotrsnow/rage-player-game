@@ -3,7 +3,7 @@
 ## Stack
 
 - **Frontend**: React 18 + Vite 6, Tailwind CSS, React Three Fiber (3D scenes), i18next, Zod 4
-- **Backend**: Fastify 5, Prisma (MongoDB), JWT + refresh cookies, WebSocket (multiplayer), BullMQ (Valkey/Redis)
+- **Backend**: Fastify 5, Prisma (MongoDB), JWT + refresh cookies, WebSocket (multiplayer), Cloud Tasks (post-scene async)
 - **Database**: MongoDB Atlas (normalized collections + Atlas Vector Search)
 - **AI**: OpenAI (GPT-5.4/mini/nano, 4.1/mini/nano, 4o/mini, o3/o4-mini) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini. Nano/standard/premium tiering via `src/services/ai/models.js`.
 - **3D**: Three.js / React Three Fiber — procedural scene rendering with GLB model support
@@ -13,7 +13,7 @@
 
 ## Commands
 
-- `npm run dev` — `docker compose up --build --watch`: boots backend :3001 + valkey, auto-restarts backend on changes in `backend/src` / `shared`, rebuilds image on package.json or frontend `src/` changes. MongoDB is Atlas-only (`DATABASE_URL` SRV string required in `.env`).
+- `npm run dev` — `docker compose up --build --watch`: boots backend :3001, auto-restarts backend on changes in `backend/src` / `shared`, rebuilds image on package.json or frontend `src/` changes. MongoDB is Atlas-only (`DATABASE_URL` SRV string required in `.env`). No Redis/Valkey — post-scene work runs inline in dev.
 - `npm run dev:down` — `docker compose down`
 - `npm run dev:logs` — tail backend container logs
 - `npm run dev:frontend` — `vite` with HMR on :5173 (Playwright E2E + fast FE iteration alongside watched backend)
@@ -50,9 +50,9 @@
 
 ### Backend (`backend/`)
 
-- **Routes** — `/v1/auth` (cookie refresh flow), campaigns CRUD (split), characters, `ai.js` (scene SSE + campaign SSE + single-shots + job polling), game data, media, multiplayer WebSocket (split), proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). All under `/v1/*`; `/health` at root.
-- **Services** — scene generation pipeline (`sceneGenerator/`), intent classification, context assembly (`aiContextTools.js`), memory compression, shared `aiJsonCall.js` for single-shot calls, multiplayer AI pipeline (`multiplayerAI/`), vector search, room manager, media storage.
-- **Infrastructure** — `redisClient.js` (regular + BullMQ connections), `queues/aiQueue.js` (per-provider BullMQ queues), `workers/aiWorker.js` (handler registry with pub/sub bridge for streaming jobs), `plugins/csrf.js`, `plugins/idempotency.js`, `plugins/rateLimitKey.js`, `plugins/bullBoard.js`, `refreshTokenService.js`.
+- **Routes** — `/v1/auth` (cookie refresh flow), campaigns CRUD (split), characters, `ai.js` (scene SSE + campaign SSE + single-shots), `/v1/internal/post-scene-work` (Cloud Tasks handler), game data, media, multiplayer WebSocket (split), proxy endpoints (OpenAI/Anthropic/Gemini/ElevenLabs/Stability/Meshy). All under `/v1/*`; `/health` at root.
+- **Services** — scene generation pipeline (`sceneGenerator/`), intent classification, context assembly (`aiContextTools.js`), memory compression, shared `aiJsonCall.js` for single-shot calls, multiplayer AI pipeline (`multiplayerAI/`), vector search, room manager, media storage, `cloudTasks.js` (post-scene enqueue), `postSceneWork.js` (async handler).
+- **Infrastructure** — `plugins/csrf.js`, `plugins/idempotency.js` (in-memory), `plugins/rateLimitKey.js`, `refreshTokenService.js` (Mongo-backed), `oidcVerify.js` (Cloud Tasks auth).
 
 ### Database (MongoDB via Prisma)
 
@@ -62,6 +62,7 @@
 | `Campaign` | `coreState` (lean JSON string), metadata |
 | `CampaignScene/NPC/Knowledge/Codex/Quest` | Normalized with Atlas Vector Search embeddings |
 | `Character` | Reusable character library (with campaign lock fields) |
+| `RefreshToken` | Opaque refresh tokens with TTL index |
 | `MultiplayerSession` | Room state backup for crash recovery |
 | `MediaAsset` | User-generated images/music/TTS |
 | `PrefabAsset` / `Wanted3D` | 3D model catalog |
@@ -75,27 +76,29 @@ Every scene generation goes through a two-stage pipeline: nano model selects wha
 Player action
   → [FE] resolveMechanics()                    — deterministic d50/combat/magic
   → [FE] useSceneGeneration → SSE stream       — POST /v1/ai/campaigns/:id/generate-scene-stream
-  → [BE route] writeSseHead + BullMQ enqueue   — pre-generated jobId, subscribe-before-enqueue
-  → [Worker] generateSceneStream phases:
+  → [BE route] writeSseHead + inline generateSceneStream
       1. load campaign state (parallel DB)
       2. classifyIntent (heuristic → nano)
       3. tryTradeShortcut / tryCombatFastPath (early return)
       4. generatePreRolls (3 d50 values for fallback)
       5. assembleContext (parallel DB for selected categories)
       6. build prompts + runTwoStagePipelineStreaming (premium)
-      7. parse + validate + reconcile dice + fill enemies + process state changes
-      8. post-scene async: compress facts, location summary, quest objectives, embedding
+      7. parse + validate + reconcile dice + fill enemies + persist character
+      8. enqueue post-scene work via Cloud Tasks (prod) or inline (dev)
   → [FE] applySceneStateChanges → stateValidator → gameDispatch
+  → [Cloud Tasks] POST /v1/internal/post-scene-work
+      — embedding, NPC/quest sync, nano state extraction (journal, knowledge, codex, worldFacts, needs), memory compression, location summary
 ```
 
 Full detail: [knowledge/concepts/scene-generation.md](knowledge/concepts/scene-generation.md).
 
 ### Design principles
 
-1. **Context selection over tool calling** — nano picks, code assembles, premium runs once. Not a loop.
+1. **Context selection, not tool calling** — nano picks, code assembles, premium runs once. No tool protocol, no tool-calling loop.
 2. **Game state over history** — structured state in the prompt, not raw scene history.
-3. **Bounded memory compression** — 15-fact cap per campaign → stable ~7k input regardless of length.
-4. **Nano for planning** — intent, fact extraction, skill inference, quest checks. Premium is for narration only.
+3. **Bounded memory compression** — 15-fact cap per campaign → stable prompt size regardless of length.
+4. **Nano for planning AND extraction** — intent classification, fact extraction, skill inference, quest checks, journal/knowledge/codex/worldFacts/needs extraction. Premium is for narration + mechanical stateChanges only.
+5. **Intent-driven conditional prompt** — combat/codex/mana-crystal/canTrain rules injected into dynamic suffix only when the intent classifier deems them relevant. Reduces prompt noise for non-combat/non-lore scenes.
 
 ### RPGon game system
 
@@ -132,7 +135,6 @@ Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code po
 ### Patterns — reusable code shapes
 
 - `knowledge/patterns/sse-streaming.md` — **MANDATORY** before touching any SSE route
-- `knowledge/patterns/bullmq-queues.md` — per-provider queues, pub/sub bridge, dual-mode workers
 - `knowledge/patterns/zustand-facade.md` — facade + granular selectors
 - `knowledge/patterns/pure-lift-refactoring.md` — lift ladder for components, thin-facade split for backend
 - `knowledge/patterns/hook-pure-factory-testing.md` — **MANDATORY** before writing hook tests
@@ -143,7 +145,7 @@ Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code po
 
 - `knowledge/decisions/two-stage-pipeline.md` — nano selection + code assembly (not tool calling)
 - `knowledge/decisions/no-byok.md` — backend is the sole AI dispatch path
-- `knowledge/decisions/bullmq-vs-sse-routes.md` — BullMQ + pub/sub bridge + SSE (not poll-only)
+- `knowledge/decisions/cloud-run-no-redis.md` — Cloud Run native, no Redis/BullMQ, Cloud Tasks for post-scene work
 - `knowledge/decisions/atlas-only-no-local-mongo.md` — Atlas SRV everywhere
 - `knowledge/decisions/embeddings-native-driver.md` — native MongoDB driver for BSON arrays
 - `knowledge/decisions/rpgon-custom-system.md` — custom d50 system, not WFRP
@@ -169,15 +171,16 @@ Current ideas (all from a `gradient-bang` review): async-tool-pattern, autonomou
 | Save/load | [src/services/storage.js](src/services/storage.js) |
 | Multiplayer WS | [backend/src/routes/multiplayer/connection.js](backend/src/routes/multiplayer/connection.js) + `handlers/` |
 | Auth flow | [src/services/apiClient.js](src/services/apiClient.js) + [backend/src/routes/auth.js](backend/src/routes/auth.js) |
-| BullMQ queues | [backend/src/services/queues/aiQueue.js](backend/src/services/queues/aiQueue.js) + [workers/aiWorker.js](backend/src/workers/aiWorker.js) |
+| System prompt (premium) | [backend/src/services/sceneGenerator/systemPrompt.js](backend/src/services/sceneGenerator/systemPrompt.js) |
+| Nano state extraction | [backend/src/services/memoryCompressor.js](backend/src/services/memoryCompressor.js) `compressSceneToSummary` |
+| Post-scene async | [backend/src/services/cloudTasks.js](backend/src/services/cloudTasks.js) + [postSceneWork.js](backend/src/services/postSceneWork.js) |
 | SSE routes | [backend/src/routes/ai.js](backend/src/routes/ai.js) `writeSseHead` |
 | Prisma schema | [backend/prisma/schema.prisma](backend/prisma/schema.prisma) |
 | RPGon rules | [src/data/rpgSystem.js](src/data/rpgSystem.js) |
 
 ## Known gaps / technical debt
 
-- **`backend/src/routes/ai.js` is ~865L** — over the 600L hard cap. Split into `routes/ai/` folder (schemas / simple / campaign / scene / scenes-crud subfiles) before adding more endpoints.
-- **`deepMerge` helper duplicated** at the bottom of `backend/src/routes/ai.js`. Move to a util file on next touch.
+- **`backend/src/routes/ai.js` is ~698L** — over the 600L hard cap (down from 865L after BullMQ removal). Split into `routes/ai/` folder before adding more endpoints.
 - **OpenAI/Anthropic dispatchers in 3 places**: `aiJsonCall.js` (single-shot), `campaignGenerator.js` (streaming), `sceneGenerator/streamingClient.js` (streaming). Acceptable — streaming vs non-streaming APIs are genuinely different shapes.
 - **`src/hooks/useNarrator.js` is ~945L** — biggest remaining monolith hook. Split is playtest-driven, not urgent.
 - **No token budget enforcement in `assembleContext()`.** Total prompt stays in ~3.5-7k tokens in practice thanks to upstream caps, but a runaway selection could blow past that. Add explicit counting if scenes start hitting model context limits or cost spikes.
@@ -188,7 +191,7 @@ Current ideas (all from a `gradient-bang` review): async-tool-pattern, autonomou
 
 - **No production backward-compat constraints** — we're pre-prod, no v1 users.
 - **Backend is the sole AI dispatch path.** No FE proxy/BYOK mode. Users can store per-user keys via `PUT /v1/auth/settings`; backend decrypts and threads them through via `loadUserApiKeys(prisma, userId)` → `userApiKeys` option → `requireServerApiKey(keyName, userApiKeys, label)`. See [knowledge/decisions/no-byok.md](knowledge/decisions/no-byok.md).
-- **Redis is optional but load-bearing.** Every consumer (embeddings L2 cache, rate limiter, idempotency plugin, BullMQ queues) checks `isRedisEnabled()` and falls back gracefully. **Exception:** `/v1/auth/register|login|refresh` return 503 when Redis is disabled — refresh tokens have no sensible in-memory fallback.
-- **Vector search indexes:** `cd backend && node src/scripts/createVectorIndexes.js` (one-time setup per Atlas cluster).
+- **No Redis/BullMQ.** Refresh tokens in Mongo (TTL index), post-scene async via Cloud Tasks (prod) or inline (dev), rate limiting + idempotency in-memory. See [knowledge/decisions/cloud-run-no-redis.md](knowledge/decisions/cloud-run-no-redis.md).
+- **One-time setup scripts:** `cd backend && node src/scripts/createVectorIndexes.js` (vector search), `node src/scripts/createRefreshTokenTtlIndex.js` (refresh token TTL).
 - **Multiplayer contracts shared via `shared/contracts/multiplayer.js`** — WS message schemas, normalizers, constants.
 - **LLM timeouts user-tunable** via DM Settings (`llmPremiumTimeoutMs`, `llmNanoTimeoutMs`). Premium timeout emits SSE `error` with `code: 'LLM_TIMEOUT'`; nano timeout falls back silently.

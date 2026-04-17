@@ -171,7 +171,56 @@ async function callAnthropicStreaming(systemPrompt, userPrompt, { model, maxToke
   return accumulated;
 }
 
+// Scales quest/NPC/world density with the campaign-length slider.
+// Medium mirrors the values the prompt used before the slider was wired in.
+const LENGTH_PARAMS = {
+  Short: {
+    objectives: '5-7',
+    npcs: '3-5',
+    questItems: '2-3',
+    worldFacts: '3-5',
+    npcMeetings: 2,
+    itemRetrieval: 1,
+    locationExplore: 1,
+    combat: 1,
+    puzzle: 1,
+    actsDescription: '3 acts: 5/7/3',
+    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 5, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 7, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 3, "description": "Final confrontation and resolution"}]',
+    totalScenes: 15,
+  },
+  Medium: {
+    objectives: '9-12',
+    npcs: '5-8',
+    questItems: '3-5',
+    worldFacts: '5-7',
+    npcMeetings: 4,
+    itemRetrieval: 2,
+    locationExplore: 1,
+    combat: 1,
+    puzzle: 1,
+    actsDescription: '3 acts: 8/12/5',
+    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 12, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 5, "description": "Final confrontation and resolution"}]',
+    totalScenes: 25,
+  },
+  Long: {
+    objectives: '13-17',
+    npcs: '7-10',
+    questItems: '5-7',
+    worldFacts: '8-10',
+    npcMeetings: 6,
+    itemRetrieval: 3,
+    locationExplore: 2,
+    combat: 2,
+    puzzle: 2,
+    actsDescription: '3 acts: 12/18/10',
+    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 12, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 18, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 10, "description": "Final confrontation and resolution"}]',
+    totalScenes: 40,
+  },
+};
+
 function buildCampaignCreationPrompt(settings, language = 'en') {
+  const lp = LENGTH_PARAMS[settings.length] || LENGTH_PARAMS.Medium;
+
   const langInstruction = language === 'pl'
     ? '\n\nIMPORTANT: Write ALL text content (name, worldDescription, hook, character backstory, narrative, quest names, quest descriptions, quest completion conditions, quest objectives, world facts, suggested actions) in Polish.'
     : '';
@@ -233,7 +282,7 @@ Respond with ONLY valid JSON:
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "backstory": "2-3 sentences of character backstory tied to the campaign world (only if player didn't provide one)",
-    "inventory": [{"id": "item_1", "name": "Hand Weapon", "type": "weapon", "description": "A sturdy sword", "rarity": "common"}]
+    "inventory": [{"id": "item_1", "name": "Lantern", "type": "gear", "description": "A brass miner's lantern with soot on the shutter.", "rarity": "common"}]
   },
   "firstScene": {
     "dialogueSegments": [
@@ -292,38 +341,38 @@ Respond with ONLY valid JSON:
   ],
   "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3", "Fact 4", "Fact 5"],
   "campaignStructure": {
-    "acts": [
-      {"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},
-      {"number": 2, "name": "Confrontation", "targetScenes": 12, "description": "Escalate the conflict, raise the stakes"},
-      {"number": 3, "name": "Climax", "targetScenes": 5, "description": "Final confrontation and resolution"}
-    ],
+    "acts": ${lp.actsJson},
     "currentAct": 1,
-    "totalTargetScenes": 25
+    "totalTargetScenes": ${lp.totalScenes}
   }
 }
 
+CAMPAIGN LENGTH: "${settings.length}" → target ~${lp.totalScenes} scenes (${lp.actsDescription}). All quest/NPC/world-fact counts below are scaled for this length.
+
 IMPORTANT for campaignStructure:
-- Base the act structure on the campaign length: Short (~15 scenes, 3 acts: 5/7/3), Medium (~25 scenes, 3 acts: 8/12/5), Long (~40 scenes, 3 acts: 12/18/10), Epic (~60+ scenes, 4 acts: 15/20/15/10).
+- Use the act structure for length "${settings.length}": ${lp.actsDescription}, totalTargetScenes = ${lp.totalScenes}.
 - Each act needs a name, target scene count, and brief description of its narrative purpose.
-- totalTargetScenes should be the sum of all act target scenes.
+- totalTargetScenes must equal the sum of all act target scenes.
 
 IMPORTANT for initialQuest and initialNPCs:
-- The initialQuest MUST have 9-12 objectives forming a coherent multi-step story arc — NOT generic placeholders.
-- Mix objective types: NPC conversations/meetings (at least 4), item retrieval (at least 2), location exploration/investigation (at least 1), combat/confrontation (at least 1), puzzle/skill challenge (at least 1).
+- The initialQuest MUST have ${lp.objectives} objectives forming a coherent multi-step story arc — NOT generic placeholders.
+- Mix objective types: NPC conversations/meetings (at least ${lp.npcMeetings}), item retrieval (at least ${lp.itemRetrieval}), location exploration/investigation (at least ${lp.locationExplore}), combat/confrontation (at least ${lp.combat}), puzzle/skill challenge (at least ${lp.puzzle}).
 - Each objective referencing an NPC meeting MUST correspond to a named NPC in initialNPCs. Use the NPC's actual name in the objective description.
 - Each objective referencing an item MUST correspond to an entry in questItems. Use the item's actual name in the objective description.
 - Objectives should follow a logical narrative order: early objectives involve gathering information and allies, middle objectives involve acquiring items and overcoming obstacles, late objectives involve confrontation and resolution.
-- initialNPCs must contain 5-8 unique NPCs with distinct names, roles, personalities, and locations. Spread them across different locations in the starting area.
+- initialNPCs must contain ${lp.npcs} unique NPCs with distinct names, roles, personalities, and locations. Spread them across different locations in the starting area.
 - Each NPC's relatedObjectiveIds must list the objective IDs they are involved in.
-- questItems must contain 3-5 items that are central to the quest. Each item must have a relatedObjectiveId linking it to the objective where it's obtained or used.
+- questItems must contain ${lp.questItems} items that are central to the quest. Each item must have a relatedObjectiveId linking it to the objective where it's obtained or used.
 - questItems represent things to find/acquire during the quest — they are NOT in the player's inventory at the start.
 - reward.items should include at least one meaningful reward item (weapon, armor, trinket, or special item).
-- initialWorldFacts should include 5+ facts that establish the world context relevant to the quest.
+- initialWorldFacts should include ${lp.worldFacts} facts that establish the world context relevant to the quest.
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
 
 IMPORTANT for characterSuggestion:
 - The player already has a character with stats/skills/money. Do NOT generate attributes, skills, mana, or money.
-- Include 2-5 starting inventory items (weapons, tools, gear) appropriate for the campaign setting.
+- The player ALSO receives a fixed starter kit from the engine (hand weapon, leather jerkin armour, backpack, waterskin, 1 day rations). Do NOT include any of these — they are guaranteed.
+- Inventory should contain 0-2 flavor items that tie the character to the campaign hook (e.g. miner's lantern, herbalist's pouch, letter of introduction, signet ring, masterwork chisel, spyglass). NOT weapons, NOT armour, NOT generic adventuring gear — those are already covered by the starter kit.
+- If no flavor item fits the campaign naturally, return an empty inventory array. Quality over quantity.
 - Include backstory ONLY if it adds campaign-specific context the player wouldn't have written themselves.
 
 There is NO separate "narrative" field — all scene prose lives in dialogueSegments.

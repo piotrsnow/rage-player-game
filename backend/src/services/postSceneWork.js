@@ -36,7 +36,10 @@ export async function handlePostSceneWork({
     phase1Tasks.push(processStateChanges(campaignId, stateChanges));
   }
   phase1Tasks.push(
-    compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs: llmNanoTimeoutMs }),
+    compressSceneToSummary(campaignId, narrative, playerAction, provider, {
+      timeoutMs: llmNanoTimeoutMs,
+      sceneIndex: scene.sceneIndex,
+    }),
   );
   if (newLoc && prevLoc && newLoc !== prevLoc) {
     phase1Tasks.push(

@@ -51,7 +51,7 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: 'gpt-4.1-mini',
+          model: config.aiModels.standard.openai,
           messages: [{ role: 'user', content: `${instruction}\n\nAkcja gracza: "${playerAction}"\n\nOdpowiedz TYLKO narracją, bez JSON.` }],
           max_tokens: 200,
           temperature: 0.8,

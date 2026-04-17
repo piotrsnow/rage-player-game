@@ -6,12 +6,24 @@ const PROVIDER_OPTIONS = [
   { id: 'anthropic', icon: 'psychology' },
 ];
 
+const BADGE_META = {
+  budget:   { icon: 'bolt',        colors: 'bg-primary/10 text-primary-dim border-primary/20' },
+  balanced: { icon: 'diamond',     colors: 'bg-tertiary/10 text-tertiary border-tertiary/30' },
+  reasoner: { icon: 'psychology',  colors: 'bg-secondary/10 text-secondary border-secondary/25' },
+};
+
 export default function AiProviderSection({ settings, updateSettings }) {
   const { t } = useTranslation();
   const providerLabels = {
     openai: t('settings.openaiLabel'),
     anthropic: t('settings.anthropicLabel'),
   };
+
+  const provider = settings.aiProvider;
+  const sceneModels = AI_MODELS.filter((m) => m.provider === provider && m.sceneBadge);
+  const recommendedId = RECOMMENDED_MODELS[provider];
+  // Empty aiModel means "use provider default" which also resolves to recommended.
+  const effectiveModelId = settings.aiModel || recommendedId;
 
   return (
     <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
@@ -24,16 +36,16 @@ export default function AiProviderSection({ settings, updateSettings }) {
         {PROVIDER_OPTIONS.map((opt) => (
           <button
             key={opt.id}
-            onClick={() => updateSettings({ aiProvider: opt.id })}
+            onClick={() => updateSettings({ aiProvider: opt.id, aiModel: '' })}
             className={`w-full p-4 rounded-sm border text-left flex items-center gap-3 transition-all ${
-              settings.aiProvider === opt.id
+              provider === opt.id
                 ? 'bg-surface-tint/10 border-primary/30 text-primary'
                 : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
             }`}
           >
             <span className="material-symbols-outlined">{opt.icon}</span>
             <span className="font-headline text-sm">{providerLabels[opt.id]}</span>
-            {settings.aiProvider === opt.id && (
+            {provider === opt.id && (
               <span className="material-symbols-outlined text-primary ml-auto text-sm">check_circle</span>
             )}
           </button>
@@ -45,76 +57,46 @@ export default function AiProviderSection({ settings, updateSettings }) {
           <span className="material-symbols-outlined text-primary-dim text-base">speed</span>
           {t('settings.modelTier')}
         </h3>
-        <p className="text-[10px] text-on-surface-variant mb-4">{t('settings.modelTierDesc')}</p>
+        <p className="text-[10px] text-on-surface-variant mb-4 leading-relaxed">{t('settings.modelTierDesc')}</p>
         <div className="space-y-2">
-          <button
-            onClick={() => updateSettings({ aiModel: '', aiModelTier: 'premium' })}
-            className={`w-full p-3 rounded-sm border text-left flex items-center gap-3 transition-all ${
-              !settings.aiModel
-                ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-            }`}
-          >
-            <span className="material-symbols-outlined text-sm">auto_awesome</span>
-            <div className="flex-1">
-              <span className="font-headline text-sm block">{t('settings.modelRecommended')}</span>
-              <span className="text-[10px] font-label uppercase tracking-widest opacity-70">
-                {AI_MODELS.find((m) => m.id === RECOMMENDED_MODELS[settings.aiProvider])?.label || RECOMMENDED_MODELS[settings.aiProvider]}
-              </span>
-            </div>
-            {!settings.aiModel && (
-              <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
-            )}
-          </button>
-
-          <button
-            onClick={() => {
-              if (!settings.aiModel) {
-                updateSettings({ aiModel: RECOMMENDED_MODELS[settings.aiProvider] });
-              }
-            }}
-            className={`w-full p-3 rounded-sm border text-left flex items-center gap-3 transition-all ${
-              settings.aiModel
-                ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-            }`}
-          >
-            <span className="material-symbols-outlined text-sm">tune</span>
-            <div className="flex-1">
-              <span className="font-headline text-sm block">{t('settings.modelCustom')}</span>
-              <span className="text-[10px] font-label uppercase tracking-widest opacity-70">
-                {t('settings.modelCustomDesc')}
-              </span>
-            </div>
-            {!!settings.aiModel && (
-              <span className="material-symbols-outlined text-primary text-sm">check_circle</span>
-            )}
-          </button>
-
-          {!!settings.aiModel && (
-            <div className="ml-4 mt-1 space-y-1.5 border-l-2 border-primary/20 pl-3">
-              {AI_MODELS.filter((m) => m.provider === settings.aiProvider).map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => updateSettings({ aiModel: m.id })}
-                  className={`w-full p-2.5 rounded-sm border text-left flex items-center gap-3 transition-all ${
-                    settings.aiModel === m.id
-                      ? 'bg-surface-tint/8 border-primary/25 text-primary'
-                      : 'bg-surface-container-high/30 border-outline-variant/10 text-on-surface-variant hover:border-primary/15'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-sm">{m.tier === 'premium' ? 'diamond' : 'bolt'}</span>
-                  <div className="flex-1">
-                    <span className="font-headline text-xs block">{m.label}</span>
-                    <span className="text-[9px] opacity-60 block">{m.cost}</span>
+          {sceneModels.map((m) => {
+            const meta = BADGE_META[m.sceneBadge];
+            const isSelected = effectiveModelId === m.id;
+            const isRecommended = m.id === recommendedId;
+            return (
+              <button
+                key={m.id}
+                onClick={() => updateSettings({ aiModel: m.id })}
+                className={`w-full p-3 rounded-sm border text-left flex items-start gap-3 transition-all ${
+                  isSelected
+                    ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                    : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                }`}
+              >
+                <span className={`material-symbols-outlined text-sm mt-0.5 ${isSelected ? '' : 'opacity-70'}`}>{meta.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-headline text-sm">{m.label}</span>
+                    <span className={`text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border ${meta.colors}`}>
+                      {t(`settings.sceneBadge${m.sceneBadge.charAt(0).toUpperCase() + m.sceneBadge.slice(1)}`)}
+                    </span>
+                    {isRecommended && (
+                      <span className="text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border bg-primary/15 text-primary border-primary/30">
+                        {t('settings.modelRecommended')}
+                      </span>
+                    )}
                   </div>
-                  {settings.aiModel === m.id && (
-                    <span className="material-symbols-outlined text-primary text-xs">check_circle</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+                  <span className="text-[10px] opacity-70 block mt-1 leading-relaxed">
+                    {t(`settings.sceneBadge${m.sceneBadge.charAt(0).toUpperCase() + m.sceneBadge.slice(1)}Desc`)}
+                  </span>
+                  <span className="text-[9px] opacity-50 block mt-0.5 font-mono">{m.cost}</span>
+                </div>
+                {isSelected && (
+                  <span className="material-symbols-outlined text-primary text-sm mt-0.5">check_circle</span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

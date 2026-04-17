@@ -374,38 +374,31 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
   }
 
   // ── RECENT CONTEXT ──
-  // Prefer compressed gameStateSummary (nano-generated facts) over full scenes
+  // Two layers: earlier scenes live as compressed gameStateSummary facts (nano
+  // extracts plot-relevant items with a 15-fact cap); the immediate previous
+  // scene is attached in full so the model has direct tonal/dialog continuity
+  // with what just happened. Facts from the last scene are filtered out — the
+  // full narrative already carries that info, no need to duplicate as compression.
+  // No truncation on the last scene; ~500-1500 chars typical, within budget.
+  const lastScene = recentScenes.length > 0 ? recentScenes[recentScenes.length - 1] : null;
+  const lastSceneIndex = lastScene?.sceneIndex ?? null;
   const gameStateSummary = cs.gameStateSummary;
   if (gameStateSummary?.length > 0) {
-    dynamicSections.push(`Recent Story Facts:\n${gameStateSummary.map((f, i) => `${i + 1}. ${f}`).join('\n')}`);
-    if (recentScenes.length > 0) {
-      const last = recentScenes[recentScenes.length - 1];
-      if (gameStateSummary.length >= 5) {
-        // Facts are rich enough — just show what the player did
-        if (last.chosenAction) dynamicSections.push(`Last action: ${last.chosenAction}`);
-      } else {
-        // Early game — include short narrative for continuity
-        const action = last.chosenAction ? `Player: ${last.chosenAction}\n` : '';
-        const narrative = (last.narrative || '').length > 300
-          ? last.narrative.slice(0, 300) + '...'
-          : last.narrative;
-        dynamicSections.push(`Last Scene:\n[Scene ${last.sceneIndex}] ${action}${narrative}`);
-      }
+    // Back-compat: legacy string facts have no sceneIndex metadata — always
+    // include (can't filter). Objects with matching sceneIndex are dropped.
+    const factText = (item) => (typeof item === 'string' ? item : item?.fact || '');
+    const factSceneIdx = (item) => (typeof item === 'string' ? null : item?.sceneIndex ?? null);
+    const filtered = gameStateSummary.filter((item) => {
+      const idx = factSceneIdx(item);
+      return idx === null || lastSceneIndex === null || idx !== lastSceneIndex;
+    });
+    if (filtered.length > 0) {
+      dynamicSections.push(`Recent Story Facts:\n${filtered.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n')}`);
     }
-  } else if (recentScenes.length > 0) {
-    // Fallback for early game: 3 scenes, 300 chars, skip trivial
-    const TRIVIAL = new Set(['[WAIT]', '[CONTINUE]', '[IDLE_WORLD_EVENT]']);
-    const meaningful = recentScenes.filter(s => !TRIVIAL.has(s.chosenAction));
-    const scenes = (meaningful.length > 0 ? meaningful : recentScenes).slice(-3);
-    const sceneLines = ['Recent History:'];
-    for (const scene of scenes) {
-      const action = scene.chosenAction ? `Player: ${scene.chosenAction}\n` : '';
-      const narrative = (scene.narrative || '').length > 300
-        ? scene.narrative.slice(0, 300) + '...'
-        : scene.narrative;
-      sceneLines.push(`[Scene ${scene.sceneIndex}] ${action}${narrative}`);
-    }
-    dynamicSections.push(sceneLines.join('\n\n'));
+  }
+  if (lastScene) {
+    const action = lastScene.chosenAction ? `Player: ${lastScene.chosenAction}\n` : '';
+    dynamicSections.push(`Last Scene:\n[Scene ${lastScene.sceneIndex}] ${action}${lastScene.narrative || ''}`);
   }
 
   const staticPrefix = staticSections.join('\n\n');

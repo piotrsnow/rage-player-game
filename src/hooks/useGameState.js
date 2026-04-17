@@ -3,11 +3,22 @@ import { useTranslation } from 'react-i18next';
 import { useGame } from '../contexts/GameContext';
 import { createDefaultNeeds } from '../stores/gameReducer';
 import { storage } from '../services/storage';
-import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney } from '../services/gameState';
+import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney, createStarterInventory } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
 import { SPECIES, createStartingSkills } from '../data/rpgSystem';
 import { gameData } from '../services/gameDataService';
 import { shortId } from '../utils/ids';
+
+// Merge the deterministic starter kit with up to 2 AI-suggested flavor items.
+// Starter kit baseTypes always present — AI can only ADD on top.
+function buildStartingInventory(aiInventory) {
+  const starter = createStarterInventory();
+  const starterBaseTypes = new Set(starter.map((i) => i.baseType));
+  const flavor = gameData.mapStartingInventoryToCatalog(aiInventory || [])
+    .filter((item) => item && !starterBaseTypes.has(item.baseType))
+    .slice(0, 2);
+  return [...starter, ...flavor];
+}
 
 function buildCharacter(aiResult, campaignSettings) {
   // If a fully pre-built character was created via the CharacterCreationModal, use it directly
@@ -21,7 +32,7 @@ function buildCharacter(aiResult, campaignSettings) {
   }
 
   // Character stats are always created by the player (CharacterCreationModal or library).
-  // AI only provides campaign-specific starting inventory and backstory.
+  // AI only provides campaign-specific flavor items and backstory.
   const speciesName = campaignSettings.species || 'Human';
   const species = SPECIES[speciesName] || SPECIES.Human;
   const attributes = generateAttributes(speciesName);
@@ -42,7 +53,7 @@ function buildCharacter(aiResult, campaignSettings) {
     mana: { current: species.startingMana || 0, max: species.startingMana || 0 },
     spells: { known: [], usageCounts: {}, scrolls: [] },
     skills: createStartingSkills(speciesName),
-    inventory: gameData.mapStartingInventoryToCatalog(aiChar.inventory || []),
+    inventory: buildStartingInventory(aiChar.inventory),
     money: generateStartingMoney(),
     statuses: [],
     backstory: aiChar.backstory || '',
@@ -95,13 +106,13 @@ export function useGameState() {
         : buildCharacter(aiResult, campaignSettings);
 
       // If the character was pre-built (via CharacterCreationModal or library) and has no
-      // inventory, fold in the AI's campaign-specific starting gear so it isn't lost.
+      // inventory, give them the deterministic starter kit plus the AI's campaign-specific flavor items.
       const aiStartingInventory = aiResult?.characterSuggestion?.inventory || [];
       const addedStartingItems = [];
-      if ((!initialCharacter.inventory || initialCharacter.inventory.length === 0) && aiStartingInventory.length > 0) {
-        const mapped = gameData.mapStartingInventoryToCatalog(aiStartingInventory);
-        initialCharacter.inventory = mapped;
-        addedStartingItems.push(...mapped);
+      if (!initialCharacter.inventory || initialCharacter.inventory.length === 0) {
+        const merged = buildStartingInventory(aiStartingInventory);
+        initialCharacter.inventory = merged;
+        addedStartingItems.push(...merged);
       }
 
       // Persist character to its own collection FIRST so we get a backendId

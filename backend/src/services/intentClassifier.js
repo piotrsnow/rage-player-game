@@ -308,7 +308,7 @@ async function callNanoOpenAI(userPrompt, signal) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4.1-nano',
+      model: config.aiModels.nano.openai,
       messages: [
         { role: 'system', content: NANO_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },

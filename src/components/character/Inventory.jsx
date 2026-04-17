@@ -7,6 +7,7 @@ import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
 import ItemDetailBox from './inventory/ItemDetailBox';
 import ItemTooltip from './inventory/ItemTooltip';
 import CrystalUseModal from './inventory/CrystalUseModal';
+import Tooltip from '../ui/Tooltip';
 import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippableSlots, getEquippedSlot } from './inventory/constants';
 
 function CoinDisplay({ value, label, color }) {
@@ -85,39 +86,44 @@ export default function Inventory({ character, items = [], money, equipped = {},
           const isSelected = selectedItemId === item.id;
           const eqSlot = getEquippedSlot(item, equipped);
           return (
-            <div
+            <Tooltip
               key={item.id}
-              className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
-              onClick={() => setSelectedItemId(isSelected ? null : item.id)}
+              content={<ItemTooltip item={item} />}
+              delay={100}
+              className="contents"
+              tooltipClassName="!max-w-none !p-3"
             >
-              <InventoryImage
-                imageUrl={resolvedImageUrl}
-                alt={item.name}
-                sizeClass="w-8 h-8"
-                fallbackIcon={icon}
-                fallbackIconClass="text-base"
-                imageClassName="group-hover:scale-110 transition-transform"
-                wrapperClassName="flex items-center justify-center"
-                tooltipContent={<ItemTooltip item={item} />}
-                tooltipDelay={400}
-              />
-              <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
-                {item.name}
-              </span>
-              {eqSlot && (
-                <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
-                  <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
-                    {SLOT_CONFIG[eqSlot].icon}
-                  </span>
-                </div>
-              )}
-              {(item.rarity === 'legendary' || item.availability === 'exotic') && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
-              )}
-              {(item.rarity === 'epic' || item.rarity === 'rare') && (
-                <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-              )}
-            </div>
+              <div
+                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+                onClick={() => setSelectedItemId(isSelected ? null : item.id)}
+              >
+                <InventoryImage
+                  imageUrl={resolvedImageUrl}
+                  alt={item.name}
+                  sizeClass="w-8 h-8"
+                  fallbackIcon={icon}
+                  fallbackIconClass="text-base"
+                  imageClassName="group-hover:scale-110 transition-transform"
+                  wrapperClassName="flex items-center justify-center"
+                />
+                <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
+                  {item.name}
+                </span>
+                {eqSlot && (
+                  <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
+                    <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      {SLOT_CONFIG[eqSlot].icon}
+                    </span>
+                  </div>
+                )}
+                {(item.rarity === 'legendary' || item.availability === 'exotic') && (
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-tertiary rounded-full shadow-[0_0_6px_rgba(255,239,213,0.6)]" />
+                )}
+                {(item.rarity === 'epic' || item.rarity === 'rare') && (
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                )}
+              </div>
+            </Tooltip>
           );
         })}
         {Array.from({ length: emptySlots }).map((_, i) => (

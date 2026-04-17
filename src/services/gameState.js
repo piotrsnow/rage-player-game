@@ -167,6 +167,20 @@ export function generateStartingMoney() {
   return normalizeMoney({ gold: 0, silver: roll, copper: 0 });
 }
 
+// Fixed starter kit every new character gets. AI may add 1-2 flavor items on top.
+// baseTypes resolve against backend/src/data/equipment/equipment.js via mapStartingInventoryToCatalog.
+const STARTER_KIT = [
+  { name: 'Broń ręczna', type: 'weapon', baseType: 'hand_weapon', description: 'Miecz, topór lub maczuga — wybór wojownika.', rarity: 'common' },
+  { name: 'Skórzany kubrak', type: 'armor', baseType: 'leather_jerkin', description: 'Solidny pancerz ze skóry; zapewnia podstawową ochronę.', rarity: 'common' },
+  { name: 'Plecak', type: 'gear', baseType: 'backpack', description: 'Płócienno-skórzany plecak na prowiant i ekwipunek.', rarity: 'common' },
+  { name: 'Bukłak', type: 'gear', baseType: 'waterskin', description: 'Skórzany bukłak na wodę; pojemność ok. 1 litra.', rarity: 'common' },
+  { name: 'Racje (1 dzień)', type: 'gear', baseType: 'rations_day', description: 'Suszone mięso, ser i chleb na jeden dzień drogi.', rarity: 'common' },
+];
+
+export function createStarterInventory() {
+  return STARTER_KIT.map((item) => ({ ...item, id: prefixedId('item', 4) }));
+}
+
 export function formatMoney(money) {
   const parts = [];
   if (money.gold) parts.push(`${money.gold} GC`);
