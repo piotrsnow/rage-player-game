@@ -103,7 +103,16 @@ export async function crudCampaignRoutes(app) {
     schema: { body: CAMPAIGN_WRITE_SCHEMA },
     config: { idempotency: true },
   }, async (request, reply) => {
-    const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
+    const {
+      name,
+      genre,
+      tone,
+      coreState: rawCoreState,
+      characterIds: rawCharIds,
+      livingWorldEnabled,
+      worldTimeRatio,
+      worldTimeMaxGapDays,
+    } = request.body;
     const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
     const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
@@ -134,6 +143,9 @@ export async function crudCampaignRoutes(app) {
         totalCost: extractTotalCost(slim),
         lastSaved: new Date(),
         shareToken: crypto.randomUUID(),
+        ...(livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
+        ...(typeof worldTimeRatio === 'number' ? { worldTimeRatio } : {}),
+        ...(Number.isInteger(worldTimeMaxGapDays) ? { worldTimeMaxGapDays } : {}),
       },
     });
 

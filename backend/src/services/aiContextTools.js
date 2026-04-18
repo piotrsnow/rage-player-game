@@ -5,6 +5,9 @@ import { embedText } from './embeddingService.js';
 import { formatWeaponCatalog, formatBaseTypeCatalog, searchBestiary } from '../data/equipment/index.js';
 import { getLocationSummary } from './memoryCompressor.js';
 import { childLogger } from '../lib/logger.js';
+import { findOrCreateWorldLocation, listNpcsAtLocation } from './livingWorld/worldStateService.js';
+import { forLocation as worldEventsForLocation, parseEventPayload } from './livingWorld/worldEventLog.js';
+import { getCompanions } from './livingWorld/companionService.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -452,6 +455,20 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
   const skipQuests = new Set((skipKeys.quests || []).map(s => String(s).toLowerCase()));
   const skipCodex = new Set((skipKeys.codex || []).map(s => String(s).toLowerCase()));
 
+  // Living World — fetch recent WorldEvents at the current location (and the
+  // canonical NPCs present there) when the campaign has the feature enabled.
+  // Runs in parallel with other context fetches; failures are non-fatal.
+  if (currentLocation) {
+    fetches.push(
+      buildLivingWorldContext(campaignId, currentLocation)
+        .then((data) => ({ type: 'livingWorld', data }))
+        .catch((err) => {
+          log.warn({ err: err?.message, campaignId }, 'livingWorld context fetch failed');
+          return { type: 'livingWorld', data: null };
+        }),
+    );
+  }
+
   // Expand selected NPCs
   for (const name of selectionResult.expand_npcs || []) {
     if (skipNpcs.has(name.toLowerCase())) continue;
@@ -497,7 +514,7 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
   }
 
   if (fetches.length === 0) {
-    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null };
+    return { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null };
   }
 
   const results = await Promise.all(fetches);
@@ -505,7 +522,7 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
 }
 
 function groupByType(results) {
-  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null };
+  const grouped = { npcs: {}, quests: {}, location: null, codex: {}, memory: null, livingWorld: null };
 
   for (const r of results) {
     switch (r.type) {
@@ -524,8 +541,90 @@ function groupByType(results) {
       case 'memory':
         grouped.memory = r.data;
         break;
+      case 'livingWorld':
+        grouped.livingWorld = r.data;
+        break;
     }
   }
 
   return grouped;
+}
+
+/**
+ * Build a Living World context block for the current location.
+ *
+ * Returns null when the campaign has livingWorldEnabled=false (so the
+ * legacy flow stays untouched) or when no relevant world data exists.
+ *
+ * Shape: { locationName, npcs: [{name, role, paused}], recentEvents: [{type, blurb, at}] }
+ */
+async function buildLivingWorldContext(campaignId, currentLocation) {
+  // Cheap check — if the flag is off we do nothing.
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { livingWorldEnabled: true },
+  });
+  if (!campaign?.livingWorldEnabled) return null;
+
+  const location = await findOrCreateWorldLocation(currentLocation);
+  if (!location) return null;
+
+  // Parallel: NPCs at this location (canonical) + recent world events +
+  // any companions travelling with the party (Phase 2).
+  const [npcs, events, companions] = await Promise.all([
+    listNpcsAtLocation(location.id, { aliveOnly: true }).catch(() => []),
+    worldEventsForLocation({
+      locationId: location.id,
+      campaignId,
+      limit: 12,
+    }).catch(() => []),
+    getCompanions(campaignId).catch(() => []),
+  ]);
+
+  // Filter events to those that carry useful narrative for the next scene.
+  // Phase 1 surfaces resume_summary blurbs and headline events (moves, kills,
+  // quest completions). Phase 3 will widen to include cross-user events.
+  const NARRATIVE_TYPES = new Set([
+    'resume_summary',
+    'moved',
+    'killed',
+    'quest_complete',
+    'returned_from_journey',
+  ]);
+  const recentEvents = events
+    .filter((e) => NARRATIVE_TYPES.has(e.eventType))
+    .map((e) => {
+      const payload = parseEventPayload(e);
+      return {
+        type: e.eventType,
+        blurb: payload?.blurb || payload?.summary || null,
+        at: e.createdAt,
+      };
+    })
+    .filter((e) => e.blurb || e.type !== 'resume_summary'); // resume_summary without a blurb adds no signal
+
+  // Exclude companions from ambient "NPCs here" list — they're rendered
+  // separately with inParty + loyalty context.
+  const companionIds = new Set(companions.map((c) => c.id));
+  const ambientNpcs = npcs.filter((n) => !companionIds.has(n.id));
+
+  if (ambientNpcs.length === 0 && recentEvents.length === 0 && companions.length === 0) {
+    return null;
+  }
+
+  return {
+    locationName: location.canonicalName,
+    npcs: ambientNpcs.map((n) => ({
+      name: n.name,
+      role: n.role || null,
+      paused: !!n.pausedAt,
+    })),
+    companions: companions.map((c) => ({
+      name: c.name,
+      role: c.role || null,
+      loyalty: typeof c.companionLoyalty === 'number' ? c.companionLoyalty : 50,
+      joinedAt: c.companionJoinedAt ? new Date(c.companionJoinedAt).toISOString() : null,
+    })),
+    recentEvents,
+  };
 }

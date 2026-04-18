@@ -8,6 +8,8 @@ import {
   buildCodexEmbeddingText,
 } from '../embeddingService.js';
 import { writeEmbedding } from '../vectorSearchService.js';
+import { maybePromote } from '../livingWorld/npcPromotion.js';
+import { updateLoyalty } from '../livingWorld/companionService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -24,7 +26,9 @@ export async function generateSceneEmbedding(scene) {
   writeEmbedding('CampaignScene', scene.id, embedding, embeddingText);
 }
 
-async function processNpcChanges(campaignId, npcs) {
+async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false } = {}) {
+  const affectedNpcIds = [];
+
   for (const npcChange of npcs) {
     if (!npcChange.name) continue;
 
@@ -54,6 +58,7 @@ async function processNpcChanges(campaignId, npcs) {
           const embText = buildNPCEmbeddingText(updated);
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignNPC', updated.id, emb, embText);
+          affectedNpcIds.push(updated.id);
         }
       } else if (npcChange.action === 'introduce' || !existing) {
         try {
@@ -75,6 +80,7 @@ async function processNpcChanges(campaignId, npcs) {
           const embText = buildNPCEmbeddingText(created);
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);
+          affectedNpcIds.push(created.id);
         } catch (createErr) {
           // P2002 = unique constraint (campaignId+npcId) — retry created it already, safe to skip
           if (createErr.code !== 'P2002') throw createErr;
@@ -83,6 +89,36 @@ async function processNpcChanges(campaignId, npcs) {
     } catch (err) {
       log.error({ err, campaignId, npcName: npcChange.name }, 'Failed to process NPC change');
     }
+  }
+
+  // Living World: attempt promotion for touched NPCs + propagate companion
+  // loyalty drift from dispositionChange. Both parallel, best-effort.
+  if (livingWorldEnabled && affectedNpcIds.length > 0) {
+    const promotionTasks = affectedNpcIds.map((id) => maybePromote(id));
+    const loyaltyTasks = npcs
+      .filter((n) => n.name && typeof n.dispositionChange === 'number' && n.dispositionChange !== 0)
+      .map(async (change) => {
+        try {
+          // Resolve CampaignNPC → worldNpcId so we can target the canonical row
+          const npcId = change.name.toLowerCase().replace(/\s+/g, '_');
+          const cn = await prisma.campaignNPC.findUnique({
+            where: { campaignId_npcId: { campaignId, npcId } },
+            select: { worldNpcId: true, isAgent: true },
+          });
+          if (!cn?.worldNpcId || !cn.isAgent) return;
+          // Loyalty scale: dispositionChange ±1-5 → same delta on 0-100 loyalty
+          const delta = Math.max(-10, Math.min(10, change.dispositionChange));
+          await updateLoyalty({
+            worldNpcId: cn.worldNpcId,
+            campaignId,
+            delta,
+            reason: `scene disposition ${delta >= 0 ? '+' : ''}${delta}`,
+          });
+        } catch (err) {
+          log.warn({ err, npcName: change.name, campaignId }, 'Loyalty drift propagation failed');
+        }
+      });
+    await Promise.allSettled([...promotionTasks, ...loyaltyTasks]);
   }
 }
 
@@ -235,8 +271,21 @@ async function processQuestStatusChange(campaignId, questIds, status) {
 }
 
 export async function processStateChanges(campaignId, stateChanges) {
+  // Fetch campaign once to check living-world flag (cheap — same record is
+  // already loaded by postSceneWork for the same campaignId).
+  let livingWorldEnabled = false;
+  try {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { livingWorldEnabled: true },
+    });
+    livingWorldEnabled = campaign?.livingWorldEnabled === true;
+  } catch {
+    // non-fatal — fall back to legacy behaviour
+  }
+
   if (stateChanges.npcs?.length) {
-    await processNpcChanges(campaignId, stateChanges.npcs);
+    await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled });
   }
 
   if (stateChanges.knowledgeUpdates) {

@@ -86,6 +86,8 @@ export function useGameState() {
         worldDescription: aiResult.worldDescription,
         hook: aiResult.hook,
         characterIds: [], // populated after the character is saved below
+        // Living World (Phase 1) — flag forwarded to backend on first save
+        ...(campaignSettings.livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
       };
 
       const initialCharacter = campaignSettings.existingCharacter

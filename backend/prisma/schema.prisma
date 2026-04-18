@@ -65,6 +65,10 @@ model Campaign {
   lastSaved      DateTime @default(now())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  // Living World (Phase 1) — experimental flag-gated feature
+  livingWorldEnabled  Boolean @default(false)
+  worldTimeRatio      Float   @default(24.0) // 1 IRL hour = N game hours
+  worldTimeMaxGapDays Int     @default(7)    // cap dla offline gap między wizytami
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -125,10 +129,14 @@ model CampaignNPC {
   notes         String?
   relationships String   @default("[]")
   embeddingText String?
+  // Living World (Phase 1) — link to canonical WorldNPC + agent flag
+  worldNpcId    String?  @db.ObjectId
+  isAgent       Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([campaignId])
+  @@index([worldNpcId])
   @@unique([campaignId, npcId])
 }
 
@@ -328,4 +336,77 @@ model Wanted3D {
   @@index([campaignId])
   @@index([status])
   @@map("3dwanted")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Living World (Phase 1)
+// Experimental flag-gated feature. See
+// C:\Users\patry\.claude\plans\siemanko-chyba-znowu-nie-lucky-flask.md
+// ═══════════════════════════════════════════════════════════════════════
+
+model WorldLocation {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  canonicalName String    @unique
+  aliases       String    @default("[]") // JSON array — fuzzy dedupe
+  description   String    @default("")
+  category      String    @default("generic")
+  region        String?
+  embeddingText String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
+
+  @@index([region])
+}
+
+model WorldNPC {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  canonicalId       String    @unique
+  name              String
+  role              String?
+  personality       String?
+  factionId         String?
+  alignment         String    @default("neutral") // good|neutral|evil — Phase 3 uses this
+  alive             Boolean   @default(true)
+  currentLocationId String?   @db.ObjectId
+  pausedAt          DateTime?
+  pauseSnapshot     String?   // JSON: last activity log + context
+  embeddingText     String?
+  // Phase 2 — Companion mode
+  companionOfCampaignId String?   @db.ObjectId // null = not a companion
+  companionJoinedAt     DateTime?
+  companionLoyalty      Int       @default(50) // 0-100, drift based on player decisions
+  // Phase 2 — Cross-campaign lock (snapshot-and-overlay isolation)
+  lockedByCampaignId    String?   @db.ObjectId
+  lockedAt              DateTime?
+  lockedSnapshot        String?   // JSON: frozen state at joinParty
+  // Phase 2 — Per-campaign dialog memory (C2 1-on-1 endpoint)
+  dialogHistory         String    @default("{}") // JSON: { campaignId: [{playerMsg, npcResponse, gameTime}] }
+  knowledgeBase         String    @default("[]") // JSON: [{ topic, learnedAt, source, sensitivity }]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
+
+  @@index([currentLocationId])
+  @@index([alive])
+  @@index([companionOfCampaignId])
+  @@index([lockedByCampaignId])
+}
+
+model WorldEvent {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  worldNpcId      String?  @db.ObjectId
+  worldLocationId String?  @db.ObjectId
+  campaignId      String?  @db.ObjectId
+  userId          String?  @db.ObjectId
+  eventType       String   // moved|spoke|killed|quest_complete|pause_snapshot|resume_summary|...
+  payload         String   @default("{}") // JSON
+  visibility      String   @default("campaign") // campaign|private (Phase 2 adds "deferred", Phase 3 adds "global")
+  gameTime        DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([worldNpcId, createdAt])
+  @@index([worldLocationId, createdAt])
+  @@index([campaignId, createdAt])
+  @@index([eventType])
 }

@@ -2,6 +2,8 @@ import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/processStateChanges.js';
 import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
+import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
+import { applyCompanionTravel } from './livingWorld/companionService.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -19,7 +21,10 @@ export async function handlePostSceneWork({
   prevLoc,
   llmNanoTimeoutMs,
 }) {
-  const scene = await prisma.campaignScene.findUnique({ where: { id: sceneId } });
+  const [scene, campaign] = await Promise.all([
+    prisma.campaignScene.findUnique({ where: { id: sceneId } }),
+    prisma.campaign.findUnique({ where: { id: campaignId } }),
+  ]);
   if (!scene) {
     log.warn({ sceneId }, 'Scene not found — skipping post-scene work');
     return;
@@ -45,6 +50,35 @@ export async function handlePostSceneWork({
     phase1Tasks.push(
       generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }),
     );
+    // Living World: pause NPCs at previous location, resume NPCs at new location.
+    // Runs in parallel with generateLocationSummary — both observe the same transition.
+    if (campaign?.livingWorldEnabled) {
+      // Phase 2: move companions BEFORE pausing at prevLoc. Companions that
+      // travel with the party write a deferred companion_moved event and
+      // have their read-model lockedSnapshot.locationName refreshed. They
+      // are then skipped by pauseNpcsAtLocation (companionOfCampaignId filter).
+      // We chain this sequentially (small cost vs race-safety) so that the
+      // pause query sees the post-travel companion state.
+      phase1Tasks.push(
+        (async () => {
+          try {
+            await applyCompanionTravel({ campaignId, newLocationName: newLoc, userId: campaign.userId });
+          } catch (err) {
+            log.warn({ err, campaignId, newLoc }, 'applyCompanionTravel failed (non-fatal)');
+          }
+          try {
+            await pauseNpcsAtLocation(prevLoc);
+          } catch (err) {
+            log.warn({ err, prevLoc }, 'pauseNpcsAtLocation failed (non-fatal)');
+          }
+          try {
+            await resumeNpcsAtLocation(newLoc, campaign, { provider, timeoutMs: llmNanoTimeoutMs });
+          } catch (err) {
+            log.warn({ err, newLoc }, 'resumeNpcsAtLocation failed (non-fatal)');
+          }
+        })(),
+      );
+    }
   }
 
   const results = await Promise.allSettled(phase1Tasks);

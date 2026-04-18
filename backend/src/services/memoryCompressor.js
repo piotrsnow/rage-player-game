@@ -19,7 +19,7 @@ const log = childLogger({ module: 'memoryCompressor' });
 // where importance judgment matters and async latency is free — memory/location
 // compression. `reasoning: false` routes to the fast nano tier (gpt-4.1-nano)
 // for classification-shaped tasks on the critical path — quest objective check.
-async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
+export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();

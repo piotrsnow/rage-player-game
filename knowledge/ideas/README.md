@@ -22,4 +22,5 @@ Never silently act on an idea here as if it were an established pattern. The con
 - [combat-auto-resolve](combat-auto-resolve.md) — AFK handling in multiplayer combat rounds
 - [declarative-event-routing](declarative-event-routing.md) — config-driven event dispatch
 - [deferred-event-batching](deferred-event-batching.md) — debounced multi-event batching
+- [living-world-vector-search](living-world-vector-search.md) — semantic NPC/location dedupe (deferred, name-dedupe is the current fallback)
 - [prompt-fragment-system](prompt-fragment-system.md) — markdown fragments + LRU cache for prompts

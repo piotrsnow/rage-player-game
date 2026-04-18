@@ -51,6 +51,7 @@ export default function CampaignCreatorPage() {
     difficulty: 'Normal',
     length: 'Medium',
     storyPrompt: '',
+    livingWorldEnabled: false,
   });
 
   const [isRandomizing, setIsRandomizing] = useState(false);
@@ -453,6 +454,29 @@ export default function CampaignCreatorPage() {
             onRandomize={handleRandomize}
             onGenerateFromInput={handleGenerateFromInput}
           />
+
+          <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 accent-tertiary"
+                checked={!!form.livingWorldEnabled}
+                disabled={isGuest}
+                onChange={(e) => updateForm((p) => ({ ...p, livingWorldEnabled: e.target.checked }))}
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-label text-sm text-on-surface">Living World</span>
+                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-tertiary/20 text-tertiary border border-tertiary/30">
+                    Experimental
+                  </span>
+                </div>
+                <p className="text-on-surface-variant text-xs leading-relaxed">
+                  Ważni NPC i lokacje żyją między wizytami. Gdy opuścisz lokację, NPC zostaje zapauzowany i „żyje dalej" po powrocie (zależnie od upływu czasu). Świat persystuje między Twoimi kampaniami.
+                </p>
+              </div>
+            </label>
+          </section>
 
           {(state.error || mp.state.error) && (
             <div className="bg-error-container/20 border border-error/20 p-4 rounded-sm">

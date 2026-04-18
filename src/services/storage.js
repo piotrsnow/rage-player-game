@@ -129,6 +129,16 @@ function _parseBackendCampaign(full) {
   if (!state.campaign) state.campaign = {};
   state.campaign.backendId = full.id;
   if (full.userId) state.campaign.userId = full.userId;
+  // Living World (Phase 1/2) — hydrate flag + knobs so FE can gate features.
+  if (typeof full.livingWorldEnabled === 'boolean') {
+    state.campaign.livingWorldEnabled = full.livingWorldEnabled;
+  }
+  if (typeof full.worldTimeRatio === 'number') {
+    state.campaign.worldTimeRatio = full.worldTimeRatio;
+  }
+  if (Number.isInteger(full.worldTimeMaxGapDays)) {
+    state.campaign.worldTimeMaxGapDays = full.worldTimeMaxGapDays;
+  }
   state.lastSaved = new Date(full.lastSaved || full.updatedAt || full.createdAt).getTime();
 
   return state;
@@ -236,6 +246,17 @@ export const storage = {
       coreState,
       characterIds,
     };
+
+    // Living World (Phase 1) — forward experimental flag when set at creation.
+    if (gameState.campaign?.livingWorldEnabled === true) {
+      payload.livingWorldEnabled = true;
+      if (typeof gameState.campaign?.worldTimeRatio === 'number') {
+        payload.worldTimeRatio = gameState.campaign.worldTimeRatio;
+      }
+      if (Number.isInteger(gameState.campaign?.worldTimeMaxGapDays)) {
+        payload.worldTimeMaxGapDays = gameState.campaign.worldTimeMaxGapDays;
+      }
+    }
 
     const backendId = gameState.campaign?.backendId;
     if (backendId) {
