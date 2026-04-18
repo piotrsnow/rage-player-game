@@ -76,7 +76,6 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
               disposition: npcChange.disposition ?? 0,
               factionId: npcChange.factionId || null,
               relationships: JSON.stringify(npcChange.relationships || []),
-              relatedQuestIds: JSON.stringify(npcChange.relatedQuestIds || []),
             },
           });
           const embText = buildNPCEmbeddingText(created);
@@ -142,8 +141,17 @@ async function processItemAttributions(campaignId, newItems, userId) {
         where: { campaignId_npcId: { campaignId, npcId: slug } },
         select: { worldNpcId: true, name: true },
       });
+      let worldLocationId = null;
+      if (campaignNpc?.worldNpcId) {
+        const worldNpc = await prisma.worldNPC.findUnique({
+          where: { id: campaignNpc.worldNpcId },
+          select: { currentLocationId: true },
+        });
+        worldLocationId = worldNpc?.currentLocationId || null;
+      }
       await appendEvent({
         worldNpcId: campaignNpc?.worldNpcId || null,
+        worldLocationId,
         campaignId,
         userId: userId || null,
         eventType: 'item_given',

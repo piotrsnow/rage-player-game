@@ -37,19 +37,23 @@ const log = childLogger({ module: 'questGoalAssigner' });
  */
 export function classifyQuestRole(npcId, quests) {
   if (!npcId || !Array.isArray(quests)) return null;
+  // questGiverId/turnInNpcId are stored as raw AI-emitted names ("Bjorn Myśliwy")
+  // while CampaignNPC.npcId is a slug ("bjorn_myśliwy"). Normalize both sides
+  // so equality matches regardless of which side is in slug form already.
+  const target = slugify(npcId);
   const active = quests.filter((q) => q.status === 'active' || q.status === 'in_progress');
   const completed = new Set(quests.filter((q) => q.status === 'completed').map((q) => q.questId));
 
   // 1. Active quest — NPC is giver OR turn-in
-  const activeGiver = active.find((q) => q.questGiverId === npcId);
+  const activeGiver = active.find((q) => slugify(q.questGiverId) === target);
   if (activeGiver) return { kind: 'giver_active', quest: activeGiver };
-  const activeTurnIn = active.find((q) => q.turnInNpcId === npcId && q.questGiverId !== npcId);
+  const activeTurnIn = active.find((q) => slugify(q.turnInNpcId) === target && slugify(q.questGiverId) !== target);
   if (activeTurnIn) return { kind: 'turnin_active', quest: activeTurnIn };
 
   // 2. Next-available quest — prerequisites all completed, quest not yet active/completed
   const pending = quests.filter((q) => {
     if (q.status === 'active' || q.status === 'in_progress' || q.status === 'completed') return false;
-    if (q.questGiverId !== npcId) return false;
+    if (slugify(q.questGiverId) !== target) return false;
     const prereqs = parsePrereqs(q.prerequisiteQuestIds);
     return prereqs.every((id) => completed.has(id));
   });
@@ -64,9 +68,13 @@ export function classifyQuestRole(npcId, quests) {
   // unfinished prerequisites, we stay null (they've got nothing to do right
   // now) — avoids prematurely triggering return-home on NPCs still waiting
   // in the chain.
-  const everCompletedGiver = quests.some((q) => q.questGiverId === npcId && q.status === 'completed');
+  const everCompletedGiver = quests.some((q) => slugify(q.questGiverId) === target && q.status === 'completed');
   if (everCompletedGiver) return { kind: 'done' };
   return null;
+}
+
+function slugify(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '_');
 }
 
 function parsePrereqs(raw) {
