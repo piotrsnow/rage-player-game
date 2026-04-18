@@ -18,7 +18,22 @@ const PACING_STABILITY = {
 const DEFAULT_STABILITY = 0.5;
 
 const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
-const PACING_VALUES = Object.keys(PACING_STABILITY);
+// Must stay in sync with scenePacing enums in src/services/prompts.js and
+// backend/src/services/multiplayerAI/scenePrompt.js. Values without an explicit
+// PACING_STABILITY entry simply fall back to DEFAULT_STABILITY.
+const PACING_VALUES = [
+  'combat',
+  'chase',
+  'stealth',
+  'exploration',
+  'dialogue',
+  'travel_montage',
+  'celebration',
+  'rest',
+  'dramatic',
+  'dream',
+  'cutscene',
+];
 
 const TTS_BODY_SCHEMA = {
   type: 'object',
