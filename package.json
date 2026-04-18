@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "setup": "npm install && npm run setup --prefix backend",
-    "dev": "docker compose up --build --watch",
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "docker compose up --build --watch",
     "dev:down": "docker compose down",
     "dev:logs": "docker compose logs -f backend",
     "dev:frontend": "vite",
@@ -36,6 +37,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.16",
     "vite": "^6.0.3",
