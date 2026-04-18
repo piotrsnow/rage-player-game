@@ -16,7 +16,7 @@ export async function loadCampaignState(campaignId) {
   const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
     prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { coreState: true, characterIds: true },
+      select: { coreState: true, characterIds: true, livingWorldEnabled: true },
     }),
     prisma.campaignNPC.findMany({ where: { campaignId } }),
     prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
@@ -102,5 +102,6 @@ export async function loadCampaignState(campaignId) {
     dbQuests,
     dbCodex,
     dbKnowledge,
+    livingWorldEnabled: campaign.livingWorldEnabled === true,
   };
 }

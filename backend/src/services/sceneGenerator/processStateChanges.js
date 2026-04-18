@@ -10,6 +10,8 @@ import {
 import { writeEmbedding } from '../vectorSearchService.js';
 import { maybePromote } from '../livingWorld/npcPromotion.js';
 import { updateLoyalty } from '../livingWorld/companionService.js';
+import { appendEvent } from '../livingWorld/worldEventLog.js';
+import { assignGoalsForCampaign } from '../livingWorld/questGoalAssigner.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -119,6 +121,44 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
         }
       });
     await Promise.allSettled([...promotionTasks, ...loyaltyTasks]);
+  }
+}
+
+/**
+ * Phase 4 — observe item-attribution hints. When a living-world campaign
+ * emits newItems with `fromNpcId`, we write a WorldEvent `item_given`
+ * attributing the transfer to the canonical WorldNPC. No validation /
+ * rejection — that belongs to full orchestration (see
+ * knowledge/ideas/living-world-scene-orchestration.md).
+ */
+async function processItemAttributions(campaignId, newItems, userId) {
+  if (!Array.isArray(newItems) || newItems.length === 0) return;
+  for (const item of newItems) {
+    const fromNpcId = item?.fromNpcId;
+    if (!fromNpcId || typeof fromNpcId !== 'string') continue;
+    try {
+      const slug = fromNpcId.toLowerCase().replace(/\s+/g, '_');
+      const campaignNpc = await prisma.campaignNPC.findUnique({
+        where: { campaignId_npcId: { campaignId, npcId: slug } },
+        select: { worldNpcId: true, name: true },
+      });
+      await appendEvent({
+        worldNpcId: campaignNpc?.worldNpcId || null,
+        campaignId,
+        userId: userId || null,
+        eventType: 'item_given',
+        payload: {
+          itemName: item.name || item.itemName || 'unknown',
+          itemId: item.id || null,
+          rarity: item.rarity || 'common',
+          fromNpcName: campaignNpc?.name || fromNpcId,
+          fromNpcId,
+        },
+        visibility: 'campaign',
+      });
+    } catch (err) {
+      log.warn({ err, campaignId, fromNpcId }, 'item attribution event write failed');
+    }
   }
 }
 
@@ -271,21 +311,28 @@ async function processQuestStatusChange(campaignId, questIds, status) {
 }
 
 export async function processStateChanges(campaignId, stateChanges) {
-  // Fetch campaign once to check living-world flag (cheap — same record is
-  // already loaded by postSceneWork for the same campaignId).
+  // Fetch campaign once to check living-world flag + userId for Phase 4
+  // WorldEvent attribution (cheap — same record is already loaded by
+  // postSceneWork for the same campaignId).
   let livingWorldEnabled = false;
+  let ownerUserId = null;
   try {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { livingWorldEnabled: true },
+      select: { livingWorldEnabled: true, userId: true },
     });
     livingWorldEnabled = campaign?.livingWorldEnabled === true;
+    ownerUserId = campaign?.userId || null;
   } catch {
     // non-fatal — fall back to legacy behaviour
   }
 
   if (stateChanges.npcs?.length) {
     await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled });
+  }
+
+  if (livingWorldEnabled && stateChanges.newItems?.length) {
+    await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId);
   }
 
   if (stateChanges.knowledgeUpdates) {
@@ -306,5 +353,24 @@ export async function processStateChanges(campaignId, stateChanges) {
 
   if (stateChanges.failedQuests?.length) {
     await processQuestStatusChange(campaignId, stateChanges.failedQuests, 'failed');
+  }
+
+  // Phase 5 — any quest status change (complete/fail) or objective update
+  // potentially advances the "next quest" pointer → re-run goal assigner.
+  // Also fires on pure NPC changes because newly-promoted NPCs may need
+  // their first goal (maybePromote already calls the assigner but batch
+  // runs catch cases where promotion returned an existing WorldNPC with
+  // outdated goals from earlier assignments).
+  if (livingWorldEnabled && (
+    stateChanges.completedQuests?.length
+    || stateChanges.failedQuests?.length
+    || stateChanges.questUpdates?.length
+    || stateChanges.npcs?.length
+  )) {
+    try {
+      await assignGoalsForCampaign(campaignId);
+    } catch (err) {
+      log.warn({ err, campaignId }, 'assignGoalsForCampaign failed (non-fatal)');
+    }
   }
 }

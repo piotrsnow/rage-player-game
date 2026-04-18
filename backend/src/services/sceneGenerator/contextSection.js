@@ -63,6 +63,26 @@ export function buildContextSection(contextBlocks) {
         .map((n) => `${n.name}${n.role ? ` (${n.role})` : ''}${n.paused ? ' [recently away]' : ''}`)
         .join(', ');
       lines.push(`Persistent NPCs here: ${npcList}`);
+
+      // Phase 5 — per-NPC goal + recent activity + arrival flag, for NPCs
+      // whose goal targets this campaign. Premium sees "Altmar just arrived
+      // with intent X" and narrates naturally.
+      const annotatedNpcs = lw.npcs.filter((n) => n.activeGoal || n.recentMilestones?.length);
+      for (const n of annotatedNpcs) {
+        const parts = [];
+        if (n.recentlyArrived) parts.push('JUST ARRIVED at this location');
+        if (n.activeGoal) parts.push(`active goal: "${n.activeGoal}"`);
+        if (n.recentMilestones?.length) {
+          const ms = n.recentMilestones
+            .map((m) => m.note || '')
+            .filter(Boolean)
+            .join(' → ');
+          if (ms) parts.push(`recent activity: ${ms}`);
+        }
+        if (parts.length > 0) {
+          lines.push(`  • ${n.name}: ${parts.join('; ')}`);
+        }
+      }
     }
     if (lw.recentEvents?.length) {
       lines.push('Recent world events at this location:');
@@ -70,6 +90,52 @@ export function buildContextSection(contextBlocks) {
         const when = e.at ? new Date(e.at).toISOString().slice(0, 10) : '';
         const tag = `[${e.type}${when ? ` ${when}` : ''}]`;
         lines.push(`- ${tag} ${e.blurb || ''}`.trim());
+      }
+    }
+    // Phase 4 — DM agent memory + pending hooks. Gives premium continuity
+    // across scenes: what you planned, introduced, left unresolved, and
+    // which seeds are waiting for the right moment.
+    if (lw.dmAgent) {
+      const dm = lw.dmAgent;
+      if (dm.dmMemory?.length) {
+        lines.push('');
+        lines.push('DM memory (what you planned / introduced / waiting on):');
+        for (const entry of dm.dmMemory) {
+          const tag = entry.status ? `[${entry.status}]` : '';
+          const when = entry.plannedFor ? ` (for: ${entry.plannedFor})` : '';
+          lines.push(`- ${tag} ${entry.summary}${when}`.trim());
+        }
+      }
+      if (dm.pendingHooks?.length) {
+        lines.push('');
+        lines.push('Pending hooks (weave in when timing fits — do not force):');
+        for (const hook of dm.pendingHooks) {
+          const tag = `[${hook.priority || 'normal'} ${hook.kind || 'generic'}]`;
+          const when = hook.idealTiming ? ` (timing: ${hook.idealTiming})` : '';
+          lines.push(`- ${tag} ${hook.summary}${when}`.trim());
+        }
+      }
+    }
+    // Phase 3 — reputation context + encounter mode hint. Only emitted when
+    // the player has any non-neutral reputation or a vendetta is active.
+    if (lw.encounter && (lw.encounter.mode !== 'neutral' || lw.encounter.vendettaActive)) {
+      const enc = lw.encounter;
+      lines.push('');
+      lines.push(`Reputation mode: ${enc.mode} (intensity ${enc.intensity})`);
+      if (lw.reputation?.rows?.length) {
+        const scopeSummary = lw.reputation.rows
+          .map((r) => `${r.scope}${r.scopeKey ? `:${r.scopeKey}` : ''}=${r.score}(${r.label || 'neutral'})`)
+          .join(', ');
+        lines.push(`Scopes: ${scopeSummary}`);
+      }
+      if (enc.bountyAmount > 0) {
+        lines.push(`Active bounty: ${enc.bountyAmount} SK.`);
+      }
+      if (enc.narrativeHint) {
+        lines.push(`Hint: ${enc.narrativeHint}`);
+      }
+      if (enc.vendettaActive) {
+        lines.push('⚠ VENDETTA MODE — frakcje mogą aktywnie tropić/atakować. Nie neutralizuj tego samowolnie: tylko atonement quest lub wygaśnięcie (2 tyg.) kończy stan.');
       }
     }
     if (lines.length) {

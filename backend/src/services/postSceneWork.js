@@ -4,6 +4,10 @@ import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/pr
 import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
 import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
 import { applyCompanionTravel } from './livingWorld/companionService.js';
+import { handleNpcKills } from './livingWorld/reputationHook.js';
+import { updateDmMemoryFromScene } from './livingWorld/dmMemoryUpdater.js';
+import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
+import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -21,6 +25,7 @@ export async function handlePostSceneWork({
   prevLoc,
   llmNanoTimeoutMs,
 }) {
+  log.info({ sceneId, campaignId, newLoc, prevLoc }, 'Post-scene work START');
   const [scene, campaign] = await Promise.all([
     prisma.campaignScene.findUnique({ where: { id: sceneId } }),
     prisma.campaign.findUnique({ where: { id: campaignId } }),
@@ -83,6 +88,58 @@ export async function handlePostSceneWork({
 
   const results = await Promise.allSettled(phase1Tasks);
 
+  // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC
+  // promotion + worldNpcId linkage is in place. Best-effort — never blocks.
+  if (campaign?.livingWorldEnabled && stateChanges?.npcs?.some((n) => n?.alive === false)) {
+    try {
+      await handleNpcKills({
+        campaign,
+        stateChanges,
+        narrative,
+        playerAction,
+        provider,
+        timeoutMs: llmNanoTimeoutMs,
+      });
+    } catch (err) {
+      log.warn({ err, campaignId }, 'Kill reputation hook failed (non-fatal)');
+    }
+  }
+
+  // Living World Phase 4 — DM agent memory update. Runs in parallel with
+  // nano-extraction below (independent data path). Never blocks scene commit.
+  if (campaign?.livingWorldEnabled && narrative) {
+    // Fire-and-forget — the updater handles its own errors.
+    updateDmMemoryFromScene({
+      campaignId,
+      narrative,
+      playerAction,
+      provider,
+      timeoutMs: llmNanoTimeoutMs,
+    }).catch((err) => {
+      log.warn({ err: err?.message, campaignId }, 'DM memory update failed (non-fatal)');
+    });
+  }
+
+  // Living World Phase 5 — goal refresh + scene-driven NPC tick batch.
+  // The assigner re-evaluates quest-tied NPCs (wait/seeker/return-home)
+  // based on current player location; then tick batch fires for NPCs
+  // whose 2-scene cooldown has elapsed since last tick.
+  if (campaign?.livingWorldEnabled) {
+    try {
+      await assignGoalsForCampaign(campaignId, { currentSceneIndex: scene.sceneIndex });
+      const result = await runTickBatch({
+        campaignId,
+        currentSceneIndex: scene.sceneIndex,
+        limit: 10,
+        provider,
+        timeoutMs: llmNanoTimeoutMs,
+      });
+      log.info({ campaignId, sceneIndex: scene.sceneIndex, tickBatch: result }, 'Phase 5 scene-tick batch');
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'Phase 5 scene-tick batch failed (non-fatal)');
+    }
+  }
+
   // Phase 2: process nano-extracted knowledge/codex from compressSceneToSummary
   // The compress call is at index 1 (if stateChanges) or 1 (if no stateChanges) — find it
   const compressIdx = stateChanges ? 2 : 1;
@@ -108,4 +165,5 @@ export async function handlePostSceneWork({
     );
     throw new Error(`Post-scene work failed: ${failures.length} task(s)`);
   }
+  log.info({ sceneId, campaignId, tasksSettled: results.length }, 'Post-scene work DONE');
 }

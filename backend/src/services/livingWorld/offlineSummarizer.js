@@ -71,13 +71,12 @@ export async function summarizeOfflineActivity({
   ].filter(Boolean).join('\n');
 
   try {
-    const raw = await callNano(SYSTEM_PROMPT, userPrompt, provider, {
+    // callNano returns a parsed JSON object (or null on failure / timeout).
+    const parsed = await callNano(SYSTEM_PROMPT, userPrompt, provider, {
       timeoutMs,
       maxTokens: 400,
       reasoning: true,
     });
-    if (!raw) return null;
-    const parsed = safeParseJson(raw);
     if (!parsed) return null;
     return {
       stillHere: parsed.stillHere !== false, // default true if missing
@@ -88,20 +87,5 @@ export async function summarizeOfflineActivity({
   } catch (err) {
     log.warn({ err, npcId: npc.id }, 'Offline summary failed (non-fatal)');
     return null;
-  }
-}
-
-function safeParseJson(text) {
-  if (!text || typeof text !== 'string') return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
-    }
   }
 }

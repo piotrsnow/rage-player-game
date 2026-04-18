@@ -13,6 +13,7 @@ model User {
   passwordHash String
   apiKeys      String   @default("{}") // Encrypted JSON: { openai, anthropic, elevenlabs, stability }
   settings     String   @default("{}") // JSON blob matching frontend settings shape
+  isAdmin      Boolean  @default(false) // Phase 6 — admin dashboard access (Living World observability)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -383,6 +384,25 @@ model WorldNPC {
   // Phase 2 — Per-campaign dialog memory (C2 1-on-1 endpoint)
   dialogHistory         String    @default("{}") // JSON: { campaignId: [{playerMsg, npcResponse, gameTime}] }
   knowledgeBase         String    @default("[]") // JSON: [{ topic, learnedAt, source, sensitivity }]
+  // Phase 5 — background ticks (NPC lives when player isn't looking)
+  activeGoal             String?   // short sentence describing the NPC's current objective
+  goalProgress           String?   // JSON: { step, milestones[], lastAction, lastLocation, updatedAt }
+  lastTickAt             DateTime?
+  tickIntervalHours      Int       @default(24) // retained for future auto-dispatch (ideas/npc-auto-dispatch)
+  // Scene-driven tick cadence (primary mechanism now — see questGoalAssigner)
+  lastTickSceneIndex     Int?
+  tickIntervalScenes     Int       @default(2)
+  // Who this goal is aimed at — resolved at assignment time from the quest's
+  // owning campaign. Living World context only surfaces the goal to the
+  // campaign whose id matches goalTargetCampaignId (prevents WorldNPC
+  // referencing player "Random" in campaign A from leaking into campaign B).
+  goalTargetCharacterId  String?   @db.ObjectId
+  goalTargetCampaignId   String?   @db.ObjectId
+  // "Home" — where the NPC belongs when they have no active task. Set on
+  // promotion from their starting location. After a quest concludes, the
+  // assigner points the NPC back here (via a return_home goal) instead
+  // of leaving them stranded wherever the player last saw them.
+  homeLocationId         String?   @db.ObjectId
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
@@ -409,4 +429,65 @@ model WorldEvent {
   @@index([worldLocationId, createdAt])
   @@index([campaignId, createdAt])
   @@index([eventType])
+}
+
+// Phase 3 — per-character reputation per scope (global / region / faction / settlement).
+// One row per (characterId, scope, scopeKey). `score` in -1000..+1000; `reputationLabel`
+// is a computed cached bucket (wanted_criminal .. hero). Bounty/vendetta fields
+// summarize escalation state so encounterEscalator can query a single row.
+model WorldReputation {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  characterId     String    @db.ObjectId
+  scope           String    // "global" | "region" | "faction" | "settlement"
+  scopeKey        String    // "" for global; region/faction/settlement id or canonical name
+  score           Int       @default(0)
+  reputationLabel String?   // wanted_criminal | outlaw | suspicious | neutral | respected | hero
+  bountyAmount    Int       @default(0) // in SK (srebrne korony)
+  bountyIssuer    String?
+  vendettaActive  Boolean   @default(false)
+  lastIncidentAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([characterId, scope, scopeKey])
+  @@index([characterId])
+  @@index([scope, scopeKey, score])
+}
+
+// Phase 4 — per-campaign DM agent state. `dmMemory` rolls up what the DM
+// planned/introduced/is waiting to resolve; `pendingHooks` is a list of
+// quest ideas / intrigue seeds the DM agent wants to weave in later.
+// Injected into scene-gen system prompt (conditional on livingWorldEnabled)
+// so premium model stays coherent across scenes without re-reading history.
+model CampaignDmAgent {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId    String   @unique @db.ObjectId
+  dmMemory      String   @default("[]") // JSON: [{at, plannedFor, status, summary}]
+  pendingHooks  String   @default("[]") // JSON: [{id, kind, summary, idealTiming, priority}]
+  lastUpdatedAt DateTime @default(now())
+}
+
+// Phase 3 — append-only ledger of actor-against-NPC actions.
+// One row per kill/rob/save/help. `justified` is populated by nano judge.
+// `alignmentImpact` = victim's alignment at time of action (good/neutral/evil).
+// `factionImpact` = JSON array of factionIds affected.
+// Visibility governs cross-user injection (Phase 3 cross-user ships later — see
+// knowledge/ideas/living-world-cross-user-visibility.md).
+model WorldNpcAttribution {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  worldNpcId       String   @db.ObjectId
+  actorCharacterId String   @db.ObjectId
+  actorCampaignId  String   @db.ObjectId
+  actionType       String   // killed | robbed | saved | helped | betrayed
+  justified        Boolean  @default(false)
+  judgeConfidence  Float    @default(0)
+  judgeReason      String?
+  alignmentImpact  String   // good | neutral | evil (snapshot of victim at action time)
+  factionImpact    String   @default("[]") // JSON: [factionIds]
+  visibility       String   @default("campaign") // campaign (default now); "global" once cross-user ships
+  gameTime         DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([actorCharacterId, createdAt])
+  @@index([worldNpcId])
 }

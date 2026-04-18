@@ -8,6 +8,9 @@ import { childLogger } from '../lib/logger.js';
 import { findOrCreateWorldLocation, listNpcsAtLocation } from './livingWorld/worldStateService.js';
 import { forLocation as worldEventsForLocation, parseEventPayload } from './livingWorld/worldEventLog.js';
 import { getCompanions } from './livingWorld/companionService.js';
+import { getReputationProfile, maybeClearVendetta } from './livingWorld/reputationService.js';
+import { suggestEncounterMode } from './livingWorld/encounterEscalator.js';
+import { readDmAgentState } from './livingWorld/dmMemoryService.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -562,16 +565,21 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    select: { livingWorldEnabled: true },
+    select: { livingWorldEnabled: true, characterIds: true },
   });
   if (!campaign?.livingWorldEnabled) return null;
 
   const location = await findOrCreateWorldLocation(currentLocation);
   if (!location) return null;
 
+  const actorCharacterId = Array.isArray(campaign.characterIds) && campaign.characterIds[0]
+    ? campaign.characterIds[0]
+    : null;
+
   // Parallel: NPCs at this location (canonical) + recent world events +
-  // any companions travelling with the party (Phase 2).
-  const [npcs, events, companions] = await Promise.all([
+  // any companions travelling with the party (Phase 2) + lazy vendetta clear
+  // + Phase 4 DM agent memory.
+  const [npcs, events, companions, , dmState] = await Promise.all([
     listNpcsAtLocation(location.id, { aliveOnly: true }).catch(() => []),
     worldEventsForLocation({
       locationId: location.id,
@@ -579,6 +587,10 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
       limit: 12,
     }).catch(() => []),
     getCompanions(campaignId).catch(() => []),
+    actorCharacterId
+      ? maybeClearVendetta(actorCharacterId).catch(() => null)
+      : Promise.resolve(null),
+    readDmAgentState(campaignId).catch(() => ({ dmMemory: [], pendingHooks: [] })),
   ]);
 
   // Filter events to those that carry useful narrative for the next scene.
@@ -608,17 +620,76 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
   const companionIds = new Set(companions.map((c) => c.id));
   const ambientNpcs = npcs.filter((n) => !companionIds.has(n.id));
 
-  if (ambientNpcs.length === 0 && recentEvents.length === 0 && companions.length === 0) {
+  // Phase 3 — reputation profile + encounter mode hint. Scoped to the factions
+  // relevant at this location (NPCs here + companions) so we don't bloat the
+  // fetch with unrelated faction rows.
+  let reputation = null;
+  let encounter = null;
+  if (actorCharacterId) {
+    const factionIds = Array.from(new Set(
+      [...ambientNpcs, ...companions]
+        .map((n) => n.factionId)
+        .filter(Boolean),
+    ));
+    try {
+      const profile = await getReputationProfile({
+        characterId: actorCharacterId,
+        region: location.region || null,
+        settlementKey: location.canonicalName || null,
+        factionIds,
+      });
+      if (profile?.rows?.length > 0) {
+        reputation = profile;
+        encounter = suggestEncounterMode(profile);
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'reputation profile fetch failed');
+    }
+  }
+
+  const hasDmState = (dmState?.dmMemory?.length || 0) > 0 || (dmState?.pendingHooks?.length || 0) > 0;
+
+  if (
+    ambientNpcs.length === 0
+    && recentEvents.length === 0
+    && companions.length === 0
+    && !reputation
+    && !hasDmState
+  ) {
     return null;
   }
 
-  return {
-    locationName: location.canonicalName,
-    npcs: ambientNpcs.map((n) => ({
+  // Phase 5 — for ambient NPCs, surface activeGoal + recent goalProgress
+  // milestones + "recentlyArrived" flag, BUT only when the goal targets
+  // THIS campaign (prevents WorldNPC goal text referencing another user's
+  // character from leaking into this prompt). Non-matching NPCs get only
+  // name/role/paused (the "has own agenda" view).
+  const ambientNpcsWithGoals = ambientNpcs.map((n) => {
+    const goalForThisCampaign = n.goalTargetCampaignId === campaignId;
+    let progress = null;
+    try {
+      progress = n.goalProgress ? JSON.parse(n.goalProgress) : null;
+    } catch { progress = null; }
+    const milestones = Array.isArray(progress?.milestones) ? progress.milestones.slice(-2) : [];
+    // "Just arrived" = last tick's action was a move to this location on
+    // the scene that just finished. Surface only within the observing
+    // campaign so premium can narrate "NPC wchodzi zdyszany".
+    const recentlyArrived = goalForThisCampaign
+      && progress?.lastAction === 'move'
+      && typeof progress?.step === 'number';
+    return {
       name: n.name,
       role: n.role || null,
       paused: !!n.pausedAt,
-    })),
+      activeGoal: goalForThisCampaign ? (n.activeGoal || null) : null,
+      recentMilestones: goalForThisCampaign ? milestones : [],
+      recentlyArrived,
+    };
+  });
+
+  return {
+    locationName: location.canonicalName,
+    npcs: ambientNpcsWithGoals,
     companions: companions.map((c) => ({
       name: c.name,
       role: c.role || null,
@@ -626,5 +697,34 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
       joinedAt: c.companionJoinedAt ? new Date(c.companionJoinedAt).toISOString() : null,
     })),
     recentEvents,
+    reputation: reputation
+      ? {
+          rows: reputation.rows.map((r) => ({
+            scope: r.scope,
+            scopeKey: r.scopeKey,
+            score: r.score,
+            label: r.reputationLabel,
+          })),
+        }
+      : null,
+    encounter,
+    dmAgent: hasDmState
+      ? {
+          // Inject last few memory lines + highest-priority pending hooks.
+          // Cap tight so the block doesn't bloat — Phase 4 intentionally
+          // narrow; full orchestration lives in the ideas file.
+          dmMemory: (dmState.dmMemory || []).slice(-6),
+          pendingHooks: (dmState.pendingHooks || [])
+            .slice()
+            .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority))
+            .slice(0, 4),
+        }
+      : null,
   };
+}
+
+function priorityRank(p) {
+  if (p === 'high') return 2;
+  if (p === 'low') return 0;
+  return 1;
 }

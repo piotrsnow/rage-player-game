@@ -75,14 +75,28 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       dbNpcs,
       dbQuests,
       dbCodex,
+      livingWorldEnabled,
     } = await loadCampaignState(campaignId);
 
-    // 2. Intent classification
-    const intentResult = await classifyIntent(playerAction, coreState, { dbNpcs, dbQuests, dbCodex }, {
-      isFirstScene,
-      provider,
-      timeoutMs: llmNanoTimeoutMs,
+    // 2. Intent classification. Fetch the most recent scene (narrative +
+    // chosenAction + index) so the classifier sees continuity. Fast query —
+    // same row will be reused by buildLeanSystemPrompt below, but we keep
+    // the separate fetch here to avoid plumbing a shared ref through.
+    const prevSceneRow = await prisma.campaignScene.findFirst({
+      where: { campaignId },
+      orderBy: { sceneIndex: 'desc' },
+      select: { sceneIndex: true, narrative: true, chosenAction: true },
     });
+    const intentResult = await classifyIntent(
+      playerAction,
+      coreState,
+      { dbNpcs, dbQuests, dbCodex, prevScene: prevSceneRow || null },
+      {
+        isFirstScene,
+        provider,
+        timeoutMs: llmNanoTimeoutMs,
+      },
+    );
     onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
 
     // 2a. Trade shortcut
@@ -152,6 +166,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       characterNeeds,
       sceneCount,
       intentResult,
+      livingWorldEnabled,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {

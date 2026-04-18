@@ -22,6 +22,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   characterNeeds = null,
   sceneCount = 0,
   intentResult = {},
+  livingWorldEnabled = false,
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -399,6 +400,20 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
   if (lastScene) {
     const action = lastScene.chosenAction ? `Player: ${lastScene.chosenAction}\n` : '';
     dynamicSections.push(`Last Scene:\n[Scene ${lastScene.sceneIndex}] ${action}${lastScene.narrative || ''}`);
+  }
+
+  // Living World Phase 4 — scoped item authority hint. When an NPC hands the
+  // player an item, premium should tag `fromNpcId` on the entry so the
+  // WorldEvent ledger can attribute the transfer. No enforcement here — full
+  // orchestration (reject without fromNpcId, per-NPC approval) lives behind
+  // the ideas file `living-world-scene-orchestration.md`.
+  if (livingWorldEnabled) {
+    dynamicSections.push(
+      `LIVING WORLD — item attribution:
+- When an NPC gives the player an item, set \`fromNpcId\` on that item entry to the NPC's canonical name (e.g. "fromNpcId": "Bjorn"). Items dropped in a location or picked up from containers do NOT need \`fromNpcId\`.
+- Poor NPCs do not give away valuable items. If you're about to narrate a gift, match item rarity to the NPC's status (peasant → common, merchant → uncommon, noble → rare).
+- If the DM memory / pending hooks block below names an NPC with a plan, respect what they already intended. Don't contradict their stated goals mid-scene.`,
+    );
   }
 
   const staticPrefix = staticSections.join('\n\n');

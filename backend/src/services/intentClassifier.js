@@ -176,42 +176,72 @@ function extractTradeNpcHint(action) {
  * Build a compact summary of available game data for the nano model.
  * Nano uses this to decide what to expand.
  */
-export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], dbCodex = [] } = {}) {
+export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], dbCodex = [], prevScene = null } = {}) {
   const parts = [];
 
   // Current location
   const location = coreState?.world?.currentLocation || 'unknown';
   parts.push(`Location: ${location}`);
 
-  // NPCs — name (role, attitude)
+  // NPCs — ONLY those at the current location. Classifier doesn't need the
+  // full campaign roster; it picks targets relevant to "here and now".
+  // Fallback: if none match (e.g. lastLocation missing), show up to 6 alive
+  // NPCs so the classifier isn't flying blind on a fresh scene.
   if (dbNpcs.length > 0) {
-    const npcList = dbNpcs
-      .filter(n => n.alive !== false)
-      .slice(0, 20)
-      .map(n => {
-        const role = n.role ? `, ${n.role}` : '';
-        return `${n.name} (${n.attitude}${role})`;
-      })
-      .join('; ');
-    parts.push(`NPCs: ${npcList}`);
+    const locNorm = String(location || '').toLowerCase().trim();
+    const alive = dbNpcs.filter((n) => n.alive !== false);
+    const atLocation = locNorm
+      ? alive.filter((n) => String(n.lastLocation || '').toLowerCase().trim() === locNorm)
+      : [];
+    const pool = atLocation.length > 0 ? atLocation : alive.slice(0, 6);
+    if (pool.length > 0) {
+      const npcList = pool
+        .slice(0, 12)
+        .map((n) => {
+          const role = n.role ? `, ${n.role}` : '';
+          return `${n.name} (${n.attitude}${role})`;
+        })
+        .join('; ');
+      parts.push(`NPCs here: ${npcList}`);
+    }
   }
 
-  // Quests — name (status)
+  // Quests — scoped: last 3 completed + current + next active.
+  // "Current" = first active; "next" = second active (the one waiting in line).
+  // Nano doesn't need the full backlog, just the slice relevant to deciding
+  // what to expand for this scene.
   if (dbQuests.length > 0) {
-    const questList = dbQuests
-      .slice(0, 10)
-      .map(q => `${q.name} (${q.status})`)
-      .join('; ');
-    parts.push(`Quests: ${questList}`);
+    const active = dbQuests.filter((q) => q.status === 'active' || q.status === 'in_progress');
+    const completed = dbQuests.filter((q) => q.status === 'completed');
+    const lines = [];
+    if (completed.length > 0) {
+      const recent = completed.slice(-3).map((q) => q.name).join(', ');
+      lines.push(`Completed (recent): ${recent}`);
+    }
+    if (active.length > 0) {
+      const current = active[0];
+      lines.push(`Current: ${current.name}`);
+      if (active.length > 1) {
+        lines.push(`Next: ${active[1].name}`);
+      }
+    }
+    if (lines.length > 0) {
+      parts.push(`Quests:\n  ${lines.join('\n  ')}`);
+    }
   }
 
-  // Codex — name (category)
-  if (dbCodex.length > 0) {
-    const codexList = dbCodex
-      .slice(0, 10)
-      .map(c => `${c.name} (${c.category})`)
-      .join('; ');
-    parts.push(`Codex: ${codexList}`);
+  // Codex dropped from classifier — it was a 10-entry catalog bloat. If a
+  // scene genuinely needs codex lookup, the scene-gen context block surfaces
+  // codex entries via other paths (expand_codex fallback still works via
+  // assembleContext, just without classifier pre-selection).
+
+  // Previous scene — short excerpt so classifier understands narrative flow.
+  // Truncated to ~350 chars: enough to recognize continuity, cheap to send.
+  if (prevScene?.narrative) {
+    const excerpt = String(prevScene.narrative).slice(0, 350);
+    const sceneTag = prevScene.sceneIndex != null ? `[Scene ${prevScene.sceneIndex}] ` : '';
+    const actionTag = prevScene.chosenAction ? `(action: "${String(prevScene.chosenAction).slice(0, 120)}") ` : '';
+    parts.push(`Previous scene: ${sceneTag}${actionTag}${excerpt}${prevScene.narrative.length > 350 ? '…' : ''}`);
   }
 
   return parts.join('\n');

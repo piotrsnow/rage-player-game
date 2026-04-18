@@ -2,12 +2,15 @@
 //
 // Backed by GET /v1/livingWorld/companions. Only fetches when the campaign
 // has livingWorldEnabled=true — otherwise the hook returns empty state with
-// no network traffic. Refetches on campaignId change + on demand.
+// no network traffic. Refetches on campaignId change + after join/leave.
+//
+// No background polling: companions change only on user-initiated actions
+// (join/leave) or inside scene-gen (loyalty drift → scene narrates NPC
+// departure). UI freshness is handled by explicit refresh() calls from the
+// mutation paths, not a timer.
 
 import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../services/apiClient';
-
-const REFRESH_INTERVAL_MS = 30_000; // light polling — companions change slowly
 
 export function useLivingWorldCompanions({ campaignId, enabled }) {
   const [companions, setCompanions] = useState([]);
@@ -33,10 +36,7 @@ export function useLivingWorldCompanions({ campaignId, enabled }) {
 
   useEffect(() => {
     refresh();
-    if (!enabled || !campaignId) return undefined;
-    const t = setInterval(refresh, REFRESH_INTERVAL_MS);
-    return () => clearInterval(t);
-  }, [refresh, campaignId, enabled]);
+  }, [refresh]);
 
   const leaveParty = useCallback(async (worldNpcId, reason = 'manual') => {
     if (!campaignId || !worldNpcId) return { ok: false };

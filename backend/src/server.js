@@ -10,6 +10,7 @@ import fastifyCookie from '@fastify/cookie';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
+import { requireAdminPlugin } from './plugins/requireAdmin.js';
 import { csrfPlugin } from './plugins/csrf.js';
 import { buildRateLimitKey } from './plugins/rateLimitKey.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
@@ -30,6 +31,7 @@ import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
 import { internalRoutes } from './routes/internal.js';
 import { livingWorldRoutes } from './routes/livingWorld.js';
+import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
 import {
   startRoomCleanup,
   stopRoomCleanup,
@@ -60,6 +62,7 @@ await fastify.register(helmet, {
 await fastify.register(corsPlugin);
 await fastify.register(fastifyCookie);
 await fastify.register(authPlugin);
+await fastify.register(requireAdminPlugin);
 await fastify.register(csrfPlugin);
 await fastify.register(websocket);
 
@@ -166,6 +169,16 @@ await fastify.register(async function livingWorldScope(app) {
   });
   app.register(livingWorldRoutes);
 }, { prefix: '/v1/livingWorld' });
+
+// Phase 6 — admin observability + moderation routes. Gated on User.isAdmin
+// via requireAdmin plugin. Rate-limited conservatively — read-heavy, but
+// tick endpoints can fire nano calls.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(adminLivingWorldRoutes);
+}, { prefix: '/v1/admin/livingWorld' });
 
 startRoomCleanup();
 

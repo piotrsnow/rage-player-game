@@ -79,6 +79,21 @@ export async function maybePromote(campaignNpcId) {
     });
     if (!worldNpc) return null;
 
+    // Set home location from initial spawn. Only on first promotion —
+    // later re-promotions (shouldPromote returns null for already-promoted,
+    // so this branch runs exactly once per NPC) leave homeLocationId alone.
+    if (!worldNpc.homeLocationId && worldLocationId) {
+      try {
+        await prisma.worldNPC.update({
+          where: { id: worldNpc.id },
+          data: { homeLocationId: worldLocationId },
+        });
+        worldNpc.homeLocationId = worldLocationId;
+      } catch (err) {
+        log.warn({ err: err?.message, worldNpcId: worldNpc.id }, 'Home location set failed (non-fatal)');
+      }
+    }
+
     // Link campaign NPC → world NPC
     await prisma.campaignNPC.update({
       where: { id: cn.id },
@@ -92,6 +107,17 @@ export async function maybePromote(campaignNpcId) {
       { campaignId: cn.campaignId, npcId: cn.npcId, worldNpcId: worldNpc.id, reason },
       'Promoted CampaignNPC → WorldNPC',
     );
+
+    // Phase 5 — immediately assign an activeGoal if this NPC has a quest
+    // role. Imports here to avoid cycle on module-load (questGoalAssigner
+    // reads CampaignNPC which pulls in promotion logic indirectly).
+    try {
+      const { assignGoalsForCampaign } = await import('./questGoalAssigner.js');
+      await assignGoalsForCampaign(cn.campaignId);
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId: cn.campaignId }, 'Goal assignment on promotion failed (non-fatal)');
+    }
+
     return worldNpc;
   } catch (err) {
     log.error({ err, campaignNpcId }, 'Promotion failed');
