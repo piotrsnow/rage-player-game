@@ -559,7 +559,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const overlayTypingSpeedMultiplier = isPlayerActionOverlayActive
     ? (isGeneratingScene ? 3 : 1)
     : 1;
-  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null;
+  const overlayHoldOpen = isPlayerActionOverlayActive && isGeneratingScene;
   const overlayHoldingDurationMs = isPlayerActionOverlayActive ? 800 : 1500;
 
   const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
@@ -572,11 +572,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       diceTypewriterTimerRef.current = null;
     }
 
-    // Decoupled from overlayText on purpose: the typewriter overlay fast-fades
-    // as soon as scene streaming starts (`fastFinish={streamingNarrative !== null}`),
-    // but the dice animation (z-80, pointer-events-none) renders over the chat
-    // independently. If we gate on overlayText, the dice overlay disappears the
-    // moment the typewriter closes, cutting off the roll mid-animation.
+    // Decoupled from overlayText on purpose: the dice reveal should fire shortly
+    // after the player-action types out, regardless of how long the scene takes
+    // to generate. The player-action typewriter now holds for the full generation
+    // (see overlayHoldOpen) and the dice's holdOpen={!!overlayText} keeps the
+    // animation alive across that whole window. The autoplay overlay still
+    // fast-fades on stream start; the dice timer doesn't depend on either.
     if (earlyDiceRoll) {
       diceTypewriterTimerRef.current = setTimeout(
         () => setDiceAfterTypewriter(true),
@@ -802,10 +803,10 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
-              showLoader={isPlayerActionOverlayActive && isGeneratingScene && streamingNarrative === null}
+              showLoader={isPlayerActionOverlayActive && isGeneratingScene}
               loaderStartTime={isMultiplayer ? mpSceneGenStartTime : sceneGenStartTime}
               loaderEstimatedMs={lastSceneGenMs}
-              fastFinish={streamingNarrative !== null}
+              fastFinish={!isPlayerActionOverlayActive && streamingNarrative !== null}
             />
           )}
           {earlyDiceRoll && diceAfterTypewriter && (
