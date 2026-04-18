@@ -13,10 +13,11 @@
 
 ## Commands
 
-- `npm run dev` — `docker compose up --build --watch`: boots backend :3001, auto-restarts backend on changes in `backend/src` / `shared`, rebuilds image on package.json or frontend `src/` changes. MongoDB is Atlas-only (`DATABASE_URL` SRV string required in `.env`). No Redis/Valkey — post-scene work runs inline in dev.
+- `npm run dev` — runs backend + frontend together via `concurrently`. Backend on :3001 (Docker Compose with watch), Vite HMR on :5173. One Ctrl+C kills both. MongoDB is Atlas-only (`DATABASE_URL` SRV string required in `.env`). No Redis/Valkey — post-scene work runs inline in dev.
+- `npm run dev:backend` — backend only (`docker compose up --build --watch`); use when iterating on the bundled FE served by the backend container.
+- `npm run dev:frontend` — Vite only on :5173 (assumes backend is already running).
 - `npm run dev:down` — `docker compose down`
 - `npm run dev:logs` — tail backend container logs
-- `npm run dev:frontend` — `vite` with HMR on :5173 (Playwright E2E + fast FE iteration alongside watched backend)
 - `npm run build` — Vite production build
 - `npm test` — Vitest unit tests
 - `npm run test:e2e` — Playwright e2e tests

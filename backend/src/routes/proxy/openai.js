@@ -66,11 +66,15 @@ const IMAGES_EDITS_BODY_SCHEMA = {
 
 async function fetchPortraitBuffer(portraitUrl) {
   if (!portraitUrl) return null;
-  const localPrefix = '/media/file/';
-  if (portraitUrl.startsWith(localPrefix)) {
-    const storagePath = portraitUrl.slice(localPrefix.length);
-    const result = await store.get(storagePath);
-    return result?.buffer ?? null;
+  // Accept both the current `/v1/media/file/` URL shape and the legacy
+  // `/media/file/` prefix that may still be referenced from older character
+  // records persisted before stores were aligned to /v1.
+  for (const localPrefix of ['/v1/media/file/', '/media/file/']) {
+    if (portraitUrl.startsWith(localPrefix)) {
+      const storagePath = portraitUrl.slice(localPrefix.length);
+      const result = await store.get(storagePath);
+      return result?.buffer ?? null;
+    }
   }
   const resp = await fetch(portraitUrl);
   if (!resp.ok) return null;

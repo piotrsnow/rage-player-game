@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiClient } from '../../services/apiClient';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
+import ItemDetailBox from './inventory/ItemDetailBox';
+import CrystalUseModal from './inventory/CrystalUseModal';
+import { getEquippableSlots, getEquippedSlot } from './inventory/constants';
 import StatusBar from '../ui/StatusBar';
 import PortraitGenerator from './PortraitGenerator';
 import CharacterHistoryPanel from './CharacterHistoryPanel';
@@ -44,6 +47,31 @@ export default function CharacterPanel({
   ];
   const [editingPortrait, setEditingPortrait] = useState(false);
   const canEditPortrait = !!onPortraitChange && !isMultiplayer;
+
+  const inventoryItems = character.inventory || [];
+  const equipped = character.equipped || {};
+  const [selectedItemId, setSelectedItemId] = useState(null);
+  const [crystalItemId, setCrystalItemId] = useState(null);
+  const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
+
+  useEffect(() => {
+    if (selectedItemId && !inventoryItems.some((i) => i.id === selectedItemId)) {
+      setSelectedItemId(null);
+    }
+  }, [inventoryItems, selectedItemId]);
+
+  const handleEquipItem = (itemId, slot) => {
+    dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } });
+    if (autoSave) autoSave();
+  };
+  const handleUnequipItem = (slot) => {
+    dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } });
+    if (autoSave) autoSave();
+  };
+  const handleUseManaCrystal = (itemId, choice) => {
+    dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
+    if (autoSave) autoSave();
+  };
 
   return (
     <>
@@ -233,6 +261,34 @@ export default function CharacterPanel({
             </div>
           )}
 
+          {selectedItem && (
+            <div className="bg-surface-container-low p-6 border border-outline-variant/10 rounded-sm relative">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-tertiary font-headline flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm">inventory_2</span>
+                  {t('inventory.itemDetails', { defaultValue: 'Szczegóły przedmiotu' })}
+                </h3>
+                <button
+                  onClick={() => setSelectedItemId(null)}
+                  aria-label={t('common.close')}
+                  className="text-on-surface-variant hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+              <ItemDetailBox
+                item={selectedItem}
+                items={inventoryItems}
+                equipped={equipped}
+                equippedSlot={getEquippedSlot(selectedItem, equipped)}
+                equippableSlots={getEquippableSlots(selectedItem)}
+                onEquipItem={handleEquipItem}
+                onUnequipItem={handleUnequipItem}
+                onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+              />
+            </div>
+          )}
+
           {character.spells?.known?.length > 0 && (
             <div className="bg-surface-container-low p-6 border border-tertiary/15 rounded-sm">
               <h3 className="text-tertiary font-headline mb-4 flex items-center gap-2">
@@ -252,14 +308,14 @@ export default function CharacterPanel({
 
         <div className="lg:col-span-4 space-y-6 animate-fade-in">
           <Inventory
-            character={character}
-            items={character.inventory}
+            items={inventoryItems}
             money={character.money}
-            equipped={character.equipped}
+            equipped={equipped}
             materialBag={character.materialBag}
-            onEquipItem={(itemId, slot) => { dispatch({ type: 'EQUIP_ITEM', payload: { itemId, slot } }); if (autoSave) autoSave(); }}
-            onUnequipItem={(slot) => { dispatch({ type: 'UNEQUIP_ITEM', payload: { slot } }); if (autoSave) autoSave(); }}
-            onUseManaCrystal={(itemId, choice) => { dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } }); if (autoSave) autoSave(); }}
+            onEquipItem={handleEquipItem}
+            onUnequipItem={handleUnequipItem}
+            selectedItemId={selectedItemId}
+            onSelectItem={setSelectedItemId}
           />
 
           <div className="bg-surface-container-low p-6 rounded-sm border border-outline-variant/10 relative">
@@ -288,6 +344,18 @@ export default function CharacterPanel({
         <div className="mt-8 animate-fade-in">
           <CharacterHistoryPanel scenes={scenes} t={t} />
         </div>
+      )}
+
+      {crystalItemId && (
+        <CrystalUseModal
+          character={character}
+          onClose={() => setCrystalItemId(null)}
+          onChoose={(choice) => {
+            handleUseManaCrystal(crystalItemId, choice);
+            setCrystalItemId(null);
+            setSelectedItemId(null);
+          }}
+        />
       )}
 
     </>

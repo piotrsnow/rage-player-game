@@ -22,7 +22,7 @@ export class GcpStore {
       metadata: { cacheControl: 'public, max-age=86400' },
     });
 
-    return { url: `/media/file/${storagePath}`, path: storagePath, size: buffer.length };
+    return { url: `/v1/media/file/${storagePath}`, path: storagePath, size: buffer.length };
   }
 
   async get(storagePath) {
@@ -36,7 +36,7 @@ export class GcpStore {
   }
 
   async getUrl(storagePath) {
-    return `/media/file/${storagePath}`;
+    return `/v1/media/file/${storagePath}`;
   }
 
   async has(storagePath) {
