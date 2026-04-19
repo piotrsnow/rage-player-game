@@ -8,6 +8,7 @@ import { handleNpcKills } from './livingWorld/reputationHook.js';
 import { updateDmMemoryFromScene } from './livingWorld/dmMemoryUpdater.js';
 import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
 import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
+import { onLocationEntry, onDeadlinePass } from './livingWorld/globalNpcTriggers.js';
 import { markLocationDiscovered, markEdgeDiscoveredByUser } from './livingWorld/userDiscoveryService.js';
 import { findOrCreateWorldLocation } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
@@ -154,17 +155,45 @@ export async function handlePostSceneWork({
     });
   }
 
-  // Living World Phase 5 — goal refresh + scene-driven NPC tick batch.
+  // Living World Phase 5 + D — goal refresh + event-driven NPC triggers.
   // The assigner re-evaluates quest-tied NPCs (wait/seeker/return-home)
-  // based on current player location; then tick batch fires for NPCs
-  // whose 2-scene cooldown has elapsed since last tick.
+  // based on current player location AND fills in sideways background
+  // goals for NPCs with no quest role. Then event-driven triggers fire:
+  //   - onLocationEntry when the player just entered a WorldLocation —
+  //     local NPCs react (first-visit or after cooldown)
+  //   - onDeadlinePass — any NPC whose goalDeadlineAt has elapsed gets a
+  //     catch-up tick so their plan advances
+  //   - legacy runTickBatch stays as a belt-and-suspenders fallback (dropped
+  //     to limit=5 now that event triggers do the heavy lifting)
   if (campaign?.livingWorldEnabled) {
     try {
       await assignGoalsForCampaign(campaignId, { currentSceneIndex: scene.sceneIndex });
+
+      if (newLoc && prevLoc && newLoc !== prevLoc) {
+        try {
+          const newRow = await findOrCreateWorldLocation(newLoc);
+          if (newRow?.id) {
+            await onLocationEntry({
+              campaignId,
+              worldLocationId: newRow.id,
+              provider,
+            });
+          }
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId, newLoc }, 'onLocationEntry failed (non-fatal)');
+        }
+      }
+
+      try {
+        await onDeadlinePass({ provider });
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'onDeadlinePass failed (non-fatal)');
+      }
+
       const result = await runTickBatch({
         campaignId,
         currentSceneIndex: scene.sceneIndex,
-        limit: 10,
+        limit: 5,
         provider,
         timeoutMs: llmNanoTimeoutMs,
       });

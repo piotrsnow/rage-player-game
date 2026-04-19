@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyQuestRole, buildGoalString } from './questGoalAssigner.js';
+import { classifyQuestRole, buildGoalString, generateBackgroundGoal } from './questGoalAssigner.js';
 
 function q(overrides = {}) {
   return {
@@ -143,5 +143,33 @@ describe('buildGoalString', () => {
     );
     expect(s).toContain('gracza');
     expect(s).not.toContain('null');
+  });
+});
+
+describe('generateBackgroundGoal', () => {
+  it('returns null for missing npc', () => {
+    expect(generateBackgroundGoal(null)).toBeNull();
+  });
+
+  it('returns a goal object with text for known roles', () => {
+    const goal = generateBackgroundGoal({ role: 'karczmarz' }, { seed: 0 });
+    expect(goal).toHaveProperty('text');
+    expect(typeof goal.text).toBe('string');
+    expect(goal.text.length).toBeGreaterThan(0);
+  });
+
+  it('karczmarz pool contains an offerable radiant entry somewhere', () => {
+    // Scan all three karczmarz seeds (pool size = 3). At least one should
+    // land on the bounty_bandits radiant hook.
+    const picks = [0, 1000, 2000].map((s) =>
+      generateBackgroundGoal({ role: 'karczmarz' }, { seed: s }),
+    );
+    expect(picks.some((p) => p.offerable === true && !!p.template)).toBe(true);
+  });
+
+  it('unknown roles fall back to neutral pool (no offerable entries)', () => {
+    const goal = generateBackgroundGoal({ role: 'bezdomny' }, { seed: 0 });
+    expect(goal.offerable).toBe(false);
+    expect(goal.template).toBeNull();
   });
 });

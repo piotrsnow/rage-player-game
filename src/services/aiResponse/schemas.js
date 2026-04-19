@@ -48,6 +48,9 @@ const NpcChangeSchema = z.object({
   relatedQuestIds: z.array(z.string()).optional().default([]),
   relationships: z.array(NpcRelationshipSchema).optional().default([]),
   canTrain: z.array(z.string()).optional(),
+  // G4 — set true when this NPC has just commented on the player's renown.
+  // Prevents the same acknowledgment from firing again in future scenes.
+  acknowledgedFame: z.boolean().optional(),
 }).passthrough();
 
 const TimeAdvanceSchema = z.object({

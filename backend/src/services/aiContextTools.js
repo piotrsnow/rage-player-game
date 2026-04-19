@@ -729,6 +729,13 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     const recentlyArrived = goalForThisCampaign
       && progress?.lastAction === 'move'
       && typeof progress?.step === 'number';
+    // G3 — radiant quest offer hint. When the background goal was tagged
+    // offerable, premium gets a marker so it MAY propose a newQuest in
+    // stateChanges (with source: 'npc_radiant'). Non-binding — premium
+    // decides based on player behaviour.
+    const radiantOffer = goalForThisCampaign && progress?.offerableAsQuest && progress?.questTemplate
+      ? { template: progress.questTemplate }
+      : null;
     return {
       name: n.name,
       role: n.role || null,
@@ -736,6 +743,7 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
       activeGoal: goalForThisCampaign ? (n.activeGoal || null) : null,
       recentMilestones: goalForThisCampaign ? milestones : [],
       recentlyArrived,
+      radiantOffer,
     };
   });
 

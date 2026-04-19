@@ -57,6 +57,9 @@ export default function CampaignCreatorPage() {
     // livingWorldEnabled is true (and the user left defaults alone → omitted).
     worldTimeRatio: 24,
     worldTimeMaxGapDays: 7,
+    // G1 — encounter difficulty cap. Validated against character level at
+    // submit time (backend enforces too). Default 'low' = safest choice.
+    difficultyTier: 'low',
   });
 
   const [isRandomizing, setIsRandomizing] = useState(false);
@@ -459,6 +462,46 @@ export default function CampaignCreatorPage() {
             onRandomize={handleRandomize}
             onGenerateFromInput={handleGenerateFromInput}
           />
+
+          {(() => {
+            const activeChar = charMode === 'new' ? createdCharacter : selectedCharacter;
+            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
+            const tiers = charLevel <= 5
+              ? ['low']
+              : charLevel <= 10
+                ? ['low', 'medium', 'high']
+                : ['low', 'medium', 'high', 'deadly'];
+            const tierLabels = { low: 'Low (niska)', medium: 'Medium (średnia)', high: 'High (wysoka)', deadly: 'Deadly (śmiertelna)' };
+            // Clamp the stored value if the active character no longer permits it.
+            if (!tiers.includes(form.difficultyTier)) {
+              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
+            }
+            return (
+              <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-label text-sm text-on-surface">Trudność kampanii</span>
+                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-outline-variant/30 text-on-surface-variant">
+                    Nowe
+                  </span>
+                </div>
+                <p className="text-on-surface-variant text-xs leading-relaxed mb-3">
+                  Górna granica wrogów w scenach. lv 1-5 → tylko Low; lv 6-10 → Low/Medium/High; lv 11+ → wszystko. Chroni przed walką ze smokiem na niskim poziomie.
+                </p>
+                <select
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-sm px-3 py-2 text-sm text-on-surface"
+                  value={form.difficultyTier}
+                  onChange={(e) => updateForm((p) => ({ ...p, difficultyTier: e.target.value }))}
+                >
+                  {tiers.map((t) => (
+                    <option key={t} value={t}>{tierLabels[t]}</option>
+                  ))}
+                </select>
+                <p className="text-on-surface-variant text-[11px] mt-2 opacity-70">
+                  Poziom postaci: <strong>{charLevel}</strong>. Dozwolone: {tiers.join(', ')}.
+                </p>
+              </section>
+            );
+          })()}
 
           <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
             <label className="flex items-start gap-3 cursor-pointer">

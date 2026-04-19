@@ -73,6 +73,13 @@ model Campaign {
   livingWorldEnabled  Boolean @default(false)
   worldTimeRatio      Float   @default(24.0) // 1 IRL hour = N game hours
   worldTimeMaxGapDays Int     @default(7)    // cap dla offline gap między wizytami
+  // G1 — encounter difficulty cap. Set at creation based on character level:
+  //   lv 1-5  → 'low' only
+  //   lv 6-10 → low | medium | high
+  //   lv 11+  → low | medium | high | deadly
+  // Scene systemPrompt and selectBestiaryEncounter both respect this cap so
+  // a fresh PC can't be thrown against a dragon unless the player chose it.
+  difficultyTier      String  @default("low")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -136,6 +143,9 @@ model CampaignNPC {
   // Living World (Phase 1) — link to canonical WorldNPC + agent flag
   worldNpcId    String?  @db.ObjectId
   isAgent       Boolean  @default(false)
+  // G4 — per-NPC flag so a single renown acknowledgment fires once per
+  // (campaign, NPC) pair instead of every reencounter.
+  hasAcknowledgedFame Boolean @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -250,6 +260,13 @@ model Character {
   voiceName       String   @default("")
   // Library metadata
   campaignCount   Int      @default(0)
+  // Living World — world-wide renown / infamy, aggregated from global
+  // WorldEvents (campaign_complete / major_deed / dungeon_cleared etc.).
+  // Character stays "grey" until fame or infamy crosses 20; crossing
+  // thresholds flips the scene systemPrompt RENOWN suffix on.
+  fame            Int      @default(0)
+  infamy          Int      @default(0)
+  knownTitles     String   @default("[]") // JSON array of unlocked title strings
   // Legacy WFRP fields kept for now (CharacterCreationModal still references some)
   careerData      String   @default("{}")
   characteristics String   @default("{}")
@@ -474,6 +491,16 @@ model WorldNPC {
   // AI may create background NPCs (generic "Wieśniak") as flavor without
   // filling a key slot. Only keyNpc=true WorldNPCs count against maxKeyNpcs.
   keyNpc                 Boolean   @default(true)
+  // Clone-architecture additions (Zakres D).
+  // `schedule` holds a JSON {morning, afternoon, evening} of location
+  // preferences, used for schedule-driven baseline action resolution
+  // without a nano call. `goalDeadlineAt` drives event-driven wakeups —
+  // when the current gameTime passes this, the NPC is flagged as due.
+  // `lastLocationPingAt` lets globalNpcTriggers throttle
+  // first-visit-this-campaign ticks (avoid spam on rapid back-and-forth).
+  schedule               String?
+  goalDeadlineAt         DateTime?
+  lastLocationPingAt     DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)

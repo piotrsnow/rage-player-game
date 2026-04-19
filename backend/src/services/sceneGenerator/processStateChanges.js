@@ -19,6 +19,7 @@ import { upsertEdge } from '../livingWorld/travelGraph.js';
 import { getTemplate } from '../livingWorld/settlementTemplates.js';
 import { applyDungeonRoomState } from '../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../livingWorld/questAudit.js';
+import { applyFameFromEvent } from '../livingWorld/fameService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -57,6 +58,7 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
         if (npcChange.relationships) {
           updateData.relationships = JSON.stringify(npcChange.relationships);
         }
+        if (npcChange.acknowledgedFame === true) updateData.hasAcknowledgedFame = true;
 
         if (Object.keys(updateData).length > 0) {
           const updated = await prisma.campaignNPC.update({
@@ -628,6 +630,7 @@ async function processWorldImpactEvent({
   ownerUserId,
   sceneGameTime,
   mainQuestCompleted,
+  characterIds = [],
 }) {
   const { promote, gate } = shouldPromoteToGlobal(stateChanges, { mainQuestCompleted });
   if (!promote) return;
@@ -663,6 +666,12 @@ async function processWorldImpactEvent({
     gameTime: sceneGameTime,
   });
   log.info({ campaignId, gate, eventType, locationName: currentLocationName }, 'worldImpact event promoted to global');
+
+  await applyFameFromEvent(characterIds, {
+    eventType,
+    visibility: 'global',
+    payload: { gate },
+  });
 }
 
 /**
@@ -712,13 +721,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   // postSceneWork for the same campaignId).
   let livingWorldEnabled = false;
   let ownerUserId = null;
+  let campaignCharacterIds = [];
   try {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { livingWorldEnabled: true, userId: true },
+      select: { livingWorldEnabled: true, userId: true, characterIds: true },
     });
     livingWorldEnabled = campaign?.livingWorldEnabled === true;
     ownerUserId = campaign?.userId || null;
+    campaignCharacterIds = Array.isArray(campaign?.characterIds) ? campaign.characterIds : [];
   } catch {
     // non-fatal — fall back to legacy behaviour
   }
@@ -742,6 +753,11 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       ownerUserId,
       sceneGameTime,
       currentLocationName: stateChanges.currentLocation,
+    });
+    await applyFameFromEvent(campaignCharacterIds, {
+      eventType: 'campaign_complete',
+      visibility: 'global',
+      payload: {},
     });
   }
 
@@ -814,6 +830,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
         ownerUserId,
         sceneGameTime,
         mainQuestCompleted,
+        characterIds: campaignCharacterIds,
       });
     }
 
@@ -850,6 +867,11 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             gameTime: sceneGameTime,
           });
           log.info({ campaignId, questId: quest.questId, reason: verdict.reason }, 'nano audit promoted side quest to global');
+          await applyFameFromEvent(campaignCharacterIds, {
+            eventType: 'major_deed',
+            visibility: 'global',
+            payload: { gate: 'nano_audit' },
+          });
         }
       }
     }
@@ -866,6 +888,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       ownerUserId,
       sceneGameTime,
       mainQuestCompleted: false,
+      characterIds: campaignCharacterIds,
     });
   }
 

@@ -12,13 +12,16 @@ import {
  *   - enemyHints → engine selects a balanced encounter from the bestiary pool
  *   - enemies[] with names → name matching + stat fill per entry
  */
-export function fillEnemiesFromBestiary(stateChanges) {
+export function fillEnemiesFromBestiary(stateChanges, { campaignDifficultyTier = null } = {}) {
   if (!stateChanges) return;
   const cu = stateChanges.combatUpdate;
   if (!cu) return;
 
   if (cu.enemyHints && (!cu.enemies || cu.enemies.length === 0)) {
-    cu.enemies = selectBestiaryEncounter(cu.enemyHints);
+    cu.enemies = selectBestiaryEncounter({
+      ...cu.enemyHints,
+      campaignDifficultyTier,
+    });
   }
 
   if (cu.enemies?.length) {

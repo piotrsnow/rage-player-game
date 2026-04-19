@@ -127,7 +127,7 @@ export function tryTradeShortcut(intentResult, coreState, dbNpcs) {
  * bestiary-selected enemy encounter. Returns { handled, result } just like
  * tryTradeShortcut.
  */
-export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, provider) {
+export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, provider, { campaignDifficultyTier = null } = {}) {
   if (!intentResult.clear_combat || !intentResult.combat_enemies) {
     return { handled: false };
   }
@@ -159,8 +159,11 @@ export async function tryCombatFastPath(intentResult, playerAction, dbNpcs, prov
     };
   }
 
-  // Select enemies from bestiary
-  const enemies = selectBestiaryEncounter(intentResult.combat_enemies);
+  // Select enemies from bestiary (with G1 difficulty-tier cap)
+  const enemies = selectBestiaryEncounter({
+    ...intentResult.combat_enemies,
+    campaignDifficultyTier,
+  });
   const filledEnemies = enemies.map(e => ({
     name: e.name,
     attributes: e.attributes,

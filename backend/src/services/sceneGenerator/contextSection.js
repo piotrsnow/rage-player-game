@@ -1,3 +1,5 @@
+import { pickChatterLine } from '../../../../src/data/npcChatterPool.js';
+
 /**
  * Format pre-fetched context blocks (from assembleContext) into a prompt
  * section that gets appended to the dynamic suffix of the system prompt.
@@ -127,7 +129,19 @@ export function buildContextSection(contextBlocks) {
       // Phase 5 — per-NPC goal + recent activity + arrival flag, for NPCs
       // whose goal targets this campaign. Premium sees "Altmar just arrived
       // with intent X" and narrates naturally.
-      const annotatedNpcs = lw.npcs.filter((n) => n.activeGoal || n.recentMilestones?.length);
+      // G6 — ambient chatter for NPCs without active goals/radiants.
+      // Purely flavor: one line per idle NPC, premium decides whether to
+      // weave it in. Zero AI cost, data-only lookup.
+      const ambientIdleNpcs = lw.npcs.filter((n) => !n.activeGoal && !n.recentMilestones?.length && !n.radiantOffer);
+      if (ambientIdleNpcs.length > 0) {
+        lines.push('Ambient chatter (optional — use at most one to color the scene):');
+        for (const n of ambientIdleNpcs.slice(0, 3)) {
+          const line = pickChatterLine({ role: n.role, personality: n.role, disposition: 0 });
+          if (line) lines.push(`  • ${n.name} might say: "${line}"`);
+        }
+      }
+
+      const annotatedNpcs = lw.npcs.filter((n) => n.activeGoal || n.recentMilestones?.length || n.radiantOffer);
       for (const n of annotatedNpcs) {
         const parts = [];
         if (n.recentlyArrived) parts.push('JUST ARRIVED at this location');
@@ -138,6 +152,9 @@ export function buildContextSection(contextBlocks) {
             .filter(Boolean)
             .join(' → ');
           if (ms) parts.push(`recent activity: ${ms}`);
+        }
+        if (n.radiantOffer?.template) {
+          parts.push(`radiant quest available: template="${n.radiantOffer.template}" — MAY be offered to the player if interaction is natural; on offer emit stateChanges.newQuests entry with source:"npc_radiant"`);
         }
         if (parts.length > 0) {
           lines.push(`  • ${n.name}: ${parts.join('; ')}`);

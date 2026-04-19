@@ -262,12 +262,25 @@ function buildCampaignCreationPrompt(settings, language = 'en') {
     ? '\nThe firstScene.sceneGrid field is MANDATORY: include a coherent 2D board (8-16 width/height), valid tiles, and entity coordinates for player + visible NPCs.'
     : '';
 
+  // G1 — encounter tier cap (passed from creator form / useGameState).
+  // Maps to plainspoken guidance so the worldDescription/hook generator
+  // avoids setting up boss-tier conflicts the scene pipeline will later
+  // refuse to escalate. 'deadly' is unrestricted.
+  const tierCap = settings.difficultyTier || 'low';
+  const tierGuidance = {
+    low: "'low' — enemies: bandyci/wilki/zbóje/drobne potwory. NO smoki, demony, lichowe, archmagowie, pradawne byty.",
+    medium: "'medium' — adds trolle, dzikie bestie, niewielcy nieumarli, sekty kultystów. Smoki/archmagi as distant threats only.",
+    high: "'high' — adds elitarni wrogowie, silne sekty, regionalni bossowie. Smoki/demony allowed but as climax encounters.",
+    deadly: "'deadly' — unrestricted: smoki, archmagi, pradawne byty, lichowie.",
+  }[tierCap] || "'low' — enemies: bandyci/wilki/zbóje.";
+
   return `Create a new RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
 - Play Style: ${settings.style}
 - Difficulty: ${settings.difficulty}
 - Campaign Length: ${settings.length}
+- Encounter Tier: ${tierGuidance}
 ${characterNameLine}
 ${speciesLine}
 - Player's story idea: "${settings.storyPrompt}"

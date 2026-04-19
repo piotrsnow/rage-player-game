@@ -107,7 +107,8 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - campaignComplete: set ONLY when the player just RESOLVED the main conflict of this campaign (final antagonist defeated, central threat ended, main quest chain completed in this scene). Object: {title ≤120 chars, summary ≤800 chars retelling the climax, majorAchievements (1-3 short strings worth spreading across the world). Emits a GLOBAL WorldEvent visible to other campaigns in this location — DO NOT fire for side quests or minor victories.
 - worldImpact: set 'major' ONLY when the scene produces an event worth retelling across UNRELATED campaigns — named antagonist killed, settlement liberated (also set locationLiberated:true), mythical creature slain, political coup. Most victories are 'minor' or null. When 'major', include worldImpactReason (≤300 chars).
 - defeatedDeadlyEncounter: set true ONLY when the player just defeated a deadly-tier encounter (bestiary maxDifficulty='deadly' or equivalent narrative peak). Combined with worldImpact it promotes the scene to a global plotka.
-- dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.`,
+- dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.
+- acknowledgedFame: in a single npcs[] entry, set true ONLY for the NPC that just commented on the player's renown (see RENOWN rule). Prevents the same one-liner from firing again. Never set on NPCs that didn't speak.`,
   );
 
   // ── ACTION FEASIBILITY ──
@@ -214,6 +215,47 @@ ${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest 
     conditionalRules.push(
       `MAIN QUEST COMPLETED. Focus on: side quests, character growth, loose ends, exploration. ` +
       `No major plot progression. The world reacts to the hero's success.`,
+    );
+  }
+
+  // ── ENCOUNTER TIER (G1) — campaign-level difficulty cap ──
+  // Prevents premium from throwing a smok/lich at a low-tier campaign.
+  // Works in tandem with bestiary clamping on the backend.
+  const difficultyTier = campaign.difficultyTier || 'low';
+  if (difficultyTier && difficultyTier !== 'deadly') {
+    const allowedExamples = difficultyTier === 'low'
+      ? 'bandyci, wilki, zbóje, drobne potwory leśne'
+      : difficultyTier === 'medium'
+      ? 'bandyci (większe grupy), trolle, dzikie bestie, niewielcy nieumarli'
+      : 'elitarni wrogowie, niebezpieczne potwory, sekty magów, regionalni bossowie';
+    conditionalRules.push(
+      `ENCOUNTER TIER: Ta kampania ma trudność '${difficultyTier}'. Gracz jest na poziomie ${character.characterLevel || 1}. ` +
+      `Wrogowie/zagrożenia w scenach NIE mogą przekraczać tego pułapu — dozwolone przykłady: ${allowedExamples}. ` +
+      `Smoki, demony wyższych kręgów, archmagowie, lichowie, pradawne byty są DOZWOLONE TYLKO dla tier 'deadly'. ` +
+      `Jeśli narracja wymaga silniejszego wroga — użyj scripted escape (ucieczka, sojusznik interweniuje, ambush fails) zamiast walki.`,
+    );
+  }
+
+  // ── RENOWN (fame/infamy) — Oblivion-style minimal acknowledgment ──
+  // Character stays "grey" until crossing fame/infamy 20. Once crossed,
+  // NPCs may comment on the player's reputation ONCE per NPC (flag on
+  // CampaignNPC.hasAcknowledgedFame). Tone approve vs disapprove is
+  // computed from the label bucket.
+  const fame = Number(character.fame) || 0;
+  const infamy = Number(character.infamy) || 0;
+  if (fame >= 20 || infamy >= 20) {
+    const label = infamy >= 50 ? 'poszukiwany łotr'
+      : infamy >= 20 ? 'podejrzany'
+      : fame >= 100 ? 'legendarny'
+      : fame >= 50 ? 'sławny'
+      : 'znany w okolicy';
+    const tone = infamy >= 20 ? 'disapprove' : 'approve';
+    conditionalRules.push(
+      `RENOWN: Gracz jest znany jako "${label}" w świecie. NPC spotkani po raz pierwszy w kampanii (CampaignNPC.hasAcknowledgedFame=false) MOGĄ to skomentować JEDNYM zdaniem zgodnym z ich osobowością. ` +
+      (tone === 'approve'
+        ? 'Pozytywne reakcje: „Słyszałem że powstrzymałeś bandytów — dobry człowiek się trafił!", „Widziałem cię w balladach.". '
+        : 'Negatywne reakcje: „Słyszałem o twoich wybrykach — trzymaj się z daleka.", „Nie pokazuj się publicznie, szukają cię.". ') +
+      `NIE powtarzaj tego co inni NPC już powiedzieli — każdy komentarz inny. Ogranicz do JEDNEGO zdania.`,
     );
   }
 

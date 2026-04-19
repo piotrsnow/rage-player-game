@@ -15,6 +15,8 @@ export const CAMPAIGN_WRITE_SCHEMA = {
     livingWorldEnabled: { type: 'boolean' },
     worldTimeRatio: { type: 'number', minimum: 1, maximum: 240 },
     worldTimeMaxGapDays: { type: 'integer', minimum: 1, maximum: 90 },
+    // G1 — encounter difficulty cap (enforced per character level in crud.js)
+    difficultyTier: { type: 'string', enum: ['low', 'medium', 'high', 'deadly'] },
   },
 };
 

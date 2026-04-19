@@ -28,6 +28,7 @@ import {
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
+import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
@@ -108,7 +109,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     }
 
     // 2a2. Combat fast-path
-    const combat = await tryCombatFastPath(intentResult, playerAction, dbNpcs, provider);
+    const combat = await tryCombatFastPath(intentResult, playerAction, dbNpcs, provider, {
+      campaignDifficultyTier: coreState.campaign?.difficultyTier || null,
+    });
     if (combat.handled) {
       if (combat.intent) onEvent({ type: 'intent', data: { intent: combat.intent } });
       onEvent({ type: 'complete', data: { scene: combat.result, sceneIndex: -1 } });
@@ -140,6 +143,17 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // animation in parallel with narrative streaming.
     if (resolvedMechanics?.diceRoll) {
       onEvent({ type: 'dice_early', data: { diceRoll: resolvedMechanics.diceRoll } });
+    }
+
+    // 2d. Clone reconciliation — catch divergence from other campaigns
+    // before assembleContext surfaces the NPC roster. Best-effort; any
+    // failure drops through with legacy clone state (non-blocking).
+    if (livingWorldEnabled) {
+      try {
+        await reconcileCloneBatch({ campaignId });
+      } catch (err) {
+        log.warn({ err, campaignId }, 'reconcileCloneBatch failed (non-fatal)');
+      }
     }
 
     // 3. Context assembly — skip entities already emitted inline in system prompt
@@ -259,8 +273,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const hasAnyDiceRoll = !!resolvedMechanics?.diceRoll || (sceneResult.diceRolls?.length > 0);
     calculateFreeformSkillXP(sceneResult.stateChanges, hasAnyDiceRoll, sceneResult.diceRolls);
 
-    // 6. Fill enemy stats from bestiary
-    fillEnemiesFromBestiary(sceneResult.stateChanges);
+    // 6. Fill enemy stats from bestiary (with G1 difficulty-tier cap)
+    fillEnemiesFromBestiary(sceneResult.stateChanges, {
+      campaignDifficultyTier: coreState.campaign?.difficultyTier || null,
+    });
 
     // 7. Save scene
     const lastScene = recentScenes[recentScenes.length - 1];

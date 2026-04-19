@@ -112,6 +112,7 @@ export async function crudCampaignRoutes(app) {
       livingWorldEnabled,
       worldTimeRatio,
       worldTimeMaxGapDays,
+      difficultyTier,
     } = request.body;
     const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
@@ -122,12 +123,28 @@ export async function crudCampaignRoutes(app) {
     if (characterIds.length > 0) {
       const owned = await prisma.character.findMany({
         where: { id: { in: characterIds }, userId: request.user.id },
-        select: { id: true },
+        select: { id: true, characterLevel: true },
       });
       const ownedSet = new Set(owned.map((c) => c.id));
       for (const id of characterIds) {
         if (!ownedSet.has(id)) {
           return reply.code(403).send({ error: `Character ${id} not found or not owned by user` });
+        }
+      }
+
+      // G1 — validate difficultyTier against the primary character's level.
+      // Prevents clients from spoofing an over-the-cap tier. Picks the
+      // character with the highest level across the party so multiplayer
+      // groups get the most permissive allowed tier.
+      if (typeof difficultyTier === 'string') {
+        const maxLevel = owned.reduce((acc, c) => Math.max(acc, Number(c.characterLevel) || 1), 1);
+        const allowed = maxLevel <= 5 ? ['low']
+          : maxLevel <= 10 ? ['low', 'medium', 'high']
+          : ['low', 'medium', 'high', 'deadly'];
+        if (!allowed.includes(difficultyTier)) {
+          return reply.code(400).send({
+            error: `difficultyTier "${difficultyTier}" not allowed at character level ${maxLevel} (allowed: ${allowed.join(', ')})`,
+          });
         }
       }
     }
@@ -146,6 +163,7 @@ export async function crudCampaignRoutes(app) {
         ...(livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
         ...(typeof worldTimeRatio === 'number' ? { worldTimeRatio } : {}),
         ...(Number.isInteger(worldTimeMaxGapDays) ? { worldTimeMaxGapDays } : {}),
+        ...(typeof difficultyTier === 'string' ? { difficultyTier } : {}),
       },
     });
 

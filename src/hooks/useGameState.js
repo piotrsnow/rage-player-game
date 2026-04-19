@@ -93,6 +93,9 @@ export function useGameState() {
         // 24.0 / 7 when the creator form leaves them alone).
         ...(typeof campaignSettings.worldTimeRatio === 'number' ? { worldTimeRatio: campaignSettings.worldTimeRatio } : {}),
         ...(Number.isInteger(campaignSettings.worldTimeMaxGapDays) ? { worldTimeMaxGapDays: campaignSettings.worldTimeMaxGapDays } : {}),
+        // G1 — difficulty tier chosen in CampaignCreator. Backend validates
+        // against the character's level before persisting.
+        ...(typeof campaignSettings.difficultyTier === 'string' ? { difficultyTier: campaignSettings.difficultyTier } : {}),
       };
 
       const initialCharacter = campaignSettings.existingCharacter

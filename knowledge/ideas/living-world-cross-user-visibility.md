@@ -1,5 +1,19 @@
 # Idea — Living World cross-user visibility
 
+> **Status (2026-04):** Minimal-viable shipped. `WorldEvent.visibility='global'`
+> is written by `processCampaignComplete` and `processWorldImpactEvent`
+> (gated on named-NPC kill / main-quest / liberation / deadly / dungeon
+> or a nano audit for side quests). `worldEventLog.forLocation` fetches
+> global events cross-campaign — current payloads are meta-only
+> (title/summary/locationName/gate/reason) so no character-private data
+> leaks without an anonymizer.
+>
+> Rate-limit (e.g. 3 major/tydzień/kampania) and the full spoiler filter
+> described below are still deferred. Feed usage observability before
+> deciding if/when we need them.
+>
+> Canonical docs: [../concepts/living-world.md](../concepts/living-world.md).
+
 ## What it is
 
 Phase 3 of the Living World plan defined `WorldEvent.visibility` with three tiers:
