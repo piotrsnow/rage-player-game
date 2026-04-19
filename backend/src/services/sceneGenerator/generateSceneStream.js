@@ -27,6 +27,7 @@ import {
   calculateFreeformSkillXP,
 } from './diceResolution.js';
 import { fillEnemiesFromBestiary } from './enemyFill.js';
+import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
@@ -267,6 +268,21 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 6d. Resolve abstract rewards into concrete items/materials/money
     resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
+
+    // 6d2. Dungeon entry hook — if premium emitted a currentLocation that
+    // points to a top-level dungeon, seed it (idempotent) and redirect
+    // currentLocation to the entrance room so FE + next scene see the
+    // deterministic room, not the dungeon stub. Best-effort, non-blocking.
+    if (livingWorldEnabled && sceneResult.stateChanges) {
+      try {
+        await handleDungeonEntry({
+          stateChanges: sceneResult.stateChanges,
+          prevLoc: coreState.world?.currentLocation || null,
+        });
+      } catch (err) {
+        log.warn({ err: err?.message }, 'handleDungeonEntry failed (non-fatal)');
+      }
+    }
 
     // 6e. Merge combat result into stateChanges (if provided). Combat is resolved
     // deterministically on FE; BE is responsible for applying its XP + wounds.

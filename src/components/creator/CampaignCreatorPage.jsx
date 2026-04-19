@@ -9,6 +9,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import Button from '../ui/Button';
+import Slider from '../ui/Slider';
 import CountdownProgress from '../ui/CountdownProgress';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
@@ -52,6 +53,10 @@ export default function CampaignCreatorPage() {
     length: 'Medium',
     storyPrompt: '',
     livingWorldEnabled: false,
+    // Phase 7 — world time controls. Only sent to backend when
+    // livingWorldEnabled is true (and the user left defaults alone → omitted).
+    worldTimeRatio: 24,
+    worldTimeMaxGapDays: 7,
   });
 
   const [isRandomizing, setIsRandomizing] = useState(false);
@@ -476,6 +481,32 @@ export default function CampaignCreatorPage() {
                 </p>
               </div>
             </label>
+
+            {form.livingWorldEnabled && !isGuest && (
+              <div className="mt-6 pt-6 border-t border-outline-variant/15">
+                <p className="text-on-surface-variant text-xs mb-4">
+                  Tempo upływu czasu w świecie gry względem realnego + maksymalna "dziura" gdy wracasz po przerwie.
+                </p>
+                <Slider
+                  label="Tempo czasu"
+                  description="1h realnego = N godzin w grze (domyślnie 24 → 1h real = 1 dzień gry)"
+                  min={1}
+                  max={72}
+                  value={form.worldTimeRatio}
+                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
+                  displayValue={`${form.worldTimeRatio}×`}
+                />
+                <Slider
+                  label="Maks. offline gap"
+                  description="Ile dni gry maksymalnie upływa gdy wracasz po długiej przerwie"
+                  min={1}
+                  max={30}
+                  value={form.worldTimeMaxGapDays}
+                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
+                  displayValue={`${form.worldTimeMaxGapDays} dni`}
+                />
+              </div>
+            )}
           </section>
 
           {(state.error || mp.state.error) && (

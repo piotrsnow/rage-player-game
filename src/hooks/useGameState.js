@@ -88,6 +88,11 @@ export function useGameState() {
         characterIds: [], // populated after the character is saved below
         // Living World (Phase 1) — flag forwarded to backend on first save
         ...(campaignSettings.livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
+        // Phase 7 — user-tunable world time ratio + offline gap cap. Only
+        // forwarded when set explicitly (so campaigns keep backend defaults
+        // 24.0 / 7 when the creator form leaves them alone).
+        ...(typeof campaignSettings.worldTimeRatio === 'number' ? { worldTimeRatio: campaignSettings.worldTimeRatio } : {}),
+        ...(Number.isInteger(campaignSettings.worldTimeMaxGapDays) ? { worldTimeMaxGapDays: campaignSettings.worldTimeMaxGapDays } : {}),
       };
 
       const initialCharacter = campaignSettings.existingCharacter

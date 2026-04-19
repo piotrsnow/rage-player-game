@@ -219,6 +219,111 @@ export async function adminLivingWorldRoutes(fastify) {
     const out = await runTickBatch({ limit: Math.min(Number(limit) || 10, 50) });
     return out;
   });
+
+  // ── Phase 7: world graph for map view ──────────────────────────────
+  // Returns nodes (top-level locations) + edges (overworld). Dungeons are
+  // collapsed: the dungeon node itself is surfaced but child rooms + corridor
+  // edges are aggregated as a `roomCount` on the node (not rendered).
+  fastify.get('/graph', guards, async () => {
+    const [locations, edges] = await Promise.all([
+      prisma.worldLocation.findMany({
+        where: { parentLocationId: null },
+        select: {
+          id: true,
+          canonicalName: true,
+          locationType: true,
+          regionX: true,
+          regionY: true,
+          region: true,
+          positionConfidence: true,
+          maxKeyNpcs: true,
+          maxSubLocations: true,
+        },
+      }),
+      prisma.worldLocationEdge.findMany({
+        where: { terrainType: { not: 'dungeon_corridor' } },
+        select: {
+          id: true,
+          fromLocationId: true,
+          toLocationId: true,
+          distance: true,
+          difficulty: true,
+          terrainType: true,
+          direction: true,
+          gated: true,
+          discoveredByCampaigns: true,
+        },
+      }),
+    ]);
+
+    const locationIds = new Set(locations.map((l) => l.id));
+    const overworldEdges = edges.filter((e) =>
+      locationIds.has(e.fromLocationId) && locationIds.has(e.toLocationId),
+    );
+
+    // Dungeons — count seeded rooms so the admin can tell "seeded vs not".
+    const dungeonIds = locations
+      .filter((l) => l.locationType === 'dungeon')
+      .map((l) => l.id);
+    let roomCounts = new Map();
+    if (dungeonIds.length > 0) {
+      const roomsGrouped = await prisma.worldLocation.groupBy({
+        by: ['parentLocationId'],
+        where: { parentLocationId: { in: dungeonIds }, locationType: 'dungeon_room' },
+        _count: true,
+      });
+      roomCounts = new Map(
+        roomsGrouped.map((r) => [r.parentLocationId, r._count]),
+      );
+    }
+
+    // Children counts for settlements (informational: how filled is each parent)
+    const topLevelIds = locations.map((l) => l.id);
+    let childCounts = new Map();
+    if (topLevelIds.length > 0) {
+      const grouped = await prisma.worldLocation.groupBy({
+        by: ['parentLocationId'],
+        where: { parentLocationId: { in: topLevelIds }, locationType: { not: 'dungeon_room' } },
+        _count: true,
+      });
+      childCounts = new Map(grouped.map((r) => [r.parentLocationId, r._count]));
+    }
+
+    const nodes = locations.map((l) => ({
+      id: l.id,
+      name: l.canonicalName,
+      locationType: l.locationType || 'generic',
+      region: l.region || null,
+      x: l.regionX || 0,
+      y: l.regionY || 0,
+      positionConfidence: l.positionConfidence ?? 0.5,
+      maxKeyNpcs: l.maxKeyNpcs || 0,
+      maxSubLocations: l.maxSubLocations || 0,
+      childCount: childCounts.get(l.id) || 0,
+      roomCount: roomCounts.get(l.id) || 0,
+    }));
+
+    return {
+      nodes,
+      edges: overworldEdges.map((e) => {
+        let campaignCount = 0;
+        try {
+          campaignCount = JSON.parse(e.discoveredByCampaigns || '[]').length;
+        } catch { /* ignore */ }
+        return {
+          id: e.id,
+          from: e.fromLocationId,
+          to: e.toLocationId,
+          distance: e.distance,
+          difficulty: e.difficulty,
+          terrainType: e.terrainType,
+          direction: e.direction || null,
+          gated: !!e.gated,
+          discoveredCampaignCount: campaignCount,
+        };
+      }),
+    };
+  });
 }
 
 function safeJson(s) {

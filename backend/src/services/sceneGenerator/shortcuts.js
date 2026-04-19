@@ -68,6 +68,18 @@ async function generateShortNarrative(instruction, playerAction, provider = 'ope
   return instruction;
 }
 
+// One-line NPC greetings shown when the trade shortcut fires. Keeps the
+// shortcut AI-free (the whole point of it) while giving the player a
+// beat of narration before the trade panel opens.
+const TRADE_GREETINGS = [
+  '{npc} uśmiecha się i rozkłada towary. „Zobacz moje towary."',
+  '„Czym mogę służyć?" — pyta {npc}, prezentując ofertę.',
+  '{npc} kiwa głową i wskazuje swoje zapasy. „Coś cię interesuje?"',
+  '„Dobrze, że cię widzę — mam coś dla ciebie," mówi {npc}.',
+  '{npc} otwiera skrzynię i pokazuje towary. „Wybieraj śmiało."',
+  '„Najlepsze ceny w okolicy," zapewnia {npc}, rozkładając ofertę.',
+];
+
 /**
  * Trade shortcut — skip scene generation for pure trade intent.
  * Returns { handled: true, result } if the shortcut matched, or { handled: false }
@@ -93,10 +105,13 @@ export function tryTradeShortcut(intentResult, coreState, dbNpcs) {
 
   if (!matchedNpc) return { handled: false };
 
+  const template = TRADE_GREETINGS[Math.floor(Math.random() * TRADE_GREETINGS.length)];
+  const narrative = template.replaceAll('{npc}', matchedNpc.name);
+
   return {
     handled: true,
     result: {
-      narrative: '',
+      narrative,
       stateChanges: {
         startTrade: { npcName: matchedNpc.name },
       },

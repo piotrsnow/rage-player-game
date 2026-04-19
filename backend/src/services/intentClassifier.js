@@ -11,15 +11,23 @@
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
 import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
+import { isHypotheticalOrQuestioning } from '../../../shared/domain/intentHeuristics.js';
 
 const log = childLogger({ module: 'intentClassifier' });
 
 // ── TRADE INTENT REGEX ──
+//
+// Tightened vs. the original: dropped bare `kup`, `sklep`, `sprzedaj`, `handel`
+// because they matched too liberally (e.g. "sklepieniem" or stand-alone nouns).
+// Only full verb forms remain — the hypothesis guard below strips questions
+// and conditional phrasing so "czy potrzebujesz kompanii żeby…" no longer
+// slips through even when a keyword appears.
 
-const TRADE_REGEX = /\b(kupuj[eę]?|sprzedaj[eę]?|handluj[eę]?|targuj[eę]?|sklep|kup|sprzedaj|handel|buy|sell|haggle|trade|shop|merchant|purchase|barter)\b/i;
+const TRADE_REGEX = /\b(kupuj[eę]?|kupi[eęć]?|zakup(?:uj)?[eęia]?|sprzedaj[eę]?|sprzeda(?:j|ć)?|handluj[eę]?|targuj[eę]?|kupcem|sklepie|buy|sell|haggle|trade|shop|merchant|purchase|barter)\b/iu;
 
 function detectTradeIntent(action) {
   if (!action || typeof action !== 'string') return false;
+  if (isHypotheticalOrQuestioning(action)) return false;
   return TRADE_REGEX.test(action);
 }
 
@@ -44,6 +52,35 @@ export function detectTravelIntent(action) {
   const target = targetMatch[1].trim().replace(/[.,;:!?].*$/, '').trim();
   if (!target) return null;
   return { target };
+}
+
+// ── DUNGEON NAVIGATION REGEX ──
+// Match "idę na północ", "otwieram drzwi na wschód", "schodzę w dół", etc.
+// Returns a canonical direction matching WorldLocationEdge.direction values:
+// N|S|E|W|up|down. Only fires in dungeon scenes (sceneGenerator gates on
+// locationType='dungeon_room').
+//
+// Deliberately does NOT use \b around Polish diacritic characters — `\b` in
+// JS regex ASCII mode treats `ą`/`ę`/`ł`/`ó` as non-word, which breaks
+// boundaries mid-token (e.g. `idę\b` won't match because there's no
+// word→non-word transition after ę).
+const DIRECTION_MAP = [
+  { re: /(p[oó]łnoc|\bnorth\b|\bpn\.?\b)/i, dir: 'N' },
+  { re: /(po[lł]udni|\bsouth\b|\bpd\.?\b)/i, dir: 'S' },
+  { re: /(wsch[oó]d|\beast\b|\bwsch\.?\b)/i, dir: 'E' },
+  { re: /(zach[oó]d|\bwest\b|\bzach\.?\b)/i, dir: 'W' },
+  { re: /(w\s+g[oó]r[eę]|\bup(?:stairs)?\b|schody\s+w\s+g[oó]r[eę])/i, dir: 'up' },
+  { re: /(w\s+d[oó][lł]|\bdown(?:stairs)?\b|schodz[eę]|schody\s+w\s+d[oó][lł])/i, dir: 'down' },
+];
+const DUNGEON_NAV_VERBS = /(id[eę]|p[oó]jd[eę]|wchodz[eę]|przechodz[eę]|rusz[aą]m|kieruj[eę]|schodz[eę]|wspin[aą]m|otwier[aą]m|\bgo\b|\bhead\b|\bwalk\b|\bclimb\b|\bdescend\b|\benter\b)/i;
+
+export function detectDungeonNavigateIntent(action) {
+  if (!action || typeof action !== 'string') return null;
+  if (!DUNGEON_NAV_VERBS.test(action)) return null;
+  for (const { re, dir } of DIRECTION_MAP) {
+    if (re.test(action)) return { direction: dir };
+  }
+  return null;
 }
 
 // ── EMPTY SELECTION (no context needed) ──
@@ -150,6 +187,18 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
       expand_location: true,
       _intent: 'travel',
       _travelTarget: travel.target,
+    };
+  }
+
+  // Dungeon navigation — "idę na północ", "otwieram drzwi na wschód".
+  // Only relevant when the player is in a dungeon room; sceneGenerator
+  // picks up _dungeonDirection and pre-resolves the target room.
+  const dungeonNav = detectDungeonNavigateIntent(playerAction);
+  if (dungeonNav) {
+    return {
+      ...emptySelection(),
+      _intent: 'dungeon_navigate',
+      _dungeonDirection: dungeonNav.direction,
     };
   }
 
@@ -271,13 +320,16 @@ export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], d
   // codex entries via other paths (expand_codex fallback still works via
   // assembleContext, just without classifier pre-selection).
 
-  // Previous scene — short excerpt so classifier understands narrative flow.
-  // Truncated to ~350 chars: enough to recognize continuity, cheap to send.
+  // Previous scene — excerpt so classifier understands narrative flow.
+  // Bumped from 350 → 800 chars: the classifier was losing continuity on
+  // discussion-style actions ("powiedz mi więcej…") where the previous
+  // scene's framing is the key signal that the player isn't taking a
+  // new combat/trade action.
   if (prevScene?.narrative) {
-    const excerpt = String(prevScene.narrative).slice(0, 350);
+    const excerpt = String(prevScene.narrative).slice(0, 800);
     const sceneTag = prevScene.sceneIndex != null ? `[Scene ${prevScene.sceneIndex}] ` : '';
     const actionTag = prevScene.chosenAction ? `(action: "${String(prevScene.chosenAction).slice(0, 120)}") ` : '';
-    parts.push(`Previous scene: ${sceneTag}${actionTag}${excerpt}${prevScene.narrative.length > 350 ? '…' : ''}`);
+    parts.push(`Previous scene: ${sceneTag}${actionTag}${excerpt}${prevScene.narrative.length > 800 ? '…' : ''}`);
   }
 
   return parts.join('\n');
@@ -324,6 +376,15 @@ combat_enemies rules — set when the player is CLEARLY initiating combat (attac
 - count: how many enemies (1-8).
 - race: infer from descriptors. ALWAYS set to 'ludzie' when the target is humanoid and nothing indicates otherwise — this includes: osiłek, chłop, gbur, karczmarz, pijak, rycerz, strażnik, bandyta, rozbójnik, najemnik, kultysta, żebrak, łotr, opryszek, cywil, wieśniak. Only set non-human race when explicitly mentioned: goblin/goblins → "gobliny", ork/orki → "orkowie", szkielet/zombie/upiór → "nieumarli", wilk/niedźwiedź/dzik → "zwierzeta", pająk → "pajaki", troll → "trolle", krasnolud → "krasnoludy", elf → "elfy", niziolek → "niziolki", demon/diabeł → "demony". When in doubt between race=null and race='ludzie', choose 'ludzie'. Valid values: ${BESTIARY_RACES_FOR_NANO}.
 - Set combat_enemies to null if no combat is intended.
+
+NEGATIVE EXAMPLES — combat_enemies MUST be null when the player discusses, questions, or hypothesizes combat rather than taking the action in-world:
+- "powiedz mi więcej jakbym miał walczyć" → null
+- "co się stanie jeśli zaatakuję?" → null
+- "opowiedz mi o walkach z bandytami" → null
+- "boję się ataku" → null
+- "jak walczy ten strażnik?" → null
+- "czy potrzebujesz kompanii żeby pokonać smoka?" → null (planning/question, not attack)
+Only set combat_enemies when the player TAKES the combat action in-world.
 
 clear_combat rules — set to true ONLY when the player action is an UNAMBIGUOUS direct attack on a visible target (e.g. "atakuję bandytę", "bijatyka w karczmie"). This allows skipping the large AI model. Set false when:
 - Combat is part of a larger narrative (ambush, negotiations breaking down)

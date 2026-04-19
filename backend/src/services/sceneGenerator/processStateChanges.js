@@ -17,6 +17,8 @@ import { decideSublocationAdmission } from '../livingWorld/topologyGuard.js';
 import { computeNewPosition, euclidean } from '../livingWorld/positionCalculator.js';
 import { upsertEdge } from '../livingWorld/travelGraph.js';
 import { getTemplate } from '../livingWorld/settlementTemplates.js';
+import { applyDungeonRoomState } from '../livingWorld/dungeonEntry.js';
+import { auditQuestWorldImpact } from '../livingWorld/questAudit.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -133,7 +135,7 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
  * rejection — that belongs to full orchestration (see
  * knowledge/ideas/living-world-scene-orchestration.md).
  */
-async function processItemAttributions(campaignId, newItems, userId) {
+async function processItemAttributions(campaignId, newItems, userId, sceneGameTime) {
   if (!Array.isArray(newItems) || newItems.length === 0) return;
   for (const item of newItems) {
     const fromNpcId = item?.fromNpcId;
@@ -166,6 +168,7 @@ async function processItemAttributions(campaignId, newItems, userId) {
           fromNpcId,
         },
         visibility: 'campaign',
+        gameTime: sceneGameTime,
       });
     } catch (err) {
       log.warn({ err, campaignId, fromNpcId }, 'item attribution event write failed');
@@ -574,6 +577,135 @@ async function processQuestStatusChange(campaignId, questIds, status) {
   }
 }
 
+/**
+ * Pure decision function — does the current scene earn global visibility?
+ *
+ * Gate: premium flags `worldImpact: 'major'` OR any deadly/dungeon flag
+ * is set; AT LEAST ONE objective signal must be present:
+ *   - named NPC killed in this scene
+ *   - a main-type quest completed
+ *   - explicit locationLiberated flag
+ *   - defeatedDeadlyEncounter flag
+ *   - dungeonComplete payload
+ *
+ * Returns `{ promote: bool, gate: string }`. `gate` identifies which
+ * signal fired so the event payload can explain why this is gossip-worthy.
+ * Exported so tests can exercise the gate without touching Prisma.
+ */
+export function shouldPromoteToGlobal(stateChanges, { mainQuestCompleted = false } = {}) {
+  if (!stateChanges || typeof stateChanges !== 'object') {
+    return { promote: false, gate: null };
+  }
+  const flaggedMajor = stateChanges.worldImpact === 'major';
+  const deadly = stateChanges.defeatedDeadlyEncounter === true;
+  const dungeon = stateChanges.dungeonComplete && typeof stateChanges.dungeonComplete === 'object';
+  const liberated = stateChanges.locationLiberated === true;
+  const namedKill = Array.isArray(stateChanges.npcs)
+    && stateChanges.npcs.some((n) => n && n.alive === false && typeof n.name === 'string' && n.name.trim().length > 0);
+
+  // Dungeon completion and deadly victory are self-gating (AI explicitly
+  // marks them) — they promote regardless of worldImpact tag.
+  if (dungeon) return { promote: true, gate: 'dungeon' };
+  if (deadly) return { promote: true, gate: 'deadly' };
+
+  // Everything else requires worldImpact='major' AND an objective signal.
+  if (!flaggedMajor) return { promote: false, gate: null };
+  if (liberated) return { promote: true, gate: 'liberation' };
+  if (mainQuestCompleted) return { promote: true, gate: 'main_quest' };
+  if (namedKill) return { promote: true, gate: 'named_kill' };
+
+  return { promote: false, gate: null };
+}
+
+/**
+ * Write a GLOBAL WorldEvent when the current scene clears the gate.
+ * Caller resolves `mainQuestCompleted` (requires a Prisma query against
+ * completedQuests). Payload is meta-only.
+ */
+async function processWorldImpactEvent({
+  campaignId,
+  stateChanges,
+  ownerUserId,
+  sceneGameTime,
+  mainQuestCompleted,
+}) {
+  const { promote, gate } = shouldPromoteToGlobal(stateChanges, { mainQuestCompleted });
+  if (!promote) return;
+
+  const currentLocationName = stateChanges.currentLocation || null;
+  let worldLocationId = null;
+  if (currentLocationName) {
+    try {
+      const loc = await findOrCreateWorldLocation(currentLocationName);
+      worldLocationId = loc?.id || null;
+    } catch {
+      // Non-fatal — event still attaches via campaignId
+    }
+  }
+
+  const eventType = gate === 'dungeon' ? 'dungeon_cleared'
+    : gate === 'deadly' ? 'deadly_victory'
+    : 'major_deed';
+
+  await appendEvent({
+    worldLocationId,
+    campaignId,
+    userId: ownerUserId,
+    eventType,
+    payload: {
+      gate,
+      reason: stateChanges.worldImpactReason || null,
+      locationName: currentLocationName,
+      dungeonName: stateChanges.dungeonComplete?.name || null,
+      dungeonSummary: stateChanges.dungeonComplete?.summary || null,
+    },
+    visibility: 'global',
+    gameTime: sceneGameTime,
+  });
+  log.info({ campaignId, gate, eventType, locationName: currentLocationName }, 'worldImpact event promoted to global');
+}
+
+/**
+ * Write a GLOBAL WorldEvent when the player resolves a campaign's main
+ * conflict. Visible cross-campaign via `forLocation` (worldEventLog reads
+ * `visibility='global'` without campaignId filter). Payload is meta-only
+ * — title, summary, achievements, locationName — so no character-private
+ * data leaks into other players' contexts.
+ */
+async function processCampaignComplete({
+  campaignId,
+  data,
+  ownerUserId,
+  sceneGameTime,
+  currentLocationName,
+}) {
+  if (!data || typeof data !== 'object') return;
+  let worldLocationId = null;
+  if (currentLocationName) {
+    try {
+      const loc = await findOrCreateWorldLocation(currentLocationName);
+      worldLocationId = loc?.id || null;
+    } catch {
+      // Non-fatal — event can still attach via campaignId
+    }
+  }
+  await appendEvent({
+    worldLocationId,
+    campaignId,
+    userId: ownerUserId,
+    eventType: 'campaign_complete',
+    payload: {
+      title: data.title || '',
+      summary: data.summary || '',
+      majorAchievements: Array.isArray(data.majorAchievements) ? data.majorAchievements : [],
+      locationName: currentLocationName || null,
+    },
+    visibility: 'global',
+    gameTime: sceneGameTime,
+  });
+  log.info({ campaignId, locationName: currentLocationName, title: data.title }, 'campaign_complete global event written');
+}
+
 export async function processStateChanges(campaignId, stateChanges, { prevLoc = null } = {}) {
   // Fetch campaign once to check living-world flag + userId for Phase 4
   // WorldEvent attribution (cheap — same record is already loaded by
@@ -591,16 +723,45 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     // non-fatal — fall back to legacy behaviour
   }
 
+  // Phase 7 — single timestamp per scene so intra-scene WorldEvents are
+  // internally consistent (instead of each appendEvent minting its own
+  // `new Date()` drifting by milliseconds). Cross-user time reconstruction
+  // later depends on this being stable per scene.
+  const sceneGameTime = new Date();
+
   if (stateChanges.npcs?.length) {
     await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled });
   }
 
+  // Campaign completion → global WorldEvent (user's explicit requirement:
+  // "zakończenie kampanii musi być zapisane globalnie").
+  if (livingWorldEnabled && stateChanges.campaignComplete) {
+    await processCampaignComplete({
+      campaignId,
+      data: stateChanges.campaignComplete,
+      ownerUserId,
+      sceneGameTime,
+      currentLocationName: stateChanges.currentLocation,
+    });
+  }
+
   if (livingWorldEnabled && stateChanges.newItems?.length) {
-    await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId);
+    await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
   }
 
   if (livingWorldEnabled && stateChanges.newLocations?.length) {
     await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc });
+  }
+
+  // Phase 7 — dungeon room state flags. `prevLoc` is the room the player
+  // was IN when premium wrote the flags; currentLocation may already point
+  // to the next room (movement). Flags apply to prevLoc.
+  if (livingWorldEnabled && stateChanges.dungeonRoom && prevLoc) {
+    await applyDungeonRoomState({
+      campaignId,
+      prevLoc,
+      flags: stateChanges.dungeonRoom,
+    });
   }
 
   if (stateChanges.knowledgeUpdates) {
@@ -621,6 +782,91 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   if (stateChanges.failedQuests?.length) {
     await processQuestStatusChange(campaignId, stateChanges.failedQuests, 'failed');
+  }
+
+  // Major-event gate (Zakres C). Two paths fire a global WorldEvent:
+  //   1) AI flagged worldImpact='major' / deadly / dungeon AND the gate
+  //      (named kill / main quest / liberation) confirms with evidence.
+  //   2) Side quest auto-completed without any worldImpact flag — nano
+  //      audit asks "is this a tavern rumour?" as a cheap backup.
+  if (livingWorldEnabled && stateChanges.completedQuests?.length) {
+    // Resolve main vs side for completed quests in this scene (one query).
+    let completedMeta = [];
+    try {
+      completedMeta = await prisma.campaignQuest.findMany({
+        where: { campaignId, questId: { in: stateChanges.completedQuests } },
+        select: { questId: true, name: true, description: true, type: true },
+      });
+    } catch (err) {
+      log.warn({ err, campaignId }, 'completedQuests metadata fetch failed');
+    }
+    const mainQuestCompleted = completedMeta.some((q) => q.type === 'main');
+
+    const hasExplicitImpact = stateChanges.worldImpact === 'major'
+      || stateChanges.defeatedDeadlyEncounter === true
+      || !!stateChanges.dungeonComplete
+      || stateChanges.locationLiberated === true;
+
+    if (hasExplicitImpact || mainQuestCompleted) {
+      await processWorldImpactEvent({
+        campaignId,
+        stateChanges,
+        ownerUserId,
+        sceneGameTime,
+        mainQuestCompleted,
+      });
+    }
+
+    // Backup audit for side quests when nothing else promoted the scene.
+    // Skip main quests (they promote via gate) and skip when an explicit
+    // impact already wrote a global event — no duplication.
+    if (!hasExplicitImpact) {
+      const sideQuests = completedMeta.filter((q) => q.type !== 'main');
+      for (const quest of sideQuests) {
+        const verdict = await auditQuestWorldImpact(quest, {
+          locationName: stateChanges.currentLocation,
+          sceneSummary: stateChanges.campaignComplete?.summary || null,
+        });
+        if (verdict?.isMajor) {
+          let worldLocationId = null;
+          if (stateChanges.currentLocation) {
+            try {
+              const loc = await findOrCreateWorldLocation(stateChanges.currentLocation);
+              worldLocationId = loc?.id || null;
+            } catch { /* non-fatal */ }
+          }
+          await appendEvent({
+            worldLocationId,
+            campaignId,
+            userId: ownerUserId,
+            eventType: 'major_deed',
+            payload: {
+              gate: 'nano_audit',
+              reason: verdict.reason,
+              questName: quest.name,
+              locationName: stateChanges.currentLocation || null,
+            },
+            visibility: 'global',
+            gameTime: sceneGameTime,
+          });
+          log.info({ campaignId, questId: quest.questId, reason: verdict.reason }, 'nano audit promoted side quest to global');
+        }
+      }
+    }
+  } else if (livingWorldEnabled && (
+    stateChanges.worldImpact === 'major'
+    || stateChanges.defeatedDeadlyEncounter === true
+    || stateChanges.dungeonComplete
+    || stateChanges.locationLiberated === true
+  )) {
+    // No completed quests this scene — still honour explicit impact flags.
+    await processWorldImpactEvent({
+      campaignId,
+      stateChanges,
+      ownerUserId,
+      sceneGameTime,
+      mainQuestCompleted: false,
+    });
   }
 
   // Phase 5 — any quest status change (complete/fail) or objective update

@@ -16,6 +16,8 @@ import { computeSubLocationBudget } from './livingWorld/topologyGuard.js';
 import { loadCampaignGraph, dijkstra, classifyDetour, expandPath } from './livingWorld/travelGraph.js';
 import { generateTravelEvents } from './livingWorld/travelEventGenerator.js';
 import { loadDiscovery } from './livingWorld/userDiscoveryService.js';
+import { parseRoomMetadata } from './livingWorld/dungeonSeedGenerator.js';
+import { localizeRoomMetadata, normalizeLanguage } from './livingWorld/contentLocalizer.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -574,9 +576,16 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    select: { livingWorldEnabled: true, characterIds: true, userId: true },
+    select: {
+      livingWorldEnabled: true,
+      characterIds: true,
+      userId: true,
+      user: { select: { contentLanguage: true } },
+    },
   });
   if (!campaign?.livingWorldEnabled) return null;
+
+  const contentLanguage = normalizeLanguage(campaign.user?.contentLanguage);
 
   const location = await findOrCreateWorldLocation(currentLocation);
   if (!location) return null;
@@ -675,6 +684,20 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     });
   }
 
+  // Phase 7 — dungeon room block. Active only when the player is CURRENTLY
+  // inside a dungeon room (locationType='dungeon_room'). Fetches adjacent
+  // rooms for exit narration. Tells premium to narrate deterministic
+  // contents EXACTLY — no inventing enemies/loot. Localized to the user's
+  // contentLanguage so the deterministic text feeds into the AI in the
+  // same language as the narrative output.
+  let dungeon = null;
+  if (location.locationType === 'dungeon_room') {
+    dungeon = await buildDungeonRoomBlock(location, contentLanguage).catch((err) => {
+      log.warn({ err: err?.message, locationId: location.id }, 'dungeon block build failed');
+      return null;
+    });
+  }
+
   if (
     ambientNpcs.length === 0
     && recentEvents.length === 0
@@ -683,6 +706,7 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     && !hasDmState
     && !settlement
     && !travel
+    && !dungeon
   ) {
     return null;
   }
@@ -759,6 +783,7 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
         }
       : null,
     travel,
+    dungeon,
   };
 }
 
@@ -869,6 +894,85 @@ async function buildTravelBlock({ campaignId, userId, startLocation, targetName,
 }
 
 const DIFFICULTY_RANK = { safe: 0, moderate: 1, dangerous: 2, deadly: 3 };
+
+/**
+ * Build the DUNGEON ROOM block for the current room. Loads adjacent rooms
+ * for exit narration, parses the deterministic contents, and marks whether
+ * the room has already been cleared (so premium narrates aftermath instead
+ * of repeating combat).
+ *
+ * Note: per-character cleared state is tracked in Character.activeDungeonState
+ * (transient) and Character.clearedDungeonIds (permanent). This block only
+ * surfaces the static room data; the caller (sceneGenerator) decides whether
+ * to merge character-side state before rendering.
+ */
+async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl') {
+  if (!roomLocation?.id) return null;
+  const rawMeta = parseRoomMetadata(roomLocation);
+  if (!rawMeta) return null;
+  // Localize all user-facing text (trap label/effect, puzzle label/hint,
+  // loot name, flavor seed) to the campaign owner's content language.
+  const meta = localizeRoomMetadata(rawMeta, contentLanguage);
+
+  // Exits — find edges where THIS room is the "from" side. Each gives us
+  // the target room + direction + gated flag.
+  const exitEdges = await prisma.worldLocationEdge.findMany({
+    where: { fromLocationId: roomLocation.id, terrainType: 'dungeon_corridor' },
+    select: {
+      toLocationId: true, direction: true, gated: true, gateHint: true,
+    },
+  });
+  const exitIds = exitEdges.map((e) => e.toLocationId).filter(Boolean);
+  const exitRooms = exitIds.length
+    ? await prisma.worldLocation.findMany({
+        where: { id: { in: exitIds } },
+        select: { id: true, canonicalName: true, slotType: true, roomMetadata: true },
+      })
+    : [];
+  const exitById = new Map(exitRooms.map((r) => [r.id, r]));
+  const exits = exitEdges.map((e) => {
+    const target = exitById.get(e.toLocationId);
+    let cleared = false;
+    if (target?.roomMetadata) {
+      try {
+        cleared = JSON.parse(target.roomMetadata).entryCleared === true;
+      } catch { /* ignore */ }
+    }
+    return {
+      direction: e.direction || 'unknown',
+      targetRoomName: target?.canonicalName || null,
+      targetRole: target?.slotType || 'normal',
+      gated: !!e.gated,
+      gateHint: e.gateHint || null,
+      cleared,
+    };
+  });
+
+  // Parent dungeon — for total room count + theme summary
+  const parent = roomLocation.parentLocationId
+    ? await prisma.worldLocation.findUnique({
+        where: { id: roomLocation.parentLocationId },
+        select: { id: true, canonicalName: true },
+      })
+    : null;
+
+  return {
+    roomName: roomLocation.canonicalName,
+    dungeonName: parent?.canonicalName || null,
+    role: meta.role || 'normal',
+    theme: meta.theme || null,
+    difficulty: meta.difficulty || null,
+    trap: meta.trapSprung ? null : meta.trap,
+    enemies: meta.entryCleared ? [] : (meta.enemies || []),
+    loot: meta.lootTaken ? [] : (meta.loot || []),
+    puzzle: meta.puzzle || null,
+    flavorSeed: meta.flavorSeed || null,
+    entryCleared: !!meta.entryCleared,
+    trapSprung: !!meta.trapSprung,
+    lootTaken: !!meta.lootTaken,
+    exits,
+  };
+}
 
 /**
  * Build the Phase 7 settlement topology block. Resolves parent → loads

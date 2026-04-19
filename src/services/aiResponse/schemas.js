@@ -247,6 +247,15 @@ const StateChangesSchema = z.object({
   addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
+  // Living World Phase 7 — per-room dungeon state flags. Written by premium
+  // when the player trips a trap / clears the encounter / takes the loot in
+  // a dungeon_room. All flags are optional — ignored if the current location
+  // is not a dungeon room.
+  dungeonRoom: z.object({
+    entryCleared: z.boolean().optional(),
+    trapSprung: z.boolean().optional(),
+    lootTaken: z.boolean().optional(),
+  }).passthrough().nullable().optional(),
   // Living World Phase 7 — materialize new locations.
   //   • Sublocation (inside a known parent settlement): parentLocationName=set.
   //   • Top-level settlement/wilderness: parentLocationName=null +
@@ -315,6 +324,25 @@ const StateChangesSchema = z.object({
   knowledgeUpdates: z.any().nullable().optional(),
   codexUpdates: z.array(CodexUpdateSchema).optional().default([]),
   campaignEnd: z.any().nullable().optional(),
+  // Living World — emitted when the player resolves the campaign's main
+  // conflict. Fires a GLOBAL WorldEvent visible to other campaigns in the
+  // same location. Minor victories and side quests MUST NOT use this.
+  campaignComplete: z.object({
+    title: z.string().min(1).max(120),
+    summary: z.string().min(1).max(800),
+    majorAchievements: z.array(z.string().max(200)).min(1).max(3),
+  }).passthrough().nullable().optional(),
+  // Major-event gate (Commit 3 / Zakres C). Premium flags scenes worth
+  // retelling across unrelated campaigns. Backend gates the promotion on
+  // objective evidence (named kill / main quest / deadly / dungeon / liberation).
+  worldImpact: z.enum(['minor', 'major']).nullable().optional(),
+  worldImpactReason: z.string().max(300).nullable().optional(),
+  locationLiberated: z.boolean().nullable().optional(),
+  defeatedDeadlyEncounter: z.boolean().nullable().optional(),
+  dungeonComplete: z.object({
+    name: z.string().min(1),
+    summary: z.string().max(400),
+  }).passthrough().nullable().optional(),
   narrativeSeeds: z.array(NarrativeSeedSchema).optional().default([]),
   resolvedSeeds: z.array(z.string()).optional().default([]),
   npcAgendas: z.array(NpcAgendaSchema).optional().default([]),

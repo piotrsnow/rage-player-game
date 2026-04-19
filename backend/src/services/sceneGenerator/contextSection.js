@@ -251,6 +251,68 @@ export function buildContextSection(contextBlocks) {
       }
     }
 
+    // Phase 7 — DUNGEON ROOM. Deterministic contents. Premium narrates
+    // these EXACTLY — no inventing enemies, traps, loot, or exits. This
+    // block replaces free-form combat/loot generation when the player is
+    // inside a dungeon room.
+    if (lw.dungeon) {
+      const d = lw.dungeon;
+      lines.push('');
+      lines.push(`## DUNGEON ROOM — DETERMINISTIC CONTENTS (NARRATE EXACTLY, DO NOT INVENT)`);
+      lines.push(`Room: ${d.roomName} (role: ${d.role}${d.dungeonName ? `, in: ${d.dungeonName}` : ''})`);
+      if (d.theme || d.difficulty) {
+        lines.push(`Theme: ${d.theme || '?'}, difficulty: ${d.difficulty || '?'}`);
+      }
+
+      if (d.exits?.length) {
+        lines.push('Exits:');
+        for (const e of d.exits) {
+          const gate = e.gated ? ` [GATED${e.gateHint ? `: ${e.gateHint}` : ''}]` : '';
+          const cleared = e.cleared ? ' (cleared earlier)' : '';
+          const targetLabel = e.targetRoomName ? ` → ${e.targetRoomName}` : '';
+          lines.push(`  - ${e.direction}${targetLabel} (${e.targetRole})${gate}${cleared}`);
+        }
+      }
+
+      if (d.trap && !d.trapSprung) {
+        const dmgTxt = d.trap.damage ? `, ${d.trap.damage} damage` : '';
+        lines.push(`Trap (not yet sprung): ${d.trap.label} — DC ${d.trap.dc} ${d.trap.stat}${dmgTxt}. Effect: ${d.trap.effect}`);
+      } else if (d.trapSprung) {
+        lines.push(`Trap: already sprung — narrate its aftermath if relevant, do not re-trigger.`);
+      }
+
+      if (d.enemies?.length && !d.entryCleared) {
+        lines.push(`Enemies (not yet cleared): ${d.enemies.join(', ')}`);
+      } else if (d.entryCleared) {
+        lines.push(`Enemies: this room was cleared earlier — narrate signs of the prior fight, do NOT spawn the same enemies again.`);
+      }
+
+      if (d.puzzle) {
+        lines.push(`Puzzle: ${d.puzzle.label} — DC ${d.puzzle.dc} ${d.puzzle.stat}.`);
+        lines.push(`  Solution hint (for narration, do NOT hand it to the player literally): ${d.puzzle.solutionHint}`);
+      }
+
+      if (d.loot?.length && !d.lootTaken) {
+        const lootList = d.loot.map((l) => `${l.name} (${l.rarity}, ${typeof l.quantity === 'string' ? l.quantity : `${l.quantity}x`}${l.category ? `, ${l.category}` : ''})`).join('; ');
+        lines.push(`Loot (hidden unless searched): ${lootList}`);
+      } else if (d.lootTaken) {
+        lines.push(`Loot: already taken earlier.`);
+      }
+
+      if (d.flavorSeed) {
+        lines.push(`Flavor seed: "${d.flavorSeed}"`);
+      }
+
+      lines.push('');
+      lines.push(`RULES for this dungeon room:`);
+      lines.push(`- First entry: narrate the combat encounter with the LISTED enemies ONLY. Do NOT invent extras.`);
+      lines.push(`- Trap activates on careless movement or failed ${d.trap?.stat || 'Zręczność'} check. Narrate once, then mark \`stateChanges.dungeonRoom.trapSprung = true\`.`);
+      lines.push(`- Loot stays hidden until searched. On reveal, add entries to \`stateChanges.newItems\` and mark \`stateChanges.dungeonRoom.lootTaken = true\`.`);
+      lines.push(`- Player may act creatively (smash walls, burn webs) — allow the improvisation, BUT DO NOT create new rooms, enemies, traps, or loot.`);
+      lines.push(`- After combat resolves (all listed enemies defeated), set \`stateChanges.dungeonRoom.entryCleared = true\`.`);
+      lines.push(`- Movement through an exit: narrate transition + set \`stateChanges.currentLocation\` to the target room's canonical name.`);
+    }
+
     if (lines.length) {
       parts.push(`[Living World]\n${lines.join('\n')}`);
     }

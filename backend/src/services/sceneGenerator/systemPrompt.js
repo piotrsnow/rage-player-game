@@ -103,7 +103,11 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - currentLocation: update when player moves.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
-- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".`,
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".
+- campaignComplete: set ONLY when the player just RESOLVED the main conflict of this campaign (final antagonist defeated, central threat ended, main quest chain completed in this scene). Object: {title ≤120 chars, summary ≤800 chars retelling the climax, majorAchievements (1-3 short strings worth spreading across the world). Emits a GLOBAL WorldEvent visible to other campaigns in this location — DO NOT fire for side quests or minor victories.
+- worldImpact: set 'major' ONLY when the scene produces an event worth retelling across UNRELATED campaigns — named antagonist killed, settlement liberated (also set locationLiberated:true), mythical creature slain, political coup. Most victories are 'minor' or null. When 'major', include worldImpactReason (≤300 chars).
+- defeatedDeadlyEncounter: set true ONLY when the player just defeated a deadly-tier encounter (bestiary maxDifficulty='deadly' or equivalent narrative peak). Combined with worldImpact it promotes the scene to a global plotka.
+- dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.`,
   );
 
   // ── ACTION FEASIBILITY ──
@@ -407,6 +411,19 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
 - When an NPC gives the player an item, set \`fromNpcId\` on that item entry to the NPC's canonical name (e.g. "fromNpcId": "Bjorn"). Items dropped in a location or picked up from containers do NOT need \`fromNpcId\`.
 - Poor NPCs do not give away valuable items. If you're about to narrate a gift, match item rarity to the NPC's status (peasant → common, merchant → uncommon, noble → rare).
 - If the DM memory / pending hooks block below names an NPC with a plan, respect what they already intended. Don't contradict their stated goals mid-scene.`,
+    );
+    dynamicSections.push(
+      `LIVING WORLD — dungeon rooms (when DUNGEON ROOM block appears in context):
+- The block is AUTHORITATIVE: enemies, traps, loot, exits, puzzle are all pre-generated. Do NOT invent additions.
+- Narrate the listed flavor seed and contents on first entry. Match atmosphere to theme (catacomb / cave).
+- When player explores or is careless, trap may activate — narrate the consequences and emit:
+    "stateChanges": { "dungeonRoom": { "trapSprung": true }, "woundsChange": ... }
+- When combat resolves with all listed enemies defeated, emit:
+    "stateChanges": { "dungeonRoom": { "entryCleared": true } }
+- When player searches and loot is revealed, add entries to \`newItems\` and emit:
+    "stateChanges": { "dungeonRoom": { "lootTaken": true } }
+- When player moves through an exit, set \`stateChanges.currentLocation\` to the target room's canonical name (as given in the Exits list).
+- Improvised player actions ("próbuję przebić ścianę", "palę sieć") — allow them, but NEVER add new rooms, enemies, traps, or loot.`,
     );
     dynamicSections.push(
       `LIVING WORLD — new locations (sublocations + top-level settlements):

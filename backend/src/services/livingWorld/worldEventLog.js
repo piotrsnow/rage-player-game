@@ -63,6 +63,12 @@ export async function forLocation({ locationId, campaignId, sinceTimestamp = nul
     OR: [
       { visibility: 'campaign', campaignId: campaignId || undefined },
       { visibility: 'private', campaignId: campaignId || undefined },
+      // Global tier: cross-campaign major events (campaign_complete,
+      // major_deed, dungeon_cleared, deadly_victory). Payload is already
+      // meta-only (title/summary/location) — no char data leaks here.
+      // Phase 3 follow-up: rate limit per campaign (e.g. 3 major/tydzień),
+      // spoiler filter relative to reader's active quest status.
+      { visibility: 'global' },
     ],
   };
   if (sinceTimestamp) {

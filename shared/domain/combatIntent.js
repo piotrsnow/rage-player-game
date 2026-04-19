@@ -6,7 +6,13 @@
  * or escalate combat. System tags ([INITIATE COMBAT], [ATTACK:<npc>]) are
  * treated as explicit combat intent; [Combat resolved: ...] is the post-combat
  * reflection tag and must NOT re-trigger combat detection.
+ *
+ * Freeform text passes through `isHypotheticalOrQuestioning` first so phrases
+ * like "jakbym miał walczyć" or "opowiedz mi o walkach" don't falsely trigger
+ * combat.
  */
+
+import { isHypotheticalOrQuestioning } from './intentHeuristics.js';
 
 export const COMBAT_INTENT_REGEX = /\b(atak|atakuj[eę]?|walcz[eęy]?|walk[eęiąa]|rozpoczynam|rzucam\s+si[eę]|wyzywam|bij[eę]|uderz(?:am|e)|zabij|zaatakuj|dobywam|wyci[aą]gam\s+(?:miecz|bro[nń]|topor|n[oó][zż]|sztylet)|attack|fight|strike|hit|punch|stab|slash|shoot|kill|combat|draw\s*(?:my\s+)?(?:sword|weapon|blade|axe|knife|dagger))\b/i;
 
@@ -14,5 +20,6 @@ export function detectCombatIntent(playerAction) {
   if (!playerAction) return false;
   if (playerAction.startsWith('[Combat resolved:')) return false;
   if (playerAction.startsWith('[INITIATE COMBAT]') || playerAction.startsWith('[ATTACK:')) return true;
+  if (isHypotheticalOrQuestioning(playerAction)) return false;
   return COMBAT_INTENT_REGEX.test(playerAction);
 }
