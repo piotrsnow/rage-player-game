@@ -50,7 +50,7 @@ export async function joinParty({ worldNpcId, campaignId, userId = null }) {
   // 1. Pre-check: does NPC exist + is alive?
   const probe = await collection.findOne(
     { _id: npcOid },
-    { projection: { _id: 1, alive: 1, lockedByCampaignId: 1, currentLocationId: 1, name: 1, role: 1, personality: 1, factionId: 1, alignment: 1 } },
+    { projection: { _id: 1, alive: 1, lockedByCampaignId: 1, currentLocationId: 1, name: 1, role: 1, personality: 1, alignment: 1 } },
   );
   if (!probe) return { success: false, reason: 'not_found' };
   if (probe.alive === false) return { success: false, reason: 'dead' };
@@ -63,7 +63,6 @@ export async function joinParty({ worldNpcId, campaignId, userId = null }) {
     name: probe.name,
     role: probe.role || null,
     personality: probe.personality || null,
-    factionId: probe.factionId || null,
     alignment: probe.alignment || 'neutral',
   };
 

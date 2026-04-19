@@ -286,12 +286,6 @@ NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
     const m = Math.round(((ts.hour ?? 6) - h) * 60);
     worldLines.push(`Time: Day ${ts.day || 1}, ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} (${ts.timeOfDay || 'morning'}), Season: ${ts.season || 'unknown'}`);
   }
-  if (world.factions && typeof world.factions === 'object') {
-    const factionEntries = Object.entries(world.factions);
-    if (factionEntries.length > 0) {
-      worldLines.push(`Factions: ${factionEntries.map(([id, rep]) => `${id}(${rep})`).join(', ')}`);
-    }
-  }
   const npcs = world.npcs || [];
   const currentLoc = world.currentLocation || '';
   const npcsHere = npcs.filter(n => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());

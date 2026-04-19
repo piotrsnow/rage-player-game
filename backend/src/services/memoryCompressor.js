@@ -125,7 +125,7 @@ Return JSON:
   "knowledge_events": [{"summary":"","importance":"low/medium/high","tags":[]}],
   "knowledge_decisions": [{"choice":"","consequence":""}],
   "world_facts": [""],
-  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|faction|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
+  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
   "needs_restoration": {"hunger":50} or null
 }
 

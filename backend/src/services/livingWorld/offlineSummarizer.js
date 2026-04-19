@@ -64,7 +64,6 @@ export async function summarizeOfflineActivity({
     `NPC: ${npc.name}`,
     npc.role ? `Role: ${npc.role}` : null,
     npc.personality ? `Personality: ${npc.personality}` : null,
-    npc.factionId ? `Faction: ${npc.factionId}` : null,
     `Last known location: ${locationName}`,
     `Elapsed game time: ${duration.label} (${Math.round(duration.totalHours)}h)`,
     eventsDigest ? `\nRecent events (newest first):\n${eventsDigest}` : null,

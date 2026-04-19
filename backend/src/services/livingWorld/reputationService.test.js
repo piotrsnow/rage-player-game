@@ -14,57 +14,57 @@ import {
 describe('computeReputationDeltas', () => {
   it('killed good unprovoked → heavy penalty across scopes', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'good', justified: false });
-    expect(d).toEqual({ global: -10, region: -20, faction: -50 });
+    expect(d).toEqual({ global: -10, region: -20 });
   });
 
   it('killed good justified → questioned but not condemned (zeros)', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'good', justified: true });
-    expect(d).toEqual({ global: 0, region: 0, faction: 0 });
+    expect(d).toEqual({ global: 0, region: 0 });
   });
 
   it('killed evil justified → reward', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'evil', justified: true });
-    expect(d).toEqual({ global: 5, region: 20, faction: 10 });
+    expect(d).toEqual({ global: 5, region: 20 });
   });
 
   it('killed evil unprovoked → mixed (regional +, global -)', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'evil', justified: false });
-    expect(d).toEqual({ global: -5, region: 10, faction: 5 });
+    expect(d).toEqual({ global: -5, region: 10 });
   });
 
   it('killed neutral unprovoked → mild penalty everywhere', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'neutral', justified: false });
-    expect(d).toEqual({ global: -5, region: -10, faction: -15 });
+    expect(d).toEqual({ global: -5, region: -10 });
   });
 
-  it('robbed → region/faction penalty, global unchanged', () => {
+  it('robbed → region penalty, global unchanged', () => {
     const d = computeReputationDeltas({ actionType: 'robbed' });
-    expect(d).toEqual({ global: 0, region: -15, faction: -30 });
+    expect(d).toEqual({ global: 0, region: -15 });
   });
 
-  it('helped good NPC → positive region+faction', () => {
+  it('helped good NPC → positive region', () => {
     const d = computeReputationDeltas({ actionType: 'helped', victimAlignment: 'good' });
-    expect(d).toEqual({ global: 0, region: 5, faction: 10 });
+    expect(d).toEqual({ global: 0, region: 5 });
   });
 
   it('helped evil NPC → negative (helping a bandit lord is not heroic)', () => {
     const d = computeReputationDeltas({ actionType: 'helped', victimAlignment: 'evil' });
-    expect(d).toEqual({ global: 0, region: -5, faction: -10 });
+    expect(d).toEqual({ global: 0, region: -5 });
   });
 
-  it('betrayed → heavy faction penalty', () => {
+  it('betrayed → region penalty', () => {
     const d = computeReputationDeltas({ actionType: 'betrayed' });
-    expect(d).toEqual({ global: -5, region: -10, faction: -40 });
+    expect(d).toEqual({ global: -5, region: -10 });
   });
 
   it('unknown actionType → all zeros (no crash)', () => {
     const d = computeReputationDeltas({ actionType: 'danced' });
-    expect(d).toEqual({ global: 0, region: 0, faction: 0 });
+    expect(d).toEqual({ global: 0, region: 0 });
   });
 
   it('invalid alignment falls back to neutral', () => {
     const d = computeReputationDeltas({ actionType: 'killed', victimAlignment: 'chaotic-evil', justified: false });
-    expect(d).toEqual({ global: -5, region: -10, faction: -15 });
+    expect(d).toEqual({ global: -5, region: -10 });
   });
 });
 

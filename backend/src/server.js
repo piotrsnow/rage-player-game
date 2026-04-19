@@ -32,6 +32,7 @@ import { gameDataRoutes } from './routes/gameData.js';
 import { internalRoutes } from './routes/internal.js';
 import { livingWorldRoutes } from './routes/livingWorld.js';
 import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
+import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
   stopRoomCleanup,
@@ -211,6 +212,13 @@ try {
 
 loadActiveSessionsFromDB().catch((err) => {
   fastify.log.warn(`Failed to load active sessions from DB: ${err.message}`);
+});
+
+// Living World Phase 7 — ensure the canonical capital Yeralden + its named
+// NPCs exist. Idempotent, best-effort — schema drift or seed bugs must not
+// block the server from serving requests.
+seedWorld().catch((err) => {
+  fastify.log.warn(`World seed skipped: ${err.message}`);
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────

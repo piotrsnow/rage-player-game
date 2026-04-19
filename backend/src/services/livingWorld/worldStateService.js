@@ -2,7 +2,7 @@
 //
 // Two write paths:
 //   - findOrCreateWorldLocation: fuzzy-name dedupe by normalized canonical name.
-//   - findOrCreateWorldNPC: exact-match dedupe on (name + role + factionId).
+//   - findOrCreateWorldNPC: exact-match dedupe on (name + role).
 //
 // Both are idempotent — safe to call from scene processing even with retries.
 //
@@ -34,16 +34,16 @@ export function normalizeLocationName(name) {
 }
 
 /**
- * Canonical-id slug for a WorldNPC derived from name + faction/role plus
+ * Canonical-id slug for a WorldNPC derived from name + role plus
  * a random suffix. Not stored as unique in Mongo — dedupe is done on
- * (name + role + factionId) via findFirst. Handy for logs/stable refs.
+ * (name + role) via findFirst. Handy for logs/stable refs.
  */
-export function buildNpcCanonicalId({ name, role, factionId }) {
+export function buildNpcCanonicalId({ name, role }) {
   const base = (name || '')
     .toLowerCase()
     .replace(/[^\wąćęłńóśźż]+/g, '_')
     .replace(/^_+|_+$/g, '');
-  const qual = [role, factionId]
+  const qual = [role]
     .filter(Boolean)
     .map((s) => s.toLowerCase().replace(/[^\wąćęłńóśźż]+/g, '_'))
     .join('_');
@@ -130,13 +130,13 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
 
 /**
  * Find (name-dedupe) or create a WorldNPC. Matches by case-insensitive name
- * + role + factionId, preferring alive entries. Loose enough to avoid
- * proliferation on name variants, strict enough to keep distinct NPCs separate.
+ * + role, preferring alive entries. Loose enough to avoid proliferation on
+ * name variants, strict enough to keep distinct NPCs separate.
  *
  * Semantic dedupe (cosine similarity on embeddings) is deferred — see
  * `knowledge/ideas/living-world-vector-search.md`.
  *
- * npcData shape: { name, role?, personality?, factionId?, alignment?,
+ * npcData shape: { name, role?, personality?, alignment?,
  *                  alive?, currentLocationId? }
  */
 export async function findOrCreateWorldNPC(npcData) {
@@ -144,14 +144,12 @@ export async function findOrCreateWorldNPC(npcData) {
 
   const name = npcData.name.trim();
   const role = npcData.role || null;
-  const factionId = npcData.factionId || null;
 
-  // Name-based dedupe. Prefer alive match on (name + role + factionId).
+  // Name-based dedupe. Prefer alive match on (name + role).
   const existing = await prisma.worldNPC.findFirst({
     where: {
       name: { equals: name, mode: 'insensitive' },
       role,
-      factionId,
       alive: true,
     },
   });
@@ -166,7 +164,6 @@ export async function findOrCreateWorldNPC(npcData) {
       name,
       role,
       personality: npcData.personality || null,
-      factionId,
       alignment: npcData.alignment || 'neutral',
       alive: npcData.alive !== false,
       currentLocationId: npcData.currentLocationId || null,

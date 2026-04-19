@@ -47,7 +47,6 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
         if (npcChange.disposition != null) updateData.disposition = npcChange.disposition;
         if (npcChange.alive != null) updateData.alive = npcChange.alive;
         if (npcChange.lastLocation) updateData.lastLocation = npcChange.lastLocation;
-        if (npcChange.factionId) updateData.factionId = npcChange.factionId;
         if (npcChange.relationships) {
           updateData.relationships = JSON.stringify(npcChange.relationships);
         }
@@ -74,7 +73,6 @@ async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false 
               personality: npcChange.personality || null,
               attitude: npcChange.attitude || 'neutral',
               disposition: npcChange.disposition ?? 0,
-              factionId: npcChange.factionId || null,
               relationships: JSON.stringify(npcChange.relationships || []),
             },
           });

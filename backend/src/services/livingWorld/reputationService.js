@@ -1,6 +1,6 @@
 // Living World Phase 3 — reputation service.
 //
-// Tracks per-character reputation across four scopes (global / region / faction /
+// Tracks per-character reputation across three scopes (global / region /
 // settlement). Each WorldNpcAttribution writes an append-only ledger entry;
 // WorldReputation rows cache the running score + computed label + bounty state
 // per (characterId, scope, scopeKey) so the scene-gen context fetch is a single
@@ -21,7 +21,7 @@ const log = childLogger({ module: 'reputationService' });
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Per-action reputation deltas. Returns a `{global, region, faction}` object
+ * Per-action reputation deltas. Returns a `{global, region}` object
  * (settlement delta mirrors region by default). Caller applies the deltas to
  * whichever scopes are relevant to the action.
  *
@@ -35,22 +35,22 @@ export function computeReputationDeltas({ actionType, victimAlignment = 'neutral
   if (actionType === 'killed') {
     if (align === 'good') {
       return justified
-        ? { global: 0, region: 0, faction: 0 } // questioned but not condemned
-        : { global: -10, region: -20, faction: -50 };
+        ? { global: 0, region: 0 } // questioned but not condemned
+        : { global: -10, region: -20 };
     }
     if (align === 'evil') {
       return justified
-        ? { global: 5, region: 20, faction: 10 }
-        : { global: -5, region: 10, faction: 5 }; // overkill, still senseless
+        ? { global: 5, region: 20 }
+        : { global: -5, region: 10 }; // overkill, still senseless
     }
     // neutral alignment — smaller penalties either way
     return justified
-      ? { global: 0, region: 5, faction: 0 }
-      : { global: -5, region: -10, faction: -15 };
+      ? { global: 0, region: 5 }
+      : { global: -5, region: -10 };
   }
 
   if (actionType === 'robbed') {
-    return { global: 0, region: -15, faction: -30 };
+    return { global: 0, region: -15 };
   }
   if (actionType === 'helped' || actionType === 'saved') {
     const mult = align === 'good' ? 1 : align === 'evil' ? -1 : 0.5;
@@ -58,14 +58,13 @@ export function computeReputationDeltas({ actionType, victimAlignment = 'neutral
     return {
       global: (Math.round(0 * mult)) | 0,
       region: (Math.round(5 * mult)) | 0,
-      faction: (Math.round(10 * mult)) | 0,
     };
   }
   if (actionType === 'betrayed') {
-    return { global: -5, region: -10, faction: -40 };
+    return { global: -5, region: -10 };
   }
 
-  return { global: 0, region: 0, faction: 0 };
+  return { global: 0, region: 0 };
 }
 
 /**
@@ -195,7 +194,7 @@ async function applyScopeDelta({
  *   actorCharacterId, actorCampaignId  — required
  *   worldNpcId                          — required
  *   actionType                          — killed | robbed | helped | saved | betrayed
- *   victimAlignment, victimFactionId    — from WorldNPC
+ *   victimAlignment                     — from WorldNPC
  *   scopeContext = { region?, settlementKey? }
  *   justified, judgeConfidence, judgeReason   — from justifiedKillJudge (kill only)
  *   gameTime                            — Date
@@ -208,7 +207,6 @@ export async function applyAttribution({
   worldNpcId,
   actionType,
   victimAlignment = 'neutral',
-  victimFactionId = null,
   scopeContext = {},
   justified = false,
   judgeConfidence = 0,
@@ -229,7 +227,6 @@ export async function applyAttribution({
       judgeConfidence,
       judgeReason,
       alignmentImpact: victimAlignment,
-      factionImpact: JSON.stringify(victimFactionId ? [victimFactionId] : []),
       visibility: 'campaign', // Phase 3 cross-user ships later — see ideas file
       gameTime: now,
     },
@@ -275,18 +272,6 @@ export async function applyAttribution({
     if (row) updated.push(row);
   }
 
-  // Faction scope — per victim faction
-  if (victimFactionId && deltas.faction !== 0) {
-    const row = await applyScopeDelta({
-      characterId: actorCharacterId,
-      scope: 'faction',
-      scopeKey: victimFactionId,
-      delta: deltas.faction,
-      lastIncidentAt: now,
-    });
-    if (row) updated.push(row);
-  }
-
   log.info(
     {
       actorCharacterId,
@@ -304,24 +289,20 @@ export async function applyAttribution({
 
 /**
  * Fetch all reputation rows for a character, narrowed to the scopes needed
- * for current scene context (global + current region + current settlement +
- * relevant factions). Returns the rows so the caller / contextSection can
- * pick the highest-severity label for injection.
+ * for current scene context (global + current region + current settlement).
+ * Returns the rows so the caller / contextSection can pick the
+ * highest-severity label for injection.
  */
 export async function getReputationProfile({
   characterId,
   region = null,
   settlementKey = null,
-  factionIds = [],
 }) {
   if (!characterId) return { rows: [], labels: {} };
 
   const orConditions = [{ scope: 'global', scopeKey: '' }];
   if (region) orConditions.push({ scope: 'region', scopeKey: region });
   if (settlementKey) orConditions.push({ scope: 'settlement', scopeKey: settlementKey });
-  for (const fid of factionIds) {
-    if (fid) orConditions.push({ scope: 'faction', scopeKey: fid });
-  }
 
   const rows = await prisma.worldReputation.findMany({
     where: {

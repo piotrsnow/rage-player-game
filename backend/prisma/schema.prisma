@@ -14,6 +14,9 @@ model User {
   apiKeys      String   @default("{}") // Encrypted JSON: { openai, anthropic, elevenlabs, stability }
   settings     String   @default("{}") // JSON blob matching frontend settings shape
   isAdmin      Boolean  @default(false) // Phase 6 — admin dashboard access (Living World observability)
+  // Phase 7 — Language lock for AI-generated content (NPC names, locations, dialog).
+  // UI language (i18next) changes independently via settings.
+  contentLanguage String @default("pl") // pl|en
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -232,6 +235,12 @@ model Character {
   lockedLocation     String?
   statuses        String   @default("[]") // JSON array of active statuses
   needs           String   @default("{\"hunger\":100,\"thirst\":100,\"bladder\":100,\"hygiene\":100,\"rest\":100}") // JSON
+  // Phase 7 — Dungeons this character has already cleared (once per character).
+  // JSON array of WorldLocation.id (top-level dungeon node).
+  clearedDungeonIds  String   @default("[]")
+  // Phase 7 — Transient per-run dungeon state (roomCleared/trapSprung/lootTaken
+  // flags). Flushed to clearedDungeonIds on boss defeat. JSON: { dungeonId, rooms: {...} }
+  activeDungeonState String?
   // Narrative
   backstory       String   @default("")
   customAttackPresets String @default("[]") // JSON array of custom attack preset strings
@@ -357,7 +366,66 @@ model WorldLocation {
   updatedAt     DateTime  @updatedAt
   // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
 
+  // Phase 7 — Topology
+  // parentLocationId: null = top-level settlement/wilderness; set = sublocation (church in X, tavern in X).
+  parentLocationId   String?  @db.ObjectId
+  // locationType: hamlet|village|town|city|capital|dungeon|forest|wilderness|interior|dungeon_room
+  locationType       String   @default("generic")
+  // slotType (sublocations only): tavern|church|blacksmith|market|barracks|... null for top-level
+  slotType           String?
+  // slotKind: required|optional|custom — classifies how the sublocation fits its parent's template
+  slotKind           String   @default("custom")
+  // Capacity caps (derived from SETTLEMENT_TEMPLATES on create; admin-tunable)
+  maxKeyNpcs         Int      @default(10)
+  maxSubLocations    Int      @default(5)
+  // Position — 2D coordinates, 1 unit = 1 km (capital at 0,0)
+  regionX            Float    @default(0)
+  regionY            Float    @default(0)
+  positionConfidence Float    @default(0.5)
+
+  // Phase 7 — Dungeon room metadata (only populated for locationType='dungeon_room')
+  // JSON: { role: entrance|boss|normal|treasure|puzzle,
+  //         trapId, enemyTemplateIds, lootTableId, puzzleId,
+  //         flavorSeed, entryCleared, trapSprung, lootTaken }
+  roomMetadata       String?
+
   @@index([region])
+  @@index([parentLocationId])
+  @@index([locationType])
+}
+
+// Phase 7 — Graph connections between WorldLocations.
+// `distance` uses the same unit scale as regionX/Y (1 unit = 1 km). Overworld
+// edges have `direction` from the 8 cardinal sectors; dungeon corridors use
+// N|S|E|W|up|down. `gated` = door/lock/puzzle gating traversal; AI narrates
+// via `gateHint` ("requires brass key").
+model WorldLocationEdge {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  fromLocationId        String   @db.ObjectId
+  toLocationId          String   @db.ObjectId
+  distance              Float    // km (overworld) or 1 unit per corridor (dungeon)
+  difficulty            String   @default("safe") // safe|moderate|dangerous|deadly
+  terrainType           String   @default("road") // road|path|wilderness|river|mountain|dungeon_corridor
+  direction             String?  // N|NE|E|SE|S|SW|W|NW|up|down — null allowed for abstract edges
+  gated                 Boolean  @default(false)
+  gateHint              String?  // narrative hint ("requires brass key", "blocked by rubble")
+  discoveredByCampaigns String   @default("[]") // JSON array of campaignId — per-campaign visibility
+  createdAt             DateTime @default(now())
+
+  @@unique([fromLocationId, toLocationId])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+}
+
+// Phase 7 — Per-user world discovery state. Capital is always implicit.
+// Tracks which locations + edges the player has physically reached; used by
+// admin map + travel intent to restrict Dijkstra to visible graph.
+model UserWorldKnowledge {
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String   @unique @db.ObjectId
+  discoveredLocationIds String   @default("[]") // JSON array
+  discoveredEdgeIds     String   @default("[]") // JSON array
+  updatedAt             DateTime @updatedAt
 }
 
 model WorldNPC {
@@ -366,7 +434,6 @@ model WorldNPC {
   name              String
   role              String?
   personality       String?
-  factionId         String?
   alignment         String    @default("neutral") // good|neutral|evil — Phase 3 uses this
   alive             Boolean   @default(true)
   currentLocationId String?   @db.ObjectId
@@ -403,6 +470,10 @@ model WorldNPC {
   // assigner points the NPC back here (via a return_home goal) instead
   // of leaving them stranded wherever the player last saw them.
   homeLocationId         String?   @db.ObjectId
+  // Phase 7 — false = background NPC (no promote, no tick, no agent loop).
+  // AI may create background NPCs (generic "Wieśniak") as flavor without
+  // filling a key slot. Only keyNpc=true WorldNPCs count against maxKeyNpcs.
+  keyNpc                 Boolean   @default(true)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
@@ -470,7 +541,6 @@ model CampaignDmAgent {
 // Phase 3 — append-only ledger of actor-against-NPC actions.
 // One row per kill/rob/save/help. `justified` is populated by nano judge.
 // `alignmentImpact` = victim's alignment at time of action (good/neutral/evil).
-// `factionImpact` = JSON array of factionIds affected.
 // Visibility governs cross-user injection (Phase 3 cross-user ships later — see
 // knowledge/ideas/living-world-cross-user-visibility.md).
 model WorldNpcAttribution {
@@ -483,7 +553,6 @@ model WorldNpcAttribution {
   judgeConfidence  Float    @default(0)
   judgeReason      String?
   alignmentImpact  String   // good | neutral | evil (snapshot of victim at action time)
-  factionImpact    String   @default("[]") // JSON: [factionIds]
   visibility       String   @default("campaign") // campaign (default now); "global" once cross-user ships
   gameTime         DateTime
   createdAt        DateTime @default(now())

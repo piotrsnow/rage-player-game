@@ -45,7 +45,67 @@ export function buildContextSection(contextBlocks) {
   if (contextBlocks.livingWorld) {
     const lw = contextBlocks.livingWorld;
     const lines = [];
-    if (lw.locationName) lines.push(`Canonical location: ${lw.locationName}`);
+    if (lw.locationName) {
+      const typeTag = lw.locationType ? ` (${lw.locationType})` : '';
+      lines.push(`Canonical location: ${lw.locationName}${typeTag}`);
+    }
+
+    // Phase 7 — NPCS AT CURRENT LOCATION. Instruct premium to reuse named
+    // characters and treat background population as collective flavor.
+    if (lw.npcs?.length || lw.backgroundCount > 0) {
+      lines.push('');
+      lines.push(`## NPCS AT CURRENT LOCATION`);
+      if (lw.npcs?.length) {
+        lines.push(`Key characters already here (USE THEIR NAMES when relevant, DO NOT introduce duplicates):`);
+        for (const n of lw.npcs) {
+          const bits = [n.name];
+          if (n.role) bits.push(`(${n.role})`);
+          if (n.paused) bits.push('[recently away]');
+          if (n.activeGoal) bits.push(`goal: "${n.activeGoal}"`);
+          lines.push(`- ${bits.join(' ')}`);
+        }
+      }
+      if (lw.backgroundCount > 0 || lw.backgroundLabel) {
+        const label = lw.backgroundLabel || 'mieszkaniec';
+        const count = lw.backgroundCount > 0 ? `${lw.backgroundCount}+ ` : '';
+        lines.push(
+          `Background population (${count}${label}): describe COLLECTIVELY as generic "${label}". ` +
+          `DO NOT name or introduce individual CampaignNPC records for them. ONLY promote a background ` +
+          `NPC to a named WorldNPC if the player explicitly asks their name or interacts substantively ` +
+          `across multiple turns.`,
+        );
+      }
+    }
+
+    // Phase 7 — SUBLOCATIONS AVAILABLE. Shows parent settlement's slot state
+    // so premium knows what already exists, what optional slots are open,
+    // and when the sublocation hard cap is approaching.
+    if (lw.settlement) {
+      const s = lw.settlement;
+      lines.push('');
+      lines.push(`## SUBLOCATIONS IN ${s.parentName} (${s.locationType} — ${s.budget.capacityRemaining}/${s.budget.filled.required.length + s.budget.filled.optional.length + s.budget.filled.custom.length + s.budget.capacityRemaining} slots free)`);
+      const fmt = (c) => `${c.canonicalName}${c.slotType ? ` [${c.slotType}]` : ''}`;
+      if (s.budget.filled.required.length) {
+        lines.push(`Required (always present): ${s.budget.filled.required.map(fmt).join(', ')}`);
+      }
+      if (s.budget.filled.optional.length) {
+        lines.push(`Optional filled: ${s.budget.filled.optional.map(fmt).join(', ')}`);
+      }
+      if (s.budget.filled.custom.length) {
+        lines.push(`Custom (unique narrative): ${s.budget.filled.custom.map(fmt).join(', ')}`);
+      }
+      if (s.budget.openOptional.length) {
+        lines.push(`Open optional slots: ${s.budget.openOptional.join(', ')} (budget ${s.budget.optionalBudgetRemaining} left)`);
+      } else {
+        lines.push(`Optional slots: FULL — only custom additions allowed`);
+      }
+      lines.push(
+        `When introducing a new sublocation: emit slotType matching an open optional slot OR use ` +
+        `a narratively distinctive custom name (e.g. "Wieża Maga", "Chata Starej Wiedźmy"). ` +
+        `Generic names like "dom" or "chata" will be rejected.`,
+      );
+    }
+
     if (lw.companions?.length) {
       const compList = lw.companions
         .map((c) => {

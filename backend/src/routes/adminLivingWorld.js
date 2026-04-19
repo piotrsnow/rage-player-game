@@ -45,7 +45,6 @@ export async function adminLivingWorldRoutes(fastify) {
           canonicalId: true,
           name: true,
           role: true,
-          factionId: true,
           alignment: true,
           alive: true,
           currentLocationId: true,

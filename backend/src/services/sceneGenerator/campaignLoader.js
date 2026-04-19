@@ -55,7 +55,7 @@ export async function loadCampaignState(campaignId) {
     coreState.world.npcs = dbNpcs.map((n) => ({
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
-      alive: n.alive, lastLocation: n.lastLocation, factionId: n.factionId,
+      alive: n.alive, lastLocation: n.lastLocation,
       notes: n.notes, relationships: JSON.parse(n.relationships || '[]'),
     }));
   }

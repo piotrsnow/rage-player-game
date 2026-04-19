@@ -114,7 +114,6 @@ export async function handleNpcKills({
         worldNpcId: worldNpc.id,
         actionType: 'killed',
         victimAlignment: worldNpc.alignment,
-        victimFactionId: worldNpc.factionId,
         scopeContext: { region, settlementKey },
         justified,
         judgeConfidence: confidence,
@@ -132,7 +131,6 @@ export async function handleNpcKills({
         payload: {
           victimName: worldNpc.name,
           alignment: worldNpc.alignment,
-          factionId: worldNpc.factionId,
           justified,
           confidence,
           reason,

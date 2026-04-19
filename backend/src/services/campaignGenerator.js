@@ -278,7 +278,7 @@ Generate the campaign foundation. The game uses the RPGon custom RPG system with
 Respond with ONLY valid JSON:
 {
   "name": "A compelling campaign name (3-5 words)",
-  "worldDescription": "2-3 paragraphs describing the world, its history, factions, and current state",
+  "worldDescription": "2-3 paragraphs describing the world, its history, and current state",
   "hook": "1-2 paragraphs presenting the story hook that draws the player into the adventure",
   "characterSuggestion": {
     "backstory": "2-3 sentences of character backstory tied to the campaign world (only if player didn't provide one)",

@@ -11,6 +11,8 @@ import { getCompanions } from './livingWorld/companionService.js';
 import { getReputationProfile, maybeClearVendetta } from './livingWorld/reputationService.js';
 import { suggestEncounterMode } from './livingWorld/encounterEscalator.js';
 import { readDmAgentState } from './livingWorld/dmMemoryService.js';
+import { getTemplate, isGeneratedLocationType } from './livingWorld/settlementTemplates.js';
+import { computeSubLocationBudget } from './livingWorld/topologyGuard.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -43,7 +45,7 @@ export const CONTEXT_TOOLS_OPENAI = [
     function: {
       name: 'get_npc_details',
       description:
-        'Get full details about an NPC - personality, disposition, relationships, faction, last known location. Use when the player interacts with or mentions an NPC.',
+        'Get full details about an NPC - personality, disposition, relationships, last known location. Use when the player interacts with or mentions an NPC.',
       parameters: {
         type: 'object',
         properties: {
@@ -88,7 +90,7 @@ export const CONTEXT_TOOLS_OPENAI = [
     function: {
       name: 'get_codex_entry',
       description:
-        'Look up discovered lore, artifacts, factions, or world knowledge from the player\'s codex. Use when referencing world lore or discovered secrets.',
+        'Look up discovered lore, artifacts, or world knowledge from the player\'s codex. Use when referencing world lore or discovered secrets.',
       parameters: {
         type: 'object',
         properties: {
@@ -245,7 +247,6 @@ function formatNPC(npc) {
     `Disposition: ${npc.disposition}`,
     `Alive: ${npc.alive}`,
     npc.lastLocation ? `Last seen: ${npc.lastLocation}` : null,
-    npc.factionId ? `Faction: ${npc.factionId}` : null,
     npc.notes ? `Notes: ${npc.notes}` : null,
     relationships.length > 0
       ? `Relationships: ${relationships.map((r) => `${r.type}: ${r.npcName}`).join(', ')}`
@@ -620,23 +621,16 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
   const companionIds = new Set(companions.map((c) => c.id));
   const ambientNpcs = npcs.filter((n) => !companionIds.has(n.id));
 
-  // Phase 3 — reputation profile + encounter mode hint. Scoped to the factions
-  // relevant at this location (NPCs here + companions) so we don't bloat the
-  // fetch with unrelated faction rows.
+  // Phase 3 — reputation profile + encounter mode hint. Scoped to global +
+  // current region + settlement.
   let reputation = null;
   let encounter = null;
   if (actorCharacterId) {
-    const factionIds = Array.from(new Set(
-      [...ambientNpcs, ...companions]
-        .map((n) => n.factionId)
-        .filter(Boolean),
-    ));
     try {
       const profile = await getReputationProfile({
         characterId: actorCharacterId,
         region: location.region || null,
         settlementKey: location.canonicalName || null,
-        factionIds,
       });
       if (profile?.rows?.length > 0) {
         reputation = profile;
@@ -649,12 +643,19 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
 
   const hasDmState = (dmState?.dmMemory?.length || 0) > 0 || (dmState?.pendingHooks?.length || 0) > 0;
 
+  // Phase 7 — settlement topology block. If the player is in a sublocation
+  // we reference the PARENT settlement for caps + slot budget; otherwise
+  // use the current top-level location. Dungeons bypass (seed generator
+  // handles their rooms directly).
+  const settlement = await buildSettlementBlock(location).catch(() => null);
+
   if (
     ambientNpcs.length === 0
     && recentEvents.length === 0
     && companions.length === 0
     && !reputation
     && !hasDmState
+    && !settlement
   ) {
     return null;
   }
@@ -687,9 +688,19 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
     };
   });
 
+  // Background NPC label + key-vs-background split — Phase 7. Key NPCs are
+  // WorldNPCs with keyNpc=true; everyone else in `npcs` stays as ambient
+  // generic flavor that premium should describe without naming.
+  const keyAmbient = ambientNpcsWithGoals.filter((n, i) => ambientNpcs[i]?.keyNpc !== false);
+  const backgroundCount = ambientNpcs.length - keyAmbient.length;
+
   return {
     locationName: location.canonicalName,
-    npcs: ambientNpcsWithGoals,
+    locationType: location.locationType || 'generic',
+    npcs: keyAmbient,
+    backgroundCount,
+    backgroundLabel: settlement?.backgroundLabel || null,
+    settlement,
     companions: companions.map((c) => ({
       name: c.name,
       role: c.role || null,
@@ -727,4 +738,62 @@ function priorityRank(p) {
   if (p === 'high') return 2;
   if (p === 'low') return 0;
   return 1;
+}
+
+// Phase 7 — background NPC label per location type (narration hint so premium
+// talks collectively about villagers/townsfolk/guards instead of naming them).
+const BACKGROUND_LABEL = {
+  hamlet:     'Wieśniak/Wieśniaczka',
+  village:    'Wieśniak/Wieśniaczka',
+  town:       'Mieszczanin/Mieszczanka',
+  city:       'Mieszczanin/Mieszczanka',
+  capital:    'Mieszczanin/Mieszczanka',
+  wilderness: 'Podróżny/Podróżna',
+};
+
+/**
+ * Build the Phase 7 settlement topology block. Resolves parent → loads
+ * children → groups by slotKind → computes budget. Returns null for
+ * dungeons (seed generator owns them) or when no parent context makes sense.
+ */
+async function buildSettlementBlock(currentLocation) {
+  if (!currentLocation) return null;
+  // If current is a sublocation, walk up to the parent settlement.
+  let settlement = currentLocation;
+  if (currentLocation.parentLocationId) {
+    const parent = await prisma.worldLocation.findUnique({
+      where: { id: currentLocation.parentLocationId },
+    });
+    if (parent) settlement = parent;
+  }
+  const type = settlement.locationType || 'generic';
+  if (isGeneratedLocationType(type)) return null; // dungeons handled elsewhere
+  const template = getTemplate(type);
+
+  const children = await prisma.worldLocation.findMany({
+    where: { parentLocationId: settlement.id },
+    select: {
+      id: true, canonicalName: true, slotType: true, slotKind: true, description: true,
+    },
+  });
+
+  const childrenBySlot = {
+    required: children.filter((c) => c.slotKind === 'required'),
+    optional: children.filter((c) => c.slotKind === 'optional'),
+    custom:   children.filter((c) => c.slotKind === 'custom'),
+  };
+  const budget = computeSubLocationBudget({
+    parentLocationType: type,
+    childrenBySlot,
+    maxSubLocations: settlement.maxSubLocations || template.maxSubLocations || 5,
+  });
+
+  return {
+    parentName: settlement.canonicalName,
+    locationType: type,
+    maxKeyNpcs: settlement.maxKeyNpcs || template.maxKeyNpcs || 10,
+    children: childrenBySlot,
+    budget,
+    backgroundLabel: BACKGROUND_LABEL[type] || null,
+  };
 }

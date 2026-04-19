@@ -7,6 +7,8 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { findOrCreateWorldNPC, findOrCreateWorldLocation } from './worldStateService.js';
+import { decideNpcAdmission } from './topologyGuard.js';
+import { getTemplate } from './settlementTemplates.js';
 
 const log = childLogger({ module: 'npcPromotion' });
 
@@ -58,12 +60,42 @@ export async function maybePromote(campaignNpcId) {
 
     // Resolve location
     let worldLocationId = null;
+    let worldLocation = null;
     if (cn.lastLocation) {
       try {
         const loc = await findOrCreateWorldLocation(cn.lastLocation);
+        worldLocation = loc || null;
         worldLocationId = loc?.id ?? null;
       } catch (err) {
         log.warn({ err, loc: cn.lastLocation }, 'Location resolution failed during promotion');
+      }
+    }
+
+    // Phase 7 — cap enforcement. Count existing keyNpcs whose home or current
+    // location is this parent settlement (or the location itself for top-level).
+    // If cap reached, skip promotion — CampaignNPC remains as background,
+    // which premium renders collectively via the Living World block.
+    if (worldLocation) {
+      const capScope = worldLocation.parentLocationId || worldLocation.id;
+      const currentKeyNpcCount = await prisma.worldNPC.count({
+        where: {
+          keyNpc: true,
+          alive: true,
+          OR: [
+            { homeLocationId: capScope },
+            { currentLocationId: capScope },
+          ],
+        },
+      });
+      const template = getTemplate(worldLocation.locationType || 'generic');
+      const maxKeyNpcs = worldLocation.maxKeyNpcs || template.maxKeyNpcs || 10;
+      const decision = decideNpcAdmission({ currentKeyNpcCount, maxKeyNpcs });
+      if (decision.admission === 'background') {
+        log.info(
+          { campaignId: cn.campaignId, npcId: cn.npcId, count: currentKeyNpcCount, max: maxKeyNpcs },
+          'NPC cap reached — keeping as background, skipping promotion',
+        );
+        return null;
       }
     }
 
@@ -72,7 +104,6 @@ export async function maybePromote(campaignNpcId) {
       name: cn.name,
       role: cn.role || undefined,
       personality: cn.personality || undefined,
-      factionId: cn.factionId || undefined,
       alignment: 'neutral', // Phase 3 refines alignment via heuristics
       alive: cn.alive !== false,
       currentLocationId: worldLocationId,

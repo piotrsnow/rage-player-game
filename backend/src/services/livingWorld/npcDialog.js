@@ -145,7 +145,6 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
   const lines = [];
   lines.push(`You are ${npc.name}${npc.role ? `, ${npc.role}` : ''}.`);
   if (npc.personality) lines.push(`Personality: ${npc.personality}`);
-  if (npc.factionId) lines.push(`Faction: ${npc.factionId}`);
   if (npc.alignment && npc.alignment !== 'neutral') lines.push(`Alignment: ${npc.alignment}`);
   if (isCompanion) {
     lines.push(`You are currently traveling with the player as a companion (loyalty ${npc.companionLoyalty ?? 50}/100). Speak intimately when context warrants; you trust them more than strangers.`);

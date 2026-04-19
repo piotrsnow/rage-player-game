@@ -203,7 +203,6 @@ function NpcDetailModal({ id, onClose, onMutated }) {
         <div className="grid grid-cols-2 gap-3 mb-3">
           <KV k="canonicalId" v={npc.canonicalId} />
           <KV k="alignment" v={npc.alignment} />
-          <KV k="factionId" v={npc.factionId || '—'} />
           <KV k="alive" v={npc.alive ? '✓' : '✗'} />
           <KV k="currentLocationId" v={npc.currentLocationId || '—'} />
           <KV k="pausedAt" v={npc.pausedAt ? new Date(npc.pausedAt).toISOString().slice(0, 16) : '—'} />
