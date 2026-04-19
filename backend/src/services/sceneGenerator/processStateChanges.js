@@ -12,6 +12,11 @@ import { maybePromote } from '../livingWorld/npcPromotion.js';
 import { updateLoyalty } from '../livingWorld/companionService.js';
 import { appendEvent } from '../livingWorld/worldEventLog.js';
 import { assignGoalsForCampaign } from '../livingWorld/questGoalAssigner.js';
+import { findOrCreateWorldLocation, createSublocation } from '../livingWorld/worldStateService.js';
+import { decideSublocationAdmission } from '../livingWorld/topologyGuard.js';
+import { computeNewPosition, euclidean } from '../livingWorld/positionCalculator.js';
+import { upsertEdge } from '../livingWorld/travelGraph.js';
+import { getTemplate } from '../livingWorld/settlementTemplates.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -168,6 +173,259 @@ async function processItemAttributions(campaignId, newItems, userId) {
   }
 }
 
+/**
+ * Phase 7 — materialize AI-emitted locations.
+ *
+ * Sublocation path (parentLocationName=set):
+ *   1. Resolve parent via fuzzy name lookup.
+ *   2. Fetch parent's children + compute slot groups.
+ *   3. Run topologyGuard.decideSublocationAdmission → accept/reject.
+ *   4. On accept: upsert via createSublocation with slotType+slotKind.
+ *
+ * Top-level path (parentLocationName=null + directionFromCurrent + travelDistance):
+ *   1. Resolve anchor from `prevLoc` (scene-start location).
+ *   2. Load existing top-level WorldLocations (for spacing + merge check).
+ *   3. Run positionCalculator.computeNewPosition → { position, mergeCandidate? }.
+ *   4. If mergeCandidate + fuzzy-name match → reuse existing (dedup).
+ *   5. Otherwise create WorldLocation with position + locationType + template caps.
+ *   6. Auto-create bidirectional WorldLocationEdge anchor↔new (discovered by this campaign).
+ *   7. Walk connectsTo[] — create edges to any resolvable existing locations within euclidean range.
+ */
+async function processLocationChanges(campaignId, newLocations, { prevLoc = null } = {}) {
+  if (!Array.isArray(newLocations) || newLocations.length === 0) return;
+
+  // Resolve anchor once (used by every top-level entry in this batch).
+  let anchor = null;
+  if (prevLoc) {
+    try { anchor = await findOrCreateWorldLocation(prevLoc); } catch { /* ignore */ }
+  }
+
+  for (const entry of newLocations) {
+    if (!entry?.name || typeof entry.name !== 'string') continue;
+
+    try {
+      if (entry.parentLocationName) {
+        await processSublocationEntry(campaignId, entry);
+      } else if (entry.directionFromCurrent && entry.travelDistance) {
+        await processTopLevelEntry(campaignId, entry, anchor);
+      } else {
+        log.info(
+          { campaignId, name: entry.name },
+          'Location entry missing parent AND directional hint — skipping',
+        );
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, name: entry.name }, 'processLocationChanges entry failed');
+    }
+  }
+}
+
+async function processSublocationEntry(campaignId, entry) {
+  const parent = await findOrCreateWorldLocation(entry.parentLocationName);
+  if (!parent) {
+    log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Parent location resolve failed');
+    return;
+  }
+
+  const children = await prisma.worldLocation.findMany({
+    where: { parentLocationId: parent.id },
+    select: { id: true, canonicalName: true, slotType: true, slotKind: true },
+  });
+  const childrenBySlot = {
+    required: children.filter((c) => c.slotKind === 'required'),
+    optional: children.filter((c) => c.slotKind === 'optional'),
+    custom: children.filter((c) => c.slotKind === 'custom'),
+  };
+
+  const decision = decideSublocationAdmission({
+    parentLocationType: parent.locationType || 'generic',
+    childrenBySlot,
+    maxSubLocations: parent.maxSubLocations || 5,
+    slotType: entry.slotType || null,
+    name: entry.name,
+  });
+
+  if (decision.admission === 'reject') {
+    log.info(
+      { campaignId, parent: parent.canonicalName, child: entry.name, reason: decision.reason },
+      'Sublocation rejected',
+    );
+    return;
+  }
+
+  await createSublocation({
+    name: entry.name,
+    parent,
+    slotType: decision.slotType || null,
+    slotKind: decision.slotKind,
+    locationType: entry.locationType || 'interior',
+    description: entry.description || '',
+  });
+
+  log.info(
+    { campaignId, parent: parent.canonicalName, child: entry.name, slotKind: decision.slotKind },
+    'Sublocation materialized',
+  );
+}
+
+async function processTopLevelEntry(campaignId, entry, anchor) {
+  if (!anchor) {
+    log.warn({ campaignId, name: entry.name }, 'Top-level location skipped — no anchor (prevLoc)');
+    return;
+  }
+  const locationType = entry.locationType || 'generic';
+
+  // Existing top-level + sublocations sharing anchor-space coords. We include
+  // both top-level rows AND sublocations because sublocations inherit parent
+  // position (shared coords) and collision-check must see them.
+  const existing = await prisma.worldLocation.findMany({
+    where: {
+      parentLocationId: null,
+      id: { not: anchor.id },
+    },
+    select: { id: true, canonicalName: true, regionX: true, regionY: true, locationType: true },
+  });
+
+  const result = computeNewPosition({
+    current: { regionX: anchor.regionX || 0, regionY: anchor.regionY || 0 },
+    directionFromCurrent: entry.directionFromCurrent,
+    travelDistance: entry.travelDistance,
+    existing,
+  });
+  if (!result) {
+    log.warn({ campaignId, name: entry.name }, 'computeNewPosition returned null — bad direction/distance');
+    return;
+  }
+
+  // Merge check: if the raw position landed near an existing location AND
+  // fuzzy names match, reuse rather than create a duplicate.
+  let created = null;
+  if (result.mergeCandidate) {
+    const cand = await findOrCreateWorldLocation(entry.name);
+    if (cand && cand.id === result.mergeCandidate.location.id) {
+      log.info(
+        { campaignId, name: entry.name, mergedInto: cand.canonicalName },
+        'Top-level location merged into existing',
+      );
+      created = cand;
+    }
+  }
+
+  if (!created) {
+    const template = getTemplate(locationType);
+    try {
+      created = await prisma.worldLocation.create({
+        data: {
+          canonicalName: entry.name,
+          aliases: JSON.stringify([entry.name]),
+          description: entry.description || '',
+          category: locationType,
+          locationType,
+          region: anchor.region || null,
+          regionX: result.position.regionX,
+          regionY: result.position.regionY,
+          positionConfidence: 0.5,
+          maxKeyNpcs: template.maxKeyNpcs || 10,
+          maxSubLocations: template.maxSubLocations || 5,
+          embeddingText: entry.description
+            ? `${entry.name}: ${entry.description}`
+            : entry.name,
+        },
+      });
+      log.info(
+        { campaignId, name: entry.name, pos: result.position, locationType },
+        'Top-level location created',
+      );
+    } catch (err) {
+      // P2002 = canonicalName unique race — fall back to fuzzy resolve
+      if (err?.code === 'P2002') {
+        created = await findOrCreateWorldLocation(entry.name);
+      } else {
+        throw err;
+      }
+    }
+  }
+  if (!created) return;
+
+  // Auto-edge anchor↔new (bidirectional). Distance = euclidean on computed
+  // coords, not the AI-declared travelDistance — the positionCalculator may
+  // have pushed the raw further for spacing.
+  const distance = euclidean(
+    { regionX: anchor.regionX || 0, regionY: anchor.regionY || 0 },
+    { regionX: created.regionX || 0, regionY: created.regionY || 0 },
+  );
+  const edgeCommon = {
+    distance,
+    difficulty: entry.difficulty || 'safe',
+    terrainType: entry.terrainType || 'road',
+    discoveredByCampaignId: campaignId,
+  };
+  await Promise.allSettled([
+    upsertEdge({
+      fromLocationId: anchor.id,
+      toLocationId: created.id,
+      direction: entry.directionFromCurrent,
+      ...edgeCommon,
+    }),
+    upsertEdge({
+      fromLocationId: created.id,
+      toLocationId: anchor.id,
+      direction: oppositeDirection(entry.directionFromCurrent),
+      ...edgeCommon,
+    }),
+  ]);
+
+  // Optional connectsTo — create edges to other known locations in range.
+  // "In range" = within 10 km euclidean (matches user spec guardrail).
+  if (Array.isArray(entry.connectsTo) && entry.connectsTo.length > 0) {
+    for (const connectName of entry.connectsTo.slice(0, 4)) {
+      try {
+        const other = await findOrCreateWorldLocation(connectName);
+        if (!other || other.id === created.id) continue;
+        const d = euclidean(
+          { regionX: created.regionX || 0, regionY: created.regionY || 0 },
+          { regionX: other.regionX || 0, regionY: other.regionY || 0 },
+        );
+        if (d > 10) {
+          log.info(
+            { campaignId, from: created.canonicalName, to: other.canonicalName, d },
+            'connectsTo skipped — out of range',
+          );
+          continue;
+        }
+        await Promise.allSettled([
+          upsertEdge({
+            fromLocationId: created.id,
+            toLocationId: other.id,
+            distance: d,
+            difficulty: 'safe',
+            terrainType: 'road',
+            discoveredByCampaignId: campaignId,
+          }),
+          upsertEdge({
+            fromLocationId: other.id,
+            toLocationId: created.id,
+            distance: d,
+            difficulty: 'safe',
+            terrainType: 'road',
+            discoveredByCampaignId: campaignId,
+          }),
+        ]);
+      } catch (err) {
+        log.warn({ err: err?.message, connect: connectName }, 'connectsTo edge failed');
+      }
+    }
+  }
+}
+
+function oppositeDirection(dir) {
+  const opp = {
+    N: 'S', S: 'N', E: 'W', W: 'E',
+    NE: 'SW', SW: 'NE', NW: 'SE', SE: 'NW',
+  };
+  return opp[dir] || null;
+}
+
 async function processKnowledgeUpdates(campaignId, ku) {
   const entries = [];
 
@@ -316,7 +574,7 @@ async function processQuestStatusChange(campaignId, questIds, status) {
   }
 }
 
-export async function processStateChanges(campaignId, stateChanges) {
+export async function processStateChanges(campaignId, stateChanges, { prevLoc = null } = {}) {
   // Fetch campaign once to check living-world flag + userId for Phase 4
   // WorldEvent attribution (cheap — same record is already loaded by
   // postSceneWork for the same campaignId).
@@ -339,6 +597,10 @@ export async function processStateChanges(campaignId, stateChanges) {
 
   if (livingWorldEnabled && stateChanges.newItems?.length) {
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId);
+  }
+
+  if (livingWorldEnabled && stateChanges.newLocations?.length) {
+    await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc });
   }
 
   if (stateChanges.knowledgeUpdates) {

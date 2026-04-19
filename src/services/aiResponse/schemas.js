@@ -247,6 +247,24 @@ const StateChangesSchema = z.object({
   addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
+  // Living World Phase 7 — materialize new locations.
+  //   • Sublocation (inside a known parent settlement): parentLocationName=set.
+  //   • Top-level settlement/wilderness: parentLocationName=null +
+  //     directionFromCurrent + travelDistance relative to the scene's starting
+  //     location. BE resolves position via positionCalculator and auto-creates
+  //     the edge current→new.
+  newLocations: z.array(z.object({
+    name: z.string().min(1),
+    parentLocationName: z.string().nullable().optional(),
+    locationType: z.string().optional().default('interior'),
+    slotType: z.string().nullable().optional(),
+    description: z.string().optional().default(''),
+    directionFromCurrent: z.enum(['N','NE','E','SE','S','SW','W','NW']).nullable().optional(),
+    travelDistance: z.enum(['short','half_day','day','two_days','multi_day']).nullable().optional(),
+    connectsTo: z.array(z.string()).optional().default([]),
+    difficulty: z.enum(['safe','moderate','dangerous','deadly']).nullable().optional(),
+    terrainType: z.enum(['road','path','wilderness','river','mountain']).nullable().optional(),
+  }).passthrough()).optional().default([]),
   newQuests: z.array(QuestSchema).optional().default([]),
   completedQuests: z.array(z.string()).optional().default([]),
   questUpdates: z.array(QuestUpdateSchema).optional().default([]),

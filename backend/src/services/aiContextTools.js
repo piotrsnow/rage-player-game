@@ -13,6 +13,9 @@ import { suggestEncounterMode } from './livingWorld/encounterEscalator.js';
 import { readDmAgentState } from './livingWorld/dmMemoryService.js';
 import { getTemplate, isGeneratedLocationType } from './livingWorld/settlementTemplates.js';
 import { computeSubLocationBudget } from './livingWorld/topologyGuard.js';
+import { loadCampaignGraph, dijkstra, classifyDetour, expandPath } from './livingWorld/travelGraph.js';
+import { generateTravelEvents } from './livingWorld/travelEventGenerator.js';
+import { loadDiscovery } from './livingWorld/userDiscoveryService.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -450,7 +453,7 @@ export {
  * @param {string} currentLocation - Current location name (for expand_location)
  * @returns {Promise<object>} Grouped context blocks: { npcs, quests, location, codex, memory }
  */
-export async function assembleContext(campaignId, selectionResult, currentLocation, skipKeys = {}) {
+export async function assembleContext(campaignId, selectionResult, currentLocation, skipKeys = {}, { provider = 'openai', timeoutMs = 5000 } = {}) {
   const fetches = [];
 
   // Encje już obecne w dynamicSuffix promptu (Key NPCs / Active Quests / ALREADY DISCOVERED).
@@ -462,9 +465,14 @@ export async function assembleContext(campaignId, selectionResult, currentLocati
   // Living World — fetch recent WorldEvents at the current location (and the
   // canonical NPCs present there) when the campaign has the feature enabled.
   // Runs in parallel with other context fetches; failures are non-fatal.
+  // Passes travel intent so the block can include a TRAVEL CONTEXT section.
   if (currentLocation) {
     fetches.push(
-      buildLivingWorldContext(campaignId, currentLocation)
+      buildLivingWorldContext(campaignId, currentLocation, {
+        travelTarget: selectionResult?._intent === 'travel' ? selectionResult._travelTarget : null,
+        provider,
+        timeoutMs,
+      })
         .then((data) => ({ type: 'livingWorld', data }))
         .catch((err) => {
           log.warn({ err: err?.message, campaignId }, 'livingWorld context fetch failed');
@@ -562,11 +570,11 @@ function groupByType(results) {
  *
  * Shape: { locationName, npcs: [{name, role, paused}], recentEvents: [{type, blurb, at}] }
  */
-async function buildLivingWorldContext(campaignId, currentLocation) {
+async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, provider = 'openai', timeoutMs = 5000 } = {}) {
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    select: { livingWorldEnabled: true, characterIds: true },
+    select: { livingWorldEnabled: true, characterIds: true, userId: true },
   });
   if (!campaign?.livingWorldEnabled) return null;
 
@@ -649,6 +657,24 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
   // handles their rooms directly).
   const settlement = await buildSettlementBlock(location).catch(() => null);
 
+  // Phase 7 — travel block. Only built when the classifier flagged a travel
+  // intent AND we can resolve both endpoints. Null if no path or trivial
+  // (same location / single hop).
+  let travel = null;
+  if (travelTarget && campaign.userId) {
+    travel = await buildTravelBlock({
+      campaignId,
+      userId: campaign.userId,
+      startLocation: location,
+      targetName: travelTarget,
+      provider,
+      timeoutMs,
+    }).catch((err) => {
+      log.warn({ err: err?.message, campaignId, travelTarget }, 'travel block build failed');
+      return null;
+    });
+  }
+
   if (
     ambientNpcs.length === 0
     && recentEvents.length === 0
@@ -656,6 +682,7 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
     && !reputation
     && !hasDmState
     && !settlement
+    && !travel
   ) {
     return null;
   }
@@ -731,6 +758,7 @@ async function buildLivingWorldContext(campaignId, currentLocation) {
             .slice(0, 4),
         }
       : null,
+    travel,
   };
 }
 
@@ -750,6 +778,97 @@ const BACKGROUND_LABEL = {
   capital:    'Mieszczanin/Mieszczanka',
   wilderness: 'Podróżny/Podróżna',
 };
+
+/**
+ * Build the Phase 7 TRAVEL CONTEXT block. Resolves target by fuzzy name,
+ * runs Dijkstra on the campaign-visible graph, classifies detour, and
+ * (for sensible multi-hop paths) asks nano for 3-5 candidate narrative
+ * beats. Null on: missing target, same-location, or no known path — in
+ * which case premium narrates travel as "no known path, you wander".
+ */
+async function buildTravelBlock({ campaignId, userId, startLocation, targetName, provider, timeoutMs }) {
+  if (!startLocation?.id || !targetName) return null;
+
+  const target = await findOrCreateWorldLocation(targetName).catch(() => null);
+  if (!target?.id || target.id === startLocation.id) return null;
+
+  // Only consider the user's discovered graph. Capital is always in the set;
+  // everything else must have been visited. Unknown targets → no path, scene
+  // falls back to exploration narration (Iteracja 2 will handle this path).
+  const { locationIds } = await loadDiscovery(userId);
+  if (!locationIds.has(target.id)) {
+    return {
+      kind: 'unknown_target',
+      targetName: target.canonicalName,
+      startName: startLocation.canonicalName,
+    };
+  }
+
+  const adj = await loadCampaignGraph(campaignId);
+  const route = dijkstra(adj, startLocation.id, target.id);
+  if (!route) {
+    return {
+      kind: 'no_path',
+      targetName: target.canonicalName,
+      startName: startLocation.canonicalName,
+    };
+  }
+  if (route.hops === 0) return null;
+
+  const pathLocations = await expandPath(route.path);
+  if (pathLocations.length < 2) return null;
+
+  const detour = classifyDetour({
+    pathDistance: route.distance,
+    start: pathLocations[0],
+    end: pathLocations[pathLocations.length - 1],
+  });
+
+  // Worst-edge difficulty on the chosen path — used as difficulty hint for
+  // the candidate event generator. Cheap re-read: pull edges by (from,to)
+  // pairs so we can read stored difficulty / terrain.
+  let worstDifficulty = 'safe';
+  let totalTerrain = new Set();
+  for (let i = 0; i < route.path.length - 1; i++) {
+    const neighbors = adj.get(route.path[i]) || [];
+    const next = neighbors.find((n) => n.toId === route.path[i + 1]);
+    if (!next) continue;
+    if (DIFFICULTY_RANK[next.difficulty] > DIFFICULTY_RANK[worstDifficulty]) {
+      worstDifficulty = next.difficulty;
+    }
+    if (next.terrainType) totalTerrain.add(next.terrainType);
+  }
+
+  // Multi-hop direct/sensible paths get candidate events. Trivial (1 hop) or
+  // long (>2.0 ratio, Iteracja 2) skip the nano call.
+  let candidateEvents = null;
+  if (route.hops >= 2 && (detour === 'direct' || detour === 'sensible')) {
+    candidateEvents = await generateTravelEvents({
+      pathLocations,
+      totalDifficulty: worstDifficulty,
+      provider,
+      timeoutMs,
+    }).catch(() => null);
+  }
+
+  return {
+    kind: 'path',
+    startName: startLocation.canonicalName,
+    targetName: target.canonicalName,
+    waypoints: pathLocations.map((l) => ({
+      name: l.canonicalName,
+      locationType: l.locationType || 'generic',
+    })),
+    totalDistance: Number(route.distance.toFixed(2)),
+    hops: route.hops,
+    detour,
+    difficulty: worstDifficulty,
+    terrains: [...totalTerrain],
+    candidateEvents,
+  };
+}
+
+const DIFFICULTY_RANK = { safe: 0, moderate: 1, dangerous: 2, deadly: 3 };
 
 /**
  * Build the Phase 7 settlement topology block. Resolves parent → loads

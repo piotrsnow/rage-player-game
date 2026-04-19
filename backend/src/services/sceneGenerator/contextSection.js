@@ -198,6 +198,59 @@ export function buildContextSection(contextBlocks) {
         lines.push('⚠ VENDETTA MODE — frakcje mogą aktywnie tropić/atakować. Nie neutralizuj tego samowolnie: tylko atonement quest lub wygaśnięcie (2 tyg.) kończy stan.');
       }
     }
+    // Phase 7 — TRAVEL CONTEXT. Emitted when the player's action classifies
+    // as a travel intent and we can resolve the path. Tells premium to narrate
+    // the whole trip in ONE scene via existing waypoints; forbids inventing
+    // new locations between them unless the detour is long (Iteracja 2).
+    if (lw.travel) {
+      const t = lw.travel;
+      lines.push('');
+      if (t.kind === 'path') {
+        const waypointList = t.waypoints.map((w) => `${w.name} (${w.locationType})`).join(' → ');
+        lines.push(`## TRAVEL CONTEXT`);
+        lines.push(`Player is travelling ${t.startName} → ${t.targetName}.`);
+        lines.push(`Known path (${t.hops} hops, ~${t.totalDistance} km, difficulty: ${t.difficulty}): ${waypointList}`);
+        if (t.terrains?.length) {
+          lines.push(`Terrain: ${t.terrains.join(', ')}`);
+        }
+        if (t.detour === 'direct' || t.detour === 'sensible') {
+          lines.push(
+            `Narrate the entire trip in ONE scene, passing through each waypoint briefly. ` +
+            `DO NOT invent new intermediate locations. End the scene at ${t.targetName}. ` +
+            `Set stateChanges.currentLocation = "${t.targetName}".`,
+          );
+        } else {
+          lines.push(
+            `This is a LONG path (${t.detour}). The player may want a shortcut — ` +
+            `if they have explicitly stated a shortcut intent, you may generate 1-2 new intermediate ` +
+            `locations via newLocations (directionFromCurrent + travelDistance). Otherwise follow the known path.`,
+          );
+        }
+        if (t.candidateEvents?.length) {
+          lines.push('');
+          lines.push('Candidate travel beats (weave 1-2 into the narrative, prefer variety):');
+          for (const cand of t.candidateEvents) {
+            lines.push(`  - [${cand.type}@${cand.at}] ${cand.hook}`);
+          }
+        }
+      } else if (t.kind === 'unknown_target') {
+        lines.push(`## TRAVEL INTENT`);
+        lines.push(`Player wants to travel to "${t.targetName}" but has not yet discovered that location.`);
+        lines.push(
+          `Narrate the player setting out; either: (a) they realize they don't know the way and ask around, ` +
+          `(b) they travel blindly and after some wandering end up in a new location — emit that new location ` +
+          `in newLocations with directionFromCurrent + travelDistance. Do NOT arrive at "${t.targetName}" directly.`,
+        );
+      } else if (t.kind === 'no_path') {
+        lines.push(`## TRAVEL INTENT`);
+        lines.push(`Player wants to travel to "${t.targetName}" but no known path connects it from ${t.startName}.`);
+        lines.push(
+          `Narrate them setting off through unfamiliar terrain — emit 1-2 new intermediate locations ` +
+          `via newLocations (directionFromCurrent + travelDistance), then arrive at ${t.targetName}.`,
+        );
+      }
+    }
+
     if (lines.length) {
       parts.push(`[Living World]\n${lines.join('\n')}`);
     }

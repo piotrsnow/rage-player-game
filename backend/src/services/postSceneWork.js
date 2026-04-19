@@ -8,6 +8,9 @@ import { handleNpcKills } from './livingWorld/reputationHook.js';
 import { updateDmMemoryFromScene } from './livingWorld/dmMemoryUpdater.js';
 import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
 import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
+import { markLocationDiscovered, markEdgeDiscoveredByUser } from './livingWorld/userDiscoveryService.js';
+import { findOrCreateWorldLocation } from './livingWorld/worldStateService.js';
+import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -43,7 +46,7 @@ export async function handlePostSceneWork({
     generateSceneEmbedding(scene),
   ];
   if (stateChanges) {
-    phase1Tasks.push(processStateChanges(campaignId, stateChanges));
+    phase1Tasks.push(processStateChanges(campaignId, stateChanges, { prevLoc }));
   }
   phase1Tasks.push(
     compressSceneToSummary(campaignId, narrative, playerAction, provider, {
@@ -55,6 +58,37 @@ export async function handlePostSceneWork({
     phase1Tasks.push(
       generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }),
     );
+    // Phase 7 — record the travel in UserWorldKnowledge (owner) + flip the
+    // edge's discoveredByCampaigns bit. Best-effort, never blocks.
+    if (campaign?.livingWorldEnabled && campaign.userId) {
+      phase1Tasks.push(
+        (async () => {
+          try {
+            const [prevRow, newRow] = await Promise.all([
+              findOrCreateWorldLocation(prevLoc),
+              findOrCreateWorldLocation(newLoc),
+            ]);
+            if (!prevRow?.id || !newRow?.id) return;
+            await Promise.allSettled([
+              markLocationDiscovered({ userId: campaign.userId, locationId: newRow.id }),
+              markLocationDiscovered({ userId: campaign.userId, locationId: prevRow.id }),
+              markEdgeDiscoveredByUser({
+                userId: campaign.userId,
+                fromLocationId: prevRow.id,
+                toLocationId: newRow.id,
+              }),
+              markEdgeDiscovered({
+                fromLocationId: prevRow.id,
+                toLocationId: newRow.id,
+                campaignId,
+              }),
+            ]);
+          } catch (err) {
+            log.warn({ err: err?.message, prevLoc, newLoc }, 'discovery marking failed (non-fatal)');
+          }
+        })(),
+      );
+    }
     // Living World: pause NPCs at previous location, resume NPCs at new location.
     // Runs in parallel with generateLocationSummary — both observe the same transition.
     if (campaign?.livingWorldEnabled) {

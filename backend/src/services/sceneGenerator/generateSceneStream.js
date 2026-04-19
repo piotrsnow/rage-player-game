@@ -144,7 +144,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // 3. Context assembly — skip entities already emitted inline in system prompt
     const currentLocation = coreState.world?.currentLocation || '';
     const inlineKeys = getInlineEntityKeys(coreState);
-    const contextBlocks = await assembleContext(campaignId, intentResult, currentLocation, inlineKeys);
+    const contextBlocks = await assembleContext(
+      campaignId, intentResult, currentLocation, inlineKeys,
+      { provider, timeoutMs: llmNanoTimeoutMs },
+    );
     onEvent({ type: 'context_ready' });
 
     // 4. Build prompts

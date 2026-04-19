@@ -408,6 +408,26 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
 - Poor NPCs do not give away valuable items. If you're about to narrate a gift, match item rarity to the NPC's status (peasant → common, merchant → uncommon, noble → rare).
 - If the DM memory / pending hooks block below names an NPC with a plan, respect what they already intended. Don't contradict their stated goals mid-scene.`,
     );
+    dynamicSections.push(
+      `LIVING WORLD — new locations (sublocations + top-level settlements):
+
+SUBLOCATIONS (inside a known settlement):
+- When the player enters a new sublocation (tavern/church/tower/etc.) INSIDE a known settlement, emit:
+  { "name": "Wieża Maga", "parentLocationName": "<canonical settlement name>", "locationType": "interior", "slotType": "<slotType or null>", "description": "<optional>" }
+- Use the SUBLOCATIONS AVAILABLE block (in EXPANDED CONTEXT) to pick \`slotType\`: either an open optional slot ('tavern','church','blacksmith',...) or leave null for a narratively distinctive custom addition.
+- Names MUST be narratively distinctive (at least two substantive words) — e.g. "Chata Starej Wiedźmy", "Wieża Czarnego Maga", "Ruiny Dawnego Cmentarzyska". Generic names like "dom", "chata", "tawerna" WILL be rejected.
+- If the parent's slot budget is full (SUBLOCATIONS AVAILABLE reports 0 remaining), don't emit new entries.
+
+TOP-LEVEL (new settlement / wilderness emerging during travel):
+- When the player travels to a brand-new overworld location (village/town/forest/etc.), emit:
+  { "name": "Watonga", "parentLocationName": null, "locationType": "village", "directionFromCurrent": "NE", "travelDistance": "half_day", "description": "<short>", "connectsTo": ["<optional known nearby locations>"] }
+- \`directionFromCurrent\` is relative to the player's STARTING location this scene (N|NE|E|SE|S|SW|W|NW).
+- \`travelDistance\` — short (~1 km) | half_day (~2 km) | day (~3 km) | two_days (~4 km) | multi_day (~5 km max single jump).
+- \`locationType\` — hamlet, village, town, city, forest, wilderness, interior, dungeon.
+- \`connectsTo\` — optional list of known nearby location names that share an edge with the new one.
+- BE resolves position via spacing rules — if your raw position collides, BE pushes it further out automatically.
+- If the TRAVEL CONTEXT block is present, follow its waypoint instructions EXACTLY — do NOT invent new locations between known waypoints on a direct path.`,
+    );
   }
 
   const staticPrefix = staticSections.join('\n\n');

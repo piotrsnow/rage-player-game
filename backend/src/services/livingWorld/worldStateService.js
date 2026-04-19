@@ -211,6 +211,64 @@ export async function killWorldNpc(worldNpcId) {
 }
 
 /**
+ * Create a sublocation under a named parent settlement. Idempotent:
+ * re-emitting the same canonicalName upserts (so scene retry doesn't
+ * double-materialize). Inherits parent position (sublocations share
+ * overworld coords with their parent).
+ *
+ * Does NOT apply topology caps — caller is responsible for running
+ * topologyGuard.decideSublocationAdmission first and passing slotType/
+ * slotKind from the decision.
+ *
+ * Returns the WorldLocation row or null on failure.
+ */
+export async function createSublocation({
+  name,
+  parent,
+  slotType = null,
+  slotKind = 'custom',
+  locationType = 'interior',
+  description = '',
+}) {
+  if (!name || !parent?.id) return null;
+  const cleanName = name.trim();
+  if (!cleanName) return null;
+  try {
+    return await prisma.worldLocation.upsert({
+      where: { canonicalName: cleanName },
+      update: {
+        parentLocationId: parent.id,
+        locationType,
+        slotType,
+        slotKind,
+        region: parent.region || null,
+        regionX: parent.regionX ?? 0,
+        regionY: parent.regionY ?? 0,
+        positionConfidence: parent.positionConfidence ?? 0.5,
+      },
+      create: {
+        canonicalName: cleanName,
+        aliases: JSON.stringify([cleanName]),
+        description,
+        category: slotType || 'custom',
+        locationType,
+        parentLocationId: parent.id,
+        slotType,
+        slotKind,
+        region: parent.region || null,
+        regionX: parent.regionX ?? 0,
+        regionY: parent.regionY ?? 0,
+        positionConfidence: parent.positionConfidence ?? 0.5,
+        embeddingText: description ? `${cleanName}: ${description}` : cleanName,
+      },
+    });
+  } catch (err) {
+    log.warn({ err: err?.message, name: cleanName }, 'createSublocation failed');
+    return null;
+  }
+}
+
+/**
  * Fetch all WorldNPCs currently at a location. Includes paused NPCs so
  * scene assembly can surface "Bjorn jeszcze tu jest, tylko śpi" via
  * pauseSnapshot. Callers filter by pausedAt as needed.

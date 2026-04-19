@@ -23,6 +23,29 @@ function detectTradeIntent(action) {
   return TRADE_REGEX.test(action);
 }
 
+// ── TRAVEL INTENT REGEX ──
+// Match "idę do X", "wyruszam do X", "jadę do X", "kieruję się do X",
+// "udaję się do X", "travel to X", "go to X", "head to X", "leave for X".
+// Two-step parse: (1) locate verb + preposition (case-insensitive),
+// (2) capture a proper-noun target after it. Target must start with uppercase
+// and continues as long as subsequent words are also capitalized (so
+// "Czarnego Lasu" captures both; "Watonga, bo noc" stops at the comma).
+// This deliberately rejects "idę do domu" / "idę do lasu" — no capital.
+const TRAVEL_VERB_PREP = /\b(?:id[eę]|wyruszam|jad[eę]|kieruj[eę]\s+si[eę]|udaj[eę]\s+si[eę]|podr[oó]żuj[eę]|travel(?:ing)?|go(?:ing)?|head(?:ing)?|leav(?:e|ing))\s+(?:do|to|for|w\s+stron[eę]|ku)\s+/iu;
+const TRAVEL_TARGET = /^([A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*(?:\s+[A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*){0,3})/u;
+
+export function detectTravelIntent(action) {
+  if (!action || typeof action !== 'string') return null;
+  const verbMatch = action.match(TRAVEL_VERB_PREP);
+  if (!verbMatch) return null;
+  const rest = action.slice(verbMatch.index + verbMatch[0].length);
+  const targetMatch = rest.match(TRAVEL_TARGET);
+  if (!targetMatch) return null;
+  const target = targetMatch[1].trim().replace(/[.,;:!?].*$/, '').trim();
+  if (!target) return null;
+  return { target };
+}
+
 // ── EMPTY SELECTION (no context needed) ──
 
 function emptySelection() {
@@ -115,6 +138,19 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
   // Combat intent from freeform text (regex)
   if (detectCombatIntent(playerAction)) {
     return { ...emptySelection(), _intent: 'combat' };
+  }
+
+  // Travel intent — "idę do Avaltro", "travel to Watonga". Doesn't short-circuit
+  // scene-gen (premium still narrates) but flags the target so sceneGenerator
+  // can inject a TRAVEL CONTEXT block (path + waypoints + candidate events).
+  const travel = detectTravelIntent(playerAction);
+  if (travel) {
+    return {
+      ...emptySelection(),
+      expand_location: true,
+      _intent: 'travel',
+      _travelTarget: travel.target,
+    };
   }
 
   // Trade intent from freeform text — if ONLY trade intent, skip scene gen
