@@ -668,6 +668,8 @@
     "needsSystemDesc": "Głód, pragnienie, pęcherz, higiena, odpoczynek",
     "canvasEffects": "Efekty Wizualne",
     "canvasEffectsDesc": "Cząsteczki, mgła, efekty pogodowe na scenach",
+    "itemImages": "Obrazki Przedmiotów",
+    "itemImagesDesc": "Automatyczne generowanie grafiki dla nowych przedmiotów w ekwipunku",
     "effectIntensityTitle": "Intensywność Efektów",
     "effectIntensityDesc": "Kontroluje gęstość cząsteczek, przezroczystość mgły i ogólną siłę efektów wizualnych",
     "effectLevels": {

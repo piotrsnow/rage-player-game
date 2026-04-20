@@ -34,6 +34,33 @@ const MAX_HAGGLE_ATTEMPTS = 3;
 const MAX_RANDOM_ITEMS = 5;
 const MIN_RANDOM_ITEMS = 3;
 
+// Fallback base prices (in copper) when item has neither price nor resolvable baseType.
+// Used so loot/reward items always sell for something rather than 0.
+const RARITY_FALLBACK_COPPER = {
+  common: 5,
+  uncommon: 20,
+  rare: 50,
+  exotic: 100,
+};
+
+/**
+ * Resolve an item's price from explicit field, baseType catalog lookup, or rarity fallback.
+ * Returns { gold, silver, copper } — zeros only as last resort.
+ *
+ * @param {object} item - inventory/shop item (may lack `price`)
+ * @param {object} [equipmentCatalog] - optional EQUIPMENT map keyed by baseType id
+ * @returns {{gold:number, silver:number, copper:number}}
+ */
+export function resolveItemPrice(item, equipmentCatalog = null) {
+  if (item?.price) return item.price;
+  if (item?.baseType && equipmentCatalog) {
+    const entry = equipmentCatalog[item.baseType];
+    if (entry?.price) return entry.price;
+  }
+  const fallbackCopper = RARITY_FALLBACK_COPPER[item?.rarity] ?? RARITY_FALLBACK_COPPER.common;
+  return normalizeCoins(fallbackCopper);
+}
+
 // ── Seeded PRNG (for consistent shop inventory per NPC) ──
 
 function seedHash(str) {
@@ -170,22 +197,22 @@ export function createTradeSession(shopItems, npcData, locationMod = 0) {
 /**
  * Calculate buy price for an item, applying disposition and location modifiers.
  */
-export function calculateItemBuyPrice(item, disposition = 0, locationMod = 0) {
-  if (!item.price) return { gold: 0, silver: 0, copper: 0 };
+export function calculateItemBuyPrice(item, disposition = 0, locationMod = 0, equipmentCatalog = null) {
+  const price = resolveItemPrice(item, equipmentCatalog);
   // Disposition: -50 to +50 maps to +25% to -25% price modifier
   const dispositionMod = -(disposition / 2);
-  return calculatePrice(item, dispositionMod, locationMod);
+  return calculatePrice({ ...item, price }, dispositionMod, locationMod);
 }
 
 /**
  * Calculate sell price (50% of base, modified by Handel skill).
  */
-export function calculateItemSellPrice(item, handelLevel = 0) {
-  if (!item.price) return { gold: 0, silver: 0, copper: 0 };
-  const base = priceToCopper(item.price);
+export function calculateItemSellPrice(item, handelLevel = 0, equipmentCatalog = null) {
+  const price = resolveItemPrice(item, equipmentCatalog);
+  const base = priceToCopper(price);
   // Base 50%, +1% per Handel level (max 75%)
   const factor = Math.min(0.75, SELL_FACTOR + handelLevel * 0.01);
-  return normalizeCoins(Math.round(base * factor));
+  return normalizeCoins(Math.max(1, Math.round(base * factor)));
 }
 
 // ── Haggling ──

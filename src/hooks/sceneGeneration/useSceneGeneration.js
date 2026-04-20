@@ -235,7 +235,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         if (playerAction === '[WAIT]') {
           dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_wait`, role: 'system', subtype: 'wait', content: t('gameplay.waitSystemMessage'), timestamp: Date.now() } });
         }
-        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, timestamp: Date.now() } });
+        dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { id: `msg_${Date.now()}_dm`, role: 'dm', sceneId, content: result.narrative, scenePacing: result.scenePacing || 'exploration', dialogueSegments: finalSegments, rawAiSpeech, soundEffect: result.soundEffect || null, dialogueIfQuestTargetCompleted: result.dialogueIfQuestTargetCompleted || null, timestamp: Date.now() } });
 
         // State changes
         applyNeedsAndRest(result, resolved, needsSystemEnabled);

@@ -17,7 +17,11 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || 'mongodb://localhost:27017/rpgon',
 
   jwtSecret: process.env.JWT_SECRET,
-  jwtExpiresIn: '7d',
+  // 15 minutes — short-lived access token. The refresh-token cookie flow
+  // (/v1/auth/refresh) swaps a 30-day opaque refresh token for a fresh
+  // access token; the FE auto-retries 401s through this path. Keep this in
+  // sync with ACCESS_TOKEN_TTL in backend/src/routes/auth.js.
+  jwtExpiresIn: '15m',
 
   mediaBackend: process.env.MEDIA_BACKEND || 'local',
   mediaLocalPath: process.env.MEDIA_LOCAL_PATH || './media',

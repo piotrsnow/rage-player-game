@@ -15,8 +15,9 @@ class WebSocketService {
     this._reconnectTimer = null;
     this._heartbeatTimer = null;
     this._url = null;
-    this._token = null;
     this._baseUrl = null;
+    this._getToken = null;
+    this._refreshToken = null;
     this._intentionalClose = false;
     this._readyPromise = null;
     this._readyResolve = null;
@@ -66,15 +67,18 @@ class WebSocketService {
     } catch { return null; }
   }
 
-  connect(baseUrl, token) {
+  // `getToken` is a callback (not a snapshot) so every `_open()` — initial
+  // connect *and* reconnects — reads the freshest access token. `refreshToken`
+  // is an optional async callback invoked before each reconnect attempt so
+  // we don't try to upgrade with an expired token after a long idle period.
+  connect(baseUrl, getToken, refreshToken = null) {
     this._intentionalClose = false;
     this._reconnectAttempts = 0;
     clearTimeout(this._reconnectTimer);
     this._reconnectTimer = null;
     this._baseUrl = baseUrl;
-    this._token = token;
-    const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
-    this._url = `${wsUrl}/v1/multiplayer?token=${encodeURIComponent(token)}`;
+    this._getToken = typeof getToken === 'function' ? getToken : () => getToken;
+    this._refreshToken = typeof refreshToken === 'function' ? refreshToken : null;
     if (this._ws) {
       this._ws.close();
       this._ws = null;
@@ -82,7 +86,14 @@ class WebSocketService {
     return this._open();
   }
 
+  _buildUrl() {
+    const token = this._getToken ? this._getToken() : '';
+    const wsUrl = (this._baseUrl || '').replace(/^http/, 'ws').replace(/\/+$/, '');
+    return `${wsUrl}/v1/multiplayer?token=${encodeURIComponent(token || '')}`;
+  }
+
   _open() {
+    this._url = this._buildUrl();
     this._readyPromise = new Promise((resolve) => {
       this._readyResolve = resolve;
     });
@@ -141,7 +152,12 @@ class WebSocketService {
       delayMs: delay,
       maxAttempts: this._maxReconnectAttempts,
     });
-    this._reconnectTimer = setTimeout(() => {
+    this._reconnectTimer = setTimeout(async () => {
+      // Best-effort refresh before reconnect — an expired access token would
+      // otherwise fail the WS upgrade handshake with "Invalid auth token".
+      if (this._refreshToken) {
+        try { await this._refreshToken(); } catch { /* fall through with stale token */ }
+      }
       this._open().then(() => {
         if (this.connected && this._roomCode && this._odId) {
           this.send(WS_CLIENT_TYPES.REJOIN_ROOM, { roomCode: this._roomCode, odId: this._odId });
@@ -187,7 +203,8 @@ class WebSocketService {
       this._ws = null;
     }
     this._url = null;
-    this._token = null;
+    this._getToken = null;
+    this._refreshToken = null;
     this._baseUrl = null;
     this._readyResolve?.();
     this._readyPromise = null;

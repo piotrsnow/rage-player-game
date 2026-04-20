@@ -10,6 +10,7 @@ import {
   CREATIVITY_BONUS_MAX,
 } from '../diceResolver.js';
 import { resolveAndApplyRewards } from '../rewardResolver.js';
+import { generateWrapupFallback, pickWrapupSpeaker } from '../questWrapupFallback.js';
 import {
   applyCharacterStateChanges,
   characterToPrismaUpdate,
@@ -29,6 +30,7 @@ import {
 import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
+import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
@@ -165,6 +167,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     );
     onEvent({ type: 'context_ready' });
 
+    // 3b. Phase D — if nano flagged a quest offer AND the world is getting
+    // saturated (Phase C budget < 0.5), suggest a concrete quest-giver so
+    // premium reuses an existing NPC instead of inventing a new one. When
+    // the budget is comfortable OR nano saw no offer cue, skip the lookup.
+    let questGiverHint = null;
+    if (livingWorldEnabled && intentResult.quest_offer_likely) {
+      const sat = contextBlocks.livingWorld?.saturation;
+      const budgetsTight =
+        (typeof sat?.settlementBudget === 'number' && sat.settlementBudget < 0.5)
+        || (typeof sat?.npcBudget === 'number' && sat.npcBudget < 0.5);
+      if (budgetsTight) {
+        try {
+          questGiverHint = await pickQuestGiver(campaignId, currentLocation);
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId }, 'pickQuestGiver failed (non-fatal)');
+        }
+      }
+    }
+
     // 4. Build prompts
     // Only the immediate previous scene goes into the prompt in full. Earlier
     // scenes are represented by compressed gameStateSummary facts. Fetching 1
@@ -185,6 +206,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneCount,
       intentResult,
       livingWorldEnabled,
+      questGiverHint,
     });
 
     const userPrompt = buildUserPrompt(playerAction, {
@@ -283,7 +305,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
 
     // 6d. Resolve abstract rewards into concrete items/materials/money
-    resolveAndApplyRewards(sceneResult.stateChanges, { sceneCount: newSceneIndex });
+    resolveAndApplyRewards(sceneResult.stateChanges, {
+      sceneCount: newSceneIndex,
+      difficultyTier: coreState.campaign?.difficultyTier || 'medium',
+    });
 
     // 6d2. Dungeon entry hook — if premium emitted a currentLocation that
     // points to a top-level dungeon, seed it (idempotent) and redirect
@@ -331,6 +356,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           flawless: combatResult.flawless === true,
         };
       }
+    }
+
+    // 6f. Quest wrap-up fallback — if premium emitted completedQuests or a
+    // completed objective update but forgot dialogueIfQuestTargetCompleted,
+    // synthesise one via nano so the player always gets a narrative beat
+    // between objectives. Guards against the root complaint: "next goal
+    // appeared in the log with zero narrative setup."
+    try {
+      await ensureQuestWrapup(sceneResult, {
+        coreState,
+        dbQuests,
+        dbNpcs,
+        language,
+        provider,
+        userApiKeys,
+        llmNanoTimeoutMs,
+      });
+    } catch (err) {
+      log.warn({ err: err?.message }, 'quest wrap-up fallback failed (non-fatal)');
     }
 
     const savedScene = await prisma.campaignScene.create({
@@ -428,4 +472,73 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       ...(isAbort ? { phase: 'scene_generation' } : {}),
     });
   }
+}
+
+/**
+ * If premium completed an objective/quest but left dialogueIfQuestTargetCompleted
+ * null, call nano to fill it so the player always gets a short narrative beat
+ * before the next objective lands in their log.
+ */
+async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, language, provider, userApiKeys, llmNanoTimeoutMs }) {
+  if (!sceneResult || sceneResult.dialogueIfQuestTargetCompleted?.text) return;
+  const sc = sceneResult.stateChanges || {};
+  const completedQuestIds = Array.isArray(sc.completedQuests) ? sc.completedQuests : [];
+  const completedObjUpdates = (Array.isArray(sc.questUpdates) ? sc.questUpdates : [])
+    .filter((u) => u && u.completed === true);
+  if (completedQuestIds.length === 0 && completedObjUpdates.length === 0) return;
+
+  // Identify the quest + objectives that resolved this scene.
+  const activeQuests = coreState?.quests?.active || [];
+  let completedObjective = null;
+  let nextObjective = null;
+  let questGiverId = null;
+
+  if (completedObjUpdates.length > 0) {
+    const upd = completedObjUpdates[0];
+    const quest = activeQuests.find((q) => q.id === upd.questId)
+      || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === upd.questId) : null);
+    const objectives = quest?.objectives || (quest?.objectives ? JSON.parse(quest.objectives) : []);
+    completedObjective = objectives.find((o) => o.id === upd.objectiveId) || { id: upd.objectiveId, description: upd.objectiveId };
+    nextObjective = objectives.find((o) => !o.completed && o.id !== upd.objectiveId) || null;
+    questGiverId = quest?.questGiverId || null;
+  } else if (completedQuestIds.length > 0) {
+    const id = completedQuestIds[0];
+    const quest = activeQuests.find((q) => q.id === id)
+      || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === id) : null);
+    const objectives = Array.isArray(quest?.objectives)
+      ? quest.objectives
+      : (typeof quest?.objectives === 'string' ? safeJsonArr(quest.objectives) : []);
+    completedObjective = objectives[objectives.length - 1] || { description: quest?.name || id };
+    nextObjective = null;
+    questGiverId = quest?.questGiverId || null;
+  }
+  if (!completedObjective) return;
+
+  const speaker = pickWrapupSpeaker({
+    questGiverId,
+    sceneNpcs: coreState?.world?.npcs || dbNpcs || [],
+    companions: coreState?.character?.companions || [],
+  });
+
+  const wrapup = await generateWrapupFallback({
+    completedObjective,
+    nextObjective,
+    speaker,
+    narratorStyle: coreState?.campaign?.narratorStyle || null,
+    language,
+    provider,
+    userApiKeys,
+    timeoutMs: Math.min(llmNanoTimeoutMs || 3000, 5000),
+  });
+
+  if (wrapup) {
+    sceneResult.dialogueIfQuestTargetCompleted = wrapup;
+  }
+}
+
+function safeJsonArr(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
 }

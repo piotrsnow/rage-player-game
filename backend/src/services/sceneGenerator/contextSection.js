@@ -1,4 +1,4 @@
-import { pickChatterLine } from '../../../../src/data/npcChatterPool.js';
+import { pickChatterLine } from '../../../../shared/domain/npcChatterPool.js';
 
 /**
  * Format pre-fetched context blocks (from assembleContext) into a prompt
@@ -52,6 +52,22 @@ export function buildContextSection(contextBlocks) {
       lines.push(`Canonical location: ${lw.locationName}${typeTag}`);
     }
 
+    // Phase C — saturation hint. Rendered at the TOP of the LIVING WORLD
+    // block (before NPC lists / settlements) so premium sees the reuse
+    // pressure before it decides what to invent. Thresholds: <0.2 = hard
+    // push, <0.5 = soft nudge. Nothing is emitted in the neutral range.
+    if (lw.saturation?.level === 'tight') {
+      lines.push('');
+      lines.push(
+        'WORLD IS NEARLY FULL — reuse existing settlements/NPCs. New creation disallowed unless narratively impossible.',
+      );
+    } else if (lw.saturation?.level === 'watch') {
+      lines.push('');
+      lines.push(
+        'Prefer existing settlements/NPCs. New only if player deliberately seeks unknown territory.',
+      );
+    }
+
     // Phase 7 — NPCS AT CURRENT LOCATION. Instruct premium to reuse named
     // characters and treat background population as collective flavor.
     if (lw.npcs?.length || lw.backgroundCount > 0) {
@@ -79,6 +95,31 @@ export function buildContextSection(contextBlocks) {
       }
     }
 
+    // Phase A — SEEDED SETTLEMENTS. Lists the canonical settlements this
+    // world already has (capital + per-campaign hamlets/villages/towns/cities)
+    // with distance-from-current so premium prefers reuse over inventing a
+    // new settlement. Mid-play settlement creation is hard-blocked in
+    // processTopLevelEntry; this block is the carrot side of the rule.
+    if (lw.seededSettlements?.entries?.length) {
+      lines.push('');
+      lines.push('## SEEDED SETTLEMENTS (reuse these — do NOT invent new hamlets/villages/towns/cities/capitals)');
+      for (const s of lw.seededSettlements.entries) {
+        const tag = s.isCapital ? ' [GLOBAL CAPITAL]' : '';
+        const desc = s.description ? ` — ${s.description}` : '';
+        lines.push(`- ${s.name} (${s.type}, ~${s.distanceKm} km away)${tag}${desc}`);
+      }
+      const caps = lw.seededSettlements.caps;
+      if (caps) {
+        const parts = [];
+        for (const [type, n] of Object.entries(caps)) {
+          if (typeof n === 'number' && n > 0) parts.push(`${n} ${type}`);
+        }
+        if (parts.length > 0) {
+          lines.push(`Campaign seed: ${parts.join(', ')} (plus global capital Yeralden). Settlements are creation-time-only — new settlement types emitted mid-play will be silently rejected.`);
+        }
+      }
+    }
+
     // Phase 7 — SUBLOCATIONS AVAILABLE. Shows parent settlement's slot state
     // so premium knows what already exists, what optional slots are open,
     // and when the sublocation hard cap is approaching.
@@ -100,6 +141,13 @@ export function buildContextSection(contextBlocks) {
         lines.push(`Open optional slots: ${s.budget.openOptional.join(', ')} (budget ${s.budget.optionalBudgetRemaining} left)`);
       } else {
         lines.push(`Optional slots: FULL — only custom additions allowed`);
+      }
+      // Phase E — custom sublocation budget (scaled by campaign difficultyTier).
+      const customRemaining = s.budget.customBudgetRemaining ?? 0;
+      if (customRemaining > 0) {
+        lines.push(`Custom (narratively-distinctive) additions remaining: ${customRemaining}.`);
+      } else {
+        lines.push(`Custom additions: 0 remaining (campaign tier does not allow more custom buildings here). Fill open optional slots only.`);
       }
       lines.push(
         `When introducing a new sublocation: emit slotType matching an open optional slot OR use ` +
@@ -230,7 +278,15 @@ export function buildContextSection(contextBlocks) {
         if (t.terrains?.length) {
           lines.push(`Terrain: ${t.terrains.join(', ')}`);
         }
-        if (t.detour === 'direct' || t.detour === 'sensible') {
+        if (t.montage) {
+          lines.push(
+            `TRAVEL MONTAGE MODE: Compress the journey into ONE scene. ` +
+            `1-2 atmospheric paragraphs (weather, terrain, mood, at most one minor incident), then arrival. ` +
+            `DO NOT introduce intermediate settlements, encounters, or lengthy deliberation. ` +
+            `Skip per-waypoint narration — mention waypoints only as passing scenery. ` +
+            `End the scene at ${t.targetName}. Set stateChanges.currentLocation = "${t.targetName}".`,
+          );
+        } else if (t.detour === 'direct' || t.detour === 'sensible') {
           lines.push(
             `Narrate the entire trip in ONE scene, passing through each waypoint briefly. ` +
             `DO NOT invent new intermediate locations. End the scene at ${t.targetName}. ` +

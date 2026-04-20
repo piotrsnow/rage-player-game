@@ -19,7 +19,13 @@ export default function QuestLog({ active = [], completed = [], npcs = [], onVer
     ...sortedActive.map((q) => ({ ...q, _status: 'active' })),
     ...sortedCompleted.map((q) => ({ ...q, _status: 'completed' })),
   ];
-  const selected = allQuests.find((q) => q.id === selectedId);
+  // Fallback when the user hasn't clicked anything yet (or the previously
+  // selected quest vanished from the list) — show the first active quest so
+  // the detail panel is never blank on open.
+  const selected = allQuests.find((q) => q.id === selectedId)
+    || sortedActive[0]
+    || sortedCompleted[0]
+    || null;
 
   const findNpc = (id) => {
     if (!id) return null;

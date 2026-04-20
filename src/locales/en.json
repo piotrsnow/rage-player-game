@@ -675,6 +675,8 @@
     "needsSystemDesc": "Hunger, thirst, bladder, hygiene, rest",
     "canvasEffects": "Canvas Effects",
     "canvasEffectsDesc": "Particles, fog, weather overlays on scenes",
+    "itemImages": "Item Images",
+    "itemImagesDesc": "Automatic image generation for new inventory items",
     "effectIntensityTitle": "Effect Intensity",
     "effectIntensityDesc": "Controls particle density, fog opacity, and overall visual effect strength",
     "effectLevels": {

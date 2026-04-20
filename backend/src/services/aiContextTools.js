@@ -11,7 +11,7 @@ import { getCompanions } from './livingWorld/companionService.js';
 import { getReputationProfile, maybeClearVendetta } from './livingWorld/reputationService.js';
 import { suggestEncounterMode } from './livingWorld/encounterEscalator.js';
 import { readDmAgentState } from './livingWorld/dmMemoryService.js';
-import { getTemplate, isGeneratedLocationType } from './livingWorld/settlementTemplates.js';
+import { getTemplate, isGeneratedLocationType, effectiveCustomCap } from './livingWorld/settlementTemplates.js';
 import { computeSubLocationBudget } from './livingWorld/topologyGuard.js';
 import { loadCampaignGraph, dijkstra, classifyDetour, expandPath } from './livingWorld/travelGraph.js';
 import { generateTravelEvents } from './livingWorld/travelEventGenerator.js';
@@ -580,6 +580,9 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
       livingWorldEnabled: true,
       characterIds: true,
       userId: true,
+      worldBounds: true,
+      settlementCaps: true,
+      difficultyTier: true,
       user: { select: { contentLanguage: true } },
     },
   });
@@ -663,8 +666,18 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
   // Phase 7 — settlement topology block. If the player is in a sublocation
   // we reference the PARENT settlement for caps + slot budget; otherwise
   // use the current top-level location. Dungeons bypass (seed generator
-  // handles their rooms directly).
-  const settlement = await buildSettlementBlock(location).catch(() => null);
+  // handles their rooms directly). Phase E — pass difficultyTier so the
+  // prompt surface reflects the campaign's effective custom-cap budget.
+  const settlement = await buildSettlementBlock(location, campaign.difficultyTier).catch(() => null);
+
+  // Phase A — SEEDED SETTLEMENTS. Lists all settlement-type WorldLocations
+  // within the campaign's worldBounds (set by worldSeeder at creation time)
+  // PLUS the global capital Yeralden. Tells premium which named settlements
+  // the world already has so it prefers reuse over invention.
+  const seededSettlements = await buildSeededSettlementsBlock(campaign, location).catch((err) => {
+    log.warn({ err: err?.message, campaignId }, 'seededSettlements block failed');
+    return null;
+  });
 
   // Phase 7 — travel block. Only built when the classifier flagged a travel
   // intent AND we can resolve both endpoints. Null if no path or trivial
@@ -698,6 +711,17 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     });
   }
 
+  // Phase C — saturation-curve hint. Compute settlement budget (against the
+  // campaign's worldBounds + settlementCaps) and NPC budget (key cap vs
+  // ambient + background for the CURRENT top-level settlement). Pushes
+  // premium toward reuse when either budget gets tight. Null when we can't
+  // compute (missing caps / bounds) so the context block stays quiet.
+  const saturation = await buildSaturationHint({
+    campaign,
+    location,
+    ambientNpcCount: ambientNpcs.length,
+  }).catch(() => null);
+
   if (
     ambientNpcs.length === 0
     && recentEvents.length === 0
@@ -707,6 +731,8 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     && !settlement
     && !travel
     && !dungeon
+    && !seededSettlements
+    && !saturation
   ) {
     return null;
   }
@@ -792,7 +818,147 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
       : null,
     travel,
     dungeon,
+    seededSettlements,
+    saturation,
   };
+}
+
+/**
+ * Phase C — compute saturation budgets for the current campaign + location.
+ *
+ * Settlement budget: (cap - existing) / cap across the campaign's worldBounds.
+ *   Capital excluded (global, shared across campaigns).
+ *
+ * NPC budget: (cap - occupants) / cap for the CURRENT top-level settlement.
+ *   Uses parent settlement when the player is in a sublocation.
+ *
+ * Returns null when neither can be computed (missing caps / bounds / location
+ * cap). Otherwise returns { settlementBudget, npcBudget, level: 'tight'|'watch'|null }.
+ * `level` is the thresholded tier — 'tight' at <0.2, 'watch' at <0.5 on
+ * whichever ratio is lower. null means no hint needed.
+ */
+async function buildSaturationHint({ campaign, location, ambientNpcCount = 0 }) {
+  let caps = null;
+  let bounds = null;
+  try { caps = campaign?.settlementCaps ? JSON.parse(campaign.settlementCaps) : null; } catch { caps = null; }
+  try { bounds = campaign?.worldBounds ? JSON.parse(campaign.worldBounds) : null; } catch { bounds = null; }
+
+  let settlementBudget = null;
+  if (caps && bounds && Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX)) {
+    const capTotal = ['hamlet', 'village', 'town', 'city']
+      .reduce((a, t) => a + (Number(caps[t]) || 0), 0);
+    if (capTotal > 0) {
+      const existing = await prisma.worldLocation.count({
+        where: {
+          parentLocationId: null,
+          locationType: { in: ['hamlet', 'village', 'town', 'city'] },
+          regionX: { gte: bounds.minX, lte: bounds.maxX },
+          regionY: { gte: bounds.minY, lte: bounds.maxY },
+        },
+      });
+      settlementBudget = Math.max(0, Math.min(1, (capTotal - existing) / capTotal));
+    }
+  }
+
+  // Resolve parent settlement for NPC budget (sublocation → walk up).
+  let settlementForNpcs = location;
+  if (location.parentLocationId) {
+    const parent = await prisma.worldLocation.findUnique({
+      where: { id: location.parentLocationId },
+      select: { id: true, maxKeyNpcs: true, locationType: true },
+    });
+    if (parent) settlementForNpcs = parent;
+  }
+  let npcBudget = null;
+  const npcCap = Number(settlementForNpcs?.maxKeyNpcs) || 0;
+  if (npcCap > 0) {
+    const keyNpcCount = await prisma.worldNPC.count({
+      where: { currentLocationId: settlementForNpcs.id, keyNpc: true, alive: true },
+    }).catch(() => ambientNpcCount);
+    npcBudget = Math.max(0, Math.min(1, (npcCap - keyNpcCount) / npcCap));
+  }
+
+  if (settlementBudget === null && npcBudget === null) return null;
+
+  const lowest = Math.min(
+    settlementBudget ?? 1,
+    npcBudget ?? 1,
+  );
+  let level = null;
+  if (lowest < 0.2) level = 'tight';
+  else if (lowest < 0.5) level = 'watch';
+
+  return {
+    settlementBudget,
+    npcBudget,
+    level,
+  };
+}
+
+/**
+ * Phase A — build SEEDED SETTLEMENTS block for a campaign. Lists every
+ * settlement-type WorldLocation inside the campaign's worldBounds (or loosely
+ * anchored via discovered edges if bounds are unset) plus the global capital
+ * Yeralden. Returns null when bounds are unset OR no settlements exist yet.
+ *
+ * The premium prompt uses this to prefer existing settlements over inventing
+ * new ones. Mid-play settlement creation is already blocked in
+ * `processTopLevelEntry` — this block is the carrot to the stick.
+ */
+async function buildSeededSettlementsBlock(campaign, currentLocation) {
+  const SETTLEMENT_TYPES = ['hamlet', 'village', 'town', 'city', 'capital'];
+  let bounds = null;
+  try {
+    bounds = campaign?.worldBounds ? JSON.parse(campaign.worldBounds) : null;
+  } catch { bounds = null; }
+
+  // Fetch capital (always visible) + in-bounds settlements.
+  const capital = await prisma.worldLocation.findFirst({
+    where: { locationType: 'capital', regionX: 0, regionY: 0 },
+    select: { canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
+  });
+
+  let settlementsInBounds = [];
+  if (bounds && Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX)) {
+    settlementsInBounds = await prisma.worldLocation.findMany({
+      where: {
+        parentLocationId: null,
+        locationType: { in: SETTLEMENT_TYPES.filter((t) => t !== 'capital') },
+        regionX: { gte: bounds.minX, lte: bounds.maxX },
+        regionY: { gte: bounds.minY, lte: bounds.maxY },
+      },
+      select: { canonicalName: true, locationType: true, regionX: true, regionY: true, description: true },
+      take: 40,
+    });
+  }
+
+  const all = [];
+  if (capital) all.push({ ...capital, isCapital: true });
+  for (const s of settlementsInBounds) all.push({ ...s, isCapital: false });
+
+  if (all.length === 0) return null;
+
+  // Distance from current location (approx km) so premium understands travel scale.
+  const cx = currentLocation?.regionX ?? 0;
+  const cy = currentLocation?.regionY ?? 0;
+  const entries = all.map((s) => {
+    const dx = (s.regionX ?? 0) - cx;
+    const dy = (s.regionY ?? 0) - cy;
+    const distanceKm = Math.round(Math.sqrt(dx * dx + dy * dy) * 10) / 10;
+    return {
+      name: s.canonicalName,
+      type: s.locationType,
+      isCapital: s.isCapital,
+      distanceKm,
+      description: s.description || null,
+    };
+  });
+  entries.sort((a, b) => a.distanceKm - b.distanceKm);
+
+  let caps = null;
+  try { caps = campaign?.settlementCaps ? JSON.parse(campaign.settlementCaps) : null; } catch { caps = null; }
+
+  return { entries, caps };
 }
 
 function priorityRank(p) {
@@ -884,6 +1050,11 @@ async function buildTravelBlock({ campaignId, userId, startLocation, targetName,
     }).catch(() => null);
   }
 
+  // Phase F — montage mode: when the known-path trip is > 5 km AND sensible/
+  // direct, force ONE compressed scene instead of multi-scene wandering.
+  // Pre-rolls are suppressed by the caller when this flag is set.
+  const montage = (detour === 'direct' || detour === 'sensible') && route.distance > 5;
+
   return {
     kind: 'path',
     startName: startLocation.canonicalName,
@@ -898,6 +1069,7 @@ async function buildTravelBlock({ campaignId, userId, startLocation, targetName,
     difficulty: worstDifficulty,
     terrains: [...totalTerrain],
     candidateEvents,
+    montage,
   };
 }
 
@@ -987,7 +1159,7 @@ async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl') {
  * children → groups by slotKind → computes budget. Returns null for
  * dungeons (seed generator owns them) or when no parent context makes sense.
  */
-async function buildSettlementBlock(currentLocation) {
+async function buildSettlementBlock(currentLocation, difficultyTier = null) {
   if (!currentLocation) return null;
   // If current is a sublocation, walk up to the parent settlement.
   let settlement = currentLocation;
@@ -1013,10 +1185,12 @@ async function buildSettlementBlock(currentLocation) {
     optional: children.filter((c) => c.slotKind === 'optional'),
     custom:   children.filter((c) => c.slotKind === 'custom'),
   };
+  const customCap = effectiveCustomCap(type, difficultyTier);
   const budget = computeSubLocationBudget({
     parentLocationType: type,
     childrenBySlot,
     maxSubLocations: settlement.maxSubLocations || template.maxSubLocations || 5,
+    customCap,
   });
 
   return {

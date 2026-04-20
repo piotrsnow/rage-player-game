@@ -183,6 +183,38 @@ describe('apiClient cookie-based auth', () => {
     expect(fetchMock.mock.calls.length).toBe(1);
   });
 
+  it('fetchAuthed refreshes on 401 and retries with the fresh token', async () => {
+    const responses = [
+      { ok: false, status: 401, headers: { get: () => 'application/json' }, json: async () => ({ error: 'expired' }) },
+      { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ accessToken: 'fresh-stream', csrfToken: 'c', user: { id: 'u1' } }) },
+      { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ streamed: true }) },
+    ];
+    fetchMock.mockImplementation(() => Promise.resolve(responses.shift()));
+
+    const res = await apiClient.fetchAuthed('http://test/v1/ai/generate-campaign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.ok).toBe(true);
+    expect(fetchMock.mock.calls.length).toBe(3);
+    expect(fetchMock.mock.calls[1][0]).toContain('/v1/auth/refresh');
+    expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe('Bearer fresh-stream');
+  });
+
+  it('fetchAuthed clears state when refresh also fails', async () => {
+    const responses = [
+      { ok: false, status: 401, headers: { get: () => 'application/json' }, json: async () => ({ error: 'expired' }) },
+      { ok: false, status: 401, headers: { get: () => 'application/json' }, json: async () => ({ error: 'no refresh' }) },
+    ];
+    fetchMock.mockImplementation(() => Promise.resolve(responses.shift()));
+
+    await expect(
+      apiClient.fetchAuthed('http://test/v1/ai/generate-campaign', { method: 'POST' }),
+    ).rejects.toThrow(/session expired/i);
+    expect(apiClient.getToken()).toBe('');
+  });
+
   it('/v1 paths remain prefixed as before', async () => {
     await apiClient.get('/campaigns');
     const [url] = lastCall();

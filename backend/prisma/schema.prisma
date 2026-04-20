@@ -80,6 +80,10 @@ model Campaign {
   // Scene systemPrompt and selectBestiaryEncounter both respect this cap so
   // a fresh PC can't be thrown against a dragon unless the player chose it.
   difficultyTier      String  @default("low")
+  // Phase A (saturation-biased seeding) — populated by worldSeeder when
+  // livingWorldEnabled. JSON strings so shape can evolve without migrations.
+  settlementCaps      String? // JSON: { hamlet: n, village: n, town: n, city: n } — capital is global, not tracked here
+  worldBounds         String? // JSON: { minX, maxX, minY, maxY } — km, centered on (0,0) so global capital Yeralden is reachable
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

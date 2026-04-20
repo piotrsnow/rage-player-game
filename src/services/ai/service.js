@@ -119,13 +119,9 @@ async function drainCampaignStream(response, { onPartialJson } = {}) {
 export const aiService = {
   async generateCampaign(settings, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium', { explicitModel = null, onPartialScene = null } = {}) {
     const baseUrl = apiClient.getBaseUrl();
-    const token = apiClient.getToken();
-    const response = await fetch(`${baseUrl}/v1/ai/generate-campaign`, {
+    const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/generate-campaign`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ settings, language, provider, model: explicitModel || null }),
     });
 
@@ -179,14 +175,10 @@ export const aiService = {
     onEvent = null,
   } = {}) {
     const baseUrl = apiClient.getBaseUrl();
-    const token = apiClient.getToken();
 
-    const response = await fetch(`${baseUrl}/v1/ai/campaigns/${campaignId}/generate-scene-stream`, {
+    const response = await apiClient.fetchAuthed(`${baseUrl}/v1/ai/campaigns/${campaignId}/generate-scene-stream`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         playerAction: playerAction || '',
         provider,

@@ -85,6 +85,14 @@ export default function Inventory({ character, items = [], money, equipped = {},
           const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
           const eqSlot = getEquippedSlot(item, equipped);
+          const equippableSlots = getEquippableSlots(item);
+          const handleDoubleClick = () => {
+            if (eqSlot) {
+              onUnequipItem?.(eqSlot);
+            } else if (equippableSlots.length > 0) {
+              onEquipItem?.(item.id, equippableSlots[0]);
+            }
+          };
           return (
             <Tooltip
               key={item.id}
@@ -94,8 +102,9 @@ export default function Inventory({ character, items = [], money, equipped = {},
               tooltipClassName="!max-w-none !p-3"
             >
               <div
-                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform select-none ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
                 onClick={() => setSelectedItemId(isSelected ? null : item.id)}
+                onDoubleClick={handleDoubleClick}
               >
                 <InventoryImage
                   imageUrl={resolvedImageUrl}

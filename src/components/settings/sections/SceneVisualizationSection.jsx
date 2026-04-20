@@ -135,6 +135,19 @@ export default function SceneVisualizationSection({ settings, updateSettings, up
 
       <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
         <div>
+          <p className="font-headline text-tertiary">{t('settings.itemImages')}</p>
+          <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+            {t('settings.itemImagesDesc')}
+          </p>
+        </div>
+        <Toggle
+          checked={settings.itemImagesEnabled !== false}
+          onClick={() => updateSettings({ itemImagesEnabled: !(settings.itemImagesEnabled !== false) })}
+        />
+      </div>
+
+      <div className="bg-surface-container-high/40 p-6 rounded-sm border-b border-outline-variant/15 flex items-center justify-between group hover:bg-surface-container-high transition-colors">
+        <div>
           <p className="font-headline text-tertiary">{t('settings.needsSystem')}</p>
           <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
             {t('settings.needsSystemDesc')}

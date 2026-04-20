@@ -55,6 +55,7 @@ export function decideSublocationAdmission({
   maxSubLocations = 5,
   slotType,
   name,
+  customCap = null,
 }) {
   const classified = classifySublocation({ slotType, name, parentLocationType });
 
@@ -94,7 +95,13 @@ export function decideSublocationAdmission({
     };
   }
 
-  // custom — no numeric cap per user spec; name distinctiveness already verified
+  // custom — Phase E: bounded by effectiveCustomCap (template.customCap scaled
+  // by campaign difficultyTier). Caller passes the pre-computed cap; falls
+  // back to template.customCap when omitted.
+  const effectiveCap = typeof customCap === 'number' ? customCap : (template.customCap || 0);
+  if ((childrenBySlot.custom?.length || 0) >= effectiveCap) {
+    return { admission: 'reject', reason: 'custom_cap_exceeded' };
+  }
   return {
     admission: 'custom',
     slotType: classified.slotType || null,
@@ -116,6 +123,7 @@ export function computeSubLocationBudget({
   parentLocationType,
   childrenBySlot = { required: [], optional: [], custom: [] },
   maxSubLocations = 5,
+  customCap = null,
 }) {
   const template = getTemplate(parentLocationType);
   const filledRequired = childrenBySlot.required || [];
@@ -128,6 +136,8 @@ export function computeSubLocationBudget({
   const totalFilled = filledRequired.length + filledOptional.length + filledCustom.length;
   const capacityRemaining = Math.max(0, maxSubLocations - totalFilled);
 
+  const effectiveCustom = typeof customCap === 'number' ? customCap : (template.customCap || 0);
+
   return {
     filled: {
       required: filledRequired,
@@ -137,5 +147,6 @@ export function computeSubLocationBudget({
     openOptional,
     capacityRemaining,
     optionalBudgetRemaining: Math.max(0, (template.optionalCap || 0) - filledOptional.length),
+    customBudgetRemaining: Math.max(0, effectiveCustom - filledCustom.length),
   };
 }

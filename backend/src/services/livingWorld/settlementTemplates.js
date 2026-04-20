@@ -17,6 +17,7 @@ export const SETTLEMENT_TEMPLATES = {
     required: [],
     optional: ['tavern', 'elder_home'],
     optionalCap: 2,
+    customCap: 0,
   },
   village: {
     maxKeyNpcs: 10,
@@ -24,6 +25,7 @@ export const SETTLEMENT_TEMPLATES = {
     required: ['tavern'],
     optional: ['church', 'blacksmith', 'alchemist', 'market', 'watchtower', 'mill', 'elder_home'],
     optionalCap: 3,
+    customCap: 1,
   },
   town: {
     maxKeyNpcs: 20,
@@ -31,6 +33,7 @@ export const SETTLEMENT_TEMPLATES = {
     required: ['tavern', 'market'],
     optional: ['church', 'blacksmith', 'alchemist', 'barracks', 'temple', 'guild_hall', 'bathhouse', 'library'],
     optionalCap: 6,
+    customCap: 2,
   },
   city: {
     maxKeyNpcs: 40,
@@ -41,6 +44,7 @@ export const SETTLEMENT_TEMPLATES = {
       'arena', 'jail', 'docks', 'magic_shop', 'apothecary', 'scribe', 'stable', 'bank',
     ],
     optionalCap: 12,
+    customCap: 3,
   },
   capital: {
     maxKeyNpcs: 70,
@@ -52,6 +56,7 @@ export const SETTLEMENT_TEMPLATES = {
       'academy', 'embassy', 'hall_of_justice', 'garrison',
     ],
     optionalCap: 18,
+    customCap: 5,
   },
   wilderness: {
     maxKeyNpcs: 3,
@@ -59,6 +64,7 @@ export const SETTLEMENT_TEMPLATES = {
     required: [],
     optional: ['camp', 'ruin', 'cave'],
     optionalCap: 3,
+    customCap: 0,
   },
   // Dungeons are handled by dungeonSeedGenerator — rooms are custom + deterministic,
   // slot system doesn't apply. The template is here so callers can query
@@ -76,7 +82,26 @@ const DEFAULT_TEMPLATE = {
   required: [],
   optional: [],
   optionalCap: 0,
+  customCap: 0,
 };
+
+// Phase E — custom-sublocation budget scales with campaign difficulty. Low-tier
+// campaigns get clean slot-only settlements; deadly tiers see rich custom
+// flavor. Applied as `floor(template.customCap * multiplier)` at admission
+// time — not stored, computed per-request.
+export const DIFFICULTY_CUSTOM_CAP_MULTIPLIER = {
+  low:    0,
+  medium: 1.0,
+  high:   1.5,
+  deadly: 2.0,
+};
+
+export function effectiveCustomCap(locationType, difficultyTier) {
+  const base = getTemplate(locationType).customCap || 0;
+  const mult = DIFFICULTY_CUSTOM_CAP_MULTIPLIER[String(difficultyTier || '').toLowerCase()];
+  if (typeof mult !== 'number') return base; // unknown tier → base
+  return Math.floor(base * mult);
+}
 
 export function getTemplate(locationType) {
   return SETTLEMENT_TEMPLATES[locationType] || DEFAULT_TEMPLATE;

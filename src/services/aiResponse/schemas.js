@@ -365,6 +365,25 @@ export const NpcIntroducedSchema = z.object({
   speechStyle: z.string().optional().default(''),
 }).passthrough();
 
+// Wrap-up dialogue emitted when a quest objective (or the entire quest) resolves
+// this scene. Plays AFTER the main dialogueSegments as a short epilogue.
+// Accepts a plain string for robustness (coerced to narrator) OR a structured object.
+export const QuestWrapupSchema = z.preprocess(
+  (val) => {
+    if (val == null) return null;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      return trimmed ? { text: trimmed, speakerType: 'narrator', speakerName: null } : null;
+    }
+    return val;
+  },
+  z.object({
+    text: z.string().min(1).max(600),
+    speakerType: z.enum(['narrator', 'npc', 'companion']).default('narrator'),
+    speakerName: z.string().max(80).nullable().optional(),
+  }).passthrough().nullable(),
+).nullable().optional();
+
 export const SceneResponseSchema = z.object({
   narrative: z.string().min(1),
   scenePacing: z.enum(SCENE_PACING_TYPES).optional().default('exploration'),
@@ -381,6 +400,7 @@ export const SceneResponseSchema = z.object({
   diceRoll: DiceRollSchema,
   cutscene: CutsceneSchema,
   dilemma: DilemmaSchema,
+  dialogueIfQuestTargetCompleted: QuestWrapupSchema,
 }).passthrough();
 
 const CharacterSuggestionSchema = z.object({

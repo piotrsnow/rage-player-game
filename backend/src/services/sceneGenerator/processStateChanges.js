@@ -16,7 +16,7 @@ import { findOrCreateWorldLocation, createSublocation } from '../livingWorld/wor
 import { decideSublocationAdmission } from '../livingWorld/topologyGuard.js';
 import { computeNewPosition, euclidean } from '../livingWorld/positionCalculator.js';
 import { upsertEdge } from '../livingWorld/travelGraph.js';
-import { getTemplate } from '../livingWorld/settlementTemplates.js';
+import { getTemplate, effectiveCustomCap } from '../livingWorld/settlementTemplates.js';
 import { applyDungeonRoomState } from '../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../livingWorld/fameService.js';
@@ -205,6 +205,18 @@ async function processLocationChanges(campaignId, newLocations, { prevLoc = null
     try { anchor = await findOrCreateWorldLocation(prevLoc); } catch { /* ignore */ }
   }
 
+  // Phase F — fetch worldBounds once per batch for out-of-bounds rejection
+  // in processTopLevelEntry. Sublocations inherit parent position so they
+  // don't need the check. Missing bounds → legacy behaviour (no clamp).
+  let bounds = null;
+  try {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { worldBounds: true },
+    });
+    if (campaign?.worldBounds) bounds = JSON.parse(campaign.worldBounds);
+  } catch { bounds = null; }
+
   for (const entry of newLocations) {
     if (!entry?.name || typeof entry.name !== 'string') continue;
 
@@ -212,7 +224,7 @@ async function processLocationChanges(campaignId, newLocations, { prevLoc = null
       if (entry.parentLocationName) {
         await processSublocationEntry(campaignId, entry);
       } else if (entry.directionFromCurrent && entry.travelDistance) {
-        await processTopLevelEntry(campaignId, entry, anchor);
+        await processTopLevelEntry(campaignId, entry, anchor, bounds);
       } else {
         log.info(
           { campaignId, name: entry.name },
@@ -242,12 +254,28 @@ async function processSublocationEntry(campaignId, entry) {
     custom: children.filter((c) => c.slotKind === 'custom'),
   };
 
+  // Phase E — effective customCap scales by the REQUESTING campaign's
+  // difficultyTier (capital is global but each campaign's additions are
+  // budgeted against its own tier). Fetch tier lazily; if missing, tier is
+  // null and effectiveCustomCap falls back to the template's base cap.
+  let difficultyTier = null;
+  try {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { difficultyTier: true },
+    });
+    difficultyTier = campaign?.difficultyTier || null;
+  } catch { /* non-fatal */ }
+  const parentLocationType = parent.locationType || 'generic';
+  const customCap = effectiveCustomCap(parentLocationType, difficultyTier);
+
   const decision = decideSublocationAdmission({
-    parentLocationType: parent.locationType || 'generic',
+    parentLocationType,
     childrenBySlot,
     maxSubLocations: parent.maxSubLocations || 5,
     slotType: entry.slotType || null,
     name: entry.name,
+    customCap,
   });
 
   if (decision.admission === 'reject') {
@@ -273,12 +301,28 @@ async function processSublocationEntry(campaignId, entry) {
   );
 }
 
-async function processTopLevelEntry(campaignId, entry, anchor) {
+// Phase A/B — settlement types are seeded at campaign creation (see
+// backend/src/services/livingWorld/worldSeeder.js). Mid-play wander into
+// unexplored terrain may only yield wilderness/ruins/camps/caves/forests/dungeons;
+// new hamlets/villages/towns/cities/capitals are rejected here so the world stays
+// bounded. This function only runs when livingWorldEnabled is true (caller
+// already gates on it), so the guard doesn't need the flag.
+const BLOCKED_MIDPLAY_LOCATION_TYPES = new Set(['hamlet', 'village', 'town', 'city', 'capital']);
+
+async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
   if (!anchor) {
     log.warn({ campaignId, name: entry.name }, 'Top-level location skipped — no anchor (prevLoc)');
     return;
   }
   const locationType = entry.locationType || 'generic';
+
+  if (BLOCKED_MIDPLAY_LOCATION_TYPES.has(locationType)) {
+    log.info(
+      { campaignId, name: entry.name, locationType },
+      'Top-level settlement creation blocked mid-play (creation-time-only in Living World)',
+    );
+    return;
+  }
 
   // Existing top-level + sublocations sharing anchor-space coords. We include
   // both top-level rows AND sublocations because sublocations inherit parent
@@ -300,6 +344,22 @@ async function processTopLevelEntry(campaignId, entry, anchor) {
   if (!result) {
     log.warn({ campaignId, name: entry.name }, 'computeNewPosition returned null — bad direction/distance');
     return;
+  }
+
+  // Phase F — bounds enforcement. Keep the player-discoverable top-level
+  // sprawl inside the campaign's worldBounds (set by worldSeeder). Silent
+  // reject so premium's narration still lands; BE just doesn't materialize
+  // the row. Merge candidates within bounds stay reachable normally.
+  if (bounds && Number.isFinite(bounds.minX)) {
+    const { regionX, regionY } = result.position;
+    if (regionX < bounds.minX || regionX > bounds.maxX
+      || regionY < bounds.minY || regionY > bounds.maxY) {
+      log.info(
+        { campaignId, name: entry.name, position: result.position, bounds },
+        'Top-level location rejected — outside campaign worldBounds',
+      );
+      return;
+    }
   }
 
   // Merge check: if the raw position landed near an existing location AND
@@ -509,17 +569,74 @@ async function processCodexUpdates(campaignId, codexUpdates) {
   }
 }
 
+// Resolve a raw quest-id string (as emitted by the premium model) to a real
+// CampaignQuest row. Premium sees quest names only (not ids) in the prompt,
+// so its `completedQuests`/`questUpdates[].questId` entries may be names,
+// hallucinated ids, or anything in between. Strategy:
+//   1) exact `questId` match among active quests
+//   2) case-insensitive `name` match among active quests
+//   3) if exactly one active quest exists, use it (player-facing UI always
+//      shows a single current quest, so one-active is the common case)
+//   4) otherwise warn and return null — ambiguity is never resolved silently
+async function resolveActiveQuest(campaignId, rawId) {
+  const activeQuests = await prisma.campaignQuest.findMany({
+    where: { campaignId, status: 'active' },
+  });
+  if (activeQuests.length === 0) return null;
+
+  const normalized = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
+
+  const exact = activeQuests.find((q) => q.questId === rawId);
+  if (exact) return exact;
+
+  if (normalized) {
+    const byName = activeQuests.find((q) => (q.name || '').trim().toLowerCase() === normalized);
+    if (byName) {
+      log.info({ campaignId, rawId, resolved: byName.questId }, 'Quest id resolved by name match');
+      return byName;
+    }
+  }
+
+  if (activeQuests.length === 1) {
+    log.info({ campaignId, rawId, resolved: activeQuests[0].questId }, 'Quest id resolved via single-active fallback');
+    return activeQuests[0];
+  }
+
+  log.warn(
+    { campaignId, rawId, activeCount: activeQuests.length, activeNames: activeQuests.map((q) => q.name) },
+    'Quest id from premium did not match any active quest — ignored',
+  );
+  return null;
+}
+
+function resolveObjective(objectives, rawObjectiveId) {
+  if (!Array.isArray(objectives) || objectives.length === 0) return null;
+  const exact = objectives.find((o) => o.id === rawObjectiveId);
+  if (exact) return exact;
+  const normalized = typeof rawObjectiveId === 'string' ? rawObjectiveId.trim().toLowerCase() : '';
+  if (normalized) {
+    const byDesc = objectives.find((o) => (o.description || '').trim().toLowerCase() === normalized);
+    if (byDesc) return byDesc;
+  }
+  const pending = objectives.filter((o) => !o.completed);
+  if (pending.length === 1) return pending[0];
+  return null;
+}
+
 async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCompletedQuestIds = []) {
   const touchedQuestIds = new Set();
   for (const update of questUpdates) {
     try {
-      const quest = await prisma.campaignQuest.findFirst({
-        where: { campaignId, questId: update.questId },
-      });
+      const quest = await resolveActiveQuest(campaignId, update.questId);
       if (!quest) continue;
       const objectives = JSON.parse(quest.objectives || '[]');
+      const targetObj = resolveObjective(objectives, update.objectiveId);
+      if (!targetObj) {
+        log.warn({ campaignId, questId: quest.questId, objectiveId: update.objectiveId }, 'Objective id from premium did not match — ignored');
+        continue;
+      }
       const updated = objectives.map(obj => {
-        if (obj.id !== update.objectiveId) return obj;
+        if (obj.id !== targetObj.id) return obj;
         const next = { ...obj };
         if (update.completed) next.completed = true;
         if (update.addProgress) {
@@ -532,13 +649,16 @@ async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCom
         where: { id: quest.id },
         data: { objectives: JSON.stringify(updated) },
       });
-      if (update.completed) touchedQuestIds.add(update.questId);
+      if (update.completed) touchedQuestIds.add(quest.questId);
     } catch (err) {
       log.error({ err, campaignId, questId: update.questId, objectiveId: update.objectiveId }, 'Failed to update quest objective');
     }
   }
 
-  // Auto-complete quests where all objectives are now done.
+  // Auto-complete quests where all objectives are now done. Returns list of
+  // auto-completed questIds so the caller can merge them into
+  // stateChanges.completedQuests (audit + world-impact gate depend on that).
+  const autoCompleted = [];
   const skip = new Set(alreadyCompletedQuestIds);
   for (const questId of touchedQuestIds) {
     if (skip.has(questId)) continue;
@@ -553,30 +673,37 @@ async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCom
           where: { id: quest.id },
           data: { status: 'completed', completedAt: new Date() },
         });
+        autoCompleted.push(questId);
         log.info({ campaignId, questId }, 'Quest auto-completed — all objectives done');
       }
     } catch (err) {
       log.error({ err, campaignId, questId }, 'Failed to auto-complete quest');
     }
   }
+  return autoCompleted;
 }
 
+// Returns the list of ACTUALLY-resolved questIds so callers (e.g. world
+// impact audit, goal reassignment) can use real ids instead of whatever
+// premium emitted. Unresolved entries are dropped with a warn already logged
+// by resolveActiveQuest.
 async function processQuestStatusChange(campaignId, questIds, status) {
-  for (const questId of questIds) {
+  const resolvedIds = [];
+  for (const rawId of questIds) {
     try {
-      const quest = await prisma.campaignQuest.findFirst({
-        where: { campaignId, questId },
-      });
+      const quest = await resolveActiveQuest(campaignId, rawId);
       if (quest) {
         await prisma.campaignQuest.update({
           where: { id: quest.id },
           data: { status, completedAt: new Date() },
         });
+        resolvedIds.push(quest.questId);
       }
     } catch (err) {
-      log.error({ err, campaignId, questId, status }, 'Failed to update quest status');
+      log.error({ err, campaignId, questId: rawId, status }, 'Failed to update quest status');
     }
   }
+  return resolvedIds;
 }
 
 /**
@@ -788,16 +915,37 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processCodexUpdates(campaignId, stateChanges.codexUpdates);
   }
 
-  if (stateChanges.questUpdates?.length) {
-    await processQuestObjectiveUpdates(campaignId, stateChanges.questUpdates, stateChanges.completedQuests || []);
-  }
-
+  // Premium sees quest *names* in its prompt (not ids), so completedQuests
+  // and questUpdates[].questId may carry names or hallucinated ids. Route
+  // everything through resolveActiveQuest so downstream (audit, world-impact
+  // gate, goal reassigner) works against real CampaignQuest.questId values.
+  //
+  // Ordering matters: resolve completedQuests BEFORE questUpdates. Otherwise
+  // an auto-completion during questUpdates leaves only one active quest,
+  // and the single-active fallback in completedQuests could wrongly close
+  // the wrong quest.
   if (stateChanges.completedQuests?.length) {
-    await processQuestStatusChange(campaignId, stateChanges.completedQuests, 'completed');
+    stateChanges.completedQuests = await processQuestStatusChange(
+      campaignId, stateChanges.completedQuests, 'completed',
+    );
   }
 
   if (stateChanges.failedQuests?.length) {
-    await processQuestStatusChange(campaignId, stateChanges.failedQuests, 'failed');
+    stateChanges.failedQuests = await processQuestStatusChange(
+      campaignId, stateChanges.failedQuests, 'failed',
+    );
+  }
+
+  if (stateChanges.questUpdates?.length) {
+    const autoCompleted = await processQuestObjectiveUpdates(
+      campaignId, stateChanges.questUpdates, stateChanges.completedQuests || [],
+    );
+    if (autoCompleted.length > 0) {
+      if (!Array.isArray(stateChanges.completedQuests)) stateChanges.completedQuests = [];
+      for (const id of autoCompleted) {
+        if (!stateChanges.completedQuests.includes(id)) stateChanges.completedQuests.push(id);
+      }
+    }
   }
 
   // Major-event gate (Zakres C). Two paths fire a global WorldEvent:

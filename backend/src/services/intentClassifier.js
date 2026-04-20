@@ -358,7 +358,8 @@ Return ONLY valid JSON matching this schema:
   "roll_skill": "skill name for dice check" or null,
   "roll_difficulty": "easy" or "medium" or "hard" or "veryHard" or "extreme" or null,
   "combat_enemies": { "location": string, "budget": number, "maxDifficulty": string, "count": number, "race": string or null } or null,
-  "clear_combat": true/false
+  "clear_combat": true/false,
+  "quest_offer_likely": true/false
 }
 Available skills: ${SKILL_NAMES_FOR_NANO}
 
@@ -390,7 +391,13 @@ clear_combat rules — set to true ONLY when the player action is an UNAMBIGUOUS
 - Combat is part of a larger narrative (ambush, negotiations breaking down)
 - Unknown threat approaches
 - Not sure if target is hostile or friendly
-When in doubt, set false.`;
+When in doubt, set false.
+
+quest_offer_likely rules — set to true ONLY when the player action reads as actively soliciting paid work, a mission, or a contract from someone in the scene:
+- "pytam o pracę / zlecenie / robotę", "szukam zlecenia", "może masz dla mnie zadanie?"
+- "ask for a job / task / work / bounty / contract", "any odd jobs?", "looking for work"
+- "rozmawiam z karczmarzem o tym co się dzieje w okolicy" only when the player explicitly follows up with a jobs/rumour request.
+Set false for: generic conversation, buying, flirting, threatening, idle small-talk, planning. When in doubt, false.`;
 
 /**
  * Call nano model to select which context to expand for a freeform player action.
@@ -516,6 +523,7 @@ function normalizeSelection(raw) {
     roll_difficulty: VALID_DIFFICULTIES.includes(raw.roll_difficulty) ? raw.roll_difficulty : null,
     combat_enemies: null,
     clear_combat: false,
+    quest_offer_likely: false,
   };
 
   // Validate combat_enemies
@@ -529,6 +537,7 @@ function normalizeSelection(raw) {
     };
   }
   result.clear_combat = raw.clear_combat === true;
+  result.quest_offer_likely = raw.quest_offer_likely === true;
 
   return result;
 }
