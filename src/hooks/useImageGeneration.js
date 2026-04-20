@@ -14,17 +14,19 @@ export function useImageGeneration() {
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
 
-  const { sceneVisualization, imageProvider, stabilityApiKey, openaiApiKey, geminiApiKey } = settings;
+  const { sceneVisualization, imageProvider, stabilityApiKey, openaiApiKey, geminiApiKey, itemImagesEnabled } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
+  const itemImageGenEnabled = itemImagesEnabled !== false;
   const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
   const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
 
   const generateItemImageForInventoryItem = useCallback(
     async (item, options = {}) => {
       if (!item || typeof item !== 'object') return null;
+      if (!itemImageGenEnabled) return null;
       const itemId = typeof item.id === 'string' ? item.id : '';
       if (!itemId || item.imageUrl) return item.imageUrl || null;
 
@@ -79,7 +81,7 @@ export function useImageGeneration() {
         activeLocks.delete(itemId);
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, dispatch, autoSave]
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, dispatch, autoSave]
   );
 
   const ensureMissingInventoryImages = useCallback(

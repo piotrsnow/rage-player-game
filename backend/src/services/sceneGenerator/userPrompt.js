@@ -85,10 +85,10 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
     if (speechMatch) {
       const speechText = speechMatch[1];
       const actionText = playerAction.replace(speechMatch[0], '').trim();
-      parts.push(`Player ACTION: ${actionText || playerAction}`);
+      parts.push(`Player input (the character's intent — GM decides outcomes): ${actionText || playerAction}`);
       parts.push(`Player SPEECH (include as dialogue segment with PC name): "${speechText}"`);
     } else {
-      parts.push(`Player action: ${playerAction}`);
+      parts.push(`Player input (the character's intent — GM decides outcomes): ${playerAction}`);
     }
   }
 

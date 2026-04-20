@@ -209,6 +209,47 @@ export const apiClient = {
     return response;
   },
 
+  // Low-level fetch that mirrors the refresh-on-401 behavior of `request()`
+  // but returns the raw Response. Use for SSE streams and other endpoints
+  // where the body is consumed by the caller (not parsed as JSON). Re-reads
+  // `_accessToken` on each attempt so a refresh between attempts is picked up.
+  async fetchAuthed(absoluteUrl, options = {}, _isRetry = false) {
+    const headers = { ...options.headers };
+    if (_accessToken) {
+      headers['Authorization'] = `Bearer ${_accessToken}`;
+    }
+
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!SAFE_METHODS.has(method)) {
+      const csrf = readCsrfTokenFromCookie();
+      if (csrf) headers['X-CSRF-Token'] = csrf;
+    }
+
+    const response = await fetch(absoluteUrl, {
+      ...options,
+      method,
+      headers,
+      credentials: 'include',
+    });
+
+    if (response.status === 401 && !_isRetry && !absoluteUrl.includes('/auth/refresh')) {
+      try {
+        await this.refreshAccessToken();
+      } catch {
+        clearAuthState();
+        throw new Error('Session expired. Please log in again.');
+      }
+      return this.fetchAuthed(absoluteUrl, options, true);
+    }
+
+    if (response.status === 401) {
+      clearAuthState();
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    return response;
+  },
+
   get(path) {
     return this.request(path, { method: 'GET' });
   },

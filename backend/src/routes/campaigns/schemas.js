@@ -11,6 +11,12 @@ export const CAMPAIGN_WRITE_SCHEMA = {
       maxItems: 20,
       items: { type: 'string', maxLength: 100 },
     },
+    // Living World (Phase 1) — experimental per-campaign flag
+    livingWorldEnabled: { type: 'boolean' },
+    worldTimeRatio: { type: 'number', minimum: 1, maximum: 240 },
+    worldTimeMaxGapDays: { type: 'integer', minimum: 1, maximum: 90 },
+    // G1 — encounter difficulty cap (enforced per character level in crud.js)
+    difficultyTier: { type: 'string', enum: ['low', 'medium', 'high', 'deadly'] },
   },
 };
 

@@ -7,11 +7,14 @@ import { shortId } from '../../utils/ids';
 export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
   const connect = useCallback(() => {
     const baseUrl = apiClient.getBaseUrl();
-    const token = apiClient.getToken();
-    if (baseUrl && token) {
-      return wsService.connect(baseUrl, token);
-    }
-    return Promise.resolve();
+    if (!baseUrl || !apiClient.getToken()) return Promise.resolve();
+    // Pass callbacks (not snapshots) so every open/reconnect reads the
+    // latest access token; refresh before each reconnect attempt.
+    return wsService.connect(
+      baseUrl,
+      () => apiClient.getToken(),
+      () => apiClient.refreshAccessToken(),
+    );
   }, []);
 
   const disconnect = useCallback(() => {

@@ -10,6 +10,7 @@ import fastifyCookie from '@fastify/cookie';
 import { config } from './config.js';
 import { corsPlugin } from './plugins/cors.js';
 import { authPlugin } from './plugins/auth.js';
+import { requireAdminPlugin } from './plugins/requireAdmin.js';
 import { csrfPlugin } from './plugins/csrf.js';
 import { buildRateLimitKey } from './plugins/rateLimitKey.js';
 import { idempotencyPlugin } from './plugins/idempotency.js';
@@ -29,6 +30,9 @@ import { multiplayerRoutes } from './routes/multiplayer.js';
 import { aiRoutes } from './routes/ai.js';
 import { gameDataRoutes } from './routes/gameData.js';
 import { internalRoutes } from './routes/internal.js';
+import { livingWorldRoutes } from './routes/livingWorld.js';
+import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
+import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
   stopRoomCleanup,
@@ -59,6 +63,7 @@ await fastify.register(helmet, {
 await fastify.register(corsPlugin);
 await fastify.register(fastifyCookie);
 await fastify.register(authPlugin);
+await fastify.register(requireAdminPlugin);
 await fastify.register(csrfPlugin);
 await fastify.register(websocket);
 
@@ -158,6 +163,24 @@ await fastify.register(async function gameDataScope(app) {
 // Cloud Tasks handler (OIDC-auth, no rate limit — dispatch rate controlled by queue config)
 await fastify.register(internalRoutes, { prefix: '/v1/internal' });
 
+// Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
+await fastify.register(async function livingWorldScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: '1 minute' } };
+  });
+  app.register(livingWorldRoutes);
+}, { prefix: '/v1/livingWorld' });
+
+// Phase 6 — admin observability + moderation routes. Gated on User.isAdmin
+// via requireAdmin plugin. Rate-limited conservatively — read-heavy, but
+// tick endpoints can fire nano calls.
+await fastify.register(async (app) => {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(adminLivingWorldRoutes);
+}, { prefix: '/v1/admin/livingWorld' });
+
 startRoomCleanup();
 
 if (existsSync(STATIC_ROOT)) {
@@ -189,6 +212,13 @@ try {
 
 loadActiveSessionsFromDB().catch((err) => {
   fastify.log.warn(`Failed to load active sessions from DB: ${err.message}`);
+});
+
+// Living World Phase 7 — ensure the canonical capital Yeralden + its named
+// NPCs exist. Idempotent, best-effort — schema drift or seed bugs must not
+// block the server from serving requests.
+seedWorld().catch((err) => {
+  fastify.log.warn(`World seed skipped: ${err.message}`);
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────

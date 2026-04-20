@@ -48,6 +48,9 @@ const NpcChangeSchema = z.object({
   relatedQuestIds: z.array(z.string()).optional().default([]),
   relationships: z.array(NpcRelationshipSchema).optional().default([]),
   canTrain: z.array(z.string()).optional(),
+  // G4 — set true when this NPC has just commented on the player's renown.
+  // Prevents the same acknowledgment from firing again in future scenes.
+  acknowledgedFame: z.boolean().optional(),
 }).passthrough();
 
 const TimeAdvanceSchema = z.object({
@@ -247,6 +250,33 @@ const StateChangesSchema = z.object({
   addScroll: z.string().nullable().optional(),
   newItems: z.array(InventoryItemSchema).optional().default([]),
   removeItems: z.array(z.any()).optional().default([]),
+  // Living World Phase 7 — per-room dungeon state flags. Written by premium
+  // when the player trips a trap / clears the encounter / takes the loot in
+  // a dungeon_room. All flags are optional — ignored if the current location
+  // is not a dungeon room.
+  dungeonRoom: z.object({
+    entryCleared: z.boolean().optional(),
+    trapSprung: z.boolean().optional(),
+    lootTaken: z.boolean().optional(),
+  }).passthrough().nullable().optional(),
+  // Living World Phase 7 — materialize new locations.
+  //   • Sublocation (inside a known parent settlement): parentLocationName=set.
+  //   • Top-level settlement/wilderness: parentLocationName=null +
+  //     directionFromCurrent + travelDistance relative to the scene's starting
+  //     location. BE resolves position via positionCalculator and auto-creates
+  //     the edge current→new.
+  newLocations: z.array(z.object({
+    name: z.string().min(1),
+    parentLocationName: z.string().nullable().optional(),
+    locationType: z.string().optional().default('interior'),
+    slotType: z.string().nullable().optional(),
+    description: z.string().optional().default(''),
+    directionFromCurrent: z.enum(['N','NE','E','SE','S','SW','W','NW']).nullable().optional(),
+    travelDistance: z.enum(['short','half_day','day','two_days','multi_day']).nullable().optional(),
+    connectsTo: z.array(z.string()).optional().default([]),
+    difficulty: z.enum(['safe','moderate','dangerous','deadly']).nullable().optional(),
+    terrainType: z.enum(['road','path','wilderness','river','mountain']).nullable().optional(),
+  }).passthrough()).optional().default([]),
   newQuests: z.array(QuestSchema).optional().default([]),
   completedQuests: z.array(z.string()).optional().default([]),
   questUpdates: z.array(QuestUpdateSchema).optional().default([]),
@@ -297,6 +327,25 @@ const StateChangesSchema = z.object({
   knowledgeUpdates: z.any().nullable().optional(),
   codexUpdates: z.array(CodexUpdateSchema).optional().default([]),
   campaignEnd: z.any().nullable().optional(),
+  // Living World — emitted when the player resolves the campaign's main
+  // conflict. Fires a GLOBAL WorldEvent visible to other campaigns in the
+  // same location. Minor victories and side quests MUST NOT use this.
+  campaignComplete: z.object({
+    title: z.string().min(1).max(120),
+    summary: z.string().min(1).max(800),
+    majorAchievements: z.array(z.string().max(200)).min(1).max(3),
+  }).passthrough().nullable().optional(),
+  // Major-event gate (Commit 3 / Zakres C). Premium flags scenes worth
+  // retelling across unrelated campaigns. Backend gates the promotion on
+  // objective evidence (named kill / main quest / deadly / dungeon / liberation).
+  worldImpact: z.enum(['minor', 'major']).nullable().optional(),
+  worldImpactReason: z.string().max(300).nullable().optional(),
+  locationLiberated: z.boolean().nullable().optional(),
+  defeatedDeadlyEncounter: z.boolean().nullable().optional(),
+  dungeonComplete: z.object({
+    name: z.string().min(1),
+    summary: z.string().max(400),
+  }).passthrough().nullable().optional(),
   narrativeSeeds: z.array(NarrativeSeedSchema).optional().default([]),
   resolvedSeeds: z.array(z.string()).optional().default([]),
   npcAgendas: z.array(NpcAgendaSchema).optional().default([]),
@@ -316,6 +365,25 @@ export const NpcIntroducedSchema = z.object({
   speechStyle: z.string().optional().default(''),
 }).passthrough();
 
+// Wrap-up dialogue emitted when a quest objective (or the entire quest) resolves
+// this scene. Plays AFTER the main dialogueSegments as a short epilogue.
+// Accepts a plain string for robustness (coerced to narrator) OR a structured object.
+export const QuestWrapupSchema = z.preprocess(
+  (val) => {
+    if (val == null) return null;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      return trimmed ? { text: trimmed, speakerType: 'narrator', speakerName: null } : null;
+    }
+    return val;
+  },
+  z.object({
+    text: z.string().min(1).max(600),
+    speakerType: z.enum(['narrator', 'npc', 'companion']).default('narrator'),
+    speakerName: z.string().max(80).nullable().optional(),
+  }).passthrough().nullable(),
+).nullable().optional();
+
 export const SceneResponseSchema = z.object({
   narrative: z.string().min(1),
   scenePacing: z.enum(SCENE_PACING_TYPES).optional().default('exploration'),
@@ -332,6 +400,7 @@ export const SceneResponseSchema = z.object({
   diceRoll: DiceRollSchema,
   cutscene: CutsceneSchema,
   dilemma: DilemmaSchema,
+  dialogueIfQuestTargetCompleted: QuestWrapupSchema,
 }).passthrough();
 
 const CharacterSuggestionSchema = z.object({

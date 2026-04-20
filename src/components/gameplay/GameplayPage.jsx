@@ -39,6 +39,7 @@ import TradePanel from './TradePanel';
 import CraftingPanel from './CraftingPanel';
 import AlchemyPanel from './AlchemyPanel';
 import PartyPanel from './PartyPanel';
+import LivingWorldCompanionsSection from './LivingWorldCompanionsSection';
 import QuestOffersPanel from './QuestOffersPanel';
 import GameplayModals from './GameplayModals';
 import GameplayHeader from './GameplayHeader';
@@ -929,6 +930,16 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               onSwitchCharacter={(id) => dispatch({ type: 'SET_ACTIVE_CHARACTER', payload: id })}
               onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
               dispatch={dispatch}
+            />
+          </div>
+        )}
+
+        {/* Living World companions (Phase 2) — separate from local PartyPanel companions. */}
+        {!isMultiplayer && !isReviewingPastScene && !readOnly && (
+          <div className="px-2 animate-fade-in">
+            <LivingWorldCompanionsSection
+              campaignId={sCampaign?.backendId || urlCampaignId}
+              enabled={!!sCampaign?.livingWorldEnabled}
             />
           </div>
         )}

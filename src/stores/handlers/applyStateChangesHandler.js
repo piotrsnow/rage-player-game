@@ -206,8 +206,41 @@ export function applyStateChangesHandler(draft, action) {
   }
 
   if (changes.completedQuests) {
-    const activeIds = new Set(draft.quests.active.map((q) => q.id));
-    const validIds = changes.completedQuests.filter((id) => activeIds.has(id));
+    // Premium sees quest *names* in its prompt, not ids — so completedQuests
+    // may contain names, hallucinated ids, or real ids. Resolve each entry
+    // against the active list: exact id → case-insensitive name → single-active
+    // fallback (player UI always surfaces a single "current quest"). Rewrite
+    // the array in place so stateChangeMessages and the toast path see real ids.
+    const activeQuests = draft.quests.active;
+    const resolvedIds = [];
+    for (const rawId of changes.completedQuests) {
+      const exact = activeQuests.find((q) => q.id === rawId);
+      if (exact) {
+        resolvedIds.push(exact.id);
+        continue;
+      }
+      const normalized = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
+      const byName = normalized
+        ? activeQuests.find((q) => (q.name || '').trim().toLowerCase() === normalized)
+        : null;
+      if (byName) {
+        resolvedIds.push(byName.id);
+        continue;
+      }
+      if (activeQuests.length === 1) {
+        resolvedIds.push(activeQuests[0].id);
+        continue;
+      }
+      // eslint-disable-next-line no-console
+      console.warn('[quest] completedQuests entry did not match any active quest', {
+        rawId,
+        activeCount: activeQuests.length,
+      });
+    }
+    changes.completedQuests = resolvedIds;
+
+    const activeIds = new Set(activeQuests.map((q) => q.id));
+    const validIds = resolvedIds.filter((id) => activeIds.has(id));
     if (validIds.length > 0) {
       const completed = draft.quests.active.filter((q) => validIds.includes(q.id));
 
@@ -253,11 +286,50 @@ export function applyStateChangesHandler(draft, action) {
   }
 
   if (changes.questUpdates?.length > 0) {
+    // Same fuzzy resolution as completedQuests above — premium doesn't see
+    // ids in the prompt. Objective resolve adds a last-resort "single pending
+    // objective" fallback so mid-scene progress updates still land when the
+    // model only describes the objective in prose.
+    const resolveActiveQuest = (rawId) => {
+      const active = draft.quests.active;
+      const exact = active.find((q) => q.id === rawId);
+      if (exact) return exact;
+      const normalized = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
+      if (normalized) {
+        const byName = active.find((q) => (q.name || '').trim().toLowerCase() === normalized);
+        if (byName) return byName;
+      }
+      if (active.length === 1) return active[0];
+      return null;
+    };
+    const resolveObj = (quest, rawObjId) => {
+      if (!quest?.objectives?.length) return null;
+      const exact = quest.objectives.find((o) => o.id === rawObjId);
+      if (exact) return exact;
+      const normalized = typeof rawObjId === 'string' ? rawObjId.trim().toLowerCase() : '';
+      if (normalized) {
+        const byDesc = quest.objectives.find(
+          (o) => (o.description || '').trim().toLowerCase() === normalized,
+        );
+        if (byDesc) return byDesc;
+      }
+      const pending = quest.objectives.filter((o) => !o.completed);
+      if (pending.length === 1) return pending[0];
+      return null;
+    };
+
     for (const update of changes.questUpdates) {
-      const quest = draft.quests.active.find((q) => q.id === update.questId);
+      const quest = resolveActiveQuest(update.questId);
       if (!quest?.objectives) continue;
-      const obj = quest.objectives.find((o) => o.id === update.objectiveId);
-      if (!obj) continue;
+      const obj = resolveObj(quest, update.objectiveId);
+      if (!obj) {
+        // eslint-disable-next-line no-console
+        console.warn('[quest] objective update did not match', {
+          questId: update.questId,
+          objectiveId: update.objectiveId,
+        });
+        continue;
+      }
       obj.completed = !!update.completed;
       if (update.addProgress) {
         const prev = obj.progress || '';

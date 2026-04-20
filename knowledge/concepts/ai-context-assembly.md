@@ -34,10 +34,36 @@ Two-stage pipeline for AI context selection. The design principle: **have the na
   memory_query: 'dragon attack village', // query string if search needed
   roll_skill: 'Perception',              // skill check if detected
   roll_difficulty: 'medium',             // difficulty tier
+  // Phase 7 additions — nano can short-circuit combat (fast-path) and
+  // signal dungeon navigation intent for the pipeline to resolve rooms.
+  combat_enemies: {                      // set by nano ONLY when player is
+    location, budget, maxDifficulty,     //   TAKING combat (not discussing)
+    count, race,
+  } | null,
+  clear_combat: false,                   // `true` → combat fast-path
   _intent: 'explore',                    // meta — debug only
-  _tradeOnly: false                      // meta — trade shortcut flag
+  _tradeOnly: false,                     // meta — trade shortcut flag
+  _travelTarget: 'Watonga',              // meta — travel intent capture
+  _dungeonDirection: 'N',                // meta — dungeon nav intent
 }
 ```
+
+### Hypothesis / questioning guard (shared)
+
+[shared/domain/intentHeuristics.js](../../shared/domain/intentHeuristics.js) exports
+`isHypotheticalOrQuestioning(text)` — used by BOTH `detectCombatIntent`
+and `detectTradeIntent` before their regex checks. Rejects conditional
+or interrogative phrasing (`jakbym`, `gdyby`, `opowiedz mi`, `co się
+stanie`, any `?`) so phrases like _"czy potrzebujesz kompanii żeby
+pokonać smoka?"_ don't flip the classifier into combat/trade and the
+freeform nano sees the full input with prevScene context for judgment.
+
+### `prevScene` excerpt length
+
+`buildAvailableSummary` (intentClassifier.js) passes up to 800 chars of
+the previous scene narrative into the nano prompt. Was 350 — the
+classifier lost continuity on discussion-style actions that hinged on
+"what just happened". Cost is negligible on nano.
 
 ## Stage 2 — `assembleContext`
 

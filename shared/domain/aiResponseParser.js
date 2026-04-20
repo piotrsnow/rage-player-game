@@ -73,5 +73,23 @@ export function parseAIResponseLean(text) {
     questOffers: parsed.questOffers || [],
     cutscene: parsed.cutscene || null,
     dilemma: parsed.dilemma || null,
+    dialogueIfQuestTargetCompleted: normalizeQuestWrapup(parsed.dialogueIfQuestTargetCompleted),
   };
+}
+
+function normalizeQuestWrapup(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed ? { text: trimmed, speakerType: 'narrator', speakerName: null } : null;
+  }
+  if (typeof raw === 'object' && typeof raw.text === 'string' && raw.text.trim()) {
+    const speakerType = ['narrator', 'npc', 'companion'].includes(raw.speakerType) ? raw.speakerType : 'narrator';
+    return {
+      text: raw.text.trim(),
+      speakerType,
+      speakerName: typeof raw.speakerName === 'string' && raw.speakerName.trim() ? raw.speakerName.trim() : null,
+    };
+  }
+  return null;
 }
