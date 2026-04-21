@@ -7,7 +7,7 @@ import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
 import ItemTooltip from './inventory/ItemTooltip';
 import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
-import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot } from './inventory/constants';
+import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot, getEquippableSlots } from './inventory/constants';
 
 const ITEMS_PER_PAGE = 12;
 

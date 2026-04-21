@@ -48,7 +48,7 @@ async function localTracks(folder) {
           filename,
           name,
           size: info.size,
-          url: `/music/play/${encodeURIComponent(filename)}${folderParam}`,
+          url: `/v1/music/play/${encodeURIComponent(filename)}${folderParam}`,
         };
       })
     );
@@ -77,7 +77,7 @@ async function gcsTracks(store, folder) {
           filename,
           name,
           size: parseInt(metadata.size || '0', 10),
-          url: `/music/play/${encodeURIComponent(filename)}${folderParam}`,
+          url: `/v1/music/play/${encodeURIComponent(filename)}${folderParam}`,
         };
       })
     );

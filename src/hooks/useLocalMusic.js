@@ -59,7 +59,7 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
     try {
       const qs = folder ? `?folder=${encodeURIComponent(folder)}` : '';
       const endpointBase = baseUrl || '';
-      const url = endpointBase ? `${endpointBase}/music/tracks${qs}` : `/music/tracks${qs}`;
+      const url = endpointBase ? `${endpointBase}/v1/music/tracks${qs}` : `/v1/music/tracks${qs}`;
       const resp = await fetch(url);
       const data = await resp.json();
       if (data.tracks?.length) {
