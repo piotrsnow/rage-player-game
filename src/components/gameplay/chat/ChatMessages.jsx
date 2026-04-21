@@ -48,6 +48,7 @@ export function DmMessage({ message, narrator }) {
                 <HighlightedText text={narrativeText} highlightInfo={narrator?.highlightInfo} segmentIndex={0} messageId={message.id} />
               </p>
             )}
+            <QuestWrapupEpilogue wrapup={message.dialogueIfQuestTargetCompleted} />
           </div>
           <button
             type="button"
@@ -72,6 +73,31 @@ export function DmMessage({ message, narrator }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function QuestWrapupEpilogue({ wrapup }) {
+  if (!wrapup || typeof wrapup !== 'object' || !wrapup.text) return null;
+  const { text, speakerType, speakerName } = wrapup;
+
+  if (speakerType === 'npc' || speakerType === 'companion') {
+    return (
+      <div className="mt-3 pt-3 border-t border-emerald-400/20">
+        <div className="text-[10px] font-bold text-emerald-300/90 uppercase tracking-widest mb-1">
+          {speakerName || '—'}
+        </div>
+        <p className="text-xs text-emerald-50/90 leading-snug italic">
+          &ldquo;{text}&rdquo;
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3 pt-3 border-t border-emerald-400/20">
+      <p className="text-xs text-emerald-100/80 leading-snug italic">
+        {text}
+      </p>
     </div>
   );
 }

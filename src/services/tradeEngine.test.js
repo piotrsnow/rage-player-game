@@ -136,6 +136,29 @@ describe('calculateItemSellPrice', () => {
     const price = calculateItemSellPrice({ price: { gold: 1, silver: 0, copper: 0 } }, 30);
     expect(price).toEqual({ gold: 0, silver: 7, copper: 5 });
   });
+
+  it('resolves price via baseType when item.price is missing', () => {
+    // Reward items carry baseType but no price — lookup in catalog.
+    const price = calculateItemSellPrice({ name: 'Sztylet', baseType: 'dagger', rarity: 'common' }, 0, mockEquipment);
+    // dagger price 5 SK = 50 MK, sell 50% = 25 MK → 2 SK 5 MK
+    expect(price).toEqual({ gold: 0, silver: 2, copper: 5 });
+  });
+
+  it('falls back to rarity-based price when baseType is missing', () => {
+    const priceCommon = calculateItemSellPrice({ name: 'Noname', rarity: 'common' }, 0);
+    // 5 MK fallback × 50% = 2.5 → rounded to 3 MK (Math.round); but we Math.max(1) so minimum 1 MK
+    expect(priceCommon.gold + priceCommon.silver + priceCommon.copper).toBeGreaterThan(0);
+
+    const priceRare = calculateItemSellPrice({ name: 'Something', rarity: 'rare' }, 0);
+    // 50 MK fallback × 50% = 25 MK → 2 SK 5 MK
+    expect(priceRare).toEqual({ gold: 0, silver: 2, copper: 5 });
+  });
+
+  it('never returns zero price for any item', () => {
+    const price = calculateItemSellPrice({ name: 'Dziwny Przedmiot' }, 0);
+    const totalCopper = price.gold * 100 + price.silver * 10 + price.copper;
+    expect(totalCopper).toBeGreaterThan(0);
+  });
 });
 
 describe('canAfford', () => {

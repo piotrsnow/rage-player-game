@@ -16,6 +16,7 @@ import {
   syncKnowledgeToNormalized,
   syncQuestsToNormalized,
 } from '../../services/campaignSync.js';
+import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -103,7 +104,17 @@ export async function crudCampaignRoutes(app) {
     schema: { body: CAMPAIGN_WRITE_SCHEMA },
     config: { idempotency: true },
   }, async (request, reply) => {
-    const { name, genre, tone, coreState: rawCoreState, characterIds: rawCharIds } = request.body;
+    const {
+      name,
+      genre,
+      tone,
+      coreState: rawCoreState,
+      characterIds: rawCharIds,
+      livingWorldEnabled,
+      worldTimeRatio,
+      worldTimeMaxGapDays,
+      difficultyTier,
+    } = request.body;
     const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
     const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
@@ -113,12 +124,28 @@ export async function crudCampaignRoutes(app) {
     if (characterIds.length > 0) {
       const owned = await prisma.character.findMany({
         where: { id: { in: characterIds }, userId: request.user.id },
-        select: { id: true },
+        select: { id: true, characterLevel: true },
       });
       const ownedSet = new Set(owned.map((c) => c.id));
       for (const id of characterIds) {
         if (!ownedSet.has(id)) {
           return reply.code(403).send({ error: `Character ${id} not found or not owned by user` });
+        }
+      }
+
+      // G1 — validate difficultyTier against the primary character's level.
+      // Prevents clients from spoofing an over-the-cap tier. Picks the
+      // character with the highest level across the party so multiplayer
+      // groups get the most permissive allowed tier.
+      if (typeof difficultyTier === 'string') {
+        const maxLevel = owned.reduce((acc, c) => Math.max(acc, Number(c.characterLevel) || 1), 1);
+        const allowed = maxLevel <= 5 ? ['low']
+          : maxLevel <= 10 ? ['low', 'medium', 'high']
+          : ['low', 'medium', 'high', 'deadly'];
+        if (!allowed.includes(difficultyTier)) {
+          return reply.code(400).send({
+            error: `difficultyTier "${difficultyTier}" not allowed at character level ${maxLevel} (allowed: ${allowed.join(', ')})`,
+          });
         }
       }
     }
@@ -134,13 +161,45 @@ export async function crudCampaignRoutes(app) {
         totalCost: extractTotalCost(slim),
         lastSaved: new Date(),
         shareToken: crypto.randomUUID(),
+        ...(livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
+        ...(typeof worldTimeRatio === 'number' ? { worldTimeRatio } : {}),
+        ...(Number.isInteger(worldTimeMaxGapDays) ? { worldTimeMaxGapDays } : {}),
+        ...(typeof difficultyTier === 'string' ? { difficultyTier } : {}),
       },
     });
+
+    // Phase A — per-campaign world seeding. Only runs for Living World opt-in
+    // campaigns. Fire-and-forget with error log: if seeding fails we still want
+    // the campaign to exist; scene-gen will tolerate an empty world.locations[].
+    let seededStartingLocation = null;
+    if (livingWorldEnabled === true) {
+      try {
+        const campaignLength = typeof parsed?.campaign?.length === 'string' ? parsed.campaign.length : 'Medium';
+        const seedResult = await seedInitialWorld(campaign.id, {
+          length: campaignLength,
+          difficultyTier: typeof difficultyTier === 'string' ? difficultyTier : 'low',
+        });
+        seededStartingLocation = seedResult.startingLocationName;
+        if (seededStartingLocation) {
+          if (!slim.world) slim.world = {};
+          slim.world.currentLocation = seededStartingLocation;
+          // Persist the updated coreState so the FE reads the seeded starting location
+          // on its follow-up load. Separate update to avoid retrying the whole create.
+          await prisma.campaign.update({
+            where: { id: campaign.id },
+            data: { coreState: JSON.stringify(slim) },
+          }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
+        }
+      } catch (err) {
+        log.error({ err: err?.message, campaignId: campaign.id }, 'seedInitialWorld failed');
+      }
+    }
 
     // Bind characters to this campaign. Lock is cleared on campaign delete
     // or when the character is released from a safe location in-game.
     if (characterIds.length > 0) {
-      const initialLocation = typeof slim?.world?.currentLocation === 'string' ? slim.world.currentLocation : null;
+      const initialLocation = seededStartingLocation
+        || (typeof slim?.world?.currentLocation === 'string' ? slim.world.currentLocation : null);
       await prisma.character.updateMany({
         where: { id: { in: characterIds } },
         data: {

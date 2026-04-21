@@ -22,6 +22,8 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   characterNeeds = null,
   sceneCount = 0,
   intentResult = {},
+  livingWorldEnabled = false,
+  questGiverHint = null,
 } = {}) {
   const cs = coreState;
   const intent = intentResult._intent || 'freeform';
@@ -93,16 +95,26 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
   staticSections.push(
     `MANDATORY stateChanges RULES:
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
-- questUpdates: after writing dialogueSegments, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}].
-- Quest completion: ONLY add to completedQuests when ALL objectives done AND player talked to turn-in NPC in this scene. Never auto-complete.
-- rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'quest_reward'|'found'|'gift'. Do NOT specify item names — just type and tier.
+- questUpdates: after writing dialogueSegments, cross-check ALL active quest objectives. Mark completed ones: [{questId, objectiveId, completed:true}]. Use the exact id= values shown in the ACTIVE QUESTS block — names/descriptions also resolve, but ids are canonical.
+- Quest completion: add to completedQuests as soon as the quest's completionCondition is narratively satisfied in this scene (turn-in NPC if the quest has one, otherwise objective fulfillment is sufficient). Always use the id= shown for the quest.
+- rewards: for standard loot/drops/found items/money. Array of [{type, rarity?, category?, quantity?, context?}]. type: 'material'|'weapon'|'armour'|'shield'|'gear'|'medical'|'money'|'potion'. rarity: 'common'|'uncommon'|'rare'. category: materials only ('metal'|'wood'|'fabric'|'herb'|'liquid'|'misc'). quantity: 'one'|'few'|'some'|'many'. context: 'loot'|'found'|'gift' (NO 'quest_reward' — quest rewards are applied automatically on completedQuests using the quest's defined reward, do NOT duplicate via rewards[]). Do NOT specify item names — just type and tier.
 - newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
 - removeItems: only items in character's inventory.
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - currentLocation: update when player moves.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
-- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".`,
+- actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".
+- campaignComplete: set ONLY when the player just RESOLVED the main conflict of this campaign (final antagonist defeated, central threat ended, main quest chain completed in this scene). Object: {title ≤120 chars, summary ≤800 chars retelling the climax, majorAchievements (1-3 short strings worth spreading across the world). Emits a GLOBAL WorldEvent visible to other campaigns in this location — DO NOT fire for side quests or minor victories.
+- worldImpact: set 'major' ONLY when the scene produces an event worth retelling across UNRELATED campaigns — named antagonist killed, settlement liberated (also set locationLiberated:true), mythical creature slain, political coup. Most victories are 'minor' or null. When 'major', include worldImpactReason (≤300 chars).
+- defeatedDeadlyEncounter: set true ONLY when the player just defeated a deadly-tier encounter (bestiary maxDifficulty='deadly' or equivalent narrative peak). Combined with worldImpact it promotes the scene to a global plotka.
+- dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.
+- acknowledgedFame: in a single npcs[] entry, set true ONLY for the NPC that just commented on the player's renown (see RENOWN rule). Prevents the same one-liner from firing again. Never set on NPCs that didn't speak.
+- dialogueIfQuestTargetCompleted: TOP-LEVEL field (not inside stateChanges). If this scene resolves a QUEST OBJECTIVE (questUpdates with completed:true) OR completes a quest entirely (completedQuests), emit an object { text, speakerType, speakerName? }:
+  * text: 1-3 sentences that (a) close the story beat that just resolved, AND (b) if the quest still has unfinished objectives, NATURALLY TEE UP THE NEXT ONE — reference the next objective's location/NPC/reason so the player understands WHY they now need to do it. Example: "Kowal dziękuje ci za narzędzia. 'Teraz, gdy wiesz gdzie szukać, powinieneś odwiedzić kaplicę w Yeralden — jakiś mnich może wiedzieć więcej o tej pieczęci.'" If no more objectives remain (quest fully done) or campaign is ending, close naturally without forcing a new hook.
+  * speakerType: 'narrator'|'npc'|'companion'. Prefer 'npc' when the quest-giver is in the scene, 'companion' when a companion is with the player, otherwise 'narrator'.
+  * speakerName: NPC/companion name when speakerType≠'narrator'; omit for narrator.
+  Tone: reflective, conclusive. Polish in PL campaigns. Null/omit when no quest objective resolved. Plays AFTER main dialogueSegments as short epilogue.`,
   );
 
   // ── ACTION FEASIBILITY ──
@@ -111,8 +123,26 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
 - Impossible (target not present): narrate failure. Trivial (unlocked door, walking): auto-success.
 - Routine (eating, resting, looking): auto-success.
 - Uncertain: engine resolves checks. Narrate the result from user prompt.
-- Item validation: character can ONLY use items in their Inventory. Fail if item not possessed.
+- Item validation: character can ONLY use items in their Inventory.
+  * If player tries to use an item they do NOT have (e.g. "piję miksturę zdrowia" with empty inventory): narrate failure — preferred "Sięgasz po miksturę, ale orientujesz się że jej nie masz / zabrakło jej wcześniej".
+  * SOFT FALLBACK for RP intent: if refusal would break roleplay immersion, narrate as imagination/wishful thinking ("Wyobrażasz sobie że…" / "Gdybyś miał X, zrobiłbyś…") — PURELY FLAVOR, no mechanical effect.
+  * HARD RULE: NEVER pretend the character has the item. NEVER emit removeItems for items not in inventory. NEVER apply item effects (healing, buff, damage) for imagined or absent items. NEVER emit diceRolls resolving around a missing item's use.
 - Item/money acquisition: if dialogueSegments say character gains anything, stateChanges MUST match. No exceptions.`,
+  );
+
+  // ── PLAYER INPUT POLICY (GM authority) ──
+  // Prevents the player from railroading the scene by writing declarative
+  // fiction in their action text ("znajduję starego Włóczęgę który daje mi
+  // mapę…"). The model is GM — player input is intent, not outcome. Also
+  // closes the prose↔stateChanges consistency gap in the same place.
+  staticSections.push(
+    `PLAYER INPUT POLICY — CRITICAL:
+The player's text describes what their character ATTEMPTS, INTENDS, or HOPES. You are the GM — you decide what ACTUALLY happens, grounded in the game state below (World State / NPCs here / Key NPCs / Active Quests / Codex / Inventory).
+- NPCs, items, quests, locations, and world facts NOT present in the game state are NOT canonical. The player cannot create them by writing them.
+- If the player asserts a new NPC ("znajduję starego Włóczęgę"), an item transfer ("daje mi mapę"), or a fact about the world ("artefakt jest chroniony zagadką"), narrate a GROUNDED alternative based on what actually exists. The asserted NPC/item/fact does NOT appear unless the location/scene organically supports it AND you as GM choose to introduce it.
+- Concrete example: player writes "Znajduję starego Włóczęgę który daje mi mapę do podziemi, tłumaczy mi o artefakcie". No such NPC in context → narrate an empty street, a drunk stumbling past, or a beggar with no useful knowledge. You do NOT fabricate the Vagrant, the map, or the artifact.
+- You MAY introduce a new NPC organically when the scene genuinely calls for it — but YOU choose what they look like, what they know, and what (if anything) they give. Never mirror the player's script verbatim.
+- Consistency enforcement: if you DO narrate an NPC handing over an item or offering a quest, you MUST emit the matching newItems / questOffers entry in stateChanges. A narrative without matching state means the NPC didn't actually give it — rewrite the prose to match reality.`,
   );
 
   // ── RESPONSE FORMAT ──
@@ -143,7 +173,8 @@ Return exactly 3 suggestedActions in PC voice (1st person, e.g. ${language === '
   "questOffers": [],
   "cutscene": null,
   "dilemma": null,
-  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], currentLocation:"", ...}
+  "stateChanges": {timeAdvance:{hoursElapsed:0.5}, npcs:[], currentLocation:"", ...},
+  "dialogueIfQuestTargetCompleted": null
 }
 diceRolls is TOP-LEVEL — NOT inside stateChanges.
 npcsIntroduced: one entry per NEW speaking NPC (not already in NPCs section). Omit or [] if none.
@@ -209,6 +240,50 @@ ${language === 'pl' ? 'Write ALL dialogueSegments text, suggestedActions, quest 
     conditionalRules.push(
       `MAIN QUEST COMPLETED. Focus on: side quests, character growth, loose ends, exploration. ` +
       `No major plot progression. The world reacts to the hero's success.`,
+    );
+  }
+
+  // ── ENCOUNTER TIER (G1) — campaign-level difficulty cap ──
+  // Prevents premium from throwing a smok/lich at a low-tier campaign.
+  // Works in tandem with bestiary clamping on the backend.
+  const difficultyTier = campaign.difficultyTier || 'low';
+  if (difficultyTier && difficultyTier !== 'deadly') {
+    const allowedExamples = difficultyTier === 'low'
+      ? 'bandyci, wilki, zbóje, drobne potwory leśne'
+      : difficultyTier === 'medium'
+      ? 'bandyci (większe grupy), trolle, dzikie bestie, niewielcy nieumarli'
+      : 'elitarni wrogowie, niebezpieczne potwory, sekty magów, regionalni bossowie';
+    conditionalRules.push(
+      `ENCOUNTER TIER: Ta kampania ma trudność '${difficultyTier}'. Gracz jest na poziomie ${character.characterLevel || 1}. ` +
+      `Wrogowie/zagrożenia w scenach NIE mogą przekraczać tego pułapu — dozwolone przykłady: ${allowedExamples}. ` +
+      `Smoki, demony wyższych kręgów, archmagowie, lichowie, pradawne byty są DOZWOLONE TYLKO dla tier 'deadly'. ` +
+      `Jeśli narracja wymaga silniejszego wroga — użyj scripted escape (ucieczka, sojusznik interweniuje, ambush fails) zamiast walki.\n` +
+      `LOOT GOLD: typowy scene-loot skalowany trudnością — low ~1-5 MK, medium ~2-15 MK, hard ~3-20 MK, deadly ~5-30 MK per scena. ` +
+      `ZAWSZE używaj rewards[{type:"money", context:"loot"|"found"|"gift"}] — NIGDY surowego moneyChange dla lootu. ` +
+      `Nagrody za ukończenie questa są aplikowane automatycznie przy completedQuests z quest.reward — nie duplikuj ich w rewards[].`,
+    );
+  }
+
+  // ── RENOWN (fame/infamy) — Oblivion-style minimal acknowledgment ──
+  // Character stays "grey" until crossing fame/infamy 20. Once crossed,
+  // NPCs may comment on the player's reputation ONCE per NPC (flag on
+  // CampaignNPC.hasAcknowledgedFame). Tone approve vs disapprove is
+  // computed from the label bucket.
+  const fame = Number(character.fame) || 0;
+  const infamy = Number(character.infamy) || 0;
+  if (fame >= 20 || infamy >= 20) {
+    const label = infamy >= 50 ? 'poszukiwany łotr'
+      : infamy >= 20 ? 'podejrzany'
+      : fame >= 100 ? 'legendarny'
+      : fame >= 50 ? 'sławny'
+      : 'znany w okolicy';
+    const tone = infamy >= 20 ? 'disapprove' : 'approve';
+    conditionalRules.push(
+      `RENOWN: Gracz jest znany jako "${label}" w świecie. NPC spotkani po raz pierwszy w kampanii (CampaignNPC.hasAcknowledgedFame=false) MOGĄ to skomentować JEDNYM zdaniem zgodnym z ich osobowością. ` +
+      (tone === 'approve'
+        ? 'Pozytywne reakcje: „Słyszałem że powstrzymałeś bandytów — dobry człowiek się trafił!", „Widziałem cię w balladach.". '
+        : 'Negatywne reakcje: „Słyszałem o twoich wybrykach — trzymaj się z daleka.", „Nie pokazuj się publicznie, szukają cię.". ') +
+      `NIE powtarzaj tego co inni NPC już powiedzieli — każdy komentarz inny. Ogranicz do JEDNEGO zdania.`,
     );
   }
 
@@ -285,12 +360,6 @@ NPC DIALOGUE STYLE — applies ONLY to dialogueSegments where type="dialogue":
     const m = Math.round(((ts.hour ?? 6) - h) * 60);
     worldLines.push(`Time: Day ${ts.day || 1}, ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')} (${ts.timeOfDay || 'morning'}), Season: ${ts.season || 'unknown'}`);
   }
-  if (world.factions && typeof world.factions === 'object') {
-    const factionEntries = Object.entries(world.factions);
-    if (factionEntries.length > 0) {
-      worldLines.push(`Factions: ${factionEntries.map(([id, rep]) => `${id}(${rep})`).join(', ')}`);
-    }
-  }
   const npcs = world.npcs || [];
   const currentLoc = world.currentLocation || '';
   const npcsHere = npcs.filter(n => n.alive !== false && n.lastLocation && currentLoc && n.lastLocation.toLowerCase() === currentLoc.toLowerCase());
@@ -350,9 +419,9 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
 
   // ── ACTIVE QUESTS ──
   if (quests.active?.length) {
-    const questLines = ['Active Quests:'];
+    const questLines = ['Active Quests (use id=... values in stateChanges.completedQuests / questUpdates):'];
     for (const q of quests.active.slice(0, 5)) {
-      let line = `- ${q.name} [${q.type || 'side'}]: ${q.description || ''}`;
+      let line = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]: ${q.description || ''}`;
       if (q.completionCondition) line += ` | Goal: ${q.completionCondition}`;
       if (q.questGiverId) line += ` | Giver: ${q.questGiverId}`;
       const turnIn = q.turnInNpcId || q.questGiverId;
@@ -364,7 +433,7 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
           line += `\n  (${done.length}/${q.objectives.length} completed)`;
         }
         for (const obj of remaining) {
-          line += `\n  [ ] ${obj.description}`;
+          line += `\n  [ ] (objId=${obj.id}) ${obj.description}`;
         }
         if (remaining.length === 0) line += '\n  COMPLETED';
       }
@@ -399,6 +468,66 @@ Narrate crisis effects (weakness, funny walk, stench, drowsiness). Apply -10 to 
   if (lastScene) {
     const action = lastScene.chosenAction ? `Player: ${lastScene.chosenAction}\n` : '';
     dynamicSections.push(`Last Scene:\n[Scene ${lastScene.sceneIndex}] ${action}${lastScene.narrative || ''}`);
+  }
+
+  // Living World Phase 4 — scoped item authority hint. When an NPC hands the
+  // player an item, premium should tag `fromNpcId` on the entry so the
+  // WorldEvent ledger can attribute the transfer. No enforcement here — full
+  // orchestration (reject without fromNpcId, per-NPC approval) lives behind
+  // the ideas file `living-world-scene-orchestration.md`.
+  if (livingWorldEnabled) {
+    dynamicSections.push(
+      `LIVING WORLD — item attribution:
+- When an NPC gives the player an item, set \`fromNpcId\` on that item entry to the NPC's canonical name (e.g. "fromNpcId": "Bjorn"). Items dropped in a location or picked up from containers do NOT need \`fromNpcId\`.
+- Poor NPCs do not give away valuable items. If you're about to narrate a gift, match item rarity to the NPC's status (peasant → common, merchant → uncommon, noble → rare).
+- If the DM memory / pending hooks block below names an NPC with a plan, respect what they already intended. Don't contradict their stated goals mid-scene.`,
+    );
+    dynamicSections.push(
+      `LIVING WORLD — dungeon rooms (when DUNGEON ROOM block appears in context):
+- The block is AUTHORITATIVE: enemies, traps, loot, exits, puzzle are all pre-generated. Do NOT invent additions.
+- Narrate the listed flavor seed and contents on first entry. Match atmosphere to theme (catacomb / cave).
+- When player explores or is careless, trap may activate — narrate the consequences and emit:
+    "stateChanges": { "dungeonRoom": { "trapSprung": true }, "woundsChange": ... }
+- When combat resolves with all listed enemies defeated, emit:
+    "stateChanges": { "dungeonRoom": { "entryCleared": true } }
+- When player searches and loot is revealed, add entries to \`newItems\` and emit:
+    "stateChanges": { "dungeonRoom": { "lootTaken": true } }
+- When player moves through an exit, set \`stateChanges.currentLocation\` to the target room's canonical name (as given in the Exits list).
+- Improvised player actions ("próbuję przebić ścianę", "palę sieć") — allow them, but NEVER add new rooms, enemies, traps, or loot.`,
+    );
+    dynamicSections.push(
+      `LIVING WORLD — new locations (sublocations + top-level settlements):
+
+SUBLOCATIONS (inside a known settlement):
+- When the player enters a new sublocation (tavern/church/tower/etc.) INSIDE a known settlement, emit:
+  { "name": "Wieża Maga", "parentLocationName": "<canonical settlement name>", "locationType": "interior", "slotType": "<slotType or null>", "description": "<optional>" }
+- Use the SUBLOCATIONS AVAILABLE block (in EXPANDED CONTEXT) to pick \`slotType\`: either an open optional slot ('tavern','church','blacksmith',...) or leave null for a narratively distinctive custom addition.
+- Names MUST be narratively distinctive (at least two substantive words) — e.g. "Chata Starej Wiedźmy", "Wieża Czarnego Maga", "Ruiny Dawnego Cmentarzyska". Generic names like "dom", "chata", "tawerna" WILL be rejected.
+- Custom additions are bounded per campaign difficulty tier. The SUBLOCATIONS AVAILABLE block reports the remaining custom budget — if it's 0, fill from open optional slots ONLY; custom entries will be silently rejected.
+- If the parent's slot budget is full (SUBLOCATIONS AVAILABLE reports 0 remaining), don't emit new entries.
+
+TOP-LEVEL (wilderness / ruins emerging during travel):
+- When the player travels into unexplored overworld terrain, emit:
+  { "name": "Zapomniane Ruiny", "parentLocationName": null, "locationType": "ruin", "directionFromCurrent": "NE", "travelDistance": "half_day", "description": "<short>", "connectsTo": ["<optional known nearby locations>"] }
+- \`directionFromCurrent\` is relative to the player's STARTING location this scene (N|NE|E|SE|S|SW|W|NW).
+- \`travelDistance\` — short (~1 km) | half_day (~2 km) | day (~3 km) | two_days (~4 km) | multi_day (~5 km max single jump).
+- \`locationType\` — allowed mid-play: \`wilderness\`, \`forest\`, \`ruin\`, \`camp\`, \`cave\`, \`dungeon\`, \`interior\`.
+- **Settlements are creation-time-only.** Populated settlements (\`hamlet\`, \`village\`, \`town\`, \`city\`, \`capital\`) are pre-seeded at campaign creation and CANNOT be emitted mid-play. Any attempt to create a settlement via newLocations will be silently rejected by the backend. If the player deliberately seeks a new village, redirect them narratively to an existing seeded settlement (see SEEDED SETTLEMENTS block) OR emit a non-settlement (ruin/camp/cave) instead.
+- \`connectsTo\` — optional list of known nearby location names that share an edge with the new one.
+- BE resolves position via spacing rules — if your raw position collides, BE pushes it further out automatically.
+- If the TRAVEL CONTEXT block is present, follow its waypoint instructions EXACTLY — do NOT invent new locations between known waypoints on a direct path.`,
+    );
+  }
+
+  // Phase D — quest-giver suggestion injected when nano flagged a quest
+  // offer AND Phase C saturation budget is tight. Non-binding — premium may
+  // pick a different NPC if narrative demands — but reuse is the default.
+  if (livingWorldEnabled && questGiverHint?.name) {
+    const locBit = questGiverHint.location ? ` at ${questGiverHint.location}` : '';
+    const roleBit = questGiverHint.role ? ` (${questGiverHint.role})` : '';
+    dynamicSections.push(
+      `SUGGESTED QUEST-GIVER: ${questGiverHint.name}${roleBit}${locBit}. If the player is asking about work/jobs/bounties, route the offer through this existing NPC instead of introducing a new one. Deviate ONLY if narrative continuity requires it.`,
+    );
   }
 
   const staticPrefix = staticSections.join('\n\n');

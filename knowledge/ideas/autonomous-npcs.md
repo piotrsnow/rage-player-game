@@ -1,5 +1,22 @@
 # Idea — autonomous NPCs (background agent loops)
 
+> **Status (2026-04):** PARTIAL realized. Phase 5 ships on-demand nano
+> ticks (`npcAgentLoop.runNpcTick`) with `activeGoal` + `goalProgress`
+> data model, quest-driven goal assignment, and background sideways
+> goals. Event-driven global triggers (`globalNpcTriggers`) replace the
+> naive per-scene scan. Clone separation (`CampaignNPC.worldNpcId` +
+> `cloneReconciliation`) keeps costs flat under concurrent campaigns.
+>
+> Full Cloud Tasks dispatcher (NPCs tick offline without any active
+> scene) is still deferred — see
+> [living-world-npc-auto-dispatch.md](./living-world-npc-auto-dispatch.md).
+> Scene orchestration round (parallel NPC reactions post-narration) is
+> also deferred — see
+> [living-world-scene-orchestration.md](./living-world-scene-orchestration.md).
+>
+> Canonical docs: [../concepts/living-world.md](../concepts/living-world.md),
+> [../concepts/npc-clone-architecture.md](../concepts/npc-clone-architecture.md).
+
 ## What it is
 
 Each NPC becomes an agent with a persistent goal, its own tool set, and a scheduler that ticks it forward in game-time independently of the player. The merchant actually runs out of stock. The bandit gang actually moves between hideouts. The rival adventurer progresses through the dungeon the player is also exploring. When the player meets an NPC, the NPC's state reflects what happened in the background.

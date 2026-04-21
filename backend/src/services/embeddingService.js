@@ -173,7 +173,6 @@ export function buildNPCEmbeddingText(npc) {
   const parts = [npc.name];
   if (npc.role) parts.push(npc.role);
   if (npc.personality) parts.push(npc.personality);
-  if (npc.factionId) parts.push(`Faction: ${npc.factionId}`);
   if (npc.notes) parts.push(npc.notes);
   return parts.join(' - ').slice(0, 2000);
 }

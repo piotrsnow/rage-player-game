@@ -19,7 +19,7 @@ const log = childLogger({ module: 'memoryCompressor' });
 // where importance judgment matters and async latency is free — memory/location
 // compression. `reasoning: false` routes to the fast nano tier (gpt-4.1-nano)
 // for classification-shaped tasks on the critical path — quest objective check.
-async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
+export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();
@@ -125,7 +125,7 @@ Return JSON:
   "knowledge_events": [{"summary":"","importance":"low/medium/high","tags":[]}],
   "knowledge_decisions": [{"choice":"","consequence":""}],
   "world_facts": [""],
-  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|faction|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
+  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
   "needs_restoration": {"hunger":50} or null
 }
 
@@ -167,10 +167,12 @@ function isDominatedScene(narrative, playerAction) {
  */
 export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs, sceneIndex } = {}) {
   if (isDominatedScene(narrative, playerAction)) {
+    log.info({ campaignId, sceneIndex, playerAction }, 'compressSceneToSummary SKIP (dominated)');
     return null;
   }
 
   try {
+    log.info({ campaignId, sceneIndex, narrativeLen: narrative?.length }, 'compressSceneToSummary START');
     // Load current summary
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
@@ -209,9 +211,13 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     // Reasoning tier + bumped maxTokens: 5.4-nano spends thinking tokens before
     // the JSON output, so cap needs headroom or output gets truncated.
     const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1200, reasoning: true });
-    if (!result) return null;
+    if (!result) {
+      log.warn({ campaignId, sceneIndex }, 'compressSceneToSummary: nano returned null');
+      return null;
+    }
 
     if (result.dominated) {
+      log.info({ campaignId, sceneIndex }, 'compressSceneToSummary: dominated flag set by nano');
       return null;
     }
 
@@ -274,6 +280,18 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
       where: { id: campaignId },
       data: { coreState: JSON.stringify(coreState) },
     });
+
+    log.info({
+      campaignId,
+      sceneIndex,
+      facts: updated.length,
+      newFacts: result.new_facts?.length || 0,
+      removed: result.remove_facts?.length || 0,
+      worldFacts: result.world_facts?.length || 0,
+      journal: !!result.journal,
+      knowledge: (result.knowledge_events?.length || 0) + (result.knowledge_decisions?.length || 0),
+      codex: result.codex_fragments?.length || 0,
+    }, 'compressSceneToSummary DONE');
 
     // Return extracted state for further processing (knowledge, codex)
     return {

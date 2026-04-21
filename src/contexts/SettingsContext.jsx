@@ -78,6 +78,7 @@ const defaultSettings = {
   narratorAutoPlay: true,
   dialogueSpeed: 100,
   canvasEffectsEnabled: true,
+  itemImagesEnabled: true,
   effectIntensity: 'medium',
   sfxEnabled: true,
   sfxVolume: 70,
@@ -166,6 +167,16 @@ export function SettingsProvider({ children }) {
       // any authed UI. Silent failure just leaves the user logged out.
       let cancelled = false;
       setBackendAuthChecking(true);
+
+      // Proactive refresh — access token lives 15 min; rotate every 12 min so
+      // long-lived consumers that snapshot the token (SSE stream body, WS
+      // upgrade URL, media <img src>?token=...) always see a fresh one.
+      const REFRESH_INTERVAL_MS = 12 * 60 * 1000;
+      const refreshTimer = setInterval(() => {
+        if (!apiClient.isConnected()) return;
+        apiClient.refreshAccessToken().catch(() => { /* 401 retry path handles it */ });
+      }, REFRESH_INTERVAL_MS);
+
       (async () => {
         try {
           const data = await apiClient.bootstrapAuth();
@@ -179,7 +190,10 @@ export function SettingsProvider({ children }) {
           if (!cancelled) setBackendAuthChecking(false);
         }
       })();
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        clearInterval(refreshTimer);
+      };
     }
     apiClient.configure({ baseUrl: '', token: '' });
     setBackendUser(null);

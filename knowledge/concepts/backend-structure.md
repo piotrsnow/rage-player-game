@@ -38,6 +38,36 @@ All routes mount under `/v1/*`. Health check at `/health` (outside the `/v1` sco
 
 See [scene-generation.md](scene-generation.md).
 
+### Living World
+
+All cross-campaign persistent state + NPC simulation lives in
+`backend/src/services/livingWorld/`. Entry points below. For the big
+picture see [living-world.md](living-world.md) and
+[npc-clone-architecture.md](npc-clone-architecture.md).
+
+- `worldEventLog.js` — `appendEvent`, `forLocation`, `forNpc`
+- `worldStateService.js` — `findOrCreateWorldLocation`, `createSublocation`
+- `npcAgentLoop.js` — `runNpcTick`, eligibility, action normalization
+- `npcTickDispatcher.js` — legacy scene-cadence batch (fallback)
+- `globalNpcTriggers.js` — `onLocationEntry`, `onDeadlinePass`, `onCrossCampaignMajor` (event-driven, primary)
+- `questGoalAssigner.js` — quest-role inference, goal templates, `generateBackgroundGoal`
+- `npcPromotion.js` — `maybePromote` (CampaignNPC → WorldNPC)
+- `npcLifecycle.js` — pause / resume on player location change
+- `companionService.js` — loyalty drift, travel propagation
+- `deferredOutbox.js` — companion trip replay
+- `reputationService.js` / `reputationHook.js` — scoped reputation
+- `travelGraph.js`, `userDiscoveryService.js` — edges + per-user discovery
+- `cloneReconciliation.js` — classify clone vs global divergence
+- `fameService.js` — `applyFameFromEvent`, `computeFameLabel` (Character-level renown)
+- `questAudit.js` — nano backup for "was this side quest major?"
+- `dungeonSeedGenerator.js`, `dungeonEntry.js`, `contentLocalizer.js` — Phase 7 deterministic dungeon seeding + localized room text
+- `dmMemoryService.js`, `dmMemoryUpdater.js` — Phase 4 DM agent memory
+- `topologyGuard.js`, `positionCalculator.js` — sublocation admission + coords
+
+`processStateChanges.js` (in `sceneGenerator/`) is the main consumer —
+writes global events, applies fame deltas, runs reconciliation, kicks
+the tick triggers.
+
 ### AI helpers
 
 - [intentClassifier.js](../../backend/src/services/intentClassifier.js) — Stage 1 of two-stage pipeline (heuristic + nano fallback)

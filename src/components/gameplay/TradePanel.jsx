@@ -49,25 +49,27 @@ export default function TradePanel({ trade, character, world, dispatch, onHaggle
   const disposition = trade?.disposition || 0;
   const locationMod = 0;
 
+  const equipmentCatalog = gameData.equipment || {};
+
   // Compute buy prices
   const shopItemsWithPrices = useMemo(() => {
     return (trade?.shopItems || []).map((item) => ({
       ...item,
-      buyPrice: calculateItemBuyPrice(item, disposition, locationMod),
+      buyPrice: calculateItemBuyPrice(item, disposition, locationMod, equipmentCatalog),
       haggledPrice: trade?.haggleDiscounts?.[item.id]
         ? trade.haggleDiscounts[item.id]
         : null,
     }));
-  }, [trade?.shopItems, disposition, locationMod, trade?.haggleDiscounts]);
+  }, [trade?.shopItems, disposition, locationMod, trade?.haggleDiscounts, equipmentCatalog]);
 
   // Player inventory with sell prices
   const sellableItems = useMemo(() => {
     const handelLevel = getSkillLevel(character?.skills, 'Handel');
     return (character?.inventory || []).map((item) => ({
       ...item,
-      sellPrice: calculateItemSellPrice(item, handelLevel),
+      sellPrice: calculateItemSellPrice(item, handelLevel, equipmentCatalog),
     }));
-  }, [character?.inventory, character?.skills]);
+  }, [character?.inventory, character?.skills, equipmentCatalog]);
 
   const money = character?.money || { gold: 0, silver: 0, copper: 0 };
 

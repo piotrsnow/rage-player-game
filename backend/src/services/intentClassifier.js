@@ -11,16 +11,76 @@
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
 import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
+import { isHypotheticalOrQuestioning } from '../../../shared/domain/intentHeuristics.js';
 
 const log = childLogger({ module: 'intentClassifier' });
 
 // ── TRADE INTENT REGEX ──
+//
+// Tightened vs. the original: dropped bare `kup`, `sklep`, `sprzedaj`, `handel`
+// because they matched too liberally (e.g. "sklepieniem" or stand-alone nouns).
+// Only full verb forms remain — the hypothesis guard below strips questions
+// and conditional phrasing so "czy potrzebujesz kompanii żeby…" no longer
+// slips through even when a keyword appears.
 
-const TRADE_REGEX = /\b(kupuj[eę]?|sprzedaj[eę]?|handluj[eę]?|targuj[eę]?|sklep|kup|sprzedaj|handel|buy|sell|haggle|trade|shop|merchant|purchase|barter)\b/i;
+const TRADE_REGEX = /\b(kupuj[eę]?|kupi[eęć]?|zakup(?:uj)?[eęia]?|sprzedaj[eę]?|sprzeda(?:j|ć)?|handluj[eę]?|targuj[eę]?|kupcem|sklepie|buy|sell|haggle|trade|shop|merchant|purchase|barter)\b/iu;
 
 function detectTradeIntent(action) {
   if (!action || typeof action !== 'string') return false;
+  if (isHypotheticalOrQuestioning(action)) return false;
   return TRADE_REGEX.test(action);
+}
+
+// ── TRAVEL INTENT REGEX ──
+// Match "idę do X", "wyruszam do X", "jadę do X", "kieruję się do X",
+// "udaję się do X", "travel to X", "go to X", "head to X", "leave for X".
+// Two-step parse: (1) locate verb + preposition (case-insensitive),
+// (2) capture a proper-noun target after it. Target must start with uppercase
+// and continues as long as subsequent words are also capitalized (so
+// "Czarnego Lasu" captures both; "Watonga, bo noc" stops at the comma).
+// This deliberately rejects "idę do domu" / "idę do lasu" — no capital.
+const TRAVEL_VERB_PREP = /\b(?:id[eę]|wyruszam|jad[eę]|kieruj[eę]\s+si[eę]|udaj[eę]\s+si[eę]|podr[oó]żuj[eę]|travel(?:ing)?|go(?:ing)?|head(?:ing)?|leav(?:e|ing))\s+(?:do|to|for|w\s+stron[eę]|ku)\s+/iu;
+const TRAVEL_TARGET = /^([A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*(?:\s+[A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*){0,3})/u;
+
+export function detectTravelIntent(action) {
+  if (!action || typeof action !== 'string') return null;
+  const verbMatch = action.match(TRAVEL_VERB_PREP);
+  if (!verbMatch) return null;
+  const rest = action.slice(verbMatch.index + verbMatch[0].length);
+  const targetMatch = rest.match(TRAVEL_TARGET);
+  if (!targetMatch) return null;
+  const target = targetMatch[1].trim().replace(/[.,;:!?].*$/, '').trim();
+  if (!target) return null;
+  return { target };
+}
+
+// ── DUNGEON NAVIGATION REGEX ──
+// Match "idę na północ", "otwieram drzwi na wschód", "schodzę w dół", etc.
+// Returns a canonical direction matching WorldLocationEdge.direction values:
+// N|S|E|W|up|down. Only fires in dungeon scenes (sceneGenerator gates on
+// locationType='dungeon_room').
+//
+// Deliberately does NOT use \b around Polish diacritic characters — `\b` in
+// JS regex ASCII mode treats `ą`/`ę`/`ł`/`ó` as non-word, which breaks
+// boundaries mid-token (e.g. `idę\b` won't match because there's no
+// word→non-word transition after ę).
+const DIRECTION_MAP = [
+  { re: /(p[oó]łnoc|\bnorth\b|\bpn\.?\b)/i, dir: 'N' },
+  { re: /(po[lł]udni|\bsouth\b|\bpd\.?\b)/i, dir: 'S' },
+  { re: /(wsch[oó]d|\beast\b|\bwsch\.?\b)/i, dir: 'E' },
+  { re: /(zach[oó]d|\bwest\b|\bzach\.?\b)/i, dir: 'W' },
+  { re: /(w\s+g[oó]r[eę]|\bup(?:stairs)?\b|schody\s+w\s+g[oó]r[eę])/i, dir: 'up' },
+  { re: /(w\s+d[oó][lł]|\bdown(?:stairs)?\b|schodz[eę]|schody\s+w\s+d[oó][lł])/i, dir: 'down' },
+];
+const DUNGEON_NAV_VERBS = /(id[eę]|p[oó]jd[eę]|wchodz[eę]|przechodz[eę]|rusz[aą]m|kieruj[eę]|schodz[eę]|wspin[aą]m|otwier[aą]m|\bgo\b|\bhead\b|\bwalk\b|\bclimb\b|\bdescend\b|\benter\b)/i;
+
+export function detectDungeonNavigateIntent(action) {
+  if (!action || typeof action !== 'string') return null;
+  if (!DUNGEON_NAV_VERBS.test(action)) return null;
+  for (const { re, dir } of DIRECTION_MAP) {
+    if (re.test(action)) return { direction: dir };
+  }
+  return null;
 }
 
 // ── EMPTY SELECTION (no context needed) ──
@@ -117,6 +177,31 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
     return { ...emptySelection(), _intent: 'combat' };
   }
 
+  // Travel intent — "idę do Avaltro", "travel to Watonga". Doesn't short-circuit
+  // scene-gen (premium still narrates) but flags the target so sceneGenerator
+  // can inject a TRAVEL CONTEXT block (path + waypoints + candidate events).
+  const travel = detectTravelIntent(playerAction);
+  if (travel) {
+    return {
+      ...emptySelection(),
+      expand_location: true,
+      _intent: 'travel',
+      _travelTarget: travel.target,
+    };
+  }
+
+  // Dungeon navigation — "idę na północ", "otwieram drzwi na wschód".
+  // Only relevant when the player is in a dungeon room; sceneGenerator
+  // picks up _dungeonDirection and pre-resolves the target room.
+  const dungeonNav = detectDungeonNavigateIntent(playerAction);
+  if (dungeonNav) {
+    return {
+      ...emptySelection(),
+      _intent: 'dungeon_navigate',
+      _dungeonDirection: dungeonNav.direction,
+    };
+  }
+
   // Trade intent from freeform text — if ONLY trade intent, skip scene gen
   if (detectTradeIntent(playerAction) && !detectCombatIntent(playerAction)) {
     // Extract NPC name hint if present (simple pattern: "od/from/u [Name]")
@@ -176,42 +261,75 @@ function extractTradeNpcHint(action) {
  * Build a compact summary of available game data for the nano model.
  * Nano uses this to decide what to expand.
  */
-export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], dbCodex = [] } = {}) {
+export function buildAvailableSummary(coreState, { dbNpcs = [], dbQuests = [], dbCodex = [], prevScene = null } = {}) {
   const parts = [];
 
   // Current location
   const location = coreState?.world?.currentLocation || 'unknown';
   parts.push(`Location: ${location}`);
 
-  // NPCs — name (role, attitude)
+  // NPCs — ONLY those at the current location. Classifier doesn't need the
+  // full campaign roster; it picks targets relevant to "here and now".
+  // Fallback: if none match (e.g. lastLocation missing), show up to 6 alive
+  // NPCs so the classifier isn't flying blind on a fresh scene.
   if (dbNpcs.length > 0) {
-    const npcList = dbNpcs
-      .filter(n => n.alive !== false)
-      .slice(0, 20)
-      .map(n => {
-        const role = n.role ? `, ${n.role}` : '';
-        return `${n.name} (${n.attitude}${role})`;
-      })
-      .join('; ');
-    parts.push(`NPCs: ${npcList}`);
+    const locNorm = String(location || '').toLowerCase().trim();
+    const alive = dbNpcs.filter((n) => n.alive !== false);
+    const atLocation = locNorm
+      ? alive.filter((n) => String(n.lastLocation || '').toLowerCase().trim() === locNorm)
+      : [];
+    const pool = atLocation.length > 0 ? atLocation : alive.slice(0, 6);
+    if (pool.length > 0) {
+      const npcList = pool
+        .slice(0, 12)
+        .map((n) => {
+          const role = n.role ? `, ${n.role}` : '';
+          return `${n.name} (${n.attitude}${role})`;
+        })
+        .join('; ');
+      parts.push(`NPCs here: ${npcList}`);
+    }
   }
 
-  // Quests — name (status)
+  // Quests — scoped: last 3 completed + current + next active.
+  // "Current" = first active; "next" = second active (the one waiting in line).
+  // Nano doesn't need the full backlog, just the slice relevant to deciding
+  // what to expand for this scene.
   if (dbQuests.length > 0) {
-    const questList = dbQuests
-      .slice(0, 10)
-      .map(q => `${q.name} (${q.status})`)
-      .join('; ');
-    parts.push(`Quests: ${questList}`);
+    const active = dbQuests.filter((q) => q.status === 'active' || q.status === 'in_progress');
+    const completed = dbQuests.filter((q) => q.status === 'completed');
+    const lines = [];
+    if (completed.length > 0) {
+      const recent = completed.slice(-3).map((q) => q.name).join(', ');
+      lines.push(`Completed (recent): ${recent}`);
+    }
+    if (active.length > 0) {
+      const current = active[0];
+      lines.push(`Current: ${current.name}`);
+      if (active.length > 1) {
+        lines.push(`Next: ${active[1].name}`);
+      }
+    }
+    if (lines.length > 0) {
+      parts.push(`Quests:\n  ${lines.join('\n  ')}`);
+    }
   }
 
-  // Codex — name (category)
-  if (dbCodex.length > 0) {
-    const codexList = dbCodex
-      .slice(0, 10)
-      .map(c => `${c.name} (${c.category})`)
-      .join('; ');
-    parts.push(`Codex: ${codexList}`);
+  // Codex dropped from classifier — it was a 10-entry catalog bloat. If a
+  // scene genuinely needs codex lookup, the scene-gen context block surfaces
+  // codex entries via other paths (expand_codex fallback still works via
+  // assembleContext, just without classifier pre-selection).
+
+  // Previous scene — excerpt so classifier understands narrative flow.
+  // Bumped from 350 → 800 chars: the classifier was losing continuity on
+  // discussion-style actions ("powiedz mi więcej…") where the previous
+  // scene's framing is the key signal that the player isn't taking a
+  // new combat/trade action.
+  if (prevScene?.narrative) {
+    const excerpt = String(prevScene.narrative).slice(0, 800);
+    const sceneTag = prevScene.sceneIndex != null ? `[Scene ${prevScene.sceneIndex}] ` : '';
+    const actionTag = prevScene.chosenAction ? `(action: "${String(prevScene.chosenAction).slice(0, 120)}") ` : '';
+    parts.push(`Previous scene: ${sceneTag}${actionTag}${excerpt}${prevScene.narrative.length > 800 ? '…' : ''}`);
   }
 
   return parts.join('\n');
@@ -240,7 +358,8 @@ Return ONLY valid JSON matching this schema:
   "roll_skill": "skill name for dice check" or null,
   "roll_difficulty": "easy" or "medium" or "hard" or "veryHard" or "extreme" or null,
   "combat_enemies": { "location": string, "budget": number, "maxDifficulty": string, "count": number, "race": string or null } or null,
-  "clear_combat": true/false
+  "clear_combat": true/false,
+  "quest_offer_likely": true/false
 }
 Available skills: ${SKILL_NAMES_FOR_NANO}
 
@@ -259,11 +378,26 @@ combat_enemies rules — set when the player is CLEARLY initiating combat (attac
 - race: infer from descriptors. ALWAYS set to 'ludzie' when the target is humanoid and nothing indicates otherwise — this includes: osiłek, chłop, gbur, karczmarz, pijak, rycerz, strażnik, bandyta, rozbójnik, najemnik, kultysta, żebrak, łotr, opryszek, cywil, wieśniak. Only set non-human race when explicitly mentioned: goblin/goblins → "gobliny", ork/orki → "orkowie", szkielet/zombie/upiór → "nieumarli", wilk/niedźwiedź/dzik → "zwierzeta", pająk → "pajaki", troll → "trolle", krasnolud → "krasnoludy", elf → "elfy", niziolek → "niziolki", demon/diabeł → "demony". When in doubt between race=null and race='ludzie', choose 'ludzie'. Valid values: ${BESTIARY_RACES_FOR_NANO}.
 - Set combat_enemies to null if no combat is intended.
 
+NEGATIVE EXAMPLES — combat_enemies MUST be null when the player discusses, questions, or hypothesizes combat rather than taking the action in-world:
+- "powiedz mi więcej jakbym miał walczyć" → null
+- "co się stanie jeśli zaatakuję?" → null
+- "opowiedz mi o walkach z bandytami" → null
+- "boję się ataku" → null
+- "jak walczy ten strażnik?" → null
+- "czy potrzebujesz kompanii żeby pokonać smoka?" → null (planning/question, not attack)
+Only set combat_enemies when the player TAKES the combat action in-world.
+
 clear_combat rules — set to true ONLY when the player action is an UNAMBIGUOUS direct attack on a visible target (e.g. "atakuję bandytę", "bijatyka w karczmie"). This allows skipping the large AI model. Set false when:
 - Combat is part of a larger narrative (ambush, negotiations breaking down)
 - Unknown threat approaches
 - Not sure if target is hostile or friendly
-When in doubt, set false.`;
+When in doubt, set false.
+
+quest_offer_likely rules — set to true ONLY when the player action reads as actively soliciting paid work, a mission, or a contract from someone in the scene:
+- "pytam o pracę / zlecenie / robotę", "szukam zlecenia", "może masz dla mnie zadanie?"
+- "ask for a job / task / work / bounty / contract", "any odd jobs?", "looking for work"
+- "rozmawiam z karczmarzem o tym co się dzieje w okolicy" only when the player explicitly follows up with a jobs/rumour request.
+Set false for: generic conversation, buying, flirting, threatening, idle small-talk, planning. When in doubt, false.`;
 
 /**
  * Call nano model to select which context to expand for a freeform player action.
@@ -389,6 +523,7 @@ function normalizeSelection(raw) {
     roll_difficulty: VALID_DIFFICULTIES.includes(raw.roll_difficulty) ? raw.roll_difficulty : null,
     combat_enemies: null,
     clear_combat: false,
+    quest_offer_likely: false,
   };
 
   // Validate combat_enemies
@@ -402,6 +537,7 @@ function normalizeSelection(raw) {
     };
   }
   result.clear_combat = raw.clear_combat === true;
+  result.quest_offer_likely = raw.quest_offer_likely === true;
 
   return result;
 }

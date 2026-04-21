@@ -388,9 +388,20 @@ export function applyAttributeVariance(baseAttributes, variance) {
  * @param {string}  [params.race]          - Filter by race (from BESTIARY_RACES)
  * @returns {Array<object>} Array of bestiary entries with name attached
  */
-export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, count = 1, race } = {}) {
-  const maxTierIdx = maxDifficulty
-    ? BESTIARY_DIFFICULTIES.indexOf(maxDifficulty)
+export function selectBestiaryEncounter({ location, budget = 4, maxDifficulty, count = 1, race, campaignDifficultyTier } = {}) {
+  // G1 — clamp the per-encounter cap to the campaign's configured tier.
+  // BESTIARY_DIFFICULTIES uses the same names as Campaign.difficultyTier
+  // (low < medium < high < deadly) so we can compare by index directly.
+  let effectiveMax = maxDifficulty;
+  if (campaignDifficultyTier) {
+    const reqIdx = effectiveMax ? BESTIARY_DIFFICULTIES.indexOf(effectiveMax) : BESTIARY_DIFFICULTIES.length - 1;
+    const capIdx = BESTIARY_DIFFICULTIES.indexOf(campaignDifficultyTier);
+    if (capIdx >= 0 && (reqIdx < 0 || reqIdx > capIdx)) {
+      effectiveMax = campaignDifficultyTier;
+    }
+  }
+  const maxTierIdx = effectiveMax
+    ? BESTIARY_DIFFICULTIES.indexOf(effectiveMax)
     : BESTIARY_DIFFICULTIES.length - 1;
 
   const filterPool = ({ race: r, location: loc }) => Object.entries(BESTIARY).filter(([, entry]) => {

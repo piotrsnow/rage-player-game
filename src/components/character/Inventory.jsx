@@ -112,6 +112,14 @@ export default function Inventory({
           const resolvedImageUrl = item.imageUrl ? apiClient.resolveMediaUrl(item.imageUrl) : null;
           const isSelected = selectedItemId === item.id;
           const eqSlot = getEquippedSlot(item, equipped);
+          const equippableSlots = getEquippableSlots(item);
+          const handleDoubleClick = () => {
+            if (eqSlot) {
+              onUnequipItem?.(eqSlot);
+            } else if (equippableSlots.length > 0) {
+              onEquipItem?.(item.id, equippableSlots[0]);
+            }
+          };
           return (
             <Tooltip
               key={item.id}

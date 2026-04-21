@@ -9,6 +9,7 @@ import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import Button from '../ui/Button';
+import Slider from '../ui/Slider';
 import CountdownProgress from '../ui/CountdownProgress';
 import PlayerLobby from '../multiplayer/PlayerLobby';
 import CharacterCreationModal from '../character/CharacterCreationModal';
@@ -51,6 +52,14 @@ export default function CampaignCreatorPage() {
     difficulty: 'Normal',
     length: 'Medium',
     storyPrompt: '',
+    livingWorldEnabled: false,
+    // Phase 7 — world time controls. Only sent to backend when
+    // livingWorldEnabled is true (and the user left defaults alone → omitted).
+    worldTimeRatio: 24,
+    worldTimeMaxGapDays: 7,
+    // G1 — encounter difficulty cap. Validated against character level at
+    // submit time (backend enforces too). Default 'low' = safest choice.
+    difficultyTier: 'low',
   });
 
   const [isRandomizing, setIsRandomizing] = useState(false);
@@ -453,6 +462,95 @@ export default function CampaignCreatorPage() {
             onRandomize={handleRandomize}
             onGenerateFromInput={handleGenerateFromInput}
           />
+
+          {(() => {
+            const activeChar = charMode === 'new' ? createdCharacter : selectedCharacter;
+            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
+            const tiers = charLevel <= 5
+              ? ['low']
+              : charLevel <= 10
+                ? ['low', 'medium', 'high']
+                : ['low', 'medium', 'high', 'deadly'];
+            const tierLabels = { low: 'Low (niska)', medium: 'Medium (średnia)', high: 'High (wysoka)', deadly: 'Deadly (śmiertelna)' };
+            // Clamp the stored value if the active character no longer permits it.
+            if (!tiers.includes(form.difficultyTier)) {
+              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
+            }
+            return (
+              <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-label text-sm text-on-surface">Trudność kampanii</span>
+                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-outline-variant/30 text-on-surface-variant">
+                    Nowe
+                  </span>
+                </div>
+                <p className="text-on-surface-variant text-xs leading-relaxed mb-3">
+                  Górna granica wrogów w scenach. lv 1-5 → tylko Low; lv 6-10 → Low/Medium/High; lv 11+ → wszystko. Chroni przed walką ze smokiem na niskim poziomie.
+                </p>
+                <select
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-sm px-3 py-2 text-sm text-on-surface"
+                  value={form.difficultyTier}
+                  onChange={(e) => updateForm((p) => ({ ...p, difficultyTier: e.target.value }))}
+                >
+                  {tiers.map((t) => (
+                    <option key={t} value={t}>{tierLabels[t]}</option>
+                  ))}
+                </select>
+                <p className="text-on-surface-variant text-[11px] mt-2 opacity-70">
+                  Poziom postaci: <strong>{charLevel}</strong>. Dozwolone: {tiers.join(', ')}.
+                </p>
+              </section>
+            );
+          })()}
+
+          <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 accent-tertiary"
+                checked={!!form.livingWorldEnabled}
+                disabled={isGuest}
+                onChange={(e) => updateForm((p) => ({ ...p, livingWorldEnabled: e.target.checked }))}
+              />
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-label text-sm text-on-surface">Living World</span>
+                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-tertiary/20 text-tertiary border border-tertiary/30">
+                    Experimental
+                  </span>
+                </div>
+                <p className="text-on-surface-variant text-xs leading-relaxed">
+                  Ważni NPC i lokacje żyją między wizytami. Gdy opuścisz lokację, NPC zostaje zapauzowany i „żyje dalej" po powrocie (zależnie od upływu czasu). Świat persystuje między Twoimi kampaniami.
+                </p>
+              </div>
+            </label>
+
+            {form.livingWorldEnabled && !isGuest && (
+              <div className="mt-6 pt-6 border-t border-outline-variant/15">
+                <p className="text-on-surface-variant text-xs mb-4">
+                  Tempo upływu czasu w świecie gry względem realnego + maksymalna "dziura" gdy wracasz po przerwie.
+                </p>
+                <Slider
+                  label="Tempo czasu"
+                  description="1h realnego = N godzin w grze (domyślnie 24 → 1h real = 1 dzień gry)"
+                  min={1}
+                  max={72}
+                  value={form.worldTimeRatio}
+                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
+                  displayValue={`${form.worldTimeRatio}×`}
+                />
+                <Slider
+                  label="Maks. offline gap"
+                  description="Ile dni gry maksymalnie upływa gdy wracasz po długiej przerwie"
+                  min={1}
+                  max={30}
+                  value={form.worldTimeMaxGapDays}
+                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
+                  displayValue={`${form.worldTimeMaxGapDays} dni`}
+                />
+              </div>
+            )}
+          </section>
 
           {(state.error || mp.state.error) && (
             <div className="bg-error-container/20 border border-error/20 p-4 rounded-sm">

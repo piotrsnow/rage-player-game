@@ -17,19 +17,18 @@ const AVAILABILITY_ORDER = { common: 0, uncommon: 1, rare: 2, exotic: 3 };
 
 const QUANTITY_MAP = { one: [1, 1], few: [1, 2], some: [2, 3], many: [3, 5] };
 
-/** Money base amounts in copper per scene range. */
-const MONEY_SCALE = [
-  { maxScene: 5, base: 8 },
-  { maxScene: 10, base: 20 },
-  { maxScene: 15, base: 50 },
-  { maxScene: 20, base: 100 },
-  { maxScene: 30, base: 250 },
-  { maxScene: 45, base: 500 },
-  { maxScene: Infinity, base: 1000 },
-];
+/** Fixed base (copper) per money reward. Scaled by campaign difficulty tier + context. */
+const MONEY_BASE_COPPER = 10;
+
+/** Per-campaign-difficulty multiplier on money rewards. Drives all loot generosity. */
+const TIER_MULTIPLIER = {
+  low: 0.5,
+  medium: 1.0,
+  hard: 1.25,
+  deadly: 1.5,
+};
 
 const CONTEXT_MULTIPLIER = {
-  quest_reward: 1.5,
   loot: 1.0,
   gift: 0.8,
   found: 0.6,
@@ -100,11 +99,6 @@ function resolveQuantity(hint) {
   return randomInRange(range[0], range[1]);
 }
 
-function getMoneyBase(sceneCount) {
-  const entry = MONEY_SCALE.find(e => sceneCount <= e.maxScene) || MONEY_SCALE[MONEY_SCALE.length - 1];
-  return entry.base;
-}
-
 // ── Pre-built indexes ──
 
 const equipmentEntries = Object.entries(EQUIPMENT).map(([id, e]) => ({ id, ...e }));
@@ -167,12 +161,12 @@ function resolveEquipmentItem(descriptor, rarity) {
   };
 }
 
-function resolveMoney(descriptor, sceneCount) {
-  const base = getMoneyBase(sceneCount);
+function resolveMoney(descriptor, { difficultyTier = 'medium' } = {}) {
+  const tierMult = TIER_MULTIPLIER[difficultyTier] ?? 1.0;
   const contextMult = CONTEXT_MULTIPLIER[descriptor.context] || 1;
   // Randomize ±50%
   const variance = 0.5 + Math.random(); // 0.5 to 1.5
-  const copperAmount = Math.round(base * contextMult * variance);
+  const copperAmount = Math.max(1, Math.round(MONEY_BASE_COPPER * tierMult * contextMult * variance));
   return { moneyChange: normalizeCoins(copperAmount) };
 }
 
@@ -201,10 +195,11 @@ function resolvePotion(descriptor, rarity) {
  * Resolve abstract reward descriptors into concrete state changes.
  * @param {Array} rewards - Array of reward descriptors from AI
  * @param {object} context
- * @param {number} context.sceneCount - Campaign scene progression
+ * @param {number} context.sceneCount - Campaign scene progression (drives rarity gates)
+ * @param {string} context.difficultyTier - Campaign difficulty tier (drives money scale)
  * @returns {{ newItems: object[], newMaterials: object[], moneyChange: {gold,silver,copper} }}
  */
-export function resolveRewards(rewards, { sceneCount = 0 } = {}) {
+export function resolveRewards(rewards, { sceneCount = 0, difficultyTier = 'medium' } = {}) {
   const result = { newItems: [], newMaterials: [], moneyChange: { gold: 0, silver: 0, copper: 0 } };
 
   for (const desc of rewards) {
@@ -227,7 +222,7 @@ export function resolveRewards(rewards, { sceneCount = 0 } = {}) {
         resolved = resolveEquipmentItem(desc, rarity);
         break;
       case 'money':
-        resolved = resolveMoney(desc, sceneCount);
+        resolved = resolveMoney(desc, { difficultyTier });
         break;
       case 'potion':
         resolved = resolvePotion(desc, rarity);
@@ -258,10 +253,10 @@ export function resolveRewards(rewards, { sceneCount = 0 } = {}) {
  * Post-processing step: resolve rewards in stateChanges and merge into concrete fields.
  * Consumes stateChanges.rewards and deletes it (same pattern as skillsUsed).
  */
-export function resolveAndApplyRewards(stateChanges, { sceneCount = 0 } = {}) {
+export function resolveAndApplyRewards(stateChanges, { sceneCount = 0, difficultyTier = 'medium' } = {}) {
   if (!stateChanges?.rewards?.length) return;
 
-  const resolved = resolveRewards(stateChanges.rewards, { sceneCount });
+  const resolved = resolveRewards(stateChanges.rewards, { sceneCount, difficultyTier });
 
   // Merge newItems
   if (resolved.newItems.length > 0) {
