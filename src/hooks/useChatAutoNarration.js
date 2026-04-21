@@ -3,44 +3,61 @@ import { useEffect, useRef } from 'react';
 /**
  * Auto-play narrator reaction to new chat messages.
  *
- * When new DM / combat-commentary messages arrive and the narrator is ready
- * (and not already speaking the current scene via streaming narration), kick
- * off playback on the latest one. Old narration is cut intentionally — the
- * UX goal is to follow the newest action.
+ * Tracks the latest spoken message (DM / combat-commentary) by id rather than
+ * by count, so that messages arriving while the narrator is busy or autoplay
+ * is temporarily suppressed (e.g. the player-action typewriter overlay is
+ * showing) are NOT lost — they get narrated as soon as conditions allow.
+ *
+ * Coordinates with other narration sources (streaming narrator,
+ * `handlePlayerActionOverlayComplete`) via `narrator.currentMessageId` and
+ * `narrator.isStreaming` to avoid double-narrating the same scene.
  */
 export function useChatAutoNarration({ messages, narrator, autoPlay }) {
-  const prevMessageCountRef = useRef(messages.length);
-  const lastNarratedMessageIdRef = useRef(null);
+  // `undefined` = first run (snapshot), null = nothing yet, string = id
+  const lastHandledIdRef = useRef(undefined);
 
   useEffect(() => {
-    if (!narrator || !autoPlay) {
-      prevMessageCountRef.current = messages.length;
-      return;
-    }
-    const { isNarratorReady, speakSingle } = narrator;
-    if (!isNarratorReady) {
-      prevMessageCountRef.current = messages.length;
+    const latestSpoken = [...messages]
+      .reverse()
+      .find((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
+    const latestId = latestSpoken?.id ?? null;
+
+    // First mount: snapshot what's already there so we don't replay history.
+    if (lastHandledIdRef.current === undefined) {
+      lastHandledIdRef.current = latestId;
       return;
     }
 
-    if (messages.length > prevMessageCountRef.current) {
-      const alreadyActive =
-        narrator.playbackState === narrator.STATES?.PLAYING ||
-        narrator.playbackState === narrator.STATES?.LOADING;
-      const newMessages = messages.slice(prevMessageCountRef.current);
-      const spokenMessages = newMessages.filter(
-        (m) => m.role === 'dm' || m.subtype === 'combat_commentary',
-      );
-      const latestSpokenMessage = spokenMessages.at(-1);
-      if (
-        latestSpokenMessage &&
-        latestSpokenMessage.id !== lastNarratedMessageIdRef.current &&
-        !alreadyActive
-      ) {
-        speakSingle(latestSpokenMessage, latestSpokenMessage.id);
-        lastNarratedMessageIdRef.current = latestSpokenMessage.id;
-      }
+    if (!latestSpoken || latestId === lastHandledIdRef.current) return;
+
+    // If another narration source already grabbed this exact message
+    // (handlePlayerActionOverlayComplete just called speakSingle, or the
+    // streaming narrator is currently reading the live scene), claim it as
+    // handled so we don't double-narrate later.
+    if (
+      narrator?.currentMessageId === latestId
+      || narrator?.isStreaming
+    ) {
+      lastHandledIdRef.current = latestId;
+      return;
     }
-    prevMessageCountRef.current = messages.length;
+
+    if (!narrator || !autoPlay || !narrator.isNarratorReady) {
+      // Don't claim — we want to narrate this message later when conditions
+      // become favorable (overlay closes / narrator becomes ready).
+      return;
+    }
+
+    const alreadyActive =
+      narrator.playbackState === narrator.STATES?.PLAYING
+      || narrator.playbackState === narrator.STATES?.LOADING;
+    if (alreadyActive) {
+      // Don't claim — re-evaluate when narrator goes back to idle and
+      // GameplayPage re-renders with the new narrator object.
+      return;
+    }
+
+    narrator.speakSingle(latestSpoken, latestSpoken.id);
+    lastHandledIdRef.current = latestId;
   }, [messages, narrator, autoPlay]);
 }

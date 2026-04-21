@@ -336,7 +336,34 @@ export function moveCombatant(combat, actorId, targetPosition) {
 // --- Manoeuvre resolution ---
 
 export function resolveManoeuvre(combat, actorId, manoeuvreKey, targetId, options = {}) {
-  const state = { ...combat, combatants: combat.combatants.map((c) => ({ ...c })) };
+  // Deep-clone the subtrees we mutate below. `combat` may be frozen by Immer
+  // (the game store uses `produce`), so a shallow `{...combat}` would still
+  // hand us read-only nested objects (playerStats, skillXpAccumulator entries,
+  // combatant.conditions/spells/mana, …) and `state.playerStats.hits += 1`
+  // would throw `TypeError: "hits" is read-only`.
+  const state = {
+    ...combat,
+    combatants: combat.combatants.map((c) => ({
+      ...c,
+      conditions: [...(c.conditions || [])],
+      spells: c.spells
+        ? { ...c.spells, usageCounts: { ...(c.spells.usageCounts || {}) } }
+        : c.spells,
+      mana: c.mana ? { ...c.mana } : c.mana,
+    })),
+    playerStats: combat.playerStats
+      ? {
+          ...combat.playerStats,
+          killsByTier: { ...(combat.playerStats.killsByTier || {}) },
+        }
+      : combat.playerStats,
+    skillXpAccumulator: combat.skillXpAccumulator
+      ? Object.fromEntries(
+          Object.entries(combat.skillXpAccumulator).map(([k, v]) => [k, { ...v }]),
+        )
+      : combat.skillXpAccumulator,
+    log: [...(combat.log || [])],
+  };
   const actor = state.combatants.find((c) => c.id === actorId);
   const target = targetId ? state.combatants.find((c) => c.id === targetId) : null;
   const manoeuvre = gameData.manoeuvres[manoeuvreKey];

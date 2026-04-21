@@ -16,7 +16,7 @@ export class LocalStore {
     await mkdir(dirname(fullPath), { recursive: true });
     await writeFile(fullPath, buffer);
     return {
-      url: `/media/file/${storagePath}`,
+      url: `/v1/media/file/${storagePath}`,
       path: storagePath,
       size: buffer.length,
     };
@@ -33,7 +33,7 @@ export class LocalStore {
   }
 
   async getUrl(storagePath) {
-    return `/media/file/${storagePath}`;
+    return `/v1/media/file/${storagePath}`;
   }
 
   async has(storagePath) {

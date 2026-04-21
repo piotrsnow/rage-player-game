@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import MaterialBagPanel from './MaterialBagPanel';
 import InventoryImage from './inventory/InventoryImage';
 import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
-import ItemDetailBox from './inventory/ItemDetailBox';
 import ItemTooltip from './inventory/ItemTooltip';
-import CrystalUseModal from './inventory/CrystalUseModal';
 import Tooltip from '../ui/Tooltip';
-import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippableSlots, getEquippedSlot } from './inventory/constants';
+import Button from '../ui/Button';
+import { rarityColors, rarityGlows, typeIcons, SLOT_CONFIG, getEquippedSlot } from './inventory/constants';
+
+const ITEMS_PER_PAGE = 12;
 
 function CoinDisplay({ value, label, color }) {
   return (
@@ -21,16 +22,42 @@ function CoinDisplay({ value, label, color }) {
   );
 }
 
-export default function Inventory({ character, items = [], money, equipped = {}, onEquipItem, onUnequipItem, onUseManaCrystal, materialBag = [] }) {
+export default function Inventory({
+  items = [],
+  money,
+  equipped = {},
+  onEquipItem,
+  onUnequipItem,
+  materialBag = [],
+  selectedItemId = null,
+  onSelectItem,
+}) {
   const { t } = useTranslation();
-  const [selectedItemId, setSelectedItemId] = useState(null);
   const [showMaterialBag, setShowMaterialBag] = useState(false);
-  const [crystalItemId, setCrystalItemId] = useState(null);
+  const [page, setPage] = useState(1);
   const maxSlots = 40;
-  const emptySlots = Math.max(0, maxSlots - items.length);
   const purse = money || { gold: 0, silver: 0, copper: 0 };
-  const selectedItem = items.find(i => i.id === selectedItemId) || null;
   const totalMaterials = materialBag.reduce((sum, m) => sum + (m.quantity || 1), 0);
+
+  const handleSelect = (id) => {
+    if (onSelectItem) onSelectItem(id);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(maxSlots / ITEMS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * ITEMS_PER_PAGE;
+    return items.slice(start, start + ITEMS_PER_PAGE);
+  }, [items, safePage]);
+  const slotsOnThisPage = Math.min(
+    ITEMS_PER_PAGE,
+    Math.max(0, maxSlots - (safePage - 1) * ITEMS_PER_PAGE)
+  );
+  const emptySlots = Math.max(0, slotsOnThisPage - pageItems.length);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   if (showMaterialBag) {
     return <MaterialBagPanel materials={materialBag} onClose={() => setShowMaterialBag(false)} />;
@@ -77,7 +104,7 @@ export default function Inventory({ character, items = [], money, equipped = {},
       />
 
       <div className="grid grid-cols-4 gap-3">
-        {items.map((item) => {
+        {pageItems.map((item) => {
           const rarityKey = item.rarity || item.availability || 'common';
           const rarity = rarityColors[rarityKey] || rarityColors.common;
           const glow = rarityGlows[rarityKey] || '';
@@ -102,9 +129,8 @@ export default function Inventory({ character, items = [], money, equipped = {},
               tooltipClassName="!max-w-none !p-3"
             >
               <div
-                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform select-none ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
-                onClick={() => setSelectedItemId(isSelected ? null : item.id)}
-                onDoubleClick={handleDoubleClick}
+                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+                onClick={() => handleSelect(isSelected ? null : item.id)}
               >
                 <InventoryImage
                   imageUrl={resolvedImageUrl}
@@ -143,30 +169,32 @@ export default function Inventory({ character, items = [], money, equipped = {},
         ))}
       </div>
 
-      {selectedItem && (
-        <ItemDetailBox
-          item={selectedItem}
-          items={items}
-          equipped={equipped}
-          equippedSlot={getEquippedSlot(selectedItem, equipped)}
-          equippableSlots={getEquippableSlots(selectedItem)}
-          onEquipItem={onEquipItem}
-          onUnequipItem={onUnequipItem}
-          onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
-        />
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <Button
+            variant="secondary"
+            size="icon"
+            disabled={safePage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            aria-label={t('gallery.prev', 'Previous')}
+          >
+            <span className="material-symbols-outlined text-base">chevron_left</span>
+          </Button>
+          <span className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest tabular-nums">
+            {safePage}/{totalPages}
+          </span>
+          <Button
+            variant="secondary"
+            size="icon"
+            disabled={safePage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            aria-label={t('gallery.next', 'Next')}
+          >
+            <span className="material-symbols-outlined text-base">chevron_right</span>
+          </Button>
+        </div>
       )}
 
-      {crystalItemId && character && (
-        <CrystalUseModal
-          character={character}
-          onClose={() => setCrystalItemId(null)}
-          onChoose={(choice) => {
-            onUseManaCrystal?.(crystalItemId, choice);
-            setCrystalItemId(null);
-            setSelectedItemId(null);
-          }}
-        />
-      )}
     </div>
   );
 }

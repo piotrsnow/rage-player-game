@@ -128,7 +128,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
 
-  const { streamingNarrationActiveRef } = useStreamingNarrator({
+  useStreamingNarrator({
     narrator,
     streamingSegments,
     streamingNarrative,
@@ -369,16 +369,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const handlePlayerActionOverlayComplete = useCallback(() => {
     clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
-    if (!sceneGenSucceededRef.current) return;
-    // Skip if streaming narration already started reading this scene
-    if (streamingNarrationActiveRef.current || narrator.playbackState !== narrator.STATES.IDLE) return;
-    if (settings.narratorEnabled && settings.narratorAutoPlay && narrator.isNarratorReady) {
-      const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
-      if (latestDm) {
-        narrator.speakSingle(latestDm, latestDm.id);
-      }
-    }
-  }, [settings.narratorEnabled, settings.narratorAutoPlay, narrator, chatHistory, clearEarlyDiceRoll]);
+    // Auto-narration is fully owned by useChatAutoNarration. As soon as
+    // playerActionOverlayText flips to null, the autoPlay flag passed to
+    // ChatPanel becomes true and the hook narrates the latest unhandled DM
+    // message — coordinating with streaming via narrator.isStreaming so we
+    // don't double-read scenes that were already streamed live.
+  }, [clearEarlyDiceRoll]);
 
   const OVERLAY_LEAD_TIME_SECONDS = 12;
 
