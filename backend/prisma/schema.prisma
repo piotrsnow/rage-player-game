@@ -162,6 +162,23 @@ model CampaignNPC {
   // Used by questgiver pickers, dialog flavor, and scene-gen intent hints.
   // Backfilled at clone/promotion time via categorize(role) in questGoalAssigner.
   category      String   @default("commoner")
+  // Round B — campaign sandbox shadow of WorldNPC.currentLocationId. Mutations
+  // to the NPC's position during play write HERE, not to the canonical WorldNPC,
+  // so a concurrent playthrough sees the untouched canonical state. `lastLocation`
+  // above stays as a flavor string but authoritative resolution uses this FK.
+  lastLocationId      String?  @db.ObjectId
+  // Round B — one-shot hint surfaced in the next scene prompt when the
+  // `onComplete.moveNpcToPlayer` quest trigger fires. Scene-gen prepends
+  // "(NPC właśnie przybył: {pendingIntroHint})" into the NPC brief, then
+  // clears the field so the hint fires exactly once.
+  pendingIntroHint    String?
+  // Round B — per-campaign NPC role description. INDEPENDENT of
+  // WorldNPC.activeGoal: canonical NPC lives its own world life (ticked by
+  // npcAgentLoop), while this field captures the NPC's role in THIS
+  // playthrough (quest giver, ally, enemy). Two never sync — guards against
+  // campaign actions corrupting canon.
+  activeGoal          String?
+  goalProgress        String?
   // G4 — per-NPC flag so a single renown acknowledgment fires once per
   // (campaign, NPC) pair instead of every reencounter.
   hasAcknowledgedFame Boolean @default(false)
@@ -206,6 +223,11 @@ model CampaignQuest {
   reward               String?
   status               String    @default("active") // "active" | "completed"
   completedAt          DateTime?
+  // Round B — when true, pickQuestGiver is skipped for this quest. Set by
+  // startSpawnPicker so the initial "meet NPC X at sublocation Y" binding
+  // sticks even when saturation logic would otherwise route the offer to
+  // a random local NPC.
+  forcedGiver          Boolean   @default(false)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -519,20 +541,20 @@ model WorldNPC {
   // Phase 2 — Per-campaign dialog memory (C2 1-on-1 endpoint)
   dialogHistory         String    @default("{}") // JSON: { campaignId: [{playerMsg, npcResponse, gameTime}] }
   knowledgeBase         String    @default("[]") // JSON: [{ topic, learnedAt, source, sensitivity }]
-  // Phase 5 — background ticks (NPC lives when player isn't looking)
-  activeGoal             String?   // short sentence describing the NPC's current objective
+  // Phase 5 — WORLD-level NPC background life. Independent of any campaign:
+  // the canonical NPC lives its own life (tick loop picks actions based on
+  // this activeGoal + goalProgress). A CampaignNPC shadow carries its OWN
+  // activeGoal that represents the NPC's role in that specific playthrough
+  // (quest giver, ally, enemy) — the two never sync. Players cannot corrupt
+  // the canonical world through campaign actions.
+  activeGoal             String?   // NPC's own long-running world goal
   goalProgress           String?   // JSON: { step, milestones[], lastAction, lastLocation, updatedAt }
   lastTickAt             DateTime?
   tickIntervalHours      Int       @default(24) // retained for future auto-dispatch (ideas/npc-auto-dispatch)
-  // Scene-driven tick cadence (primary mechanism now — see questGoalAssigner)
+  // Scene-driven tick cadence for the WORLD tick. Per-campaign ticks (if
+  // any) track their own cadence on the shadow.
   lastTickSceneIndex     Int?
   tickIntervalScenes     Int       @default(2)
-  // Who this goal is aimed at — resolved at assignment time from the quest's
-  // owning campaign. Living World context only surfaces the goal to the
-  // campaign whose id matches goalTargetCampaignId (prevents WorldNPC
-  // referencing player "Random" in campaign A from leaking into campaign B).
-  goalTargetCharacterId  String?   @db.ObjectId
-  goalTargetCampaignId   String?   @db.ObjectId
   // "Home" — where the NPC belongs when they have no active task. Set on
   // promotion from their starting location. After a quest concludes, the
   // assigner points the NPC back here (via a return_home goal) instead

@@ -144,7 +144,7 @@ Rules:
 - Prefer incremental progress (work_on_goal) over jumps. Move only if goal requires it.
 - Match action scope to tick interval: 24h tick = "brought back 3 herbs", not "founded a guild".`;
 
-async function proposeAction({ npc, recentEvents = [], targetPlayerLocation = null, provider = 'openai', timeoutMs = 5000 }) {
+async function proposeAction({ npc, recentEvents = [], provider = 'openai', timeoutMs = 5000 }) {
   const eventsDigest = recentEvents.slice(0, 6).map((e) => {
     const payload = e.payload ? (typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload)) : '';
     return `[${e.eventType}] ${payload.slice(0, 160)}`;
@@ -161,7 +161,6 @@ async function proposeAction({ npc, recentEvents = [], targetPlayerLocation = nu
     npc.goalProgress ? `Goal progress: ${typeof npc.goalProgress === 'string' ? npc.goalProgress : JSON.stringify(npc.goalProgress)}` : null,
     currentLocName ? `Current location: ${currentLocName}` : (npc.currentLocationId ? `Current location id: ${npc.currentLocationId}` : null),
     homeLocName && homeLocName !== currentLocName ? `Home location: ${homeLocName}. Return here when your current goal is done.` : null,
-    targetPlayerLocation ? `Player target is currently at: ${targetPlayerLocation}. If your goal is to find/deliver to player, move there.` : null,
     eventsDigest ? `\nRecent activity:\n${eventsDigest}` : null,
   ].filter(Boolean).join('\n');
 
@@ -198,11 +197,11 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
     return { status: 'skipped', reason: eligibility.reason };
   }
 
-  // Resolve target player location (for seeker/delivery goals), current NPC
-  // location name, and home location name (for return-home goals). All
-  // best-effort; nano handles missing data gracefully.
-  const [targetPlayerLocation, currentLocName, homeLocName] = await Promise.all([
-    resolveTargetPlayerLocation(npc).catch(() => null),
+  // Resolve current NPC location name + home location name (for return-home
+  // goals). WorldNPC tick is world-level — no knowledge of which campaign's
+  // player is where (that was a hack from the pre-shadow era; shadow
+  // architecture makes per-campaign goals live on CampaignNPC instead).
+  const [currentLocName, homeLocName] = await Promise.all([
     resolveLocationName(npc.currentLocationId).catch(() => null),
     resolveLocationName(npc.homeLocationId).catch(() => null),
   ]);
@@ -210,7 +209,6 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
   const proposed = await proposeAction({
     npc: { ...npc, _currentLocationName: currentLocName, _homeLocationName: homeLocName },
     recentEvents,
-    targetPlayerLocation,
     provider,
     timeoutMs,
   });
@@ -285,26 +283,6 @@ function parseProgress(gp) {
   if (!gp) return null;
   if (typeof gp === 'object') return gp;
   try { return JSON.parse(gp); } catch { return null; }
-}
-
-/**
- * Resolve the target player's current location name from the owning
- * campaign's coreState. Used for seeker/delivery goals so nano can pick
- * `move toLocation: <where player is>`. Returns null on any failure.
- */
-async function resolveTargetPlayerLocation(npc) {
-  if (!npc?.goalTargetCampaignId) return null;
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: npc.goalTargetCampaignId },
-    select: { coreState: true },
-  });
-  if (!campaign?.coreState) return null;
-  try {
-    const core = JSON.parse(campaign.coreState);
-    return core?.world?.currentLocation || null;
-  } catch {
-    return null;
-  }
 }
 
 async function resolveLocationName(locationId) {

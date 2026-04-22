@@ -87,11 +87,47 @@ export function buildContextSection(contextBlocks) {
         for (const n of lw.npcs) {
           const bits = [n.name];
           if (n.role) bits.push(`(${n.role})`);
+          if (n.category) bits.push(`[${n.category}]`);
           if (n.paused) bits.push('[recently away]');
           if (n.activeGoal) bits.push(`goal: "${n.activeGoal}"`);
           lines.push(`- ${bits.join(' ')}`);
+          // Round B — one-shot introduction hint, fired by the quest trigger
+          // `onComplete.moveNpcToPlayer`. Tells premium the NPC just arrived
+          // and has a specific piece of news. Cleared post-assembly.
+          if (n.pendingIntroHint) {
+            lines.push(`  * JUST ARRIVED — ${n.name} przychodzi do gracza z wiadomością: ${n.pendingIntroHint}`);
+          }
         }
       }
+      // Round B (Phase 4b) — NPC hearsay policy. Each key NPC gets a list
+      // of locations they are authorized to reveal in dialog (own location
+      // + 1-hop edges + explicit knownLocationIds). Premium MUST NOT reveal
+      // other locations from this NPC; processStateChanges enforces via the
+      // `locationMentioned` bucket policy check.
+      if (Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {
+        lines.push('');
+        lines.push('## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić');
+        lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationId, byNpcId}]` — tylko z tej listy.');
+        for (const h of lw.hearsayByNpc) {
+          lines.push(`- ${h.npcName} wie o:`);
+          for (const loc of h.locations) {
+            const danger = loc.danger && loc.danger !== 'safe' ? ` ⚠ ${loc.danger}` : '';
+            lines.push(`  · ${loc.name} (${loc.type}${danger}) [id: ${loc.id}]`);
+          }
+        }
+      }
+
+      // Round B (Phase 4c) — WORLD BOUNDS reminder. Tells premium how much
+      // room the player has in each cardinal direction before hitting the
+      // edge of this campaign's worldBounds. New non-canonical locations
+      // emitted beyond the boundary are silently rejected by processTopLevelEntry,
+      // so this hint steers narration toward feasible directions.
+      if (lw.worldBoundsHint) {
+        const h = lw.worldBoundsHint;
+        lines.push('');
+        lines.push(`## [WORLD BOUNDS] — remaining travel room: N ${h.remainingN} km · S ${h.remainingS} km · E ${h.remainingE} km · W ${h.remainingW} km. Beyond that = edge of the known world (new locations past this boundary are rejected by the engine).`);
+      }
+
       if (lw.backgroundCount > 0 || lw.backgroundLabel) {
         const label = lw.backgroundLabel || 'mieszkaniec';
         const count = lw.backgroundCount > 0 ? `${lw.backgroundCount}+ ` : '';

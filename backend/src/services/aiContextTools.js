@@ -5,7 +5,12 @@ import { embedText } from './embeddingService.js';
 import { formatWeaponCatalog, formatBaseTypeCatalog, searchBestiary } from '../data/equipment/index.js';
 import { getLocationSummary } from './memoryCompressor.js';
 import { childLogger } from '../lib/logger.js';
-import { findOrCreateWorldLocation, listNpcsAtLocation } from './livingWorld/worldStateService.js';
+import { findOrCreateWorldLocation } from './livingWorld/worldStateService.js';
+import {
+  listNpcsAtLocation,
+  clearCampaignNpcIntroHint,
+  resolveNpcKnownLocations,
+} from './livingWorld/campaignSandbox.js';
 import { forLocation as worldEventsForLocation, parseEventPayload } from './livingWorld/worldEventLog.js';
 import { getCompanions } from './livingWorld/companionService.js';
 import { getReputationProfile, maybeClearVendetta } from './livingWorld/reputationService.js';
@@ -660,11 +665,12 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     ? campaign.characterIds[0]
     : null;
 
-  // Parallel: NPCs at this location (canonical) + recent world events +
-  // any companions travelling with the party (Phase 2) + lazy vendetta clear
-  // + Phase 4 DM agent memory.
+  // Parallel: NPCs at this location (campaign-sandbox aware — returns
+  // CampaignNPC shadows, auto-cloning canonical WorldNPCs at first encounter)
+  // + recent world events + any companions travelling with the party
+  // (Phase 2) + lazy vendetta clear + Phase 4 DM agent memory.
   const [npcs, events, companions, , dmState] = await Promise.all([
-    listNpcsAtLocation(location.id, { aliveOnly: true }).catch(() => []),
+    listNpcsAtLocation(location.id, { campaignId, aliveOnly: true }).catch(() => []),
     worldEventsForLocation({
       locationId: location.id,
       campaignId,
@@ -800,41 +806,98 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
     return null;
   }
 
-  // Phase 5 — for ambient NPCs, surface activeGoal + recent goalProgress
-  // milestones + "recentlyArrived" flag, BUT only when the goal targets
-  // THIS campaign (prevents WorldNPC goal text referencing another user's
-  // character from leaking into this prompt). Non-matching NPCs get only
-  // name/role/paused (the "has own agenda" view).
+  // Round B — Phase 3b moved goal/tick state onto the CampaignNPC shadow,
+  // so it's scoped to this playthrough by construction. No more
+  // `goalTargetCampaignId === campaignId` guard — shadows can't leak goals
+  // across campaigns. The enriched NPC objects already carry the shadow's
+  // activeGoal + goalProgress (or the canonical fallback for NPCs whose
+  // shadow hasn't been created yet; both are safe to surface).
   const ambientNpcsWithGoals = ambientNpcs.map((n) => {
-    const goalForThisCampaign = n.goalTargetCampaignId === campaignId;
     let progress = null;
     try {
       progress = n.goalProgress ? JSON.parse(n.goalProgress) : null;
     } catch { progress = null; }
     const milestones = Array.isArray(progress?.milestones) ? progress.milestones.slice(-2) : [];
     // "Just arrived" = last tick's action was a move to this location on
-    // the scene that just finished. Surface only within the observing
-    // campaign so premium can narrate "NPC wchodzi zdyszany".
-    const recentlyArrived = goalForThisCampaign
-      && progress?.lastAction === 'move'
+    // the scene that just finished. Premium narrates "NPC wchodzi zdyszany".
+    const recentlyArrived = progress?.lastAction === 'move'
       && typeof progress?.step === 'number';
     // G3 — radiant quest offer hint. When the background goal was tagged
     // offerable, premium gets a marker so it MAY propose a newQuest in
     // stateChanges (with source: 'npc_radiant'). Non-binding — premium
     // decides based on player behaviour.
-    const radiantOffer = goalForThisCampaign && progress?.offerableAsQuest && progress?.questTemplate
+    const radiantOffer = progress?.offerableAsQuest && progress?.questTemplate
       ? { template: progress.questTemplate }
       : null;
     return {
       name: n.name,
       role: n.role || null,
+      category: n.category || null,
       paused: !!n.pausedAt,
-      activeGoal: goalForThisCampaign ? (n.activeGoal || null) : null,
-      recentMilestones: goalForThisCampaign ? milestones : [],
+      activeGoal: n.activeGoal || null,
+      recentMilestones: milestones,
       recentlyArrived,
       radiantOffer,
+      // Round B — one-shot intro hint set by quest-trigger "moveNpcToPlayer".
+      // Scene-gen surfaces it in the NPC brief; we clear it post-assembly so
+      // the hint fires exactly once.
+      pendingIntroHint: n.pendingIntroHint || null,
+      campaignNpcId: n.campaignNpcId || null,
     };
   });
+
+  // Round B — clear any pendingIntroHints we just surfaced. Best-effort;
+  // failure just means the hint lingers and fires on the next scene too,
+  // which is a harmless soft duplicate (NPC still says the same thing).
+  for (const n of ambientNpcsWithGoals) {
+    if (n.pendingIntroHint && n.campaignNpcId) {
+      clearCampaignNpcIntroHint(n.campaignNpcId).catch(() => {});
+    }
+  }
+
+  // Round B (Phase 4b) — hearsay knowledge surface. For each key NPC at
+  // the location, resolve the set of locations they're authorized to
+  // reveal in dialog: own location + 1-hop edge neighbours + explicit
+  // WorldNPC.knownLocationIds. Scene prompt renders this as
+  // [NPC_KNOWLEDGE] blocks so premium respects scope ("ask the commoner
+  // about the far dungeon → NPC says I don't know"). Post-scene policy
+  // in processStateChanges rejects `locationMentioned` entries that fall
+  // outside this set (prevents LLM from leaking hearsay past intent).
+  const hearsayByNpc = [];
+  for (let i = 0; i < ambientNpcs.length; i += 1) {
+    const nEnriched = ambientNpcs[i];
+    const goalEntry = ambientNpcsWithGoals[i];
+    if (!nEnriched || !goalEntry) continue;
+    if (nEnriched.keyNpc === false) continue;
+    // Fetch matching WorldNPC for canonical knownLocationIds (enriched
+    // shape already carries them; ephemeral NPCs skip this branch).
+    const worldFallback = nEnriched.worldNpcId
+      ? await prisma.worldNPC.findUnique({ where: { id: nEnriched.worldNpcId } }).catch(() => null)
+      : null;
+    const known = await resolveNpcKnownLocations({
+      campaignNpc: nEnriched,
+      worldNpc: worldFallback,
+    });
+    if (known.size === 0) continue;
+    // Resolve to display names. Cap at 12 entries per NPC to keep prompt
+    // tight — the 1-hop neighbours + handful of explicit grants shouldn't
+    // exceed that for named NPCs.
+    const ids = [...known].slice(0, 12);
+    const rows = await prisma.worldLocation.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, canonicalName: true, locationType: true, dangerLevel: true },
+    }).catch(() => []);
+    if (rows.length === 0) continue;
+    hearsayByNpc.push({
+      npcName: goalEntry.name,
+      locations: rows.map((r) => ({
+        id: r.id,
+        name: r.canonicalName,
+        type: r.locationType,
+        danger: r.dangerLevel || null,
+      })),
+    });
+  }
 
   // Background NPC label + key-vs-background split — Phase 7. Key NPCs are
   // WorldNPCs with keyNpc=true; everyone else in `npcs` stays as ambient
@@ -842,10 +905,38 @@ async function buildLivingWorldContext(campaignId, currentLocation, { travelTarg
   const keyAmbient = ambientNpcsWithGoals.filter((n, i) => ambientNpcs[i]?.keyNpc !== false);
   const backgroundCount = ambientNpcs.length - keyAmbient.length;
 
+  // Round B (Phase 4c) — worldBounds remaining-room hint. Tells premium
+  // how far in each cardinal direction the player can still travel before
+  // hitting the edge of this campaign's worldBounds, so narration doesn't
+  // suggest "you see a vast plain stretching endlessly west" when the
+  // campaign boundary is 3 km away. Skipped when bounds are missing.
+  let worldBoundsHint = null;
+  if (campaign?.worldBounds) {
+    try {
+      const b = JSON.parse(campaign.worldBounds);
+      if (Number.isFinite(b.minX) && Number.isFinite(b.maxX)
+        && Number.isFinite(b.minY) && Number.isFinite(b.maxY)) {
+        const px = location.regionX ?? 0;
+        const py = location.regionY ?? 0;
+        worldBoundsHint = {
+          remainingN: Math.max(0, Math.round((b.maxY - py) * 10) / 10),
+          remainingS: Math.max(0, Math.round((py - b.minY) * 10) / 10),
+          remainingE: Math.max(0, Math.round((b.maxX - px) * 10) / 10),
+          remainingW: Math.max(0, Math.round((px - b.minX) * 10) / 10),
+        };
+      }
+    } catch { /* ignore malformed bounds */ }
+  }
+
   return {
     locationName: location.canonicalName,
     locationType: location.locationType || 'generic',
     npcs: keyAmbient,
+    // Round B — NPC hearsay knowledge (which locations each key NPC can
+    // reveal in dialog). Rendered as a dedicated [NPC_KNOWLEDGE] section
+    // so premium respects scope when the player asks about distant places.
+    hearsayByNpc,
+    worldBoundsHint,
     backgroundCount,
     backgroundLabel: settlement?.backgroundLabel || null,
     settlement,

@@ -286,12 +286,9 @@ export function generateBackgroundGoal(npc, { seed = Date.now() } = {}) {
  * exist (i.e. already promoted via maybePromote).
  *
  * @param {string} campaignId
- * @param {number} [currentSceneIndex] — if provided, `lastTickSceneIndex`
- *   is reset when a goal text actually changes, so the 2-scene countdown
- *   for next tick restarts from the goal's introduction.
  * @returns {{assigned: number, cleared: number, unchanged: number}}
  */
-export async function assignGoalsForCampaign(campaignId, { currentSceneIndex = null } = {}) {
+export async function assignGoalsForCampaign(campaignId) {
   if (!campaignId) return { assigned: 0, cleared: 0, unchanged: 0 };
 
   try {
@@ -303,7 +300,11 @@ export async function assignGoalsForCampaign(campaignId, { currentSceneIndex = n
       prisma.campaignQuest.findMany({ where: { campaignId } }),
       prisma.campaignNPC.findMany({
         where: { campaignId, worldNpcId: { not: null } },
-        select: { id: true, npcId: true, name: true, lastLocation: true, worldNpcId: true },
+        select: {
+          id: true, npcId: true, name: true, role: true, personality: true,
+          lastLocation: true, lastLocationId: true, worldNpcId: true,
+          activeGoal: true, goalProgress: true,
+        },
       }),
     ]);
     if (!campaign) return { assigned: 0, cleared: 0, unchanged: 0 };
@@ -328,80 +329,63 @@ export async function assignGoalsForCampaign(campaignId, { currentSceneIndex = n
       const role = classifyQuestRole(cn.npcId, quests);
       const coLocated = playerLocNorm && String(cn.lastLocation || '').toLowerCase().trim() === playerLocNorm;
 
-      // Read current WorldNPC state (needed for home-location check + change detection)
-      const current = await prisma.worldNPC.findUnique({
+      // Round B — goals + tick state live on the CampaignNPC shadow (per
+      // playthrough) rather than the canonical WorldNPC. Canonical state
+      // is read only for home-location derivation (which stays canonical).
+      const canonical = await prisma.worldNPC.findUnique({
         where: { id: cn.worldNpcId },
-        select: {
-          activeGoal: true,
-          goalTargetCampaignId: true,
-          goalTargetCharacterId: true,
-          currentLocationId: true,
-          homeLocationId: true,
-        },
+        select: { currentLocationId: true, homeLocationId: true },
       });
-      if (!current) continue;
+      if (!canonical) continue;
 
       // Quest role first. If done/null AND NPC is not at home, override with
       // a return-home goal so they trek back instead of stranding.
       // If they're already home, fall through to a background (sideways)
-      // goal so the NPC has something to do between quest assignments
-      // instead of sitting with activeGoal=null (which disables ticks).
+      // goal so the NPC has something to do between quest assignments.
       let nextGoal = buildGoalString(role, { characterName, coLocated });
-      if (!nextGoal && current.homeLocationId && current.currentLocationId !== current.homeLocationId) {
-        const homeName = await resolveLocationName(current.homeLocationId);
+      const shadowLocationId = cn.lastLocationId || canonical.currentLocationId;
+      if (!nextGoal && canonical.homeLocationId && shadowLocationId !== canonical.homeLocationId) {
+        const homeName = await resolveLocationName(canonical.homeLocationId);
         if (homeName) {
           nextGoal = `Wracam do swojego miejsca: ${homeName}.`;
         }
       }
       let backgroundMeta = null;
       if (!nextGoal) {
-        // Background goal — fetch role for pool matching
-        const npcMeta = await prisma.campaignNPC.findUnique({
-          where: { id: cn.id },
-          select: { role: true, personality: true },
-        }).catch(() => null);
-        backgroundMeta = generateBackgroundGoal(npcMeta, { seed: Date.now() });
+        backgroundMeta = generateBackgroundGoal(
+          { role: cn.role, personality: cn.personality },
+          { seed: Date.now() },
+        );
         nextGoal = backgroundMeta?.text || null;
       }
 
-      if (current.activeGoal === nextGoal
-        && current.goalTargetCampaignId === (nextGoal ? campaign.id : null)
-        && current.goalTargetCharacterId === (nextGoal ? actorCharacterId : null)) {
+      if (cn.activeGoal === nextGoal) {
         unchanged += 1;
         continue;
       }
 
-      const updateData = {
-        activeGoal: nextGoal,
-        goalTargetCharacterId: nextGoal ? actorCharacterId : null,
-        goalTargetCampaignId: nextGoal ? campaign.id : null,
-      };
+      const shadowUpdate = { activeGoal: nextGoal };
       // Radiant quest flag (G3): when the background goal is offerable,
       // embed metadata in goalProgress so aiContextTools can surface the
       // hook and premium can emit newQuests with source='npc_radiant'.
       if (backgroundMeta?.offerable && backgroundMeta.template) {
-        updateData.goalProgress = JSON.stringify({
+        shadowUpdate.goalProgress = JSON.stringify({
           offerableAsQuest: true,
           questTemplate: backgroundMeta.template,
           source: 'background',
           updatedAt: new Date().toISOString(),
         });
       }
-      // When a goal is freshly assigned or its text changes, reset the
-      // tick countdown so the 2-scene wait starts from now.
-      if (typeof currentSceneIndex === 'number' && nextGoal && nextGoal !== current.activeGoal) {
-        updateData.lastTickSceneIndex = currentSceneIndex;
-      }
-      await prisma.worldNPC.update({
-        where: { id: cn.worldNpcId },
-        data: updateData,
-      });
+      // Round B — shadow OWNS the campaign-scoped goal. We do NOT mirror
+      // onto WorldNPC: canonical has its own independent world-level goal
+      // ticked by npcAgentLoop. Campaign mutations must never touch canon.
+      await prisma.campaignNPC.update({ where: { id: cn.id }, data: shadowUpdate });
 
       if (nextGoal) assigned += 1;
       else cleared += 1;
     }
 
-    log.info({ campaignId, assigned, cleared, unchanged, currentSceneIndex }, 'Quest goal assigner done');
+    log.info({ campaignId, assigned, cleared, unchanged }, 'Quest goal assigner done');
     return { assigned, cleared, unchanged };
   } catch (err) {
     log.warn({ err: err?.message, campaignId }, 'assignGoalsForCampaign failed');

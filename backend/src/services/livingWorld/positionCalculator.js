@@ -38,9 +38,25 @@ export const DISTANCE_UNITS = {
   multi_day:  5,
 };
 
+// Round B (Phase 4c+) — simpler `distanceHint` vocabulary. Each maps to a
+// random km range; actual placement picks uniformly inside. AI may emit
+// either `travelDistance` (old) OR `distanceHint` (new) OR neither — neither
+// defaults to the implicit "close" bucket so narration that just mentions
+// "you find a cave" still materializes within walking distance.
+export const DISTANCE_HINT_RANGE = {
+  close:    [0.1, 2.0],
+  near:     [0.1, 2.0],
+  nearby:   [0.1, 2.0],
+  far:      [2.1, 4.0],
+  distant:  [2.1, 4.0],
+};
+
 export const MIN_SECTOR_SPACING = 3; // km — min distance from farthest existing in same sector
 export const MAX_SINGLE_JUMP = 5;    // km — cap from current
 export const MERGE_RADIUS = 1;        // km — anything within this radius is a merge candidate
+export const COLLISION_RADIUS = 0.5;  // km — any existing tile closer than this is a hard collision (different from MERGE_RADIUS which is a soft merge hint)
+export const DEFAULT_HINT_RANGE = [0.1, 2.0]; // fallback when AI gives neither travelDistance nor distanceHint
+export const MAX_PLACEMENT_ATTEMPTS = 20;     // retries for random-angle collision avoidance
 
 export function euclidean(a, b) {
   const dx = (a.regionX ?? 0) - (b.regionX ?? 0);
@@ -182,4 +198,136 @@ export function computeNewPosition({ current, directionFromCurrent, travelDistan
     position: spaced,
     mergeCandidate: mergeCandidate || null,
   };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Round B — smart placer (relaxed contract).
+//
+// The strict `computeNewPosition` above requires BOTH `directionFromCurrent`
+// and `travelDistance` and rejects entries that omit either. The smart
+// placer below accepts partial hints (or none at all) and falls back to a
+// random angle + random-in-range radius, retrying a bounded number of
+// times to avoid collisions. Used by `processTopLevelEntry` so AI narration
+// like "you find a hunter's hut nearby" materializes even without explicit
+// bearings.
+//
+// Hint resolution:
+//   - Explicit `travelDistance` enum → exact km (matches old behaviour)
+//   - Explicit `distanceHint` string ("close"|"far"|"near"|…) → random in range
+//   - Neither → default `close` range [0.1, 2.0]
+//   - Explicit `directionFromCurrent` → anchor angle, ±22.5° jitter on retry
+//   - No direction → full 360° random angle
+//
+// Returns `{ position, mergeCandidate, reason }` where `reason` explains
+// which hint path was taken (useful for logs + tests). `null` only when
+// the placement truly couldn't find an unoccupied tile inside the bounds.
+// ────────────────────────────────────────────────────────────────────
+
+function hintedRadiusRange({ travelDistance, distanceHint }) {
+  if (typeof travelDistance === 'string') {
+    const km = DISTANCE_UNITS[travelDistance];
+    if (Number.isFinite(km)) return { range: [km, km], reason: `travelDistance:${travelDistance}` };
+  }
+  if (typeof travelDistance === 'number' && Number.isFinite(travelDistance) && travelDistance > 0) {
+    return { range: [travelDistance, travelDistance], reason: 'travelDistance:number' };
+  }
+  if (typeof distanceHint === 'string') {
+    const range = DISTANCE_HINT_RANGE[distanceHint.toLowerCase()];
+    if (range) return { range, reason: `distanceHint:${distanceHint}` };
+  }
+  return { range: DEFAULT_HINT_RANGE, reason: 'default_close' };
+}
+
+// Inverse of UNIT_PER_DIRECTION — 8-cardinal → radians.
+const DIRECTION_TO_RADIANS = {
+  E:  0,
+  NE: Math.PI / 4,
+  N:  Math.PI / 2,
+  NW: 3 * Math.PI / 4,
+  W:  Math.PI,
+  SW: -3 * Math.PI / 4,
+  S:  -Math.PI / 2,
+  SE: -Math.PI / 4,
+};
+
+function randomInRange([lo, hi]) {
+  return lo + Math.random() * Math.max(0, hi - lo);
+}
+
+function pickAngle(directionFromCurrent, attempt) {
+  const base = DIRECTION_TO_RADIANS[directionFromCurrent];
+  if (base !== undefined) {
+    // First attempt hits dead-centre on the cardinal; retries fan out
+    // within the ±22.5° sector so the direction is still respected.
+    const jitterMax = Math.PI / 8; // 22.5°
+    const jitter = attempt === 0 ? 0 : (Math.random() * 2 - 1) * jitterMax;
+    return base + jitter;
+  }
+  return Math.random() * 2 * Math.PI;
+}
+
+function clampToBounds(point, bounds) {
+  if (!bounds) return point;
+  const { minX, maxX, minY, maxY } = bounds;
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) return point;
+  return {
+    regionX: Math.max(minX, Math.min(maxX, point.regionX)),
+    regionY: Math.max(minY, Math.min(maxY, point.regionY)),
+  };
+}
+
+function tooCloseToExisting(point, existing) {
+  for (const loc of existing || []) {
+    const dx = (loc.regionX ?? 0) - point.regionX;
+    const dy = (loc.regionY ?? 0) - point.regionY;
+    if (dx * dx + dy * dy < COLLISION_RADIUS * COLLISION_RADIUS) return true;
+  }
+  return false;
+}
+
+/**
+ * Smart placement for non-canonical runtime locations. Relaxed contract —
+ * any subset of `{directionFromCurrent, travelDistance, distanceHint}` is
+ * accepted; missing values default to a random angle and the `close` range.
+ *
+ * Returns `{ position: {regionX, regionY}, reason }` or `null` if after
+ * MAX_PLACEMENT_ATTEMPTS retries no unoccupied tile inside `bounds` was
+ * found.
+ */
+export function computeSmartPosition({
+  current,
+  directionFromCurrent = null,
+  travelDistance = null,
+  distanceHint = null,
+  existing = [],
+  bounds = null,
+}) {
+  if (!current || !Number.isFinite(current.regionX) || !Number.isFinite(current.regionY)) {
+    return null;
+  }
+  const { range, reason: hintReason } = hintedRadiusRange({ travelDistance, distanceHint });
+  const existingList = Array.isArray(existing) ? existing : [];
+
+  let last = null;
+  for (let attempt = 0; attempt < MAX_PLACEMENT_ATTEMPTS; attempt += 1) {
+    const angle = pickAngle(directionFromCurrent, attempt);
+    const km = randomInRange(range);
+    const candidate = {
+      regionX: current.regionX + Math.cos(angle) * km,
+      regionY: current.regionY + Math.sin(angle) * km,
+    };
+    const clamped = clampToBounds(candidate, bounds);
+    if (!tooCloseToExisting(clamped, existingList)) {
+      return {
+        position: clamped,
+        reason: `${hintReason};dir:${directionFromCurrent || 'random'};attempt:${attempt}`,
+      };
+    }
+    last = clamped;
+  }
+  // Couldn't find an unoccupied spot — caller picks: use last attempt or
+  // bail. We return the last clamped point with a note so caller can decide.
+  return last
+    ? { position: last, reason: `${hintReason};dir:${directionFromCurrent || 'random'};overflow` }
+    : null;
 }

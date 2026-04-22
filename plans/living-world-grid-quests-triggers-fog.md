@@ -1,5 +1,15 @@
 # Living world: grid map, quest-giver binding, NPC triggers, fog-of-war
 
+## Status (2026-04-22)
+
+- ✅ **Round A** shipped — fog schema, NPC categories, world content expansion, World Lore (admin CRUD + scene-gen preamble), hand-authored NPC knowledge. See [knowledge/concepts/fog-of-war.md](../knowledge/concepts/fog-of-war.md), [knowledge/concepts/world-lore.md](../knowledge/concepts/world-lore.md).
+- ✅ **Round B** shipped — start-spawn picker (hard-bound first scene), campaign sandbox with INDEPENDENT CampaignNPC shadow (each carries its own activeGoal — canonical NPC lives separate background life), quest trigger `onComplete.moveNpcToPlayer`, hearsay `[NPC_KNOWLEDGE]` prompt block + `locationMentioned` policy handler, AI-generated non-canonical locations via smart placer (distanceHint + optional direction + random fallback), unified `listLocationsForCampaign` helper, `[WORLD BOUNDS]` remaining-room hint, NPC source policy in quest-gen prompt. Cleanup: dropped `WorldNPC.goalTargetCampaignId`/`goalTargetCharacterId` (dead hacks). See [knowledge/concepts/campaign-sandbox.md](../knowledge/concepts/campaign-sandbox.md), [knowledge/concepts/hearsay-and-ai-locations.md](../knowledge/concepts/hearsay-and-ai-locations.md).
+- ⏳ **Round C** — UI: tile-grid player map, sublocation drill-down, fog rendering. Not started.
+- ⏳ **Round D** — OPTIONAL (deferred): biome flavor, lore RAG retrieval, lore-consistency validator. Not started.
+- ⏳ **Round E** — post-campaign write-back + NPC/location promotion candidates + admin review UI + canon graph visualization. Not started.
+
+**Before resuming**: run `cd backend && npm run db:push` to push the Round B schema additions to Atlas (CampaignNPC.lastLocationId/pendingIntroHint/activeGoal/goalProgress/category + CampaignQuest.forcedGiver + WorldLocation fog fields from Round A).
+
 ## Context
 
 **Problem.** Obecne kampanie startują w abstrakcyjnej "lokacji startowej" (string typu `"Yeralden"`) — bez przypięcia do sublokacji, bez wskazanego questgivera w konkretnym miejscu. Questy trzymają `questGiverId`/`locationId` jako luźne stringi, AI może halucynować gdzie kto jest. Mapa w stanie świata jest siłą-zorientowanym canvasem (force-directed), nie tile-gridem; gracz widzi "odkryte" lokacje jako nazwy w `coreState.world.locations[]`. Nie ma dungeonów, ruin, wilderness. Nie ma rozróżnienia "ważna postać kanoniczna" vs "NPC stworzony pod jedną kampanię". Nie ma triggerów, że po skończonym celu NPC przyjeżdża do gracza z wiadomością.
@@ -81,9 +91,9 @@
 
 ## Fazy implementacji (kolejność)
 
-### Round A: fundament (1 PR, 1 playtest na końcu)
+### Round A: fundament (✅ SHIPPED — commit `f6dce36 World lore, discover locations`)
 
-**Phase 0a — World Lore document & admin UI.**
+**Phase 0a — World Lore document & admin UI.** ✅
 - Schema `WorldLoreSection` (patrz wyżej).
 - Seed: jedna sekcja `slug="main"`, `title="Świat Yeralden"`, pusty content (user wypełni).
 - Admin endpoints:
@@ -102,7 +112,7 @@
   - Prepend w prompt scene-gen przed `[NPC_KNOWLEDGE]`, quest context, etc., jako `[WORLD LORE]\n{preamble}\n[/WORLD LORE]`.
   - Tak samo w campaignGenerator.js dla initialQuest generation — lore kształtuje starting story.
 
-**Phase 0 — fog-of-war schema (canonical/ephemeral split + hearsay).**
+**Phase 0 — fog-of-war schema (canonical/ephemeral split + hearsay).** ✅
 - Dodanie `WorldLocation.isCanonical: bool`. Seed upserty ustawiają `true`. AI-generowane lokacje default `false`.
 - Dodanie `Campaign.discoveredLocationIds` + `discoveredSubLocationIds` + `heardAboutLocationIds` (tylko non-canonical).
 - Dodanie `UserWorldKnowledge.heardAboutLocationIds` (tylko canonical, parallel do istniejącego `discoveredLocationIds`).
@@ -119,7 +129,7 @@
 - Seed: kapitol `knownByDefault=true`. Przy tworzeniu kampanii auto-dodawany do UserWorldKnowledge (już tak robi istniejący kod w `userDiscoveryService.js:122`).
 - Wioski: `knownByDefault=false` — gracz odkrywa.
 
-**Phase 1 — NPC categories.** Dodanie kolumn `category`, keyword-backfill z `role` przez `categorize()` reużywający `ROLE_AFFINITY`. Seed [backend/src/scripts/seedWorld.js](backend/src/scripts/seedWorld.js) uzupełnia jawne `category` dla NAMED_NPCS i village NPCs. **Gwarancja pokrycia wszystkich 5 kategorii:**
+**Phase 1 — NPC categories.** ✅ Dodanie kolumn `category`, keyword-backfill z `role` przez `categorize()` reużywający `ROLE_AFFINITY`. Seed [backend/src/scripts/seedWorld.js](backend/src/scripts/seedWorld.js) uzupełnia jawne `category` dla NAMED_NPCS i village NPCs. **Gwarancja pokrycia wszystkich 5 kategorii:**
 - `guard` — Kapitan Gerent ✓
 - `priest` — Arcykapłanka Lyana ✓
 - `adventurer` — skill masters (Darvok, Ilara, Venadra, Taelor, Senya, Ashen, Karros, Korvia) ✓
@@ -127,7 +137,7 @@
 - `merchant` — **brakuje** → recategorize Tamar (innkeeper) jako `merchant`, ALBO dodać nowego NPC "Kupiec Dorgun" w Yeralden Market (preferowane: dodać kupca, karczmarz zostanie `commoner`).
 - Otwarte TODO w kodzie: `// TODO(category-enum): rozszerzyć o hunter, noble, rogue, scholar, innkeeper, blacksmith, farmer gdy picker zacznie mieć za mało różnorodności`.
 
-**Phase 2 — world content expansion + NPC knowledge seeding.** Seed dodaje ~17 nowych lokacji na gridzie 10×10:
+**Phase 2 — world content expansion + NPC knowledge seeding.** ✅ Seed dodaje ~17 nowych lokacji na gridzie 10×10:
 - 4 dungeony — jeden safe (ok 2km od kapitolu), moderate (~3-4km), dangerous (~5-6km), deadly (~7-8km)
 - ~6 wilderness (forest / mountains / plains)
 - ~4 ruins
@@ -136,7 +146,7 @@
 - Wszystkie nowe lokacje: `isCanonical=true`, `dangerLevel` per lokacja ręcznie, `knownByDefault=false`
 - Sublokacje istniejących wiosek/kapitolu dostają ręczne `subGridX/subGridY` (np. Yeralden Palace (5,5), Grand Temple (3,6), Tavern (6,4), Market (4,3), Barracks (7,7), itd. — capital sub-grid 10×10).
 
-**Phase 2b — seed NPC explicit knowledge.** Seed przypisuje `knownLocationIds` dla wybranych NPC:
+**Phase 2b — seed NPC explicit knowledge.** ✅ Seed przypisuje `knownLocationIds` dla wybranych NPC:
 - Kapitan Gerent → wszystkie dungeony + barracks + ruiny (wojskowa wiedza)
 - Eleya Tropicielka → wszystkie wilderness + 2-3 ukryte spots (tropiciel-hunter)
 - Arcykapłanka Lyana → shrine POI + ruins z religijnym backgroundem
@@ -155,9 +165,11 @@
 - [src/components/admin/AdminWorldLoreTab.jsx](src/components/admin/AdminWorldLoreTab.jsx) — nowy component
 - [backend/src/services/sceneGenerator/aiContextTools.js](backend/src/services/sceneGenerator/aiContextTools.js) — `buildWorldLorePreamble()`
 
-### Round B: quest starter binding + triggery (1 PR, 1 playtest)
+### Round B: quest starter binding + triggery (✅ SHIPPED — not yet committed, Round A-B sits together in working tree)
 
-**Phase 3 — campaign start picker.** Nowy moduł `startSpawnPicker.js` — tylko ogranicza **gdzie** quest ma się zacząć (settlement/sublokacja/NPC). Całą treść questa dalej generuje large model w `campaignGenerator.js` z pełną swobodą; picker tylko injectuje wybranego NPC jako questgivera do promptu.
+**Ważna korekta architektury shadow vs pierwotny plan:** Pierwotny plan zakładał "mutacje canonical → clone-on-first-encounter, shadow przejmuje state, canonical zostaje zamrożone przez całą kampanię". **Ostateczna decyzja**: WorldNPC i CampaignNPC są **INDEPENDENT** — każdy ma własne `activeGoal` / `goalProgress`. Canonical NPC żyje swoim tłem (ticki `npcAgentLoop` na WorldNPC.activeGoal — np. "Gerent patroluje mury"); shadow niesie rolę NPC w tej konkretnej kampanii (assignGoalsForCampaign na CampaignNPC.activeGoal — np. "czeka aż gracz wróci z dowodami"). Nie synchronizują się. To upraszcza model i eliminuje klasę bugów "kampania popsuła canon". Zobacz `knowledge/concepts/campaign-sandbox.md`.
+
+**Phase 3 — campaign start picker.** ✅ Nowy moduł `startSpawnPicker.js` — tylko ogranicza **gdzie** quest ma się zacząć (settlement/sublokacja/NPC). Całą treść questa dalej generuje large model w `campaignGenerator.js` z pełną swobodą; picker tylko injectuje wybranego NPC jako questgivera do promptu.
 1. Losuj settlement z `{capitol, village1, village2}` (weighted: kapitol 40%, każda wioska 30%).
 2. Losuj sublokację w settlementcie, która ma ≥1 NPC (jakiejkolwiek kategorii — large model dopasuje ton questa do typu NPC).
 3. Losuj NPC z tej sublokacji.
@@ -165,7 +177,7 @@
 5. Przy generowaniu `initialQuest` w [backend/src/services/sceneGenerator/campaignGenerator.js](backend/src/services/sceneGenerator/campaignGenerator.js) twardo wymuś `questGiverId=<CampaignNPC.npcId>`, `locationId=<sublokacja>`, `forcedGiver=true`. Prompt large modela dostaje: "starting NPC is {name} (category: {cat}, personality: {...}) at {sublokacja}; wygeneruj quest który ten NPC mógłby wiarygodnie dawać".
 6. Pierwsza scena: gracz jest już w tej sublokacji, NPC dostępny (auto-clone z WorldNPC do CampaignNPC via `getOrCloneCampaignNpc`).
 
-**Phase 3b — campaign sandbox migration.**
+**Phase 3b — campaign sandbox.** ✅ (zmodyfikowana vs pierwotny plan — shadow jest niezależny, nie "migruje writers z canonical")
 - Audit wszystkich call-sites `setWorldNpcLocation`, dialog write do `WorldNPC.dialogHistory`, `activeGoal` update, `alive=false` na WorldNPC. Grep i lista.
 - Każdy writer podczas play → przekierowany na odpowiedni field na `CampaignNPC`:
   - `setWorldNpcLocation` → nowy `setCampaignNpcLocation(campaignId, worldNpcId, locationId)` ustawia `CampaignNPC.lastLocationId`.
@@ -176,7 +188,7 @@
   - Inaczej → stwórz snapshot z WorldNPC (name, role, personality, alignment, currentLocationId → lastLocationId, keyNpc, category, activeGoal, knownLocationIds).
 - `listNpcsAtLocation(locationId, campaignId)` (nowa sygnatura): zwraca CampaignNPCs gdzie `lastLocationId=locationId`, plus auto-clone dla WorldNPCs których canonical `currentLocationId=locationId` + brak CampaignNPC yet.
 
-**Phase 4 — quest triggers (movement).** Rozszerzenie `processStateChanges.js` (miejsce gdzie questUpdates flagują objective complete, ok. linii 612-660):
+**Phase 4 — quest triggers (movement).** ✅ Rozszerzenie `processStateChanges.js` (miejsce gdzie questUpdates flagują objective complete, ok. linii 612-660):
 - Po zakończeniu celu, jeśli w metadanych celu (generowanych przez LLM) jest `onComplete: { moveNpcToPlayer: npcId, message }`:
   - `getOrCloneCampaignNpc(campaignId, npcId)` → zapewnia clone.
   - `setCampaignNpcLocation(campaignId, npcId, player.currentLocationId)` — **nie dotyka WorldNPC**.
@@ -186,14 +198,14 @@
 - Prompt LLM dostaje jasną wskazówkę: "NPC X właśnie przybył i chce przekazać: {message}".
 - Po wygenerowaniu sceny hint jest czyszczony.
 
-**Phase 4b — hearsay discovery przez dialog.**
+**Phase 4b — hearsay discovery przez dialog.** ✅
 - Scene assembler dla każdego NPC dostępnego w lokacji buduje `knownLocations = implicit(1-hop via edges) ∪ npc.knownLocationIds`. Resolve na listę `{id, name, hint}` — gdzie `hint` to krótki opis (np. "dungeon known to be dangerous", "village nearby").
 - Prompt LLM wzbogacony o sekcję `[NPC_KNOWLEDGE]` per NPC obecny w scenie + instrukcję: "jeśli gracz pyta o miejsca, tylko z tej listy możesz ujawnić; poza listą — NPC nie wie lub spekuluje bez szczegółów".
 - Nowy bucket w stateChanges wyjściowych LLM: `locationMentioned: [{locationId, byNpcId}]`.
 - Handler w `processStateChanges`: dla każdego mentioned → `markLocationHeardAbout(campaignId, userId, locationId)` (helper z Phase 0).
 - Edge case: jeśli NPC wygada lokację spoza swojego `knownLocations` (halucynacja), skip + log warning. Nie chcemy żeby LLM "dodawał wiedzy" ignorując policy.
 
-**Phase 4c — AI-created campaign locations (non-canonical).** Gdy LLM w scenie narracyjnie wprowadza nową lokację (chatka myśliwego, ukryta krypta, boczna ścieżka):
+**Phase 4c — AI-created campaign locations (non-canonical).** ✅ (z dodatkiem: smart placer — BE akceptuje lokacje bez direction+distance, losuje kąt + radius wg `distanceHint`: close=0.1-2 km, far=2.1-4 km, default=close, direction brany pod uwagę z jitter ±22.5°).
 - LLM emituje `stateChanges.newLocations: [{ name, locationType, biome?, description, dangerLevel?, directionHint?, parentLocationName? }]`.
 - Refactor istniejącego `processLocationChanges` (dziś dodaje tylko nazwę do `coreState.world.locations[]`):
   - Nowy helper `placeCampaignLocationOnGrid(campaignId, playerLocationId, directionHint?)`:
@@ -212,7 +224,7 @@
     - Add do `Campaign.discoveredLocationIds` (jeśli narracyjnie gracz ją odkrywa) ALBO `heardAboutLocationIds` (jeśli tylko wzmianka).
 - Sublokacje AI-gen analogicznie: tworzone z `parentLocationId`, `subGridX/subGridY` wyliczane (np. najniższa wolna kratka na sub-grid parent'a, albo z preferowanego slotu jeśli LLM poda).
 
-**Phase 4d — unified location queries + intent-driven knowledge injection.**
+**Phase 4d — unified location queries + intent-driven knowledge injection.** ✅ (listLocationsForCampaign helper dostarczony; intent-driven NPC expansion używa istniejącego `expand_npcs` z classifier'a — już było zrobione przed Round B)
 - Nowy helper `listLocationsForCampaign(campaignId, filterOpts)`:
   - Zwraca canonical `WorldLocation` (isCanonical=true) + non-canonical tej kampanii (isCanonical=false AND createdByCampaignId=campaignId).
   - Filter options: `visibleOnly` (aplikuje fog-of-war), `withSublocations`, `topLevelOnly`.
@@ -227,7 +239,7 @@
 - Zero agresywnego truncate'owania. Jeśli prompt urośnie za bardzo po testach — zobaczymy co realnie tam jest i wytniemy konkretnie, nie globalnie.
 - Performance: indeks composite `(isCanonical, createdByCampaignId)` dla szybkiego filter.
 
-**Phase 5 — NPC policy dla quest steps.** W quest-gen prompcie dla LLM-a (campaignGenerator.js):
+**Phase 5 — NPC policy dla quest steps.** ✅ (dodany do `buildCampaignCreationPrompt` jako "NPC SOURCE POLICY" block — finale/twist → existing canonical; minor → ephemeral OK; category hint per NPC)
 - Dla każdego objective LLM decyduje: `npcSource: 'existing'|'ephemeral'`.
 - `existing` — wymaga podania `worldNpcId`, musi być category-compatible.
 - `ephemeral` — generuje nowego `CampaignNPC` bez `worldNpcId`, kategoria + lokalizacja zdefiniowane w objective. Auto-spawn przy odpowiedniej scenie.
@@ -243,7 +255,10 @@
 - [backend/src/services/sceneGenerator/aiContextTools.js](backend/src/services/sceneGenerator/aiContextTools.js) — używa `listLocationsForCampaign`
 - [backend/src/routes/campaigns/crud.js](backend/src/routes/campaigns/crud.js)
 
-### Round C: UI — tile grid map + drill-down (1 PR, 1 playtest)
+### Round C: UI — tile grid map + drill-down (⏳ TODO — not started)
+
+**Schema prerequisites already in place** (added in Round A/B): `WorldLocation.isCanonical`, `knownByDefault`, `dangerLevel`, `subGridX/Y`, `createdByCampaignId`, `displayName`; `UserWorldKnowledge.heardAboutLocationIds`; `Campaign.discoveredLocationIds/discoveredSubLocationIds/heardAboutLocationIds`. Fog helpers (`loadCampaignFog`, `markLocationDiscovered`, `markLocationHeardAbout`) exist in `backend/src/services/livingWorld/userDiscoveryService.js`. Unified location query (`listLocationsForCampaign`) exists in `backend/src/services/livingWorld/locationQueries.js`.
+
 
 **Phase 6 — player world map (top-level) z trzema stanami + travel + quest markers.**
 - [src/components/gameplay/MapCanvas.jsx](src/components/gameplay/MapCanvas.jsx) przepisane: tile grid 10×10 zamiast force-directed. Każdy tile renderuje node jeśli lokacja ma `regionX/regionY` w zakresie.
@@ -273,7 +288,7 @@
 - [src/components/admin/AdminLivingWorldPage.jsx](src/components/admin/AdminLivingWorldPage.jsx) MapTab dostaje toggle: "Force layout" (obecny) vs "Tile grid" (nowy). Tile grid pokazuje wszystko, kolory po `dangerLevel`, ikonki po `locationType`.
 - Admin sub-location view: klik na lokację w tile grid → modal z sub-gridem (ten sam component co gracz, ale bez fog).
 
-### Round D (opcjonalny, odłożony): biome + lore retrieval + lore consistency validator
+### Round D (⏳ OPCJONALNY, odłożony): biome + lore retrieval + lore consistency validator
 
 Nie robimy teraz, ale zapisane do revisit.
 
@@ -287,7 +302,10 @@ Nie robimy teraz, ale zapisane do revisit.
 
 **Lore consistency validator** (dobry catch z review): post-scene mały model (Haiku) dostaje wygenerowaną scenę + relevant lore chunks → structured output `{violations: [{loreSection, sceneQuote, reason}]}`. Route violations do admin "Pending canonicalizations" → "Lore violations" tab (nowa sekcja). Admin decyduje: (a) zignoruj (jednorazowy freestyle), (b) zaktualizuj lore (scene stworzyła nowy canon), (c) retro-fix scene (scenariusz musi się dopasować). Zapobiega AI cichemu przepisywaniu canon.
 
-### Round E: post-campaign world write-back (osobny PR, playtest na końcu)
+### Round E: post-campaign world write-back (⏳ TODO — not started)
+
+**Dotychczasowe przygotowanie**: CampaignNPC carry `category`, `activeGoal`, `goalProgress` independent of WorldNPC → diff collector ma jasno rozdzielone "shadow vs canonical". `WorldLocation.isCanonical` + `createdByCampaignId` → promotion path ma zaznaczone co kampania stworzyła vs co już jest canonical. Reszta zgodnie z poniższym planem.
+
 
 Cel: przy finalizacji kampanii promować istotne zmiany z campaign shadow → canonical world. Akcje gracza mają realny, widoczny wpływ między kampaniami.
 

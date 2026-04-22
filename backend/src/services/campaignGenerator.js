@@ -1,14 +1,28 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
+import { pickStartSpawn } from './livingWorld/startSpawnPicker.js';
 
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
   const resolvedModel = model || config.aiModels.premium[resolvedProvider];
 
+  // Round B (Phase 3) — pick a canonical start-spawn trio BEFORE prompt
+  // assembly. The picker returns null when no canonical world is seeded
+  // yet; campaign-gen then falls back to free-form invention. When present,
+  // the trio is injected into the prompt as a hard bind.
+  const startSpawn = await pickStartSpawn().catch(() => null);
+  if (startSpawn) {
+    onEvent({ type: 'start_spawn', data: {
+      settlement: startSpawn.settlement.canonicalName,
+      sublocation: startSpawn.sublocation.canonicalName,
+      npc: startSpawn.npc.name,
+    } });
+  }
+
   const systemPrompt = 'You are a master RPG campaign designer. Create rich, immersive campaign foundations that draw players into the story. Always respond with valid JSON only.';
-  const userPrompt = buildCampaignCreationPrompt(settings, language);
+  const userPrompt = buildCampaignCreationPrompt(settings, language, { startSpawn });
 
   try {
     const streamFn = resolvedProvider === 'anthropic' ? callAnthropicStreaming : callOpenAIStreaming;
@@ -20,6 +34,17 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     );
 
     const parsed = parseResponse(accumulated);
+    // Round B — attach the picker decision to the payload so the /v1/campaigns
+    // POST handler can override questGiverId / locationId defensively and set
+    // forcedGiver=true when persisting.
+    if (startSpawn && parsed && typeof parsed === 'object') {
+      parsed._startSpawn = {
+        settlementName: startSpawn.settlement.canonicalName,
+        sublocationName: startSpawn.sublocation.canonicalName,
+        npcName: startSpawn.npc.name,
+        npcCanonicalId: startSpawn.npc.canonicalId,
+      };
+    }
     onEvent({ type: 'complete', data: parsed });
   } catch (err) {
     onEvent({ type: 'error', error: err.message || 'Campaign generation failed', code: err.code || 'STREAM_ERROR' });
@@ -218,7 +243,7 @@ const LENGTH_PARAMS = {
   },
 };
 
-function buildCampaignCreationPrompt(settings, language = 'en') {
+function buildCampaignCreationPrompt(settings, language = 'en', { startSpawn = null } = {}) {
   const lp = LENGTH_PARAMS[settings.length] || LENGTH_PARAMS.Medium;
 
   const langInstruction = language === 'pl'
@@ -274,6 +299,25 @@ function buildCampaignCreationPrompt(settings, language = 'en') {
     deadly: "'deadly' — unrestricted: smoki, archmagi, pradawne byty, lichowie.",
   }[tierCap] || "'low' — enemies: bandyci/wilki/zbóje.";
 
+  // Round B (Phase 3) — starter bind. When the canonical world is seeded,
+  // `startSpawn` locks the starting sublocation + quest-giver NPC so every
+  // campaign begins at a named, revisitable place. The quest's content is
+  // still free-form — picker only anchors WHERE + WHO.
+  const starterBindBlock = startSpawn
+    ? `
+
+STARTING LOCATION + QUEST-GIVER (HARD BIND — DO NOT DEVIATE):
+- The first scene MUST take place inside sublocation "${startSpawn.sublocation.canonicalName}" in "${startSpawn.settlement.canonicalName}".
+- The quest-giver NPC is "${startSpawn.npc.name}" (${startSpawn.npc.role || 'canonical NPC'}). Category: ${startSpawn.npc.category || 'commoner'}. Alignment: ${startSpawn.npc.alignment || 'neutral'}.
+- initialQuest.questGiverId MUST be "${startSpawn.npc.name}" — exact string.
+- initialQuest.locationId MUST be "${startSpawn.sublocation.canonicalName}" — exact string.
+- firstScene narration MUST open with the character meeting "${startSpawn.npc.name}" at "${startSpawn.sublocation.canonicalName}". NO travel montage, NO "you arrive at a nameless inn". The NPC gives the quest immediately.
+- initialNPCs MUST include an entry with name="${startSpawn.npc.name}". Add 4 OTHER campaign-specific NPCs as usual (distinct names, different locations within the settlement / nearby).
+- Tailor the quest content to be something this NPC could plausibly hand out given their role ("${startSpawn.npc.role || 'unknown role'}") and personality ("${startSpawn.npc.personality || 'unspecified'}").
+- Do NOT invent a different starting settlement; canon is fixed.
+`
+    : '';
+
   return `Create a new RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
@@ -284,7 +328,7 @@ function buildCampaignCreationPrompt(settings, language = 'en') {
 ${characterNameLine}
 ${speciesLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${existingCharNote}${humorousToneGuidance}
+${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}
 
 Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 
@@ -380,6 +424,12 @@ IMPORTANT for initialQuest and initialNPCs:
 - reward.items should include at least one meaningful reward item (weapon, armor, trinket, or special item).
 - initialWorldFacts should include ${lp.worldFacts} facts that establish the world context relevant to the quest.
 - The quest giver NPC (questGiverId) MUST be one of the NPCs in initialNPCs.
+
+NPC SOURCE POLICY (Living World):
+- Finale / twist / major-reveal objectives SHOULD reference a quest-giver or named foil that is a CANONICAL WorldNPC — re-use the starter quest-giver when it fits, or name a known authority (captain, high priest, ruler) instead of inventing one.
+- Minor objectives (fetch, deliver, talk to X, search Y) MAY introduce an ephemeral CampaignNPC (unique to this playthrough). These ephemeral NPCs need a name + role + location + personality; they are NOT promoted to the canonical world mid-play.
+- Category hint for each NPC in initialNPCs: guard | merchant | commoner | priest | adventurer (broad bucket). Pick what best matches their role so the questgiver picker can route future offers sanely.
+- Do NOT invent a new "King Torvan" / "Arcykapłanka Lyana" / other canonical names unless the starter bind above names them. Canonical NPCs are authoritative.
 
 IMPORTANT for characterSuggestion:
 - The player already has a character with stats/skills/money. Do NOT generate attributes, skills, mana, or money.

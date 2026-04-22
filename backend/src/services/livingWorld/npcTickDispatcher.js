@@ -53,9 +53,11 @@ export async function runTickBatch({
   currentSceneIndex = null,
 } = {}) {
   try {
-    // Pre-filter at the DB level on cheap predicates (alive + has goal +
-    // not locked / not companion / not paused). JS-level tick-interval +
-    // ordering happens in selectEligibleNpcs.
+    // Pre-filter at the DB level on cheap predicates (alive + has WORLD
+    // goal + not locked / not companion / not paused). Round B: dispatcher
+    // ticks WORLD-level NPC goals (independent of any campaign); the
+    // `campaignId` arg used to filter to NPCs "owned by" the campaign is
+    // now ignored because the shadow architecture replaced that hack.
     const where = {
       alive: true,
       activeGoal: { not: null },
@@ -63,11 +65,6 @@ export async function runTickBatch({
       lockedByCampaignId: null,
       pausedAt: null,
     };
-    // Campaign scope — only NPCs owned by this campaign. Matches by
-    // goalTargetCampaignId which the quest assigner sets at promotion.
-    if (campaignId) {
-      where.goalTargetCampaignId = campaignId;
-    }
     const candidates = await prisma.worldNPC.findMany({
       where,
       // overfetch so selectEligibleNpcs has room to filter by interval

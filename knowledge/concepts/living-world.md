@@ -29,6 +29,7 @@ Living World tables so legacy campaigns stay unaffected.
 | E | Custom-sublocation budget scaled by `difficultyTier` — `customCap` added to `SETTLEMENT_TEMPLATES`, multiplied by `{low:0, medium:1.0, high:1.5, deadly:2.0}` per-campaign at admission time. Capital remains global but each campaign's additions count against its own tier | `settlementTemplates.effectiveCustomCap`, `topologyGuard.decideSublocationAdmission` custom branch |
 | F | Travel montage (compress trip > 5 km to ONE scene; injected via TRAVEL MONTAGE MODE instruction) + `worldBounds` enforcement in `processTopLevelEntry` (out-of-bounds new top-level rejected) | `aiContextTools.buildTravelBlock` montage flag, `processStateChanges.processTopLevelEntry` bounds check |
 | G — Round A | Schema + content foundation for the plans/living-world-grid-quests-triggers-fog.md roadmap: canonical/non-canonical fog-of-war split, NPC categories, hand-authored wilderness/dungeons/ruins, NPC explicit knowledge seeding, admin-editable world lore injected into every scene | `seedWorld.js` (content + `isCanonical=true` flag), `userDiscoveryService` (canonical/non-canonical routing + `markLocationHeardAbout` + `loadCampaignFog`), `questGoalAssigner.categorize` + `NPC_CATEGORIES`, `aiContextTools.buildWorldLorePreamble`, admin routes `/v1/admin/livingWorld/lore` |
+| H — Round B | Independent CampaignNPC shadow + WorldNPC split (each carries its own activeGoal — canonical ticks in background, shadow tracks quest role), hard-bound starter quest (`startSpawnPicker`), `onComplete.moveNpcToPlayer` quest trigger, hearsay dialog (`[NPC_KNOWLEDGE]` + `locationMentioned` bucket + policy), AI-generated non-canonical locations placed by smart placer (distanceHint + optional direction + random fallback), unified `listLocationsForCampaign` query, `[WORLD BOUNDS]` prompt hint, NPC source policy in quest-gen. See [campaign-sandbox.md](./campaign-sandbox.md) and [hearsay-and-ai-locations.md](./hearsay-and-ai-locations.md) | `campaignSandbox.js`, `startSpawnPicker.js`, `locationQueries.js`, `positionCalculator.computeSmartPosition`, `processStateChanges.fireMoveNpcToPlayerTrigger` + `processLocationMentions`, `campaignGenerator` starter-bind block, `aiContextTools.buildLivingWorldContext` hearsayByNpc + worldBoundsHint |
 
 ## Global visibility — what bubbles up
 
@@ -84,6 +85,37 @@ Round B (quest binding + triggers), Round C (UI: grid map + drill-down),
 Round D (deferred — biome + lore RAG), Round E (post-campaign write-back +
 NPC/location promotion candidates) ride on top of this schema. Plan file
 has the phase-by-phase breakdown.
+
+## Phase H — Round B (campaign sandbox + hearsay + AI locations)
+
+Implementation-level docs:
+- [campaign-sandbox.md](./campaign-sandbox.md) — Independent WorldNPC vs
+  CampaignNPC model, field ownership matrix, clone triggers, dropped hacks.
+- [hearsay-and-ai-locations.md](./hearsay-and-ai-locations.md) — `[NPC_KNOWLEDGE]`
+  prompt block, `locationMentioned` policy, smart placer, `[WORLD BOUNDS]`
+  hint, non-canonical location placement.
+
+New schema columns (Round B additions only — no migration of existing
+canonical columns):
+- `CampaignNPC`: `lastLocationId`, `pendingIntroHint`, `activeGoal`,
+  `goalProgress`, `category` (campaign-scoped; goal/progress
+  INDEPENDENT of WorldNPC's — no mirror, no fallback).
+- `CampaignQuest.forcedGiver` — set by `startSpawnPicker` so the initial
+  quest-giver bind sticks past saturation logic.
+
+Dropped columns (dead hacks from pre-shadow era):
+- `WorldNPC.goalTargetCampaignId`, `goalTargetCharacterId` — replaced by
+  the shadow-split architecture.
+
+Campaign creation (crud.js POST) now honours `parsed._startSpawn` from the
+campaignGenerator SSE stream: overrides `currentLocation` to the picked
+sublocation, flags matching quests with `forcedGiver=true`, clones the
+starter NPC as CampaignNPC, and discovers the sublocation canonically.
+
+Open follow-ups: `npcLifecycle` pause semantics still operate on canonical
+row (could migrate to shadow if per-campaign pause is ever needed),
+AI-sublocation `subGridX/Y` (AI-generated sublocs don't get drill-down
+slots yet — auto-layout TODO for Round C).
 
 ## NPC tick model (D — clone architecture)
 

@@ -27,6 +27,8 @@ File types:
 | [concepts/backend-structure.md](concepts/backend-structure.md) | `backend/src/` + `shared/` subdomain map with entry-point cheat sheet |
 | [concepts/fog-of-war.md](concepts/fog-of-war.md) | Three-state location visibility, canonical vs non-canonical split, `userDiscoveryService` helpers |
 | [concepts/world-lore.md](concepts/world-lore.md) | Admin-editable `WorldLoreSection` prepended to every scene prompt, `buildWorldLorePreamble` cache |
+| [concepts/campaign-sandbox.md](concepts/campaign-sandbox.md) | CampaignNPC shadows over immutable WorldNPC, clone-on-first-encounter, field ownership matrix |
+| [concepts/hearsay-and-ai-locations.md](concepts/hearsay-and-ai-locations.md) | `[NPC_KNOWLEDGE]` prompt block, `locationMentioned` policy, AI-created non-canonical locations |
 
 ## Patterns — reusable code shapes
 

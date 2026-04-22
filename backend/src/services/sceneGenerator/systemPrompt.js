@@ -508,13 +508,13 @@ SUBLOCATIONS (inside a known settlement):
 
 TOP-LEVEL (wilderness / ruins emerging during travel):
 - When the player travels into unexplored overworld terrain, emit:
-  { "name": "Zapomniane Ruiny", "parentLocationName": null, "locationType": "ruin", "directionFromCurrent": "NE", "travelDistance": "half_day", "description": "<short>", "connectsTo": ["<optional known nearby locations>"] }
-- \`directionFromCurrent\` is relative to the player's STARTING location this scene (N|NE|E|SE|S|SW|W|NW).
-- \`travelDistance\` — short (~1 km) | half_day (~2 km) | day (~3 km) | two_days (~4 km) | multi_day (~5 km max single jump).
+  { "name": "Zapomniane Ruiny", "parentLocationName": null, "locationType": "ruin", "description": "<short>", "directionFromCurrent": "NE", "distanceHint": "close", "connectsTo": ["<optional known nearby locations>"] }
+- \`directionFromCurrent\` — OPTIONAL cardinal bearing from player's current location (N|NE|E|SE|S|SW|W|NW). Omit if the narration doesn't specify a direction — BE picks a random angle.
+- \`distanceHint\` — OPTIONAL rough distance: \`close\` (0.1–2 km, "nearby", "not far") or \`far\` (2.1–4 km, "a day's travel", "distant"). Omit → defaults to \`close\`. (Legacy \`travelDistance\` enum short|half_day|day|two_days|multi_day still accepted.)
 - \`locationType\` — allowed mid-play: \`wilderness\`, \`forest\`, \`ruin\`, \`camp\`, \`cave\`, \`dungeon\`, \`interior\`.
 - **Settlements are creation-time-only.** Populated settlements (\`hamlet\`, \`village\`, \`town\`, \`city\`, \`capital\`) are pre-seeded at campaign creation and CANNOT be emitted mid-play. Any attempt to create a settlement via newLocations will be silently rejected by the backend. If the player deliberately seeks a new village, redirect them narratively to an existing seeded settlement (see SEEDED SETTLEMENTS block) OR emit a non-settlement (ruin/camp/cave) instead.
 - \`connectsTo\` — optional list of known nearby location names that share an edge with the new one.
-- BE resolves position via spacing rules — if your raw position collides, BE pushes it further out automatically.
+- BE computes coordinates on the campaign grid: random angle (or your direction if provided), random distance inside the hinted range, avoiding collisions with existing locations and clamped to worldBounds. You do NOT need to provide coordinates — just the narrative + optional hints.
 - If the TRAVEL CONTEXT block is present, follow its waypoint instructions EXACTLY — do NOT invent new locations between known waypoints on a direct path.`,
     );
   }

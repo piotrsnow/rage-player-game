@@ -13,8 +13,14 @@ import { updateLoyalty } from '../livingWorld/companionService.js';
 import { appendEvent } from '../livingWorld/worldEventLog.js';
 import { assignGoalsForCampaign } from '../livingWorld/questGoalAssigner.js';
 import { findOrCreateWorldLocation, createSublocation } from '../livingWorld/worldStateService.js';
+import {
+  setCampaignNpcLocation,
+  setCampaignNpcIntroHint,
+  resolveNpcKnownLocations,
+} from '../livingWorld/campaignSandbox.js';
+import { markLocationHeardAbout, markLocationDiscovered } from '../livingWorld/userDiscoveryService.js';
 import { decideSublocationAdmission } from '../livingWorld/topologyGuard.js';
-import { computeNewPosition, euclidean } from '../livingWorld/positionCalculator.js';
+import { computeSmartPosition, findMergeCandidate, euclidean } from '../livingWorld/positionCalculator.js';
 import { upsertEdge } from '../livingWorld/travelGraph.js';
 import { getTemplate, effectiveCustomCap } from '../livingWorld/settlementTemplates.js';
 import { applyDungeonRoomState } from '../livingWorld/dungeonEntry.js';
@@ -196,6 +202,76 @@ async function processItemAttributions(campaignId, newItems, userId, sceneGameTi
  *   6. Auto-create bidirectional WorldLocationEdge anchor↔new (discovered by this campaign).
  *   7. Walk connectsTo[] — create edges to any resolvable existing locations within euclidean range.
  */
+/**
+ * Round B (Phase 4b) — hearsay policy handler.
+ *
+ * For each `{locationId, byNpcId}` the LLM emitted, resolve the NPC (by
+ * CampaignNPC.npcId OR name), ensure the location sits in the NPC's
+ * `resolveNpcKnownLocations` set, and only then mark it as heard-about for
+ * the player (canonical → UserWorldKnowledge, non-canonical → Campaign).
+ *
+ * Violations (LLM made up a location or wrote one outside the NPC's scope)
+ * are skipped with a warning — the mention doesn't propagate to fog state.
+ */
+async function processLocationMentions(campaignId, mentions) {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { userId: true },
+  }).catch(() => null);
+  if (!campaign?.userId) return;
+
+  for (const entry of mentions) {
+    const locationId = String(entry?.locationId || '').trim();
+    const byNpcIdent = String(entry?.byNpcId || entry?.npcId || entry?.byNpc || '').trim();
+    if (!locationId || !byNpcIdent) continue;
+
+    try {
+      const location = await prisma.worldLocation.findUnique({
+        where: { id: locationId },
+        select: { id: true },
+      });
+      if (!location) {
+        log.warn({ campaignId, locationId, byNpcIdent }, 'locationMentioned: location not found — skipping');
+        continue;
+      }
+
+      // Resolve the NPC — campaign shadow first, canonical by name fallback.
+      const campaignNpc = await prisma.campaignNPC.findFirst({
+        where: {
+          campaignId,
+          OR: [
+            { npcId: byNpcIdent },
+            { name: { equals: byNpcIdent, mode: 'insensitive' } },
+          ],
+        },
+      });
+      const worldNpc = campaignNpc?.worldNpcId
+        ? await prisma.worldNPC.findUnique({ where: { id: campaignNpc.worldNpcId } })
+        : await prisma.worldNPC.findFirst({
+          where: { name: { equals: byNpcIdent, mode: 'insensitive' } },
+        });
+
+      if (!campaignNpc && !worldNpc) {
+        log.warn({ campaignId, byNpcIdent }, 'locationMentioned: NPC not found — skipping');
+        continue;
+      }
+
+      const known = await resolveNpcKnownLocations({ campaignNpc, worldNpc });
+      if (!known.has(locationId)) {
+        log.warn(
+          { campaignId, locationId, byNpcIdent, knownCount: known.size },
+          'locationMentioned: location outside NPC knowledge scope — policy violation, skipping',
+        );
+        continue;
+      }
+
+      await markLocationHeardAbout({ userId: campaign.userId, locationId, campaignId });
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, entry }, 'locationMentioned: handler failed');
+    }
+  }
+}
+
 async function processLocationChanges(campaignId, newLocations, { prevLoc = null } = {}) {
   if (!Array.isArray(newLocations) || newLocations.length === 0) return;
 
@@ -223,13 +299,12 @@ async function processLocationChanges(campaignId, newLocations, { prevLoc = null
     try {
       if (entry.parentLocationName) {
         await processSublocationEntry(campaignId, entry);
-      } else if (entry.directionFromCurrent && entry.travelDistance) {
-        await processTopLevelEntry(campaignId, entry, anchor, bounds);
       } else {
-        log.info(
-          { campaignId, name: entry.name },
-          'Location entry missing parent AND directional hint — skipping',
-        );
+        // Round B — relaxed contract. Any top-level entry goes through the
+        // smart placer; it accepts missing directionFromCurrent / travelDistance
+        // and falls back to a random angle + `close` radius. Nothing is
+        // silently skipped for missing hints now.
+        await processTopLevelEntry(campaignId, entry, anchor, bounds);
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, name: entry.name }, 'processLocationChanges entry failed');
@@ -324,9 +399,8 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
     return;
   }
 
-  // Existing top-level + sublocations sharing anchor-space coords. We include
-  // both top-level rows AND sublocations because sublocations inherit parent
-  // position (shared coords) and collision-check must see them.
+  // Existing top-level + sublocations sharing anchor-space coords. Include
+  // both so collision-check sees them all (sublocations inherit parent coords).
   const existing = await prisma.worldLocation.findMany({
     where: {
       parentLocationId: null,
@@ -335,39 +409,42 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
     select: { id: true, canonicalName: true, regionX: true, regionY: true, locationType: true },
   });
 
-  const result = computeNewPosition({
+  // Round B — smart placer. Relaxed contract: accepts any subset of
+  // directionFromCurrent / travelDistance / distanceHint, defaults to a
+  // random angle inside the "close" range (0.1–2 km) when AI gives nothing.
+  // Also clamps to worldBounds internally, so we don't need the separate
+  // bounds rejection path — out-of-bounds candidates get pulled to the
+  // edge rather than silently dropped.
+  const placed = computeSmartPosition({
     current: { regionX: anchor.regionX || 0, regionY: anchor.regionY || 0 },
-    directionFromCurrent: entry.directionFromCurrent,
-    travelDistance: entry.travelDistance,
+    directionFromCurrent: entry.directionFromCurrent || null,
+    travelDistance: entry.travelDistance || null,
+    distanceHint: entry.distanceHint || null,
     existing,
+    bounds,
   });
-  if (!result) {
-    log.warn({ campaignId, name: entry.name }, 'computeNewPosition returned null — bad direction/distance');
+  if (!placed) {
+    log.warn({ campaignId, name: entry.name }, 'computeSmartPosition returned null — bad anchor');
     return;
   }
+  const position = placed.position;
+  log.info(
+    { campaignId, name: entry.name, pos: position, reason: placed.reason },
+    'Smart placer picked position',
+  );
 
-  // Phase F — bounds enforcement. Keep the player-discoverable top-level
-  // sprawl inside the campaign's worldBounds (set by worldSeeder). Silent
-  // reject so premium's narration still lands; BE just doesn't materialize
-  // the row. Merge candidates within bounds stay reachable normally.
-  if (bounds && Number.isFinite(bounds.minX)) {
-    const { regionX, regionY } = result.position;
-    if (regionX < bounds.minX || regionX > bounds.maxX
-      || regionY < bounds.minY || regionY > bounds.maxY) {
-      log.info(
-        { campaignId, name: entry.name, position: result.position, bounds },
-        'Top-level location rejected — outside campaign worldBounds',
-      );
-      return;
-    }
-  }
-
-  // Merge check: if the raw position landed near an existing location AND
-  // fuzzy names match, reuse rather than create a duplicate.
+  // Merge check: if the picked position landed near an existing location AND
+  // fuzzy names match, reuse rather than create a duplicate. MERGE_RADIUS is
+  // bigger than COLLISION_RADIUS — the placer only avoided hard collisions,
+  // so near-miss coordinates can still fuzzy-match a neighbour by name.
   let created = null;
-  if (result.mergeCandidate) {
+  const mergeCandidate = findMergeCandidate({
+    raw: position,
+    existing: existing.filter((loc) => loc.id !== anchor.id),
+  });
+  if (mergeCandidate) {
     const cand = await findOrCreateWorldLocation(entry.name);
-    if (cand && cand.id === result.mergeCandidate.location.id) {
+    if (cand && cand.id === mergeCandidate.location.id) {
       log.info(
         { campaignId, name: entry.name, mergedInto: cand.canonicalName },
         'Top-level location merged into existing',
@@ -378,28 +455,40 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
 
   if (!created) {
     const template = getTemplate(locationType);
+    // Round B (Phase 4c) — AI-created runtime locations are non-canonical
+    // and campaign-scoped. We suffix the canonicalName so two campaigns
+    // that both spawn "Chatka Myśliwego" stay uncollided in the global
+    // canonical name space. Display name is the raw AI-emitted name so
+    // the player sees "Chatka Myśliwego" in the UI and prompt.
+    const campaignSuffix = campaignId ? `__${campaignId.slice(-8)}` : '';
+    const canonicalName = `${entry.name}${campaignSuffix}`;
     try {
       created = await prisma.worldLocation.create({
         data: {
-          canonicalName: entry.name,
+          canonicalName,
           aliases: JSON.stringify([entry.name]),
           description: entry.description || '',
           category: locationType,
           locationType,
           region: anchor.region || null,
-          regionX: result.position.regionX,
-          regionY: result.position.regionY,
+          regionX: position.regionX,
+          regionY: position.regionY,
           positionConfidence: 0.5,
           maxKeyNpcs: template.maxKeyNpcs || 10,
           maxSubLocations: template.maxSubLocations || 5,
           embeddingText: entry.description
             ? `${entry.name}: ${entry.description}`
             : entry.name,
+          // Round B — non-canonical marks
+          isCanonical: false,
+          createdByCampaignId: campaignId,
+          displayName: entry.name,
+          dangerLevel: entry.dangerLevel || 'safe',
         },
       });
       log.info(
-        { campaignId, name: entry.name, pos: result.position, locationType },
-        'Top-level location created',
+        { campaignId, name: entry.name, pos: position, locationType },
+        'Top-level location created (non-canonical)',
       );
     } catch (err) {
       // P2002 = canonicalName unique race — fall back to fuzzy resolve
@@ -411,6 +500,27 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
     }
   }
   if (!created) return;
+
+  // Round B — non-canonical locations need to land in the campaign's
+  // `discoveredLocationIds` since that's how the player map shows them.
+  // Canonical seed locations pass through this path only on a merge hit,
+  // where UserWorldKnowledge is the correct target — markLocationDiscovered
+  // routes by isCanonical so this single call is safe for both.
+  try {
+    const campaignRow = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { userId: true },
+    });
+    if (campaignRow?.userId) {
+      await markLocationDiscovered({
+        userId: campaignRow.userId,
+        locationId: created.id,
+        campaignId,
+      });
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, campaignId, locationId: created.id }, 'auto-discover after create failed');
+  }
 
   // Auto-edge anchor↔new (bidirectional). Distance = euclidean on computed
   // coords, not the AI-declared travelDistance — the positionCalculator may
@@ -623,6 +733,88 @@ function resolveObjective(objectives, rawObjectiveId) {
   return null;
 }
 
+/**
+ * Fire the `onComplete.moveNpcToPlayer` quest trigger. Relocates the named
+ * NPC's CampaignNPC shadow to the player's current location and stores a
+ * one-shot pendingIntroHint for next-scene prompt surfacing.
+ *
+ * `onComplete.moveNpcToPlayer` is an NPC name (or canonicalId) emitted by
+ * the AI. We resolve to WorldNPC by exact canonicalId, then fallback to
+ * name (case-insensitive). Non-canonical AI-invented NPCs are resolved
+ * via CampaignNPC.npcId directly.
+ *
+ * NEVER mutates WorldNPC — canonical state stays immutable during play.
+ */
+async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
+  const npcIdent = String(onComplete.moveNpcToPlayer || '').trim();
+  const message = String(onComplete.message || '').trim();
+  if (!npcIdent) return;
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { coreState: true, userId: true },
+  });
+  if (!campaign) return;
+
+  let playerLocationId = null;
+  try {
+    const core = JSON.parse(campaign.coreState || '{}');
+    const locName = core?.world?.currentLocation;
+    if (locName) {
+      const row = await prisma.worldLocation.findFirst({
+        where: { canonicalName: locName },
+        select: { id: true },
+      });
+      playerLocationId = row?.id || null;
+    }
+  } catch { /* ignore — player location unknown */ }
+  if (!playerLocationId) return;
+
+  // Resolve NPC: canonicalId → name → CampaignNPC.npcId
+  let worldNpcId = null;
+  const byCanonical = await prisma.worldNPC.findFirst({
+    where: { canonicalId: npcIdent },
+    select: { id: true },
+  }).catch(() => null);
+  if (byCanonical) {
+    worldNpcId = byCanonical.id;
+  } else {
+    const byName = await prisma.worldNPC.findFirst({
+      where: { name: { equals: npcIdent, mode: 'insensitive' } },
+      select: { id: true },
+    }).catch(() => null);
+    if (byName) worldNpcId = byName.id;
+  }
+
+  if (worldNpcId) {
+    await setCampaignNpcLocation(campaignId, worldNpcId, playerLocationId);
+    await setCampaignNpcIntroHint(campaignId, worldNpcId, message || null);
+    return;
+  }
+
+  // Fallback: ephemeral CampaignNPC (no WorldNPC link). Name-match inside
+  // the campaign and update in-place.
+  const ephemeral = await prisma.campaignNPC.findFirst({
+    where: {
+      campaignId,
+      OR: [
+        { npcId: npcIdent },
+        { name: { equals: npcIdent, mode: 'insensitive' } },
+      ],
+    },
+    select: { id: true },
+  }).catch(() => null);
+  if (ephemeral) {
+    await prisma.campaignNPC.update({
+      where: { id: ephemeral.id },
+      data: {
+        lastLocationId: playerLocationId,
+        pendingIntroHint: message || null,
+      },
+    }).catch((err) => log.warn({ err: err?.message, campaignNpcId: ephemeral.id }, 'moveNpcToPlayer ephemeral update failed'));
+  }
+}
+
 async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCompletedQuestIds = []) {
   const touchedQuestIds = new Set();
   for (const update of questUpdates) {
@@ -650,6 +842,20 @@ async function processQuestObjectiveUpdates(campaignId, questUpdates, alreadyCom
         data: { objectives: JSON.stringify(updated) },
       });
       if (update.completed) touchedQuestIds.add(quest.questId);
+
+      // Round B (Phase 4) — `onComplete.moveNpcToPlayer` trigger. When the
+      // objective that was just completed carries `onComplete: { moveNpcToPlayer,
+      // message }`, we (a) relocate the CampaignNPC shadow to the player's
+      // current location, (b) stash the message on `pendingIntroHint` so the
+      // next scene prompt surfaces "NPC just arrived with news". The trigger
+      // fires once per objective completion — no further bookkeeping.
+      if (update.completed && targetObj.onComplete?.moveNpcToPlayer) {
+        try {
+          await fireMoveNpcToPlayerTrigger(campaignId, targetObj.onComplete);
+        } catch (err) {
+          log.warn({ err: err?.message, campaignId, questId: quest.questId }, 'moveNpcToPlayer trigger failed');
+        }
+      }
     } catch (err) {
       log.error({ err, campaignId, questId: update.questId, objectiveId: update.objectiveId }, 'Failed to update quest objective');
     }
@@ -894,6 +1100,16 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   if (livingWorldEnabled && stateChanges.newLocations?.length) {
     await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc });
+  }
+
+  // Round B (Phase 4b) — hearsay. `locationMentioned` is an array of
+  // `{ locationId, byNpcId }` emitted when a key NPC reveals a location in
+  // dialog. Promotes the location to "heard-about" for the player + enforces
+  // policy: the NPC must have the location in their knownLocations set, else
+  // we reject the mention and log a warning (prevents LLM from leaking
+  // hearsay past intent).
+  if (livingWorldEnabled && Array.isArray(stateChanges.locationMentioned) && stateChanges.locationMentioned.length > 0) {
+    await processLocationMentions(campaignId, stateChanges.locationMentioned);
   }
 
   // Phase 7 — dungeon room state flags. `prevLoc` is the room the player

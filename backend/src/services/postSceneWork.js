@@ -167,7 +167,7 @@ export async function handlePostSceneWork({
   //     to limit=5 now that event triggers do the heavy lifting)
   if (campaign?.livingWorldEnabled) {
     try {
-      await assignGoalsForCampaign(campaignId, { currentSceneIndex: scene.sceneIndex });
+      await assignGoalsForCampaign(campaignId);
 
       if (newLoc && prevLoc && newLoc !== prevLoc) {
         try {

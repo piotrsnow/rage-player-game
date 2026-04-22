@@ -137,6 +137,8 @@ export async function syncQuestsToNormalized(campaignId, quests) {
         reward: q.reward ? JSON.stringify(q.reward) : null,
         status: q._status,
         completedAt: q.completedAt ? new Date(q.completedAt) : null,
+        // Round B — forcedGiver propagated from the startSpawnPicker bind.
+        forcedGiver: q.forcedGiver === true,
       };
       await prisma.campaignQuest.upsert({
         where: { campaignId_questId: { campaignId, questId: q.id } },

@@ -17,6 +17,8 @@ import {
   syncQuestsToNormalized,
 } from '../../services/campaignSync.js';
 import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
+import { getOrCloneCampaignNpc } from '../../services/livingWorld/campaignSandbox.js';
+import { markLocationDiscovered } from '../../services/livingWorld/userDiscoveryService.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -210,9 +212,63 @@ export async function crudCampaignRoutes(app) {
       }).catch((err) => log.error({ err, campaignId: campaign.id }, 'Failed to lock characters to campaign'));
     }
 
+    // Round B (Phase 3) — honour a start-spawn bind if campaignGenerator
+    // attached one. `_startSpawn` is the picker's {settlement, sublocation,
+    // npc} decision, threaded through from the SSE generation phase.
+    //   - Override `coreState.world.currentLocation` to the sublocation.
+    //   - Mark every active quest with a matching questGiverId as forced.
+    //   - Auto-clone the canonical NPC into CampaignNPC so the first scene
+    //     already has the shadow.
+    //   - Register the settlement + sublocation as discovered canonical.
+    const startSpawn = parsed?._startSpawn || null;
+    if (startSpawn?.sublocationName) {
+      if (!slim.world) slim.world = {};
+      slim.world.currentLocation = startSpawn.sublocationName;
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { coreState: JSON.stringify(slim) },
+      }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
+    }
+    if (startSpawn?.npcName && Array.isArray(quests?.active)) {
+      for (const q of quests.active) {
+        if (q && typeof q.questGiverId === 'string'
+          && q.questGiverId.trim().toLowerCase() === String(startSpawn.npcName).toLowerCase()) {
+          q.forcedGiver = true;
+          // Also force locationId to the sublocation so any downstream
+          // logic that resolves quests by location aligns with the start
+          // bind (picker guarantees sublocation exists).
+          if (startSpawn.sublocationName) q.locationId = startSpawn.sublocationName;
+        }
+      }
+    }
+
     await syncNPCsToNormalized(campaign.id, npcs).catch((err) => log.error({ err, campaignId: campaign.id }, 'NPC sync wrapper failed'));
     await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId: campaign.id }, 'Knowledge sync wrapper failed'));
     await syncQuestsToNormalized(campaign.id, quests).catch((err) => log.error({ err, campaignId: campaign.id }, 'Quest sync wrapper failed'));
+
+    // Post-sync start-spawn wiring. Safe to run after syncNPCsToNormalized —
+    // the canonical NPC was never in the `npcs` payload (LLM only wrote
+    // CampaignNPCs for its invented roster), so the clone gets its own row.
+    if (startSpawn?.npcCanonicalId) {
+      try {
+        const canonical = await prisma.worldNPC.findUnique({
+          where: { canonicalId: startSpawn.npcCanonicalId },
+          select: { id: true, currentLocationId: true },
+        });
+        if (canonical) {
+          await getOrCloneCampaignNpc(campaign.id, canonical.id);
+          if (canonical.currentLocationId) {
+            await markLocationDiscovered({
+              userId: request.user.id,
+              locationId: canonical.currentLocationId,
+              campaignId: campaign.id,
+            });
+          }
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId: campaign.id }, 'startSpawn post-sync wiring failed');
+      }
+    }
 
     const fullState = { ...slim };
     if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }

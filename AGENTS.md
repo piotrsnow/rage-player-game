@@ -132,6 +132,11 @@ Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code po
 - `knowledge/concepts/model-tiering.md` — nano / standard / premium tiers
 - `knowledge/concepts/frontend-structure.md` — `src/` subdomain map + entry-point cheat sheet
 - `knowledge/concepts/backend-structure.md` — `backend/` + `shared/` subdomain map + entry-point cheat sheet
+- `knowledge/concepts/living-world.md` — Living World phase roadmap (1-7 + A-F + Round A/B), tick model, clone architecture, write-back plans
+- `knowledge/concepts/fog-of-war.md` — three-state location visibility (unknown/heard-about/visited), canonical vs non-canonical split, discovery helpers
+- `knowledge/concepts/world-lore.md` — admin-editable `WorldLoreSection` injected into every scene prompt, cache invalidation
+- `knowledge/concepts/campaign-sandbox.md` — CampaignNPC shadow independent of WorldNPC (each with own activeGoal), clone triggers, writer ownership matrix
+- `knowledge/concepts/hearsay-and-ai-locations.md` — `[NPC_KNOWLEDGE]` prompt block, `locationMentioned` policy, smart placer for AI-created locations, `[WORLD BOUNDS]` hint
 
 ### Patterns — reusable code shapes
 
@@ -179,6 +184,11 @@ Current ideas (all from a `gradient-bang` review): async-tool-pattern, autonomou
 | SSE routes | [backend/src/routes/ai.js](backend/src/routes/ai.js) `writeSseHead` |
 | Prisma schema | [backend/prisma/schema.prisma](backend/prisma/schema.prisma) |
 | RPGon rules | [src/data/rpgSystem.js](src/data/rpgSystem.js) |
+| Living World canonical seed | [backend/src/scripts/seedWorld.js](backend/src/scripts/seedWorld.js) (capital + villages + NPCs + wilderness/dungeons/ruins) |
+| Campaign sandbox (CampaignNPC shadow) | [backend/src/services/livingWorld/campaignSandbox.js](backend/src/services/livingWorld/campaignSandbox.js) |
+| Start-spawn picker (campaign binding) | [backend/src/services/livingWorld/startSpawnPicker.js](backend/src/services/livingWorld/startSpawnPicker.js) |
+| Fog-of-war helpers | [backend/src/services/livingWorld/userDiscoveryService.js](backend/src/services/livingWorld/userDiscoveryService.js) |
+| AI location placement | [backend/src/services/livingWorld/positionCalculator.js](backend/src/services/livingWorld/positionCalculator.js) `computeSmartPosition` |
 
 ## Known gaps / technical debt
 
