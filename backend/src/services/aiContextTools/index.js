@@ -6,25 +6,10 @@ import { handleGetNPC } from './handlers/npc.js';
 import { handleGetQuest } from './handlers/quest.js';
 import { handleGetLocation } from './handlers/location.js';
 import { handleGetCodex } from './handlers/codex.js';
-import { handleGetEquipmentCatalog, handleGetBestiary } from './handlers/equipment.js';
 import { buildWorldLorePreamble } from './worldLore.js';
 import { buildLivingWorldContext } from './contextBuilders/livingWorld.js';
 
 export { buildWorldLorePreamble };
-export {
-  handleSearchMemory,
-  handleGetNPC,
-  handleGetQuest,
-  handleGetLocation,
-  handleGetCodex,
-  handleGetEquipmentCatalog,
-  handleGetBestiary,
-};
-export {
-  CONTEXT_TOOLS_OPENAI,
-  CONTEXT_TOOLS_ANTHROPIC,
-  executeToolCall,
-} from './toolDefs.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 

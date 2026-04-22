@@ -102,10 +102,6 @@ Both: silent on nano timeout, return empty/null.
 
 Net effect: total prompt stays in the ~3.5-7k token range for typical scenes. A runaway selection could blow past that, but hasn't happened in practice. **Add explicit budget enforcement if scenes start hitting model context limits or cost spikes**.
 
-## Legacy tool-use definitions
-
-`aiContextTools.js` also exports `CONTEXT_TOOLS_OPENAI` / `CONTEXT_TOOLS_ANTHROPIC` — tool definitions for the older AI→tool→AI function calling loop. **Not used by the scene-gen pipeline** (tool protocol was removed — 2-stage nano+assembleContext is the only path). Kept around because a few non-scene paths (campaign creation, recap generation) still reference them. When refactoring, consider whether those paths can also switch to nano selection.
-
 ## When debugging context issues
 
 1. **"AI doesn't know about NPC X."** Check `selectionResult.expand_npcs` — did intent classifier name them? If not, the heuristic missed and nano didn't detect. Add a test case to `classifyIntentHeuristic` or tune the nano prompt.

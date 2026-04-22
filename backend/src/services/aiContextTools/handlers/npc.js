@@ -62,7 +62,7 @@ export function formatNPC(npc) {
   if (bestiaryMatch) {
     lines.push(`\nCombat stats (bestiary match):\n${bestiaryMatch}`);
   } else {
-    lines.push('\nNo bestiary match — if combat starts, use get_bestiary to find a similar enemy template and adapt it.');
+    lines.push('\nNo bestiary match — if combat starts, improvise a stat block from the enemy template rules.');
   }
 
   return lines.filter(Boolean).join('\n');

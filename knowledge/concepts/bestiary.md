@@ -58,7 +58,7 @@ Large model can flag "something is approaching" in `stateChanges.pendingThreat` 
 
 ## Prompt hooks
 
-- `get_bestiary` (legacy tool-use) and `getBestiaryLocationSummary()` feed the scene prompt with per-location enemy summaries so the AI picks race-appropriate foes.
+- `getBestiaryLocationSummary()` feeds the scene prompt with per-location enemy summaries so the AI picks race-appropriate foes.
 - The system prompt enumerates `BESTIARY_LOCATIONS` and `BESTIARY_RACES` so the AI stays inside the catalog when naming enemies.
 
 ## When debugging bestiary issues
