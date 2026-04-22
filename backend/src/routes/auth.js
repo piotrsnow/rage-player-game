@@ -62,8 +62,11 @@ function clearAuthCookies(reply) {
 }
 
 function signAccessToken(fastify, user) {
+  // isAdmin is minted into the JWT so `requireAdmin` can check a claim
+  // instead of hitting Prisma on every admin request. Role changes take at
+  // most one access-token TTL (15 min) to propagate.
   return fastify.jwt.sign(
-    { id: user.id, email: user.email },
+    { id: user.id, email: user.email, isAdmin: user.isAdmin === true },
     { expiresIn: ACCESS_TOKEN_TTL },
   );
 }
@@ -184,7 +187,7 @@ export async function authRoutes(fastify) {
 
     const user = await prisma.user.findUnique({
       where: { id: verified.userId },
-      select: { id: true, email: true },
+      select: { id: true, email: true, isAdmin: true },
     });
     if (!user) {
       await revokeRefreshToken(cookieValue);

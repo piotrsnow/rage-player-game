@@ -172,11 +172,16 @@ await fastify.register(async function livingWorldScope(app) {
 }, { prefix: '/v1/livingWorld' });
 
 // Phase 6 — admin observability + moderation routes. Gated on User.isAdmin
-// via requireAdmin plugin. Rate-limited conservatively — read-heavy, but
-// tick endpoints can fire nano calls.
+// via requireAdmin plugin. Default rate is 60/min — read-heavy, but tick
+// endpoints fire nano LLM calls and declare their own stricter limits in
+// the route config. We respect the route-level rateLimit when present
+// instead of unconditionally overwriting it.
 await fastify.register(async (app) => {
   app.addHook('onRoute', (routeOptions) => {
-    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+    routeOptions.config = {
+      ...routeOptions.config,
+      rateLimit: routeOptions.config?.rateLimit || { max: 60, timeWindow: '1 minute' },
+    };
   });
   app.register(adminLivingWorldRoutes);
 }, { prefix: '/v1/admin/livingWorld' });

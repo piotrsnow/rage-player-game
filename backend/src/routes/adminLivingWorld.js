@@ -18,12 +18,37 @@ import { runTickBatch } from '../services/livingWorld/npcTickDispatcher.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
+// Fastify coerces querystring values into the declared JSON-Schema types, so
+// declaring every filter as `type: 'string'` (or `integer`/`boolean`) rejects
+// bracket-syntax attempts like `?locationId[$ne]=null` before they reach
+// Prisma. Node's default querystring parser already flattens brackets into
+// the key, but keeping the schemas tight is belt-and-braces.
+const BOOL_STRING = { type: 'string', enum: ['true', 'false'] };
+const ID_STRING = { type: 'string', maxLength: 128 };
+const SHORT_STRING = { type: 'string', maxLength: 64 };
+
 export async function adminLivingWorldRoutes(fastify) {
   const guards = { preHandler: [fastify.authenticate, fastify.requireAdmin] };
+  const guard = (extras = {}) => ({ ...guards, ...extras });
 
   // ── NPCs ───────────────────────────────────────────────────────────
-  fastify.get('/npcs', guards, async (request) => {
-    const { alive, companion, locked, locationId, limit = 100, skip = 0 } = request.query || {};
+  fastify.get('/npcs', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          alive: BOOL_STRING,
+          companion: BOOL_STRING,
+          locked: BOOL_STRING,
+          locationId: ID_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+          skip: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { alive, companion, locked, locationId, limit, skip } = request.query;
     const where = {};
     if (alive === 'true') where.alive = true;
     if (alive === 'false') where.alive = false;
@@ -38,8 +63,8 @@ export async function adminLivingWorldRoutes(fastify) {
       prisma.worldNPC.findMany({
         where,
         orderBy: { updatedAt: 'desc' },
-        take: Math.min(Number(limit) || 100, 500),
-        skip: Math.max(Number(skip) || 0, 0),
+        take: limit,
+        skip,
         select: {
           id: true,
           canonicalId: true,
@@ -61,7 +86,7 @@ export async function adminLivingWorldRoutes(fastify) {
     return { total, rows };
   });
 
-  fastify.get('/npcs/:id', guards, async (request, reply) => {
+  fastify.get('/npcs/:id', guard(), async (request, reply) => {
     const { id } = request.params;
     const npc = await prisma.worldNPC.findUnique({ where: { id } });
     if (!npc) return reply.code(404).send({ error: 'Not found' });
@@ -90,14 +115,25 @@ export async function adminLivingWorldRoutes(fastify) {
   });
 
   // ── Locations ──────────────────────────────────────────────────────
-  fastify.get('/locations', guards, async (request) => {
-    const { region, limit = 200 } = request.query || {};
+  fastify.get('/locations', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          region: SHORT_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { region, limit } = request.query;
     const where = {};
     if (region) where.region = region;
     const rows = await prisma.worldLocation.findMany({
       where,
       orderBy: { updatedAt: 'desc' },
-      take: Math.min(Number(limit) || 200, 1000),
+      take: limit,
       select: {
         id: true,
         canonicalName: true,
@@ -111,7 +147,7 @@ export async function adminLivingWorldRoutes(fastify) {
     return { rows };
   });
 
-  fastify.get('/locations/:id', guards, async (request, reply) => {
+  fastify.get('/locations/:id', guard(), async (request, reply) => {
     const { id } = request.params;
     const location = await prisma.worldLocation.findUnique({ where: { id } });
     if (!location) return reply.code(404).send({ error: 'Not found' });
@@ -130,8 +166,23 @@ export async function adminLivingWorldRoutes(fastify) {
   });
 
   // ── Events timeline ────────────────────────────────────────────────
-  fastify.get('/events', guards, async (request) => {
-    const { eventType, campaignId, npcId, locationId, visibility, limit = 100 } = request.query || {};
+  fastify.get('/events', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          eventType: SHORT_STRING,
+          campaignId: ID_STRING,
+          npcId: ID_STRING,
+          locationId: ID_STRING,
+          visibility: SHORT_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { eventType, campaignId, npcId, locationId, visibility, limit } = request.query;
     const where = {};
     if (eventType) where.eventType = eventType;
     if (campaignId) where.campaignId = campaignId;
@@ -142,21 +193,33 @@ export async function adminLivingWorldRoutes(fastify) {
     const rows = await prisma.worldEvent.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: Math.min(Number(limit) || 100, 500),
+      take: limit,
     });
     return { rows };
   });
 
   // ── Reputation ─────────────────────────────────────────────────────
-  fastify.get('/reputation', guards, async (request) => {
-    const { characterId, vendetta, limit = 100 } = request.query || {};
+  fastify.get('/reputation', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          characterId: ID_STRING,
+          vendetta: BOOL_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { characterId, vendetta, limit } = request.query;
     const where = {};
     if (characterId) where.characterId = characterId;
     if (vendetta === 'true') where.vendettaActive = true;
     const rows = await prisma.worldReputation.findMany({
       where,
       orderBy: { updatedAt: 'desc' },
-      take: Math.min(Number(limit) || 100, 500),
+      take: limit,
     });
     return { rows };
   });
@@ -165,7 +228,7 @@ export async function adminLivingWorldRoutes(fastify) {
   // Flushes the deferred outbox from the locking campaign (chronological
   // replay → canonical state), then nulls lock fields. Use when a companion
   // is stuck (abandoned campaign, zombified lock, etc.).
-  fastify.post('/npcs/:id/release-lock', guards, async (request, reply) => {
+  fastify.post('/npcs/:id/release-lock', guard(), async (request, reply) => {
     const { id } = request.params;
     try {
       const npc = await prisma.worldNPC.findUnique({
@@ -188,7 +251,7 @@ export async function adminLivingWorldRoutes(fastify) {
   });
 
   // ── Moderation: force unpause (re-activate offline NPC) ────────────
-  fastify.post('/npcs/:id/force-unpause', guards, async (request, reply) => {
+  fastify.post('/npcs/:id/force-unpause', guard(), async (request, reply) => {
     const { id } = request.params;
     try {
       const updated = await prisma.worldNPC.update({
@@ -205,7 +268,18 @@ export async function adminLivingWorldRoutes(fastify) {
   // ── Phase 5: manual single-NPC tick ────────────────────────────────
   // Admin click → force=true so paused / too_soon don't silently skip.
   // Integrity guards (dead, companion, locked, no_goal) still enforce.
-  fastify.post('/npcs/:id/tick', guards, async (request) => {
+  // Each tick fires a nano LLM call → tier rate-limit below the
+  // 60 req/min admin default.
+  fastify.post('/npcs/:id/tick', guard({
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { force: { type: 'boolean' } },
+      },
+    },
+  }), async (request) => {
     const { id } = request.params;
     const force = request.body?.force !== false; // default ON for admin
     const result = await runNpcTick(id, { timeoutMs: 8000, force });
@@ -214,9 +288,21 @@ export async function adminLivingWorldRoutes(fastify) {
   });
 
   // ── Phase 5: manual batch tick ─────────────────────────────────────
-  fastify.post('/tick-batch', guards, async (request) => {
-    const { limit = 10 } = request.body || {};
-    const out = await runTickBatch({ limit: Math.min(Number(limit) || 10, 50) });
+  // A single request can fan out to `limit` nano calls — even stricter tier.
+  fastify.post('/tick-batch', guard({
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+        },
+      },
+    },
+  }), async (request) => {
+    const limit = request.body?.limit ?? 10;
+    const out = await runTickBatch({ limit });
     return out;
   });
 
@@ -224,7 +310,7 @@ export async function adminLivingWorldRoutes(fastify) {
   // Returns nodes (top-level locations) + edges (overworld). Dungeons are
   // collapsed: the dungeon node itself is surfaced but child rooms + corridor
   // edges are aggregated as a `roomCount` on the node (not rendered).
-  fastify.get('/graph', guards, async () => {
+  fastify.get('/graph', guard(), async () => {
     const [locations, edges] = await Promise.all([
       prisma.worldLocation.findMany({
         where: { parentLocationId: null },
@@ -330,14 +416,14 @@ export async function adminLivingWorldRoutes(fastify) {
   // Injected into scene-gen prompts via `buildWorldLorePreamble()`.
   // Scene-gen caches by `max(updatedAt)` so edits propagate on next scene.
 
-  fastify.get('/lore', guards, async () => {
+  fastify.get('/lore', guard(), async () => {
     const sections = await prisma.worldLoreSection.findMany({
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
     return { sections };
   });
 
-  fastify.put('/lore/:slug', guards, async (request, reply) => {
+  fastify.put('/lore/:slug', guard(), async (request, reply) => {
     const { slug } = request.params;
     if (!slug || !/^[a-z0-9_-]+$/i.test(slug)) {
       return reply.code(400).send({ error: 'slug must match [a-z0-9_-]+' });
@@ -361,7 +447,7 @@ export async function adminLivingWorldRoutes(fastify) {
     return { section };
   });
 
-  fastify.delete('/lore/:slug', guards, async (request, reply) => {
+  fastify.delete('/lore/:slug', guard(), async (request, reply) => {
     const { slug } = request.params;
     const deleted = await prisma.worldLoreSection.deleteMany({ where: { slug } });
     if (deleted.count === 0) return reply.code(404).send({ error: 'Not found' });
@@ -373,7 +459,7 @@ export async function adminLivingWorldRoutes(fastify) {
   // by createdAt). Runs in a sequential loop rather than a transaction
   // because MongoDB transactions require a replicaSet — the upstream Atlas
   // connection does, but we keep it loop-based for local dev parity.
-  fastify.post('/lore/reorder', guards, async (request, reply) => {
+  fastify.post('/lore/reorder', guard(), async (request, reply) => {
     const body = request.body || {};
     const list = Array.isArray(body.order) ? body.order : null;
     if (!list) return reply.code(400).send({ error: 'order[] required' });
