@@ -25,6 +25,8 @@ File types:
 | [concepts/model-tiering.md](concepts/model-tiering.md) | nano / standard / premium tiers + provider fallback |
 | [concepts/frontend-structure.md](concepts/frontend-structure.md) | `src/` subdomain map with entry-point cheat sheet |
 | [concepts/backend-structure.md](concepts/backend-structure.md) | `backend/src/` + `shared/` subdomain map with entry-point cheat sheet |
+| [concepts/fog-of-war.md](concepts/fog-of-war.md) | Three-state location visibility, canonical vs non-canonical split, `userDiscoveryService` helpers |
+| [concepts/world-lore.md](concepts/world-lore.md) | Admin-editable `WorldLoreSection` prepended to every scene prompt, `buildWorldLorePreamble` cache |
 
 ## Patterns — reusable code shapes
 
@@ -50,6 +52,7 @@ File types:
 | [decisions/rpgon-custom-system.md](decisions/rpgon-custom-system.md) | Custom d50 system (RPGon) instead of WFRP |
 | [decisions/currency-three-tier-pl.md](decisions/currency-three-tier-pl.md) | Złota/Srebrna/Miedziana Korona, `1 ZK = 20 SK = 240 MK` |
 | [decisions/titles-from-achievements.md](decisions/titles-from-achievements.md) | Character identity via achievement-unlocked titles, not classes |
+| [decisions/hand-authored-world-seed.md](decisions/hand-authored-world-seed.md) | Canonical world in `seedWorld.js`; Living World proc-gen stays opt-in |
 
 ## Ideas — future concepts (not adopted)
 

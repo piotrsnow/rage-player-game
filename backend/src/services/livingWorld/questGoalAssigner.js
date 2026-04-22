@@ -44,6 +44,48 @@ function roleMatchesQuestType(role, questType) {
   return keys.some((kw) => text.includes(kw));
 }
 
+// Round A — broad NPC category buckets. Picker + dialog flavor + scene-gen
+// hints read this. Five starter values; extend via CATEGORY_KEYWORDS when
+// the picker runs out of variety (TODO(category-enum)).
+export const NPC_CATEGORIES = ['guard', 'merchant', 'commoner', 'priest', 'adventurer'];
+
+// Role-keyword buckets for backfilling `category` from existing `role`/
+// `personality` strings. Order matters — first match wins. We keep the
+// terms in sync with ROLE_AFFINITY so the two tables stay coherent (a
+// quest-type `combat` quest picks the same NPCs as a `guard`/`adventurer`
+// category filter would).
+const CATEGORY_KEYWORDS = {
+  priest: ['kapłan', 'kapłanka', 'arcykapłan', 'mnich', 'zakonnik', 'priest', 'monk', 'cleric'],
+  guard: ['strażnik', 'żołnierz', 'kapitan', 'gwardzist', 'rycerz', 'guard', 'soldier', 'captain', 'knight'],
+  merchant: ['kupiec', 'kupcowa', 'handlarz', 'karczmarz', 'karczmarka', 'szuler', 'posłaniec', 'goniec', 'merchant', 'trader', 'innkeeper', 'messenger'],
+  adventurer: [
+    'mistrz', 'mistrzyni', 'mag', 'czarodziej', 'wiedźma', 'alchemik', 'alchemiczka',
+    'łowca', 'łowczyni', 'tropiciel', 'myśliwy', 'myśliwa', 'złodziej', 'rozbójnik',
+    'najemnik', 'awanturnik', 'przygodowiec', 'wojownik', 'wróżbitka',
+    'adventurer', 'mage', 'wizard', 'witch', 'alchemist', 'hunter', 'ranger',
+    'rogue', 'thief', 'mercenary', 'warrior',
+  ],
+  // `commoner` is the fallback — any NPC without a match above.
+};
+
+/**
+ * Map a freeform role/personality string to one of NPC_CATEGORIES. Used
+ * during seeding, cloning from WorldNPC → CampaignNPC, and post-hoc
+ * backfill. Pure, exported for tests.
+ *
+ * Order matters: priest/guard/merchant are checked before adventurer so
+ * "kapłan-wojownik" lands under `priest`, not `adventurer`.
+ */
+export function categorize(role, { fallback = 'commoner' } = {}) {
+  const text = String(role || '').toLowerCase();
+  if (!text) return fallback;
+  for (const category of ['priest', 'guard', 'merchant', 'adventurer']) {
+    const keys = CATEGORY_KEYWORDS[category] || [];
+    if (keys.some((kw) => text.includes(kw))) return category;
+  }
+  return fallback;
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // Pure helpers (exported for testability)
 // ──────────────────────────────────────────────────────────────────────

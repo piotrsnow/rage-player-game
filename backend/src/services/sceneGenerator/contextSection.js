@@ -9,6 +9,15 @@ export function buildContextSection(contextBlocks) {
 
   const parts = [];
 
+  // Round A (Phase 0a) — World Lore preamble. Admin-curated canon that
+  // the scene MUST respect (pantheon, factions, regional history). Placed
+  // ABOVE per-scene NPC/quest/location context so the LLM anchors against
+  // canonical lore first and treats everything below as this session's
+  // facts.
+  if (contextBlocks.worldLore) {
+    parts.push(`[WORLD LORE]\n${contextBlocks.worldLore}\n[/WORLD LORE]`);
+  }
+
   // NPCs
   for (const [name, data] of Object.entries(contextBlocks.npcs || {})) {
     if (data && !data.startsWith('No NPC found')) {

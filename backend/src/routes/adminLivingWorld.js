@@ -324,6 +324,82 @@ export async function adminLivingWorldRoutes(fastify) {
       }),
     };
   });
+
+  // ── World Lore (Round A — Phase 0a) ───────────────────────────────
+  // Hand-curated canonical world lore, editable from the admin panel.
+  // Injected into scene-gen prompts via `buildWorldLorePreamble()`.
+  // Scene-gen caches by `max(updatedAt)` so edits propagate on next scene.
+
+  fastify.get('/lore', guards, async () => {
+    const sections = await prisma.worldLoreSection.findMany({
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    });
+    return { sections };
+  });
+
+  fastify.put('/lore/:slug', guards, async (request, reply) => {
+    const { slug } = request.params;
+    if (!slug || !/^[a-z0-9_-]+$/i.test(slug)) {
+      return reply.code(400).send({ error: 'slug must match [a-z0-9_-]+' });
+    }
+    const body = request.body || {};
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const content = typeof body.content === 'string' ? body.content : '';
+    const order = Number.isFinite(body.order) ? Math.trunc(body.order) : null;
+    if (!title) return reply.code(400).send({ error: 'title required' });
+
+    const updatedBy = request.user?.email || request.user?.id || null;
+    const existing = await prisma.worldLoreSection.findUnique({ where: { slug } });
+    const nextOrder = order !== null
+      ? order
+      : (existing?.order ?? await nextLoreOrder());
+    const section = await prisma.worldLoreSection.upsert({
+      where: { slug },
+      update: { title, content, order: nextOrder, updatedBy },
+      create: { slug, title, content, order: nextOrder, updatedBy },
+    });
+    return { section };
+  });
+
+  fastify.delete('/lore/:slug', guards, async (request, reply) => {
+    const { slug } = request.params;
+    const deleted = await prisma.worldLoreSection.deleteMany({ where: { slug } });
+    if (deleted.count === 0) return reply.code(404).send({ error: 'Not found' });
+    return { deleted: deleted.count };
+  });
+
+  // Bulk reorder. Body: { order: [{slug, order}, ...] }. Missing slugs are
+  // ignored; duplicate order values are accepted (rendering does tie-break
+  // by createdAt). Runs in a sequential loop rather than a transaction
+  // because MongoDB transactions require a replicaSet — the upstream Atlas
+  // connection does, but we keep it loop-based for local dev parity.
+  fastify.post('/lore/reorder', guards, async (request, reply) => {
+    const body = request.body || {};
+    const list = Array.isArray(body.order) ? body.order : null;
+    if (!list) return reply.code(400).send({ error: 'order[] required' });
+    let updated = 0;
+    for (const entry of list) {
+      if (!entry?.slug || !Number.isFinite(entry.order)) continue;
+      const res = await prisma.worldLoreSection.updateMany({
+        where: { slug: entry.slug },
+        data: { order: Math.trunc(entry.order) },
+      });
+      updated += res.count;
+    }
+    return { updated };
+  });
+}
+
+async function nextLoreOrder() {
+  try {
+    const last = await prisma.worldLoreSection.findFirst({
+      orderBy: { order: 'desc' },
+      select: { order: true },
+    });
+    return (last?.order ?? -1) + 1;
+  } catch {
+    return 0;
+  }
 }
 
 function safeJson(s) {

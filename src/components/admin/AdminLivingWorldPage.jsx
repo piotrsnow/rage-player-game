@@ -9,8 +9,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { apiClient } from '../../services/apiClient';
+import AdminWorldLoreTab from './AdminWorldLoreTab';
 
-const TABS = ['npcs', 'locations', 'events', 'reputation', 'map'];
+const TABS = ['npcs', 'locations', 'events', 'reputation', 'map', 'lore'];
 
 export default function AdminLivingWorldPage() {
   const [tab, setTab] = useState('npcs');
@@ -79,6 +80,7 @@ export default function AdminLivingWorldPage() {
       {tab === 'events' && <EventTimelineTab />}
       {tab === 'reputation' && <ReputationListTab />}
       {tab === 'map' && <MapTab />}
+      {tab === 'lore' && <AdminWorldLoreTab />}
     </div>
   );
 }

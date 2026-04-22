@@ -84,6 +84,16 @@ model Campaign {
   // livingWorldEnabled. JSON strings so shape can evolve without migrations.
   settlementCaps      String? // JSON: { hamlet: n, village: n, town: n, city: n } — capital is global, not tracked here
   worldBounds         String? // JSON: { minX, maxX, minY, maxY } — km, centered on (0,0) so global capital Yeralden is reachable
+  // Round A — fog-of-war split. Canonical locations use UserWorldKnowledge
+  // (per-user, cross-campaign). Non-canonical (AI-generated mid-play) stay
+  // campaign-scoped because the same "Chatka Myśliwego" doesn't exist across
+  // parallel playthroughs. `heardAboutLocationIds` is the third fog state
+  // (visible on map but drill-down locked). Non-canonical sublocations are
+  // tracked separately so parent-location discovery doesn't implicitly expose
+  // them.
+  discoveredLocationIds    String @default("[]") // JSON array of non-canonical WorldLocation.id
+  discoveredSubLocationIds String @default("[]") // JSON array of non-canonical sublocation ids
+  heardAboutLocationIds    String @default("[]") // JSON array of non-canonical WorldLocation.id
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -147,6 +157,11 @@ model CampaignNPC {
   // Living World (Phase 1) — link to canonical WorldNPC + agent flag
   worldNpcId    String?  @db.ObjectId
   isAgent       Boolean  @default(false)
+  // Round A — broad NPC category. Five starter buckets:
+  //   guard | merchant | commoner | priest | adventurer
+  // Used by questgiver pickers, dialog flavor, and scene-gen intent hints.
+  // Backfilled at clone/promotion time via categorize(role) in questGoalAssigner.
+  category      String   @default("commoner")
   // G4 — per-NPC flag so a single renown acknowledgment fires once per
   // (campaign, NPC) pair instead of every reencounter.
   hasAcknowledgedFame Boolean @default(false)
@@ -410,9 +425,36 @@ model WorldLocation {
   //         flavorSeed, entryCleared, trapSprung, lootTaken }
   roomMetadata       String?
 
+  // Round A — hand-authored canonical seed vs AI-generated campaign-specific.
+  // Canonical locations (seedWorld.js) are shared across all campaigns and
+  // discovery goes to UserWorldKnowledge. Non-canonical is AI-invented at
+  // runtime (chatka myśliwego, sekretna krypta) and stays per-campaign.
+  isCanonical           Boolean @default(false)
+  // Round A — visibility default. `true` only for the capital; other
+  // canonical locations start hidden and become visible as the player
+  // visits or hears about them.
+  knownByDefault        Boolean @default(false)
+  // Round A — danger tier, hand-authored for dungeons/wilderness/ruins.
+  // Kept as string enum (safe|moderate|dangerous|deadly) to match edge.difficulty.
+  dangerLevel           String  @default("safe")
+  // Round A — hand-authored sub-grid coords inside a parent settlement.
+  // Only set when parentLocationId is non-null. Grid size scales with the
+  // parent's locationType (village 5x5, town 7x7, city/capital 10x10).
+  subGridX              Int?
+  subGridY              Int?
+  // Round A — campaign-of-origin for AI-generated locations. Null for canonical.
+  // Kept as audit trail even after post-campaign promotion (Round E).
+  createdByCampaignId   String? @db.ObjectId
+  // Round A — display name shown to the player. For canonical = canonicalName.
+  // For non-canonical = original AI-emitted name without global-unique suffix
+  // (canonicalName gets `_{campaignIdShort}` appended to avoid cross-campaign
+  // collisions in the global canonical name space).
+  displayName           String?
+
   @@index([region])
   @@index([parentLocationId])
   @@index([locationType])
+  @@index([isCanonical, createdByCampaignId])
 }
 
 // Phase 7 — Graph connections between WorldLocations.
@@ -444,8 +486,13 @@ model WorldLocationEdge {
 model UserWorldKnowledge {
   id                    String   @id @default(auto()) @map("_id") @db.ObjectId
   userId                String   @unique @db.ObjectId
-  discoveredLocationIds String   @default("[]") // JSON array
+  discoveredLocationIds String   @default("[]") // JSON array — visited canonical locations
   discoveredEdgeIds     String   @default("[]") // JSON array
+  // Round A — "heard-about" third fog state for canonical locations.
+  // Entries here render on the map (name visible, dashed outline) but
+  // drill-down to sublocations is locked until physical visit promotes
+  // the entry to discoveredLocationIds.
+  heardAboutLocationIds String   @default("[]")
   updatedAt             DateTime @updatedAt
 }
 
@@ -505,6 +552,16 @@ model WorldNPC {
   schedule               String?
   goalDeadlineAt         DateTime?
   lastLocationPingAt     DateTime?
+  // Round A — broad NPC category (guard|merchant|commoner|priest|adventurer).
+  // Questgiver picker + hearsay policy filter on this. TODO(category-enum):
+  // extend with hunter/noble/rogue/scholar/innkeeper/blacksmith when the
+  // picker runs out of variety.
+  category               String    @default("commoner")
+  // Round A — explicit location knowledge. NPCs implicitly know their own
+  // location + 1-hop edges (derived at query time). This JSON array holds
+  // ADDITIONAL canonical-only locations the NPC is authorized to reveal
+  // in dialog (e.g. Kapitan Gerent knows dungeons, Eleya knows wilderness).
+  knownLocationIds       String    @default("[]") // JSON array of WorldLocation.id
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   // embedding field NOT declared — written via native MongoDB driver (writeEmbedding)
@@ -590,4 +647,23 @@ model WorldNpcAttribution {
 
   @@index([actorCharacterId, createdAt])
   @@index([worldNpcId])
+}
+
+// Round A — world lore sections. Admin-editable markdown that gets
+// concatenated (in `order`) and prepended to scene-gen prompts as
+// `[WORLD LORE] ... [/WORLD LORE]`. One canonical pool shared across all
+// campaigns — classic seed content lives in `seedWorld.js`, this is the
+// additional handcrafted world-context (pantheon details, faction rumors,
+// regional lore) that a DM would want the LLM to always know about.
+model WorldLoreSection {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  slug      String   @unique
+  title     String
+  content   String   @default("")
+  order     Int      @default(0)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
 }

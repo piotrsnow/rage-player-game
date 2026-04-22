@@ -28,6 +28,7 @@ Living World tables so legacy campaigns stay unaffected.
 | D | Hybrid quest-giver picker — when nano flags `quest_offer_likely` AND saturation is tight, BE pre-selects a weighted-random existing NPC (60% local / 30% low-quest / 10% wildcard, role-affinity filtered) and injects a `SUGGESTED QUEST-GIVER` line into the dynamic suffix | `questGoalAssigner.pickQuestGiver`, `intentClassifier.quest_offer_likely`, `systemPrompt` suffix |
 | E | Custom-sublocation budget scaled by `difficultyTier` — `customCap` added to `SETTLEMENT_TEMPLATES`, multiplied by `{low:0, medium:1.0, high:1.5, deadly:2.0}` per-campaign at admission time. Capital remains global but each campaign's additions count against its own tier | `settlementTemplates.effectiveCustomCap`, `topologyGuard.decideSublocationAdmission` custom branch |
 | F | Travel montage (compress trip > 5 km to ONE scene; injected via TRAVEL MONTAGE MODE instruction) + `worldBounds` enforcement in `processTopLevelEntry` (out-of-bounds new top-level rejected) | `aiContextTools.buildTravelBlock` montage flag, `processStateChanges.processTopLevelEntry` bounds check |
+| G — Round A | Schema + content foundation for the plans/living-world-grid-quests-triggers-fog.md roadmap: canonical/non-canonical fog-of-war split, NPC categories, hand-authored wilderness/dungeons/ruins, NPC explicit knowledge seeding, admin-editable world lore injected into every scene | `seedWorld.js` (content + `isCanonical=true` flag), `userDiscoveryService` (canonical/non-canonical routing + `markLocationHeardAbout` + `loadCampaignFog`), `questGoalAssigner.categorize` + `NPC_CATEGORIES`, `aiContextTools.buildWorldLorePreamble`, admin routes `/v1/admin/livingWorld/lore` |
 
 ## Global visibility — what bubbles up
 
@@ -50,6 +51,40 @@ Fame/infamy feed from these events into `Character.fame` / `.infamy`
 thresholds (E). Renown crossings turn on the systemPrompt RENOWN suffix
 for first-time NPC meetings (G4).
 
+## Phase G — Round A (plan: [plans/living-world-grid-quests-triggers-fog.md](../../plans/living-world-grid-quests-triggers-fog.md))
+
+Foundation pass for the "grid map + quests + triggers + fog" roadmap.
+Subsystem-level docs:
+
+- **Fog-of-war** — canonical vs non-canonical split, three visibility
+  states. See [fog-of-war.md](./fog-of-war.md).
+- **World lore** — admin-editable `WorldLoreSection` injected into every
+  scene prompt. See [world-lore.md](./world-lore.md).
+
+New `WorldLocation` columns: `isCanonical`, `knownByDefault`, `dangerLevel`
+(safe|moderate|dangerous|deadly), `subGridX/Y` (hand-authored drill-down
+slots), `createdByCampaignId`, `displayName`.
+
+New `WorldNPC` / `CampaignNPC` columns: `category` (guard | merchant |
+commoner | priest | adventurer — seed guarantees ≥1 per bucket),
+`knownLocationIds` on WorldNPC for explicit hearsay authorization (Round B
+will wire this into scene prompts).
+
+`seedWorld.js` now carries:
+- 17 new canonical locations on the heartland 10×10 grid: 4 dungeons
+  (safe/moderate/dangerous/deadly), 6 wilderness, 4 ruins, 3 roadside POI.
+  Road fan-out from the capital with difficulty matching each tile.
+- Sub-grid coords (`subGridX/subGridY`) for every capital + village
+  sublocation — used by the Round C drill-down UI.
+- Kupiec Dorgun in the Grand Market (fills the `merchant` category bucket).
+- `WorldLoreSection { slug:"main" }` starter row so the scene-gen cache has
+  a well-defined "empty preamble" default.
+
+Round B (quest binding + triggers), Round C (UI: grid map + drill-down),
+Round D (deferred — biome + lore RAG), Round E (post-campaign write-back +
+NPC/location promotion candidates) ride on top of this schema. Plan file
+has the phase-by-phase breakdown.
+
 ## NPC tick model (D — clone architecture)
 
 Global NPCs (`WorldNPC`) live in ONE location and tick only when
@@ -69,12 +104,12 @@ clone vs global split and reconciliation rules.
 
 Every `livingWorldEnabled` campaign is seeded with a bounded set of settlements when POST `/v1/campaigns` runs. The seed:
 
-1. Calls `seedWorld()` belt-and-suspender (ensures global capital Yeralden + its NPCs exist — idempotent).
+1. Calls `seedWorld()` belt-and-suspender (ensures global hand-authored world exists — capital Yeralden + surrounding villages + their NPCs + inter-settlement edges. Idempotent; see [decisions/hand-authored-world-seed.md](../decisions/hand-authored-world-seed.md) for why the global seed grows over time instead of being proc-gen).
 2. Reads `length` from `coreState.campaign.length` (`Short|Medium|Long`) → settlement count table:
    - **Short**: 1 hamlet + 1 village, bounds ±2.5 km
    - **Medium**: 2 hamlets + 2 villages + 1 town, bounds ±5 km
    - **Long**: 3 hamlets + 3 villages + 2 towns + 1 city, bounds ±10 km
-3. Picks names from [nameBank.js](../../backend/src/services/livingWorld/nameBank.js) (Polish-themed pools, ~30 per type, falls back to roman-numeral suffix on collision). Capital name is fixed (`Yeralden`) — never in the bank.
+3. Picks names from [nameBank.js](../../backend/src/services/livingWorld/nameBank.js) (Polish-themed pools, ~30 per type, falls back to roman-numeral suffix on collision). All hand-seeded canonical names (capital + globally seeded villages like `Świetłogaj`, `Kamionka Stara`) are implicitly excluded because `worldSeeder` pre-loads the full set of existing `WorldLocation.canonicalName`s before naming.
 4. Places settlements on a ring around (0,0) so Yeralden stays reachable, auto-creates bidirectional `WorldLocationEdge` rows between ring neighbors AND between every seeded settlement ≤10 km from (0,0) and the capital.
 5. Picks a starting settlement by weighted random:
    - **Default pool** (capital NOT eligible): `hamlet 10% / village 70% / city 20%` — falls back to `town` if no city seeded.
@@ -138,7 +173,7 @@ Two independent additions:
 | Fame service | [fameService.js](../../backend/src/services/livingWorld/fameService.js) |
 | Quest audit | [questAudit.js](../../backend/src/services/livingWorld/questAudit.js) |
 | Dungeons (Phase 7) | [dungeonSeedGenerator.js](../../backend/src/services/livingWorld/dungeonSeedGenerator.js), [dungeonEntry.js](../../backend/src/services/livingWorld/dungeonEntry.js), [contentLocalizer.js](../../backend/src/services/livingWorld/contentLocalizer.js), [backend/src/data/dungeonTemplates.js](../../backend/src/data/dungeonTemplates.js) |
-| Phase A seeding | [worldSeeder.js](../../backend/src/services/livingWorld/worldSeeder.js), [nameBank.js](../../backend/src/services/livingWorld/nameBank.js), [scripts/seedWorld.js](../../backend/src/scripts/seedWorld.js) (global capital Yeralden + 12 named NPCs) |
+| Phase A seeding | [worldSeeder.js](../../backend/src/services/livingWorld/worldSeeder.js), [nameBank.js](../../backend/src/services/livingWorld/nameBank.js), [scripts/seedWorld.js](../../backend/src/scripts/seedWorld.js) (global hand-authored world: Yeralden + surrounding villages — currently Świetłogaj, Kamionka Stara — + all their sublocations, NPCs, and inter-settlement edges) |
 | Phase B mid-play guard | [processStateChanges.js](../../backend/src/services/sceneGenerator/processStateChanges.js) `BLOCKED_MIDPLAY_LOCATION_TYPES` |
 | Phase C saturation hint | [aiContextTools.js](../../backend/src/services/aiContextTools.js) `buildSaturationHint`, [contextSection.js](../../backend/src/services/sceneGenerator/contextSection.js) tight/watch render |
 | Phase D quest-giver picker | [questGoalAssigner.js](../../backend/src/services/livingWorld/questGoalAssigner.js) `pickQuestGiver`, [intentClassifier.js](../../backend/src/services/intentClassifier.js) `quest_offer_likely`, [generateSceneStream.js](../../backend/src/services/sceneGenerator/generateSceneStream.js) wiring |

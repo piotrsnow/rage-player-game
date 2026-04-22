@@ -71,8 +71,8 @@ export async function handlePostSceneWork({
             ]);
             if (!prevRow?.id || !newRow?.id) return;
             await Promise.allSettled([
-              markLocationDiscovered({ userId: campaign.userId, locationId: newRow.id }),
-              markLocationDiscovered({ userId: campaign.userId, locationId: prevRow.id }),
+              markLocationDiscovered({ userId: campaign.userId, locationId: newRow.id, campaignId }),
+              markLocationDiscovered({ userId: campaign.userId, locationId: prevRow.id, campaignId }),
               markEdgeDiscoveredByUser({
                 userId: campaign.userId,
                 fromLocationId: prevRow.id,

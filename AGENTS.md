@@ -152,6 +152,7 @@ Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code po
 - `knowledge/decisions/rpgon-custom-system.md` — custom d50 system, not WFRP
 - `knowledge/decisions/currency-three-tier-pl.md` — ZK/SK/MK exchange rates
 - `knowledge/decisions/titles-from-achievements.md` — character identity via titles
+- `knowledge/decisions/hand-authored-world-seed.md` — canonical world in `seedWorld.js`; Living World proc-gen stays opt-in
 
 ### Ideas — future concepts (not adopted)
 
