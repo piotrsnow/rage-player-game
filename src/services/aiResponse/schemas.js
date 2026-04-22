@@ -346,6 +346,16 @@ const StateChangesSchema = z.object({
     name: z.string().min(1),
     summary: z.string().max(400),
   }).passthrough().nullable().optional(),
+  // Round B (Phase 4b) — hearsay mentions. BE's `processLocationMentions`
+  // enforces policy (NPC must already know the location) + caps at 20 to
+  // bound per-scene DB work. Same cap here so FE validator rejects oversized
+  // arrays before dispatch.
+  locationMentioned: z.array(z.object({
+    locationId: z.string().min(1),
+    byNpcId: z.string().min(1).optional(),
+    npcId: z.string().min(1).optional(),
+    byNpc: z.string().min(1).optional(),
+  }).passthrough()).max(20).optional().default([]),
   narrativeSeeds: z.array(NarrativeSeedSchema).optional().default([]),
   resolvedSeeds: z.array(z.string()).optional().default([]),
   npcAgendas: z.array(NpcAgendaSchema).optional().default([]),
