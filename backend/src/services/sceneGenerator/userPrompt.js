@@ -8,11 +8,11 @@ function buildPreRollInstructions() {
   return `To resolve a non-lucky check:
 1. Pick skill name from PC Skills (e.g. Skradanie:4 → skill_level=4). If not in list → skill_level=0.
 2. Find linked attribute from PC Attributes (see mapping in CORE RULES, e.g. Skradanie→ZRC:13 → attr=13).
-3. total = base + attr + skill_level
+3. total = base + attr + skill_level + creativityBonus (the top-level bonus you are awarding this scene — already factored into the result below)
 4. Compare vs threshold: easy=20, medium=35, hard=50, veryHard=65, extreme=80
 5. margin = total - threshold. success = margin >= 0.
 LUCKY SUCCESS rolls: skip all calculation, auto-success. Narrate fortunate twist.
-IMPORTANT: Calculate result FIRST, then narrate accordingly. Do not narrate success if the roll fails.
+IMPORTANT: Decide creativityBonus FIRST, then calculate result, then narrate accordingly. Do not narrate success if the roll fails.
 Include in TOP-LEVEL diceRolls field (NOT nested in stateChanges): [{skill, difficulty, success}]. Use only as many rolls as genuinely needed.`;
 }
 
@@ -110,10 +110,18 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   // Resolved mechanics + pre-rolled dice
   if (resolvedMechanics?.diceRoll) {
     const r = resolvedMechanics.diceRoll;
-    const outcomeLabel = r.luckySuccess ? 'LUCKY SUCCESS' : r.success ? (r.margin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS') : (r.margin <= -15 ? 'HARD FAILURE' : 'FAILURE');
-    parts.push(`SKILL CHECK (engine-resolved, DO NOT recalculate):
-Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} + creativity=${r.creativityBonus || 0} = ${r.total || r.roll} vs ${r.threshold || r.target} | Margin: ${r.margin ?? r.sl ?? 0} | Result: ${outcomeLabel}
-Narrate consistently: ${r.success ? 'the action SUCCEEDS' : 'the action FAILS'}. Scale intensity with margin.`);
+    const baseTotal = r.total || r.roll;
+    const threshold = r.threshold || r.target;
+    const baseMargin = r.margin ?? r.sl ?? 0;
+    const outcomeLabel = r.luckySuccess ? 'LUCKY SUCCESS' : r.success ? (baseMargin >= 15 ? 'GREAT SUCCESS' : 'SUCCESS') : (baseMargin <= -15 ? 'HARD FAILURE' : 'FAILURE');
+    const creativityNote = r.luckySuccess
+      ? ''
+      : creativityEligible
+        ? ` creativityBonus (0-10, this scene) will be ADDED post-hoc: final_total = ${baseTotal} + creativityBonus, final_margin = ${baseMargin} + creativityBonus. If that flips the result (e.g. margin crosses 0), narrate the FINAL result — not the pre-creativity one shown here.`
+        : '';
+    parts.push(`SKILL CHECK (engine-resolved, DO NOT recalculate the base numbers):
+Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} = ${baseTotal} vs ${threshold} | Margin: ${baseMargin} | Pre-creativity result: ${outcomeLabel}.${creativityNote}
+Scale intensity with the final margin (after creativityBonus).`);
 
     // Remaining pre-rolls for additional sub-actions
     if (preRolls && preRolls.length > 1) {

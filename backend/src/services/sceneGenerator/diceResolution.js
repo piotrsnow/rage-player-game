@@ -96,14 +96,19 @@ export function isCreativityEligible(playerAction, { isCustomAction, fromAutoPla
  * Model returns only {skill, difficulty, success} — backend calculates the full
  * result. If the model's narrated outcome disagrees with the mechanical result,
  * nudge d50 to reconcile so narration and mechanics stay in sync.
+ * creativityBonus is the scene-level bonus the model awarded (already clamped/
+ * validated by caller) — baked into every roll so AI's success/fail decision
+ * and the backend's re-computation use the same formula.
  */
-export function resolveModelDiceRolls(sceneResult, character, preRolls) {
+export function resolveModelDiceRolls(sceneResult, character, preRolls, creativityBonus = 0) {
   // Schema reorder: diceRolls is TOP-LEVEL. Fall back to legacy stateChanges.diceRolls
   // for any in-flight responses where the model still nests it (best-effort).
   const modelRolls = Array.isArray(sceneResult.diceRolls) && sceneResult.diceRolls.length > 0
     ? sceneResult.diceRolls
     : sceneResult.stateChanges?.diceRolls;
   if (!Array.isArray(modelRolls) || modelRolls.length === 0) return;
+
+  const clampedCreativity = Math.max(0, Math.min(CREATIVITY_BONUS_MAX, Math.floor(Number(creativityBonus) || 0)));
 
   const resolved = [];
   for (let i = 0; i < Math.min(modelRolls.length, 3); i++) {
@@ -113,7 +118,7 @@ export function resolveModelDiceRolls(sceneResult, character, preRolls) {
 
     const roll = resolveBackendDiceRollWithPreRoll(
       character, skill, difficulty || 'medium',
-      preRoll.d50, preRoll.luckySuccess,
+      preRoll.d50, preRoll.luckySuccess, clampedCreativity,
     );
     if (!roll) continue;
 
@@ -124,17 +129,18 @@ export function resolveModelDiceRolls(sceneResult, character, preRolls) {
         const skillLvl = getSkillLevel(character, skill);
         const momentum = clamp(character.momentumBonus || 0, -10, 10);
         const threshold = DIFFICULTY_THRESHOLDS[difficulty] || DIFFICULTY_THRESHOLDS.medium;
+        const staticBonus = attr + skillLvl + momentum + clampedCreativity;
 
         if (modelSaysSuccess && !roll.success) {
           const nudge = Math.floor(Math.random() * 4);
-          const neededD50 = threshold - attr - skillLvl - momentum + nudge;
+          const neededD50 = threshold - staticBonus + nudge;
           roll.roll = clamp(neededD50, 1, 50);
         } else if (!modelSaysSuccess && roll.success) {
           const nudge = -(Math.floor(Math.random() * 4) + 1);
-          const neededD50 = threshold - attr - skillLvl - momentum + nudge;
+          const neededD50 = threshold - staticBonus + nudge;
           roll.roll = clamp(neededD50, 1, 50);
         }
-        roll.total = roll.roll + attr + skillLvl + momentum;
+        roll.total = roll.roll + staticBonus;
         roll.margin = roll.total - threshold;
         roll.success = roll.margin >= 0;
       }

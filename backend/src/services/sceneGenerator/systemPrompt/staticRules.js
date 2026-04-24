@@ -13,7 +13,7 @@ export function coreRulesBlock() {
   return `CORE RULES:
 - Dice/skill checks: may be engine-resolved (see user prompt) or self-resolved using pre-rolled d50 values.
 - If engine-resolved: narrate the provided result. DO NOT recalculate.
-- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). Calculate total = base + attribute_value + skill_level. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
+- If pre-rolled d50 values are available and action has genuine risk: pick the correct skill from PC Skills below (format: skill:level→ATTR:value). DECIDE creativityBonus FIRST, then calculate total = base + attribute_value + skill_level + creativityBonus. Compare vs difficulty threshold. If luckySuccess → auto-success. Unlisted skills = level 0; use Attributes line for base value.
 - Include results in diceRolls array (max 3) — format in RESPONSE section.
 - Margin scaling: lucky success=fortunate twist, margin 15+=decisive success, margin 0-14=success (low margin may add complication), margin -1 to -14=failure with opportunity, margin≤-15=hard fail+consequence.
 - Consequences: risky actions generate reputation/disposition/resource/wound/rumor consequences. Criminal acts accumulate heat (guards, bounties, higher prices).
@@ -23,7 +23,7 @@ export function coreRulesBlock() {
 - The world is grim and perilous. Death is real. Consequences are lasting.
 - creativityBonus (TOP-LEVEL, int 0-10): ONLY for player_input_kind=custom (suggested/auto=ALWAYS 0).
   0=none | 1-3=detail/environment use | 4-6=clever tactic | 7-9=brilliant combo | 10=genius.
-  Quality > length. Adds to skill check total.`;
+  Quality > length. Score creativityBonus BEFORE resolving any dice in this scene, then ADD it to every skill-check total (both engine-resolved and self-resolved). Narrate success/failure based on the total WITH creativity already included.`;
 }
 
 export function scenePacingBlock() {

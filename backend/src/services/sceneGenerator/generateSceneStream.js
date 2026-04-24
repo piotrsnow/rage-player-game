@@ -250,21 +250,22 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     sceneResult.creativityBonus = effectiveCreativity;
 
     // 5c. Apply creativity to the nano roll (if any) post-hoc — the backend
-    // already resolved that roll in step 2b before the model call.
+    // already resolved that roll in step 2b before the model call. The user
+    // prompt told the model to expect this post-hoc bump, so narration should
+    // be consistent with the final margin.
     if (effectiveCreativity > 0 && resolvedMechanics?.diceRoll) {
       applyCreativityToRoll(resolvedMechanics.diceRoll, effectiveCreativity);
     }
 
-    // 6a. Resolve model-initiated dice rolls (if any)
-    resolveModelDiceRolls(sceneResult, characterForRoll, resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls);
-
-    // 6a2. Apply creativity also to self-resolved model rolls — all dice in
-    // one scene share the same top-level creativity bonus.
-    if (effectiveCreativity > 0 && Array.isArray(sceneResult.diceRolls)) {
-      for (const roll of sceneResult.diceRolls) {
-        applyCreativityToRoll(roll, effectiveCreativity);
-      }
-    }
+    // 6a. Resolve model-initiated dice rolls (if any). Creativity is baked in
+    // at resolution time so the AI's success/fail decision and backend's
+    // re-computation use the same formula.
+    resolveModelDiceRolls(
+      sceneResult,
+      characterForRoll,
+      resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls,
+      effectiveCreativity,
+    );
 
     // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array.
     // Dedupe by skill name: if nano already resolved a skill, drop any model
