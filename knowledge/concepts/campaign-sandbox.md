@@ -90,9 +90,19 @@ These are gone entirely — DO NOT reintroduce:
   `goalTargetCampaignId` hack to inject "player is at X" into the nano
   prompt. World tick is world-level; it doesn't know about campaigns.
 - Mirror write in `assignGoalsForCampaign` — no longer writes shadow
-  changes back to WorldNPC. The two are independent.
+  changes back to WorldNPC. The two are independent. Round E Phase 12b
+  Slice B also dropped the `worldNpcId: { not: null }` filter — the
+  assigner now operates on the full CampaignNPC shadow pool (canonical
+  home-derivation is opt-in per-row).
 - `npcTickDispatcher` campaign filter — dispatcher ticks whichever
   WorldNPCs have world-level activeGoals, regardless of who's playing.
+- `maybePromote` + inline `findOrCreateWorldNPC` during play (Round E
+  Phase 12b Slice B) — canonical `WorldNPC` rows are NEVER created
+  mid-campaign anymore. All promotion goes through
+  [`postCampaignPromotion.js`](../../backend/src/services/livingWorld/postCampaignPromotion.js)
+  post-campaign, then admin approval (Phase 13a) commits the row.
+  Ephemeral `CampaignNPC` rows (`worldNpcId=null`) are the norm during
+  a campaign.
 
 ## Open follow-ups
 

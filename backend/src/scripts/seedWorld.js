@@ -30,6 +30,8 @@ import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { upsertEdge } from '../services/livingWorld/travelGraph.js';
 import { getTemplate } from '../services/livingWorld/settlementTemplates.js';
+import { batchBackfillMissing } from '../services/livingWorld/ragService.js';
+import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../services/embeddingService.js';
 
 const log = childLogger({ module: 'seedWorld' });
 
@@ -158,6 +160,11 @@ const NAMED_NPCS = [
     alignment: 'good',
     location: 'palace',
     category: 'guard', // władca, nominalnie "commoner" wg enuma, ale w dialogu zachowuje się jak dowódca; mapujemy do guard
+    baselineKnowledge: [
+      'Wie o napięciach z sąsiednimi lennami — baronia Varnhold jawnie wymaga więcej niezależności; król podejrzewa, że stoi za tym ktoś z jego własnego dworu.',
+      'Pamięta wojnę o Dolinę Cierni sprzed dwudziestu lat — stracił tam starszego brata; nie mówi o tym, ale temat odbiera osobiście.',
+      'Dyskretnie wspiera Akademię — uważa że wyszkolony uczony wart jest dwóch rycerzy, choć publicznie nigdy tego nie powie.',
+    ],
   },
   {
     canonicalId: 'arcykaplanka_lyana',
@@ -167,6 +174,11 @@ const NAMED_NPCS = [
     alignment: 'good',
     location: 'grand_temple',
     category: 'priest',
+    baselineKnowledge: [
+      'Zna tekst zakazanego apokryfu Ferathona — kult boga śmierci działa w ukryciu od pokoleń; nikt poza nią i dwoma braćmi w świątyni tego nie wie.',
+      'Wierzy że Serneth (bóg życia) i Yeriala (bogini słońca) są w istocie dwoma aspektami jednej siły — to teza pisana przez nią w zaciszu, nigdy nie wygłaszana publicznie.',
+      'Pamięta dzień koronacji Torvana IV — błogosławiła go osobiście; uważa go za dobrego człowieka, ale niepewnego władcę.',
+    ],
   },
   {
     canonicalId: 'kapitan_gerent',
@@ -176,6 +188,11 @@ const NAMED_NPCS = [
     alignment: 'neutral',
     location: 'barracks',
     category: 'guard',
+    baselineKnowledge: [
+      'Prowadził trzy ekspedycje do dungeonów wokół Yeraldenu — wie dokładnie które z nich są śmiertelne, a które da się oczyścić z dwudziestoma ludźmi.',
+      'Zna sekretne przejście z koszar na dziedziniec pałacowy — otworzone tylko w razie zamachu; król o tym wie, Arcykapłanka nie.',
+      'Prywatnie gardzi magami bojowymi — raz widział jak jeden spalił własnego sojusznika; od tej pory wymaga strażników-ochroniarzy na każdym rytuale publicznym.',
+    ],
   },
   // 8 Skill Masters (Mistrzowie) → adventurer
   {
@@ -213,6 +230,11 @@ const NAMED_NPCS = [
     alignment: 'good',
     location: 'academy',
     category: 'adventurer',
+    baselineKnowledge: [
+      'Zna legendy o Runach Pierwszej Kowalni — zapomnianym języku magicznym pisanym przez przedludzki lud Iyr. Ruiny wokół Yeraldenu często kryją ich ślady.',
+      'Pamięta Wielką Zarazę sprzed osiemdziesięciu lat — jego pradziadek był jednym z trzech medyków, którzy przeżyli; lekcje z tamtego okresu wisi w Akademii w zapieczętowanym manuskrypcie.',
+      'Potrafi rozpoznać każde zioło rosnące w promieniu dwóch dni marszu od stolicy, w tym cztery gatunki toksyczne zakazane w aptekach.',
+    ],
   },
   {
     canonicalId: 'mistrzyni_medyka_senya',
@@ -259,6 +281,11 @@ const NAMED_NPCS = [
     alignment: 'neutral',
     location: 'tavern',
     category: 'commoner',
+    baselineKnowledge: [
+      'Wie kto z dworzan pije samotnie — lista zmienia się co miesiąc, ale zawsze ktoś jej dotyczy; potrafi wskazać kto jest na krawędzi problemu.',
+      'Pamięta każdego najemnika, który przeszedł przez karczmę w ostatnich dwudziestu latach — twarze, imiona, długi, opowieści o wilkołakach w Kamionce i goblinach pod Świetłogajem.',
+      'Słyszał plotkę że pod starym kamieniem młyńskim na tyłach karczmy jest schowek kontrabandy z czasów dziadka — nigdy tego nie sprawdził, bo nie chce wiedzieć.',
+    ],
   },
   // Round A — fresh merchant. The market previously only housed Venadra
   // (adventurer-bucket trainer); we now guarantee a pure merchant NPC so
@@ -271,6 +298,11 @@ const NAMED_NPCS = [
     alignment: 'neutral',
     location: 'market',
     category: 'merchant',
+    baselineKnowledge: [
+      'Prowadzi trasy do trzech odległych krain — Varnhold (żelazo), Sołtystwo Mchu (wełna), Wybrzeże Słone (ryby i sól). Wie które trakty są bezpieczne o tej porze roku, a które kontrolują bandyci.',
+      'Zna dokładne ceny każdego towaru z tygodnia wstecz w stolicy i wioskach — umie wskazać gdzie gracz przepłaca, a gdzie trafia na okazję.',
+      'Ma kontakty w cechu złodziei — nie sam do niego należy, ale zna dwóch fence\'ów na rynku, którzy przyjmą "delikatne" przedmioty bez pytań, za 30% wartości.',
+    ],
   },
 ];
 
@@ -321,6 +353,11 @@ const VILLAGES = [
         alignment: 'good',
         location: 'sawmill',
         category: 'commoner',
+        baselineKnowledge: [
+          'Pamięta wszystkie ataki stworów na osadę z ostatnich piętnastu lat — daty, ofiary, miejsca startu. Widzi wzorzec: coś budzi się w puszczy co 2-3 lata, każdy raz mocniejsze.',
+          'Wie że trzy rodziny we wsi wolałyby przenieść się bliżej Yeraldenu, ale nie powiedzą tego głośno — boją się że reszta wsi weźmie to za dezercję.',
+          'Ma cichą umowę z łowczynią Eleyą — ona patroluje granice puszczy, on informuje ją o każdym obcym, który pyta o las; żaden król o tym nie wie.',
+        ],
       },
       {
         canonicalId: 'tropicielka_eleya',
@@ -331,6 +368,11 @@ const VILLAGES = [
         alignment: 'neutral',
         location: 'tavern',
         category: 'adventurer',
+        baselineKnowledge: [
+          'Zna mapę puszczy której nie ma w żadnym archiwum — w tym trzy jaskinie poza oficjalnymi traktami, dwie z widocznymi śladami kultu Ferathona.',
+          'Widziała raz istotę której nie potrafiła nazwać — szła na dwóch nogach, pozostawiała ślady podobne do psich, ale zbyt duże. Nie powiedziała nikomu; wraca do tego miejsca raz w roku sprawdzić czy wróciła.',
+          'Nie ufa Kapitanowi Gerentowi — uważa że jego ekspedycje wyczerpują teren; czuje że dungeony uzdrowiają się gdy ludzie trzymają się z daleka.',
+        ],
       },
     ],
   },
@@ -735,6 +777,7 @@ async function upsertCapital() {
       positionConfidence: 1.0,
       maxKeyNpcs: 70,
       maxSubLocations: 25,
+      parentLocationId: null,
       isCanonical: true,
       knownByDefault: true,
       dangerLevel: 'safe',
@@ -817,6 +860,7 @@ async function upsertVillage(village) {
       positionConfidence: 1.0,
       maxKeyNpcs: template.maxKeyNpcs,
       maxSubLocations: template.maxSubLocations,
+      parentLocationId: null,
       isCanonical: true,
       knownByDefault: false,
       dangerLevel: 'safe',
@@ -851,6 +895,7 @@ async function upsertWildLocation(loc) {
       regionX: loc.regionX,
       regionY: loc.regionY,
       positionConfidence: 1.0,
+      parentLocationId: null,
       isCanonical: true,
       knownByDefault: false,
       dangerLevel: loc.dangerLevel || 'safe',
@@ -861,6 +906,32 @@ async function upsertWildLocation(loc) {
 
 async function upsertNpc(npc, locationId) {
   const knownLocationIds = Array.isArray(npc.knownLocationIds) ? npc.knownLocationIds : [];
+
+  // Stage 1 — hand-authored baseline knowledge seeded into `WorldNPC.knowledgeBase`.
+  // Shape: [{ content, source: 'baseline' }]. Stage 2 (Phase 11 lived experience)
+  // will append entries with `source: 'campaign:{id}'` post-campaign.
+  const baselineEntries = Array.isArray(npc.baselineKnowledge)
+    ? npc.baselineKnowledge.map((content) => ({ content, source: 'baseline' }))
+    : [];
+
+  // Merge-preserving update: on reseed we REPLACE the baseline slice only.
+  // Entries with any other `source` (future lived experience from Phase 11)
+  // are preserved so seed reboot doesn't wipe campaign-promoted memories.
+  const existing = await prisma.worldNPC.findUnique({
+    where: { canonicalId: npc.canonicalId },
+    select: { knowledgeBase: true },
+  });
+  let preservedEntries = [];
+  if (existing?.knowledgeBase) {
+    try {
+      const parsed = JSON.parse(existing.knowledgeBase);
+      if (Array.isArray(parsed)) {
+        preservedEntries = parsed.filter((e) => e && e.source && e.source !== 'baseline');
+      }
+    } catch { /* malformed — drop and rebuild */ }
+  }
+  const knowledgeBase = JSON.stringify([...baselineEntries, ...preservedEntries]);
+
   return prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
     update: {
@@ -874,6 +945,7 @@ async function upsertNpc(npc, locationId) {
       alive: true,
       category: npc.category || 'commoner',
       knownLocationIds: JSON.stringify(knownLocationIds),
+      knowledgeBase,
     },
     create: {
       canonicalId: npc.canonicalId,
@@ -887,6 +959,7 @@ async function upsertNpc(npc, locationId) {
       alive: true,
       category: npc.category || 'commoner',
       knownLocationIds: JSON.stringify(knownLocationIds),
+      knowledgeBase,
     },
   });
 }
@@ -1014,7 +1087,59 @@ async function seedNpcKnowledge(locationByName) {
  * Run the world seed. Idempotent — upsert on every canonicalName/canonicalId.
  * Returns a summary of rows touched.
  */
+// Round E Phase 9 — backfill WorldEntityEmbedding for every canonical NPC
+// and WorldLocation in the seed. Runs once per boot after the seed upserts
+// land — `batchBackfillMissing` skips any entity that already has a row.
+// Degrades gracefully when OPENAI_API_KEY is unset (local dev).
+async function backfillRagEmbeddings(locationByName) {
+  if (!process.env.OPENAI_API_KEY) {
+    log.info('RAG backfill skipped — OPENAI_API_KEY not set');
+    return { skipped: true, reason: 'no_openai_key' };
+  }
+
+  try {
+    // Canonical NPCs — name+role+personality. Seed inserts are scoped by
+    // canonicalId so fetching `alive=true` catches everything seeded.
+    const npcs = await prisma.worldNPC.findMany({
+      where: { alive: true },
+      select: { id: true, name: true, role: true, personality: true },
+    });
+    const npcStats = await batchBackfillMissing('npc', npcs, buildNPCEmbeddingText);
+
+    // Canonical WorldLocations only — non-canonical entries belong to a
+    // campaign and are indexed at creation time in processStateChanges.
+    const locations = await prisma.worldLocation.findMany({
+      where: { isCanonical: true },
+      select: {
+        id: true,
+        canonicalName: true,
+        displayName: true,
+        locationType: true,
+        region: true,
+        description: true,
+      },
+    });
+    const locStats = await batchBackfillMissing('location', locations, buildLocationEmbeddingText);
+
+    return { npcs: npcStats, locations: locStats };
+  } catch (err) {
+    log.warn({ err: err?.message }, 'RAG backfill failed — continuing without embeddings');
+    return { error: err?.message };
+  }
+}
+
 export async function seedWorld() {
+  // Cold-start guard. The seed is idempotent (upserts) but still does ~O(100)
+  // Mongo round-trips per boot. On Cloud Run revisions 2+ the canonical world
+  // is already present and re-running adds ~1s to cold start for no change.
+  // Set SKIP_WORLD_SEED=true on any revision where the schema hasn't added
+  // new seed content since the last successful seed. Leave unset (or explicit
+  // "false") on the first deploy of new seed data.
+  if (String(process.env.SKIP_WORLD_SEED || '').toLowerCase() === 'true') {
+    log.info('SKIP_WORLD_SEED=true — skipping world seed');
+    return { skipped: true };
+  }
+
   try {
     const capital = await upsertCapital();
 
@@ -1099,6 +1224,12 @@ export async function seedWorld() {
 
     const loreSection = await upsertMainLoreSection();
 
+    // Round E Phase 9 — index canonical NPCs + locations into the RAG store.
+    // Idempotent: `batchBackfillMissing` skips entities that already have an
+    // embedding row. Skipped entirely when OPENAI_API_KEY is absent (dev
+    // workflows without LLM keys still get a working seed, just no RAG).
+    const ragStats = await backfillRagEmbeddings(locationByName);
+
     log.info(
       {
         capital: CAPITAL_NAME,
@@ -1111,6 +1242,7 @@ export async function seedWorld() {
         npcKnowledgeUpdated,
         roads: roadsUpserted,
         loreSectionId: loreSection.id,
+        rag: ragStats,
       },
       'World seed applied',
     );
@@ -1123,6 +1255,7 @@ export async function seedWorld() {
       wildLocationIds: wildRows.map((w) => w.id),
       npcKnowledgeUpdated,
       roadsUpserted,
+      rag: ragStats,
     };
   } catch (err) {
     log.error({ err: err?.message }, 'World seed failed');

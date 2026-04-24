@@ -24,6 +24,8 @@ import { pickSettlementName } from './nameBank.js';
 import { seedWorld } from '../../scripts/seedWorld.js';
 import { upsertEdge } from './travelGraph.js';
 import { euclidean } from './positionCalculator.js';
+import * as ragService from './ragService.js';
+import { buildLocationEmbeddingText } from '../embeddingService.js';
 
 const log = childLogger({ module: 'worldSeeder' });
 
@@ -170,6 +172,8 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
           embeddingText: `${name} (${type})`,
         },
       });
+      // Round E Phase 9 — fire-and-forget RAG indexing for campaign-seeded settlement.
+      ragService.index('location', row.id, buildLocationEmbeddingText(row)).catch(() => {});
       created.push({ ...row, type });
     } catch (err) {
       if (err?.code === 'P2002') {

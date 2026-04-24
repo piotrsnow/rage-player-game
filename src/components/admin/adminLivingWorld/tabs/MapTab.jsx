@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { apiClient } from '../../../../services/apiClient';
 import { KV } from '../shared/primitives';
 import { LOCATION_TYPE_COLORS, edgeColour, nodeRadius } from './mapHelpers';
+import AdminTileGridView from './AdminTileGridView';
+import SubLocationGrid from '../../../gameplay/worldMap/SubLocationGrid';
 
 const W = 800;
 const H = 600;
@@ -11,6 +13,10 @@ export default function MapTab() {
   const [graph, setGraph] = useState(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [layout, setLayout] = useState('force'); // 'force' | 'tile'
+  const [drillParent, setDrillParent] = useState(null);
+  const [drillData, setDrillData] = useState(null);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -18,6 +24,21 @@ export default function MapTab() {
       .then(setGraph)
       .finally(() => setLoading(false));
   }, []);
+
+  const openDrill = (node) => {
+    if (!node) return;
+    setDrillParent(node);
+    setDrillData(null);
+    setDrillLoading(true);
+    apiClient.get(`/v1/admin/livingWorld/graph/sublocations/${encodeURIComponent(node.id)}`)
+      .then(setDrillData)
+      .finally(() => setDrillLoading(false));
+  };
+
+  const closeDrill = () => {
+    setDrillParent(null);
+    setDrillData(null);
+  };
 
   if (loading) return <div className="text-[11px] text-on-surface-variant">Loading map…</div>;
   if (!graph || !graph.nodes?.length) {
@@ -48,21 +69,44 @@ export default function MapTab() {
 
   return (
     <div>
-      <div className="flex gap-3 mb-3 text-[11px]">
-        <div className="text-on-surface-variant self-center">
+      <div className="flex gap-3 mb-3 text-[11px] items-center">
+        <div className="text-on-surface-variant">
           {graph.nodes.length} locations • {graph.edges.length} overworld edges
           {' • '}dungeons: {graph.nodes.filter((n) => n.locationType === 'dungeon').length}
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
-          {Object.entries(LOCATION_TYPE_COLORS).map(([type, color]) => (
-            <span key={type} className="flex items-center gap-1 text-[10px]">
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: color }} />
-              <span className="text-on-surface-variant">{type}</span>
-            </span>
-          ))}
+        <div className="ml-auto flex items-center gap-2">
+          <div className="inline-flex rounded-sm border border-outline-variant/25 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setLayout('force')}
+              className={`px-2 py-1 text-[10px] uppercase tracking-widest ${layout === 'force' ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+            >
+              Force
+            </button>
+            <button
+              type="button"
+              onClick={() => setLayout('tile')}
+              className={`px-2 py-1 text-[10px] uppercase tracking-widest border-l border-outline-variant/25 ${layout === 'tile' ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}
+            >
+              Tile grid
+            </button>
+          </div>
+          <div className="hidden md:flex flex-wrap gap-2 ml-2">
+            {Object.entries(LOCATION_TYPE_COLORS).map(([type, color]) => (
+              <span key={type} className="flex items-center gap-1 text-[10px]">
+                <span className="inline-block w-2 h-2 rounded-full" style={{ background: color }} />
+                <span className="text-on-surface-variant">{type}</span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
+      {layout === 'tile' && (
+        <AdminTileGridView graph={graph} onSelectParent={openDrill} />
+      )}
+
+      {layout === 'force' && (
       <div className="rounded-sm border border-outline-variant/25 bg-surface-container/40 overflow-hidden">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
           {renderGrid(minX, maxX, minY, maxY, project)}
@@ -119,6 +163,7 @@ export default function MapTab() {
           })}
         </svg>
       </div>
+      )}
 
       {selectedNode && (
         <div className="mt-3 p-3 rounded-sm bg-surface-container/40 border border-outline-variant/25 text-[11px]">
@@ -145,6 +190,36 @@ export default function MapTab() {
             {selectedNode.locationType === 'dungeon' && (
               <KV k="roomCount (seeded)" v={selectedNode.roomCount || 'not seeded'} />
             )}
+          </div>
+        </div>
+      )}
+
+      {drillParent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={closeDrill} />
+          <div className="relative w-full max-w-3xl max-h-[85vh] bg-surface-container-highest/95 border border-outline-variant/25 rounded-sm shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-outline-variant/15">
+              <div className="text-[11px] font-bold text-on-surface">
+                {drillParent.displayName || drillParent.name}
+                <span className="text-[10px] text-on-surface-variant font-normal ml-2">— sublocations</span>
+              </div>
+              <button onClick={closeDrill} className="text-on-surface-variant hover:text-on-surface text-[11px]">close</button>
+            </div>
+            <div className="p-3">
+              {drillLoading && <div className="text-[11px] text-on-surface-variant">Loading sublocations…</div>}
+              {!drillLoading && drillData && (
+                <SubLocationGrid
+                  parent={drillData.parent}
+                  sublocations={drillData.sublocations}
+                  currentLocationId={null}
+                  fogDiscoveredSubs={new Set()}
+                  bypassFog
+                  onEnter={() => { /* admin: clicks are inert here */ }}
+                  onBack={closeDrill}
+                  t={(k) => (k === 'worldState.backToMap' ? 'Close' : k === 'worldState.noSublocations' ? 'No sublocations here.' : k)}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -34,3 +34,13 @@ export function nodeRadius(locationType) {
     default:        return 5;
   }
 }
+
+// Round E Phase 13b — NPC category colors for the canon knowledge graph.
+// Categories match `WorldNPC.category` enum.
+export const NPC_CATEGORY_COLORS = {
+  guard:      '#ef476f',
+  merchant:   '#ffd166',
+  priest:     '#c3b1e1',
+  adventurer: '#06d6a0',
+  commoner:   '#adb5bd',
+};

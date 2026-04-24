@@ -15,6 +15,10 @@ import { childLogger } from '../lib/logger.js';
 import { leaveParty } from '../services/livingWorld/companionService.js';
 import { runNpcTick } from '../services/livingWorld/npcAgentLoop.js';
 import { runTickBatch } from '../services/livingWorld/npcTickDispatcher.js';
+import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampaignWriteback.js';
+import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
+import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
+import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -142,6 +146,8 @@ export async function adminLivingWorldRoutes(fastify) {
         description: true,
         aliases: true,
         createdAt: true,
+        isCanonical: true,
+        createdByCampaignId: true,
       },
     });
     return { rows };
@@ -317,6 +323,7 @@ export async function adminLivingWorldRoutes(fastify) {
         select: {
           id: true,
           canonicalName: true,
+          displayName: true,
           locationType: true,
           regionX: true,
           regionY: true,
@@ -324,6 +331,9 @@ export async function adminLivingWorldRoutes(fastify) {
           positionConfidence: true,
           maxKeyNpcs: true,
           maxSubLocations: true,
+          dangerLevel: true,
+          isCanonical: true,
+          createdByCampaignId: true,
         },
       }),
       prisma.worldLocationEdge.findMany({
@@ -378,6 +388,7 @@ export async function adminLivingWorldRoutes(fastify) {
     const nodes = locations.map((l) => ({
       id: l.id,
       name: l.canonicalName,
+      displayName: l.displayName || l.canonicalName,
       locationType: l.locationType || 'generic',
       region: l.region || null,
       x: l.regionX || 0,
@@ -387,6 +398,9 @@ export async function adminLivingWorldRoutes(fastify) {
       maxSubLocations: l.maxSubLocations || 0,
       childCount: childCounts.get(l.id) || 0,
       roomCount: roomCounts.get(l.id) || 0,
+      dangerLevel: l.dangerLevel || 'safe',
+      isCanonical: l.isCanonical !== false,
+      createdByCampaignId: l.createdByCampaignId || null,
     }));
 
     return {
@@ -411,6 +425,123 @@ export async function adminLivingWorldRoutes(fastify) {
     };
   });
 
+  // Round E Phase 13b — canonical knowledge graph.
+  // Everything canonical across the world in one payload: top-level locations,
+  // overworld edges, all alive canonical NPCs keyed by their home/current
+  // location. Frontend overlays the NPCs around their parent locations. Kept
+  // separate from `/graph` so the existing map tab stays unchanged.
+  fastify.get('/canon-graph', guard(), async () => {
+    const [locations, edges, npcs] = await Promise.all([
+      prisma.worldLocation.findMany({
+        where: { parentLocationId: null, isCanonical: true },
+        select: {
+          id: true, canonicalName: true, displayName: true, locationType: true,
+          regionX: true, regionY: true, region: true, dangerLevel: true,
+          maxKeyNpcs: true, maxSubLocations: true,
+        },
+      }),
+      prisma.worldLocationEdge.findMany({
+        where: { terrainType: { not: 'dungeon_corridor' } },
+        select: {
+          id: true, fromLocationId: true, toLocationId: true,
+          distance: true, difficulty: true, terrainType: true,
+          direction: true, gated: true,
+        },
+      }),
+      prisma.worldNPC.findMany({
+        where: { alive: true },
+        select: {
+          id: true, canonicalId: true, name: true, role: true, category: true,
+          keyNpc: true, alive: true,
+          currentLocationId: true, homeLocationId: true,
+        },
+      }),
+    ]);
+
+    const locationIds = new Set(locations.map((l) => l.id));
+    const overworldEdges = edges.filter(
+      (e) => locationIds.has(e.fromLocationId) && locationIds.has(e.toLocationId),
+    );
+
+    const locationNodes = locations.map((l) => ({
+      id: l.id,
+      name: l.canonicalName,
+      displayName: l.displayName || l.canonicalName,
+      locationType: l.locationType || 'generic',
+      region: l.region || null,
+      x: l.regionX || 0,
+      y: l.regionY || 0,
+      dangerLevel: l.dangerLevel || 'safe',
+      maxKeyNpcs: l.maxKeyNpcs || 0,
+      maxSubLocations: l.maxSubLocations || 0,
+    }));
+
+    const npcNodes = npcs.map((n) => ({
+      id: n.id,
+      canonicalId: n.canonicalId,
+      name: n.name,
+      role: n.role || null,
+      category: n.category || 'commoner',
+      keyNpc: n.keyNpc !== false,
+      alive: n.alive !== false,
+      homeLocationId: n.homeLocationId || null,
+      currentLocationId: n.currentLocationId || null,
+    }));
+
+    return {
+      locations: locationNodes,
+      edges: overworldEdges.map((e) => ({
+        id: e.id,
+        from: e.fromLocationId,
+        to: e.toLocationId,
+        distance: e.distance,
+        difficulty: e.difficulty,
+        terrainType: e.terrainType,
+        direction: e.direction || null,
+        gated: !!e.gated,
+      })),
+      npcs: npcNodes,
+    };
+  });
+
+  // Round C Phase 8 — children of a single top-level location, used by the
+  // admin tile-grid drill-down modal. Returns bare shape the FE sub-grid
+  // renderer needs; no fog (admin view is unfiltered).
+  fastify.get('/graph/sublocations/:parentId', guard({
+    schema: {
+      params: {
+        type: 'object',
+        required: ['parentId'],
+        properties: { parentId: ID_STRING },
+      },
+    },
+  }), async (request, reply) => {
+    const { parentId } = request.params;
+    const parent = await prisma.worldLocation.findUnique({
+      where: { id: parentId },
+      select: {
+        id: true, canonicalName: true, displayName: true, locationType: true,
+      },
+    });
+    if (!parent) {
+      return reply.code(404).send({ error: 'parent not found' });
+    }
+    const children = await prisma.worldLocation.findMany({
+      where: {
+        parentLocationId: parentId,
+        locationType: { not: 'dungeon_room' },
+      },
+      select: {
+        id: true, canonicalName: true, displayName: true,
+        locationType: true, slotType: true, slotKind: true,
+        subGridX: true, subGridY: true,
+        isCanonical: true, createdByCampaignId: true,
+        dangerLevel: true, description: true,
+      },
+    });
+    return reply.send({ parent, sublocations: children });
+  });
+
   // ── World Lore (Round A — Phase 0a) ───────────────────────────────
   // Hand-curated canonical world lore, editable from the admin panel.
   // Injected into scene-gen prompts via `buildWorldLorePreamble()`.
@@ -423,7 +554,19 @@ export async function adminLivingWorldRoutes(fastify) {
     return { sections };
   });
 
-  fastify.put('/lore/:slug', guard(), async (request, reply) => {
+  fastify.put('/lore/:slug', guard({
+    config: { idempotency: true },
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', maxLength: 200 },
+          content: { type: 'string', maxLength: 100000 },
+          order: { type: 'integer' },
+        },
+      },
+    },
+  }), async (request, reply) => {
     const { slug } = request.params;
     if (!slug || !/^[a-z0-9_-]+$/i.test(slug)) {
       return reply.code(400).send({ error: 'slug must match [a-z0-9_-]+' });
@@ -473,6 +616,410 @@ export async function adminLivingWorldRoutes(fastify) {
       updated += res.count;
     }
     return { updated };
+  });
+
+  // ── Round E Phase 13a — Pending world state changes ────────────────
+  // Lists `PendingWorldStateChange` rows (Phase 12 MEDIUM/location/unsupported-HIGH
+  // output). Approve routes through `applyApprovedPendingChange` which dispatches
+  // to the per-entity writer (WorldNPC or WorldLocation knowledgeBase append),
+  // then marks the row approved. Reject just stamps the decision with notes.
+  fastify.get('/pending-world-state-changes', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+          kind: SHORT_STRING,
+          campaignId: ID_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { status, kind, campaignId, limit } = request.query;
+    const where = {};
+    if (status) where.status = status;
+    if (kind) where.kind = kind;
+    if (campaignId) where.campaignId = campaignId;
+    const rows = await prisma.pendingWorldStateChange.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: limit,
+    });
+    return { rows };
+  });
+
+  fastify.post('/pending-world-state-changes/:id/approve', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const pending = await prisma.pendingWorldStateChange.findUnique({ where: { id } });
+      if (!pending) return reply.code(404).send({ error: 'Not found' });
+      if (pending.status !== 'pending') {
+        return reply.code(409).send({ error: `already ${pending.status}` });
+      }
+      const applied = await applyApprovedPendingChange(pending);
+      if (!applied.ok) {
+        return reply.code(422).send({ error: 'apply_failed', reason: applied.reason });
+      }
+      const updated = await prisma.pendingWorldStateChange.update({
+        where: { id },
+        data: {
+          status: 'approved',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return { ok: true, pending: updated, applied };
+    } catch (err) {
+      log.error({ err, id }, 'approve pending world-state change failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.post('/pending-world-state-changes/:id/reject', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const pending = await prisma.pendingWorldStateChange.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (!pending) return reply.code(404).send({ error: 'Not found' });
+      if (pending.status === 'approved') {
+        return reply.code(409).send({ error: 'already approved' });
+      }
+      const updated = await prisma.pendingWorldStateChange.update({
+        where: { id },
+        data: {
+          status: 'rejected',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return { ok: true, pending: updated };
+    } catch (err) {
+      log.error({ err, id }, 'reject pending world-state change failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Round E Phase 13a — NPC promotion candidates ───────────────────
+  // Lists `NPCPromotionCandidate` rows (Phase 12b output). Approve creates a
+  // canonical WorldNPC from the CampaignNPC shadow (or links to an existing
+  // canonical match) via `promoteCampaignNpcToWorld`, then marks the row
+  // approved. Reject just stamps the decision.
+  fastify.get('/promotion-candidates', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+          campaignId: ID_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { status, campaignId, limit } = request.query;
+    const where = {};
+    if (status) where.status = status;
+    if (campaignId) where.campaignId = campaignId;
+    const rows = await prisma.nPCPromotionCandidate.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: limit,
+    });
+    return { rows };
+  });
+
+  fastify.post('/promotion-candidates/:id/approve', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const candidate = await prisma.nPCPromotionCandidate.findUnique({ where: { id } });
+      if (!candidate) return reply.code(404).send({ error: 'Not found' });
+      if (candidate.status === 'approved') {
+        return reply.code(409).send({ error: 'already approved' });
+      }
+      const promoted = await promoteCampaignNpcToWorld(candidate.campaignNpcId, { reviewedBy });
+      if (!promoted.ok) {
+        return reply.code(422).send({ error: 'promote_failed', reason: promoted.reason });
+      }
+      const updated = await prisma.nPCPromotionCandidate.update({
+        where: { id },
+        data: {
+          status: 'approved',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return {
+        ok: true,
+        candidate: updated,
+        worldNpcId: promoted.worldNpc?.id,
+        deduped: !!promoted.deduped,
+      };
+    } catch (err) {
+      log.error({ err, id }, 'approve promotion candidate failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.post('/promotion-candidates/:id/reject', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const candidate = await prisma.nPCPromotionCandidate.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (!candidate) return reply.code(404).send({ error: 'Not found' });
+      if (candidate.status === 'approved') {
+        return reply.code(409).send({ error: 'already approved' });
+      }
+      const updated = await prisma.nPCPromotionCandidate.update({
+        where: { id },
+        data: {
+          status: 'rejected',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return { ok: true, candidate: updated };
+    } catch (err) {
+      log.error({ err, id }, 'reject promotion candidate failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Round E Phase 12c/13a — Location promotion candidates ─────────
+  fastify.get('/location-promotion-candidates', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+          campaignId: ID_STRING,
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { status, campaignId, limit } = request.query;
+    const where = {};
+    if (status) where.status = status;
+    if (campaignId) where.campaignId = campaignId;
+    const rows = await prisma.locationPromotionCandidate.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: limit,
+    });
+    return { rows };
+  });
+
+  fastify.post('/location-promotion-candidates/:id/approve', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const candidate = await prisma.locationPromotionCandidate.findUnique({ where: { id } });
+      if (!candidate) return reply.code(404).send({ error: 'Not found' });
+      if (candidate.status === 'approved') {
+        return reply.code(409).send({ error: 'already approved' });
+      }
+      const promoted = await promoteWorldLocationToCanonical(candidate.worldLocationId);
+      if (!promoted.ok) {
+        return reply.code(422).send({ error: 'promote_failed', reason: promoted.reason });
+      }
+      const updated = await prisma.locationPromotionCandidate.update({
+        where: { id },
+        data: {
+          status: 'approved',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return {
+        ok: true,
+        candidate: updated,
+        worldLocationId: promoted.worldLocation?.id,
+      };
+    } catch (err) {
+      log.error({ err, id }, 'approve location promotion candidate failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.post('/location-promotion-candidates/:id/reject', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { reviewNotes: { type: 'string', maxLength: 2000 } },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const reviewNotes = typeof request.body?.reviewNotes === 'string' ? request.body.reviewNotes : null;
+    const reviewedBy = request.user?.email || request.user?.id || null;
+    try {
+      const candidate = await prisma.locationPromotionCandidate.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (!candidate) return reply.code(404).send({ error: 'Not found' });
+      if (candidate.status === 'approved') {
+        return reply.code(409).send({ error: 'already approved' });
+      }
+      const updated = await prisma.locationPromotionCandidate.update({
+        where: { id },
+        data: {
+          status: 'rejected',
+          reviewedBy,
+          reviewedAt: new Date(),
+          reviewNotes,
+        },
+      });
+      return { ok: true, candidate: updated };
+    } catch (err) {
+      log.error({ err, id }, 'reject location promotion candidate failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Round E Phase 13a — campaigns (admin picker) + writeback trigger ──
+  // Lightweight list of all campaigns (admin-scope, not per-user) so the
+  // PromotionsTab can pick a campaign to run post-campaign writeback against.
+  fastify.get('/campaigns', guard({
+    schema: {
+      querystring: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+        },
+      },
+    },
+  }), async (request) => {
+    const { limit } = request.query;
+    const rows = await prisma.campaign.findMany({
+      orderBy: { lastSaved: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+        genre: true,
+        tone: true,
+        lastSaved: true,
+        createdAt: true,
+      },
+    });
+    return { rows };
+  });
+
+  // Trigger `runPostCampaignWorldWriteback` for a given campaign. Heavy — runs
+  // LLM extraction + RAG resolver + Haiku verdict fan-out. Rate-limited on
+  // top of the global admin tier. dryRun query flag passes through for
+  // observability without writes.
+  fastify.post('/campaigns/:id/run-writeback', guard({
+    config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          dryRun: { type: 'boolean' },
+          skipExtraction: { type: 'boolean' },
+          skipWorldChangePipeline: { type: 'boolean' },
+          skipPromotion: { type: 'boolean' },
+          skipPromotionVerdict: { type: 'boolean' },
+          skipMemoryPromotion: { type: 'boolean' },
+          skipLocationPromotion: { type: 'boolean' },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    const body = request.body || {};
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+      const result = await runPostCampaignWorldWriteback(id, {
+        dryRun: !!body.dryRun,
+        skipExtraction: !!body.skipExtraction,
+        skipWorldChangePipeline: !!body.skipWorldChangePipeline,
+        skipPromotion: !!body.skipPromotion,
+        skipPromotionVerdict: !!body.skipPromotionVerdict,
+        skipMemoryPromotion: !!body.skipMemoryPromotion,
+        skipLocationPromotion: !!body.skipLocationPromotion,
+      });
+      log.info({
+        campaignId: id,
+        dryRun: !!body.dryRun,
+        triggeredBy: request.user?.email || request.user?.id || null,
+      }, 'Admin-triggered post-campaign writeback');
+      return { ok: true, campaign, result };
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'run-writeback failed');
+      return reply.code(500).send({ error: err.message });
+    }
   });
 }
 

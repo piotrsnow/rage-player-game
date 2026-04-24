@@ -6,6 +6,8 @@ import { decideSublocationAdmission } from '../../livingWorld/topologyGuard.js';
 import { computeSmartPosition, findMergeCandidate, euclidean } from '../../livingWorld/positionCalculator.js';
 import { upsertEdge } from '../../livingWorld/travelGraph.js';
 import { getTemplate, effectiveCustomCap } from '../../livingWorld/settlementTemplates.js';
+import * as ragService from '../../livingWorld/ragService.js';
+import { buildLocationEmbeddingText } from '../../embeddingService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -262,6 +264,11 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
     }
   }
   if (!created) return;
+
+  // Round E Phase 9 — index the runtime-created WorldLocation into the RAG
+  // store so future promotion-dedup + world state resolvers can find it by
+  // semantic hint. Fire-and-forget; ragService swallows provider errors.
+  ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
 
   // Round B — non-canonical locations need to land in the campaign's
   // `discoveredLocationIds` since that's how the player map shows them.

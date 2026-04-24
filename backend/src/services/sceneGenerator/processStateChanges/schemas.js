@@ -56,6 +56,21 @@ export const DungeonRoomFlagsSchema = z.object({
   lootTaken: z.boolean().optional(),
 }).passthrough();
 
+// Stage 2 — NPC memory updates. Array of `{npcName, memory, importance?}`.
+// Append-only into CampaignNPC.experienceLog. Caps: 20 updates per scene
+// (prevents an overzealous LLM from stuffing every incidental interaction
+// into memory), 300 chars per memory text. Importance defaults to 'minor'
+// at apply-time if LLM omits it.
+const MAX_NPC_MEMORY_UPDATES = 20;
+
+const NpcMemoryUpdateSchema = z.object({
+  npcName: z.string().trim().min(1).max(120),
+  memory: z.string().trim().min(1).max(300),
+  importance: z.enum(['minor', 'major']).optional(),
+}).passthrough();
+
+export const NpcMemoryUpdatesSchema = z.array(NpcMemoryUpdateSchema).max(MAX_NPC_MEMORY_UPDATES);
+
 /**
  * Safe parse helpers. Each returns `{ ok, data, error }`. Handlers use these
  * instead of raw `.parse()` so a schema violation downgrades to a logged
@@ -73,3 +88,4 @@ export const parseCampaignComplete = (input) => safeParse(CampaignCompleteSchema
 export const parseDungeonComplete = (input) => safeParse(DungeonCompleteSchema, input);
 export const parseWorldImpactFlags = (input) => safeParse(WorldImpactFlagsSchema, input);
 export const parseDungeonRoomFlags = (input) => safeParse(DungeonRoomFlagsSchema, input);
+export const parseNpcMemoryUpdates = (input) => safeParse(NpcMemoryUpdatesSchema, input);

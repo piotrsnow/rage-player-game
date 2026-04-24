@@ -179,14 +179,41 @@ model CampaignNPC {
   // campaign actions corrupting canon.
   activeGoal          String?
   goalProgress        String?
+  // Stage 2 (Round E follow-on) — lived experience log. Append-only JSON array
+  // of `{content, importance?, addedAt}` entries emitted by LLM via the
+  // `npcMemoryUpdates` stateChanges bucket when something memorable happens
+  // to this NPC mid-play. Rendered alongside WorldNPC.knowledgeBase (seeded
+  // baseline) into the `[NPC_MEMORY]` prompt block for cross-scene continuity.
+  // Stage 2b will extract the important entries to canonical knowledgeBase
+  // at post-campaign write-back so the NPC remembers across campaigns.
+  experienceLog       String   @default("[]")
   // G4 — per-NPC flag so a single renown acknowledgment fires once per
   // (campaign, NPC) pair instead of every reencounter.
   hasAcknowledgedFame Boolean @default(false)
+  // Phase 12b — engagement stats used by post-campaign promotion batch to
+  // pick top-N ephemeral NPCs worth admin review. `interactionCount` ticks
+  // once per scene the NPC appears in `processNpcChanges`. `dialogCharCount`
+  // is a placeholder (Slice B) until scene-gen emits structured per-NPC
+  // dialog text. `questInvolvementCount` stores the "return visit" signal
+  // only — incremented inline when the player re-encounters this NPC after
+  // a sceneIndex gap ≥ 2. The structural signal (NPC as questGiver /
+  // turnInNpc on N CampaignQuests) is computed batch-time from CampaignQuest
+  // rows inside `postCampaignPromotion.js` and fed into the final score
+  // alongside this counter — kept out of inline writes so quest upserts
+  // stay single-query.
+  interactionCount          Int       @default(0)
+  dialogCharCount           Int       @default(0)
+  questInvolvementCount     Int       @default(0)
+  lastInteractionAt         DateTime?
+  lastInteractionSceneIndex Int?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([campaignId])
   @@index([worldNpcId])
+  // Shadow lookups from canonical — `resolveNpcKnownLocations` and the admin
+  // NPC detail view both hit this pair.
+  @@index([campaignId, worldNpcId])
   @@unique([campaignId, npcId])
 }
 
@@ -472,6 +499,13 @@ model WorldLocation {
   // (canonicalName gets `_{campaignIdShort}` appended to avoid cross-campaign
   // collisions in the global canonical name space).
   displayName           String?
+  // Phase 12 closeout — canonical world knowledge about this location.
+  // Mirrors WorldNPC.knowledgeBase: append-only JSON of
+  // {content, source, kind, confidence?, similarity?, addedAt} entries
+  // promoted from post-campaign admin-approved world state changes
+  // (locationBurned, future: locationModified). FIFO-capped to 50 at apply
+  // time. Rendered into scene prompts when the player enters the location.
+  knowledgeBase         String  @default("[]")
 
   @@index([region])
   @@index([parentLocationId])
@@ -610,6 +644,9 @@ model WorldEvent {
   @@index([worldLocationId, createdAt])
   @@index([campaignId, createdAt])
   @@index([eventType])
+  // Admin events feed filters by (eventType, visibility) and orders by
+  // createdAt desc — a single compound index beats post-filter + sort.
+  @@index([eventType, visibility, createdAt])
 }
 
 // Phase 3 — per-character reputation per scope (global / region / faction / settlement).
@@ -688,4 +725,149 @@ model WorldLoreSection {
   updatedAt DateTime @updatedAt
 
   @@index([order])
+}
+
+// Round E Phase 9 — unified embedding store for world-scope retrieval.
+// Separate from campaign-scoped `CampaignScene/NPC/Knowledge/Codex.embedding`
+// (which live in Atlas $vectorSearch indexes) — this table holds embeddings
+// for WorldNPC, WorldLocation, promotion candidates, and future lore chunks.
+// Cosine similarity is computed in-process (ragService.js) against the full
+// table to stay inside the Atlas shared-tier index cap. Swap to Atlas Vector
+// Search by adding a createIndex entry in createVectorIndexes.js when the row
+// count grows past ~5k and local scan becomes too slow.
+model WorldEntityEmbedding {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  entityType String   // npc | location | lore_chunk | promotion_candidate
+  entityId   String   // references the source entity (WorldNPC.id / WorldLocation.id / ...)
+  text       String   // source text that produced the embedding (kept for debug + potential re-embed)
+  embedding  Json     // number[1536] — stored as BSON array via Prisma Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
+}
+
+// Phase 12b — ephemeral CampaignNPCs surfaced by the post-campaign promotion
+// batch for admin review. Each row is a single promotion proposal: raw stats
+// captured at batch time, optional LLM verdict (Slice B — currently left null),
+// and a reviewer decision. Idempotent per (campaignId, campaignNpcId) — re-running
+// the batch updates stats without clobbering reviewer flags.
+model NPCPromotionCandidate {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId     String    @db.ObjectId
+  campaignNpcId  String    @db.ObjectId
+  name           String
+  role           String?
+  personality    String?
+  // JSON snapshot — {interactionCount, questInvolvementCount, dialogCharCount,
+  // lastInteractionAt, lastInteractionSceneIndex, score}. Stored as string for
+  // schema-shape stability; callers use JSON.parse.
+  stats          String    @default("{}")
+  // Slice B — short excerpt of dialog context to feed small-model verdict.
+  // Null until that phase ships.
+  dialogSample   String?
+  // Slice B — structured verdict {recommend: yes|no|unsure, uniqueness: 0-10,
+  // worldFit: 0-10, reasons: [string]}. Null until small-model scoring lands.
+  smallModelVerdict String?
+  // Lifecycle: pending = in admin queue, approved = promoted to WorldNPC,
+  // rejected = dismissed by admin with a note on `reviewNotes`.
+  status         String    @default("pending")
+  reviewedBy     String?   @db.ObjectId
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([campaignId, campaignNpcId])
+  @@index([status, createdAt])
+}
+
+// Phase 12 closeout — MEDIUM-tier world state changes awaiting admin review.
+// Written by `applyWorldStateChanges` whenever an LLM-extracted change either
+// lacks shadow-diff corroboration (MEDIUM), has a resolved entity but no auto-
+// apply handler yet (HIGH but unsupported kind, e.g. factionShift), or targets
+// a location which per Phase 12 policy always requires admin sign-off. Re-runs
+// upsert by idempotencyKey so the queue doesn't accumulate duplicates — same
+// change from a re-run of the pipeline refreshes confidence/similarity but
+// never overwrites the reviewer's decision. Different phrasings of the same
+// fact intentionally produce distinct rows (different hashes) — lets admins
+// see competing "legends" from the same campaign.
+model PendingWorldStateChange {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId       String    @db.ObjectId
+  // Deterministic hash of `${kind}|${targetHint}|${newValue}` so re-running
+  // the pipeline for the same change doesn't create duplicates.
+  idempotencyKey   String
+  // One of: npcDeath | npcRelocation | newRumor | locationBurned | factionShift.
+  kind             String
+  // Short human-readable identifier LLM emitted (name / short description).
+  targetHint       String
+  // Resolved via ragService if similarity ≥ 0.6; null when unresolved or
+  // when the kind has no canonical target (factionShift today).
+  targetEntityId   String?   @db.ObjectId
+  targetEntityType String?   // 'npc' | 'location' | null
+  // One-sentence description of what changed (LLM output, ≤500 chars).
+  newValue         String
+  // LLM-reported confidence 0-1. Admin uses this to triage queue.
+  confidence       Float
+  // Cosine similarity at resolve time (null when unresolved).
+  similarity       Float?
+  // Why this landed in pending instead of auto-applying. One of:
+  //   'llm_only'                   — MEDIUM: resolved but no shadow corroboration
+  //   'kind_without_shadow_path'   — kind has no shadow-diff equivalent (newRumor etc.)
+  //   'high_but_no_handler'        — HIGH confidence but no apply handler wired
+  //   'high_but_unsupported_kind'  — HIGH but kind is outside the handler whitelist
+  //   'location_requires_review'   — all location changes require admin sign-off
+  reason           String
+  // Admin review lifecycle. `pending` is default until someone touches it.
+  status           String    @default("pending") // pending | approved | rejected
+  reviewedBy       String?   @db.ObjectId
+  reviewedAt       DateTime?
+  reviewNotes      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([campaignId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([campaignId, status])
+}
+
+// Round E Phase 12c — non-canonical locations created during a campaign that
+// scored well enough to surface to admin review for promotion into the
+// canonical world. Mirrors NPCPromotionCandidate (Phase 12b): stats refresh
+// on re-run, admin decisions stay sticky. Approve flips the linked
+// WorldLocation's `isCanonical` flag (Phase 13a approval route); reject is
+// a stamp-only decision.
+model LocationPromotionCandidate {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  campaignId        String    @db.ObjectId
+  // FK to the non-canonical WorldLocation. On approve the WorldLocation row
+  // is flipped to `isCanonical=true` in place; on reject the candidate row
+  // stays rejected but the non-canonical WorldLocation remains in the
+  // campaign (doesn't leak to other campaigns because `isCanonical=false`
+  // scopes it via `createdByCampaignId`).
+  worldLocationId   String    @db.ObjectId
+  canonicalName     String
+  displayName       String?
+  locationType      String?
+  region            String?
+  description       String?
+  // JSON snapshot — {sceneCount, questObjectiveCount, npcCount, score,
+  // dedupeOfId?, dedupeSimilarity?}. Stored as string for schema-shape
+  // stability. Callers parse on read.
+  stats             String    @default("{}")
+  // Optional LLM verdict — same shape as NPCPromotionCandidate. Reserved
+  // for a future small-model pass; today all candidates land pending and
+  // wait for manual admin decision.
+  smallModelVerdict String?
+  status            String    @default("pending") // pending | approved | rejected
+  reviewedBy        String?   @db.ObjectId
+  reviewedAt        DateTime?
+  reviewNotes       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([campaignId, worldLocationId])
+  @@index([status, createdAt])
 }

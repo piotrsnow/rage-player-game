@@ -171,39 +171,59 @@ Current ideas (all from a `gradient-bang` review): async-tool-pattern, autonomou
 |---|---|
 | Scene generation bug | [backend/src/services/sceneGenerator/generateSceneStream.js](backend/src/services/sceneGenerator/generateSceneStream.js) |
 | Scene gen FE orchestration | [src/hooks/sceneGeneration/useSceneGeneration.js](src/hooks/sceneGeneration/useSceneGeneration.js) |
-| AI context selection | [backend/src/services/intentClassifier.js](backend/src/services/intentClassifier.js) + [aiContextTools.js](backend/src/services/aiContextTools.js) |
+| AI context selection | [backend/src/services/intentClassifier/index.js](backend/src/services/intentClassifier/index.js) (heuristics + nanoSelector) + [aiContextTools/index.js](backend/src/services/aiContextTools/index.js) |
 | AI response validation | [src/services/stateValidator.js](src/services/stateValidator.js) + [shared/domain/stateValidation.js](shared/domain/stateValidation.js) |
 | State change application | [src/stores/handlers/applyStateChangesHandler.js](src/stores/handlers/applyStateChangesHandler.js) |
 | Combat mechanics | [src/services/combatEngine.js](src/services/combatEngine.js) |
 | Save/load | [src/services/storage.js](src/services/storage.js) |
 | Multiplayer WS | [backend/src/routes/multiplayer/connection.js](backend/src/routes/multiplayer/connection.js) + `handlers/` |
 | Auth flow | [src/services/apiClient.js](src/services/apiClient.js) + [backend/src/routes/auth.js](backend/src/routes/auth.js) |
-| System prompt (premium) | [backend/src/services/sceneGenerator/systemPrompt.js](backend/src/services/sceneGenerator/systemPrompt.js) |
+| System prompt (premium) | [backend/src/services/sceneGenerator/systemPrompt/index.js](backend/src/services/sceneGenerator/systemPrompt/index.js) (sections in `staticRules` / `conditionalRules` / `worldBlock` / `livingWorldBlock`) |
+| stateChanges handlers | [backend/src/services/sceneGenerator/processStateChanges/index.js](backend/src/services/sceneGenerator/processStateChanges/index.js) (handlers per bucket + Zod schemas) |
 | Nano state extraction | [backend/src/services/memoryCompressor.js](backend/src/services/memoryCompressor.js) `compressSceneToSummary` |
 | Post-scene async | [backend/src/services/cloudTasks.js](backend/src/services/cloudTasks.js) + [postSceneWork.js](backend/src/services/postSceneWork.js) |
-| SSE routes | [backend/src/routes/ai.js](backend/src/routes/ai.js) `writeSseHead` |
+| SSE routes | [backend/src/routes/ai/sseBoilerplate.js](backend/src/routes/ai/sseBoilerplate.js) `writeSseHead` + per-endpoint handlers in `routes/ai/` |
+| Admin routes | [backend/src/routes/adminLivingWorld.js](backend/src/routes/adminLivingWorld.js) (gated on `fastify.requireAdmin` — JWT claim) |
 | Prisma schema | [backend/prisma/schema.prisma](backend/prisma/schema.prisma) |
 | RPGon rules | [src/data/rpgSystem.js](src/data/rpgSystem.js) |
 | Living World canonical seed | [backend/src/scripts/seedWorld.js](backend/src/scripts/seedWorld.js) (capital + villages + NPCs + wilderness/dungeons/ruins) |
 | Campaign sandbox (CampaignNPC shadow) | [backend/src/services/livingWorld/campaignSandbox.js](backend/src/services/livingWorld/campaignSandbox.js) |
+| Quest-driven NPC goals | [backend/src/services/livingWorld/questGoalAssigner/index.js](backend/src/services/livingWorld/questGoalAssigner/index.js) (pure classifier + weighted picker split out) |
 | Start-spawn picker (campaign binding) | [backend/src/services/livingWorld/startSpawnPicker.js](backend/src/services/livingWorld/startSpawnPicker.js) |
 | Fog-of-war helpers | [backend/src/services/livingWorld/userDiscoveryService.js](backend/src/services/livingWorld/userDiscoveryService.js) |
 | AI location placement | [backend/src/services/livingWorld/positionCalculator.js](backend/src/services/livingWorld/positionCalculator.js) `computeSmartPosition` |
 
 ## Known gaps / technical debt
 
-- **`backend/src/routes/ai.js` is ~698L** — over the 600L hard cap (down from 865L after BullMQ removal). Split into `routes/ai/` folder before adding more endpoints.
-- **OpenAI/Anthropic dispatchers in 3 places**: `aiJsonCall.js` (single-shot), `campaignGenerator.js` (streaming), `sceneGenerator/streamingClient.js` (streaming). Acceptable — streaming vs non-streaming APIs are genuinely different shapes.
 - **`src/hooks/useNarrator.js` is ~945L** — biggest remaining monolith hook. Split is playtest-driven, not urgent.
+- **`backend/src/scripts/seedWorld.js` is ~1146L** — bootstrap script, not a hot path, but runs on every boot (idempotent upsert). Adding a seed-completion guard (env flag or DB marker) would skip the no-op I/O on warm starts.
 - **No token budget enforcement in `assembleContext()`.** Total prompt stays in ~3.5-7k tokens in practice thanks to upstream caps, but a runaway selection could blow past that. Add explicit counting if scenes start hitting model context limits or cost spikes.
+- **Prisma compound indexes missing on Living World models.** `WorldEvent` needs `@@index([eventType, visibility, createdAt])` for the admin events feed; `CampaignNPC` needs `@@index([campaignId, canonicalWorldNpcId])` for shadow lookups. Verify in `schema.prisma` before pushing to Atlas.
+- **OpenAI/Anthropic dispatchers in 3 places**: `aiJsonCall.js` (single-shot), `campaignGenerator.js` (streaming), `sceneGenerator/streamingClient.js` (streaming). Acceptable — streaming vs non-streaming APIs are genuinely different shapes.
 - **`src/services/diceRollInference.js` has legacy aliases** not in `shared/domain/diceRollInference.js`. Fold into the shared version when convenient.
 - **MP guest join doesn't write character campaign lock.** Only host's characters get locked via `POST /v1/campaigns`. Fix in `backend/src/routes/multiplayer/handlers/lobby.js` if guests report losing characters.
+
+### Recently split (barrel pattern — import paths preserved)
+
+| File | Was | Now |
+|---|---|---|
+| `backend/src/routes/ai.js` | 698 LOC | 4-LOC barrel → `routes/ai/{index,schemas,sseBoilerplate,singleShots,campaignStream,sceneStream,scenes,coreState}.js` |
+| `backend/src/services/aiContextTools.js` | 1358 LOC | barrel → `aiContextTools/{index,handlers/*,contextBuilders/*,worldLore}.js` |
+| `backend/src/services/sceneGenerator/processStateChanges.js` | 1277 LOC | barrel → `processStateChanges/{index,schemas,handlers/*,sceneEmbedding}.js` with Zod validators per bucket |
+| `backend/src/services/intentClassifier.js` | 588 LOC | barrel → `intentClassifier/{index,heuristics,nanoSelector,nanoPrompt}.js` |
+| `backend/src/services/sceneGenerator/systemPrompt.js` | 550 LOC | barrel → `systemPrompt/{index,staticRules,conditionalRules,dmSettingsBlock,characterBlock,worldBlock,livingWorldBlock}.js` |
+| `backend/src/services/livingWorld/questGoalAssigner.js` | 557 LOC | barrel → `questGoalAssigner/{index,questRole,npcGiverPicker,backgroundGoals,categories,roleAffinity}.js` |
+| `src/components/admin/AdminLivingWorldPage.jsx` | 795 LOC | tab switcher → `adminLivingWorld/{tabs/*,shared/*}` |
+
+Barrels keep the old import paths intact — `import { ... } from '.../systemPrompt.js'` and friends still work unchanged.
 
 ## Important notes
 
 - **No production backward-compat constraints** — we're pre-prod, no v1 users.
 - **Backend is the sole AI dispatch path.** No FE proxy/BYOK mode. Users can store per-user keys via `PUT /v1/auth/settings`; backend decrypts and threads them through via `loadUserApiKeys(prisma, userId)` → `userApiKeys` option → `requireServerApiKey(keyName, userApiKeys, label)`. See [knowledge/decisions/no-byok.md](knowledge/decisions/no-byok.md).
 - **No Redis/BullMQ.** Refresh tokens in Mongo (TTL index), post-scene async via Cloud Tasks (prod) or inline (dev), rate limiting + idempotency in-memory. See [knowledge/decisions/cloud-run-no-redis.md](knowledge/decisions/cloud-run-no-redis.md).
+- **Admin auth is a JWT claim, not a DB lookup.** `signAccessToken` mints `isAdmin` at login/refresh; `fastify.requireAdmin` reads the claim. Role changes take at most one access-token TTL (15 min) to propagate. See [backend/src/plugins/requireAdmin.js](backend/src/plugins/requireAdmin.js).
+- **Admin querystring filters are JSON-Schema typed.** Every GET on `/v1/admin/livingWorld/*` declares a `querystring` schema so Fastify coerces/validates before the params reach Prisma — stops bracket-syntax injections like `?locationId[$ne]=null`. LLM-triggering admin endpoints (`/npcs/:id/tick`, `/tick-batch`) carry their own stricter rate limits in the route config.
 - **One-time setup scripts:** `cd backend && node src/scripts/createVectorIndexes.js` (vector search), `node src/scripts/createRefreshTokenTtlIndex.js` (refresh token TTL).
 - **Multiplayer contracts shared via `shared/contracts/multiplayer.js`** — WS message schemas, normalizers, constants.
 - **LLM timeouts user-tunable** via DM Settings (`llmPremiumTimeoutMs`, `llmNanoTimeoutMs`). Premium timeout emits SSE `error` with `code: 'LLM_TIMEOUT'`; nano timeout falls back silently.

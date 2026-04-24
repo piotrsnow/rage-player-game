@@ -2,9 +2,9 @@ import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
-import { resolveNpcKnownLocations } from '../../livingWorld/campaignSandbox.js';
 import { markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
+import { runPostCampaignWorldWriteback } from '../../livingWorld/postCampaignWriteback.js';
 import {
   parseLocationMentions,
   parseCampaignComplete,
@@ -63,8 +63,11 @@ export function shouldPromoteToGlobal(stateChanges, { mainQuestCompleted = false
  * Violations (LLM made up a location or wrote one outside the NPC's scope)
  * are skipped with a warning — the mention doesn't propagate to fog state.
  *
- * Input runs through Zod first; arrays over MAX_LOCATION_MENTIONS (20) are
- * rejected in full so a runaway LLM can't trigger N findUnique queries.
+ * Batched layout — the previous loop hit Prisma 4× per mention (location
+ * findUnique + campaignNPC findFirst + worldNPC findUnique/findFirst +
+ * edge findMany inside resolveNpcKnownLocations). With 20 mentions clamped
+ * by Zod that was 80 round-trips. We now pre-fetch every location, NPC,
+ * and edge in 3 queries total, then walk the mentions in memory.
  */
 export async function processLocationMentions(campaignId, mentions) {
   const parsed = parseLocationMentions(mentions);
@@ -84,43 +87,134 @@ export async function processLocationMentions(campaignId, mentions) {
   }).catch(() => null);
   if (!campaign?.userId) return;
 
-  for (const entry of validMentions) {
-    const locationId = String(entry.locationId).trim();
-    const byNpcIdent = String(entry.byNpcId || entry.npcId || entry.byNpc || '').trim();
-    if (!locationId || !byNpcIdent) continue;
+  // Normalize + uniq the mention inputs so batched queries don't pull
+  // duplicates and the loop below can do constant-time map lookups.
+  const normalized = validMentions
+    .map((entry) => ({
+      locationId: String(entry.locationId || '').trim(),
+      byNpcIdent: String(entry.byNpcId || entry.npcId || entry.byNpc || '').trim(),
+    }))
+    .filter((m) => m.locationId && m.byNpcIdent);
+  if (normalized.length === 0) return;
 
+  const uniqLocationIds = [...new Set(normalized.map((m) => m.locationId))];
+  const uniqIdents = [...new Set(normalized.map((m) => m.byNpcIdent))];
+
+  // 1. All referenced locations in one query.
+  const locationRows = await prisma.worldLocation.findMany({
+    where: { id: { in: uniqLocationIds } },
+    select: { id: true },
+  }).catch(() => []);
+  const existingLocationIds = new Set(locationRows.map((l) => l.id));
+
+  // 2. All candidate CampaignNPCs in one query. `mode: 'insensitive'` isn't
+  // available on `in:` with Mongo, so we OR-together per-ident clauses —
+  // still a single round-trip.
+  const identOrClauses = uniqIdents.flatMap((ident) => [
+    { npcId: ident },
+    { name: { equals: ident, mode: 'insensitive' } },
+  ]);
+  const campaignNpcRows = identOrClauses.length > 0
+    ? await prisma.campaignNPC.findMany({
+      where: { campaignId, OR: identOrClauses },
+    }).catch(() => [])
+    : [];
+
+  // Map each ident → best CampaignNPC (exact-npcId match wins over name).
+  const campaignNpcByIdent = new Map();
+  for (const ident of uniqIdents) {
+    const exact = campaignNpcRows.find((r) => r.npcId === ident);
+    const byName = campaignNpcRows.find(
+      (r) => r.name && r.name.toLowerCase() === ident.toLowerCase(),
+    );
+    if (exact || byName) campaignNpcByIdent.set(ident, exact || byName);
+  }
+
+  // 3. WorldNPCs — pull via campaignNpc.worldNpcId OR fallback name match in
+  // a single query. Idents that resolved via CampaignNPC take the FK path;
+  // the rest fall back to a canonical-name lookup.
+  const worldNpcIdsFromCampaign = [...new Set(
+    [...campaignNpcByIdent.values()]
+      .map((c) => c?.worldNpcId)
+      .filter(Boolean),
+  )];
+  const fallbackNameIdents = uniqIdents.filter((ident) => !campaignNpcByIdent.has(ident));
+  const worldNpcOrClauses = [
+    ...(worldNpcIdsFromCampaign.length > 0
+      ? [{ id: { in: worldNpcIdsFromCampaign } }]
+      : []),
+    ...fallbackNameIdents.map((ident) => ({ name: { equals: ident, mode: 'insensitive' } })),
+  ];
+  const worldNpcRows = worldNpcOrClauses.length > 0
+    ? await prisma.worldNPC.findMany({ where: { OR: worldNpcOrClauses } }).catch(() => [])
+    : [];
+  const worldNpcById = new Map(worldNpcRows.map((n) => [n.id, n]));
+
+  // 4. All edges touching any NPC's anchor location, in a single query.
+  const anchorLocationIds = new Set();
+  for (const ident of uniqIdents) {
+    const cNpc = campaignNpcByIdent.get(ident);
+    const wNpc = cNpc?.worldNpcId
+      ? worldNpcById.get(cNpc.worldNpcId)
+      : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
+    const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
+    if (anchor) anchorLocationIds.add(anchor);
+  }
+  const edgeRows = anchorLocationIds.size > 0
+    ? await prisma.worldLocationEdge.findMany({
+      where: {
+        OR: [
+          { fromLocationId: { in: [...anchorLocationIds] } },
+          { toLocationId: { in: [...anchorLocationIds] } },
+        ],
+      },
+      select: { fromLocationId: true, toLocationId: true },
+    }).catch(() => [])
+    : [];
+  const adjacencyByAnchor = new Map();
+  for (const anchor of anchorLocationIds) adjacencyByAnchor.set(anchor, new Set([anchor]));
+  for (const e of edgeRows) {
+    const fromSet = adjacencyByAnchor.get(e.fromLocationId);
+    const toSet = adjacencyByAnchor.get(e.toLocationId);
+    if (fromSet) { fromSet.add(e.toLocationId); }
+    if (toSet) { toSet.add(e.fromLocationId); }
+  }
+
+  // Resolve each ident → Set<knownLocationId>. Edge adjacency + explicit
+  // knownLocationIds on the WorldNPC (seed + admin authored).
+  const knownByIdent = new Map();
+  for (const ident of uniqIdents) {
+    const cNpc = campaignNpcByIdent.get(ident);
+    const wNpc = cNpc?.worldNpcId
+      ? worldNpcById.get(cNpc.worldNpcId)
+      : worldNpcRows.find((n) => n.name && n.name.toLowerCase() === ident.toLowerCase());
+    if (!cNpc && !wNpc) continue;
+
+    const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
+    const known = new Set(anchor ? adjacencyByAnchor.get(anchor) || [anchor] : []);
+    if (wNpc?.knownLocationIds) {
+      try {
+        const extra = JSON.parse(wNpc.knownLocationIds);
+        if (Array.isArray(extra)) for (const id of extra) if (id) known.add(id);
+      } catch { /* ignore malformed authored JSON */ }
+    }
+    knownByIdent.set(ident, known);
+  }
+
+  // Walk the original mentions and fire markLocationHeardAbout only for
+  // policy-passing pairs. Duplicates in the input collapse naturally via
+  // the knownByIdent / existingLocationIds sets.
+  for (const { locationId, byNpcIdent } of normalized) {
     try {
-      const location = await prisma.worldLocation.findUnique({
-        where: { id: locationId },
-        select: { id: true },
-      });
-      if (!location) {
+      if (!existingLocationIds.has(locationId)) {
         log.warn({ campaignId, locationId, byNpcIdent }, 'locationMentioned: location not found — skipping');
         continue;
       }
-
-      // Resolve the NPC — campaign shadow first, canonical by name fallback.
-      const campaignNpc = await prisma.campaignNPC.findFirst({
-        where: {
-          campaignId,
-          OR: [
-            { npcId: byNpcIdent },
-            { name: { equals: byNpcIdent, mode: 'insensitive' } },
-          ],
-        },
-      });
-      const worldNpc = campaignNpc?.worldNpcId
-        ? await prisma.worldNPC.findUnique({ where: { id: campaignNpc.worldNpcId } })
-        : await prisma.worldNPC.findFirst({
-          where: { name: { equals: byNpcIdent, mode: 'insensitive' } },
-        });
-
-      if (!campaignNpc && !worldNpc) {
+      const known = knownByIdent.get(byNpcIdent);
+      if (!known) {
         log.warn({ campaignId, byNpcIdent }, 'locationMentioned: NPC not found — skipping');
         continue;
       }
-
-      const known = await resolveNpcKnownLocations({ campaignNpc, worldNpc });
       if (!known.has(locationId)) {
         log.warn(
           { campaignId, locationId, byNpcIdent, knownCount: known.size },
@@ -128,10 +222,9 @@ export async function processLocationMentions(campaignId, mentions) {
         );
         continue;
       }
-
       await markLocationHeardAbout({ userId: campaign.userId, locationId, campaignId });
     } catch (err) {
-      log.warn({ err: err?.message, campaignId, entry }, 'locationMentioned: handler failed');
+      log.warn({ err: err?.message, campaignId, locationId, byNpcIdent }, 'locationMentioned: handler failed');
     }
   }
 }
@@ -246,4 +339,13 @@ export async function processCampaignComplete({
     gameTime: sceneGameTime,
   });
   log.info({ campaignId, locationName: currentLocationName, title: safe.title }, 'campaign_complete global event written');
+
+  // Auto-trigger post-campaign writeback — surfaces NPC/location promotion
+  // candidates + extracts world facts for admin review. Fire-and-forget: the
+  // pipeline runs LLM-heavy extraction (~30s+) and must not block post-scene
+  // processing. Idempotent — safe to re-run manually from the admin panel if
+  // this one fails.
+  runPostCampaignWorldWriteback(campaignId).catch((err) => {
+    log.warn({ err: err?.message, campaignId }, 'auto-triggered post-campaign writeback failed (non-fatal)');
+  });
 }

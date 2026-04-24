@@ -12,7 +12,7 @@ import FactionsTab from './world/FactionsTab';
 const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
 const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
-export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, onClose }) {
+export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
   const [highlightId, setHighlightId] = useState(null);
@@ -20,15 +20,12 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
   const modalRef = useModalA11y(onClose);
 
   const npcs = world?.npcs || [];
-  const mapState = world?.mapState || [];
-  const mapConnections = world?.mapConnections || [];
   const currentLocation = world?.currentLocation || '';
   const timeState = world?.timeState || { day: 1, timeOfDay: 'morning', season: 'unknown' };
   const activeEffects = (world?.activeEffects || []).filter((e) => e.active !== false);
   const eventHistory = world?.eventHistory || [];
   const compressedHistory = world?.compressedHistory || '';
   const factions = world?.factions || {};
-  const exploredLocations = world?.exploredLocations || [];
 
   const navigateTo = useCallback((tab, entityId) => {
     setActiveTab(tab);
@@ -90,7 +87,7 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
             <NpcTab npcs={npcs} quests={quests} characterVoiceMap={characterVoiceMap} maleVoices={maleVoices} femaleVoices={femaleVoices} dispatch={dispatch} autoSave={autoSave} navigateTo={navigateTo} t={t} />
           )}
           {activeTab === 'map' && (
-            <MapTab mapState={mapState} currentLocation={currentLocation} connections={mapConnections} exploredLocations={exploredLocations} npcs={npcs} quests={quests} navigateTo={navigateTo} t={t} />
+            <MapTab campaignId={campaignId} currentSceneId={currentSceneId} currentLocation={currentLocation} onTravel={onTravel} onEnterSub={onEnterSub} t={t} />
           )}
           {activeTab === 'quests' && (
             <QuestsTab quests={quests} npcs={npcs} navigateTo={navigateTo} t={t} />

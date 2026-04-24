@@ -29,3 +29,4 @@ Never silently act on an idea here as if it were an established pattern. The con
 - [living-world-scene-orchestration](living-world-scene-orchestration.md) — DM directives + parallel per-NPC standard calls at end of scene (Phase 4 full, deferred)
 - [living-world-vector-search](living-world-vector-search.md) — semantic NPC/location dedupe (deferred, name-dedupe is the current fallback)
 - [prompt-fragment-system](prompt-fragment-system.md) — markdown fragments + LRU cache for prompts
+- [side-quests-between-campaigns](side-quests-between-campaigns.md) — side/personal/faction quests as between-campaign feature (currently disabled in prompts + FE)

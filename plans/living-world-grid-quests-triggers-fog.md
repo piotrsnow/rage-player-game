@@ -1,14 +1,23 @@
 # Living world: grid map, quest-giver binding, NPC triggers, fog-of-war
 
-## Status (2026-04-22)
+## Status (2026-04-23)
 
 - ✅ **Round A** shipped — fog schema, NPC categories, world content expansion, World Lore (admin CRUD + scene-gen preamble), hand-authored NPC knowledge. See [knowledge/concepts/fog-of-war.md](../knowledge/concepts/fog-of-war.md), [knowledge/concepts/world-lore.md](../knowledge/concepts/world-lore.md).
 - ✅ **Round B** shipped — start-spawn picker (hard-bound first scene), campaign sandbox with INDEPENDENT CampaignNPC shadow (each carries its own activeGoal — canonical NPC lives separate background life), quest trigger `onComplete.moveNpcToPlayer`, hearsay `[NPC_KNOWLEDGE]` prompt block + `locationMentioned` policy handler, AI-generated non-canonical locations via smart placer (distanceHint + optional direction + random fallback), unified `listLocationsForCampaign` helper, `[WORLD BOUNDS]` remaining-room hint, NPC source policy in quest-gen prompt. Cleanup: dropped `WorldNPC.goalTargetCampaignId`/`goalTargetCharacterId` (dead hacks). See [knowledge/concepts/campaign-sandbox.md](../knowledge/concepts/campaign-sandbox.md), [knowledge/concepts/hearsay-and-ai-locations.md](../knowledge/concepts/hearsay-and-ai-locations.md).
-- ⏳ **Round C** — UI: tile-grid player map, sublocation drill-down, fog rendering. Not started.
+- ✅ **Round C** — Phase 6 (top-level tile-grid map + fog render + travel), Phase 7 (sublocation drill-down + auto-open when clicking current settlement + synthetic `Wchodzę do …` dispatch), Phase 8 (admin MapTab Force/Tile-grid toggle + admin sub-grid modal) all shipped. Key correction vs original plan: the player map is a **fixed global `-10..10` grid** (canonical world is the same for every campaign), not driven by per-campaign `Campaign.worldBounds` — that field stays as the AI/seeder placement guardrail only. See [knowledge/concepts/living-world.md](../knowledge/concepts/living-world.md) "Three things that look the same but aren't".
 - ⏳ **Round D** — OPTIONAL (deferred): biome flavor, lore RAG retrieval, lore-consistency validator. Not started.
-- ⏳ **Round E** — post-campaign write-back + NPC/location promotion candidates + admin review UI + canon graph visualization. Not started.
+- ✅ **Round E — COMPLETE**. Full post-campaign world write-back pipeline shipped end-to-end:
+  - **Phase 9** — RagService (`npc`/`location`/`lore_chunk`/`promotion_candidate`/`location_promotion_candidate`/`npc_memory` entity types, in-process cosine, fire-and-forget indexing at every entity creation site).
+  - **Phases 10 + 11 + 12 + 12-lite** — shadow diff collector + LLM fact extraction (nano, bounded sources only) + resolver + shadow-diff correlation + confidence-tiered apply (HIGH NPC-kind → `WorldNPC.knowledgeBase`; all location + HIGH-unsupported-kind + MEDIUM → `PendingWorldStateChange` sticky-status upsert; narrow `alive`/`location` auto-apply on the shadow diff). `WorldLocation.knowledgeBase` + `applyLocationKnowledgeChange` / `applyNpcKnowledgeChange` / `applyApprovedPendingChange` wired for approval.
+  - **Phase 12b Slice A + B** — `NPCPromotionCandidate` pipeline with stats tracking (inline interaction + return-visit counts; batch-time structural quest count) + dialog sample harvest + cross-campaign RAG dedup (`dedupeOfId`/`dedupeSimilarity` stashed in stats JSON) + Haiku verdict auto-reject on `recommend=no` or `uniqueness<5` + sticky admin status. Inline `maybePromote` removed; `assignGoalsForCampaign` now operates on all CampaignNPC rows regardless of `worldNpcId`.
+  - **Phase 12c** — `LocationPromotionCandidate` pipeline (non-canonical WorldLocations scored by sceneCount + questObjective count; RAG dedup against other location candidates; sticky admin status; `promoteWorldLocationToCanonical` flips `isCanonical=true` + reindexes).
+  - **Phase 13a** — admin tab "Promotions" with four panels (run-writeback trigger + pending world-state + NPC promotion candidates + location promotion candidates); backend routes `/pending-world-state-changes`, `/promotion-candidates`, `/location-promotion-candidates`, `/campaigns`, `/campaigns/:id/run-writeback` (rate-limited 5/min); sticky approve/reject with `reviewedBy`/`reviewedAt`/`reviewNotes`.
+  - **Phase 13b** — admin tab "Canon" — force-directed SVG graph of canonical world (WorldLocation nodes + WorldLocationEdge lines + WorldNPC dots orbiting home/current location, colored by category). `GET /v1/admin/livingWorld/canon-graph` endpoint. Surfaces "lonely locations" (no edges) and "homeless NPCs" (no home/current link) as red-outlined lists for admin spot-check.
+  - **NPC memory Stage 1 + 2a + 2a.1 + 2a.2** — baseline `knowledgeBase` → `[NPC_MEMORY]` prompt block + in-campaign `experienceLog` via `npcMemoryUpdates` bucket + importance-aware top-8 merge + cross-NPC symmetry mirror (Polish-inflection-aware) all shipped earlier.
+  - **NPC memory Stage 2b** — `promoteExperienceLogsToCanonical` runs as part of writeback: for every CampaignNPC with `worldNpcId` set, major-importance `experienceLog` entries are promoted to the canonical `WorldNPC.knowledgeBase` with `source: 'campaign:<campaignId>'`. Idempotent via replace-by-source-tag. Prompt renders as `(poprzednia kampania)`.
+  - **NPC memory Stage 3** — RAG-powered recall in `buildNpcMemory`. When an NPC's merged memory pool (experienceLog + cross-campaign knowledgeBase) exceeds 15 entries, replaces the static importance-slice with cosine similarity against a scene-derived query (`playerAction + currentLocation`). Entities indexed at write time (`cexp:<campaignNpcId>:<addedAt>` for experience, `wknw:<worldNpcId>:<addedAt>` for cross-campaign). Falls back to static slice on empty RAG hits or missing scene query.
 
-**Before resuming**: run `cd backend && npm run db:push` to push the Round B schema additions to Atlas (CampaignNPC.lastLocationId/pendingIntroHint/activeGoal/goalProgress/category + CampaignQuest.forcedGiver + WorldLocation fog fields from Round A).
+**Before resuming**: run `cd backend && npm run db:push` to push the Round B + Round E schema additions to Atlas (CampaignNPC.lastLocationId/pendingIntroHint/activeGoal/goalProgress/category/experienceLog/interactionCount/dialogCharCount/questInvolvementCount/lastInteractionAt/lastInteractionSceneIndex + CampaignQuest.forcedGiver + WorldLocation fog fields from Round A + WorldLocation.knowledgeBase from Phase 12 closeout + WorldEntityEmbedding from Phase 9 + NPCPromotionCandidate from Phase 12b + PendingWorldStateChange from Phase 12 closeout + **LocationPromotionCandidate from Phase 12c**).
 
 ## Context
 
@@ -276,17 +285,20 @@
 - Kapitol widoczny od startu (knownByDefault, auto-dodany do UserWorldKnowledge przy tworzeniu kampanii).
 - Wchodzenie fizyczne do lokacji: awans heard-about → visited (helper `markLocationDiscovered` usuwa z heard-about) + `markEdgeDiscovered` dla edge'a traversed.
 
-**Phase 7 — sublocation map + navigation.**
-- Nowy component `SubLocationGrid.jsx`. Renderuje grid `subGridX × subGridY` wymiarowany per settlement (capital 10×10, town 7×7, village 5×5 — patrz pole `settlementSize` albo rozmiar rodzica).
-- Sublokacje pozycjonowane z ręcznych koordów `subGridX/subGridY` ustawionych w seedzie.
-- Klik na sublokację dispatchuje syntetyczny player message `"wchodzę do {slotType}"` przez istniejący pipeline sceny.
-- **Back button** `← Back to map` w nagłówku sub-view → wraca do top-level tile grid bez dispatch'owania scene (sub-view to overlay, nie zmiana lokacji gracza).
-- **Auto-open na travel**: gdy gracz dotrze do settlementu via "Travel here", sub-view auto-otwiera się pokazując sublokacje (UX: "właśnie przybyłeś do Świetłogaju, dokąd idziesz?").
-- Fog-of-war sublokacji: canonical sublokacje znanego parent-location widoczne od razu (raz odkryłeś wioskę — widzisz wszystkie jej hand-authored budynki). AI-generowane sublokacje wymagają discovery per-kampania (np. "znajdujesz ukryte przejście w piwnicy").
+**Phase 7 — sublocation map + navigation.** ✅ shipped
+- `components/gameplay/worldMap/SubLocationGrid.jsx` + `subGridRenderer.js` — canvas drill-down. Grid size zależny od typu rodzica: capital/city 10×10, town 7×7, village/hamlet/ruin/dungeon/cave 5×5.
+- Seeded subs używają `subGridX/subGridY`; subs bez koordów (AI-gen) dostają auto-layout row-major w `layoutSubsWithFallback` aż grid się nie zapełni.
+- Fog: canonical subs parentu visited → widoczne od razu; non-canonical wymaga `fog.discoveredSubLocationIds`. `bypassFog` prop dla admin view (Phase 8).
+- Klik → nowy callback `onEnterSub(name)` → `GameplayPage.onEnterSubFromMap` zamyka World Modal i dispatchuje `handleAction(\`Wchodzę do ${name}.\`, true)` (hardcoded PL, analogicznie do istniejącego travel dispatch).
+- Back button czyści subView lokalnie w `PlayerWorldMap` — żadnej zmiany stanu gry.
+- Auto-open: klik w kafel parent'u w którym gracz już jest → pomijamy popover i wchodzimy prosto w sub-view (bez cross-modal state-handshake; MVP, resztę rozstrzygnij po playteście jeśli UX zawiedzie).
+- `PlayerWorldMap` resolve current parent walk-up przez `parentLocationId` tak, by top-level pulse przeszedł na settlement gdy gracz jest w jego sublokacji.
 
-**Phase 8 — admin map alignment.**
-- [src/components/admin/AdminLivingWorldPage.jsx](src/components/admin/AdminLivingWorldPage.jsx) MapTab dostaje toggle: "Force layout" (obecny) vs "Tile grid" (nowy). Tile grid pokazuje wszystko, kolory po `dangerLevel`, ikonki po `locationType`.
-- Admin sub-location view: klik na lokację w tile grid → modal z sub-gridem (ten sam component co gracz, ale bez fog).
+**Phase 8 — admin map alignment.** ✅ shipped
+- `components/admin/adminLivingWorld/tabs/MapTab.jsx` — toggle Force / Tile grid (default Force).
+- Nowy `AdminTileGridView.jsx` reuse'uje `tileMapRenderer.js` primitives z pustą fogą no-op (wszystkie nody → visited).
+- Klik w tile otwiera modal z `SubLocationGrid` w trybie `bypassFog` — admin widzi wszystkie subs (canonical + non-canonical), kliknięcia sublokacji są inertne (no-op `onEnter`).
+- Backend: `GET /v1/admin/livingWorld/graph` dostał `dangerLevel`, `displayName`, `isCanonical`, `createdByCampaignId`. Nowy endpoint `GET /v1/admin/livingWorld/graph/sublocations/:parentId` zwraca children z `subGridX/Y` (+ slotType/slotKind/dangerLevel/description) bez fogu.
 
 ### Round D (⏳ OPCJONALNY, odłożony): biome + lore retrieval + lore consistency validator
 
@@ -309,109 +321,176 @@ Nie robimy teraz, ale zapisane do revisit.
 
 Cel: przy finalizacji kampanii promować istotne zmiany z campaign shadow → canonical world. Akcje gracza mają realny, widoczny wpływ między kampaniami.
 
-**Phase 9 — RagService (unified retrieval).**
-- Nowa tabela `WorldEntityEmbedding { id, entityType: 'npc'|'location'|'lore_chunk'|'promotion_candidate', entityId, text (source), embedding: JSON[number] (1536d), updatedAt }`.
-- Nowy serwis `ragService.js` (single source of truth dla wszystkich retrieval):
-  - `index(entityType, entityId, text)` — generuje embedding z `text` przez `text-embedding-3-small` (OpenAI, ~$0.02/1M tokens), upsert do tabeli.
-  - `query(queryText, { filters: {entityType?, campaignId?}, topK, minSim=0.5 })` — naive cosine similarity w JS (dla ~200-500 encji bez problemu, <50ms). Zwraca `[{entityId, entityType, similarity, text}]`.
-  - `invalidate(entityType, entityId)` — usuwa wpis (np. gdy encja usunięta).
-- **Używany przez wszystkie features wymagające retrieval**:
-  - Write-back (Phase 12): `ragService.query(factHint, {entityType:'npc'|'location'}, topK=1)` → resolve target.
-  - Promotion dedup (Phase 12b/c): `ragService.query(candidateText, {entityType:'promotion_candidate'}, topK=5)` → merge podobnych.
-  - Lore retrieval (Round D gdy lore urośnie): `ragService.query(sceneContext, {entityType:'lore_chunk'}, topK=5)`.
-  - Scene context enrichment (jeśli w przyszłości potrzebne): same interface.
-- Seed + mid-game entity creation triggeruje `ragService.index()`. Batch backfill jednorazowy dla istniejących encji.
-- **Koszt**: ~$1/miesiąc przy intensywnym testowaniu (seed + rebuilds + queries). Zero budget concern.
-- Jedno miejsce do swap'u gdy skala urośnie (naive JS cosine → Atlas Vector Search lub pgvector) bez dotykania call-sites.
+**Phase 9 — RagService (unified retrieval). ✅ SHIPPED**
+- Schema: `WorldEntityEmbedding { id, entityType, entityId, text, embedding: Json (1536d), createdAt, updatedAt }`, unique `(entityType, entityId)`, index on `entityType`. Entity types currently accepted: `npc | location | lore_chunk | promotion_candidate`.
+- Service [backend/src/services/livingWorld/ragService.js](backend/src/services/livingWorld/ragService.js):
+  - `index(entityType, entityId, text)` — upserts row via `embedText` (re-uses existing [embeddingService.js](backend/src/services/embeddingService.js) L1 cache). Non-throwing; provider failures log warn and return null so entity writers stay resilient. Fire-and-forget is the canonical call pattern.
+  - `query(queryText, { filters: { entityType?, entityIds? }, topK=5, minSim=0.5 })` — in-process cosine over `prisma.worldEntityEmbedding.findMany({ where: { entityType } })`. Returns `[{ entityId, entityType, similarity, text }]` sorted desc.
+  - `invalidate(entityType, entityId)` — deleteMany by composite key.
+  - `batchBackfillMissing(entityType, entities, textOf)` — idempotent bulk indexer. Skips entities that already have a row so repeated seed boots don't repay the embedding cost.
+- New helper `buildLocationEmbeddingText(loc)` in `embeddingService.js` (mirrors `buildNPCEmbeddingText`).
+- Seed wire-up ([seedWorld.js](backend/src/scripts/seedWorld.js)): `backfillRagEmbeddings()` runs at end of `seedWorld()` — `batchBackfillMissing` over all `alive=true` `WorldNPC` rows + all `isCanonical=true` `WorldLocation` rows. Skipped gracefully when `OPENAI_API_KEY` is unset.
+- Mid-game wire-up: `ragService.index(...)` fire-and-forget at every WorldLocation/WorldNPC creation site — [worldStateService.js](backend/src/services/livingWorld/worldStateService.js) (`findOrCreateWorldLocation`, `findOrCreateWorldNPC`, `createSublocation`), [processStateChanges/locations.js](backend/src/services/sceneGenerator/processStateChanges/locations.js) (non-canonical AI-created locations), [worldSeeder.js](backend/src/services/livingWorld/worldSeeder.js) (per-campaign settlement seed), [dungeonSeedGenerator.js](backend/src/services/livingWorld/dungeonSeedGenerator.js) (dungeon rooms).
+- **Design note — diverges from existing vector-search pattern**: campaign-scope (`CampaignScene/NPC/Knowledge/Codex`) embeddings still live inline + Atlas `$vectorSearch` (see [vectorSearchService.js](backend/src/services/vectorSearchService.js)). World-scope embeddings use the new table + in-process cosine to stay under the Atlas shared-tier search-index cap. One call-site rewrite moves us to `$vectorSearch` later if row count outgrows local scan (~5k rows / <50ms threshold).
+- **Koszt**: ~$0.02 per cold seed (400-ish entities × ~50 tokens × $0.02/M). L1 cache skips duplicate re-embeds within a boot.
 
-**Phase 10 — campaign shadow diff collector.**
-- Helper `collectCampaignShadowDiff(campaignId)`:
-  - Dla każdego CampaignNPC z `worldNpcId` porównaj shadow fields vs WorldNPC canonical. Wygeneruj listę `{ worldNpcId, field, oldValue, newValue }`.
-  - Analogiczne dla CampaignLocationSummary vs WorldLocation gdy dodamy location-level mutations.
+**Phase 10 — campaign shadow diff collector. ✅ SHIPPED (NPC-only)**
+- [backend/src/services/livingWorld/postCampaignWriteback.js](backend/src/services/livingWorld/postCampaignWriteback.js) exports:
+  - `diffNpcFields(clone, canonical)` — pure. Emits `[{field, oldValue, newValue}]` for {`alive`, `location`, `name`, `role`, `personality`}. `location` is a synthetic field mapping `CampaignNPC.lastLocationId → WorldNPC.currentLocationId`. Skips clone→null string drift so we never erase canonical.
+  - `collectCampaignShadowDiff(campaignId)` — pulls all `CampaignNPC` with `worldNpcId!=null`, loads their WorldNPC rows in one batch, returns `{ npcDiffs, summary: { npcsExamined, npcsWithChanges, fieldCounts } }`. Ephemeral NPCs (`worldNpcId=null`) skipped — Phase 12b promotion territory.
+- `CampaignLocationSummary` diff NOT implemented — requires `worldLocationId` FK on that model first (deferred with Phase 12c).
+- Excluded fields (Round B architectural decision): `activeGoal`, `goalProgress` are INDEPENDENT between shadow and canonical — not a drift source, no diff emitted.
+- 14 unit tests cover pure diff + filter + dryRun apply in [postCampaignWriteback.test.js](backend/src/services/livingWorld/postCampaignWriteback.test.js).
 
-**Phase 11 — LLM fact extraction.**
-- Pobierz compressed memory vault + campaign summary dla kampanii.
-- Prompt do LLM z structured output:
-  ```
-  { worldChanges: [{ 
-      kind: "npcDeath"|"npcRelocation"|"locationBurned"|"newRumor"|"factionShift",
-      targetHint: string (name/description of entity),
-      newValue: string,
-      confidence: 0-1,
-      reason: string
-  }] }
-  ```
-- LLM instruction: "wyciągnij tylko zmiany które logicznie powinny zostać zapamiętane przez świat (np. śmierć znanego NPC, zniszczenie miejsca, znaczący sojusz); pomiń drobiazgi".
+**NPC memory Stage 1 — hand-authored baseline knowledge. ✅ SHIPPED**
+- Optional `baselineKnowledge: string[]` on `NAMED_NPCS` / village NPCs in [seedWorld.js](backend/src/scripts/seedWorld.js). `upsertNpc` serializes to `WorldNPC.knowledgeBase` as `[{content, source: 'baseline'}]`. Seeded today: Król Torvan IV, Arcykapłanka Lyana, Kapitan Gerent, Mistrz Wiedzy Taelor, Karczmarz Tamar, Kupiec Dorgun, Wiltar Olbram, Eleya Tropicielka.
+- **Merge-preserving update**: on reseed, `upsertNpc` reads existing `knowledgeBase`, keeps entries with `source !== 'baseline'`, replaces the baseline slice. Protects Stage 2 lived experience from being wiped by seed reboot.
 
-**Phase 12 — resolver + apply (world state changes).**
-- Dla każdego `targetHint` wywołaj `findSimilarEntities(hint, entityType)` → top-1 match (threshold 0.75 cosine sim).
-- Confidence tiers:
-  - **High** (shadow diff + LLM extraction + sim>0.85) → auto-apply do WorldNPC/WorldLocation.
-  - **Medium** (jedno źródło lub sim 0.6-0.85) → queue w admin review do manual approve/reject.
-  - **Low** (<0.6) → skip + log.
-- **Ważne — mitigation "fake progress"**: high-confidence wymaga obu źródeł (shadow-diff + LLM-extracted). LLM-only (bez shadow diff) → maksymalnie medium → wymagany admin review. Tym samym LLM nie może sam "wymyślać" zmian canon.
-- Apply:
-  - `npcDeath` → `WorldNPC.alive=false` + append do `WorldNPC.knowledgeBase` z reason.
-  - `npcRelocation` → `WorldNPC.currentLocationId` update.
-  - `locationBurned`/`modifications` → append do nowego pola `WorldLocation.worldHistory: JSON[]` (historyczny log).
-  - `newRumor`/`newKnowledge` → append do `WorldNPC.knowledgeBase` lub `WorldLocation.knowledgeBase`.
+**NPC memory Stage 2a — in-campaign lived experience. ✅ SHIPPED**
+- New `CampaignNPC.experienceLog: String @default("[]")` — append-only JSON `[{content, importance, addedAt}]`. Shadow-only write (Round B sandbox compliance).
+- New stateChanges bucket `npcMemoryUpdates: [{npcName, memory, importance?}]` — emitted by premium when something narratively notable happens TO/ABOUT an NPC. Zod-validated via `parseNpcMemoryUpdates` in [schemas.js](backend/src/services/sceneGenerator/processStateChanges/schemas.js) — caps: 20 updates/scene, 300 chars/memory.
+- Handler [processStateChanges/npcMemoryUpdates.js](backend/src/services/sceneGenerator/processStateChanges/npcMemoryUpdates.js) — resolves `npcName` → CampaignNPC (slug rule mirrors `processNpcChanges`), FIFO-caps per-NPC log at 20 entries, dispatched AFTER `processNpcChanges` so same-scene NPC introductions attach. NOT gated on `livingWorldEnabled` — classic campaigns benefit from cross-scene NPC consistency too.
+- Prompt guidance added to [systemPrompt/staticRules.js](backend/src/services/sceneGenerator/systemPrompt/staticRules.js) — Polish, explicit "SKIP for flavor/small talk, emit ONLY for narrative beats NPC would plausibly remember". Max ~3/scene expectation.
+- Builder [npcBaseline.js](backend/src/services/aiContextTools/contextBuilders/npcBaseline.js) renamed from `buildNpcBaselineKnowledge` → `buildNpcMemory` (old export kept as alias). Now merges baseline (`WorldNPC.knowledgeBase`) + experience (`CampaignNPC.experienceLog`) in two parallel batch reads. Returns `[{npcName, entries: [{content, source}]}]` with source `'baseline' | 'campaign_current'` (Stage 2b will add `'campaign:<id>'` for cross-campaign promoted memories).
+- Prompt block renamed from `[NPC_BASELINE]` → `[NPC_MEMORY]`. Each entry prefixed `(zawsze)` for baseline, `(ta kampania)` for lived experience — lets premium distinguish immutable worldview from in-campaign growth.
+- Caps: 6 baseline entries + 8 experience entries per NPC (newest-first slice). Will feed Stage 3 RAG retrieval when cross-campaign memories inflate the pool past naive-slice usefulness.
+- 25 new unit tests across `npcBaseline.test.js` + `npcMemoryUpdates.test.js` (pure helpers only — no Prisma mocks).
 
-**Phase 12b — NPC promotion candidates.**
-- **Inline stats tracking podczas play**: scene generator inkrementuje `CampaignNPC.interactionCount`, `dialogCharCount`, `lastInteractionAt` gdy NPC występuje w dialogu; `questInvolvementCount` gdy quest objective dotyczy NPC.
-- **Refactor istniejącego `maybePromote()` w [backend/src/services/livingWorld/npcPromotion.js](backend/src/services/livingWorld/npcPromotion.js)**: zamiast inline `findOrCreateWorldNPC` (mutacja canonical world podczas gry), tworzy wpis `NPCPromotionCandidate` ze statusem `pending`. Trigger dla inline candidate: quest involvement lub named NPC z personality — zgodnie z istniejącą heurystyką, tyle że nie commit do WorldNPC.
-- **Post-campaign batch** w `postCampaignPromotion.js`:
-  1. Filter: top-5 CampaignNPC bez `worldNpcId` (czyli ephemeral) sortowane po `interactionCount + questInvolvementCount*10`.
-  2. Deduplication: dla każdego kandydata embedding na `name + role + personality`, cosine sim search w `NPCPromotionCandidate` (pending/approved). Jeśli match >0.85 → append stats do istniejącego kandydata, skip nowy.
-  3. Top-3 przechodzi przez small model (Haiku lub równoważny nano):
-     - Prompt: NPC data + dialog excerpts (max 3000 chars) + quest involvement + world context summary (hand-authored region/factions, żeby model mógł ocenić worldFit).
-     - Output structured: `{ recommend: 'yes'|'no'|'unsure', uniqueness: 0-10, worldFit: 0-10, reasons: [string] }`.
-  4. Verdict z `recommend=yes` lub `unsure` + `uniqueness>=5` → utwórz `NPCPromotionCandidate` z `status=pending` + pełny verdict dla admin review.
-  5. Rest (recommend=no lub uniqueness<5) → nie tworzy candidate, log dla debugowania.
+**NPC memory Stage 2a.1 — importance-aware merge. ✅ SHIPPED**
+- Two-pass selection in [npcBaseline.js](backend/src/services/aiContextTools/contextBuilders/npcBaseline.js) `formatExperienceEntries`: (1) rank by `importance DESC, addedAt DESC, originalIdx DESC` with `IMPORTANCE_RANK = {major: 2, minor: 1}` (missing/unknown = 0) to pick top-N, (2) re-sort survivors by `originalIdx ASC` so prompt renders chronologically (preserves old tail-slice reading order).
+- `importance` field was already on entries via `toMemoryEntry`; picker just wasn't using it.
+- Zero schema change. 4 new unit tests cover major-wins-over-newer-minor-flood, tie-break by recency within tier, missing-importance-drops-first, chronological render after selection.
 
-**Phase 12c — Location promotion candidates (analogicznie do NPC).**
-- Stats tracking na **`CampaignLocationSummary`** (już istnieje, name-keyed — dodać `worldLocationId` FK + nowe pola): `visitCount`, `questObjectiveCount`, `npcCount` (ilu NPC zostało tu stworzonych) — inkrementowane inline podczas kampanii. Nie trzymamy na WorldLocation, żeby stats jednej kampanii nie mieszały się z innymi.
-- Post-campaign filter: top-5 non-canonical lokacji tej kampanii (`isCanonical=false AND createdByCampaignId=current`) sortowane po `visitCount + questObjectiveCount*5`.
-- Deduplication: embedding sim search vs istniejące `LocationPromotionCandidate` pending/approved (z innych kampanii) — jeśli match >0.85 → append stats do istniejącego.
-- Top-3 → small model verdict (uniqueness: ma distinctive features? worldFit: pasuje do regionu?).
-- Candidate utworzony z `recommend=yes|unsure + uniqueness>=5`.
-- Admin approval:
-  - `isCanonical=true`, keep `regionX/regionY` (już na gridzie z Phase 4c).
-  - Remove `createdByCampaignId` (lub zostaw jako audit).
-  - Update `canonicalName` — usuń auto-suffix, conflict check (jeśli inna canonical już zajmuje nazwę → admin musi rename przed approve).
-  - Rebuild embedding.
-  - Od tego momentu ta lokacja pojawia się w KAŻDEJ kolejnej kampanii.
+**NPC memory Stage 2a.2 — cross-NPC symmetry hook. ✅ SHIPPED**
+- Pure helpers in [processStateChanges/npcMemoryUpdates.js](backend/src/services/sceneGenerator/processStateChanges/npcMemoryUpdates.js): `buildNpcNameMatcher(nameLower)` (case-insensitive whole-word regex with Polish-inflection tolerance — final vowel swap covers Lyany/Lyaną/Lyanę/Lyano via stem + `[aąeęioóuy]` suffix), `detectMirrorTargets(memoryText, sourceName, otherNpcs, {maxTargets=3})` (skips self-mention, dedups by row id, caps fan-out), `buildMirrorEntry(sourceEntry, sourceName)` (step-down: `major → minor`, anything else → null; tags `mirror: true`; prefixes content with `[zasłyszane o {sourceName}]`).
+- `processNpcMemoryUpdates` prefetches all `CampaignNPC` rows once, buckets primary entries + mirror entries by target `npcId`, issues one DB write per target regardless of how many source memories trigger mirrors. Returns `{applied, skipped, mirrored}`.
+- Ping-pong prevention via `mirror: true` flag on entry — never re-mirrors.
+- 15 new unit tests in `npcMemoryUpdates.test.js` (`detectMirrorTargets` + `buildMirrorEntry`) cover: single mention, multi-word names, self-mention skip, dedup on repeated mentions, fan-out cap, substring false-positive rejection, Polish inflections, minor step-down-to-null, ping-pong prevention, missing source guards.
 
-**Phase 13 — admin review UI (unified "Pending canonicalizations").**
-- Nowa zakładka w Admin Living World: **"Pending canonicalizations"**. Trzy sekcje:
-  - **World state changes** (z Phase 12): npcDeath/npcRelocation/locationModification — lista z kampanii, kontekst, confidence, proponowana zmiana.
-  - **NPC promotions** (z Phase 12b): CampaignNPC kandydaci → WorldNPC. Pokazuje: stats, dialog sample, small model verdict (recommend + reasons + uniqueness/worldFit scores).
-  - **Location promotions** (z Phase 12c): CampaignLocation kandydaci → canonical.
-- Każda pozycja: approve / reject / edit-before-approve (admin może poprawić pola przed commitem, np. dopisać knowledge do WorldNPC) + notka.
-- Approve pipeline:
-  - World state change → apply directly to WorldNPC/WorldLocation, rebuild embedding jeśli naming/role się zmienił.
-  - NPC promotion → create WorldNPC (name, role, personality z CampaignNPC + `canonicalId` generowane), link do pierwotnego CampaignNPC (`worldNpcId=nowy_id`), rebuild embedding.
-  - Location promotion → `isCanonical=true` + permanent coords + rebuild embedding.
-- Toggle: **"auto-approve high-confidence world state changes"** (tylko dla state changes, nigdy dla promotions — promotions zawsze wymagają manual).
-- Filter/search: po kampanii, typie, status, dacie.
+**NPC memory Stage 3 — RAG-powered recall. ⏳ TODO (trigger: per-NPC log > 15 entries)**
+- **Activation**: only kicks in when a specific `CampaignNPC.experienceLog` exceeds 15 entries. Below that, Stage 2a.1 static importance-slice stays — cheaper (no embed call per scene) and good enough for short-lived NPCs.
+- **Write path**: handler in `npcMemoryUpdates.js` calls `ragService.index('npc_memory', '${campaignNpcId}:${entryIdx}', content)` fire-and-forget on every write. Same pattern as existing worldStateService entity indexing.
+- **Read path**: `buildNpcMemory` checks per-NPC log length. If > 15 → query `ragService.query(sceneQueryText, { filters: { entityType: 'npc_memory' }, topK: 8 })` filtered in-process by entityId prefix matching the CampaignNPC. If ≤ 15 → static slice (Stage 2a.1).
+- **Scene query text**: `playerLastAction + ' ' + currentLocationName` (keep short, single embed per scene, shared across all NPCs present — one embed, N filtered cosines).
+- **Stage 3 extends 2b**: when Stage 2b promotes experienceLog → canonical WorldNPC.knowledgeBase cross-campaign, the combined pool easily exceeds 15 for recurring named NPCs. Stage 3 is what makes cross-campaign memory usable without prompt bloat.
+- Tests: pure helper `shouldUseRagRecall(log)` returning threshold check; mocked `ragService.query` in integration test covering "NPC with 20 entries pulls scene-relevant top-8, not newest-8".
 
-**Phase 13b — Canon Knowledge Graph Visualization** (nowa zakładka w Admin Living World).
-- Graf obecnego canonical world state: węzły = `WorldNPC` + `WorldLocation`, krawędzie = `WorldLocationEdge` (location↔location), `WorldNPC.currentLocationId`/`homeLocationId` (NPC→location), `WorldNPC.relationships` (NPC→NPC).
-- Kolory: węzły NPC po `category`, lokacje po `locationType` (reuse `LOCATION_TYPE_COLORS` z obecnego admin MapTab).
-- Filter toggle: pokaż tylko `isCanonical=true` (domyślnie) albo dorzuć non-canonical per-wybrana kampania do inspekcji.
-- Interakcje: zoom, pan, click na node → side panel z detalami (pola, `knowledgeBase`, promotion history jeśli był candidate).
-- Zastosowanie: spot "samotne" węzły (NPC bez relationships, lokacja bez edges), sprawdź spójność canon, zobacz gaps w hand-authored world, szybki sanity check po Round E auto-approvals.
-- Implementacja: reuse istniejący SVG force-directed renderer z `AdminLivingWorldPage.jsx:MapTab` ale z dodatkowymi warstwami (NPC jako mniejsze węzły przy location parent, relacje jako dashed edges).
+**Phase 12-lite — narrow auto-apply (alive + location). ✅ SHIPPED**
+- `filterAutoApplyChanges(changes, autoApplyFields=['alive','location'])` — pure. Guards:
+  - `alive: true→false` only. Never auto-resurrects.
+  - `location`: only promotes to non-null target.
+- `applyShadowDiffToCanonical({ diff, autoApplyFields, dryRun })` — writes authorized changes to WorldNPC, reports the rest as `skipped` with `reason: 'needs_review'`. Idempotent (re-running finds zero diffs for already-applied fields). `dryRun=true` skips writes.
+- `runPostCampaignWorldWriteback(campaignId, opts)` — single-entry orchestrator. No route/trigger yet; callers will wire it into a future finalize endpoint / admin button.
+- **Known safe overlap with Phase 3 `reputationHook.killWorldNpc`**: reputationHook already flips `WorldNPC.alive=false` during post-scene work for NPCs killed in play. Phase 12-lite becomes the belt-and-suspenders for cases the hook bailed on (missing `worldNpcId` link, name resolution failure, `livingWorldEnabled` toggled mid-campaign). Both writes are idempotent so overlap is harmless.
+
+**Phase 11 — LLM fact extraction. ✅ SHIPPED**
+- [backend/src/services/livingWorld/postCampaignFactExtraction.js](backend/src/services/livingWorld/postCampaignFactExtraction.js) — `extractWorldFacts({ campaignId, coreState, shadowDiffSummary, modelTier, provider, userApiKeys })` + pure helpers `buildFactExtractionInput`, `parseFactExtractionOutput`. Default tier `nanoReasoning` (gpt-5.4-nano / haiku-4.5), temperature 0, maxTokens 1500.
+- Input slice: only bounded-summary sources — `gameStateSummary` (≤15 facts capped by memoryCompressor), `world.keyPlotFacts` (top-5 high-importance CampaignKnowledge from campaignLoader), `journalEntries` (nano-compressed per scene). No raw scene narratives. Campaign metadata + Phase 10 shadow diff summary passed as context hint ("already detected X — confirm or skip, don't duplicate").
+- Zod output schema: `{ worldChanges: [{ kind: npcDeath|npcRelocation|locationBurned|newRumor|factionShift, targetHint≤150ch, newValue≤500ch, confidence 0-1, reason≤300ch }] }`, capped at 10 entries. Malformed entries dropped individually with warn log, not a whole-response failure.
+- Non-throwing contract: provider error / malformed JSON / no memory → `{ changes: [], warning }`. Never blocks narrow auto-apply.
+- Wired into `runPostCampaignWorldWriteback` between `collectCampaignShadowDiff` and `applyShadowDiffToCanonical`. Return shape extended: `{ ..., factExtraction: { changes, warning?, skipped? } }`. Opts: `skipExtraction: true` bypass, plus `extractionProvider`/`extractionModelTier`/`extractionUserApiKeys` forwarding.
+- 22 unit tests ([postCampaignFactExtraction.test.js](backend/src/services/livingWorld/postCampaignFactExtraction.test.js)) cover input shaping, Zod salvage behavior, provider error paths, prompt forwarding. 5 wiring tests in [postCampaignWriteback.test.js](backend/src/services/livingWorld/postCampaignWriteback.test.js) verify orchestrator propagation, `skipExtraction` bypass, missing/malformed coreState tolerance, override forwarding.
+- **Not in scope** (deferred): resolving `targetHint` → entity IDs (Phase 12), applying changes to WorldNPC/WorldLocation (Phase 12), confidence-tiered auto-apply (Phase 12), admin review UI (Phase 13), cross-campaign dedup (Phase 12b/c).
+
+**Phase 12 — resolver + confidence-tiered apply (world state changes). ✅ SHIPPED**
+- [backend/src/services/livingWorld/postCampaignWorldChanges.js](backend/src/services/livingWorld/postCampaignWorldChanges.js) — pipeline `resolveWorldChanges` → `correlateWithShadowDiff` → `classifyConfidence` → `applyWorldStateChanges`, composed by `runWorldStateChangePipeline({changes, shadowDiff, campaignId, dryRun, ragQuery})`.
+- **Resolver**: `ragService.query(targetHint, {filters: {entityType}, topK: 1, minSim: 0.6})` per change. `entityTypeForKind` maps kinds to RAG entity types: `npc` for `npcDeath|npcRelocation|newRumor`, `location` for `locationBurned`, null for `factionShift` (no canonical target — always unresolvable). RAG errors log + return `null` without throwing.
+- **Correlation**: only NPC-kind changes with a shadow-diff pathway correlate — `npcDeath` ↔ shadow `alive: true→false`, `npcRelocation` ↔ shadow `location` change. Other kinds never correlate (always LLM-only MEDIUM at best).
+- **Tiering**:
+  - **HIGH** — resolved + sim ≥ 0.75 + shadow-diff correlated (both sources agree on same canonical NPC). Auto-applied.
+  - **MEDIUM** — resolved + sim ≥ 0.6 but missing correlation (LLM-only), OR kind has no shadow-diff pathway (`newRumor`, `locationBurned`, `factionShift`). Queued in `pending`.
+  - **LOW** — unresolved (sim < 0.6 or `entityType=null`). Skipped with reason.
+  - Enforces the plan's "fake progress" mitigation: LLM-only extraction never reaches HIGH; admin review is always required unless a real shadow diff corroborates.
+- **Apply scope — narrow auto-apply + persisted admin queue**:
+  - HIGH `npcDeath` / `npcRelocation` / `newRumor` (NPC entity + shadow corroboration) → `appendKnowledgeEntry(WorldNPC.knowledgeBase, {content: "${newValue} (${reason})", source: "llm_extraction:${campaignId}", kind, confidence, similarity, addedAt})`. FIFO-capped at 50 per NPC.
+  - All **location** changes (even HIGH resolver similarity) → `PendingWorldStateChange` with reason `location_requires_review`. Rationale: no shadow-diff pathway exists for locations, so the "two sources agreed" invariant we rely on for NPC auto-apply isn't available. Admin sign-off is the safety net. Apply routine is still wired: `applyLocationKnowledgeChange({change, resolved, campaignId})` writes to [`WorldLocation.knowledgeBase`](backend/prisma/schema.prisma) (new field, mirrors WorldNPC.knowledgeBase, FIFO-capped at 50). Phase 13 approval route calls it.
+  - HIGH `factionShift` + any other unsupported-kind HIGH → `PendingWorldStateChange` with reason `high_but_no_handler` / `high_but_unsupported_kind`.
+  - Phase 12-lite (separately) still owns `alive` and `currentLocationId` writes via shadow diff — Phase 12 writes knowledge context on top, both idempotent.
+- **MEDIUM persistence — `PendingWorldStateChange` (new table)**. Schema: `{id, campaignId, idempotencyKey, kind, targetHint, targetEntityId?, targetEntityType?, newValue, confidence, similarity?, reason, status (pending|approved|rejected default pending), reviewedBy?, reviewedAt?, reviewNotes?, createdAt, updatedAt}` with `@@unique([campaignId, idempotencyKey])` + `@@index([status, createdAt])` + `@@index([campaignId, status])`.
+  - `computeIdempotencyKey({kind, targetHint, newValue})` — pure SHA-1 hash (16 hex chars) of `${kind}|${targetHint}|${newValue}`. **No normalization** by design: different phrasings of the same event (e.g. "Gerent zginął pod bramą" vs "Gerent poległ w walce") intentionally create distinct rows so admin can see competing rumors/legends from one campaign — per user guidance "tak się tworzą legendy".
+  - Upsert on re-run refreshes resolver signals (`targetEntityId`/`targetEntityType`/`confidence`/`similarity`/`reason`) but **never** overwrites `status`/`reviewedBy`/`reviewedAt`/`reviewNotes`. Admin decisions survive re-runs. Same stickiness pattern as `NPCPromotionCandidate`.
+  - `applyWorldStateChanges` now returns the persisted row shape in `pending` (not the ephemeral in-memory hints) so callers can observe the actual queue state.
+  - Pending upsert failure is non-fatal — the item is silently dropped from the result list, pipeline continues.
+- Wired into `runPostCampaignWorldWriteback` between Phase 11 extraction and Phase 12-lite narrow apply. Orchestrator opt: `skipWorldChangePipeline`. Auto-skips when `factExtraction.changes.length === 0`.
+- 47 unit tests in [postCampaignWorldChanges.test.js](backend/src/services/livingWorld/postCampaignWorldChanges.test.js) cover resolver / correlation / tiering / NPC + location apply (LOW skip, MEDIUM pending-upsert, HIGH dryRun, HIGH with missing WorldNPC, write failures, location `apply` helper happy path + not-found + non-location guard, pending upsert failure). `computeIdempotencyKey` pure tests (deterministic, case-sensitive, no-normalization). 4 integration tests in [postCampaignWriteback.test.js](backend/src/services/livingWorld/postCampaignWriteback.test.js) cover pipeline propagation, auto-skip on empty changes, `skipWorldChangePipeline` bypass, shadow diff forwarding.
+
+**Phase 12b Slice A — NPC promotion candidates (stats + persist). ✅ SHIPPED**
+- Schema additions:
+  - `CampaignNPC`: `interactionCount Int @default(0)`, `dialogCharCount Int @default(0)` (Slice B placeholder — not incremented yet), `questInvolvementCount Int @default(0)`, `lastInteractionAt DateTime?`, `lastInteractionSceneIndex Int?`.
+  - New model `NPCPromotionCandidate`: `{id, campaignId, campaignNpcId, name, role, personality, stats (JSON string), dialogSample?, smallModelVerdict?, status (pending|approved|rejected, default pending), reviewedBy?, reviewedAt?, reviewNotes?, createdAt, updatedAt}`. Unique `@@unique([campaignId, campaignNpcId])`, index `@@index([status, createdAt])`. `dialogSample`/`smallModelVerdict` reserved for Slice B.
+- **Inline stats** — [processStateChanges/npcs.js](backend/src/services/sceneGenerator/processStateChanges/npcs.js): pure helpers `computeInteractionDelta(existing, sceneIndex, now)` + `initialInteractionFields(sceneIndex, now)`. Every `processNpcChanges` bump increments `interactionCount` and stamps `lastInteractionAt`/`lastInteractionSceneIndex`; a sceneIndex gap ≥ 2 since the last interaction bumps `questInvolvementCount` (the "return visit" signal per Q3 answer). sceneIndex threaded through `processStateChanges(campaignId, stateChanges, { prevLoc, sceneIndex })` from [postSceneWork.js](backend/src/services/postSceneWork.js) via `scene.sceneIndex`. Mentions without content changes still tick stats (bare-mention = interaction) but skip the embedding re-write.
+- **Batch-time structural signal** — [postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js): `computeStructuralInvolvement(quests)` counts how many `CampaignQuest` rows list each NPC as `questGiverId`/`turnInNpcId` (once per quest, role-deduped). Kept out of inline writes so `campaignSync.upsert` stays single-query.
+- **Scoring** — `score = interactionCount + questInvolvementCount*3 + structuralQuestCount*10` (structural strongest signal, return visits medium, raw interactions baseline). Zero-score candidates dropped. Tie-breaker: `lastInteractionAt DESC`.
+- **Persistence** — upsert into `NPCPromotionCandidate` by `[campaignId, campaignNpcId]`. Refresh `stats`/`name`/`role`/`personality` on re-run; **never** touches `status`/`reviewedBy`/`reviewedAt`/`reviewNotes`/`dialogSample`/`smallModelVerdict` so admin feedback is sticky (Q5).
+- **Orchestrator wiring** — new Phase 5 in `runPostCampaignWorldWriteback`: `runNpcPromotionPipeline({campaignId, dryRun, topN})`. Opts: `skipPromotion: true` to bypass, `promotionTopN: number` override. Return shape: `{..., promotion: {collected, persisted, skipped}}`.
+- **NOT in Slice A**: no LLM verdict (Haiku/nano small-model scoring of uniqueness/worldFit), no cross-campaign dedup via embedding similarity, no refactor of `maybePromote` (still does inline `findOrCreateWorldNPC` during play). All three land in Slice B.
+- 19 tests in [npcs.test.js](backend/src/services/sceneGenerator/processStateChanges/npcs.test.js) + [postCampaignPromotion.test.js](backend/src/services/livingWorld/postCampaignPromotion.test.js) cover the pure helpers (delta, initial fields, slug, structural counts, scoring, selection, tie-breaks) + pipeline integration + orchestrator wiring (3 new tests in [postCampaignWriteback.test.js](backend/src/services/livingWorld/postCampaignWriteback.test.js)).
+
+**Phase 12b Slice B — LLM verdict + dedup + maybePromote refactor. ✅ SHIPPED**
+- **Cross-campaign dedup** — [postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js) `buildCandidateEmbeddingText` + `findDuplicateCandidate` + persist path. Before each upsert, embed `name — role — personality(truncated 200ch)` and `ragService.query({entityType: 'promotion_candidate'}, minSim=0.85)`. Match → stash `dedupeOfId` + `dedupeSimilarity` inside the row's `stats` JSON (no schema change — admin UI collapses dupes at display time per Q1 decision). After upsert, fire-and-forget `ragService.index('promotion_candidate', candidateId, text)` so the next campaign's candidates can dedup against this one.
+- **Dialog sample harvest** — `bucketDialogByNpc` + `renderDialogSample` + `harvestDialogSamples`: one `campaignScene.findMany` pulls `dialogueSegments`, walks `type=dialogue` segments, buckets last 5 lines per slug, renders newline-joined sample capped at 600 chars with ellipsis-truncation on the last overflowing line. Attached as `stats.dialogSample` and stored on `NPCPromotionCandidate.dialogSample`.
+- **LLM verdict** — new module [postCampaignPromotionVerdict.js](backend/src/services/livingWorld/postCampaignPromotionVerdict.js). Zod schema `{recommend: yes|no|unsure, uniqueness: 0-10 int, worldFit: 0-10 int, reasons: [string] max 5}`. Default provider `anthropic` + tier `standard` (Haiku 4.5). `runVerdictForCandidates` fans out via `Promise.allSettled` (top-N ≤5, parallel per Q4) so one failure doesn't kneecap the batch. Per-candidate failure modes logged with `warning`: `provider_error` | `invalid_json` | `schema_miss` | `missing_npc` — all non-throwing, candidate keeps `status=pending` with no auto-reason (admin decides manually).
+- **Status classification** — pure `classifyVerdict` in the verdict module. `recommend=no` OR `uniqueness<5` → `status=rejected` with `reviewNotes='auto: ' + verdict.reasons[0]` (or generic auto-reject string if no reasons). Else → `status=pending`. **Stickiness rule**: on UPDATE path, if the existing row has `reviewedBy` set OR a non-`pending`/non-`rejected` status, we do NOT overwrite `status` or `reviewNotes` — admin decisions survive re-runs. Stats / dialogSample / verdict still refresh.
+- **maybePromote removed** — [npcPromotion.js](backend/src/services/livingWorld/npcPromotion.js) deleted. Inline call removed from [processStateChanges/npcs.js](backend/src/services/sceneGenerator/processStateChanges/npcs.js). Canonical `WorldNPC` rows are **never** created mid-campaign. `CampaignNPC.worldNpcId` field preserved (no schema change) — admin-approve flow (Phase 13) will populate it at promotion time, which is also useful for Stage 2b knowledge write-back (user Q2 decision: "przyda się potem żeby zaktualizować wiedzę tego NPC").
+- **`assignGoalsForCampaign` refactor** (Q2 option (b)) — [questGoalAssigner/index.js](backend/src/services/livingWorld/questGoalAssigner/index.js) now operates on **all** CampaignNPC rows in the campaign (dropped `worldNpcId: { not: null }` filter). Canonical WorldNPC lookup is opt-in per-row (only when shadow carries a link) and provides home-derivation fallback. Quest-tied ephemeral shadows get their goals on every scene-tick. `homeLocationId` fallback stays best-effort — ephemerals without a canonical home skip the "return home" override and fall through to background goals.
+- **Known behavioural regressions vs pre-refactor** (accepted per sandbox purity):
+  - `updateLoyalty` (companion drift) + `processItemAttributions` (WorldEvent `item_given` attribution) now both require the CampaignNPC to already carry `worldNpcId` (canonical seeded or admin-approved). Ephemerals silently skip both paths. Previously these worked for freshly-inline-promoted NPCs; now they wait for admin approval.
+  - `npcAgentLoop` ticks only pre-seeded + admin-approved canonical WorldNPCs. Organic "NPC discovered mid-campaign ticks in background world" is deferred until admin approves (matches the Q2 "manual admin tick" model).
+- **Orchestrator opts** — new `runPostCampaignWorldWriteback` knobs: `skipPromotionVerdict`, `promotionProvider` (default `'anthropic'`), `promotionModelTier` (default `'standard'`), `promotionUserApiKeys`. Forwarded to `runNpcPromotionPipeline` as `skipVerdict`/`verdictProvider`/`verdictModelTier`/`verdictUserApiKeys`.
+- Tests: 48 in [postCampaignPromotion.test.js](backend/src/services/livingWorld/postCampaignPromotion.test.js), 19 in [postCampaignPromotionVerdict.test.js](backend/src/services/livingWorld/postCampaignPromotionVerdict.test.js), +3 in [postCampaignWriteback.test.js](backend/src/services/livingWorld/postCampaignWriteback.test.js) covering dedup stash, verdict classification, sticky admin status, dialog harvest, parallel verdict fan-out (with per-call failure isolation), orchestrator opt forwarding.
+
+**Phase 12c — Location promotion candidates. ✅ SHIPPED** (MVP scope — LLM verdict deferred).
+- New `LocationPromotionCandidate` table: `{id, campaignId, worldLocationId, canonicalName, displayName?, locationType?, region?, description?, stats (JSON string), smallModelVerdict?, status, reviewedBy?, reviewedAt?, reviewNotes?, createdAt, updatedAt}`. Unique `(campaignId, worldLocationId)`, index `(status, createdAt)`.
+- Pipeline [postCampaignLocationPromotion.js](backend/src/services/livingWorld/postCampaignLocationPromotion.js) `runLocationPromotionPipeline({campaignId, dryRun, topN})`:
+  1. Collect — `WorldLocation` rows with `isCanonical=false AND createdByCampaignId=current`.
+  2. Score — `sceneCount + questObjectiveCount*5`, where sceneCount is fuzzy-name-matched against `CampaignLocationSummary.sceneCount` and questObjectiveCount counts `CampaignQuest.objectives` referencing the location by id or name.
+  3. Dedup — `ragService.query({entityType: 'location_promotion_candidate'}, minSim=0.85)` — match stashes `dedupeOfId`/`dedupeSimilarity` in `stats` JSON.
+  4. Persist — sticky upsert keyed by `(campaignId, worldLocationId)`; `status='pending'` default, admin decision preserved across re-runs.
+  5. RAG index — fire-and-forget so next campaign's candidates dedup against this one.
+- Admin approval ([adminLivingWorld.js](backend/src/routes/adminLivingWorld.js) `POST /location-promotion-candidates/:id/approve`) calls `promoteWorldLocationToCanonical` which flips `WorldLocation.isCanonical=true`, nulls out `createdByCampaignId`, and reindexes as `entityType='location'` so `findOrCreateWorldLocation` dedup sees it as canonical.
+- **Deferred** (not in 12c MVP): LLM verdict pass (uniqueness + worldFit scoring), visit-count inline stats on `CampaignLocationSummary` (we use sceneCount fuzzy-match instead — works fine but drops location entries that summary writer never wrote to). Revisit once admin fatigue signals from playtest.
+
+**Phase 13a — admin review UI (unified "Pending canonicalizations"). ✅ SHIPPED**
+- Tab **Promotions** wired into [AdminLivingWorldPage.jsx](src/components/admin/AdminLivingWorldPage.jsx) — three stacked sections in [PromotionsTab.jsx](src/components/admin/adminLivingWorld/tabs/PromotionsTab.jsx):
+  1. **Run write-back** — admin-triggered orchestrator call. Campaign dropdown (new admin endpoint `GET /v1/admin/livingWorld/campaigns`) + `dryRun` checkbox + result summary (npcs examined, shadow applied, LLM facts, world-changes applied/pending, promotion collected/persisted).
+  2. **Pending world state changes** — table of `PendingWorldStateChange` rows with `status/kind/campaignId` filter. Approve button calls `applyApprovedPendingChange` (dispatches NPC vs location knowledgeBase append) + sticky `reviewedBy/reviewedAt` stamp. Reject does the stamp only.
+  3. **NPC promotion candidates** — card list grouped by `stats.dedupeOfId` (collapse dupes under parent row, expand-on-click shows sibling candidates). Surface smallModelVerdict scores (recommend/uniqueness/worldFit/reasons) + dialog sample + stats. Approve calls `promoteCampaignNpcToWorld` (creates WorldNPC with `buildNpcCanonicalId` slug + links `CampaignNPC.worldNpcId` + RAG reindex; name+role-alive dedupe reuses existing canonical if match). Reject does stamp only.
+- New routes in [adminLivingWorld.js](backend/src/routes/adminLivingWorld.js) (kept in single file per existing convention, not split into `routes/admin/` subdir):
+  - `GET /pending-world-state-changes?status&kind&campaignId` + `POST /:id/approve` + `POST /:id/reject`
+  - `GET /promotion-candidates?status&campaignId` + `POST /:id/approve` + `POST /:id/reject`
+  - `GET /campaigns?limit=N` (admin-scope campaign picker, not per-user)
+  - `POST /campaigns/:id/run-writeback` (rate-limited to 5/min, body: `{dryRun, skipExtraction, skipWorldChangePipeline, skipPromotion, skipPromotionVerdict}`)
+- New service helpers:
+  - [postCampaignWorldChanges.js](backend/src/services/livingWorld/postCampaignWorldChanges.js) `applyNpcKnowledgeChange` (mirror of `applyLocationKnowledgeChange`) + `applyApprovedPendingChange` (dispatches by `targetEntityType`).
+  - [postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js) `promoteCampaignNpcToWorld(campaignNpcId, {reviewedBy})` — dedupe-aware canonical creation + shadow link + RAG index.
+- **Not in Phase 13a** (deferred to future slices):
+  - Edit-before-approve form (admin can only approve/reject as-is today; to edit knowledge content, reject and rerun writeback with different input, or hand-edit WorldNPC via future endpoint).
+  - Location promotions panel (requires Phase 12c to ship `LocationPromotionCandidate` first).
+  - Auto-approve high-confidence toggle (auto-apply for HIGH + shadow-corroborated NPC changes already happens in Phase 12 pipeline; pending queue is MEDIUM + unsupported-kind HIGH + locations-by-policy — per plan those always require manual).
+  - Sort/search beyond the status+kind+campaignId filters.
+
+**Phase 13b — Canon Knowledge Graph Visualization. ✅ SHIPPED** (MVP scope).
+- New admin tab "Canon" → [CanonGraphTab.jsx](src/components/admin/adminLivingWorld/tabs/CanonGraphTab.jsx). SVG render reusing `LOCATION_TYPE_COLORS` + new `NPC_CATEGORY_COLORS` palette in [mapHelpers.js](src/components/admin/adminLivingWorld/tabs/mapHelpers.js).
+- Backend endpoint `GET /v1/admin/livingWorld/canon-graph` returns `{locations, edges, npcs}` — top-level canonical locations + overworld edges (non-dungeon-corridor) + alive canonical NPCs with `homeLocationId`/`currentLocationId`.
+- Layout: locations placed by `(regionX, regionY)` with same projection math as `/graph`. NPCs orbit their home location (falls back to currentLocation) on a ring of radius 18px, spreading to 2 rings past 10 NPCs per location so dense settlements stay readable.
+- Click any node → side panel with details. "Homeless NPCs" banner (red) lists NPCs with no home/current link — spot-check for data gaps after Round E auto-approvals.
+- **Deferred** (not in 13b MVP): zoom/pan, NPC→NPC relationship edges (WorldNPC.relationships field not widely populated), non-canonical toggle for inspecting per-campaign additions. Good starting surface; revisit once canon world grows.
 
 **Krytyczne pliki Round E:**
-- [backend/prisma/schema.prisma](backend/prisma/schema.prisma) — WorldEntityEmbedding, NPCPromotionCandidate, LocationPromotionCandidate, WorldLocation.worldHistory, CampaignNPC stats fields, CampaignLocationSummary stats
-- [backend/src/services/livingWorld/ragService.js](backend/src/services/livingWorld/ragService.js) — nowy plik (Phase 9)
-- [backend/src/services/livingWorld/postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js) — nowy plik, orchestrator (world state + NPC + location candidates)
-- [backend/src/services/livingWorld/npcPromotion.js](backend/src/services/livingWorld/npcPromotion.js) — refactor `maybePromote()`: tworzy candidate zamiast commitować WorldNPC
-- [backend/src/services/sceneGenerator/processStateChanges.js](backend/src/services/sceneGenerator/processStateChanges.js) — stats tracking inline (interactionCount, dialogCharCount increments)
-- [backend/src/routes/admin/pendingCanonicalizations.js](backend/src/routes/admin/pendingCanonicalizations.js) — nowy endpoint (unified)
-- [backend/src/routes/admin/canonGraph.js](backend/src/routes/admin/canonGraph.js) — endpoint dla Phase 13b
-- [src/components/admin/AdminPendingCanonicalizationsTab.jsx](src/components/admin/AdminPendingCanonicalizationsTab.jsx) — nowy component, 3 sekcje
-- [src/components/admin/AdminCanonGraphTab.jsx](src/components/admin/AdminCanonGraphTab.jsx) — nowy component (Phase 13b)
+- [backend/prisma/schema.prisma](backend/prisma/schema.prisma) — `WorldEntityEmbedding` (Phase 9), `NPCPromotionCandidate` (Phase 12b), `PendingWorldStateChange` (Phase 12 closeout), `WorldLocation.knowledgeBase` (Phase 12 closeout), `CampaignNPC` stats fields + `experienceLog` (Phase 12b + Stage 2a). `LocationPromotionCandidate` + `CampaignLocationSummary.worldLocationId`/stats still TODO (Phase 12c).
+- [backend/src/services/livingWorld/ragService.js](backend/src/services/livingWorld/ragService.js) — Phase 9 shared retrieval; entity types `npc`/`location`/`promotion_candidate`/`lore_chunk`.
+- [backend/src/services/livingWorld/postCampaignWriteback.js](backend/src/services/livingWorld/postCampaignWriteback.js) — top-level orchestrator `runPostCampaignWorldWriteback`. Threads Phase 10 shadow diff → Phase 11 fact extraction → Phase 12 world-change pipeline → Phase 12-lite narrow auto-apply → Phase 12b promotion pipeline.
+- [backend/src/services/livingWorld/postCampaignFactExtraction.js](backend/src/services/livingWorld/postCampaignFactExtraction.js) — Phase 11 LLM extraction of world changes from compressed memory.
+- [backend/src/services/livingWorld/postCampaignWorldChanges.js](backend/src/services/livingWorld/postCampaignWorldChanges.js) — Phase 12 resolver + tiering + NPC `knowledgeBase` auto-apply + `PendingWorldStateChange` upsert + `applyLocationKnowledgeChange` (called by Phase 13 approval route).
+- [backend/src/services/livingWorld/postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js) — Phase 12b Slice A + B: stats collection, dialog harvest, cross-campaign dedup via `ragService('promotion_candidate')`, sticky-status upsert into `NPCPromotionCandidate`.
+- [backend/src/services/livingWorld/postCampaignPromotionVerdict.js](backend/src/services/livingWorld/postCampaignPromotionVerdict.js) — Phase 12b Slice B Haiku verdict module (Zod-validated `{recommend, uniqueness, worldFit, reasons}`, parallel fan-out via `Promise.allSettled`, non-throwing).
+- [backend/src/services/sceneGenerator/processStateChanges/npcs.js](backend/src/services/sceneGenerator/processStateChanges/npcs.js) — inline stats tracking (`computeInteractionDelta`, `initialInteractionFields`). Slice B removed the inline `maybePromote` call — canonical `WorldNPC` rows are never created mid-play.
+- [backend/src/services/livingWorld/questGoalAssigner/index.js](backend/src/services/livingWorld/questGoalAssigner/index.js) — Slice B refactor: operates on all `CampaignNPC` rows; canonical lookup is opt-in per-row (home-derivation only when shadow carries `worldNpcId`).
+- **~~`backend/src/services/livingWorld/npcPromotion.js`~~** — deleted in Slice B. Inline promotion is gone; all canonical `WorldNPC` creation flows through admin approval now.
+- **Phase 13a files (✅ SHIPPED)** — [adminLivingWorld.js](backend/src/routes/adminLivingWorld.js) extended with pending-world-state + promotion-candidate + location-promotion-candidate approve/reject + campaigns list + run-writeback routes (kept single-file per existing convention); [PromotionsTab.jsx](src/components/admin/adminLivingWorld/tabs/PromotionsTab.jsx); `applyNpcKnowledgeChange` + `applyApprovedPendingChange` in [postCampaignWorldChanges.js](backend/src/services/livingWorld/postCampaignWorldChanges.js); `promoteCampaignNpcToWorld` in [postCampaignPromotion.js](backend/src/services/livingWorld/postCampaignPromotion.js); `promoteWorldLocationToCanonical` in [postCampaignLocationPromotion.js](backend/src/services/livingWorld/postCampaignLocationPromotion.js).
+- **Phase 13b files (✅ SHIPPED)** — [CanonGraphTab.jsx](src/components/admin/adminLivingWorld/tabs/CanonGraphTab.jsx); `NPC_CATEGORY_COLORS` added to [mapHelpers.js](src/components/admin/adminLivingWorld/tabs/mapHelpers.js); `GET /v1/admin/livingWorld/canon-graph` endpoint in [adminLivingWorld.js](backend/src/routes/adminLivingWorld.js).
+- **Memory Stage 2b + 3 files (✅ SHIPPED)** — [postCampaignMemoryPromotion.js](backend/src/services/livingWorld/postCampaignMemoryPromotion.js) (`promoteExperienceLogsToCanonical`, pure `buildPromotableEntries` + `mergeKnowledgeBaseForCampaign`); RAG indexing added to [processStateChanges/npcMemoryUpdates.js](backend/src/services/sceneGenerator/processStateChanges/npcMemoryUpdates.js) + shared `memoryEntityId` helper; `sceneQueryText` threaded from [generateSceneStream.js](backend/src/services/sceneGenerator/generateSceneStream.js) → [assembleContext](backend/src/services/aiContextTools/index.js) → [buildLivingWorldContext](backend/src/services/aiContextTools/contextBuilders/livingWorld.js) → [buildNpcMemory](backend/src/services/aiContextTools/contextBuilders/npcBaseline.js) with `shouldUseRagRecall` threshold at 15 entries; `'npc_memory'` + `'location_promotion_candidate'` added to [ragService.js](backend/src/services/livingWorld/ragService.js) entity-type allowlist; `(poprzednia kampania)` tag rendering in [contextSection.js](backend/src/services/sceneGenerator/contextSection.js).
+- **TODO (Phase 13b)** — canon knowledge graph: `backend/src/routes/admin/canonGraph.js` + `src/components/admin/adminLivingWorld/tabs/CanonGraphTab.jsx`.
 
 ## Weryfikacja (playtesty po każdym round)
 
@@ -464,6 +543,9 @@ Cel: przy finalizacji kampanii promować istotne zmiany z campaign shadow → ca
 - [ ] Istniejący `maybePromote()` nie tworzy już WorldNPC inline — tylko kandydata do review
 - [ ] Canon Knowledge Graph tab renderuje canonical world, węzły kolorowane po category/locationType, click → side panel z detalami
 - [ ] RagService: `index()` + `query()` działają dla wszystkich typów entity; batch backfill zrobiony raz
+- [ ] **Stage 2a.1**: NPC z mieszanym poolem (krytyczne memory + 10 nowszych trivialnych) — prompt `[NPC_MEMORY]` pokazuje krytyczne mimo że są stare
+- [ ] **Stage 2a.2**: scene emit memory "gracz zdradził Lyanę" do Gerenta → Lyana dostaje lustrzany wpis z `source: 'mirror'` i obniżoną importance, bez ponownego mirror'owania
+- [ ] **Stage 3**: NPC z 20 experience entries → prompt używa RAG query (scene-relevant top-8), nie slice newest-8. Poniżej progu 15 — slice Stage 2a.1
 
 ## Co świadomie odkładam / odrzucam
 
@@ -480,7 +562,7 @@ Cel: przy finalizacji kampanii promować istotne zmiany z campaign shadow → ca
 - **Seed idempotency** — nowe pola (`isCanonical`, `dangerLevel`, `subGridX/Y`, `knownByDefault`) muszą mieć defaulty. Seed przy każdym boot ponownie `upsert` ustawi, więc issue tylko dla istniejących rows *przed* deployem — migracja Prisma doda defaulty.
 - **Policy: forcedGiver override vs `pickQuestGiver` locality-weighting** — gdy `forcedGiver=true`, `pickQuestGiver()` jest pomijany jawnie. Dokumentuj tę ścieżkę w [backend/src/services/livingWorld/questGoalAssigner.js](backend/src/services/livingWorld/questGoalAssigner.js).
 - **Click-to-enter-sublocation UX** — dispatching syntetycznego usera-message przez pipeline LLM jest semantycznie czyste, ale droższe (nano + scene-gen call). Jeśli koszt stanie się problemem, Round D może dodać "cheap enter" mutację stanu bez regen sceny.
-- **Grid 10×10 vs `worldBounds`** — kampania ma `worldBounds` (JSON `{minX, maxX, minY, maxY}`). Trzymaj grid 10×10 = `worldBounds` {min:-5, max:5} by dane pasowały. Jeśli kampania ma większe bounds (proc-gen), grid może się nie zmieścić — UI fallback: skalowanie.
+- **Grid vs `worldBounds` — rozstrzygnięte (Round C Phase 6)**: player map to **fixed global `-10..10` grid** (canonical world jest ten sam dla wszystkich kampanii — `seedWorld.js` seeduje jeden globalny świat). `Campaign.worldBounds` pozostaje tylko jako **AI placement guardrail** (worldSeeder ring radius, `processTopLevelEntry` out-of-bounds reject, `worldBoundsHint` prompt block). UI nigdy go nie konsumuje. Zob. [knowledge/concepts/living-world.md](../knowledge/concepts/living-world.md) sekcja "Three things that look the same but aren't".
 - **Hearsay policy enforcement** — LLM może mimo instrukcji wygadać lokację spoza `knownLocations` NPC lub wymyślić nieistniejącą. Handler w processStateChanges musi: (1) resolve `locationId` do realnego WorldLocation (po id lub canonicalName); (2) jeśli lokacja nie istnieje → skip + log; (3) jeśli istnieje ale nie w NPC.knownLocations → skip + log jako policy violation. Nie chcemy żeby "wyciek wiedzy" przez LLM stał się bypassem fog-of-war.
 - **Hearsay vs quest starter objective** — jeśli quest objective mówi "znajdź X" i X jest w heard-about, UI powinno podświetlić X na mapie (quest marker), ale nie automatycznie awansować do visited. Dopiero wizyta awansuje. Verify w playtest że nie ma doubled-marking.
 - **Sandbox audit footprint** — audit "co dziś zapisuje do WorldNPC w runtime" musi być wyczerpujący. Pominięcie jednego writera sprawi że canonical world zostanie zmutowany mimo zasady. Sugerowana metoda: grep `prisma.worldNPC.update` + ręczny review każdego call-site. W razie wątpliwości dodać log/warning przy bezpośrednim write do WorldNPC w ścieżce scene-gen.

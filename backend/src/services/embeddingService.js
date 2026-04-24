@@ -178,6 +178,19 @@ export function buildNPCEmbeddingText(npc) {
 }
 
 /**
+ * Build embedding text for a WorldLocation / non-canonical campaign location.
+ * Mirrors the ad-hoc `${name}: ${description}` construction used at every
+ * WorldLocation write-site so the RAG store sees a consistent signal shape.
+ */
+export function buildLocationEmbeddingText(loc) {
+  const parts = [loc.canonicalName || loc.displayName || loc.name || ''];
+  if (loc.locationType && loc.locationType !== 'generic') parts.push(`[${loc.locationType}]`);
+  if (loc.region) parts.push(`region: ${loc.region}`);
+  if (loc.description) parts.push(loc.description);
+  return parts.filter(Boolean).join(' - ').slice(0, 4000);
+}
+
+/**
  * Build embedding text for a codex entry.
  */
 export function buildCodexEmbeddingText(codex) {

@@ -5,7 +5,10 @@ import { compressSceneToSummary, generateLocationSummary } from './memoryCompres
 import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
 import { applyCompanionTravel } from './livingWorld/companionService.js';
 import { handleNpcKills } from './livingWorld/reputationHook.js';
-import { updateDmMemoryFromScene } from './livingWorld/dmMemoryUpdater.js';
+// `updateDmMemoryFromScene` merged into `compressSceneToSummary` — DM notes,
+// hooks + resolvedHookIds now come out of the same nano call that extracts
+// facts/journal/codex/knowledge/needs. The standalone updater is kept in
+// `livingWorld/dmMemoryUpdater.js` for tests / future ad-hoc uses.
 import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
 import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
 import { onLocationEntry, onDeadlinePass } from './livingWorld/globalNpcTriggers.js';
@@ -27,6 +30,7 @@ export async function handlePostSceneWork({
   provider,
   newLoc,
   prevLoc,
+  wrapupText = null,
   llmNanoTimeoutMs,
 }) {
   log.info({ sceneId, campaignId, newLoc, prevLoc }, 'Post-scene work START');
@@ -40,19 +44,45 @@ export async function handlePostSceneWork({
   }
 
   const stateChanges = scene.stateChanges ? JSON.parse(scene.stateChanges) : null;
-  const narrative = scene.narrative;
+
+  // Build the scene transcript from `dialogueSegments` — the sole source of
+  // scene prose. Premium stopped emitting a top-level `narrative` long ago;
+  // it writes narration + dialogue as typed segments in `dialogueSegments`.
+  // (`scene.narrative` is a legacy derived join of narration segments only,
+  // so concatenating it here would duplicate every narration line.) Without
+  // the dialogue lines, nano was analyzing narration-only input and either
+  // returning empty results or flipping `isDominatedScene` (short narration
+  // without quote marks → "dominated" → skip).
+  let sceneDialogueSegments = [];
+  try {
+    sceneDialogueSegments = scene.dialogueSegments ? JSON.parse(scene.dialogueSegments) : [];
+  } catch { /* malformed → treat as empty */ }
+  const sceneTranscript = Array.isArray(sceneDialogueSegments)
+    ? sceneDialogueSegments
+        .map((seg) => {
+          if (!seg || typeof seg.text !== 'string') return '';
+          if (seg.type === 'dialogue') {
+            const speaker = seg.character || 'NPC';
+            return `${speaker}: "${seg.text}"`;
+          }
+          return seg.text;
+        })
+        .filter(Boolean)
+        .join('\n')
+    : '';
 
   // Phase 1: parallel tasks — embedding, premium stateChanges, memory compression, location summary
   const phase1Tasks = [
     generateSceneEmbedding(scene),
   ];
   if (stateChanges) {
-    phase1Tasks.push(processStateChanges(campaignId, stateChanges, { prevLoc }));
+    phase1Tasks.push(processStateChanges(campaignId, stateChanges, { prevLoc, sceneIndex: scene.sceneIndex }));
   }
   phase1Tasks.push(
-    compressSceneToSummary(campaignId, narrative, playerAction, provider, {
+    compressSceneToSummary(campaignId, sceneTranscript, playerAction, provider, {
       timeoutMs: llmNanoTimeoutMs,
       sceneIndex: scene.sceneIndex,
+      wrapupText,
     }),
   );
   if (newLoc && prevLoc && newLoc !== prevLoc) {
@@ -140,20 +170,8 @@ export async function handlePostSceneWork({
     }
   }
 
-  // Living World Phase 4 — DM agent memory update. Runs in parallel with
-  // nano-extraction below (independent data path). Never blocks scene commit.
-  if (campaign?.livingWorldEnabled && narrative) {
-    // Fire-and-forget — the updater handles its own errors.
-    updateDmMemoryFromScene({
-      campaignId,
-      narrative,
-      playerAction,
-      provider,
-      timeoutMs: llmNanoTimeoutMs,
-    }).catch((err) => {
-      log.warn({ err: err?.message, campaignId }, 'DM memory update failed (non-fatal)');
-    });
-  }
+  // Living World Phase 4 — DM agent memory + hooks are now produced inside
+  // compressSceneToSummary (merged extractor). No separate nano call here.
 
   // Living World Phase 5 + D — goal refresh + event-driven NPC triggers.
   // The assigner re-evaluates quest-tied NPCs (wait/seeker/return-home)

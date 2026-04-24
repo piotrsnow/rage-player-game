@@ -117,6 +117,28 @@ export function buildContextSection(contextBlocks) {
         }
       }
 
+      // Stage 1+2 — NPC memory. Unified block combining baseline (seeded in
+      // seedWorld.js + Phase 11-promoted cross-campaign memories) with lived
+      // experience from THIS campaign (CampaignNPC.experienceLog — written by
+      // `npcMemoryUpdates` handler). Flavor for dialog, NOT policy-enforced.
+      // Source prefix lets premium distinguish "always knew" vs "learned in
+      // this playthrough".
+      if (Array.isArray(lw.memoryByNpc) && lw.memoryByNpc.length > 0) {
+        lines.push('');
+        lines.push('## [NPC_MEMORY] — co każdy NPC wie, pamięta i uważa');
+        lines.push('Każdy NPC ma stałe przekonania + osobiste doświadczenia. Część jest publiczna, część NPC ujawni tylko zaufanej osobie lub przy mocnej perswazji. Nie powtarzaj dosłownie — zaadaptuj do stylu NPC. Prefiks `(zawsze)` = stałe przekonanie / baseline; `(ta kampania)` = coś, co NPC PRZEŻYŁ z graczem w trakcie tej rozgrywki (zawsze bierz pod uwagę zanim wygenerujesz dialog). Jeśli nowe wydarzenie w scenie kształtuje dalszy obraz NPC — emit `npcMemoryUpdates`.');
+        for (const b of lw.memoryByNpc) {
+          lines.push(`- ${b.npcName}:`);
+          for (const entry of b.entries) {
+            const tag = entry.source === 'campaign_current' ? '(ta kampania)'
+              : entry.source === 'baseline' ? '(zawsze)'
+              : typeof entry.source === 'string' && entry.source.startsWith('campaign:') ? '(poprzednia kampania)'
+              : `(${entry.source})`;
+            lines.push(`  · ${tag} ${entry.content}`);
+          }
+        }
+      }
+
       // Round B (Phase 4c) — WORLD BOUNDS reminder. Tells premium how much
       // room the player has in each cardinal direction before hitting the
       // edge of this campaign's worldBounds. New non-canonical locations

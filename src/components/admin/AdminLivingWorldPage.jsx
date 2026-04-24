@@ -16,8 +16,10 @@ import LocationListTab from './adminLivingWorld/tabs/LocationListTab';
 import EventTimelineTab from './adminLivingWorld/tabs/EventTimelineTab';
 import ReputationListTab from './adminLivingWorld/tabs/ReputationListTab';
 import MapTab from './adminLivingWorld/tabs/MapTab';
+import PromotionsTab from './adminLivingWorld/tabs/PromotionsTab';
+import CanonGraphTab from './adminLivingWorld/tabs/CanonGraphTab';
 
-const TABS = ['npcs', 'locations', 'events', 'reputation', 'map', 'lore'];
+const TABS = ['npcs', 'locations', 'events', 'reputation', 'map', 'lore', 'promotions', 'canon'];
 
 export default function AdminLivingWorldPage() {
   const [tab, setTab] = useState('npcs');
@@ -87,6 +89,8 @@ export default function AdminLivingWorldPage() {
       {tab === 'reputation' && <ReputationListTab />}
       {tab === 'map' && <MapTab />}
       {tab === 'lore' && <AdminWorldLoreTab />}
+      {tab === 'promotions' && <PromotionsTab />}
+      {tab === 'canon' && <CanonGraphTab />}
     </div>
   );
 }

@@ -35,17 +35,17 @@ export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, 
     // has no key configured, fall back to whichever key is available.
     if (provider === 'anthropic') {
       if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
       return null;
     }
     if (provider === 'openai') {
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
+      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
       if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
       return null;
     }
     // No explicit preference — keep legacy behavior (Anthropic first)
     if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel);
+    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
     return null;
   } catch (err) {
     if (err?.name === 'AbortError') {
@@ -58,27 +58,43 @@ export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, 
   }
 }
 
-async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, model) {
+async function callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, model, reasoning = false) {
+  // Reasoning-family models (gpt-5.x, o-series) reject temperature!=1 and
+  // require max_completion_tokens. Non-reasoning chat models accept both
+  // field names, so we standardize on max_completion_tokens and skip
+  // temperature only for reasoning tier.
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    max_completion_tokens: maxTokens,
+    response_format: { type: 'json_object' },
+  };
+  if (!reasoning) body.temperature = 0;
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKeys.openai}`,
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0,
-      max_tokens: maxTokens,
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    // Surface HTTP failures — silent `return null` lost hours of debugging
+    // when `gpt-5.4-nano` rejected `temperature: 0` + `max_tokens` on every
+    // post-scene call for an entire campaign.
+    const errBody = await response.text().catch(() => '');
+    log.warn(
+      { status: response.status, model, bodyPreview: errBody.slice(0, 500) },
+      'callNanoOpenAI: HTTP error',
+    );
+    return null;
+  }
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (!content) return null;
@@ -104,7 +120,14 @@ async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, mo
     signal,
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    log.warn(
+      { status: response.status, model, bodyPreview: errBody.slice(0, 500) },
+      'callNanoAnthropic: HTTP error',
+    );
+    return null;
+  }
   const data = await response.json();
   const content = data.content?.[0]?.text;
   if (!content) return null;
@@ -115,37 +138,64 @@ async function callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, mo
 
 // ── RUNNING SUMMARY ──
 
-const RUNNING_SUMMARY_SYSTEM = `You extract PLOT-RELEVANT facts and state changes from RPG scene narratives.
+// Unified post-scene extractor. One nano call replaces what used to be two:
+// compressSceneToSummary (player-POV facts + journal + world facts + codex +
+// knowledge + needs) and updateDmMemoryFromScene (GM-POV memory + hooks).
+//
+// `new_facts` / `journal` / `memoryEntries` all ended up capturing the same
+// beats in practice — collapsed into one `memory` list with importance tag.
+// GM-perspective notes with status lifecycle (planned/introduced/waiting/
+// resolved) remain in a separate `gmNotes` list because status matters for
+// dmAgent lifecycle. Hooks are still side-channel.
+const RUNNING_SUMMARY_SYSTEM = `You extract PLOT-RELEVANT signals from RPG scene narratives.
+
 Return JSON:
 {
-  "new_facts": ["fact1"],
-  "remove_facts": ["outdated fact"],
   "dominated": true/false,
-  "journal": "summary" or null,
-  "knowledge_events": [{"summary":"","importance":"low/medium/high","tags":[]}],
-  "knowledge_decisions": [{"choice":"","consequence":""}],
-  "world_facts": [""],
-  "codex_fragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
-  "needs_restoration": {"hunger":50} or null
+  "memory": [{"text":"...","importance":"minor|major"}],
+  "removeMemory": ["outdated fact text"],
+  "gmNotes": [{"summary":"...","status":"planned|introduced|waiting|resolved","plannedFor":"when/where it matters"|null}],
+  "hookAdditions": [{"id":"kebab-slug-unique","kind":"quest|intrigue|reveal|encounter","summary":"...","idealTiming":"..."|null,"priority":"low|normal|high"}],
+  "resolvedHookIds": ["id1"],
+  "worldFacts": [""],
+  "codexFragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
+  "knowledgeEvents": [{"summary":"","importance":"low|medium|high","tags":[]}],
+  "knowledgeDecisions": [{"choice":"","consequence":""}],
+  "needsRestoration": {"hunger":50} or null
 }
 
-CRITICAL — what IS a fact vs what is NOT:
-- FACT: "Grimwald learned from Marta that Barbara lives in Czarnokorzeń" (new information, plot progress)
-- FACT: "Grimwald defeated 3 bandits on the road to Brost" (state change, combat consequence)
-- FACT: "Marta refused to reveal how she knows about Barbara" (NPC relationship change, blocked info)
-- NOT A FACT: "People at the fire flinched" (atmospheric description, no plot impact)
-- NOT A FACT: "Grimwald asked about Mazak" (player action with no answer/result = nothing happened)
-- NOT A FACT: "The wind tugged at banners" (scenery, literary flavor)
+Two perspectives on the same scene:
+
+MEMORY (player POV — WHO did WHAT with WHAT RESULT):
+- FACT: "Grimwald learned from Marta that Barbara lives in Czarnokorzeń"
+- FACT: "Grimwald defeated 3 bandits on the road to Brost"
+- FACT: "Marta refused to reveal how she knows about Barbara" (blocked info still counts)
+- NOT A FACT: "People at the fire flinched" (atmosphere)
+- NOT A FACT: "Grimwald asked about Mazak" (player action without answer = nothing happened)
+- importance: 'major' = plot-pivotal (major reveal, key death, objective resolved, big decision). 'minor' = flavor-useful (disposition shift, small discovery).
+- Max 5 entries per scene. If nothing happened, return [].
+
+GM NOTES (GM POV — what the scene PLANNED / INTRODUCED / RESOLVED):
+- Only things the narrator INTENTIONALLY set up, introduced, or delivered on.
+- Overlap with MEMORY is expected — same beat, different framing.
+  * MEMORY: "Karros zlecił Rudeusowi rozmowę z Mireią" (what happened)
+  * GM NOTE: "[introduced] Karros jako zleceniodawca, [planned] spotkanie z Mireią jako kolejny krok" (narrative state)
+- status values: 'planned' (set up for later), 'introduced' (just made canonical), 'waiting' (pending seed), 'resolved' (paid off).
+- Max 3 entries per scene.
+
+SIDE CHANNELS (independent targets):
+- hookAdditions: max 2. Only if scene OPENED a new narrative thread worth remembering.
+- resolvedHookIds: reference existing hook ids from the state provided. [] if none delivered.
+- worldFacts: concrete world info (place names, political facts, lore). NOT atmosphere.
+- codexFragments: lore explicitly revealed through NPC dialogue.
+- knowledgeEvents/Decisions: key story moments for semantic recall.
+- needsRestoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.
 
 Rules:
-- "dominated": true if scene has NO new information, NO state change, NO NPC reveals, NO combat result. A dramatic question with no answer = dominated.
-- new_facts: max 3. Each must contain WHO did WHAT with WHAT RESULT. If no result → no fact.
-- remove_facts: only facts now contradicted/superseded by this scene.
-- journal: null unless scene had significant plot events. 1-2 sentences max.
-- knowledge_events/decisions: only for key story moments with consequences. [] if nothing.
-- world_facts: concrete new world information (place names, political facts, lore). NOT atmosphere or description. [] if nothing.
-- codex_fragments: lore explicitly revealed through NPC dialogue. [] if no NPC shared knowledge.
-- needs_restoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.`;
+- dominated: true if scene has NO new information, NO state change, NO NPC reveals, NO combat result. A dramatic question with no answer = dominated.
+- removeMemory: only memory entries contradicted/superseded by this scene.
+- Polish language where content is Polish. Keep entries ≤ 120 chars each.
+- Empty array / null when nothing fits — do not fabricate.`;
 
 /**
  * Compress a scene narrative into running summary facts.
@@ -165,11 +215,12 @@ function isDominatedScene(narrative, playerAction) {
  * Called async after each scene generation. Returns extracted state for
  * the caller to process.
  */
-export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs, sceneIndex } = {}) {
+export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs, sceneIndex, wrapupText = null } = {}) {
   if (isDominatedScene(narrative, playerAction)) {
     log.info({ campaignId, sceneIndex, playerAction }, 'compressSceneToSummary SKIP (dominated)');
     return null;
   }
+
 
   try {
     log.info({ campaignId, sceneIndex, narrativeLen: narrative?.length }, 'compressSceneToSummary START');
@@ -200,17 +251,28 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
       return `${q.name}: ${nextObj}`;
     }).join('; ');
 
+    // Premium's `dialogueIfQuestTargetCompleted` is a short epilogue played
+    // after dialogueSegments — it closes a resolved objective AND often
+    // teases the next one ("Mireia zgodziła się opowiedzieć o Jaskini
+    // Szeptów"). CampaignScene schema doesn't persist it, so without folding
+    // it in here the teaser dies. Appended AFTER the 1000-char narrative
+    // slice so a long narrative can't crowd it out.
+    const narrativeBlock = wrapupText
+      ? `${(narrative || '').slice(0, 1000)}\n\n[Quest wrap-up / next-objective teaser]: ${wrapupText}`
+      : (narrative || '').slice(0, 1000);
     const userPrompt = `Player action: "${playerAction || 'N/A'}"
 
 Narrative:
-${(narrative || '').slice(0, 1000)}
+${narrativeBlock}
 
 Current summary (${currentSummary.length} facts):
 ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}`;
 
-    // Reasoning tier + bumped maxTokens: 5.4-nano spends thinking tokens before
-    // the JSON output, so cap needs headroom or output gets truncated.
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1200, reasoning: true });
+    // Reasoning tier + bumped maxTokens: 5.4-nano spends thinking tokens
+    // before JSON output AND we now emit more fields (memory + gmNotes +
+    // hooks + world/codex/knowledge/needs). 1800 leaves headroom against
+    // mid-JSON truncation.
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true });
     if (!result) {
       log.warn({ campaignId, sceneIndex }, 'compressSceneToSummary: nano returned null');
       return null;
@@ -221,54 +283,65 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
       return null;
     }
 
-    // Apply summary updates
+    // ── Apply MEMORY updates to gameStateSummary ──
     let updated = [...currentSummary];
+    const memoryEntries = Array.isArray(result.memory) ? result.memory : [];
 
-    if (result.remove_facts?.length) {
-      const toRemove = new Set(result.remove_facts.map(f => f.toLowerCase()));
-      updated = updated.filter(item => !toRemove.has(factText(item).toLowerCase()));
+    if (result.removeMemory?.length) {
+      const toRemove = new Set(result.removeMemory.map((t) => (typeof t === 'string' ? t.toLowerCase() : '')));
+      updated = updated.filter((item) => !toRemove.has(factText(item).toLowerCase()));
     }
 
-    if (result.new_facts?.length) {
-      for (const fact of result.new_facts) {
-        if (typeof fact === 'string' && fact.trim()) {
-          // Tag with sceneIndex so the prompt assembler can exclude facts from
-          // the last scene (which is shown in full narrative form — no need to
-          // duplicate as compressed fact). Unknown sceneIndex (undefined) means
-          // always include — used by legacy entries without metadata.
-          updated.push({ fact: fact.trim(), sceneIndex: typeof sceneIndex === 'number' ? sceneIndex : null });
-        }
-      }
+    for (const m of memoryEntries) {
+      const text = typeof m === 'string' ? m : m?.text;
+      if (typeof text !== 'string' || !text.trim()) continue;
+      // Tag with sceneIndex so worldBlock's buildRecentContextBlock can exclude
+      // facts from the last scene (shown in full narrative form — no need to
+      // duplicate as compressed fact). `importance` carried through for any
+      // future use (e.g., "keep major facts longer than minor in FIFO 15").
+      updated.push({
+        fact: text.trim(),
+        sceneIndex: typeof sceneIndex === 'number' ? sceneIndex : null,
+        importance: m?.importance === 'major' ? 'major' : 'minor',
+      });
     }
 
     if (updated.length > 15) {
       updated = updated.slice(-15);
     }
-
     coreState.gameStateSummary = updated;
 
-    // Apply world facts to coreState
-    if (result.world_facts?.length) {
+    // ── World facts (append to coreState.world.worldFacts) ──
+    const worldFactsList = Array.isArray(result.worldFacts) ? result.worldFacts : [];
+    if (worldFactsList.length) {
       if (!coreState.world) coreState.world = {};
       if (!coreState.world.worldFacts) coreState.world.worldFacts = [];
-      for (const wf of result.world_facts) {
+      for (const wf of worldFactsList) {
         if (typeof wf === 'string' && wf.trim()) {
           coreState.world.worldFacts.push(wf.trim());
         }
       }
     }
 
-    // Apply journal entries to coreState
-    if (result.journal && typeof result.journal === 'string') {
+    // ── Journal: derived from first 'major' memory entry if none explicit ──
+    // The merged prompt no longer emits a standalone `journal` field — player-
+    // POV significance lives in memory[importance='major']. Pick the first one
+    // as the journal bullet for this scene (back-compat with existing journal
+    // display + CampaignKnowledge flow).
+    const majorMemory = memoryEntries.find((m) => m?.importance === 'major' && typeof m?.text === 'string' && m.text.trim());
+    if (majorMemory) {
       if (!coreState.journalEntries) coreState.journalEntries = [];
-      coreState.journalEntries.push(result.journal);
+      coreState.journalEntries.push(majorMemory.text.trim());
     }
 
-    // Apply needs restoration to character
-    if (result.needs_restoration && typeof result.needs_restoration === 'object') {
+    // ── Character needs ──
+    const needsRestoration = result.needsRestoration && typeof result.needsRestoration === 'object'
+      ? result.needsRestoration
+      : null;
+    if (needsRestoration) {
       const char = coreState.character;
       if (char?.needs) {
-        for (const [key, delta] of Object.entries(result.needs_restoration)) {
+        for (const [key, delta] of Object.entries(needsRestoration)) {
           if (key in char.needs && typeof delta === 'number' && delta > 0) {
             char.needs[key] = Math.min(100, (char.needs[key] ?? 0) + delta);
           }
@@ -281,24 +354,45 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
       data: { coreState: JSON.stringify(coreState) },
     });
 
+    // ── DM agent: persist gmNotes + hooks. Fire-and-forget: dmAgent updates
+    // are soft signals and shouldn't block the scene commit. Errors are
+    // logged by updateDmAgent itself.
+    const gmNotes = Array.isArray(result.gmNotes) ? result.gmNotes : [];
+    const hookAdditions = Array.isArray(result.hookAdditions) ? result.hookAdditions : [];
+    const resolvedHookIds = Array.isArray(result.resolvedHookIds) ? result.resolvedHookIds : [];
+    if (gmNotes.length || hookAdditions.length || resolvedHookIds.length) {
+      // Lazy import — keeps the existing circular-free dep shape. dmMemoryService
+      // clamps + persists via the same path as the old updateDmMemoryFromScene.
+      import('./livingWorld/dmMemoryService.js').then(({ updateDmAgent }) =>
+        updateDmAgent(campaignId, { memoryEntries: gmNotes, hookAdditions, resolvedHookIds })
+      ).catch((err) => log.warn({ err: err?.message, campaignId }, 'dmAgent persist failed (non-fatal)'));
+    }
+
+    const knowledgeEventsList = Array.isArray(result.knowledgeEvents) ? result.knowledgeEvents : [];
+    const knowledgeDecisionsList = Array.isArray(result.knowledgeDecisions) ? result.knowledgeDecisions : [];
+    const codexFragmentsList = Array.isArray(result.codexFragments) ? result.codexFragments : [];
+
     log.info({
       campaignId,
       sceneIndex,
       facts: updated.length,
-      newFacts: result.new_facts?.length || 0,
-      removed: result.remove_facts?.length || 0,
-      worldFacts: result.world_facts?.length || 0,
-      journal: !!result.journal,
-      knowledge: (result.knowledge_events?.length || 0) + (result.knowledge_decisions?.length || 0),
-      codex: result.codex_fragments?.length || 0,
+      newMemory: memoryEntries.length,
+      removed: result.removeMemory?.length || 0,
+      worldFacts: worldFactsList.length,
+      gmNotes: gmNotes.length,
+      hooks: hookAdditions.length,
+      resolvedHooks: resolvedHookIds.length,
+      knowledge: knowledgeEventsList.length + knowledgeDecisionsList.length,
+      codex: codexFragmentsList.length,
     }, 'compressSceneToSummary DONE');
 
-    // Return extracted state for further processing (knowledge, codex)
+    // Return extracted state for further processing (knowledge, codex) by
+    // postSceneWork's phase 6 fan-out into CampaignKnowledge + CampaignCodex.
     return {
-      knowledgeUpdates: (result.knowledge_events?.length || result.knowledge_decisions?.length)
-        ? { events: result.knowledge_events || [], decisions: result.knowledge_decisions || [] }
+      knowledgeUpdates: (knowledgeEventsList.length || knowledgeDecisionsList.length)
+        ? { events: knowledgeEventsList, decisions: knowledgeDecisionsList }
         : null,
-      codexUpdates: result.codex_fragments || [],
+      codexUpdates: codexFragmentsList,
     };
   } catch (err) {
     log.error({ err }, 'Memory compression failed');

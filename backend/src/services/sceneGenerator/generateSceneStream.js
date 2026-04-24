@@ -163,7 +163,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     const inlineKeys = getInlineEntityKeys(coreState);
     const contextBlocks = await assembleContext(
       campaignId, intentResult, currentLocation, inlineKeys,
-      { provider, timeoutMs: llmNanoTimeoutMs },
+      { provider, timeoutMs: llmNanoTimeoutMs, playerAction },
     );
     onEvent({ type: 'context_ready' });
 
@@ -438,6 +438,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
 
     // 9. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
     // Fire-and-forget: don't block the 'complete' event on enqueue failure.
+    //
+    // `wrapupText` carries `dialogueIfQuestTargetCompleted` into the fact
+    // extractor so the teaser ("Mireia promised to tell you about Jaskinia
+    // Szeptów") lands in gameStateSummary and survives into the next scene's
+    // prompt. CampaignScene schema doesn't persist the wrap-up separately,
+    // so without this the continuity signal dies after the 'complete' event.
     enqueuePostSceneWork({
       sceneId: savedScene.id,
       campaignId,
@@ -445,6 +451,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       provider,
       newLoc: sceneResult.stateChanges?.currentLocation || null,
       prevLoc: coreState.world?.currentLocation || null,
+      wrapupText: sceneResult.dialogueIfQuestTargetCompleted?.text || null,
       llmNanoTimeoutMs,
     }).catch((err) =>
       log.error({ err, sceneId: savedScene.id }, 'Failed to enqueue post-scene work')

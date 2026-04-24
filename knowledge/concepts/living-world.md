@@ -16,7 +16,7 @@ Living World tables so legacy campaigns stay unaffected.
 | Phase | What it adds | Primary services |
 |---|---|---|
 | 1 | `WorldLocation` + `WorldNPC` + `WorldEvent` ledger, basic context injection | `worldStateService`, `worldEventLog`, `aiContextTools.buildLivingWorldContext` |
-| 2 | Companion mode, per-campaign lock, deferred outbox, promotion | `companionService`, `npcPromotion`, `deferredOutbox` |
+| 2 | Companion mode, per-campaign lock, deferred outbox | `companionService`, `deferredOutbox` (inline `npcPromotion` deleted in Round E Phase 12b Slice B — canonical promotion is post-campaign admin-review only now) |
 | 3 (partial) | Reputation + attribution ledger schema; `visibility='global'` reads enabled; rate limit + anonymization deferred | `reputationService`, `worldEventLog.forLocation`, `reputationHook` |
 | 4 | DM agent memory per campaign, item attribution hints | `dmMemoryService`, `dmMemoryUpdater`, `processStateChanges.processItemAttributions` |
 | 5 | NPC agent loop (on-demand ticks), quest-driven goal assigner, background goals, event-driven global triggers | `npcAgentLoop`, `questGoalAssigner`, `globalNpcTriggers`, `npcTickDispatcher` |
@@ -30,6 +30,25 @@ Living World tables so legacy campaigns stay unaffected.
 | F | Travel montage (compress trip > 5 km to ONE scene; injected via TRAVEL MONTAGE MODE instruction) + `worldBounds` enforcement in `processTopLevelEntry` (out-of-bounds new top-level rejected) | `aiContextTools.buildTravelBlock` montage flag, `processStateChanges.processTopLevelEntry` bounds check |
 | G — Round A | Schema + content foundation for the plans/living-world-grid-quests-triggers-fog.md roadmap: canonical/non-canonical fog-of-war split, NPC categories, hand-authored wilderness/dungeons/ruins, NPC explicit knowledge seeding, admin-editable world lore injected into every scene | `seedWorld.js` (content + `isCanonical=true` flag), `userDiscoveryService` (canonical/non-canonical routing + `markLocationHeardAbout` + `loadCampaignFog`), `questGoalAssigner.categorize` + `NPC_CATEGORIES`, `aiContextTools.buildWorldLorePreamble`, admin routes `/v1/admin/livingWorld/lore` |
 | H — Round B | Independent CampaignNPC shadow + WorldNPC split (each carries its own activeGoal — canonical ticks in background, shadow tracks quest role), hard-bound starter quest (`startSpawnPicker`), `onComplete.moveNpcToPlayer` quest trigger, hearsay dialog (`[NPC_KNOWLEDGE]` + `locationMentioned` bucket + policy), AI-generated non-canonical locations placed by smart placer (distanceHint + optional direction + random fallback), unified `listLocationsForCampaign` query, `[WORLD BOUNDS]` prompt hint, NPC source policy in quest-gen. See [campaign-sandbox.md](./campaign-sandbox.md) and [hearsay-and-ai-locations.md](./hearsay-and-ai-locations.md) | `campaignSandbox.js`, `startSpawnPicker.js`, `locationQueries.js`, `positionCalculator.computeSmartPosition`, `processStateChanges.fireMoveNpcToPlayerTrigger` + `processLocationMentions`, `campaignGenerator` starter-bind block, `aiContextTools.buildLivingWorldContext` hearsayByNpc + worldBoundsHint |
+| I — Round C | Player tile-grid map (fixed -10..10 grid = canonical world extent, three-state fog with visited / heard-about / unknown, synthetic-message travel dispatch) + sublocation drill-down (parent-sized sub-grid, `Wchodzę do …` dispatch, back = local toggle) + admin Force/Tile-grid toggle with sub-grid drill-down modal (bypass fog) | `routes/livingWorld.js` `GET /campaigns/:id/map`, `routes/adminLivingWorld.js` `GET /graph/sublocations/:parentId`, `hooks/useCampaignMap`, `components/gameplay/worldMap/*` (incl. `SubLocationGrid.jsx` + `subGridRenderer.js`), `components/admin/adminLivingWorld/tabs/{MapTab.jsx, AdminTileGridView.jsx}` |
+| J — Round E Phase 9 | `WorldEntityEmbedding` table + `ragService` unified retrieval for world-scope entities (canonical NPCs/locations, non-canonical campaign locations, dungeon rooms, future lore chunks + promotion candidates). Naive in-process cosine similarity, OpenAI `text-embedding-3-small` (1536d), fire-and-forget index at every world-entity creation site, idempotent `batchBackfillMissing` at end of `seedWorld`. Diverges from campaign-scope vector search (Atlas `$vectorSearch` with inline `embedding` fields) to stay under Atlas shared-tier index cap — swap-friendly when scale demands | `backend/src/services/livingWorld/ragService.js`, `backend/src/services/embeddingService.buildLocationEmbeddingText`, `backend/src/scripts/seedWorld.js#backfillRagEmbeddings`, hooked into `worldStateService.{findOrCreateWorldLocation, findOrCreateWorldNPC, createSublocation}`, `processStateChanges/locations.js`, `worldSeeder.js`, `dungeonSeedGenerator.js` |
+| K — Round E Phases 10/11/12/12-lite/12b | Post-campaign world write-back orchestrator (`runPostCampaignWorldWriteback`). Shadow diff vs canonical (Phase 10) → Haiku fact extraction from compressed memory (Phase 11) → resolver + confidence tiering (Phase 12): HIGH NPC-kind (shadow-corroborated) auto-appends to `WorldNPC.knowledgeBase`; MEDIUM + all locations + unsupported HIGH upsert into `PendingWorldStateChange` (`computeIdempotencyKey` SHA-1 hash, sticky admin status, **no normalization** — different phrasings become distinct rumors) → narrow `alive`/`location` auto-apply to WorldNPC (Phase 12-lite) → NPC promotion pipeline (Phase 12b: stats/structural quest count → dialog sample harvest → Haiku verdict `{recommend, uniqueness, worldFit, reasons}` → cross-campaign dedup via `ragService('promotion_candidate')` → upsert `NPCPromotionCandidate`). Inline `maybePromote` deleted — canonical `WorldNPC` never created mid-play. **No trigger wired** (Phase 13a) | `backend/src/services/livingWorld/postCampaignWriteback.js`, `postCampaignFactExtraction.js`, `postCampaignWorldChanges.js`, `postCampaignPromotion.js`, `postCampaignPromotionVerdict.js`; `WorldLocation.knowledgeBase` + `PendingWorldStateChange` + `NPCPromotionCandidate` in `schema.prisma` |
+
+## Three things that look the same but aren't: canonical world, per-campaign seed, map viewport
+
+It's easy to conflate these because they all talk about "the world". They are distinct:
+
+1. **Canonical world — global, immutable during play.** [backend/src/scripts/seedWorld.js](../../backend/src/scripts/seedWorld.js) upserts a fixed set of ~20 hand-authored `WorldLocation` rows (capital + named villages + dungeons + wilderness + ruins) with `isCanonical=true`. **Same for every campaign.** The player-facing map renders from these rows (plus whatever non-canonical rows the current campaign has created).
+2. **Per-campaign ephemeral seed — hamlets/villages/towns/cities generated at campaign creation.** [worldSeeder.js](../../backend/src/services/livingWorld/worldSeeder.js) (Phase A) picks count + bounds from the campaign's `length` and scatters fresh settlement rows on a ring around (0,0). These rows become canonical too (they live in `WorldLocation`), but were not authored — they were generated for this campaign's flavor.
+3. **Player map viewport — fixed `-10..10` grid.** The tile-grid map (`PlayerWorldMap.jsx`, Round C) always renders on a global `-10..10` range — it does **not** consult `Campaign.worldBounds`. The canonical world is the map; the grid is the canvas.
+
+The per-campaign field **`Campaign.worldBounds`** is an **AI/seeder placement guardrail**, not a viewport:
+- `worldSeeder.seedInitialWorld` uses it to decide the ring radius when scattering ephemeral settlements.
+- `processTopLevelEntry` (Phase F) uses it to reject AI-emitted new top-level locations that fall outside the range.
+- `buildWorldBoundsHint` uses it to tell premium "you have N km of remaining room to the N/E/S/W".
+- **No UI reads it.** The BE map endpoint does not return it; the FE renderer does not consume it.
+
+When in doubt: canonical + bounds are BE concerns (placement, AI constraints); the map viewport is a FE constant.
 
 ## Global visibility — what bubbles up
 
@@ -113,9 +132,11 @@ sublocation, flags matching quests with `forcedGiver=true`, clones the
 starter NPC as CampaignNPC, and discovers the sublocation canonically.
 
 Open follow-ups: `npcLifecycle` pause semantics still operate on canonical
-row (could migrate to shadow if per-campaign pause is ever needed),
-AI-sublocation `subGridX/Y` (AI-generated sublocs don't get drill-down
-slots yet — auto-layout TODO for Round C).
+row (could migrate to shadow if per-campaign pause is ever needed).
+AI-sublocation `subGridX/Y` — resolved in Round C via
+`subGridRenderer.layoutSubsWithFallback`: missing coords get row-major
+auto-fill against the parent's grid size (capital/city 10×10, town 7×7,
+village/hamlet/ruin/dungeon/cave 5×5), overflow silently dropped.
 
 ## NPC tick model (D — clone architecture)
 
@@ -189,7 +210,7 @@ Capital note: Yeralden is shared across campaigns, but each campaign's tier gove
 Two independent additions:
 
 1. **Travel montage** — when `buildTravelBlock` resolves a known-graph path (direct or sensible detour) with `totalDistance > 5 km`, the block sets `montage: true`. `contextSection.js` injects `TRAVEL MONTAGE MODE` instructions telling premium to compress the journey into one 1-2-paragraph scene with at most one minor incident, skipping per-waypoint narration.
-2. **Bounds enforcement** — `processLocationChanges` fetches `campaign.worldBounds` once per batch and `processTopLevelEntry` rejects any new top-level WorldLocation whose computed `regionX/regionY` falls outside those bounds. Silent reject — premium's narration still lands, BE just doesn't materialize the row.
+2. **Bounds enforcement** — `processLocationChanges` fetches `campaign.worldBounds` once per batch and `processTopLevelEntry` rejects any new top-level WorldLocation whose computed `regionX/regionY` falls outside those bounds. Silent reject — premium's narration still lands, BE just doesn't materialize the row. (Note: this is an AI-placement guardrail; it does not affect what the player sees on the map — the player map always renders the full canonical `-10..10` grid regardless.)
 
 ## Critical files
 
@@ -198,7 +219,10 @@ Two independent additions:
 | Schema | [backend/prisma/schema.prisma](../../backend/prisma/schema.prisma) (WorldLocation, WorldNPC, WorldEvent, WorldReputation, WorldNpcAttribution, Campaign.settlementCaps + worldBounds) |
 | Event log | [worldEventLog.js](../../backend/src/services/livingWorld/worldEventLog.js) |
 | Context assembly | [aiContextTools.js](../../backend/src/services/aiContextTools.js) `buildLivingWorldContext`, `buildSeededSettlementsBlock` |
-| Promotion / lifecycle | [npcPromotion.js](../../backend/src/services/livingWorld/npcPromotion.js), [npcLifecycle.js](../../backend/src/services/livingWorld/npcLifecycle.js) |
+| Promotion (post-campaign admin-review) | [postCampaignPromotion.js](../../backend/src/services/livingWorld/postCampaignPromotion.js) + [postCampaignPromotionVerdict.js](../../backend/src/services/livingWorld/postCampaignPromotionVerdict.js) (Round E Phase 12b); inline `npcPromotion.js` deleted |
+| Lifecycle (pause / resume) | [npcLifecycle.js](../../backend/src/services/livingWorld/npcLifecycle.js) |
+| Post-campaign write-back orchestrator | [postCampaignWriteback.js](../../backend/src/services/livingWorld/postCampaignWriteback.js) (Round E Phases 10/11/12/12-lite/12b) |
+| Post-campaign world-change pipeline | [postCampaignWorldChanges.js](../../backend/src/services/livingWorld/postCampaignWorldChanges.js) (Round E Phase 12 — HIGH NPC auto-apply + `PendingWorldStateChange` for MEDIUM + locations) |
 | Goals (quest + background) | [questGoalAssigner.js](../../backend/src/services/livingWorld/questGoalAssigner.js) |
 | Global tick triggers | [globalNpcTriggers.js](../../backend/src/services/livingWorld/globalNpcTriggers.js) |
 | Clone reconciliation | [cloneReconciliation.js](../../backend/src/services/livingWorld/cloneReconciliation.js) |

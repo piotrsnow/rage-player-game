@@ -21,6 +21,10 @@ export default function GameplayModals({
   dispatch,
   autoSave,
   narrator,
+  campaignId,
+  currentSceneId,
+  onTravelFromMap,
+  onEnterSubFromMap,
   // world
   worldModalOpen,
   onWorldModalClose,
@@ -68,6 +72,10 @@ export default function GameplayModals({
           femaleVoices={settings.femaleVoices}
           dispatch={dispatch}
           autoSave={autoSave}
+          campaignId={campaignId}
+          currentSceneId={currentSceneId}
+          onTravel={onTravelFromMap}
+          onEnterSub={onEnterSubFromMap}
           onClose={onWorldModalClose}
         />
       )}

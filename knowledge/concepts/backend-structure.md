@@ -50,8 +50,9 @@ picture see [living-world.md](living-world.md) and
 - `npcAgentLoop.js` — `runNpcTick`, eligibility, action normalization
 - `npcTickDispatcher.js` — legacy scene-cadence batch (fallback)
 - `globalNpcTriggers.js` — `onLocationEntry`, `onDeadlinePass`, `onCrossCampaignMajor` (event-driven, primary)
-- `questGoalAssigner.js` — quest-role inference, goal templates, `generateBackgroundGoal`
-- `npcPromotion.js` — `maybePromote` (CampaignNPC → WorldNPC)
+- `questGoalAssigner.js` — quest-role inference, goal templates, `generateBackgroundGoal`. Round E Phase 12b: operates on all `CampaignNPC` rows (canonical lookup is opt-in per-row)
+- `postCampaignPromotion.js` + `postCampaignPromotionVerdict.js` — post-campaign admin-review promotion pipeline (Round E Phase 12b). Inline `npcPromotion.js` deleted in Slice B — canonical `WorldNPC` rows are never created mid-play anymore
+- `postCampaignWriteback.js`, `postCampaignFactExtraction.js`, `postCampaignWorldChanges.js` — post-campaign orchestrator + Phase 11 LLM fact extraction + Phase 12 world-change pipeline (`PendingWorldStateChange` admin queue + HIGH NPC `knowledgeBase` auto-apply)
 - `npcLifecycle.js` — pause / resume on player location change
 - `companionService.js` — loyalty drift, travel propagation
 - `deferredOutbox.js` — companion trip replay

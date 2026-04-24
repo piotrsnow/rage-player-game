@@ -2,13 +2,52 @@ import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../vectorSearchService.js';
-import { maybePromote } from '../../livingWorld/npcPromotion.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
-export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false } = {}) {
+// Phase 12b — "return visit" signal threshold. Two consecutive scenes with
+// the same NPC (player holds a dialog across scenes) should NOT count as a
+// return. Three+ scenes apart means the player left and came back.
+const RETURN_VISIT_SCENE_GAP = 2;
+
+/**
+ * Pure — compute the `prisma.campaignNPC.update` payload that captures this
+ * scene's interaction with an existing CampaignNPC. Always increments
+ * `interactionCount` and stamps the scene cursor. Conditionally increments
+ * `questInvolvementCount` when the sceneIndex gap since last interaction
+ * qualifies as a return visit (Q3 signal — "player came back to this NPC").
+ *
+ * `sceneIndex` may be null in legacy call paths that don't thread it through —
+ * in that case we just stamp `lastInteractionAt` and skip the return-visit
+ * signal entirely (ranking falls back to interactionCount alone).
+ */
+export function computeInteractionDelta(existing, sceneIndex, now = new Date()) {
+  const data = {
+    interactionCount: { increment: 1 },
+    lastInteractionAt: now,
+  };
+  if (typeof sceneIndex === 'number' && sceneIndex >= 0) {
+    data.lastInteractionSceneIndex = sceneIndex;
+    const prev = existing?.lastInteractionSceneIndex;
+    if (typeof prev === 'number' && sceneIndex - prev >= RETURN_VISIT_SCENE_GAP) {
+      data.questInvolvementCount = { increment: 1 };
+    }
+  }
+  return data;
+}
+
+/** Pure — initial stats fields for a freshly-created CampaignNPC. */
+export function initialInteractionFields(sceneIndex, now = new Date()) {
+  return {
+    interactionCount: 1,
+    lastInteractionAt: now,
+    lastInteractionSceneIndex: typeof sceneIndex === 'number' && sceneIndex >= 0 ? sceneIndex : null,
+  };
+}
+
+export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false, sceneIndex = null } = {}) {
   const affectedNpcIds = [];
 
   for (const npcChange of npcs) {
@@ -22,21 +61,25 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
       });
 
       if (existing) {
-        const updateData = {};
-        if (npcChange.attitude) updateData.attitude = npcChange.attitude;
-        if (npcChange.disposition != null) updateData.disposition = npcChange.disposition;
-        if (npcChange.alive != null) updateData.alive = npcChange.alive;
-        if (npcChange.lastLocation) updateData.lastLocation = npcChange.lastLocation;
+        const contentUpdate = {};
+        if (npcChange.attitude) contentUpdate.attitude = npcChange.attitude;
+        if (npcChange.disposition != null) contentUpdate.disposition = npcChange.disposition;
+        if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
+        if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
         if (npcChange.relationships) {
-          updateData.relationships = JSON.stringify(npcChange.relationships);
+          contentUpdate.relationships = JSON.stringify(npcChange.relationships);
         }
-        if (npcChange.acknowledgedFame === true) updateData.hasAcknowledgedFame = true;
+        if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
 
-        if (Object.keys(updateData).length > 0) {
-          const updated = await prisma.campaignNPC.update({
-            where: { id: existing.id },
-            data: updateData,
-          });
+        const hasContentUpdate = Object.keys(contentUpdate).length > 0;
+        const statsDelta = computeInteractionDelta(existing, sceneIndex);
+        const updated = await prisma.campaignNPC.update({
+          where: { id: existing.id },
+          data: { ...statsDelta, ...contentUpdate },
+        });
+        // Only re-embed + queue downstream work when LLM actually changed
+        // state — bare mentions tick stats but don't require embedding churn.
+        if (hasContentUpdate) {
           const embText = buildNPCEmbeddingText(updated);
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignNPC', updated.id, emb, embText);
@@ -55,6 +98,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               attitude: npcChange.attitude || 'neutral',
               disposition: npcChange.disposition ?? 0,
               relationships: JSON.stringify(npcChange.relationships || []),
+              ...initialInteractionFields(sceneIndex),
             },
           });
           const embText = buildNPCEmbeddingText(created);
@@ -71,22 +115,22 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
     }
   }
 
-  // Living World: attempt promotion for touched NPCs + propagate companion
-  // loyalty drift from dispositionChange. Both parallel, best-effort.
+  // Living World: propagate companion loyalty drift from dispositionChange
+  // for NPCs already linked to a canonical WorldNPC (seeded or admin-promoted).
+  // Ephemeral CampaignNPCs (`worldNpcId=null`) skip this path — canonical
+  // promotion happens post-campaign via the admin-review pipeline (Phase 12b),
+  // no longer inline. Best-effort, never blocks scene commit.
   if (livingWorldEnabled && affectedNpcIds.length > 0) {
-    const promotionTasks = affectedNpcIds.map((id) => maybePromote(id));
     const loyaltyTasks = npcs
       .filter((n) => n.name && typeof n.dispositionChange === 'number' && n.dispositionChange !== 0)
       .map(async (change) => {
         try {
-          // Resolve CampaignNPC → worldNpcId so we can target the canonical row
           const npcId = change.name.toLowerCase().replace(/\s+/g, '_');
           const cn = await prisma.campaignNPC.findUnique({
             where: { campaignId_npcId: { campaignId, npcId } },
             select: { worldNpcId: true, isAgent: true },
           });
           if (!cn?.worldNpcId || !cn.isAgent) return;
-          // Loyalty scale: dispositionChange ±1-5 → same delta on 0-100 loyalty
           const delta = Math.max(-10, Math.min(10, change.dispositionChange));
           await updateLoyalty({
             worldNpcId: cn.worldNpcId,
@@ -98,7 +142,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           log.warn({ err, npcName: change.name, campaignId }, 'Loyalty drift propagation failed');
         }
       });
-    await Promise.allSettled([...promotionTasks, ...loyaltyTasks]);
+    await Promise.allSettled(loyaltyTasks);
   }
 }
 

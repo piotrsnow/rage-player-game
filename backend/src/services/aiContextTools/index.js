@@ -22,7 +22,7 @@ export async function assembleContext(
   selectionResult,
   currentLocation,
   skipKeys = {},
-  { provider = 'openai', timeoutMs = 5000 } = {},
+  { provider = 'openai', timeoutMs = 5000, playerAction = null } = {},
 ) {
   const fetches = [];
 
@@ -50,6 +50,7 @@ export async function assembleContext(
         travelTarget: selectionResult?._intent === 'travel' ? selectionResult._travelTarget : null,
         provider,
         timeoutMs,
+        playerAction,
       })
         .then((data) => ({ type: 'livingWorld', data }))
         .catch((err) => {

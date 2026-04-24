@@ -21,6 +21,8 @@ import {
   DUNGEON_THEMES, DUNGEON_DIFFICULTIES,
 } from '../../data/dungeonTemplates.js';
 import { upsertEdge } from './travelGraph.js';
+import * as ragService from './ragService.js';
+import { buildLocationEmbeddingText } from '../embeddingService.js';
 
 const log = childLogger({ module: 'dungeonSeedGenerator' });
 
@@ -295,6 +297,9 @@ async function persistSeed({ dungeon, rooms, theme, difficulty }) {
         embeddingText: `${name}: ${room.contents?.flavorSeed || room.role}`,
       },
     });
+    // Round E Phase 9 — RAG index for room-level resolution (e.g. future
+    // "NPC died in boss chamber" resolver). Fire-and-forget.
+    ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
     createdRooms.push({ ...room, worldLocationId: created.id });
   }
 

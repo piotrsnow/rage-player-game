@@ -66,6 +66,13 @@ always materializes. The old strict `computeNewPosition` (requires
 direction + travelDistance, drops on missing) is deprecated but still
 exported for tests.
 
+Note on `worldBounds`: it's a per-campaign AI-placement guardrail,
+**not** the player-visible map range. The map viewport is a fixed
+`-10..10` grid (see [living-world.md](./living-world.md) "Three things
+that look the same but aren't"). A campaign with `boundsKm=2.5`
+(Short) restricts where AI/worldSeeder drops new rows, but the player
+still sees the full canonical world on their map.
+
 ### Row shape
 
 - `isCanonical: false`, `createdByCampaignId=<campaign>`, `displayName=<raw AI name>`.

@@ -17,6 +17,8 @@ import {
   getCompanions,
 } from '../services/livingWorld/companionService.js';
 import { generate as generateNpcDialog } from '../services/livingWorld/npcDialog.js';
+import { listLocationsForCampaign } from '../services/livingWorld/locationQueries.js';
+import { loadCampaignFog } from '../services/livingWorld/userDiscoveryService.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
@@ -136,6 +138,88 @@ export async function livingWorldRoutes(fastify) {
     if (!campaign) return;
     const companions = await getCompanions(campaignId);
     return reply.send({ companions });
+  });
+
+  // GET /campaigns/:id/map — unified payload for the player world map
+  // (Round C Phase 6). Merges canonical + campaign-specific locations, fog
+  // state, edges, and resolves the player's current location to an id by
+  // exact-matching coreState.world.currentLocation against displayName /
+  // canonicalName. Mismatch → null + warn log (the tile-grid simply doesn't
+  // pulse; safer than heuristic fuzzy match).
+  fastify.get('/campaigns/:id/map', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', minLength: 1 } },
+      },
+    },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
+    if (!campaign) return;
+
+    const [locations, fog, full] = await Promise.all([
+      listLocationsForCampaign(campaignId, {
+        select: {
+          id: true, canonicalName: true, displayName: true,
+          locationType: true, dangerLevel: true,
+          regionX: true, regionY: true,
+          parentLocationId: true, isCanonical: true,
+          description: true, region: true,
+          subGridX: true, subGridY: true,
+          slotType: true, slotKind: true,
+        },
+      }),
+      loadCampaignFog({ userId: request.user.id, campaignId }),
+      prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { coreState: true },
+      }),
+    ]);
+
+    const locationIds = locations.map((l) => l.id);
+    const edges = locationIds.length === 0 ? [] : await prisma.worldLocationEdge.findMany({
+      where: {
+        fromLocationId: { in: locationIds },
+        toLocationId: { in: locationIds },
+      },
+      select: {
+        id: true, fromLocationId: true, toLocationId: true,
+        terrainType: true, difficulty: true, direction: true, gated: true,
+      },
+    });
+
+    let currentLocationId = null;
+    try {
+      const core = JSON.parse(full?.coreState || '{}');
+      const currentName = core?.world?.currentLocation || null;
+      if (currentName) {
+        const match = locations.find(
+          (l) => l.displayName === currentName || l.canonicalName === currentName
+        );
+        if (match) currentLocationId = match.id;
+        else log.warn({ campaignId, currentName }, 'currentLocation name has no exact WorldLocation match');
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'coreState parse failed for map endpoint');
+    }
+
+    // NOTE: we intentionally do NOT return Campaign.worldBounds. The player
+    // map is a global -10..10 grid (canonical world is the same across all
+    // campaigns). `worldBounds` is a per-campaign AI/seeder placement
+    // guardrail, not the viewport range. See knowledge/concepts/living-world.md.
+    return reply.send({
+      locations,
+      edges,
+      fog: {
+        visited: [...fog.visited],
+        heardAbout: [...fog.heardAbout],
+        discoveredEdgeIds: [...fog.discoveredEdgeIds],
+        discoveredSubLocationIds: [...fog.discoveredSubLocationIds],
+      },
+      currentLocationId,
+    });
   });
 
   // POST /npc-dialog/:worldNpcId — C2 1-on-1 dialog

@@ -14,7 +14,8 @@
 import { ObjectId } from 'mongodb';
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { buildNPCEmbeddingText } from '../embeddingService.js';
+import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../embeddingService.js';
+import * as ragService from './ragService.js';
 
 const log = childLogger({ module: 'worldStateService' });
 
@@ -110,6 +111,20 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
 
   // Create new canonical record. `embeddingText` is populated but no vector
   // is computed — see note at top of file.
+  //
+  // NOTE: this path creates a rogue location with no regionX/regionY because
+  // findOrCreateWorldLocation has no positioning context. It's designed for
+  // seed-time creation OR fallback resolution — mid-play, the proper path is
+  // `processLocationChanges → processTopLevelEntry → computeSmartPosition`
+  // (triggered by LLM emitting `newLocations`). When we reach this branch
+  // during a live campaign, it means premium set `currentLocation` to a brand
+  // new place WITHOUT a matching `newLocations` entry. Log a warning so the
+  // regression surfaces in observability; downstream the location will exist
+  // but won't appear on the player map (missing coords).
+  log.warn(
+    { name, region },
+    'findOrCreateWorldLocation: creating location without coordinates — likely a currentLocation change without matching newLocations emission',
+  );
   const embText = description ? `${name}: ${description}` : name;
   const created = await prisma.worldLocation.create({
     data: {
@@ -120,6 +135,10 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
       embeddingText: embText,
     },
   });
+
+  // Round E Phase 9 — fire-and-forget RAG indexing. ragService.index
+  // internally swallows and logs failures so the caller never sees them.
+  ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
 
   return created;
 }
@@ -170,6 +189,9 @@ export async function findOrCreateWorldNPC(npcData) {
       embeddingText: embText,
     },
   });
+
+  // Round E Phase 9 — RAG index for world-scope retrieval.
+  ragService.index('npc', created.id, embText).catch(() => {});
 
   return created;
 }
@@ -234,7 +256,7 @@ export async function createSublocation({
   const cleanName = name.trim();
   if (!cleanName) return null;
   try {
-    return await prisma.worldLocation.upsert({
+    const row = await prisma.worldLocation.upsert({
       where: { canonicalName: cleanName },
       update: {
         parentLocationId: parent.id,
@@ -262,6 +284,9 @@ export async function createSublocation({
         embeddingText: description ? `${cleanName}: ${description}` : cleanName,
       },
     });
+    // Round E Phase 9 — fire-and-forget RAG indexing for sublocation.
+    ragService.index('location', row.id, buildLocationEmbeddingText(row)).catch(() => {});
+    return row;
   } catch (err) {
     log.warn({ err: err?.message, name: cleanName }, 'createSublocation failed');
     return null;

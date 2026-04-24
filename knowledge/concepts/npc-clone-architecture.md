@@ -22,7 +22,14 @@ hits provider cost and latency quickly. Naive per-scene batch ticks
 
 ### Campaign clone — `CampaignNPC` with `worldNpcId`
 
-- Created at promotion time from the global ([npcPromotion.js](../../backend/src/services/livingWorld/npcPromotion.js)).
+- Created on clone-on-first-encounter via
+  [campaignSandbox.getOrCloneCampaignNpc](../../backend/src/services/livingWorld/campaignSandbox.js)
+  — the shadow snapshot takes a subset of canonical fields and then
+  evolves independently. The reverse direction — CampaignNPC →
+  WorldNPC — is the **post-campaign admin-approval path** via
+  [postCampaignPromotion.js](../../backend/src/services/livingWorld/postCampaignPromotion.js)
+  (Round E Phase 12b). Inline `maybePromote` was deleted in Slice B —
+  canonical `WorldNPC` rows are never created mid-play anymore.
 - Premium AI drives the clone inside scenes: dialogue, movement between
   campaign locations, dispositions, acknowledgments. No dedicated nano
   call per clone — the premium pass already handles it.

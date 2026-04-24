@@ -977,6 +977,10 @@
     "here": "Tutaj",
     "mapExplored": "Odkryte lokacje",
     "mapConnections": "Znane ścieżki",
+    "travelHere": "Wyrusz tutaj",
+    "viewSublocations": "Pokaż sublokacje",
+    "backToMap": "Wróć do mapy",
+    "noSublocations": "Brak sublokacji tutaj.",
     "day": "Dzień",
     "season": "Pora roku",
     "seasons": {

@@ -8,8 +8,11 @@ const TYPE_COLORS = {
 };
 
 export default function QuestsTab({ quests, npcs, navigateTo, t }) {
-  const rawActive = quests?.active || [];
-  const rawCompleted = quests?.completed || [];
+  // Side/personal/faction questy są wyłączone w tym buildzie — feature
+  // do wdrożenia jako system między-kampaniami. Patrz
+  // knowledge/ideas/side-quests-between-campaigns.md.
+  const rawActive = (quests?.active || []).filter((q) => q.type === 'main');
+  const rawCompleted = (quests?.completed || []).filter((q) => q.type === 'main');
   const active = [...rawActive].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const completed = [...rawCompleted].sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
   const [showCompleted, setShowCompleted] = useState(false);

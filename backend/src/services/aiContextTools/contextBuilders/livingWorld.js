@@ -16,6 +16,7 @@ import { buildTravelBlock } from './travel.js';
 import { buildDungeonRoomBlock } from './dungeonRoom.js';
 import { mapAmbientNpcsWithGoals, clearSurfacedIntroHints } from './npcGoalMapping.js';
 import { buildHearsayByNpc } from './hearsay.js';
+import { buildNpcMemory } from './npcBaseline.js';
 import { computeWorldBoundsHint } from './worldBoundsHint.js';
 
 const log = childLogger({ module: 'aiContextTools' });
@@ -42,7 +43,7 @@ function priorityRank(p) {
  *
  * Shape: { locationName, npcs: [{name, role, paused}], recentEvents: [{type, blurb, at}] }
  */
-export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, provider = 'openai', timeoutMs = 5000 } = {}) {
+export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, provider = 'openai', timeoutMs = 5000, playerAction = null } = {}) {
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
@@ -201,7 +202,23 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   // Round B (Phase 4b) — NPC hearsay. Scene prompt renders this as a
   // [NPC_KNOWLEDGE] section so premium respects scope. Builder batches
   // all DB reads (previously N+1 per NPC).
-  const hearsayByNpc = await buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals });
+  // Stage 1+2 — NPC memory: merges hand-authored baseline (WorldNPC.knowledgeBase)
+  // with in-campaign lived experience (CampaignNPC.experienceLog). Rendered
+  // as a `[NPC_MEMORY]` block — flavor, NOT policy-enforced (that's hearsay's job).
+  // Stage 3 — build scene query text for RAG-powered memory recall. Kept
+  // short (single embed per scene, shared across all NPCs present): the
+  // player's last action + the current location name. Only used inside
+  // `buildNpcMemory` when an NPC's merged memory pool exceeds 15 entries;
+  // otherwise the static importance-slice path (Stage 2a.1) wins.
+  const sceneQueryText = [playerAction, location.canonicalName]
+    .filter((s) => typeof s === 'string' && s.trim())
+    .join(' ')
+    .trim() || null;
+
+  const [hearsayByNpc, memoryByNpc] = await Promise.all([
+    buildHearsayByNpc({ ambientNpcs, ambientNpcsWithGoals }),
+    buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQueryText }),
+  ]);
 
   // Background NPC label + key-vs-background split — Phase 7. Key NPCs are
   // WorldNPCs with keyNpc=true; everyone else in `npcs` stays as ambient
@@ -217,6 +234,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     locationType: location.locationType || 'generic',
     npcs: keyAmbient,
     hearsayByNpc,
+    memoryByNpc,
     worldBoundsHint,
     backgroundCount,
     backgroundLabel: settlement?.backgroundLabel || null,

@@ -9,6 +9,7 @@ import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.j
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
+import { processNpcMemoryUpdates } from './npcMemoryUpdates.js';
 import { processKnowledgeUpdates, processCodexUpdates } from './knowledgeCodex.js';
 import { processQuestObjectiveUpdates, processQuestStatusChange } from './quests.js';
 import { processLocationChanges } from './locations.js';
@@ -25,7 +26,7 @@ export { shouldPromoteToGlobal, generateSceneEmbedding };
 
 const log = childLogger({ module: 'sceneGenerator' });
 
-export async function processStateChanges(campaignId, stateChanges, { prevLoc = null } = {}) {
+export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null } = {}) {
   // Fetch campaign once to check living-world flag + userId for Phase 4
   // WorldEvent attribution (cheap — same record is already loaded by
   // postSceneWork for the same campaignId).
@@ -51,7 +52,17 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   const sceneGameTime = new Date();
 
   if (stateChanges.npcs?.length) {
-    await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled });
+    await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled, sceneIndex });
+  }
+
+  // Stage 2 — NPC memory accumulation (shadow only). Runs AFTER processNpcChanges
+  // so any NPC introduced in the same scene already has a CampaignNPC row
+  // the memory can attach to. Not gated on livingWorldEnabled: cross-scene
+  // NPC consistency benefits classic campaigns too. Canonical WorldNPC is
+  // never touched here — post-campaign write-back (Stage 2b) will extract
+  // important entries to WorldNPC.knowledgeBase.
+  if (Array.isArray(stateChanges.npcMemoryUpdates) && stateChanges.npcMemoryUpdates.length > 0) {
+    await processNpcMemoryUpdates(campaignId, stateChanges.npcMemoryUpdates);
   }
 
   // Campaign completion → global WorldEvent (user's explicit requirement:
@@ -235,10 +246,9 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   // Phase 5 — any quest status change (complete/fail) or objective update
   // potentially advances the "next quest" pointer → re-run goal assigner.
-  // Also fires on pure NPC changes because newly-promoted NPCs may need
-  // their first goal (maybePromote already calls the assigner but batch
-  // runs catch cases where promotion returned an existing WorldNPC with
-  // outdated goals from earlier assignments).
+  // Also fires on pure NPC changes so freshly-introduced CampaignNPCs that
+  // hold a quest role get their first goal without waiting for the next
+  // scene's postSceneWork pass.
   if (livingWorldEnabled && (
     stateChanges.completedQuests?.length
     || stateChanges.failedQuests?.length

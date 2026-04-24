@@ -984,6 +984,10 @@
     "here": "Here",
     "mapExplored": "Explored locations",
     "mapConnections": "Known paths",
+    "travelHere": "Travel here",
+    "viewSublocations": "View sublocations",
+    "backToMap": "Back to map",
+    "noSublocations": "No sublocations here.",
     "day": "Day",
     "season": "Season",
     "seasons": {
