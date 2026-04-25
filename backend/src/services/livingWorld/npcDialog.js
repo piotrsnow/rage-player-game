@@ -201,33 +201,22 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
   return lines.join('\n');
 }
 
-function parseDialogHistoryForCampaign(rawJson, campaignId) {
-  if (!rawJson) return [];
-  let parsed;
-  try { parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson; } catch { return []; }
-  if (!parsed || typeof parsed !== 'object') return [];
-  const arr = parsed[campaignId];
+function parseDialogHistoryForCampaign(raw, campaignId) {
+  if (!raw || typeof raw !== 'object') return [];
+  const arr = raw[campaignId];
   return Array.isArray(arr) ? arr : [];
 }
 
-function parseKnowledgeBase(rawJson) {
-  if (!rawJson) return [];
-  try {
-    const parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function parseKnowledgeBase(raw) {
+  return Array.isArray(raw) ? raw : [];
 }
 
 async function appendToHistory({ worldNpcId, campaignId, npc, playerMessage, reply }) {
-  const allHistory = (() => {
-    if (!npc.dialogHistory) return {};
-    try { return typeof npc.dialogHistory === 'string' ? JSON.parse(npc.dialogHistory) : npc.dialogHistory; }
-    catch { return {}; }
-  })();
+  const allHistory = (npc.dialogHistory && typeof npc.dialogHistory === 'object')
+    ? { ...npc.dialogHistory }
+    : {};
 
-  const list = Array.isArray(allHistory[campaignId]) ? allHistory[campaignId] : [];
+  const list = Array.isArray(allHistory[campaignId]) ? [...allHistory[campaignId]] : [];
   list.push({
     playerMsg: truncate(playerMessage, 600),
     npcResponse: truncate(reply.dialog, 600),
@@ -235,7 +224,6 @@ async function appendToHistory({ worldNpcId, campaignId, npc, playerMessage, rep
     at: new Date().toISOString(),
   });
 
-  // Rolling cap — drop oldest. Phase 2+ may compress oldest via nano summary.
   while (list.length > HISTORY_CAP) list.shift();
 
   allHistory[campaignId] = list;
@@ -243,7 +231,7 @@ async function appendToHistory({ worldNpcId, campaignId, npc, playerMessage, rep
   try {
     await prisma.worldNPC.update({
       where: { id: worldNpcId },
-      data: { dialogHistory: JSON.stringify(allHistory) },
+      data: { dialogHistory: allHistory },
     });
   } catch (err) {
     log.warn({ err, worldNpcId, campaignId }, 'Failed to persist dialog history (non-fatal)');

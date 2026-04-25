@@ -89,12 +89,7 @@ export async function assignGoalsForCampaign(campaignId) {
     const characterName = actorCharacterId
       ? await resolveCharacterName(actorCharacterId)
       : null;
-    const playerLocation = (() => {
-      try {
-        const core = JSON.parse(campaign.coreState || '{}');
-        return core?.world?.currentLocation || null;
-      } catch { return null; }
-    })();
+    const playerLocation = (campaign.coreState || {})?.world?.currentLocation || null;
     const playerLocNorm = String(playerLocation || '').toLowerCase().trim();
 
     let assigned = 0;

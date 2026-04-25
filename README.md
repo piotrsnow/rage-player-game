@@ -27,17 +27,14 @@ RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an 
 
 ```bash
 npm run setup                          # root + backend deps, prisma generate
-cp backend/.env.example backend/.env   # fill in DATABASE_URL (Atlas SRV), JWT_SECRET, keys
-npm run dev                            # docker compose up --build --watch (backend :3001)
+cp backend/.env.example backend/.env   # fill in JWT_SECRET, API_KEY_ENCRYPTION_SECRET, AI keys
+npm run dev                            # docker compose up --build --watch (db + backend :3001)
+cd backend && npm run db:migrate       # apply Prisma migrations to the local Postgres
 ```
 
-**MongoDB is Atlas-only** — set `DATABASE_URL` to an Atlas SRV string in `.env` before booting. The backend is the sole AI dispatch path; users can paste their own provider keys in Settings which are stored encrypted server-side.
+**Database** is Postgres 16 + pgvector, bundled as the `db` service in `docker-compose.yml`. `DATABASE_URL` defaults to `postgresql://rpgon:rpgon@db:5432/rpgon` for compose and `localhost:5432` for host-machine runs — no `.env` editing required for offline dev. The backend is the sole AI dispatch path; users can paste their own provider keys in Settings which are stored encrypted server-side.
 
-For vector search, run once per Atlas cluster:
-
-```bash
-cd backend && node src/scripts/createVectorIndexes.js
-```
+HNSW vector indexes ship inside the init migration — there is no separate setup script.
 
 ### Documentation
 
@@ -74,7 +71,7 @@ RPGon to przeglądarkowa gra RPG z narratorem AI, zbudowana na **autorskim syste
 
 ## Architektura
 
-Backend jest jedyną ścieżką dispatcha AI — frontend nie rozmawia bezpośrednio z providerami. Scena streamuje się bezpośrednio z route'a (Fastify SSE), a post-scene work (embedding, kompresja pamięci, podsumowania) jedzie przez Cloud Tasks (prod) albo inline fire-and-forget (dev). Bez Redisa — refresh tokeny w Mongo (TTL index), rate-limit + idempotency in-memory per-instance.
+Backend jest jedyną ścieżką dispatcha AI — frontend nie rozmawia bezpośrednio z providerami. Scena streamuje się bezpośrednio z route'a (Fastify SSE), a post-scene work (embedding, kompresja pamięci, podsumowania) jedzie przez Cloud Tasks (prod) albo inline fire-and-forget (dev). Bez Redisa — refresh tokeny w Postgresie (cleanup co 10 min via `setInterval`), rate-limit + idempotency in-memory per-instance.
 
 ```mermaid
 graph TB
@@ -531,14 +528,14 @@ rage-player-game/
 │       │   ├── multiplayerSceneFlow.js # Shared flow for APPROVE_ACTIONS + SOLO_ACTION
 │       │   ├── stateValidator.js       # MP state-change validation
 │       │   ├── embeddingService.js     # OpenAI embeddings + in-memory cache
-│       │   ├── vectorSearchService.js  # Atlas Vector Search
-│       │   ├── mongoNative.js          # Raw driver (for BSON embedding arrays)
+│       │   ├── vectorSearchService.js  # pgvector cosine via $queryRaw
+│       │   ├── embeddingWrite.js       # vector(1536) writer with table allowlist
 │       │   ├── apiKeyService.js        # AES-256 key encryption
-│       │   └── refreshTokenService.js  # Opaque refresh tokens in MongoDB (TTL index)
+│       │   └── refreshTokenService.js  # Opaque refresh tokens in Postgres + 10-min reaper
 │       ├── plugins/                    # auth, csrf, idempotency (in-memory), rateLimitKey (in-memory), cors
 │       ├── lib/                        # prisma, logger
 │       ├── data/equipment/             # Bestiary, weapons, armour
-│       └── scripts/                    # createVectorIndexes, createRefreshTokenTtlIndex
+│       └── scripts/                    # generatePrefabs, importPrefabsFromModels3d
 │
 ├── shared/                             # Domain logic used by FE and BE
 │   ├── domain/                         # combatIntent, luck, pricing, stateValidation, dialogueRepair,
@@ -569,8 +566,7 @@ rage-player-game/
 ### Wymagania
 
 - **Node.js 18+** (lokalne testy vitest / playwright)
-- **Docker + Docker Compose** (uruchomienie stacku)
-- **MongoDB Atlas** — klaster (free tier wystarcza na pre-prod)
+- **Docker + Docker Compose** (uruchomienie stacku — bundled Postgres + pgvector + backend)
 - **Klucze API:** OpenAI lub Anthropic (wymagane), Gemini / ElevenLabs / Stability / Meshy (opcjonalne)
 
 ### Instalacja
@@ -581,30 +577,28 @@ npm run setup
 
 # Konfiguracja backendu
 cp backend/.env.example backend/.env
-# Uzupełnij DATABASE_URL (Atlas SRV), JWT_SECRET, API_KEY_ENCRYPTION_SECRET + klucze
+# Uzupełnij JWT_SECRET, API_KEY_ENCRYPTION_SECRET + klucze AI. DATABASE_URL ma sensowny default.
 
-# Uruchom backend w Dockerze
-npm run dev           # docker compose up --build --watch (backend :3001)
+# Uruchom stack w Dockerze (Postgres + pgvector + backend)
+npm run dev           # docker compose up --build --watch (db + backend :3001)
 npm run dev:down      # docker compose down
 npm run dev:logs      # tail backend logs
+
+# Apply migracje do lokalnego Postgresa (jednorazowo lub po zmianach schema.prisma)
+cd backend && npm run db:migrate
 ```
 
 Frontend jest serwowany przez backend (build dostarczony w obrazie Dockera) pod `http://localhost:3001`. Do e2e / szybkiej iteracji FE lokalnie użyj `npm run dev:frontend` (vite :5173) — wymagane przez Playwright. W dev post-scene work idzie inline — bez Cloud Tasks.
 
-### Jednorazowy setup — Atlas
+### Indeksy
 
-```bash
-cd backend && node src/scripts/createVectorIndexes.js        # vector search indexes
-cd backend && node src/scripts/createRefreshTokenTtlIndex.js # TTL index dla refresh tokenów
-```
-
-Pierwszy skrypt tworzy indeksy vector search na kolekcjach `CampaignScene`, `CampaignNPC`, `CampaignKnowledge`, `CampaignCodex`. Drugi włącza automatyczny cleanup wygasłych refresh tokenów.
+HNSW vector indeksy są w init migration (`0000_init_postgres/migration.sql`) — `prisma migrate deploy` aplikuje je razem ze schematem. Refresh-token cleanup włącza się sam w `server.js` (`startPeriodicCleanup`).
 
 ### Zmienne środowiskowe (`backend/.env`)
 
 | Zmienna | Wymagana | Opis |
 |---|---|---|
-| `DATABASE_URL` | **Tak** | Connection string MongoDB Atlas (SRV). Hard-failuje boot jeśli nie jest ustawiona. |
+| `DATABASE_URL` | Nie | Connection string Postgres. Default `postgresql://rpgon:rpgon@db:5432/rpgon` (compose) / `localhost:5432` (host). |
 | `JWT_SECRET` | **Tak** | Sekret do podpisywania JWT access tokenów |
 | `API_KEY_ENCRYPTION_SECRET` | **Tak** | 32 hex chars, do szyfrowania kluczy API przechowywanych w DB |
 | `PORT` | Nie | Port serwera (domyślnie 3001, 8080 w compose) |

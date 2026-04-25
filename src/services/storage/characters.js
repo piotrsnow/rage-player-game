@@ -129,10 +129,6 @@ export async function saveCharacter(character) {
         campaignCount: character.campaignCount || 0,
         voiceId: character.voiceId || '',
         voiceName: character.voiceName || '',
-        // Legacy WFRP fields kept for the CharacterCreationModal back-compat
-        careerData: character.career || character.careerData || {},
-        characteristics: character.characteristics || {},
-        advances: character.advances || {},
       };
 
       let saved;
@@ -202,7 +198,6 @@ export async function loadCharacter(id) {
       return {
         ...char,
         age: normalizeCharacterAge(char.age),
-        career: char.careerData,
         backendId: char.id,
       };
     } catch (err) {

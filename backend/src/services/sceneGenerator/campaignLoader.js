@@ -1,11 +1,12 @@
 import { prisma } from '../../lib/prisma.js';
 import { deserializeCharacterRow } from '../characterMutations.js';
+import { getCampaignCharacterIds } from '../campaignSync.js';
 
 /**
  * Load all DB state needed for scene generation for a given campaign:
- * - campaign row (coreState + characterIds)
+ * - campaign row (coreState)
  * - normalized NPCs / quests / codex / knowledge
- * - the active player character (first characterId)
+ * - the active player character (first participant)
  *
  * Returns { coreState, activeCharacter, activeCharacterId, dbNpcs, dbQuests,
  * dbCodex, dbKnowledge }. `coreState` has had npcs/quests/codexSummary/
@@ -13,10 +14,10 @@ import { deserializeCharacterRow } from '../characterMutations.js';
  * sees a single hydrated view.
  */
 export async function loadCampaignState(campaignId) {
-  const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge] = await Promise.all([
+  const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge, characterIds] = await Promise.all([
     prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { coreState: true, characterIds: true, livingWorldEnabled: true },
+      select: { coreState: true, livingWorldEnabled: true },
     }),
     prisma.campaignNPC.findMany({ where: { campaignId } }),
     prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
@@ -32,14 +33,13 @@ export async function loadCampaignState(campaignId) {
       orderBy: { createdAt: 'desc' },
       take: 5,
     }),
+    getCampaignCharacterIds(campaignId),
   ]);
 
   if (!campaign) throw new Error('Campaign not found');
-  const coreState = JSON.parse(campaign.coreState);
+  const coreState = campaign.coreState || {};
 
-  // Load the active player character from the Character collection.
-  // Single-player → characterIds[0]. Multiplayer routes through multiplayerAI.
-  const characterIds = Array.isArray(campaign.characterIds) ? campaign.characterIds : [];
+  // Single-player → first participant. Multiplayer routes through multiplayerAI.
   const activeCharacterId = characterIds[0] || null;
   let activeCharacter = null;
   if (activeCharacterId) {
@@ -56,7 +56,7 @@ export async function loadCampaignState(campaignId) {
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
-      notes: n.notes, relationships: JSON.parse(n.relationships || '[]'),
+      notes: n.notes, relationships: Array.isArray(n.relationships) ? n.relationships : [],
     }));
   }
 
@@ -68,9 +68,9 @@ export async function loadCampaignState(campaignId) {
         id: q.questId, name: q.name, type: q.type, description: q.description,
         completionCondition: q.completionCondition, questGiverId: q.questGiverId,
         turnInNpcId: q.turnInNpcId, locationId: q.locationId,
-        prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
-        objectives: JSON.parse(q.objectives || '[]'),
-        reward: q.reward ? JSON.parse(q.reward) : null,
+        prerequisiteQuestIds: Array.isArray(q.prerequisiteQuestIds) ? q.prerequisiteQuestIds : [],
+        objectives: Array.isArray(q.objectives) ? q.objectives : [],
+        reward: q.reward ?? null,
       };
       if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });
       else active.push(quest);
@@ -82,7 +82,7 @@ export async function loadCampaignState(campaignId) {
     if (!coreState.world) coreState.world = {};
     const ASPECT_TYPES = ['history', 'description', 'location', 'weakness', 'rumor', 'technical', 'political'];
     coreState.world.codexSummary = dbCodex.map((c) => {
-      const fragments = JSON.parse(c.fragments || '[]');
+      const fragments = Array.isArray(c.fragments) ? c.fragments : [];
       const knownAspects = [...new Set(fragments.map(f => f.aspect).filter(Boolean))];
       const canReveal = ASPECT_TYPES.filter(a => !knownAspects.includes(a));
       return { name: c.name, category: c.category, knownAspects, canReveal };

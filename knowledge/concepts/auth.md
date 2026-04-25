@@ -71,9 +71,9 @@ User doesn't see 401s from stale access tokens — they just see the retry land.
 
 ## Persistence
 
-Refresh tokens live in MongoDB with a TTL index on `expiresAt` — no Redis dependency. The `RefreshToken` row is created on register/login and deleted on logout; expired rows are purged automatically by MongoDB.
+Refresh tokens live in Postgres with a btree index on `expiresAt` — no Redis dependency. The `RefreshToken` row is created on register/login and deleted on logout; expired rows are reaped by an in-process timer.
 
-One-time setup: `cd backend && node src/scripts/createRefreshTokenTtlIndex.js` — also re-run after any `db:push`, because Prisma drops the index when the schema omits it.
+`refreshTokenService.startPeriodicCleanup()` runs a `setInterval` every 10 min via `server.js`; each tick `DELETE`s rows where `expiresAt < now()`. `verifyRefreshToken` also reaps eagerly to short-circuit reuse of an expired cookie between ticks. No one-time index script — the migration owns the schema.
 
 ## Admin flag
 
@@ -103,12 +103,12 @@ Threaded through scene generation via the `userApiKeys` option — `sceneGenerat
 
 ## When debugging auth
 
-1. **"Logged out on every page reload."** `bootstrapAuth()` isn't firing or failing. Check SettingsContext mount effect + Network tab for POST /refresh. Likely the refresh cookie wasn't set (CORS `credentials: 'include'` misconfigured) or the `RefreshToken` TTL index is missing (cookie points at a row that was never persisted).
+1. **"Logged out on every page reload."** `bootstrapAuth()` isn't firing or failing. Check SettingsContext mount effect + Network tab for POST /refresh. Likely the refresh cookie wasn't set (CORS `credentials: 'include'` misconfigured) or the cookie points at a row that was never persisted.
 2. **"CSRF errors on refresh."** FE isn't reading the `csrf_token` cookie or not injecting `X-CSRF-Token`. Check `apiClient.js` header injection path.
 3. **"Auto-refresh loops."** Refresh itself returning 401 — the refresh token expired or was revoked. Should be caught and clear auth state; if it's looping, `_refreshInFlight` dedup is broken.
 4. **"Admin panel returns 403 for a user who IS admin."** The `isAdmin` claim was minted in an older token — stale for up to 15 min. Refresh access token (client will do it automatically on next 401) or re-login to pick up the new claim.
 5. **"User key doesn't work."** `resolveApiKey` precedence: per-user encrypted bundle > env var. If env is set, it wins UNLESS the user key is present. Check `User.apiKeys` row actually has the encrypted value.
-6. **"Refresh silently fails."** `RefreshToken` collection missing the TTL index → tokens don't get purged, but cookie-to-row lookup still works. More likely: the script `createRefreshTokenTtlIndex.js` wasn't re-run after the last `db:push`.
+6. **"Refresh silently fails."** Cookie-to-row lookup either misses (row reaped early — check `expiresAt`) or the userId in the cookie doesn't match the stored row (sanity check in `verifyRefreshToken`). If reaper isn't running, expired rows accumulate but verify still works.
 
 ## Deferred / not yet shipped
 

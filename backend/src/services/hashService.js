@@ -21,9 +21,11 @@ export function hashFromParams(params) {
   return createHash('sha256').update(normalized).digest('hex').substring(0, 24);
 }
 
-const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
-/** Return `val` if it's a valid MongoDB ObjectID hex string, otherwise `undefined`. */
-export function toObjectId(val) {
-  return typeof val === 'string' && OBJECT_ID_RE.test(val) ? val : undefined;
+/** Return `val` if it's a valid UUID string, otherwise `undefined`. Used by
+ *  media/proxy routes to gate optional `campaignId` writes — Prisma rejects
+ *  non-UUID input on @db.Uuid columns, so we pre-filter at the boundary. */
+export function toUuid(val) {
+  return typeof val === 'string' && UUID_RE.test(val) ? val : undefined;
 }

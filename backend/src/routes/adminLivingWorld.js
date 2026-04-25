@@ -406,10 +406,7 @@ export async function adminLivingWorldRoutes(fastify) {
     return {
       nodes,
       edges: overworldEdges.map((e) => {
-        let campaignCount = 0;
-        try {
-          campaignCount = JSON.parse(e.discoveredByCampaigns || '[]').length;
-        } catch { /* ignore */ }
+        const campaignCount = Array.isArray(e.discoveredByCampaigns) ? e.discoveredByCampaigns.length : 0;
         return {
           id: e.id,
           from: e.fromLocationId,

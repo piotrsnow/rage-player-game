@@ -234,7 +234,6 @@ export default function CampaignCreatorPage() {
     const normalized = {
       ...nextCharacter,
       ...saved,
-      career: saved?.career || saved?.careerData || nextCharacter.career,
     };
     const previousId = selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id;
     const nextId = normalized.backendId || normalized.localId || normalized.id || previousId;
@@ -249,7 +248,6 @@ export default function CampaignCreatorPage() {
           return {
             ...entry,
             ...normalized,
-            careerData: normalized.career || normalized.careerData || entry.careerData,
           };
         }
         return entry;

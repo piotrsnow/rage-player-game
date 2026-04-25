@@ -85,17 +85,14 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
   if (!campaign) return;
 
   let playerLocationId = null;
-  try {
-    const core = JSON.parse(campaign.coreState || '{}');
-    const locName = core?.world?.currentLocation;
-    if (locName) {
-      const row = await prisma.worldLocation.findFirst({
-        where: { canonicalName: locName },
-        select: { id: true },
-      });
-      playerLocationId = row?.id || null;
-    }
-  } catch { /* ignore — player location unknown */ }
+  const locName = campaign.coreState?.world?.currentLocation;
+  if (locName) {
+    const row = await prisma.worldLocation.findFirst({
+      where: { canonicalName: locName },
+      select: { id: true },
+    }).catch(() => null);
+    playerLocationId = row?.id || null;
+  }
   if (!playerLocationId) return;
 
   // Resolve NPC: canonicalId → name → CampaignNPC.npcId
@@ -149,7 +146,7 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
     try {
       const quest = await resolveActiveQuest(campaignId, update.questId);
       if (!quest) continue;
-      const objectives = JSON.parse(quest.objectives || '[]');
+      const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
       const targetObj = resolveObjective(objectives, update.objectiveId);
       if (!targetObj) {
         log.warn({ campaignId, questId: quest.questId, objectiveId: update.objectiveId }, 'Objective id from premium did not match — ignored');
@@ -167,7 +164,7 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
       });
       await prisma.campaignQuest.update({
         where: { id: quest.id },
-        data: { objectives: JSON.stringify(updated) },
+        data: { objectives: updated },
       });
       if (update.completed) touchedQuestIds.add(quest.questId);
 
@@ -201,7 +198,7 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
         where: { campaignId, questId },
       });
       if (!quest || quest.status === 'completed') continue;
-      const objectives = JSON.parse(quest.objectives || '[]');
+      const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
       if (objectives.length > 0 && objectives.every(o => o.completed)) {
         await prisma.campaignQuest.update({
           where: { id: quest.id },

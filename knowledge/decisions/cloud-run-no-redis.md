@@ -28,7 +28,7 @@ Full delete of Redis, BullMQ, Valkey, and all fallback/dead-code paths. Cloud-Ru
 
 - **Positive**: $45/mo savings, simpler architecture, fewer moving parts in docker-compose, no Redis ops burden.
 - **Negative**: one real regression — no automatic retry on instance death mid-SSE (FE retry button covers this, <0.5% of requests). Rate limiting is per-instance (acceptable at single-instance scale, add token bucket if 429s spike at 500 DAU).
-- **Migration**: one-time `node backend/src/scripts/createRefreshTokenTtlIndex.js` to create TTL index on Atlas.
+- **Migration (post-Postgres)**: no setup script. Refresh-token reaping runs in-process via `refreshTokenService.startPeriodicCleanup()` (10-min interval, wired from `server.js`).
 
 ## Related
 

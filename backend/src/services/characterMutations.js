@@ -310,66 +310,46 @@ export function applyCharacterStateChanges(character, changes) {
 }
 
 // ── Prisma serialization helpers ──
+// Postgres + JSONB: Prisma roundtrips Json columns as native objects/arrays,
+// so writes pass-through directly and reads are already deserialized.
 
 const CHARACTER_JSON_FIELDS = [
   'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
   'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
-  'careerData', 'characteristics', 'advances',
+  'knownTitles', 'clearedDungeonIds', 'activeDungeonState',
 ];
 
 /**
  * Build a Prisma update payload from a mutated character snapshot.
- * Re-stringifies all JSON fields and copies scalar fields.
  */
 export function characterToPrismaUpdate(snapshot) {
   if (!snapshot) return {};
   const data = {};
 
-  // Scalar fields
   const scalars = [
     'name', 'age', 'gender', 'species',
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
     'backstory', 'portraitUrl', 'voiceId', 'voiceName',
-    'campaignCount', 'xp', 'xpSpent', 'status',
+    'campaignCount', 'fame', 'infamy', 'status',
     'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
   ];
   for (const key of scalars) {
     if (snapshot[key] !== undefined) data[key] = snapshot[key];
   }
 
-  // JSON fields
   for (const key of CHARACTER_JSON_FIELDS) {
-    if (snapshot[key] !== undefined) data[key] = JSON.stringify(snapshot[key]);
+    if (snapshot[key] !== undefined) data[key] = snapshot[key];
   }
 
   return data;
 }
 
 /**
- * Deserialize a raw Prisma Character row into a plain JS object with parsed
- * JSON fields, ready for use by frontend or applyCharacterStateChanges().
+ * Identity passthrough kept for callsite stability — Prisma already returns
+ * Json columns as native values from Postgres. Callers used to need a parse
+ * wrapper for the Mongo provider's String-as-JSON storage.
  */
 export function deserializeCharacterRow(row) {
-  if (!row) return null;
-  const safe = (raw, fallback) => {
-    try { return JSON.parse(raw); } catch { return fallback; }
-  };
-  return {
-    ...row,
-    attributes: safe(row.attributes, { sila: 10, inteligencja: 10, charyzma: 10, zrecznosc: 10, wytrzymalosc: 10, szczescie: 5 }),
-    skills: safe(row.skills, {}),
-    mana: safe(row.mana, { current: 0, max: 0 }),
-    spells: safe(row.spells, { known: [], usageCounts: {}, scrolls: [] }),
-    inventory: safe(row.inventory, []),
-    materialBag: safe(row.materialBag, []),
-    money: safe(row.money, { gold: 0, silver: 0, copper: 0 }),
-    equipped: safe(row.equipped, { mainHand: null, offHand: null, armour: null }),
-    statuses: safe(row.statuses, []),
-    needs: safe(row.needs, createDefaultNeeds()),
-    customAttackPresets: safe(row.customAttackPresets, []),
-    careerData: safe(row.careerData, {}),
-    characteristics: safe(row.characteristics, {}),
-    advances: safe(row.advances, {}),
-  };
+  return row || null;
 }

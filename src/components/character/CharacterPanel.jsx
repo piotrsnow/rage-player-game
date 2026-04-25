@@ -227,7 +227,7 @@ export default function CharacterPanel({
 
         <div className="lg:col-span-5 space-y-6 animate-fade-in">
           <StatsGrid
-            attributes={character.attributes || character.characteristics}
+            attributes={character.attributes}
             mana={character.mana}
             characterLevel={character.characterLevel}
             characterXp={character.characterXp}

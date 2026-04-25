@@ -12,10 +12,8 @@ import { prisma } from '../../../lib/prisma.js';
  */
 export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   const SETTLEMENT_TYPES = ['hamlet', 'village', 'town', 'city', 'capital'];
-  let bounds = null;
-  try {
-    bounds = campaign?.worldBounds ? JSON.parse(campaign.worldBounds) : null;
-  } catch { bounds = null; }
+  const bounds = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
+    ? campaign.worldBounds : null;
 
   // Fetch capital (always visible) + in-bounds settlements.
   const capital = await prisma.worldLocation.findFirst({
@@ -60,8 +58,8 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   });
   entries.sort((a, b) => a.distanceKm - b.distanceKm);
 
-  let caps = null;
-  try { caps = campaign?.settlementCaps ? JSON.parse(campaign.settlementCaps) : null; } catch { caps = null; }
+  const caps = (campaign?.settlementCaps && typeof campaign.settlementCaps === 'object')
+    ? campaign.settlementCaps : null;
 
   return { entries, caps };
 }

@@ -13,14 +13,9 @@ const log = childLogger({ module: 'aiContextTools' });
  * config drift.
  */
 export function computeWorldBoundsHint(campaign, location) {
-  if (!campaign?.worldBounds) return null;
-  let b = null;
-  try {
-    b = JSON.parse(campaign.worldBounds);
-  } catch (err) {
-    log.warn({ err: err?.message, campaignId: campaign.id }, 'worldBounds JSON malformed — skipping hint');
-    return null;
-  }
+  const b = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
+    ? campaign.worldBounds : null;
+  if (!b) return null;
   if (
     !Number.isFinite(b?.minX) || !Number.isFinite(b?.maxX)
     || !Number.isFinite(b?.minY) || !Number.isFinite(b?.maxY)

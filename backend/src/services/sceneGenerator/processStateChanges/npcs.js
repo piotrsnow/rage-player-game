@@ -1,7 +1,7 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
-import { writeEmbedding } from '../../vectorSearchService.js';
+import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 
@@ -67,7 +67,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
         if (npcChange.relationships) {
-          contentUpdate.relationships = JSON.stringify(npcChange.relationships);
+          contentUpdate.relationships = npcChange.relationships;
         }
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
 
@@ -97,7 +97,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               personality: npcChange.personality || null,
               attitude: npcChange.attitude || 'neutral',
               disposition: npcChange.disposition ?? 0,
-              relationships: JSON.stringify(npcChange.relationships || []),
+              relationships: npcChange.relationships || [],
               ...initialInteractionFields(sceneIndex),
             },
           });

@@ -1,5 +1,7 @@
 export function extractTotalCost(coreState) {
   if (!coreState) return 0;
+  // Prisma returns Json columns as native objects; strings only happen when
+  // a caller (legacy / test) hands us a serialized blob.
   const obj = typeof coreState === 'string' ? JSON.parse(coreState) : coreState;
   return obj?.aiCosts?.total || 0;
 }

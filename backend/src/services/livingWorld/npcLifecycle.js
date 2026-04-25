@@ -63,7 +63,7 @@ export async function pauseNpcsAtLocation(prevLocationName) {
         where: { id: npc.id },
         data: {
           pausedAt,
-          pauseSnapshot: JSON.stringify(snapshot),
+          pauseSnapshot: snapshot,
         },
       });
 

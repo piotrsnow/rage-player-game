@@ -192,11 +192,8 @@ export async function processLocationMentions(campaignId, mentions) {
 
     const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
     const known = new Set(anchor ? adjacencyByAnchor.get(anchor) || [anchor] : []);
-    if (wNpc?.knownLocationIds) {
-      try {
-        const extra = JSON.parse(wNpc.knownLocationIds);
-        if (Array.isArray(extra)) for (const id of extra) if (id) known.add(id);
-      } catch { /* ignore malformed authored JSON */ }
+    if (Array.isArray(wNpc?.knownLocationIds)) {
+      for (const id of wNpc.knownLocationIds) if (id) known.add(id);
     }
     knownByIdent.set(ident, known);
   }

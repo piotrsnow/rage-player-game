@@ -12,7 +12,9 @@ export async function withRetry(fn) {
     try {
       return await fn();
     } catch (err) {
-      const isRetryable = err.code === 'P2034' || err.code === 'P2028';
+      // Postgres serialization failure (40001) — Prisma surfaces as P2034.
+      // Mongo replica-set transient (P2028) is dead with the engine swap.
+      const isRetryable = err.code === 'P2034' || err.code === '40001';
       if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
       await new Promise((r) => setTimeout(r, RETRY_BASE_MS * 2 ** attempt));
     }
@@ -32,6 +34,40 @@ export async function fetchCampaignCharacters(characterIds) {
   return characterIds.map((id) => byId.get(id)).filter(Boolean);
 }
 
+/**
+ * Resolve a campaign's character IDs from CampaignParticipant rows.
+ * Replaces the old `Campaign.characterIds[]` array column. Order is by
+ * `joinedAt` ASC so the host (first to join) lands at index 0.
+ */
+export async function getCampaignCharacterIds(campaignId) {
+  if (!campaignId) return [];
+  const rows = await prisma.campaignParticipant.findMany({
+    where: { campaignId },
+    select: { characterId: true },
+    orderBy: { joinedAt: 'asc' },
+  });
+  return rows.map((r) => r.characterId);
+}
+
+/**
+ * Bulk variant for callsites that need character IDs for many campaigns
+ * in one round-trip (campaign list endpoints). Returns a Map<campaignId, string[]>.
+ */
+export async function getCharacterIdsForCampaigns(campaignIds) {
+  if (!Array.isArray(campaignIds) || campaignIds.length === 0) return new Map();
+  const rows = await prisma.campaignParticipant.findMany({
+    where: { campaignId: { in: campaignIds } },
+    select: { campaignId: true, characterId: true, joinedAt: true },
+    orderBy: { joinedAt: 'asc' },
+  });
+  const out = new Map();
+  for (const r of rows) {
+    if (!out.has(r.campaignId)) out.set(r.campaignId, []);
+    out.get(r.campaignId).push(r.characterId);
+  }
+  return out;
+}
+
 export async function syncNPCsToNormalized(campaignId, npcs) {
   if (!Array.isArray(npcs) || npcs.length === 0) return;
   for (const npc of npcs) {
@@ -49,7 +85,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         lastLocation: npc.lastLocation || null,
         factionId: npc.factionId || null,
         notes: npc.notes || null,
-        relationships: JSON.stringify(npc.relationships || []),
+        relationships: npc.relationships || [],
       };
       await prisma.campaignNPC.upsert({
         where: { campaignId_npcId: { campaignId, npcId } },
@@ -80,9 +116,9 @@ export async function syncKnowledgeToNormalized(campaignId, events, decisions) {
           campaignId,
           entryType: 'event',
           summary,
-          content: JSON.stringify(e),
+          content: e,
           importance: e.importance || null,
-          tags: JSON.stringify(e.tags || []),
+          tags: e.tags || [],
           sceneIndex: e.sceneIndex ?? null,
         },
       });
@@ -101,9 +137,9 @@ export async function syncKnowledgeToNormalized(campaignId, events, decisions) {
           campaignId,
           entryType: 'decision',
           summary,
-          content: JSON.stringify(d),
+          content: d,
           importance: d.importance || null,
-          tags: JSON.stringify(d.tags || []),
+          tags: d.tags || [],
           sceneIndex: d.sceneIndex ?? null,
         },
       });
@@ -132,12 +168,11 @@ export async function syncQuestsToNormalized(campaignId, quests) {
         questGiverId: q.questGiverId || null,
         turnInNpcId: q.turnInNpcId || q.questGiverId || null,
         locationId: q.locationId || null,
-        prerequisiteQuestIds: JSON.stringify(q.prerequisiteQuestIds || []),
-        objectives: JSON.stringify(q.objectives || []),
-        reward: q.reward ? JSON.stringify(q.reward) : null,
+        prerequisiteQuestIds: q.prerequisiteQuestIds || [],
+        objectives: q.objectives || [],
+        reward: q.reward ?? null,
         status: q._status,
         completedAt: q.completedAt ? new Date(q.completedAt) : null,
-        // Round B — forcedGiver propagated from the startSpawnPicker bind.
         forcedGiver: q.forcedGiver === true,
       };
       await prisma.campaignQuest.upsert({
@@ -167,7 +202,7 @@ export async function reconstructFromNormalized(campaignId, coreState) {
       lastLocation: n.lastLocation,
       factionId: n.factionId,
       notes: n.notes,
-      relationships: JSON.parse(n.relationships || '[]'),
+      relationships: n.relationships || [],
     }));
   }
 
@@ -182,11 +217,9 @@ export async function reconstructFromNormalized(campaignId, coreState) {
     const events = [];
     const decisions = [];
     for (const k of dbKnowledge) {
-      try {
-        const content = JSON.parse(k.content);
-        if (k.entryType === 'event') events.push({ ...content, sceneIndex: k.sceneIndex });
-        else decisions.push({ ...content, sceneIndex: k.sceneIndex });
-      } catch { /* skip malformed */ }
+      const content = k.content || {};
+      if (k.entryType === 'event') events.push({ ...content, sceneIndex: k.sceneIndex });
+      else decisions.push({ ...content, sceneIndex: k.sceneIndex });
     }
     if (events.length > 0) coreState.world.knowledgeBase.events = events;
     if (decisions.length > 0) coreState.world.knowledgeBase.decisions = decisions;
@@ -209,9 +242,9 @@ export async function reconstructFromNormalized(campaignId, coreState) {
         questGiverId: q.questGiverId,
         turnInNpcId: q.turnInNpcId,
         locationId: q.locationId,
-        prerequisiteQuestIds: JSON.parse(q.prerequisiteQuestIds || '[]'),
-        objectives: JSON.parse(q.objectives || '[]'),
-        reward: q.reward ? JSON.parse(q.reward) : null,
+        prerequisiteQuestIds: q.prerequisiteQuestIds || [],
+        objectives: q.objectives || [],
+        reward: q.reward ?? null,
       };
       if (q.status === 'completed') {
         completed.push({ ...quest, completedAt: q.completedAt?.getTime?.() || q.completedAt, rewardGranted: true });

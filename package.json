@@ -9,6 +9,8 @@
     "dev:backend": "docker compose up --build --watch",
     "dev:down": "docker compose down",
     "dev:logs": "docker compose logs -f backend",
+    "db:up": "docker compose up -d db",
+    "db:reset": "docker compose down -v && docker compose up -d db",
     "dev:frontend": "vite",
     "build": "vite build",
     "test": "vitest run",

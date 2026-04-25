@@ -1,5 +1,6 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
+import { getCampaignCharacterIds } from '../../campaignSync.js';
 import { assignGoalsForCampaign } from '../../livingWorld/questGoalAssigner.js';
 import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
@@ -34,13 +35,16 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   let ownerUserId = null;
   let campaignCharacterIds = [];
   try {
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { livingWorldEnabled: true, userId: true, characterIds: true },
-    });
+    const [campaign, charIds] = await Promise.all([
+      prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { livingWorldEnabled: true, userId: true },
+      }),
+      getCampaignCharacterIds(campaignId),
+    ]);
     livingWorldEnabled = campaign?.livingWorldEnabled === true;
     ownerUserId = campaign?.userId || null;
-    campaignCharacterIds = Array.isArray(campaign?.characterIds) ? campaign.characterIds : [];
+    campaignCharacterIds = charIds;
   } catch {
     // non-fatal — fall back to legacy behaviour
   }

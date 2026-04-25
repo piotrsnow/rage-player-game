@@ -41,11 +41,8 @@ export async function upsertEdge({
   });
 
   const discovered = new Set();
-  if (existing) {
-    try {
-      const prev = JSON.parse(existing.discoveredByCampaigns || '[]');
-      for (const id of prev) discovered.add(id);
-    } catch { /* ignore */ }
+  if (existing && Array.isArray(existing.discoveredByCampaigns)) {
+    for (const id of existing.discoveredByCampaigns) discovered.add(id);
   }
   if (discoveredByCampaignId) discovered.add(discoveredByCampaignId);
 
@@ -58,7 +55,7 @@ export async function upsertEdge({
     direction,
     gated,
     gateHint,
-    discoveredByCampaigns: JSON.stringify([...discovered]),
+    discoveredByCampaigns: [...discovered],
   };
 
   if (existing) {
@@ -91,17 +88,13 @@ async function markDirection({ fromLocationId, toLocationId, campaignId }) {
     where: { fromLocationId, toLocationId },
   });
   if (!edge) return;
-  try {
-    const prev = JSON.parse(edge.discoveredByCampaigns || '[]');
-    if (prev.includes(campaignId)) return;
-    prev.push(campaignId);
-    await prisma.worldLocationEdge.update({
-      where: { id: edge.id },
-      data: { discoveredByCampaigns: JSON.stringify(prev) },
-    });
-  } catch (err) {
-    log.warn({ err: err?.message, edgeId: edge.id }, 'markDirection failed');
-  }
+  const prev = Array.isArray(edge.discoveredByCampaigns) ? [...edge.discoveredByCampaigns] : [];
+  if (prev.includes(campaignId)) return;
+  prev.push(campaignId);
+  await prisma.worldLocationEdge.update({
+    where: { id: edge.id },
+    data: { discoveredByCampaigns: prev },
+  }).catch((err) => log.warn({ err: err?.message, edgeId: edge.id }, 'markDirection failed'));
 }
 
 /**
@@ -138,12 +131,8 @@ export async function loadCampaignGraph(campaignId) {
 
 function isEdgeVisibleTo(edge, campaignId) {
   if (!campaignId) return true;
-  try {
-    const list = JSON.parse(edge.discoveredByCampaigns || '[]');
-    return list.includes(campaignId);
-  } catch {
-    return false;
-  }
+  const list = Array.isArray(edge.discoveredByCampaigns) ? edge.discoveredByCampaigns : [];
+  return list.includes(campaignId);
 }
 
 /**

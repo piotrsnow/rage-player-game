@@ -115,7 +115,7 @@ export default function CharacterPicker({
                   <div className="flex flex-wrap gap-3 mt-2">
                     {ATTRIBUTE_KEYS.slice(0, 5).map((key) => (
                       <span key={key} className="text-[10px] text-on-surface-variant">
-                        {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(createdCharacter.attributes || createdCharacter.characteristics)?.[key]}</strong>
+                        {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{createdCharacter.attributes?.[key]}</strong>
                       </span>
                     ))}
                   </div>
@@ -147,7 +147,6 @@ export default function CharacterPicker({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {savedCharacters.map((ch) => {
-                const career = ch.careerData || ch.career || {};
                 const charId = ch.backendId || ch.localId || ch.id;
                 const isSelected = selectedCharacter && (selectedCharacter.backendId || selectedCharacter.localId || selectedCharacter.id) === charId;
                 const lockInfo = getCharacterLockInfo(ch, t);
@@ -178,7 +177,6 @@ export default function CharacterPicker({
                         const base = fullChar || ch;
                         const normalized = {
                           ...base,
-                          career: base.career || base.careerData || career,
                           backendId: base.backendId || ch.backendId || ch.id,
                           localId: base.localId || ch.localId || ch.id,
                         };
@@ -203,7 +201,7 @@ export default function CharacterPicker({
                           {t(`species.${ch.species}`, { defaultValue: ch.species })}
                         </p>
                         <div className="flex items-center gap-2 mt-1 text-[9px] text-outline">
-                          <span>{ch.xp || 0} {t('characterPicker.xpLabel')}</span>
+                          <span>{ch.characterXp || 0} {t('characterPicker.xpLabel')}</span>
                         </div>
                       </div>
                       {isSelected && !lockInfo.locked && (
@@ -264,7 +262,7 @@ export default function CharacterPicker({
                   <div className="flex flex-wrap gap-3 mt-2">
                     {ATTRIBUTE_KEYS.slice(0, 5).map((key) => (
                       <span key={key} className="text-[10px] text-on-surface-variant">
-                        {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(selectedCharacter.attributes || selectedCharacter.characteristics)?.[key]}</strong>
+                        {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{selectedCharacter.attributes?.[key]}</strong>
                       </span>
                     ))}
                   </div>

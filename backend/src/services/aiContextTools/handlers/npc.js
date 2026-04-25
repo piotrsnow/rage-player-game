@@ -39,8 +39,7 @@ export async function handleGetNPC(campaignId, npcName) {
 }
 
 export function formatNPC(npc) {
-  const relationships =
-    typeof npc.relationships === 'string' ? JSON.parse(npc.relationships) : npc.relationships || [];
+  const relationships = Array.isArray(npc.relationships) ? npc.relationships : [];
 
   const lines = [
     `Name: ${npc.name}`,

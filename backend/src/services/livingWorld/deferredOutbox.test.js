@@ -6,7 +6,7 @@ import { replay } from './deferredOutbox.js';
 // against Atlas (manual playtest Phase 2 verification).
 
 function evt(eventType, payload = {}, gameTime = '2026-01-01T00:00:00Z') {
-  return { eventType, payload: JSON.stringify(payload), gameTime };
+  return { eventType, payload, gameTime };
 }
 
 describe('deferredOutbox.replay', () => {

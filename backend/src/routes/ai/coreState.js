@@ -48,16 +48,15 @@ export async function coreStateRoutes(fastify) {
       return reply.code(403).send({ error: 'Not authorized' });
     }
 
-    // coreState is stored as a JSON string. A corrupt row here returns 500,
-    // which is the right failure mode — continuing with a merged {} would
-    // silently overwrite the whole state with only the patch.
-    const currentState = JSON.parse(campaign.coreState);
+    const currentState = (campaign.coreState && typeof campaign.coreState === 'object')
+      ? campaign.coreState
+      : {};
 
     await prisma.campaign.update({
       where: { id: campaignId },
       data: {
         lastSaved: new Date(),
-        coreState: JSON.stringify(deepMerge(currentState, updates)),
+        coreState: deepMerge(currentState, updates),
       },
     });
 

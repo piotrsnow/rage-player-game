@@ -3,15 +3,18 @@ import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
 
 // Refresh-token service backing the /v1/auth/* cookie flow. Opaque random
-// tokens (NOT JWTs) stored in MongoDB so revocation is O(1): deleteMany.
+// tokens (NOT JWTs) stored in Postgres so revocation is O(1): deleteMany.
 //
-// Storage: RefreshToken collection with TTL index on expiresAt (Mongo reaps
-// expired docs every ~60s). Code also checks expiresAt eagerly on verify.
+// Storage: RefreshToken row with btree index on expiresAt. Postgres has no
+// TTL reaper, so `startPeriodicCleanup` reaps expired rows every 10 min.
+// Verify also reaps eagerly to short-circuit reuse of an expired cookie
+// between cleanup ticks.
 //
 // Cookie format: `<userId>.<tokenId>` — kept for backward compat even though
 // the tokenId alone is unique. userId in cookie lets us do cheap sanity checks.
 
 const REFRESH_TTL_SEC = 30 * 24 * 60 * 60;
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
 function parseCookieValue(cookieValue) {
   if (!cookieValue || typeof cookieValue !== 'string') return null;
@@ -97,7 +100,39 @@ export async function revokeAllUserRefreshTokens(userId) {
   }
 }
 
+export async function reapExpiredRefreshTokens() {
+  try {
+    const result = await prisma.refreshToken.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    if (result.count > 0) {
+      logger.info({ deleted: result.count }, '[refreshToken] reaped expired tokens');
+    }
+    return result.count;
+  } catch (err) {
+    logger.warn({ err }, '[refreshToken] reap failed');
+    return 0;
+  }
+}
+
+let cleanupTimer = null;
+export function startPeriodicCleanup() {
+  if (cleanupTimer) return cleanupTimer;
+  cleanupTimer = setInterval(() => {
+    reapExpiredRefreshTokens().catch(() => {});
+  }, CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref();
+  return cleanupTimer;
+}
+
+export function stopPeriodicCleanup() {
+  if (!cleanupTimer) return;
+  clearInterval(cleanupTimer);
+  cleanupTimer = null;
+}
+
 export const __testInternals = {
   parseCookieValue,
   REFRESH_TTL_SEC,
+  CLEANUP_INTERVAL_MS,
 };

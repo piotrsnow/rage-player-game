@@ -173,7 +173,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   it('propagates extracted changes into the return shape', async () => {
     prisma.campaignNPC.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({
-      coreState: JSON.stringify({ gameStateSummary: [{ fact: 'X died', sceneIndex: 1 }] }),
+      coreState: { gameStateSummary: [{ fact: 'X died', sceneIndex: 1 }] },
     });
     extractWorldFacts.mockResolvedValue({
       changes: [{ kind: 'npcDeath', targetHint: 'X', newValue: 'died', confidence: 0.9, reason: 'summary' }],
@@ -216,7 +216,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
     expect(result.apply).toBeDefined();
   });
 
-  it('tolerates malformed coreState JSON — logs warn, continues', async () => {
+  it('skips extraction when coreState is not an object (e.g. legacy malformed string)', async () => {
     prisma.campaignNPC.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({ coreState: '{malformed' });
 
@@ -229,7 +229,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
   it('forwards provider / modelTier / userApiKeys overrides', async () => {
     prisma.campaignNPC.findMany.mockResolvedValue([]);
     prisma.campaign.findUnique.mockResolvedValue({
-      coreState: JSON.stringify({ gameStateSummary: [{ fact: 'x', sceneIndex: 0 }] }),
+      coreState: { gameStateSummary: [{ fact: 'x', sceneIndex: 0 }] },
     });
     extractWorldFacts.mockResolvedValue({ changes: [] });
 
@@ -250,7 +250,7 @@ describe('runPostCampaignWorldWriteback — Phase 11 extraction wiring', () => {
 
 describe('runPostCampaignWorldWriteback — Phase 12 world state change wiring', () => {
   const baseChange = { kind: 'npcDeath', targetHint: 'Gerent', newValue: 'died', confidence: 0.9, reason: 'x' };
-  const coreState = JSON.stringify({ gameStateSummary: [{ fact: 'fact', sceneIndex: 1 }] });
+  const coreState = { gameStateSummary: [{ fact: 'fact', sceneIndex: 1 }] };
 
   it('runs Phase 12 pipeline when extraction produced changes', async () => {
     prisma.campaignNPC.findMany.mockResolvedValue([]);

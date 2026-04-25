@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey, toObjectId } from '../../services/hashService.js';
+import { generateKey, toUuid } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -89,7 +89,7 @@ function aliasTokensFromFile(file) {
 }
 
 function toCatalogEntry(prefabAsset) {
-  const metadata = JSON.parse(prefabAsset.metadata || '{}');
+  const metadata = prefabAsset.metadata || {};
   const file = prefabAsset.fileName || prefabAsset.path.split('/').pop() || '';
   const category = prefabAsset.category || 'misc';
   const aliases = Array.from(new Set([
@@ -313,19 +313,19 @@ export async function meshyProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(campaignId),
+        campaignId: toUuid(campaignId),
         key: cacheKey,
         type: 'model3d',
         contentType: 'model/gltf-binary',
         size: buffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: JSON.stringify({
+        metadata: {
           provider: 'meshy',
           prompt: prompt || '',
           assetKey: assetKey || '',
           cacheVersion: cacheVersion || 'legacy',
-        }),
+        },
       },
       update: {},
     });

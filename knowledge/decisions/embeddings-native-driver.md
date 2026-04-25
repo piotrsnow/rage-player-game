@@ -1,5 +1,7 @@
 # Decision — Embeddings via Native MongoDB Driver
 
+> **SUPERSEDED 2026-04 by [embeddings-pgvector.md](embeddings-pgvector.md).** With the Postgres migration, embeddings live in pgvector `vector(1536)` columns and are queried via `<=>` cosine distance through Prisma `$queryRaw`. The native-driver indirection is gone. Kept for historical context.
+
 Embedding vectors are written using the native `mongodb` driver instead of Prisma.
 
 ## Why

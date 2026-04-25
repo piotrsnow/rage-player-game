@@ -53,11 +53,11 @@ export async function recapCampaignRoutes(app) {
     if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
     const assetKey = buildRecapAssetKey(existing.id, key);
-    const metadata = JSON.stringify({
+    const metadata = {
       recap,
       meta,
       cachedAt: new Date().toISOString(),
-    });
+    };
 
     await withRetry(() =>
       prisma.mediaAsset.upsert({

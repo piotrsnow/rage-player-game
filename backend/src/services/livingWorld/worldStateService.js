@@ -11,7 +11,6 @@
 // `embeddingText` so a future backfill script can compute + index embeddings
 // once the scale (~1000+ NPCs) justifies the Atlas tier and per-write cost.
 
-import { ObjectId } from 'mongodb';
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../embeddingService.js';
@@ -81,29 +80,21 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
   for (const rec of candidates) {
     const recNorm = normalizeLocationName(rec.canonicalName);
     if (recNorm === norm) return rec;
-    try {
-      const aliases = JSON.parse(rec.aliases || '[]');
-      if (aliases.some((a) => normalizeLocationName(a) === norm)) {
-        // Found via alias — promote to aliases if not already
-        return rec;
-      }
-    } catch {
-      // ignore malformed aliases
+    const aliases = Array.isArray(rec.aliases) ? rec.aliases : [];
+    if (aliases.some((a) => normalizeLocationName(a) === norm)) {
+      return rec;
     }
     // Substring containment — very loose, only for close variants
     if (recNorm && norm && (recNorm.includes(norm) || norm.includes(recNorm))) {
-      // Merge: append this variant as alias for future resolution
-      try {
-        const aliases = JSON.parse(rec.aliases || '[]');
-        if (!aliases.includes(name)) {
-          aliases.push(name);
+      if (!aliases.includes(name)) {
+        try {
           await prisma.worldLocation.update({
             where: { id: rec.id },
-            data: { aliases: JSON.stringify(aliases) },
+            data: { aliases: [...aliases, name] },
           });
+        } catch (err) {
+          log.warn({ err, locationId: rec.id }, 'Failed to merge location alias');
         }
-      } catch (err) {
-        log.warn({ err, locationId: rec.id }, 'Failed to merge location alias');
       }
       return rec;
     }
@@ -129,7 +120,7 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
   const created = await prisma.worldLocation.create({
     data: {
       canonicalName: name,
-      aliases: JSON.stringify([name]),
+      aliases: [name],
       description,
       region,
       embeddingText: embText,
@@ -270,7 +261,7 @@ export async function createSublocation({
       },
       create: {
         canonicalName: cleanName,
-        aliases: JSON.stringify([cleanName]),
+        aliases: [cleanName],
         description,
         category: slotType || 'custom',
         locationType,
@@ -305,12 +296,3 @@ export async function listNpcsAtLocation(locationId, { aliveOnly = true } = {}) 
   return prisma.worldNPC.findMany({ where });
 }
 
-/**
- * Coerce ObjectId-ish strings to clean strings for Prisma @db.ObjectId columns.
- * Handy when callers pass raw ids from mongo driver (BSON ObjectId instances).
- */
-export function toObjectIdString(value) {
-  if (!value) return null;
-  if (value instanceof ObjectId) return value.toString();
-  return String(value);
-}

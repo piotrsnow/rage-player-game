@@ -66,11 +66,7 @@ export function computeQuestObjectiveCounts(locations, quests) {
   }
   for (const q of quests) {
     if (!q) continue;
-    let objectives = [];
-    try {
-      const parsed = q.objectives ? JSON.parse(q.objectives) : [];
-      if (Array.isArray(parsed)) objectives = parsed;
-    } catch { /* malformed — skip */ }
+    const objectives = Array.isArray(q.objectives) ? q.objectives : [];
     for (const obj of objectives) {
       if (!obj) continue;
       for (const loc of locations) {
@@ -239,7 +235,7 @@ export async function persistLocationCandidates(campaignId, candidates, { dryRun
       locationType: loc.locationType || null,
       region: loc.region || null,
       description: loc.description || null,
-      stats: JSON.stringify(statsWithDedup),
+      stats: statsWithDedup,
       status: 'pending',
     };
 

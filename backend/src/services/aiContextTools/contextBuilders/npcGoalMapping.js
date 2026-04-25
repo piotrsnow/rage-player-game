@@ -11,10 +11,7 @@ import { clearCampaignNpcIntroHint } from '../../livingWorld/campaignSandbox.js'
  */
 export function mapAmbientNpcsWithGoals(ambientNpcs) {
   return ambientNpcs.map((n) => {
-    let progress = null;
-    try {
-      progress = n.goalProgress ? JSON.parse(n.goalProgress) : null;
-    } catch { progress = null; }
+    const progress = (n.goalProgress && typeof n.goalProgress === 'object') ? n.goalProgress : null;
     const milestones = Array.isArray(progress?.milestones) ? progress.milestones.slice(-2) : [];
     // "Just arrived" = last tick's action was a move to this location on
     // the scene that just finished. Premium narrates "NPC wchodzi zdyszany".

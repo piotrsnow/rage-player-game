@@ -38,8 +38,7 @@ export async function handleGetCodex(campaignId, topic) {
 }
 
 export function formatCodex(codex) {
-  const fragments =
-    typeof codex.fragments === 'string' ? JSON.parse(codex.fragments) : codex.fragments || [];
+  const fragments = Array.isArray(codex.fragments) ? codex.fragments : [];
 
   const lines = [`${codex.name} [${codex.category}]`];
 

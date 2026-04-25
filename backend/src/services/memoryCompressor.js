@@ -231,7 +231,9 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
     });
     if (!campaign) return null;
 
-    const coreState = JSON.parse(campaign.coreState);
+    const coreState = (campaign.coreState && typeof campaign.coreState === 'object')
+      ? campaign.coreState
+      : {};
     const currentSummary = coreState.gameStateSummary || [];
     // Back-compat: summary can be legacy string[] or new [{fact, sceneIndex}].
     // Normalize for prompt display and remove-match.
@@ -351,7 +353,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
 
     await prisma.campaign.update({
       where: { id: campaignId },
-      data: { coreState: JSON.stringify(coreState) },
+      data: { coreState },
     });
 
     // ── DM agent: persist gmNotes + hooks. Fire-and-forget: dmAgent updates
@@ -468,7 +470,7 @@ export async function generateLocationSummary(campaignId, locationName, previous
     const scenesAtLocation = [];
     let currentLoc = '';
     for (const scene of scenes) {
-      const sc = scene.stateChanges ? JSON.parse(scene.stateChanges) : {};
+      const sc = (scene.stateChanges && typeof scene.stateChanges === 'object') ? scene.stateChanges : {};
       if (sc.currentLocation) currentLoc = sc.currentLocation;
 
       if (currentLoc.toLowerCase().includes(previousLocation.toLowerCase()) ||
@@ -503,8 +505,8 @@ ${scenesAtLocation.join('\n\n')}`;
 
     const data = {
       summary: result.summary,
-      keyNpcs: JSON.stringify(result.key_npcs || []),
-      unresolvedHooks: JSON.stringify(result.unresolved_hooks || []),
+      keyNpcs: result.key_npcs || [],
+      unresolvedHooks: result.unresolved_hooks || [],
       sceneCount: scenesAtLocation.length,
       lastVisitScene: scenes[scenes.length - 1]?.sceneIndex || 0,
     };
@@ -540,8 +542,8 @@ export async function getLocationSummary(campaignId, locationName) {
 
   if (!summary) return null;
 
-  const keyNpcs = JSON.parse(summary.keyNpcs || '[]');
-  const hooks = JSON.parse(summary.unresolvedHooks || '[]');
+  const keyNpcs = Array.isArray(summary.keyNpcs) ? summary.keyNpcs : [];
+  const hooks = Array.isArray(summary.unresolvedHooks) ? summary.unresolvedHooks : [];
 
   const lines = [
     `Previous visits summary (${summary.sceneCount} scenes):`,

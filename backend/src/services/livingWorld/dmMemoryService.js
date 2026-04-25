@@ -94,7 +94,7 @@ export async function getOrCreateDmAgent(campaignId) {
     const existing = await prisma.campaignDmAgent.findUnique({ where: { campaignId } });
     if (existing) return existing;
     return await prisma.campaignDmAgent.create({
-      data: { campaignId, dmMemory: '[]', pendingHooks: '[]' },
+      data: { campaignId, dmMemory: [], pendingHooks: [] },
     });
   } catch (err) {
     log.warn({ err, campaignId }, 'getOrCreateDmAgent failed');
@@ -117,17 +117,17 @@ export async function updateDmAgent(
     const row = await getOrCreateDmAgent(campaignId);
     if (!row) return null;
 
-    const dmMemory = JSON.parse(row.dmMemory || '[]');
-    const pendingHooks = JSON.parse(row.pendingHooks || '[]');
+    const dmMemory = Array.isArray(row.dmMemory) ? row.dmMemory : [];
+    const pendingHooks = Array.isArray(row.pendingHooks) ? row.pendingHooks : [];
 
     const nextMemory = mergeMemoryEntries(dmMemory, memoryEntries);
     const nextHooks = mergePendingHooks(pendingHooks, hookAdditions, resolvedHookIds);
 
     return await prisma.campaignDmAgent.update({
-      where: { id: row.id },
+      where: { campaignId: row.campaignId },
       data: {
-        dmMemory: JSON.stringify(nextMemory),
-        pendingHooks: JSON.stringify(nextHooks),
+        dmMemory: nextMemory,
+        pendingHooks: nextHooks,
         lastUpdatedAt: new Date(),
       },
     });
@@ -147,21 +147,11 @@ export async function readDmAgentState(campaignId) {
     const row = await prisma.campaignDmAgent.findUnique({ where: { campaignId } });
     if (!row) return { dmMemory: [], pendingHooks: [] };
     return {
-      dmMemory: safeParseArray(row.dmMemory),
-      pendingHooks: safeParseArray(row.pendingHooks),
+      dmMemory: Array.isArray(row.dmMemory) ? row.dmMemory : [],
+      pendingHooks: Array.isArray(row.pendingHooks) ? row.pendingHooks : [],
     };
   } catch (err) {
     log.warn({ err, campaignId }, 'readDmAgentState failed');
     return { dmMemory: [], pendingHooks: [] };
-  }
-}
-
-function safeParseArray(s) {
-  if (!s) return [];
-  try {
-    const parsed = JSON.parse(s);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
   }
 }

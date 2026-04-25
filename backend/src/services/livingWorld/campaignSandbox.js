@@ -317,13 +317,8 @@ export async function resolveNpcKnownLocations({ campaignNpc, worldNpc }) {
   }
   // Explicit knowledge list (seed + admin authored).
   const explicit = worldNpc?.knownLocationIds;
-  if (explicit) {
-    try {
-      const ids = JSON.parse(explicit);
-      if (Array.isArray(ids)) {
-        for (const id of ids) if (id) known.add(id);
-      }
-    } catch { /* ignore */ }
+  if (Array.isArray(explicit)) {
+    for (const id of explicit) if (id) known.add(id);
   }
   known.delete(null);
   known.delete(undefined);

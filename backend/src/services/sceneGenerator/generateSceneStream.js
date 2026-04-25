@@ -378,23 +378,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       log.warn({ err: err?.message }, 'quest wrap-up fallback failed (non-fatal)');
     }
 
-    const savedScene = await prisma.campaignScene.create({
-      data: {
-        campaignId,
-        sceneIndex: newSceneIndex,
-        narrative: sceneResult.narrative || '',
-        chosenAction: playerAction,
-        suggestedActions: JSON.stringify(sceneResult.suggestedActions || []),
-        dialogueSegments: JSON.stringify(sceneResult.dialogueSegments || []),
-        imagePrompt: sceneResult.imagePrompt || null,
-        soundEffect: sceneResult.soundEffect || null,
-        diceRoll: sceneResult.diceRolls ? JSON.stringify(sceneResult.diceRolls) : (sceneResult.diceRoll ? JSON.stringify(sceneResult.diceRoll) : null),
-        stateChanges: sceneResult.stateChanges ? JSON.stringify(sceneResult.stateChanges) : null,
-        scenePacing: sceneResult.scenePacing || 'exploration',
-      },
-    });
-
-    // 8. Apply character state changes + persist
+    // 8. Apply character state changes + achievements (pure), then persist
+    // scene + character in one tx so a half-saved scene can never reference
+    // a character row that doesn't reflect its stateChanges.
     let updatedCharacter = activeCharacter;
     let newlyUnlockedAchievements = [];
     let updatedAchievementState = achievementState;
@@ -427,15 +413,36 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
             updatedCharacter = applyCharacterStateChanges(updatedCharacter, { xp: totalAchievementXp });
           }
         }
-
-        await prisma.character.update({
-          where: { id: activeCharacterId },
-          data: characterToPrismaUpdate(updatedCharacter),
-        });
       } catch (err) {
-        log.error({ err, characterId: activeCharacterId }, 'Failed to persist character state changes');
+        log.error({ err, characterId: activeCharacterId }, 'Failed to compute character state changes');
       }
     }
+
+    const sceneCreateOp = prisma.campaignScene.create({
+      data: {
+        campaignId,
+        sceneIndex: newSceneIndex,
+        narrative: sceneResult.narrative || '',
+        chosenAction: playerAction,
+        suggestedActions: sceneResult.suggestedActions || [],
+        dialogueSegments: sceneResult.dialogueSegments || [],
+        imagePrompt: sceneResult.imagePrompt || null,
+        soundEffect: sceneResult.soundEffect || null,
+        diceRoll: sceneResult.diceRolls ?? sceneResult.diceRoll ?? null,
+        stateChanges: sceneResult.stateChanges ?? null,
+        scenePacing: sceneResult.scenePacing || 'exploration',
+      },
+    });
+
+    const txOps = [sceneCreateOp];
+    const persistChar = activeCharacterId && updatedCharacter && updatedCharacter !== activeCharacter;
+    if (persistChar) {
+      txOps.push(prisma.character.update({
+        where: { id: activeCharacterId },
+        data: characterToPrismaUpdate(updatedCharacter),
+      }));
+    }
+    const [savedScene] = await prisma.$transaction(txOps);
 
     // 9. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
     // Fire-and-forget: don't block the 'complete' event on enqueue failure.
@@ -505,7 +512,7 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
     const upd = completedObjUpdates[0];
     const quest = activeQuests.find((q) => q.id === upd.questId)
       || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === upd.questId) : null);
-    const objectives = quest?.objectives || (quest?.objectives ? JSON.parse(quest.objectives) : []);
+    const objectives = Array.isArray(quest?.objectives) ? quest.objectives : [];
     completedObjective = objectives.find((o) => o.id === upd.objectiveId) || { id: upd.objectiveId, description: upd.objectiveId };
     nextObjective = objectives.find((o) => !o.completed && o.id !== upd.objectiveId) || null;
     questGiverId = quest?.questGiverId || null;
@@ -513,9 +520,7 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
     const id = completedQuestIds[0];
     const quest = activeQuests.find((q) => q.id === id)
       || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === id) : null);
-    const objectives = Array.isArray(quest?.objectives)
-      ? quest.objectives
-      : (typeof quest?.objectives === 'string' ? safeJsonArr(quest.objectives) : []);
+    const objectives = Array.isArray(quest?.objectives) ? quest.objectives : [];
     completedObjective = objectives[objectives.length - 1] || { description: quest?.name || id };
     nextObjective = null;
     questGiverId = quest?.questGiverId || null;
@@ -544,9 +549,3 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
   }
 }
 
-function safeJsonArr(raw) {
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}

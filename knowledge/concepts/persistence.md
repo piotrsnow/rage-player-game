@@ -22,19 +22,20 @@ How campaign state is saved and loaded. The frontend owns an in-memory Zustand s
 - [backend/src/services/campaignSync.js](../../backend/src/services/campaignSync.js) — DB side effects: `withRetry` (Prisma P2034/P2028 transaction retry), `fetchCampaignCharacters`, `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `reconstructFromNormalized`
 - [backend/src/services/campaignRecap.js](../../backend/src/services/campaignRecap.js) — recap cache helpers
 
-## Database model (MongoDB via Prisma)
+## Database model (Postgres 16 via Prisma)
 
 | Model | Purpose |
 |---|---|
 | `User` | Auth, encrypted API keys, settings |
-| `Campaign` | `coreState` (lean ~15-25KB JSON string), metadata, totalCost, share tokens |
-| `CampaignScene` | Normalized scene rows with Atlas Vector Search embeddings |
-| `CampaignNPC` | NPC rows with embeddings + lock fields (`lockedCampaignId`, `lockedCampaignName`, `lockedLocation`) |
+| `Campaign` | `coreState` (lean ~15-25KB JSONB), metadata, totalCost, share tokens |
+| `CampaignScene` | Normalized scene rows with pgvector embeddings (HNSW) |
+| `CampaignNPC` | NPC rows with embeddings + per-campaign shadow over `WorldNPC` |
 | `CampaignKnowledge` | Running facts, events, decisions, plot threads, location summaries |
 | `CampaignCodex` | Lore entries with embeddings |
 | `CampaignQuest` | Quest rows with status + objectives |
-| `Character` | Reusable character library. Owns the character-to-campaign lock. |
-| `MultiplayerSession` | Room state backup for crash recovery |
+| `CampaignParticipant` | Join table (campaign ↔ character + role); replaces the old `characterIds[]` array |
+| `Character` | Reusable character library. Owns the character-to-campaign lock (`lockedCampaignId`, `lockedCampaignName`, `lockedLocation`). |
+| `MultiplayerSession` + `MultiplayerSessionPlayer` | Room state backup with normalized players join table |
 | `MediaAsset` | User-generated images/music/TTS (content-addressable) |
 | `PrefabAsset`, `Wanted3D` | 3D model catalog |
 | `Achievement` | Per-user unlocked achievements |
@@ -59,18 +60,13 @@ On load:
 3. Frontend `_parseBackendCampaign(full)` parses `coreState` string, copies `characters[0]` onto `state.character`, hydrates the rest of the state shape
 4. `gameDispatch({type: 'LOAD_CAMPAIGN', payload: data})` drops it into the store
 
-## JSON fields stored as strings
+## JSONB native columns
 
-Prisma on MongoDB does NOT support native JSON fields — arrays of complex objects must be serialized to strings and parsed on read. This applies to:
+Postgres + Prisma map `Json` Prisma fields directly to native JSONB — no `JSON.parse` / `JSON.stringify` at boundaries. Pass and read JS objects/arrays as-is. This applies to `Campaign.coreState`, `CampaignNPC.details`, `CampaignQuest.objectives`, and every other JSON-shaped field across the schema.
 
-- `Campaign.coreState`
-- `CampaignNPC.details`, `CampaignNPC.personality` (any nested object field)
-- `CampaignQuest.objectives`, `CampaignQuest.rewards`
-- ...and so on
+When adding a new JSONB field, declare it `Json` (or `Json @default("[]")` for arrays / `Json @default("{}")` for objects). The default literal is a string because Prisma's parser, but the value at runtime is a real object/array.
 
-When adding a new `String` Prisma field that holds JSON, always pair the DB access with `JSON.parse` on read and `JSON.stringify` on write. Check existing examples in `campaignSync.js` and `storage.js`.
-
-**Exception:** embeddings. Atlas Vector Search requires native BSON arrays of doubles. These are written via `mongoNative.js` using the raw MongoDB driver — see [decisions/embeddings-native-driver.md](../decisions/embeddings-native-driver.md).
+**Embeddings** live in dedicated `vector(1536)` columns (Prisma `Unsupported("vector(1536)")?`) and are written via `embeddingWrite.js` / queried via `<=>` cosine distance through `$queryRaw`. See [decisions/embeddings-pgvector.md](../decisions/embeddings-pgvector.md).
 
 ## Auto-save queue
 
@@ -123,14 +119,14 @@ A character is available to pick iff `!lockedCampaignId || isSafeLocation(locked
 1. **"My changes aren't saving."** Check `autoSave` queue — is `pendingSaveRef` set? Has the PUT gone out? Check Network tab.
 2. **"Load returns stale data."** `_parseBackendCampaign` vs the current state shape. Add a `console.log` before the dispatch. Also check `reconstructFromNormalized` on backend — maybe a new normalized field wasn't merged back.
 3. **"Scene count mismatch."** `dedupeScenesByIndexAsc` — backend has duplicates (same sceneIndex). Usually from a split save between `PUT /campaigns` and `POST /scenes` that lost the order.
-4. **"NPC lost personality after reload."** Prisma field holds a JSON string; you forgot to `JSON.parse`. Check `syncNPCsToNormalized` and the read path.
+4. **"NPC lost personality after reload."** JSONB column round-trips JS objects directly — if a field reads `undefined`, the write payload was missing it. Check `syncNPCsToNormalized` is including the field on upsert.
 5. **"Character locked to a campaign I deleted."** The DELETE handler should clear lock fields; if it didn't, check if you're hitting the right delete path and that `Character.lockedCampaignId` is nulled.
 6. **"Double row created after a retry."** Missing `{ idempotent: true }` on a POST that should have it. Check the 3 routes that opt in and match them in `apiClient.js` call sites.
 
 ## Related
 
-- [decisions/embeddings-native-driver.md](../decisions/embeddings-native-driver.md) — why embeddings bypass Prisma
-- [decisions/atlas-only-no-local-mongo.md](../decisions/atlas-only-no-local-mongo.md) — why dev requires Atlas
+- [decisions/embeddings-pgvector.md](../decisions/embeddings-pgvector.md) — embedding storage + query shape
+- [decisions/postgres-dev.md](../decisions/postgres-dev.md) — Postgres-everywhere (local + prod)
 - [game-state.md](game-state.md) — the store that gets serialized
 - [scene-generation.md](scene-generation.md) — where scenes are produced before saving
 - [auth.md](auth.md) — how `apiClient` gets the JWT access token

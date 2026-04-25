@@ -64,24 +64,24 @@ export function buildPromotableEntries(experienceLogRaw, campaignId, { importanc
 
 /**
  * Pure — merge new cross-campaign entries into an existing knowledgeBase
- * JSON string, replacing any prior entries tagged with the same campaign
- * source. FIFO-cap on total length. Returns the serialized array.
+ * (JSONB array or legacy JSON string), replacing any prior entries tagged
+ * with the same campaign source. FIFO-cap on total length. Returns a plain
+ * array ready to write into a JSONB column.
  */
 export function mergeKnowledgeBaseForCampaign(rawKnowledgeBase, campaignEntries, campaignId, { cap = NPC_KNOWLEDGE_CAP } = {}) {
   let parsed = [];
-  if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
+  if (Array.isArray(rawKnowledgeBase)) {
+    parsed = rawKnowledgeBase;
+  } else if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
     try {
       const j = JSON.parse(rawKnowledgeBase);
       if (Array.isArray(j)) parsed = j;
     } catch { /* malformed — rebuild */ }
-  } else if (Array.isArray(rawKnowledgeBase)) {
-    parsed = rawKnowledgeBase;
   }
   const sourceTag = `campaign:${campaignId || 'unknown'}`;
   const preserved = parsed.filter((e) => e && e.source !== sourceTag);
   const merged = [...preserved, ...(Array.isArray(campaignEntries) ? campaignEntries : [])];
-  const trimmed = merged.length > cap ? merged.slice(merged.length - cap) : merged;
-  return JSON.stringify(trimmed);
+  return merged.length > cap ? merged.slice(merged.length - cap) : merged;
 }
 
 /**

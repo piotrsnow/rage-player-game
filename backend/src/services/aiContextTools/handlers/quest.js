@@ -12,8 +12,8 @@ export async function handleGetQuest(campaignId, questName) {
       (q) => q.name?.toLowerCase().includes(query) || q.description?.toLowerCase().includes(query),
     );
     if (match) {
-      const objectives = JSON.parse(match.objectives || '[]');
-      const reward = match.reward ? JSON.parse(match.reward) : null;
+      const objectives = Array.isArray(match.objectives) ? match.objectives : [];
+      const reward = match.reward ?? null;
       const lines = [
         `Quest: ${match.name}`,
         `Status: ${match.status}`,
@@ -40,7 +40,8 @@ export async function handleGetQuest(campaignId, questName) {
   });
   if (!campaign) return 'Campaign not found.';
 
-  const coreState = JSON.parse(campaign.coreState);
+  const coreState = (campaign.coreState && typeof campaign.coreState === 'object')
+    ? campaign.coreState : {};
   const allQuests = [...(coreState.quests?.active || []), ...(coreState.quests?.completed || [])];
   match = allQuests.find(
     (q) => q.name?.toLowerCase().includes(query) || q.description?.toLowerCase().includes(query),

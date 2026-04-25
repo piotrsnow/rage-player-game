@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey, toObjectId } from '../../services/hashService.js';
+import { generateKey, toUuid } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
@@ -91,8 +91,7 @@ export async function elevenlabsProxyRoutes(fastify) {
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
       const url = await store.getUrl(existing.path);
-      const meta = JSON.parse(existing.metadata);
-      return { cached: true, url, key: cacheKey, alignment: meta.alignment || null };
+      return { cached: true, url, key: cacheKey, alignment: existing.metadata?.alignment || null };
     }
 
     const response = await fetch(`${ELEVENLABS_URL}/text-to-speech/${voiceId}/with-timestamps`, {
@@ -131,14 +130,14 @@ export async function elevenlabsProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(campaignId),
+        campaignId: toUuid(campaignId),
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
         size: audioBytes.length,
         backend: config.mediaBackend,
         path: cacheKey,
-        metadata: JSON.stringify({ ...cacheParams, alignment: data.alignment }),
+        metadata: { ...cacheParams, alignment: data.alignment },
       },
       update: {},
     });
@@ -205,14 +204,14 @@ export async function elevenlabsProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(streamCampaignId),
+        campaignId: toUuid(streamCampaignId),
         key: cacheKey,
         type: 'tts',
         contentType: 'audio/mpeg',
         size: buffer.length,
         backend: config.mediaBackend,
         path: cacheKey,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });
@@ -268,14 +267,14 @@ export async function elevenlabsProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(sfxCampaignId),
+        campaignId: toUuid(sfxCampaignId),
         key: cacheKey,
         type: 'sfx',
         contentType: 'audio/mpeg',
         size: buffer.length,
         backend: config.mediaBackend,
         path: cacheKey,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });

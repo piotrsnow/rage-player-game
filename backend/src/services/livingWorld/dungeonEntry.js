@@ -91,12 +91,11 @@ export async function applyDungeonRoomState({ campaignId, prevLoc, flags }) {
     });
     if (!room || room.locationType !== 'dungeon_room') return;
 
-    let meta = {};
-    try { meta = JSON.parse(room.roomMetadata || '{}'); } catch { meta = {}; }
+    const meta = (room.roomMetadata && typeof room.roomMetadata === 'object') ? room.roomMetadata : {};
     const merged = { ...meta, ...touched };
     await prisma.worldLocation.update({
       where: { id: room.id },
-      data: { roomMetadata: JSON.stringify(merged) },
+      data: { roomMetadata: merged },
     });
 
     // Boss defeat → mark the parent dungeon as cleared for the active character.
@@ -110,11 +109,12 @@ export async function applyDungeonRoomState({ campaignId, prevLoc, flags }) {
 
 async function markDungeonClearedForCampaign({ campaignId, dungeonId }) {
   try {
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { characterIds: true },
+    const participant = await prisma.campaignParticipant.findFirst({
+      where: { campaignId },
+      orderBy: { joinedAt: 'asc' },
+      select: { characterId: true },
     });
-    const characterId = Array.isArray(campaign?.characterIds) ? campaign.characterIds[0] : null;
+    const characterId = participant?.characterId || null;
     if (!characterId) return;
 
     const character = await prisma.character.findUnique({
@@ -123,15 +123,14 @@ async function markDungeonClearedForCampaign({ campaignId, dungeonId }) {
     });
     if (!character) return;
 
-    let cleared = [];
-    try { cleared = JSON.parse(character.clearedDungeonIds || '[]'); } catch { cleared = []; }
+    const cleared = Array.isArray(character.clearedDungeonIds) ? [...character.clearedDungeonIds] : [];
     if (cleared.includes(dungeonId)) return;
 
     cleared.push(dungeonId);
     await prisma.character.update({
       where: { id: characterId },
       data: {
-        clearedDungeonIds: JSON.stringify(cleared),
+        clearedDungeonIds: cleared,
         activeDungeonState: null,
       },
     });

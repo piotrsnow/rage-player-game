@@ -18,8 +18,15 @@ vi.mock('../config.js', () => ({
 
 const JWT_TEST_SECRET = 'unit-test-jwt-secret-at-least-32-chars-long-abc';
 
-// In-memory user store used by the prisma + mongoNative mocks. Reset between tests.
+// In-memory user store used by the prisma mock. Reset between tests.
 const userStore = new Map();
+
+function pickFields(obj, select) {
+  if (!select) return obj;
+  const picked = {};
+  for (const k of Object.keys(select)) if (select[k]) picked[k] = obj[k];
+  return picked;
+}
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
@@ -32,10 +39,7 @@ vi.mock('../lib/prisma.js', () => ({
             if (u.id === where.id) { user = u; break; }
           }
         }
-        if (!user || !select) return user;
-        const picked = {};
-        for (const k of Object.keys(select)) if (select[k]) picked[k] = user[k];
-        return picked;
+        return user ? pickFields(user, select) : null;
       }),
       create: vi.fn(async ({ data }) => {
         const id = `user_${userStore.size + 1}`;
@@ -43,40 +47,25 @@ vi.mock('../lib/prisma.js', () => ({
           id,
           email: data.email,
           passwordHash: data.passwordHash,
-          settings: '{}',
+          settings: {},
           apiKeys: '{}',
           createdAt: new Date(),
         };
         userStore.set(data.email, user);
         return user;
       }),
-    },
-  },
-}));
-
-// /settings uses the native Mongo client (findOneAndUpdate) to patch the
-// User document. Mock it to update the same in-memory store.
-vi.mock('../services/mongoNative.js', () => ({
-  getCollection: vi.fn(async () => ({
-    findOneAndUpdate: vi.fn(async (filter, update) => {
-      const targetId = filter._id.toString();
-      for (const user of userStore.values()) {
-        if (user.id === targetId) {
-          Object.assign(user, update.$set);
-          return { _id: { toString: () => user.id }, email: user.email, settings: user.settings };
+      update: vi.fn(async ({ where, data, select }) => {
+        for (const user of userStore.values()) {
+          if (user.id === where.id) {
+            Object.assign(user, data);
+            return pickFields(user, select);
+          }
         }
-      }
-      return null;
-    }),
-  })),
-}));
-
-// mongodb.ObjectId: the real one needs a 24-char hex string; our mock user
-// ids look like "user_1". Stub ObjectId with a shim that stores the raw id.
-vi.mock('mongodb', () => ({
-  ObjectId: class {
-    constructor(id) { this.id = id; }
-    toString() { return this.id; }
+        const err = new Error('Record not found');
+        err.code = 'P2025';
+        throw err;
+      }),
+    },
   },
 }));
 

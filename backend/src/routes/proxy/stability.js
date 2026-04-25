@@ -1,7 +1,7 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey, toObjectId } from '../../services/hashService.js';
+import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
@@ -88,14 +88,14 @@ export async function stabilityProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(campaignId),
+        campaignId: toUuid(campaignId),
         key: cacheKey,
         type: 'image',
         contentType: 'image/jpeg',
         size: buffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });
@@ -175,7 +175,7 @@ export async function stabilityProxyRoutes(fastify) {
         size: resultBuffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });

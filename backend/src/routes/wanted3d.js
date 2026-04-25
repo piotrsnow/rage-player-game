@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.js';
-import { hashFromParams, toObjectId } from '../services/hashService.js';
+import { hashFromParams, toUuid } from '../services/hashService.js';
 
 const REPORT_BODY_SCHEMA = {
   type: 'object',
@@ -60,7 +60,7 @@ export async function wanted3dRoutes(fastify) {
       return reply.code(400).send({ error: 'entries array is required' });
     }
 
-    const normalizedCampaignId = toObjectId(campaignId);
+    const normalizedCampaignId = toUuid(campaignId);
     const results = [];
 
     for (const rawEntry of entries) {

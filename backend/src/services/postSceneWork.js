@@ -43,7 +43,7 @@ export async function handlePostSceneWork({
     return;
   }
 
-  const stateChanges = scene.stateChanges ? JSON.parse(scene.stateChanges) : null;
+  const stateChanges = scene.stateChanges || null;
 
   // Build the scene transcript from `dialogueSegments` — the sole source of
   // scene prose. Premium stopped emitting a top-level `narrative` long ago;
@@ -53,10 +53,7 @@ export async function handlePostSceneWork({
   // the dialogue lines, nano was analyzing narration-only input and either
   // returning empty results or flipping `isDominatedScene` (short narration
   // without quote marks → "dominated" → skip).
-  let sceneDialogueSegments = [];
-  try {
-    sceneDialogueSegments = scene.dialogueSegments ? JSON.parse(scene.dialogueSegments) : [];
-  } catch { /* malformed → treat as empty */ }
+  const sceneDialogueSegments = Array.isArray(scene.dialogueSegments) ? scene.dialogueSegments : [];
   const sceneTranscript = Array.isArray(sceneDialogueSegments)
     ? sceneDialogueSegments
         .map((seg) => {

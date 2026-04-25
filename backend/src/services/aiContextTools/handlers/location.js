@@ -13,7 +13,8 @@ export async function handleGetLocation(campaignId, locationName) {
 
   if (!campaign) return 'Campaign not found.';
 
-  const coreState = JSON.parse(campaign.coreState);
+  const coreState = (campaign.coreState && typeof campaign.coreState === 'object')
+    ? campaign.coreState : {};
   const locations = coreState.world?.locations || [];
 
   const query = locationName.toLowerCase();

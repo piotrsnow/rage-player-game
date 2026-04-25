@@ -110,10 +110,37 @@ if (!existsSync(prismaClientDir)) {
 }
 
 // ── 4. Database ──────────────────────────────────────────
-console.log('[4/5] Database');
-info('Pushing schema to MongoDB...');
-run('npx prisma db push');
-ok('Schema pushed');
+console.log('[4/5] Database (Postgres + pgvector)');
+const REPO_ROOT = resolve(BACKEND_ROOT, '..');
+info('Starting `db` container (docker compose up -d db)...');
+try {
+  run('docker compose up -d db', REPO_ROOT);
+} catch (err) {
+  console.error('  ✗ Failed to start db container — is Docker running?');
+  process.exit(1);
+}
+info('Waiting for Postgres to accept connections...');
+// pg_isready inside the container — docker-compose healthcheck already polls
+// this every 5s, so by the time `up -d` returns the wait is usually short.
+let ready = false;
+for (let i = 0; i < 30; i++) {
+  try {
+    execSync('docker compose exec -T db pg_isready -U rpgon -d rpgon', {
+      cwd: REPO_ROOT, stdio: 'ignore',
+    });
+    ready = true;
+    break;
+  } catch { /* not ready yet */ }
+  execSync(process.platform === 'win32' ? 'powershell -Command "Start-Sleep -Seconds 1"' : 'sleep 1');
+}
+if (!ready) {
+  console.error('  ✗ Postgres did not become ready in 30s');
+  process.exit(1);
+}
+ok('Postgres is ready');
+info('Applying Prisma migrations (prisma migrate deploy)...');
+run('npx prisma migrate deploy');
+ok('Migrations applied');
 
 // ── 5. Media directory ───────────────────────────────────
 console.log('[5/5] Media storage directory');

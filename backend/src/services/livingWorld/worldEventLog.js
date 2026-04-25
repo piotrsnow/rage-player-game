@@ -37,7 +37,7 @@ export async function appendEvent({
         campaignId,
         userId,
         eventType,
-        payload: typeof payload === 'string' ? payload : JSON.stringify(payload),
+        payload: typeof payload === 'string' ? { raw: payload } : (payload || {}),
         visibility,
         gameTime: gameTime || new Date(),
       },
@@ -115,13 +115,9 @@ export async function forNpc({ worldNpcId, campaignId = null, sinceTimestamp = n
 }
 
 /**
- * Parse an event's JSON payload safely.
+ * Return the event's payload object. Kept as a helper so callers don't
+ * sprinkle `event.payload || {}` everywhere.
  */
 export function parseEventPayload(event) {
-  if (!event?.payload) return {};
-  try {
-    return JSON.parse(event.payload);
-  } catch {
-    return {};
-  }
+  return (event?.payload && typeof event.payload === 'object') ? event.payload : {};
 }

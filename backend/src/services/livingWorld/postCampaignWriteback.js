@@ -326,20 +326,18 @@ export async function runPostCampaignWorldWriteback(campaignId, {
       where: { id: campaignId },
       select: { coreState: true },
     });
-    if (campaign?.coreState) {
-      let coreState = null;
-      try { coreState = JSON.parse(campaign.coreState); }
-      catch (err) { log.warn({ campaignId, err: err?.message }, 'coreState JSON parse failed — skipping extraction'); }
-      if (coreState) {
-        factExtraction = await extractWorldFacts({
-          campaignId,
-          coreState,
-          shadowDiffSummary: diff.summary,
-          provider: extractionProvider,
-          modelTier: extractionModelTier,
-          userApiKeys: extractionUserApiKeys,
-        });
-      }
+    const coreState = campaign?.coreState;
+    if (coreState && typeof coreState === 'object') {
+      factExtraction = (await extractWorldFacts({
+        campaignId,
+        coreState,
+        shadowDiffSummary: diff.summary,
+        provider: extractionProvider,
+        modelTier: extractionModelTier,
+        userApiKeys: extractionUserApiKeys,
+      })) || factExtraction;
+    } else if (coreState) {
+      log.warn({ campaignId }, 'coreState is not an object — skipping extraction');
     }
   }
 

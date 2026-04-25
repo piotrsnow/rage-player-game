@@ -191,18 +191,14 @@ export async function livingWorldRoutes(fastify) {
     });
 
     let currentLocationId = null;
-    try {
-      const core = JSON.parse(full?.coreState || '{}');
-      const currentName = core?.world?.currentLocation || null;
-      if (currentName) {
-        const match = locations.find(
-          (l) => l.displayName === currentName || l.canonicalName === currentName
-        );
-        if (match) currentLocationId = match.id;
-        else log.warn({ campaignId, currentName }, 'currentLocation name has no exact WorldLocation match');
-      }
-    } catch (err) {
-      log.warn({ err: err?.message, campaignId }, 'coreState parse failed for map endpoint');
+    const core = full?.coreState || {};
+    const currentName = core?.world?.currentLocation || null;
+    if (currentName) {
+      const match = locations.find(
+        (l) => l.displayName === currentName || l.canonicalName === currentName
+      );
+      if (match) currentLocationId = match.id;
+      else log.warn({ campaignId, currentName }, 'currentLocation name has no exact WorldLocation match');
     }
 
     // NOTE: we intentionally do NOT return Campaign.worldBounds. The player

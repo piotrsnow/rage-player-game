@@ -766,7 +766,7 @@ async function upsertCapital() {
     },
     create: {
       canonicalName: CAPITAL_NAME,
-      aliases: JSON.stringify(['Stolica', 'Kapitol']),
+      aliases: ['Stolica', 'Kapitol'],
       description:
         'Słoneczna stolica ludzkiego królestwa. Siedziba tronu, wielkiej świątyni Yerieli i akademii. Z każdej bramy wybiega utwardzona droga w stronę serca kontynentu.',
       category: 'capital',
@@ -809,7 +809,7 @@ async function upsertSublocation(parent, sub) {
     },
     create: {
       canonicalName: sub.name,
-      aliases: JSON.stringify([]),
+      aliases: [],
       description: sub.description,
       category: sub.category,
       locationType: 'interior',
@@ -850,7 +850,7 @@ async function upsertVillage(village) {
     },
     create: {
       canonicalName: village.canonicalName,
-      aliases: JSON.stringify(village.aliases || []),
+      aliases: village.aliases || [],
       description: village.description,
       category: 'village',
       locationType: 'village',
@@ -887,7 +887,7 @@ async function upsertWildLocation(loc) {
     },
     create: {
       canonicalName: loc.canonicalName,
-      aliases: JSON.stringify([]),
+      aliases: [],
       description: loc.description,
       category: loc.category,
       locationType: loc.locationType,
@@ -921,16 +921,9 @@ async function upsertNpc(npc, locationId) {
     where: { canonicalId: npc.canonicalId },
     select: { knowledgeBase: true },
   });
-  let preservedEntries = [];
-  if (existing?.knowledgeBase) {
-    try {
-      const parsed = JSON.parse(existing.knowledgeBase);
-      if (Array.isArray(parsed)) {
-        preservedEntries = parsed.filter((e) => e && e.source && e.source !== 'baseline');
-      }
-    } catch { /* malformed — drop and rebuild */ }
-  }
-  const knowledgeBase = JSON.stringify([...baselineEntries, ...preservedEntries]);
+  const existingArr = Array.isArray(existing?.knowledgeBase) ? existing.knowledgeBase : [];
+  const preservedEntries = existingArr.filter((e) => e && e.source && e.source !== 'baseline');
+  const knowledgeBase = [...baselineEntries, ...preservedEntries];
 
   return prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
@@ -944,7 +937,7 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
-      knownLocationIds: JSON.stringify(knownLocationIds),
+      knownLocationIds,
       knowledgeBase,
     },
     create: {
@@ -958,7 +951,7 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
-      knownLocationIds: JSON.stringify(knownLocationIds),
+      knownLocationIds,
       knowledgeBase,
     },
   });
@@ -1069,7 +1062,7 @@ async function seedNpcKnowledge(locationByName) {
     try {
       await prisma.worldNPC.update({
         where: { canonicalId: entry.canonicalId },
-        data: { knownLocationIds: JSON.stringify(ids) },
+        data: { knownLocationIds: ids },
       });
       updated += 1;
     } catch (err) {

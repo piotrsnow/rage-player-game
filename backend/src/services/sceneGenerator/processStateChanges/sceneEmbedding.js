@@ -1,5 +1,5 @@
 import { buildSceneEmbeddingText, embedText } from '../../embeddingService.js';
-import { writeEmbedding } from '../../vectorSearchService.js';
+import { writeEmbedding } from '../../embeddingWrite.js';
 
 /**
  * Generate and store embedding for a saved scene (async, fire-and-forget).

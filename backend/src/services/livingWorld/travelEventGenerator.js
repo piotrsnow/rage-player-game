@@ -86,13 +86,8 @@ export async function generateTravelEvents({
     if (!locName) continue;
     const list = eventsByLoc.get(locName) || [];
     if (list.length >= 3) continue;
-    let blurb = null;
-    try {
-      const p = JSON.parse(e.payload || '{}');
-      blurb = p.blurb || p.summary || `${e.eventType}`;
-    } catch {
-      blurb = e.eventType;
-    }
+    const p = e.payload || {};
+    const blurb = p.blurb || p.summary || `${e.eventType}`;
     list.push({ type: e.eventType, blurb });
     eventsByLoc.set(locName, list);
   }

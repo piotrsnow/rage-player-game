@@ -1,115 +1,142 @@
-# Migracja MongoDB Atlas → PostgreSQL (kompletna)
+# Migracja MongoDB Atlas → PostgreSQL (fazowo)
+
+## Status (2026-04-25)
+
+| Faza | Status | Notatka |
+|---|---|---|
+| **F1** | ✅ **Zrobione** | Engine swap + JSONB cleanup + transakcje + Postgres dev stack. Zobacz [F1 retrospektywa](#f1-retrospektywa). |
+| **F2** | ⏭️ Następna | Write-path scaling — child tables + FIFO triggery + bulk upsert. **Zacząć od tego w kolejnej sesji.** |
+| F3-F6 | Pending | Bez zmian planu. |
+
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywę F1 (znane długi techniczne), potem skocz do [F2 — Write-path scaling](#f2--write-path-scaling) i poproś o plan startowy.
 
 ## Context
 
-Obecnie projekt stoi na **MongoDB Atlas + Prisma (MongoDB provider)**. Przechodzimy na **PostgreSQL + pgvector**. Pre-prod, znajomi testują ale poczekają do końca migracji. Pusty start (zero migracji danych). Pełen zakres — dopóki nie skończymy, nie wracamy na prod.
+Obecnie projekt stoi na **MongoDB Atlas + Prisma (MongoDB provider)**. Przechodzimy na **PostgreSQL + pgvector**. Pre-prod, znajomi testują ale poczekają do końca migracji. Pusty start (zero migracji danych).
+
+**Skala:** nieznana. Może być 0 DAU, może 50, może spike do 1000 pierwszego dnia. Skalowanie musi być **infra-led** (connection pool, replica, hosting tier), nie code-led — kod ma już mieć patterns które się skalują (transakcje, FK, JSONB, vector index, brak N+1 na hot path).
 
 **Bolączki MongoDB które usuwamy:**
-- Prisma na Mongo nie ma `Json` type → **~50 pól `String` z ręcznym `JSON.parse`/`JSON.stringify`** (persistence.md:62-73).
-- Atlas Vector Search wymaga native BSON arrays → `mongoNative.js` workaround + `writeEmbedding()` poza Prisma.
-- Atlas-only dev (nie ma lokalnego Mongo), SRV string obowiązkowy.
-- Brak FK → `@db.ObjectId` references bez integrity constraints. Possible to save id wskazujące na nieistniejący rekord.
-- `String[] @db.ObjectId` arrays bez natywnego indexowania.
-- Prisma transakcje wymagają replica setu — w praktyce **kod nie ma ANI JEDNEGO `prisma.$transaction`** (zweryfikowane grepem).
-- Brak FIFO triggerów → trimming w JS (`while list.length > 50 list.shift()`) z pełnym rewrite całego JSON arraya.
-- Brak TTL lepszego niż `expireAfterSeconds` (Mongo-specific).
+- Prisma na Mongo nie ma `Json` type → **~50 pól `String` z ręcznym `JSON.parse`/`JSON.stringify`**
+- Atlas Vector Search wymaga native BSON arrays → `mongoNative.js` workaround + `writeEmbedding()` poza Prisma
+- Atlas-only dev (nie ma lokalnego Mongo), SRV string obowiązkowy
+- Brak FK → `@db.ObjectId` references bez integrity constraints
+- `String[] @db.ObjectId` arrays bez natywnego indexowania
+- Prisma transakcje wymagają replica setu — w praktyce **kod nie ma ANI JEDNEGO `prisma.$transaction`** (zweryfikowane grepem)
+- Brak FIFO triggerów → trimming w JS z pełnym rewrite całego JSON arraya
+- Brak TTL lepszego niż `expireAfterSeconds` (Mongo-specific)
 
 ---
 
-## Success criteria
+## Plan fazowy — overview
 
-Migracja skończona, gdy:
+| Faza | Cel | Trigger uruchomienia | Schema delta |
+|---|---|---|---|
+| **F1** | Engine swap, friends back online | ASAP | Full new schema, JSONB dla wszystkiego co dekomponowane później; 2 join tables (Participant + MPPlayer) |
+| **F2** | Write-path scaling | Przed publicznym exposure / przed >100 DAU | + 5 child tables dla append-heavy capped lists; bulk upserty; FIFO triggery |
+| **F3** | Reference normalization | Po F2, przy najbliższym oknie | + 7 join tables dla pól `Json[]` które są pure Mongo workaroundami |
+| **F4** | Hot-path entity decomposition | Po F3 | + 5 child tables (skills/inventory/materials/objectives/relationships) + equipped FK |
+| **F5** | `coreState` surface trimming | Po F4 | Hot scalars na kolumny + `transientState JSONB` |
+| **F6** | Production scale-out | Metric-driven | Infra: pool tuning, replica, partycjonowanie, materialized views, pg_cron |
 
-1. `docker compose up` stawia lokalny Postgres + backend **offline** (bez internetu / bez Atlas).
-2. `npx prisma migrate dev` czysto generuje schemat + ręczne SQL bloczki (CREATE EXTENSION vector, HNSW indexes, triggery FIFO, enum types).
-3. Cały kod po grepie `import.*mongodb`, `ObjectId`, `JSON.parse(...)` na pola bazodanowe, `writeEmbedding via native driver` — **zero wyników** poza `node_modules` i plikami które świadomie usuwamy.
-4. E2E: rejestracja → postać → kampania → scena → embedding → vector search → tick Living World → NPC się ruszy → WorldEvent zapisany. `npm test` i `npm run test:e2e` przechodzą.
-5. Produkcyjny Cloud Run deployable na Postgres (hosting do zdecydowania osobno — ale **kod gotowy**, niezależnie od hostingu).
-6. Docs zaktualizowane: `atlas-only-no-local-mongo.md` + `embeddings-native-driver.md` → SUPERSEDED, nowe `postgres-dev.md` + `embeddings-pgvector.md`. `AGENTS.md` Stack section.
+Każda faza shippable samodzielnie. Fazy 2-5 nie blokują się nawzajem (można przerwać po F1 lub F2 i normalnie operować).
 
 ---
 
-## Decyzje podjęte (potwierdzone)
+## Decyzje (wspólne dla wszystkich faz)
 
 | Pytanie | Decyzja |
 |---|---|
 | ID | **UUIDv7** (`@default(uuid(7))` w Prisma 6) |
 | `withRetry` | Zostaje, tylko zamiana kodów błędów (P2028 mongo-only → 40001 postgres serialization) |
-| Migracje Prisma | **Jedna migracja** — cały initial schema + extensions + triggery w jednym `npx prisma migrate dev --name init_postgres` |
+| Migracje Prisma | F1 = jedna migracja init. Każda kolejna faza = osobna migracja przyrostowa |
 | JSON handling | **Natywny JSONB** — `Json` type. Zero `JSON.parse`/`JSON.stringify` na polach DB w kodzie |
 | Pusty start | Znajomi zaczynają świeże konta/kampanie — brak migracji danych |
-| Równoległa produkcja | Wyłączamy — znajomi czekają do końca migracji |
 | Vector index | HNSW, cosine, 1536-dim |
+| Naming | camelCase tabel/kolumn jak dziś (mniej zmian w kodzie) |
+| Enums w PG | Tylko dla zamkniętych zbiorów (`DangerLevel`, `LocationType`, `ReviewStatus`, `DiscoveryState`). Dla łatwo-ewoluujących (`attitude`, `visibility`, quest `status`) zostaje `String` |
 
 ---
 
-## Mongo-isms które wyrzucamy (vs Postgres-native replacement)
+## Mongo-isms — wszystkie + przypisanie do fazy
 
-Zasada: zamiast kopiować Mongo patterns do Postgres, bierzemy Postgres-native alternatywę TYLKO gdy adresuje realny kod który już jest problematyczny. Nie dodajemy "elastyczności" na wszelki wypadek.
-
-| Mongo-ism | Gdzie w kodzie | Postgres-native | Uzasadnienie |
+| Mongo-ism | Gdzie w kodzie | Postgres-native | Faza |
 |---|---|---|---|
-| `String` z JSON.parse/stringify | ~50 pól w `schema.prisma`, parse/stringify w `campaignSync.js`, `processStateChanges/handlers/*`, `livingWorld/*`, `campaignLoader.js`, `storage.js` | **`Json` typ + JSONB storage** | Prisma 6 serializuje/deserializuje automatycznie. Zero linii JSON.parse/stringify. |
-| `String[] @db.ObjectId` (arrays IDs) | `Campaign.characterIds`, `MultiplayerSession.characterIds` | **Join table z FK + cascade** | `CampaignParticipant`, `MultiplayerSessionPlayer` — eliminuje ręczne lookup, dostajemy natywny "którą kampanię używa postać X" przez relation, cascade delete działa |
-| JSON array of foreign IDs in a string field | `Campaign.discoveredLocationIds`, `heardAboutLocationIds`, `discoveredSubLocationIds`, `UserWorldKnowledge.discoveredLocationIds/EdgeIds/heardAbout`, `WorldLocationEdge.discoveredByCampaigns`, `CampaignQuest.prerequisiteQuestIds`, `Character.clearedDungeonIds`, `WorldNPC.knownLocationIds` | **Join tables** | Mongo pattern ("trzymaj IDs w arrayu w polu") jest wymuszony brakiem FK. Postgres: join table z FK, unique, cascade, natywne indeksy. Łatwe queries "czy X widzi Y". |
-| JSON obiektów bez search ale z partial updates | `Character.skills` (xp per skill, hot path), `Character.inventory` (add/remove item), `Character.materialBag` (stack), `CampaignQuest.objectives` (progress per objective), `CampaignNPC.relationships`, `CampaignNPC.experienceLog`, `WorldNPC.knowledgeBase`, `WorldNPC.dialogHistory` (cap 50 per campaign), `WorldLocation.knowledgeBase`, `CampaignDmAgent.dmMemory/pendingHooks` | **Dedykowane tabele 1-to-many** | Partial update w JSONB = full rewrite. Dedykowana tabela = precyzyjny INSERT/UPDATE jednego rekordu. Plus trigger FIFO trim tam gdzie jest cap. |
-| JSON skalarów | `Character.attributes` (6 INT), `Character.mana` ({current,max}), `Character.money` ({gold,silver,copper}), `Character.needs` (5 INT), `Character.equipped` (3 FK), `Campaign.worldBounds` (4 FLOAT), `WorldLocation.roomMetadata` (fixed struct) | **Kolumny skalarne + FK** | Atomic `UPDATE … SET col = col - 5` zamiast full JSON rewrite. Uneventfully typowane. |
-| `lastLocation: String` + `lastLocationId: @db.ObjectId` duplikacja | `CampaignNPC` | **Tylko `lastLocationId` FK**, displayName pobierany przez JOIN lub `include` | Brak FK w Mongo wymuszał trzymanie flavor stringa na wszelki wypadek. W Postgres FK gwarantuje że join znajdzie nazwę. |
-| Brak `$transaction` | Save flow (PUT campaign + syncs), scene save + state changes, promotion batch | **`prisma.$transaction([...])` wrap** | Mongo wymagał replica setu; w Postgres transakcje są standardem. Multi-write teraz atomowe. |
-| Loop `findUnique` + `upsert` per-entity | `syncNPCsToNormalized` (40+ queries dla 20 NPC), `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `processNpcChanges` | **Bulk `INSERT … ON CONFLICT DO UPDATE`** | Postgres ma ON CONFLICT natywnie. 1 query zamiast N. |
-| `@db.ObjectId` referencje bez cascade | Większość cross-model references poza explicit `@relation(onDelete: Cascade)` | **FK z `ON DELETE CASCADE`** w Prisma `@relation` | Kaskadowe usunięcie kampanii znika wszystko; dziś trzeba ręcznie kasować normalized collections. |
-| String enum + CHECK w comment | `Campaign.difficultyTier`, `WorldLocation.dangerLevel`, `WorldLocationEdge.difficulty`, `WorldLocation.locationType`, `UserDiscoveredLocation.state` (hypothetic), `PendingWorldStateChange.status`, `CampaignNPC.attitude` | **Postgres `CREATE TYPE … AS ENUM`** via Prisma `enum` block | Typed, wymusza wartości, kompiluje się bez wartości-literałów w kodzie. |
-| `MongoClient.createSearchIndex` + `$vectorSearch` | `vectorSearchService.js`, `createVectorIndexes.js` | **pgvector + HNSW** przez `CREATE INDEX USING hnsw` i `ORDER BY embedding <=> query_vec` | Jedna biblioteka, jedna ścieżka zapisu przez Prisma `$executeRaw`, brak osobnego klienta. |
-| In-process cosine (ragService) | `ragService.query()` — `findMany` + loop cosine w JS | **`$queryRaw` + pgvector operator** | Skalowalne, indeksowane, <5ms na 10k rows. |
-| TTL index `expireAfterSeconds` | `RefreshToken.expiresAt` | **Boot-time `setInterval` cleanup** (Faza 1) + `@@index([expiresAt])`. Alternatywa: pg_cron gdy prod Cloud SQL (osobna decyzja). | Lazy cleanup w `refreshTokenService.js:50-71` już odrzuca ekspirowane — setInterval tylko sweep co 10 min |
-| FIFO trim w JS `while len > cap` | `WorldNPC.dialogHistory` cap 50, `knowledgeBase` cap 50, `CampaignDmAgent.dmMemory` cap 20, `pendingHooks` cap 12, `goalProgress.milestones` cap 20 (npcAgentLoop) | **Trigger AFTER INSERT** który DELETE oldest rows gdy count > cap | Per-row insert bez pełnego rewrite całej historii. Trigger centralizuje politykę. |
-| `new ObjectId(val)` wrapping w ~10 plikach | `hashService.toObjectId`, `worldStateService.toObjectIdString`, `companionService`, `routes/auth.js` (direct native query!), `routes/media.js`, `routes/wanted3d.js`, `routes/proxy/{stability,openai}.js` | **Drop całkowicie** — Prisma przyjmuje UUID string | 10+ plików uproszczonych |
-| `Campaign.coreState` monolit 15-25KB | `campaignSync.js` rewrite przy każdym save | **Kolumny skalarne dla hot-path + `transientState JSONB` dla reszty** | Partial updates `UPDATE … SET current_location = $1` zamiast pełnego JSON |
+| `String` z JSON.parse/stringify | ~50 pól w schemie + parse/stringify w campaignSync, processStateChanges/handlers, livingWorld, campaignLoader, storage | `Json` typ + JSONB | **F1** |
+| `String[] @db.ObjectId` (character lists) | `Campaign.characterIds`, `MultiplayerSession.characterIds` | Join table z FK + cascade (`CampaignParticipant`, `MultiplayerSessionPlayer`) | **F1** |
+| `@db.ObjectId` referencje | wszystkie cross-model refs | FK z `ON DELETE CASCADE` na scalar UUID | **F1** |
+| `MongoClient.createSearchIndex` + `$vectorSearch` | `vectorSearchService.js`, `createVectorIndexes.js` | pgvector + HNSW + `$queryRaw <=>` | **F1** |
+| In-process cosine (ragService) | `ragService.query()` — findMany + JS loop | `$queryRaw + <=>` z pgvector op | **F1** |
+| `new ObjectId(val)` wrapping w ~10 plikach | hashService, worldStateService, companionService, routes/auth, routes/media, routes/wanted3d, routes/proxy/{stability,openai} | DROP — Prisma przyjmuje UUID string | **F1** |
+| Brak `$transaction` | save flow, scene save, processStateChanges, promotion batch, admin approve | `prisma.$transaction([...])` wrap | **F1** |
+| Direct `MongoClient` query w routes/auth.js | `routes/auth.js:2,101` | Prisma client | **F1** |
+| TTL index `expireAfterSeconds` | `RefreshToken.expiresAt` | F1: boot-time `setInterval` cleanup. F6: `pg_cron` gdy prod | **F1 → F6** |
+| WFRP legacy fields (careerData, characteristics, advances, xp, xpSpent) | `Character` + `routes/characters.js` + FE fallback | DROP całkowicie | **F1** |
+| Loop `findUnique`+`upsert` per-entity | `syncNPCsToNormalized` (40+ queries dla 20 NPC), `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `processNpcChanges` | Bulk `INSERT … ON CONFLICT DO UPDATE` (`createMany`+`updateMany` lub `$executeRaw UNNEST`) | **F2** |
+| FIFO trim w JS `while len > cap` | `WorldNPC.dialogHistory` cap 50, `WorldNPC.knowledgeBase` cap 50, `CampaignDmAgent.dmMemory` cap 20, `CampaignDmAgent.pendingHooks` cap 12, `CampaignNPC.experienceLog` (cap N), `goalProgress.milestones` cap 20 | Per-row INSERT do child table + trigger AFTER INSERT który DELETE oldest gdy count > cap | **F2** |
+| JSON array of foreign IDs (Mongo workaround dla braku FK) | `Campaign.discoveredLocationIds/heardAbout/discoveredSub`, `UserWorldKnowledge.*Ids`, `WorldLocationEdge.discoveredByCampaigns`, `WorldNPC.knownLocationIds`, `Character.clearedDungeonIds`, `CampaignQuest.prerequisiteQuestIds` | Join tables z FK + unique + cascade + indeksy | **F3** |
+| JSON map skill→{xp,level} (hot partial update) | `Character.skills` | Dedykowana tabela `CharacterSkill` | **F4** |
+| JSON inventory list + equipped przez ID-w-stringu | `Character.inventory`, `Character.equipped {mainHand, offHand, armour}` | `CharacterInventoryItem` + FK `equipped*Id` → wymusza spójność | **F4** |
+| JSON materialBag (atomic stack updates) | `Character.materialBag` | `CharacterMaterial` (atomic `UPDATE quantity = quantity + N`) | **F4** |
+| JSON objectives + prereqs | `CampaignQuest.objectives`, `prerequisiteQuestIds` | `CampaignQuestObjective` + `CampaignQuestPrerequisite` | **F3 (prereqs) + F4 (objectives)** |
+| JSON relationships map | `CampaignNPC.relationships` | `CampaignNpcRelationship` | **F4** |
+| JSON skalarów (small fixed structs) | `Character.attributes` (6 INT), `mana`, `money`, `needs`, `Campaign.worldBounds` (4 FLOAT), `WorldLocation.roomMetadata` | F1: JSONB. F5: hot-path `coreState` rzeczy → kolumny skalarne | **F1 → F5** |
+| `lastLocation: String` + `lastLocationId: @db.ObjectId` duplikacja | `CampaignNPC` | Tylko `lastLocationId` FK, displayName przez join | **F5** (low priority — UI zachowanie się nie zmienia) |
+| `Campaign.coreState` monolit 15-25KB | `campaignSync.js` rewrite przy każdym save | Hot scalars (currentLocationId, gameTime, weather, sessionTitle, worldBounds) na kolumny + `transientState JSONB` | **F5** |
 
 ---
 
 ## Postgres-native cechy które wykorzystujemy
 
-- **pgvector HNSW** — vector search bez osobnego klienta
-- **JSONB** — `?`, `@>`, `->>` operators, GIN indexes tam gdzie filtrujemy
-- **Native UUIDv7** — time-ordered ID, lepszy B-tree locality
-- **FK + ON DELETE CASCADE** — auto-cleanup przy delete parent
-- **`CREATE TYPE … AS ENUM`** — typed enumy
-- **`prisma.$transaction`** — multi-write atomicity
-- **`INSERT … ON CONFLICT DO UPDATE`** — bulk upsert (Prisma `createMany` + `updateMany` / `$executeRaw`)
-- **Partial indexes** `CREATE INDEX … WHERE …` — np. embedding IS NOT NULL
-- **Triggery** — FIFO trim, audit ledger
-- **Composite indexes** — już używamy `@@index([...])`, Postgres je honoruje tak samo
-- **`generated always as ... stored`** — dla derived columns (ale nie używamy spekulatywnie — tylko jeśli pojawi się konkretny slow query)
+- **pgvector HNSW** (F1) — vector search bez osobnego klienta
+- **JSONB** (F1) — `?`, `@>`, `->>` operators, GIN indexes tam gdzie filtrujemy
+- **Native UUIDv7** (F1) — time-ordered ID, lepszy B-tree locality
+- **FK + ON DELETE CASCADE** (F1) — auto-cleanup przy delete parent
+- **`CREATE TYPE … AS ENUM`** (F1) — typed enumy dla zamkniętych zbiorów
+- **`prisma.$transaction`** (F1) — multi-write atomicity
+- **`INSERT … ON CONFLICT DO UPDATE`** (F2) — bulk upsert
+- **Partial indexes** `CREATE INDEX … WHERE …` (F1) — np. embedding IS NOT NULL
+- **Triggery plpgsql** (F2) — FIFO trim
+- **Composite indexes** (F1) — Postgres je honoruje tak samo jak Mongo
 
-**Nie używamy:**
-- PostGIS — coords + Dijkstra w JS (euklidesowe, Dijkstra <1000 nodes), vanilla btree na (regionX, regionY) wystarczy
+**Nie używamy (non-goals):**
+- PostGIS — coords + Dijkstra w JS, vanilla btree na (regionX, regionY) wystarczy
 - pg_trgm / full-text search — fuzzy NPC dedupe robi JS substring + RAG embeddingi
-- Recursive CTE — brak graph traversal w SQL, Dijkstra w JS
+- Recursive CTE — Dijkstra w JS
 - LISTEN/NOTIFY — nie zastępujemy Cloud Tasks
-- Materialized views — brak slow aggregate queries (profile po implementacji, dodaj jeśli trzeba)
-- Partycjonowanie — WorldEvent rośnie, ale przy <1M wierszy nie potrzebujemy
-- Read replicas — 50 DAU
-- RLS — multi-tenant przez `WHERE userId = $1` w kodzie, review pokrywa
+- RLS — multi-tenant przez `WHERE userId = $1` w kodzie
+- `generated always as stored` columns — spekulatywne, profile po użyciu
 
 ---
 
-## Pełen schemat Postgres (z dekompozycjami)
+# F1 — Engine swap
 
-Konwencja: Prisma `model` w camelCase/PascalCase, SQL `@@map`/`@map` opcjonalnie snake_case (robię dopiero gdy user potwierdzi — dziś zostawiam camelCase jak w obecnej schemie).
+**Cel:** odciąć Mongo, zostawić logikę nienaruszoną, użyć natywnych typów PG gdzie to *darmowe*.
 
-### Enumy (nowe, Postgres-native)
+## F1 success criteria
+
+1. `docker compose up` stawia lokalny Postgres + backend **offline** (bez internetu / bez Atlas)
+2. `npx prisma migrate dev --name init_postgres` czysto generuje schemat + manual SQL bloczek (CREATE EXTENSION vector, HNSW indexes)
+3. Cały kod po grepie `import.*mongodb`, `ObjectId`, `JSON.parse(...)` na pola DB, `mongoNative` — **zero wyników** poza node_modules
+4. E2E: rejestracja → postać → kampania → scena → embedding → vector search → tick Living World → NPC się ruszy → WorldEvent zapisany. `npm test` i `npm run test:e2e` przechodzą
+5. Cloud Run deployable na Postgres (hosting decyzja osobno w F6)
+6. Docs: `atlas-only-no-local-mongo.md` + `embeddings-native-driver.md` → SUPERSEDED, nowe `postgres-dev.md` + `embeddings-pgvector.md`. CLAUDE.md Stack section.
+
+## F1 schema
+
+Konwencja: camelCase. Wszystko co w F2-F5 zostanie zdekomponowane → zostaje `Json` w F1.
+
+### Enumy (Postgres-native)
 
 ```prisma
-enum DangerLevel { safe moderate dangerous deadly }
-enum LocationType { generic hamlet village town city capital dungeon forest wilderness interior dungeon_room }
-enum DiscoveryState { visited heard_about sublocation_visited }
-enum ReviewStatus { pending approved rejected }
-enum NpcAttitude { hostile unfriendly neutral friendly ally }   // opcjonalnie, sprawdzić używanie
-enum CampaignVisibility { campaign private deferred global }   // dla WorldEvent
+enum DangerLevel    { safe moderate dangerous deadly }
+enum LocationType   { generic hamlet village town city capital dungeon forest wilderness interior dungeon_room }
+enum ReviewStatus   { pending approved rejected }
 ```
 
-Używane w: `Campaign.difficultyTier` (DangerLevel), `WorldLocation.dangerLevel` (DangerLevel), `WorldLocation.locationType` (LocationType), `WorldLocationEdge.difficulty` (DangerLevel), `PendingWorldStateChange/NPCPromotionCandidate/LocationPromotionCandidate.status` (ReviewStatus), `CampaignNPC.attitude` (NpcAttitude), `WorldEvent.visibility` (CampaignVisibility), `UserDiscoveredLocation.state` (DiscoveryState).
+`DiscoveryState` przeniesiony do F3 (używany tylko przez join tables dodane w F3).
+
+`attitude`, `WorldEvent.visibility`, `CampaignQuest.status`, `Campaign.difficultyTier` (osobna skala low/medium/high/deadly) zostają `String` (łatwo ewoluują lub osobna semantyka).
 
 ### User / Auth
 
@@ -118,10 +145,10 @@ model User {
   id              String   @id @default(uuid(7)) @db.Uuid
   email           String   @unique
   passwordHash    String
-  apiKeys         Json     @default("{}")     // encrypted blob
+  apiKeys         Json     @default("{}")
   settings        Json     @default("{}")
   isAdmin         Boolean  @default(false)
-  contentLanguage String   @default("pl")     // TEXT (pl|en) — nie enum (potential future langs)
+  contentLanguage String   @default("pl")
   createdAt       DateTime @default(now()) @db.Timestamptz
   updatedAt       DateTime @updatedAt         @db.Timestamptz
 
@@ -143,151 +170,74 @@ model RefreshToken {
   expiresAt   DateTime @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId])
-  @@index([expiresAt])      // dla setInterval sweep
+  @@index([expiresAt])
 }
 ```
 
-### Character (pełna dekompozycja)
+### Character (F1 — wszystko Json poza FK na user)
 
 ```prisma
 model Character {
-  id              String @id @default(uuid(7)) @db.Uuid
-  userId          String @db.Uuid
-  name            String
-  age             Int    @default(23)
-  gender          String @default("")
-  species         String
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  userId             String   @db.Uuid
+  name               String
+  age                Int      @default(23)
+  gender             String   @default("")
+  species            String
 
-  // Atrybuty RPGon — 6 skalarów (zamiast JSON)
-  attrSila         Int @default(1)
-  attrInteligencja Int @default(1)
-  attrCharyzma     Int @default(1)
-  attrZrecznosc    Int @default(1)
-  attrWytrzymalosc Int @default(1)
-  attrSzczescie    Int @default(0)
+  attributes         Json     @default("{}")  // {sila, inteligencja, charyzma, zrecznosc, wytrzymalosc, szczescie}
+  wounds             Int      @default(0)
+  maxWounds          Int      @default(0)
+  movement           Int      @default(4)
+  characterLevel     Int      @default(1)
+  characterXp        Int      @default(0)
+  attributePoints    Int      @default(0)
+  mana               Json     @default("{\"current\":0,\"max\":0}")
+  money              Json     @default("{\"gold\":0,\"silver\":0,\"copper\":0}")
+  needs              Json     @default("{}")
 
-  wounds           Int @default(0)
-  maxWounds        Int @default(0)
-  movement         Int @default(4)
-  characterLevel   Int @default(1)
-  characterXp      Int @default(0)
-  attributePoints  Int @default(0)
+  skills             Json     @default("{}")           // map skillName → {level, xp}        — F4
+  inventory          Json     @default("[]")           // array of items                      — F4
+  equipped           Json     @default("{}")           // {mainHand, offHand, armour} string IDs — F4 (FK)
+  materialBag        Json     @default("[]")           // array of {key, qty}                — F4
+  clearedDungeonIds  Json     @default("[]")           // array of WorldLocation.id strings  — F3
+  spells             Json     @default("{\"known\":[],\"usageCounts\":{},\"scrolls\":[]}")
+  statuses           Json     @default("[]")
+  customAttackPresets Json    @default("[]")
+  knownTitles        Json     @default("[]")
 
-  manaCurrent      Int @default(0)
-  manaMax          Int @default(0)
-
-  moneyGold        Int @default(0)
-  moneySilver      Int @default(0)
-  moneyCopper      Int @default(0)
-
-  needHunger       Int @default(100)
-  needThirst       Int @default(100)
-  needBladder      Int @default(100)
-  needHygiene      Int @default(100)
-  needRest         Int @default(100)
-
-  // Equipped — 3 optional FK
-  equippedMainHandId String? @db.Uuid
-  equippedOffHandId  String? @db.Uuid
-  equippedArmourId   String? @db.Uuid
-  equippedMainHand   CharacterInventoryItem? @relation("equipMain", fields: [equippedMainHandId], references: [id])
-  equippedOffHand    CharacterInventoryItem? @relation("equipOff",  fields: [equippedOffHandId],  references: [id])
-  equippedArmour     CharacterInventoryItem? @relation("equipArm",  fields: [equippedArmourId],   references: [id])
-
-  // Spells — małe, rzadkie partial updates, strukturowane — JSONB OK
-  spells           Json @default("{\"known\":[],\"usageCounts\":{},\"scrolls\":[]}")
-
-  // Status
-  status             String?    // alive|dead|unconscious — string bo UI/LLM operują free form
-  lockedCampaignId   String?    @db.Uuid
+  status             String?
+  lockedCampaignId   String?  @db.Uuid
   lockedCampaignName String?
   lockedLocation     String?
+  activeDungeonState Json?
 
-  activeDungeonState Json?      // transient per-run
-
-  statuses            Json @default("[]")
-  customAttackPresets Json @default("[]")
-  knownTitles         Json @default("[]")
-
-  backstory   String @default("")
-  portraitUrl String @default("")
-  voiceId     String @default("")
-  voiceName   String @default("")
-  campaignCount Int  @default(0)
-  fame        Int @default(0)
-  infamy      Int @default(0)
-
-  // USUWAMY legacy WFRP (careerData, characteristics, advances, xp, xpSpent).
-  // Migrować FE fallback `char.attributes || char.characteristics` → tylko `char.attributes`.
-  // BE routes/characters.js drop WFRP write path.
+  backstory          String   @default("")
+  portraitUrl        String   @default("")
+  voiceId            String   @default("")
+  voiceName          String   @default("")
+  campaignCount      Int      @default(0)
+  fame               Int      @default(0)
+  infamy             Int      @default(0)
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  skills          CharacterSkill[]
-  inventoryItems  CharacterInventoryItem[] @relation("charInvItems")
-  materials       CharacterMaterial[]
-  clearedDungeons CharacterClearedDungeon[]
-  participants    CampaignParticipant[]
-  mpPlayers       MultiplayerSessionPlayer[]
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participants   CampaignParticipant[]
+  mpPlayers      MultiplayerSessionPlayer[]
   npcAttributions WorldNpcAttribution[]
-  reputations     WorldReputation[]
+  reputations    WorldReputation[]
 
   @@index([userId])
   @@index([lockedCampaignId])
 }
-
-model CharacterSkill {
-  characterId String @db.Uuid
-  skillName   String
-  level       Int    @default(0)
-  xp          Int    @default(0)
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  @@id([characterId, skillName])
-  @@index([characterId, level])
-}
-
-model CharacterInventoryItem {
-  id          String @id @default(uuid(7)) @db.Uuid
-  characterId String @db.Uuid
-  itemId      String          // stable ID z src/data/
-  baseType    String?
-  name        String
-  quantity    Int    @default(1)
-  props       Json   @default("{}")
-  addedAt     DateTime @default(now()) @db.Timestamptz
-  character   Character @relation("charInvItems", fields: [characterId], references: [id], onDelete: Cascade)
-
-  asMainHand  Character[] @relation("equipMain")
-  asOffHand   Character[] @relation("equipOff")
-  asArmour    Character[] @relation("equipArm")
-
-  @@index([characterId, itemId])
-}
-
-model CharacterMaterial {
-  characterId String @db.Uuid
-  materialKey String
-  quantity    Int    @default(0)
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  @@id([characterId, materialKey])
-}
-
-model CharacterClearedDungeon {
-  characterId String @db.Uuid
-  dungeonId   String @db.Uuid
-  clearedAt   DateTime @default(now()) @db.Timestamptz
-  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  dungeon     WorldLocation @relation(fields: [dungeonId], references: [id])
-  @@id([characterId, dungeonId])
-}
 ```
 
-### Campaign (dekompozycja coreState)
+**Drop w F1:** WFRP legacy (`careerData`, `characteristics`, `advances`, `xp`, `xpSpent`). FE fallback `char.attributes || char.characteristics` → tylko `char.attributes`. BE `routes/characters.js` drop write path.
+
+### Campaign (F1 — coreState monolit)
 
 ```prisma
 model Campaign {
@@ -296,17 +246,7 @@ model Campaign {
   name                     String @default("")
   genre                    String @default("")
   tone                     String @default("")
-
-  // Hot path z coreState — kolumny skalarne
-  currentLocation          String?              // flavor name
-  currentLocationId        String? @db.Uuid
-  gameTime                 DateTime? @db.Timestamptz
-  weather                  String?
-  sessionTitle             String?
-
-  // Pozostałe transient (combat state, chat buffer, temp world facts) → JSONB
-  transientState           Json    @default("{}")
-
+  coreState                Json    @default("{}")       // monolit — F5 dekompozycja
   totalCost                Float   @default(0)
   isPublic                 Boolean @default(false)
   shareToken               String? @unique
@@ -317,69 +257,55 @@ model Campaign {
   livingWorldEnabled       Boolean @default(false)
   worldTimeRatio           Float   @default(24.0)
   worldTimeMaxGapDays      Int     @default(7)
-  difficultyTier           DangerLevel @default(safe)
-  settlementCaps           Json?                       // małe, rzadko mod — JSONB
+  difficultyTier           String  @default("low")     // low|medium|high|deadly — encounter cap, OSOBNA skala od WorldLocation.dangerLevel; zostaje String bo walidacja w routes/campaigns/schemas.js
+  settlementCaps           Json?
+  worldBounds              Json?
 
-  // worldBounds → 4 FLOAT
-  boundsMinX               Float?
-  boundsMaxX               Float?
-  boundsMinY               Float?
-  boundsMaxY               Float?
+  discoveredLocationIds    Json @default("[]")          // F3 → join table
+  discoveredSubLocationIds Json @default("[]")          // F3
+  heardAboutLocationIds    Json @default("[]")          // F3
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  participants            CampaignParticipant[]
-  scenes                  CampaignScene[]
-  npcs                    CampaignNPC[]
-  knowledge               CampaignKnowledge[]
-  codex                   CampaignCodex[]
-  quests                  CampaignQuest[]
-  locationSummaries       CampaignLocationSummary[]
-  dmAgent                 CampaignDmAgent?
-  discoveredLocations     CampaignDiscoveredLocation[]
-  edgeDiscoveries         WorldEdgeDiscovery[]
-  npcDialogTurns          WorldNpcDialogTurn[]
-  npcAttributions         WorldNpcAttribution[]
-  pendingWorldStateChanges PendingWorldStateChange[]
-  npcPromotionCandidates  NPCPromotionCandidate[]
+  user                        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  participants                CampaignParticipant[]
+  scenes                      CampaignScene[]
+  npcs                        CampaignNPC[]
+  knowledge                   CampaignKnowledge[]
+  codex                       CampaignCodex[]
+  quests                      CampaignQuest[]
+  locationSummaries           CampaignLocationSummary[]
+  dmAgent                     CampaignDmAgent?
+  npcAttributions             WorldNpcAttribution[]
+  pendingWorldStateChanges    PendingWorldStateChange[]
+  npcPromotionCandidates      NPCPromotionCandidate[]
   locationPromotionCandidates LocationPromotionCandidate[]
+  worldEvents                 WorldEvent[]
+  npcDialogTurns              WorldNpcDialogTurn[]      // F2 (placeholder relation, model w F2)
 
   @@index([userId])
   @@index([isPublic])
 }
 
-model CampaignParticipant {
+model CampaignParticipant {                              // F1 — replaces Campaign.characterIds[]
   campaignId   String @db.Uuid
   characterId  String @db.Uuid
-  role         String @default("player")   // player|host|guest
+  role         String @default("player")
   joinedAt     DateTime @default(now()) @db.Timestamptz
-  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign     Campaign  @relation(fields: [campaignId],  references: [id], onDelete: Cascade)
   character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   @@id([campaignId, characterId])
   @@index([characterId])
 }
-
-model CampaignDiscoveredLocation {
-  campaignId     String @db.Uuid
-  locationId     String @db.Uuid
-  state          DiscoveryState
-  discoveredAt   DateTime @default(now()) @db.Timestamptz
-  campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  location       WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  @@id([campaignId, locationId])
-  @@index([locationId])
-}
 ```
 
-### CampaignScene (z pgvector)
+### CampaignScene / NPC / Knowledge / Codex / Quest / LocationSummary / DmAgent (F1 — bez dekompozycji)
 
 ```prisma
 model CampaignScene {
-  id                String @id @default(uuid(7)) @db.Uuid
-  campaignId        String @db.Uuid
+  id                String   @id @default(uuid(7)) @db.Uuid
+  campaignId        String   @db.Uuid
   sceneIndex        Int
   narrative         String
   chosenAction      String?
@@ -394,53 +320,50 @@ model CampaignScene {
   embeddingText     String?
   embedding         Unsupported("vector(1536)")?
   createdAt         DateTime @default(now()) @db.Timestamptz
-
   campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-
   @@index([campaignId, sceneIndex])
 }
-```
 
-### CampaignNPC (rozbicie relationships + experienceLog)
-
-```prisma
 model CampaignNPC {
   id                        String @id @default(uuid(7)) @db.Uuid
   campaignId                String @db.Uuid
   npcId                     String
   name                      String
-  gender                    String @default("unknown")
+  gender                    String   @default("unknown")
   role                      String?
   personality               String?
-  attitude                  NpcAttitude @default(neutral)
-  disposition               Int    @default(0)
-  alive                     Boolean @default(true)
+  attitude                  String   @default("neutral")
+  disposition               Int      @default(0)
+  alive                     Boolean  @default(true)
   factionId                 String?
   notes                     String?
-  worldNpcId                String? @db.Uuid
-  isAgent                   Boolean @default(false)
-  category                  String  @default("commoner")
-  lastLocationId            String? @db.Uuid            // ← jedyne pole lokalizacji; `lastLocation` string DROP
+  worldNpcId                String?  @db.Uuid
+  isAgent                   Boolean  @default(false)
+  category                  String   @default("commoner")
+  lastLocation              String?                        // F5 drop (FK only)
+  lastLocationId            String?  @db.Uuid
   pendingIntroHint          String?
   activeGoal                String?
   goalProgress              Json?
-  hasAcknowledgedFame       Boolean @default(false)
-  interactionCount          Int     @default(0)
-  dialogCharCount           Int     @default(0)
-  questInvolvementCount     Int     @default(0)
+  hasAcknowledgedFame       Boolean  @default(false)
+  interactionCount          Int      @default(0)
+  dialogCharCount           Int      @default(0)
+  questInvolvementCount     Int      @default(0)
   lastInteractionAt         DateTime? @db.Timestamptz
   lastInteractionSceneIndex Int?
+
+  relationships             Json     @default("[]")        // F4 → CampaignNpcRelationship
+  experienceLog             Json     @default("[]")        // F2 → CampaignNpcExperience
+
   embeddingText             String?
   embedding                 Unsupported("vector(1536)")?
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
-  campaign                  Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  worldNpc                  WorldNPC? @relation(fields: [worldNpcId], references: [id])
-  lastLocation              WorldLocation? @relation(fields: [lastLocationId], references: [id])
-  relationships             CampaignNpcRelationship[]
-  experienceEntries         CampaignNpcExperience[]
+  campaign     Campaign       @relation(fields: [campaignId],     references: [id], onDelete: Cascade)
+  worldNpc     WorldNPC?      @relation(fields: [worldNpcId],     references: [id])
+  lastLocFk    WorldLocation? @relation(fields: [lastLocationId], references: [id])
 
   @@unique([campaignId, npcId])
   @@index([campaignId])
@@ -448,90 +371,13 @@ model CampaignNPC {
   @@index([campaignId, worldNpcId])
 }
 
-model CampaignNpcRelationship {
-  id            BigInt @id @default(autoincrement())
-  campaignNpcId String @db.Uuid
-  targetType    String           // "npc" | "character" | "faction"
-  targetRef     String            // stringowy FK (npcId/characterId/factionId)
-  relation      String
-  strength      Int    @default(0)
-  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
-  @@index([campaignNpcId])
-}
-
-model CampaignNpcExperience {
-  id            BigInt   @id @default(autoincrement())
-  campaignNpcId String   @db.Uuid
-  content       String
-  importance    String?
-  sceneIndex    Int?
-  addedAt       DateTime @default(now()) @db.Timestamptz
-  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
-  @@index([campaignNpcId, addedAt])
-}
-```
-
-### CampaignQuest (rozbicie objectives + prerequisites)
-
-```prisma
-model CampaignQuest {
-  id                    String @id @default(uuid(7)) @db.Uuid
-  campaignId            String @db.Uuid
-  questId               String
-  name                  String
-  type                  String @default("side")
-  description           String @default("")
-  completionCondition   String?
-  questGiverId          String?
-  turnInNpcId           String?
-  locationId            String?
-  reward                Json?
-  status                String @default("active")      // zostawiam string (active|completed|failed|…)
-  completedAt           DateTime? @db.Timestamptz
-  forcedGiver           Boolean @default(false)
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt      @db.Timestamptz
-
-  campaign              Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  objectives            CampaignQuestObjective[]
-  prerequisites         CampaignQuestPrerequisite[] @relation("questSide")
-  blockedBy             CampaignQuestPrerequisite[] @relation("prereqSide")
-
-  @@unique([campaignId, questId])
-  @@index([campaignId, status])
-}
-
-model CampaignQuestObjective {
-  id           BigInt @id @default(autoincrement())
-  questId      String @db.Uuid
-  objectiveKey String
-  description  String
-  progress     Int    @default(0)
-  targetAmount Int    @default(1)
-  status       String @default("pending")
-  quest        CampaignQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
-  @@unique([questId, objectiveKey])
-}
-
-model CampaignQuestPrerequisite {
-  questId        String @db.Uuid
-  prerequisiteId String @db.Uuid
-  quest        CampaignQuest @relation("questSide",  fields: [questId],        references: [id], onDelete: Cascade)
-  prerequisite CampaignQuest @relation("prereqSide", fields: [prerequisiteId], references: [id], onDelete: Cascade)
-  @@id([questId, prerequisiteId])
-}
-```
-
-### CampaignKnowledge / Codex / LocationSummary
-
-```prisma
 model CampaignKnowledge {
   id            String @id @default(uuid(7)) @db.Uuid
   campaignId    String @db.Uuid
-  entryType     String   // event|decision|plotThread|character|location
+  entryType     String
   summary       String
-  content       Json                   // struct — JSONB
-  tags          Json   @default("[]")  // array stringów
+  content       Json
+  tags          Json   @default("[]")
   importance    String?
   status        String?
   sceneIndex    Int?
@@ -549,15 +395,42 @@ model CampaignCodex {
   codexKey       String
   name           String
   category       String
-  tags           Json  @default("[]")
-  fragments      Json                    // append-only array fragmentów
-  relatedEntries Json  @default("[]")
+  tags           Json   @default("[]")
+  fragments      Json
+  relatedEntries Json   @default("[]")
   embeddingText  String?
   embedding      Unsupported("vector(1536)")?
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
   campaign       Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   @@unique([campaignId, codexKey])
+}
+
+model CampaignQuest {
+  id                    String @id @default(uuid(7)) @db.Uuid
+  campaignId            String @db.Uuid
+  questId               String
+  name                  String
+  type                  String @default("side")
+  description           String @default("")
+  completionCondition   String?
+  questGiverId          String?
+  turnInNpcId           String?
+  locationId            String?
+  status                String @default("active")
+  completedAt           DateTime? @db.Timestamptz
+  forcedGiver           Boolean @default(false)
+
+  reward                Json?
+  objectives            Json   @default("[]")              // F4 → CampaignQuestObjective
+  prerequisiteQuestIds  Json   @default("[]")              // F3 → CampaignQuestPrerequisite
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt      @db.Timestamptz
+
+  campaign              Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@unique([campaignId, questId])
+  @@index([campaignId, status])
 }
 
 model CampaignLocationSummary {
@@ -574,93 +447,45 @@ model CampaignLocationSummary {
   campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   @@unique([campaignId, locationName])
 }
-```
 
-### CampaignDmAgent (rozbicie dmMemory + pendingHooks)
-
-```prisma
 model CampaignDmAgent {
-  campaignId    String @id @db.Uuid
+  campaignId    String   @id @db.Uuid
   lastUpdatedAt DateTime @default(now()) @db.Timestamptz
+  dmMemory      Json     @default("[]")                    // F2 → CampaignDmMemoryEntry
+  pendingHooks  Json     @default("[]")                    // F2 → CampaignDmPendingHook
   campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  memoryEntries CampaignDmMemoryEntry[]
-  pendingHooks  CampaignDmPendingHook[]
-}
-
-model CampaignDmMemoryEntry {
-  id         BigInt   @id @default(autoincrement())
-  campaignId String   @db.Uuid
-  at         DateTime @default(now()) @db.Timestamptz
-  plannedFor String?
-  status     String?
-  summary    String
-  agent      CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
-  @@index([campaignId, at])
-}
-
-model CampaignDmPendingHook {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  campaignId  String   @db.Uuid
-  kind        String
-  summary     String
-  idealTiming String?
-  priority    Int      @default(0)
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  agent       CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
-  @@index([campaignId, priority])
 }
 ```
 
-FIFO trigger:
-```sql
--- cap 20 memory entries per campaign
-CREATE OR REPLACE FUNCTION trim_campaign_dm_memory() RETURNS trigger AS $$
-BEGIN
-  DELETE FROM "CampaignDmMemoryEntry"
-  WHERE "campaignId" = NEW."campaignId"
-    AND id IN (
-      SELECT id FROM "CampaignDmMemoryEntry"
-      WHERE "campaignId" = NEW."campaignId"
-      ORDER BY at DESC OFFSET 20
-    );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-CREATE TRIGGER trim_campaign_dm_memory_tr
-AFTER INSERT ON "CampaignDmMemoryEntry"
-FOR EACH ROW EXECUTE FUNCTION trim_campaign_dm_memory();
-
--- Analogicznie cap 12 na CampaignDmPendingHook (po priority asc offset 12).
-```
-
-### WorldLocation / Edge / UserWorldKnowledge
+### WorldLocation / Edge / UserWorldKnowledge (F1 — bez dekompozycji)
 
 ```prisma
 model WorldLocation {
-  id                    String @id @default(uuid(7)) @db.Uuid
-  canonicalName         String @unique
+  id                    String       @id @default(uuid(7)) @db.Uuid
+  canonicalName         String       @unique
   displayName           String?
-  description           String @default("")
-  category              String @default("generic")
+  description           String       @default("")
+  category              String       @default("generic")
   region                String?
-  parentLocationId      String? @db.Uuid
+  parentLocationId      String?      @db.Uuid
   locationType          LocationType @default(generic)
   slotType              String?
-  slotKind              String @default("custom")
-  maxKeyNpcs            Int    @default(10)
-  maxSubLocations       Int    @default(5)
-  regionX               Float  @default(0)
-  regionY               Float  @default(0)
-  positionConfidence    Float  @default(0.5)
+  slotKind              String       @default("custom")
+  maxKeyNpcs            Int          @default(10)
+  maxSubLocations       Int          @default(5)
+  regionX               Float        @default(0)
+  regionY               Float        @default(0)
+  positionConfidence    Float        @default(0.5)
   subGridX              Int?
   subGridY              Int?
-  isCanonical           Boolean @default(false)
-  knownByDefault        Boolean @default(false)
-  dangerLevel           DangerLevel @default(safe)
-  createdByCampaignId   String? @db.Uuid
+  isCanonical           Boolean      @default(false)
+  knownByDefault        Boolean      @default(false)
+  dangerLevel           DangerLevel  @default(safe)
+  createdByCampaignId   String?      @db.Uuid
 
-  aliases               Json    @default("[]")
+  aliases               Json         @default("[]")
   roomMetadata          Json?
+  knowledgeBase         Json         @default("[]")        // F2 → WorldLocationKnowledge
 
   embeddingText         String?
   embedding             Unsupported("vector(1536)")?
@@ -668,19 +493,14 @@ model WorldLocation {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
-  parent                WorldLocation? @relation("subloc", fields: [parentLocationId], references: [id])
-  sublocations          WorldLocation[] @relation("subloc")
-  outgoingEdges         WorldLocationEdge[] @relation("fromLoc")
-  incomingEdges         WorldLocationEdge[] @relation("toLoc")
-  knowledgeEntries      WorldLocationKnowledge[]
-  clearedByCharacters   CharacterClearedDungeon[]
-  npcsHere              WorldNPC[] @relation("npcCurrentLoc")
-  npcsHome              WorldNPC[] @relation("npcHomeLoc")
-  npcsKnowing           WorldNpcKnownLocation[]
-  campaignNpcsLastHere  CampaignNPC[]
-  discoveredByCampaigns CampaignDiscoveredLocation[]
-  discoveredByUsers     UserDiscoveredLocation[]
-  locationPromotionCandidates LocationPromotionCandidate[]
+  parent                       WorldLocation?  @relation("subloc", fields: [parentLocationId], references: [id])
+  sublocations                 WorldLocation[] @relation("subloc")
+  outgoingEdges                WorldLocationEdge[] @relation("fromLoc")
+  incomingEdges                WorldLocationEdge[] @relation("toLoc")
+  npcsHere                     WorldNPC[]      @relation("npcCurrentLoc")
+  npcsHome                     WorldNPC[]      @relation("npcHomeLoc")
+  campaignNpcsLastHere         CampaignNPC[]
+  locationPromotionCandidates  LocationPromotionCandidate[]
 
   @@index([region])
   @@index([parentLocationId])
@@ -689,117 +509,73 @@ model WorldLocation {
   @@index([regionX, regionY])
 }
 
-model WorldLocationKnowledge {
-  id         BigInt @id @default(autoincrement())
-  locationId String @db.Uuid
-  content    String
-  source     String
-  kind       String
-  confidence Float?
-  similarity Float?
-  addedAt    DateTime @default(now()) @db.Timestamptz
-  location   WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  @@index([locationId, addedAt])
-}
-```
-
-FIFO trigger: cap 50 per location — analogicznie do `trim_campaign_dm_memory`.
-
-```prisma
 model WorldLocationEdge {
-  id             String @id @default(uuid(7)) @db.Uuid
-  fromLocationId String @db.Uuid
-  toLocationId   String @db.Uuid
+  id             String      @id @default(uuid(7)) @db.Uuid
+  fromLocationId String      @db.Uuid
+  toLocationId   String      @db.Uuid
   distance       Float
   difficulty     DangerLevel @default(safe)
-  terrainType    String @default("road")
+  terrainType    String      @default("road")
   direction      String?
-  gated          Boolean @default(false)
+  gated          Boolean     @default(false)
   gateHint       String?
-  createdAt      DateTime @default(now()) @db.Timestamptz
+  discoveredByCampaigns Json @default("[]")                 // F3 → WorldEdgeDiscovery
+  createdAt      DateTime    @default(now()) @db.Timestamptz
 
   from           WorldLocation @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
   to             WorldLocation @relation("toLoc",   fields: [toLocationId],   references: [id], onDelete: Cascade)
-  discoveredByCampaigns WorldEdgeDiscovery[]
-  discoveredByUsers     UserDiscoveredEdge[]
-
   @@unique([fromLocationId, toLocationId])
   @@index([fromLocationId])
   @@index([toLocationId])
 }
 
-model WorldEdgeDiscovery {
-  edgeId       String @db.Uuid
-  campaignId   String @db.Uuid
-  discoveredAt DateTime @default(now()) @db.Timestamptz
-  edge         WorldLocationEdge @relation(fields: [edgeId], references: [id], onDelete: Cascade)
-  campaign     Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  @@id([edgeId, campaignId])
-  @@index([campaignId])
-}
-
 model UserWorldKnowledge {
-  userId     String @id @db.Uuid
-  updatedAt  DateTime @updatedAt @db.Timestamptz
-  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  locations  UserDiscoveredLocation[]
-  edges      UserDiscoveredEdge[]
-}
-
-model UserDiscoveredLocation {
-  userId       String @db.Uuid
-  locationId   String @db.Uuid
-  state        DiscoveryState
-  discoveredAt DateTime @default(now()) @db.Timestamptz
-  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  location      WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  @@id([userId, locationId])
-  @@index([locationId])
-}
-
-model UserDiscoveredEdge {
-  userId       String @db.Uuid
-  edgeId       String @db.Uuid
-  discoveredAt DateTime @default(now()) @db.Timestamptz
-  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  edge          WorldLocationEdge @relation(fields: [edgeId], references: [id], onDelete: Cascade)
-  @@id([userId, edgeId])
+  userId                   String   @id @db.Uuid
+  updatedAt                DateTime @updatedAt @db.Timestamptz
+  discoveredLocationIds    Json     @default("[]")          // F3 → UserDiscoveredLocation (state=visited)
+  heardAboutLocationIds    Json     @default("[]")          // F3 (state=heard_about)
+  discoveredSubLocationIds Json     @default("[]")          // F3 (state=sublocation_visited)
+  discoveredEdgeIds        Json     @default("[]")          // F3 → UserDiscoveredEdge
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 ```
 
-### WorldNPC (rozbicie knowledgeBase + dialogHistory + knownLocationIds)
+### WorldNPC (F1 — bez dekompozycji)
 
 ```prisma
 model WorldNPC {
-  id                     String @id @default(uuid(7)) @db.Uuid
-  canonicalId            String @unique
+  id                     String   @id @default(uuid(7)) @db.Uuid
+  canonicalId            String   @unique
   name                   String
   role                   String?
   personality            String?
-  alignment              String  @default("neutral")
-  alive                  Boolean @default(true)
-  currentLocationId      String? @db.Uuid
-  homeLocationId         String? @db.Uuid
+  alignment              String   @default("neutral")
+  alive                  Boolean  @default(true)
+  currentLocationId      String?  @db.Uuid
+  homeLocationId         String?  @db.Uuid
   pausedAt               DateTime? @db.Timestamptz
   pauseSnapshot          Json?
-  companionOfCampaignId  String? @db.Uuid
+  companionOfCampaignId  String?  @db.Uuid
   companionJoinedAt      DateTime? @db.Timestamptz
-  companionLoyalty       Int     @default(50)
-  lockedByCampaignId     String? @db.Uuid
+  companionLoyalty       Int      @default(50)
+  lockedByCampaignId     String?  @db.Uuid
   lockedAt               DateTime? @db.Timestamptz
   lockedSnapshot         Json?
-
   activeGoal             String?
   goalProgress           Json?
   schedule               Json?
   lastTickAt             DateTime? @db.Timestamptz
-  tickIntervalHours      Int     @default(24)
+  tickIntervalHours      Int      @default(24)
   lastTickSceneIndex     Int?
-  tickIntervalScenes     Int     @default(2)
+  tickIntervalScenes     Int      @default(2)
   goalDeadlineAt         DateTime? @db.Timestamptz
   lastLocationPingAt     DateTime? @db.Timestamptz
-  category               String  @default("commoner")
-  keyNpc                 Boolean @default(true)
+  category               String   @default("commoner")
+  keyNpc                 Boolean  @default(true)
+
+  knowledgeBase          Json     @default("[]")            // F2 → WorldNpcKnowledge
+  dialogHistory          Json     @default("[]")            // F2 → WorldNpcDialogTurn
+  knownLocationIds       Json     @default("[]")            // F3 → WorldNpcKnownLocation
 
   embeddingText          String?
   embedding              Unsupported("vector(1536)")?
@@ -809,9 +585,6 @@ model WorldNPC {
   currentLocation  WorldLocation? @relation("npcCurrentLoc", fields: [currentLocationId], references: [id])
   homeLocation     WorldLocation? @relation("npcHomeLoc",    fields: [homeLocationId],    references: [id])
   campaignShadows  CampaignNPC[]
-  knowledgeEntries WorldNpcKnowledge[]
-  dialogTurns      WorldNpcDialogTurn[]
-  knownLocations   WorldNpcKnownLocation[]
   attributions     WorldNpcAttribution[]
 
   @@index([currentLocationId])
@@ -819,70 +592,26 @@ model WorldNPC {
   @@index([companionOfCampaignId])
   @@index([lockedByCampaignId])
 }
-
-model WorldNpcKnowledge {
-  id          BigInt @id @default(autoincrement())
-  npcId       String @db.Uuid
-  content     String
-  source      String
-  kind        String
-  confidence  Float?
-  similarity  Float?
-  sensitivity String?
-  addedAt     DateTime @default(now()) @db.Timestamptz
-  learnedAt   DateTime? @db.Timestamptz
-  npc         WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
-  @@index([npcId, addedAt])
-}
-
-model WorldNpcDialogTurn {
-  id          BigInt @id @default(autoincrement())
-  npcId       String @db.Uuid
-  campaignId  String @db.Uuid
-  playerMsg   String
-  npcResponse String
-  gameTime    DateTime @db.Timestamptz
-  createdAt   DateTime @default(now()) @db.Timestamptz
-  npc         WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
-  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  @@index([npcId, campaignId, createdAt])
-}
-
-model WorldNpcKnownLocation {
-  npcId      String @db.Uuid
-  locationId String @db.Uuid
-  grantedBy  String                    // "seed" | "promotion" | "dialog"
-  grantedAt  DateTime @default(now()) @db.Timestamptz
-  npc        WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
-  location   WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  @@id([npcId, locationId])
-  @@index([locationId])
-}
 ```
 
-FIFO triggery:
-- `WorldNpcKnowledge` cap 50 per npcId
-- `WorldNpcDialogTurn` cap 50 per (npcId, campaignId)
-
-### WorldEvent / Reputation / Attribution / LoreSection / Embedding / Pending*
+### WorldEvent / Reputation / Attribution / LoreSection / Embedding / Pending* (F1)
 
 ```prisma
 model WorldEvent {
-  id              BigInt @id @default(autoincrement())
-  worldNpcId      String? @db.Uuid
-  worldLocationId String? @db.Uuid
-  campaignId      String? @db.Uuid
-  userId          String? @db.Uuid
+  id              BigInt   @id @default(autoincrement())
+  worldNpcId      String?  @db.Uuid
+  worldLocationId String?  @db.Uuid
+  campaignId      String?  @db.Uuid
+  userId          String?  @db.Uuid
   eventType       String
-  payload         Json    @default("{}")
-  visibility      CampaignVisibility @default(campaign)
+  payload         Json     @default("{}")
+  visibility      String   @default("campaign")
   gameTime        DateTime @db.Timestamptz
   createdAt       DateTime @default(now()) @db.Timestamptz
-
+  campaign        Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   @@index([worldNpcId, createdAt])
   @@index([worldLocationId, createdAt])
   @@index([campaignId, createdAt])
-  @@index([eventType])
   @@index([eventType, visibility, createdAt])
 }
 
@@ -905,16 +634,16 @@ model WorldReputation {
 }
 
 model WorldNpcAttribution {
-  id               BigInt @id @default(autoincrement())
-  worldNpcId       String @db.Uuid
-  actorCharacterId String @db.Uuid
-  actorCampaignId  String @db.Uuid
+  id               BigInt   @id @default(autoincrement())
+  worldNpcId       String   @db.Uuid
+  actorCharacterId String   @db.Uuid
+  actorCampaignId  String   @db.Uuid
   actionType       String
-  justified        Boolean @default(false)
-  judgeConfidence  Float   @default(0)
+  justified        Boolean  @default(false)
+  judgeConfidence  Float    @default(0)
   judgeReason      String?
   alignmentImpact  String
-  visibility       String  @default("campaign")
+  visibility       String   @default("campaign")
   gameTime         DateTime @db.Timestamptz
   createdAt        DateTime @default(now()) @db.Timestamptz
   npc       WorldNPC  @relation(fields: [worldNpcId], references: [id], onDelete: Cascade)
@@ -925,11 +654,11 @@ model WorldNpcAttribution {
 }
 
 model WorldLoreSection {
-  id        String @id @default(uuid(7)) @db.Uuid
-  slug      String @unique
+  id        String   @id @default(uuid(7)) @db.Uuid
+  slug      String   @unique
   title     String
-  content   String @default("")
-  order     Int    @default(0)
+  content   String   @default("")
+  order     Int      @default(0)
   updatedBy String?
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
@@ -937,7 +666,7 @@ model WorldLoreSection {
 }
 
 model WorldEntityEmbedding {
-  id         BigInt @id @default(autoincrement())
+  id         BigInt   @id @default(autoincrement())
   entityType String
   entityId   String
   text       String
@@ -949,8 +678,8 @@ model WorldEntityEmbedding {
 }
 
 model PendingWorldStateChange {
-  id               BigInt @id @default(autoincrement())
-  campaignId       String @db.Uuid
+  id               BigInt       @id @default(autoincrement())
+  campaignId       String       @db.Uuid
   idempotencyKey   String
   kind             String
   targetHint       String
@@ -961,71 +690,71 @@ model PendingWorldStateChange {
   similarity       Float?
   reason           String
   status           ReviewStatus @default(pending)
-  reviewedBy       String?   @db.Uuid
-  reviewedAt       DateTime? @db.Timestamptz
+  reviewedBy       String?      @db.Uuid
+  reviewedAt       DateTime?    @db.Timestamptz
   reviewNotes      String?
-  createdAt        DateTime @default(now()) @db.Timestamptz
-  updatedAt        DateTime @updatedAt      @db.Timestamptz
-  campaign         Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  createdAt        DateTime     @default(now()) @db.Timestamptz
+  updatedAt        DateTime     @updatedAt      @db.Timestamptz
+  campaign         Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   @@unique([campaignId, idempotencyKey])
   @@index([status, createdAt])
   @@index([campaignId, status])
 }
 
 model NPCPromotionCandidate {
-  id               BigInt @id @default(autoincrement())
-  campaignId       String @db.Uuid
-  campaignNpcId    String @db.Uuid
-  name             String
-  role             String?
-  personality      String?
-  stats            Json    @default("{}")
-  dialogSample     String?
+  id                BigInt       @id @default(autoincrement())
+  campaignId        String       @db.Uuid
+  campaignNpcId     String       @db.Uuid
+  name              String
+  role              String?
+  personality       String?
+  stats             Json         @default("{}")
+  dialogSample      String?
   smallModelVerdict String?
-  status           ReviewStatus @default(pending)
-  reviewedBy       String?   @db.Uuid
-  reviewedAt       DateTime? @db.Timestamptz
-  reviewNotes      String?
-  createdAt        DateTime @default(now()) @db.Timestamptz
-  updatedAt        DateTime @updatedAt      @db.Timestamptz
-  campaign         Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  status            ReviewStatus @default(pending)
+  reviewedBy        String?      @db.Uuid
+  reviewedAt        DateTime?    @db.Timestamptz
+  reviewNotes       String?
+  createdAt         DateTime     @default(now()) @db.Timestamptz
+  updatedAt         DateTime     @updatedAt      @db.Timestamptz
+  campaign          Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   @@unique([campaignId, campaignNpcId])
   @@index([status, createdAt])
 }
 
 model LocationPromotionCandidate {
-  id                BigInt @id @default(autoincrement())
-  campaignId        String @db.Uuid
-  worldLocationId   String @db.Uuid
+  id                BigInt       @id @default(autoincrement())
+  campaignId        String       @db.Uuid
+  worldLocationId   String       @db.Uuid
   canonicalName     String
   displayName       String?
   locationType      String?
   region            String?
   description       String?
-  stats             Json    @default("{}")
+  stats             Json         @default("{}")
   smallModelVerdict String?
   status            ReviewStatus @default(pending)
-  reviewedBy        String?   @db.Uuid
-  reviewedAt        DateTime? @db.Timestamptz
+  reviewedBy        String?      @db.Uuid
+  reviewedAt        DateTime?    @db.Timestamptz
   reviewNotes       String?
-  createdAt         DateTime @default(now()) @db.Timestamptz
-  updatedAt         DateTime @updatedAt      @db.Timestamptz
-  campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now()) @db.Timestamptz
+  updatedAt         DateTime     @updatedAt      @db.Timestamptz
+  campaign          Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   location          WorldLocation @relation(fields: [worldLocationId], references: [id], onDelete: Cascade)
   @@unique([campaignId, worldLocationId])
   @@index([status, createdAt])
 }
 ```
 
-### MultiplayerSession (rozbicie players[])
+### MultiplayerSession (F1 — players[] na join table)
 
 ```prisma
 model MultiplayerSession {
-  id        String @id @default(uuid(7)) @db.Uuid
-  roomCode  String @unique
-  hostId    String @db.Uuid
+  id        String   @id @default(uuid(7)) @db.Uuid
+  roomCode  String   @unique
+  hostId    String   @db.Uuid
   phase     String
-  gameState Json                       // world/scenes/combat transient
+  gameState Json
   settings  Json
   updatedAt DateTime @updatedAt @db.Timestamptz
   createdAt DateTime @default(now()) @db.Timestamptz
@@ -1033,8 +762,8 @@ model MultiplayerSession {
   players   MultiplayerSessionPlayer[]
 }
 
-model MultiplayerSessionPlayer {
-  sessionId   String @db.Uuid
+model MultiplayerSessionPlayer {                              // F1 — replaces players[] embed + characterIds[]
+  sessionId   String  @db.Uuid
   odId        String
   name        String
   characterId String? @db.Uuid
@@ -1048,31 +777,29 @@ model MultiplayerSessionPlayer {
 }
 ```
 
-### MediaAsset / PrefabAsset / Wanted3D / Achievement
-
-Bez dekompozycji — małe, flat, stringowe enumy kategoryzujące (`type`, `status`, `backend`) zostają TEXT. Tylko konwersja na Postgres-native types:
+### MediaAsset / PrefabAsset / Wanted3D / Achievement (F1)
 
 ```prisma
-model MediaAsset { /* jak dziś, String→Json dla metadata, @db.ObjectId→@db.Uuid, FK User onDelete Cascade */ }
-model PrefabAsset { /* jak dziś */ }
-model Wanted3D { /* jak dziś */ }
-model Achievement { /* jak dziś, metadata → Json */ }
+model MediaAsset   { /* grep + przepisać przy F1 implementacji: metadata: String → Json, @db.ObjectId → @db.Uuid, FK User onDelete Cascade */ }
+model PrefabAsset  { /* jak dziś, ObjectId → Uuid */ }
+model Wanted3D     { /* jak dziś, ObjectId → Uuid */ }
+model Achievement  {
+  // jak dziś, metadata: String → Json, ObjectId → Uuid
+  // campaignId dostaje FK → Campaign onDelete: SetNull (achievement persistuje, kampanijny kontekst znika razem z kampanią)
+  // brak legacy unlocks do zachowania, więc startujemy czysto
+}
 ```
 
----
-
-## Vector search implementation
+## F1 vector search
 
 ### Zapis
-
 ```js
-// backend/src/services/embeddingWrite.js (nowy, zastępuje mongoNative.writeEmbedding)
+// backend/src/services/embeddingWrite.js (NEW, zastępuje mongoNative.writeEmbedding)
 import { prisma } from '../lib/prisma.js';
 
-// Table allowlist (bo używamy $executeRawUnsafe z dynamic table name)
 const ALLOWED = new Set([
   'CampaignScene', 'CampaignKnowledge', 'CampaignNPC', 'CampaignCodex',
-  'WorldLocation', 'WorldNPC',
+  'WorldLocation', 'WorldNPC', 'WorldEntityEmbedding',
 ]);
 
 export async function writeEmbedding(table, id, embedding, embeddingText) {
@@ -1085,7 +812,6 @@ export async function writeEmbedding(table, id, embedding, embeddingText) {
 ```
 
 ### Query
-
 ```js
 // backend/src/services/vectorSearchService.js — rewrite
 export async function searchScenes(campaignId, queryEmbedding, { limit = 10, minScore = 0.5 } = {}) {
@@ -1094,176 +820,126 @@ export async function searchScenes(campaignId, queryEmbedding, { limit = 10, min
            "dialogueSegments", "diceRoll",
            1 - (embedding <=> ${queryEmbedding}::vector) AS score
     FROM "CampaignScene"
-    WHERE "campaignId" = ${campaignId}::uuid
-      AND embedding IS NOT NULL
+    WHERE "campaignId" = ${campaignId}::uuid AND embedding IS NOT NULL
     ORDER BY embedding <=> ${queryEmbedding}::vector
     LIMIT ${limit}
   `;
   return rows.filter(r => r.score >= minScore);
 }
-// Analogicznie: searchKnowledge (filtr entryType), searchNPCs, searchCodex.
+// Analogicznie searchKnowledge / searchNPCs / searchCodex.
 ```
 
-`ragService.query` analogicznie — `findMany + JS cosine` → `$queryRaw + <=>`. Filtry: `entity_type = ANY($1)` + optional `entity_id = ANY($2)`.
+`ragService.query` analogicznie — `findMany + JS cosine` → `$queryRaw + <=>`.
 
-### HNSW SQL indexy w migracji
-
+### HNSW SQL indexy w migracji init
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE INDEX idx_scene_embedding     ON "CampaignScene"       USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
-CREATE INDEX idx_knowledge_embedding ON "CampaignKnowledge"   USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
-CREATE INDEX idx_npc_embedding       ON "CampaignNPC"         USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
-CREATE INDEX idx_codex_embedding     ON "CampaignCodex"       USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
+CREATE INDEX idx_scene_embedding     ON "CampaignScene"        USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
+CREATE INDEX idx_knowledge_embedding ON "CampaignKnowledge"    USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
+CREATE INDEX idx_npc_embedding       ON "CampaignNPC"          USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
+CREATE INDEX idx_codex_embedding     ON "CampaignCodex"        USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
 CREATE INDEX idx_worldent_embedding  ON "WorldEntityEmbedding" USING hnsw (embedding vector_cosine_ops);
--- WorldLocation/WorldNPC embedding indexes odroczone (dziś createVectorIndexes.js też ich nie ma)
 ```
 
----
+## F1 transakcje
 
-## Transakcje + bulk upsert
+| Endpoint / service | Wrap |
+|---|---|
+| `PUT /v1/campaigns/:id` (`crud.js`) | `campaign.update` + `syncNPCsToNormalized` + `syncKnowledgeToNormalized` + `syncQuestsToNormalized` + `character.updateMany(lock)` |
+| `POST /v1/ai/campaigns/:id/scenes` (`sceneStream.js`/`generateSceneStream.js`) | `campaignScene.create` + `character.update(stateChanges)`. Cloud Task enqueue **PO commicie** |
+| `processStateChanges/index.js` | Cały batch (`processNpcChanges` + `processKnowledgeUpdates` + `processCodexUpdates` + `processQuestStatusChange`) per scena |
+| `postSceneWork.js` | Per-task transakcje gdzie multi-write |
+| `adminLivingWorld.js` approve/reject | Status change + side-effect (flipCanonical, promote) |
+| `postCampaignPromotion` batch | Bulk insert kandydatów |
 
-### Gdzie wrap `prisma.$transaction`
+LLM calls **przed** transakcją; wynik → mutacja w transakcji. Scene-gen pipeline już tak działa.
 
-1. **PUT /v1/campaigns/:id** (crud.js) — `campaign.update` + `syncNPCsToNormalized` + `syncKnowledgeToNormalized` + `syncQuestsToNormalized` + `character.updateMany(lock)` w jednej transakcji. Jeden fail → rollback, nie pół zapisane.
-
-2. **POST /v1/ai/campaigns/:id/scenes** (`sceneStream.js`/`generateSceneStream.js`) — `campaignScene.create` + `character.update(stateChanges)` w transakcji. **Cloud Task enqueue PO commicie** (nie wewnątrz — fire-and-forget byłby poisoned jeśli txn rollback).
-
-3. **processStateChanges/index.js** — cały batch mutacji (processNpcChanges + processKnowledgeUpdates + processCodexUpdates + processQuestStatusChange) w jednej transakcji per scena.
-
-4. **postCampaignPromotion batch** — bulk insert NPCPromotionCandidate/LocationPromotionCandidate w transakcji.
-
-5. **admin approve/reject** (PendingWorldStateChange, NPCPromotionCandidate, LocationPromotionCandidate) — status change + side effects (flipCanonical, promote) w transakcji.
-
-### Bulk upsert zamiast loop
-
-```js
-// zamiast pętli findUnique+upsert:
-await prisma.$executeRaw`
-  INSERT INTO "CampaignNPC" (id, "campaignId", "npcId", name, attitude, disposition, …)
-  SELECT * FROM UNNEST(
-    ${ids}::uuid[], ${cids}::uuid[], ${npcIds}::text[], ${names}::text[],
-    ${attitudes}::"NpcAttitude"[], ${dispositions}::int[], …
-  )
-  ON CONFLICT ("campaignId","npcId") DO UPDATE SET
-    attitude = EXCLUDED.attitude,
-    disposition = EXCLUDED.disposition,
-    …
-`;
-```
-
-Aplikujemy do: `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `processNpcChanges`. Z 40+ queries → 1 per batch.
-
-Prisma alternative: `createMany({ data: [...], skipDuplicates: true })` + osobny `updateMany` dla zmienionych. Gorsze dla naszego use case (chcemy upsert). Direct raw SQL preferowany.
-
----
-
-## Pliki do zmiany
+## F1 pliki do zmiany
 
 ### Schema & migracja
-
 | Plik | Zmiana |
 |---|---|
-| `backend/prisma/schema.prisma` | **Pełny rewrite** per sekcje powyżej |
-| `backend/prisma/migrations/0000_init_postgres/migration.sql` | **Auto-generated** przez Prisma + **dodajemy ręcznie na końcu**: CREATE EXTENSION vector, HNSW indexes, FIFO triggery |
-| `backend/prisma/seed.js` | Sprawdzić/dostosować (mapa nowych enumów) |
-| `backend/src/scripts/seedWorld.js` | Adaptacja — w miejscach gdzie tworzy rows używających enumów (DangerLevel, LocationType), gdzie tworzy relacje przez array-of-IDs (teraz join tables); `new ObjectId` drop |
+| `backend/prisma/schema.prisma` | Pełny rewrite per F1 schema |
+| `backend/prisma/migrations/0000_init_postgres/migration.sql` | Auto-generated + manual: `CREATE EXTENSION vector`, HNSW indexes |
+| `backend/prisma/seed.js` | Dostosować do nowych enumów |
+| `backend/src/scripts/seedWorld.js` | Drop `new ObjectId`, użyć enumów (`DangerLevel`, `LocationType`); join tables nie dotyczą F1 |
 
 ### Embedding layer
-
 | Plik | Zmiana |
 |---|---|
 | `backend/src/services/mongoNative.js` | **DELETE** |
-| `backend/src/services/embeddingWrite.js` | **NEW** — `writeEmbedding(table, id, vec, text)` przez Prisma `$executeRawUnsafe` |
-| `backend/src/services/vectorSearchService.js` | $vectorSearch → `$queryRaw` + `<=>`. Drop `mongodb` import. `writeEmbedding` eksport przeniesiony do `embeddingWrite.js` |
-| `backend/src/services/livingWorld/ragService.js` | `findMany + JS cosine` → `$queryRaw + <=>`. Drop in-process loop |
-| `backend/src/services/embeddingService.js` | Bez zmian (embedText + LRU cache zostają) |
-| `backend/src/scripts/createVectorIndexes.js` | **DELETE** (indeksy w migracji Prisma) |
+| `backend/src/services/embeddingWrite.js` | **NEW** — `$executeRawUnsafe` z allowlistą |
+| `backend/src/services/vectorSearchService.js` | `$vectorSearch` → `$queryRaw + <=>`; drop `mongodb` import |
+| `backend/src/services/livingWorld/ragService.js` | `findMany + JS cosine` → `$queryRaw + <=>` |
+| `backend/src/services/embeddingService.js` | Bez zmian |
+| `backend/src/scripts/createVectorIndexes.js` | **DELETE** (indeksy w migracji) |
 
 ### MongoDB native driver callsites (drop ObjectId)
-
 | Plik | Zmiana |
 |---|---|
-| `backend/src/services/hashService.js:27` | `toObjectId` → no-op passthrough. Preferowane: DELETE funkcji + update wszystkich callsites na passthrough bezpośredni |
-| `backend/src/routes/auth.js:2,101` | **Direct MongoClient query** (`{ _id: new ObjectId(userId) }`) → `prisma.user.findUnique/update` |
+| `backend/src/services/hashService.js:27` | `toObjectId` → DELETE, callsites passthrough |
+| `backend/src/routes/auth.js:2,101` | Direct MongoClient query → `prisma.user.findUnique/update` |
 | `backend/src/services/livingWorld/worldStateService.js:14,309-314` | Drop `import { ObjectId }`, `toObjectIdString` passthrough |
-| `backend/src/services/livingWorld/companionService.js:13,41-42` | Drop `new ObjectId(worldNpcId)`, `new ObjectId(campaignId)` |
+| `backend/src/services/livingWorld/companionService.js:13,41-42` | Drop `new ObjectId(...)` |
 | `backend/src/routes/media.js:104`, `routes/wanted3d.js:63`, `routes/proxy/stability.js:91`, `routes/proxy/openai.js:204,402` | Drop `toObjectId(campaignId)` wrapowania |
 
-### JSON.parse/stringify cleanup
-
-Grep-driven cleanup — wszystkie miejsca gdzie backend parsował/serializował JSON-as-string:
-
-| Plik | Zakres zmian |
+### JSON.parse/stringify cleanup (na polach DB)
+| Plik | Zakres |
 |---|---|
-| `backend/src/services/campaignSync.js` | Drop `JSON.parse/stringify` (relationships, tags, objectives, reward, …). Teraz bulk upsert zamiast loop. `withRetry` — zamiana P2028 na 40001 |
-| `backend/src/services/campaignLoader.js` | Drop ręczne JSON.parse dla relationships/tags |
-| `backend/src/services/sceneGenerator/processStateChanges/handlers/*.js` | Drop JSON.parse/stringify w każdym handlerze (npcs, knowledgeCodex, quests, locations, npcMemoryUpdates, …) |
-| `backend/src/services/livingWorld/*.js` | Wszystkie: npcDialog, npcMemoryUpdates, dmMemoryService, campaignSandbox, npcAgentLoop, postCampaignMemoryPromotion, postCampaignLocationPromotion, worldStateService — drop JSON.parse dla knowledgeBase/dialogHistory/goalProgress/schedule/milestones/etc., używaj natywnych relations |
-| `backend/src/services/postSceneWork.js` | Wrap transaction — już omówione |
-| `backend/src/services/campaignSerialize.js` | Uproszczenie — `stripNormalizedFromCoreState` może być znacznie prostszy po dekompozycji coreState |
-| `src/services/storage.js`, `src/services/storage/characters.js`, `src/services/storage/migrations.js` | FE: drop JSON.parse po stronie klienta tam gdzie backend zwraca natywne obiekty. `_parseBackendCampaign` uproszczenie |
-| `src/components/character/CharacterCreationModal.jsx:127` | Drop fallback `char.characteristics` (WFRP legacy) → tylko `char.attributes` |
-| `backend/src/routes/characters.js:56-58,91,129-131` | Drop WFRP write path (careerData, characteristics, advances) |
-| `backend/src/services/characterMutations.js:317,371-373` | Drop WFRP fields z WRITABLE_SCALARS + serialize |
+| `backend/src/services/campaignSync.js` | Drop JSON.parse/stringify; `withRetry` P2028 → 40001 |
+| `backend/src/services/campaignLoader.js` | Drop ręczne parse |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/*.js` | Drop parse/stringify w każdym handlerze |
+| `backend/src/services/livingWorld/*.js` | npcDialog, npcMemoryUpdates, dmMemoryService, campaignSandbox, npcAgentLoop, postCampaignMemoryPromotion, postCampaignLocationPromotion, worldStateService — drop parse |
+| `backend/src/services/postSceneWork.js` | Wrap transakcje |
+| `backend/src/services/campaignSerialize.js` | Uproszczenie (mniej miejsc gdzie parse coreState — coreState dalej JSONB monolit, ale `JSON.parse(coreStateString)` znika z FE/BE bo Prisma zwróci obiekt) |
+| `src/services/storage.js`, `storage/characters.js`, `storage/migrations.js` | FE: drop JSON.parse tam gdzie BE zwraca obiekt; `_parseBackendCampaign` uproszczenie |
 
-### Routes/services które teraz dostają transakcje
-
+### WFRP legacy drop
 | Plik | Zmiana |
 |---|---|
-| `backend/src/routes/campaigns/crud.js` (PUT) | `prisma.$transaction` wrap campaign.update + syncs + character lock |
-| `backend/src/routes/ai/sceneStream.js` lub `backend/src/services/sceneGenerator/generateSceneStream.js` | `prisma.$transaction` wrap scene.create + character.update; enqueue Cloud Task PO commicie |
-| `backend/src/services/sceneGenerator/processStateChanges/index.js` | Wrap w transakcję cały batch handlers |
-| `backend/src/services/postSceneWork.js` | Promise.allSettled już jest — wewnątrz każdego task dodać transakcje tam gdzie multi-write |
-| `backend/src/routes/adminLivingWorld.js` (approve/reject handlers) | `prisma.$transaction` wrap status change + side-effect |
-| `backend/src/services/livingWorld/postCampaignPromotion.js` | Transakcja batch insert |
+| `src/components/character/CharacterCreationModal.jsx:127` | Drop fallback `char.characteristics` → tylko `char.attributes` |
+| `backend/src/routes/characters.js:56-58,91,129-131` | Drop WFRP write path |
+| `backend/src/services/characterMutations.js:317,371-373` | Drop WFRP fields |
+| `e2e/helpers/mock-responses.js` | Aktualizacja mocków (drop careerData) |
 
 ### TTL / lazy cleanup
-
 | Plik | Zmiana |
 |---|---|
 | `backend/src/scripts/createRefreshTokenTtlIndex.js` | **DELETE** |
-| `backend/src/services/refreshTokenService.js` | Dodać `startPeriodicCleanup()` eksport — wywoływane z `server.js` po `fastify.listen`. `setInterval(() => prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() }}}), 10 * 60_000).unref()` |
-| `backend/src/server.js` | Wywołanie `startPeriodicCleanup()` po listen |
+| `backend/src/services/refreshTokenService.js` | Eksport `startPeriodicCleanup()`: `setInterval(deleteMany expired, 10*60_000).unref()` |
+| `backend/src/server.js` | Wywołanie `startPeriodicCleanup()` po `fastify.listen` |
 
 ### Config / infra
-
 | Plik | Zmiana |
 |---|---|
 | `backend/src/config.js:17` | Default URL → `postgresql://rpgon:rpgon@localhost:5432/rpgon` |
-| `docker-compose.yml` | Dodać service `db: image: pgvector/pgvector:pg16`, volume, healthcheck, update backend DATABASE_URL + depends_on |
-| `.env.example` | `DATABASE_URL=postgresql://rpgon:rpgon@db:5432/rpgon`, `POSTGRES_PASSWORD=rpgon_local` |
-| `.env` | jak wyżej (lokalna kopia) |
-| `backend/package.json` | Remove `mongodb` dep. Script `db:migrate` już jest. Dodać `db:reset` jeśli wygodne |
-| `backend/src/lib/prisma.js` (jeśli istnieje) | Bez zmian — Prisma client to Prisma client |
-| `cloudbuild.yaml` | **ODROCZONE** — prod hosting decyzja osobno. Kod gotowy, pipeline dopasujemy gdy wybierzemy hosting |
+| `docker-compose.yml` | `db: pgvector/pgvector:pg16`, volume, healthcheck, depends_on |
+| `.env.example`, `.env` | `DATABASE_URL=postgresql://rpgon:rpgon@db:5432/rpgon`, `POSTGRES_PASSWORD=rpgon_local` |
+| `backend/package.json` | Remove `mongodb` dep |
+| `backend/src/lib/prisma.js` | Bez zmian |
+| `cloudbuild.yaml` | **ODROCZONE** do F6 (hosting decyzja) |
 
 ### One-off scripts
-
 | Plik | Decyzja |
 |---|---|
-| `backend/src/scripts/migrateCoreState.js` | Review — jeśli Mongo-specific data fix, DELETE. Jeśli nadal użyteczny w nowym modelu, adapt |
-| `backend/src/scripts/dropSharedConfigCollection.js` | **DELETE** (Mongo collection ops) |
-| `backend/src/scripts/inspectMediaAssetDuplicates.js`, `pruneMediaAssetDuplicates.js` | Adapt na SQL — jeśli logika nadal potrzebna. Jeśli jednorazowa — DELETE |
-| `backend/src/scripts/generatePrefabs.js`, `importPrefabsFromModels3d.js` | Review — prawdopodobnie używają Prisma + file system, bez Mongo-specifics. Zostaną |
+| `backend/src/scripts/migrateCoreState.js` | Review — Mongo-specific data fix? DELETE. Nadal użyteczny? Adapt |
+| `backend/src/scripts/dropSharedConfigCollection.js` | **DELETE** |
+| `backend/src/scripts/inspectMediaAssetDuplicates.js`, `pruneMediaAssetDuplicates.js` | Adapt na SQL jeśli logika potrzebna; jednorazowe — DELETE |
+| `backend/src/scripts/generatePrefabs.js`, `importPrefabsFromModels3d.js` | Bez Mongo-specifics — zostają |
 
-### Dokumenty
-
+### Dokumenty (F1)
 | Plik | Zmiana |
 |---|---|
-| `AGENTS.md` | Stack section: MongoDB Atlas → PostgreSQL 16 + pgvector. Commands: `db:push` → `db:migrate`. Database section: drop "Atlas Vector Search" mentions. Decisions: dodać link do nowych decyzji. Known gaps: usunąć kilka zdezaktualizowanych (np. "Prisma compound indexes missing" — dodamy od razu) |
-| `knowledge/decisions/atlas-only-no-local-mongo.md` | Banner "SUPERSEDED by postgres-dev.md" |
-| `knowledge/decisions/embeddings-native-driver.md` | Banner "SUPERSEDED by embeddings-pgvector.md" |
-| `knowledge/decisions/postgres-dev.md` | **NEW** — Postgres lokalnie (pgvector/pgvector:pg16), hosting prod TBD |
-| `knowledge/decisions/embeddings-pgvector.md` | **NEW** — pgvector HNSW, `$queryRaw + <=>`, allowlist writeEmbedding |
-| `knowledge/concepts/persistence.md` | Update "JSON fields stored as strings" → "JSONB native". Update "embeddings via mongoNative" → "embeddings via `$executeRawUnsafe` do `vector(1536)` column" |
-| `knowledge/decisions/cloud-run-no-redis.md` | Bez zmian (ortogonalne) |
+| `CLAUDE.md` | Stack: MongoDB Atlas → PostgreSQL 16 + pgvector. Commands: `db:push` → `db:migrate`. Drop "Atlas Vector Search" mentions. Dodać linki do nowych decyzji |
+| `knowledge/decisions/atlas-only-no-local-mongo.md` | Banner SUPERSEDED |
+| `knowledge/decisions/embeddings-native-driver.md` | Banner SUPERSEDED |
+| `knowledge/decisions/postgres-dev.md` | **NEW** |
+| `knowledge/decisions/embeddings-pgvector.md` | **NEW** |
+| `knowledge/concepts/persistence.md` | "JSON fields stored as strings" → "JSONB native"; "embeddings via mongoNative" → "embeddings via `$executeRawUnsafe` do `vector(1536)` column" |
 | `README.md` | Dev setup: `docker compose up` stawia Postgres+backend offline |
-| `Deployment checklist — Cloud Run bez Red.txt` | Dodać sekcję "Postgres prod hosting" — placeholder pod decyzję |
 
----
-
-## Docker compose
+## F1 docker compose
 
 ```yaml
 services:
@@ -1296,123 +972,606 @@ services:
       MEDIA_BACKEND: "${MEDIA_BACKEND:-local}"
       MEDIA_LOCAL_PATH: "/data/media"
       CLOUD_TASKS_ENABLED: "false"
-      # …reszta envów jak dziś
     depends_on:
       db: { condition: service_healthy }
     volumes: [media-data:/data/media]
     develop:
       watch:
-        - action: sync+restart
-          path: ./backend/src
-          target: /app/backend/src
-        - action: sync+restart
-          path: ./shared
-          target: /app/shared
-        - action: rebuild
-          path: ./backend/package.json
-        - action: rebuild
-          path: ./backend/prisma
-        - action: rebuild
-          path: ./src
-        - action: rebuild
-          path: ./package.json
+        - { action: sync+restart, path: ./backend/src, target: /app/backend/src }
+        - { action: sync+restart, path: ./shared,      target: /app/shared }
+        - { action: rebuild, path: ./backend/package.json }
+        - { action: rebuild, path: ./backend/prisma }
+        - { action: rebuild, path: ./src }
+        - { action: rebuild, path: ./package.json }
 volumes:
   media-data:
   pg-data:
 ```
 
----
-
-## Produkcyjny hosting Postgres (do decyzji po Fazie 1)
-
-Plan zostawia cloudbuild.yaml bez zmian. Kiedy wybierzemy hosting, osobna sesja: dobór instancji, `DATABASE_URL` format (Unix socket vs host), connection pool, IAM vs password, pg_cron (dla Cloud SQL trzeba włączyć flagą `cloudsql.enable_pg_cron=on`), backup retention.
-
-Opcje do rozważenia (nie decyzja teraz):
-
-- **Google Cloud SQL** — ten sam region co Cloud Run (`europe-west1`), wbudowany Cloud Run Connector (unix socket, zero hasła), pgvector dostępne, pg_cron włącza się flagą.
-- **Neon** — serverless (skalowanie do zera), pgvector natywnie, branche DB dla PR preview. Connection pooling (PgBouncer) wbudowany. Możliwy issue: cold start latency, WebSocket z Prisma wymaga `pg-pool` settings.
-- **Supabase** — overkill (auth/storage/realtime nieużywane), ale pgvector + pg_cron.
-- **Self-hosted Postgres na VM GCE** — kontrola pełna, koszty niższe, ale ops burden (backupy, HA, upgrade).
-
-Co wszystkie muszą spełnić: PostgreSQL 16+, pgvector 0.7+, możliwość connection przez Cloud Run (unix socket lub private IP).
-
----
-
-## Weryfikacja
+## F1 weryfikacja
 
 ```bash
-# 1. Local dev offline
 docker compose down -v && docker compose up --build --watch
-# ↳ db zdrowy, backend bez Atlas startuje, żadnego ENOTFOUND na *.mongodb.net
-
-# 2. Migracja + extensions + indeksy
 cd backend && npx prisma migrate dev --name init_postgres
-docker compose exec db psql -U rpgon -d rpgon -c "\dx"   # pgvector obecny
-docker compose exec db psql -U rpgon -d rpgon -c "\di *embedding*" # HNSW indexes
-
-# 3. Seed
+docker compose exec db psql -U rpgon -d rpgon -c "\dx"
+docker compose exec db psql -U rpgon -d rpgon -c "\di *embedding*"
 cd backend && npm run db:seed
-
-# 4. Testy
 npm test
 npm run test:e2e
 
-# 5. Grep sanity
-grep -rn "import.*mongodb" backend/src src --include='*.js' | grep -v node_modules  # expect: 0
-grep -rn "new ObjectId" backend/src --include='*.js' | grep -v node_modules          # expect: 0
-grep -rn "JSON\.parse" backend/src/services/campaignSync.js backend/src/services/sceneGenerator backend/src/services/livingWorld | grep -v ".test.js" # expect: minimal (tylko faktycznie potrzebne miejsca, nie DB fields)
+# Grep sanity
+grep -rn "import.*mongodb"   backend/src src --include='*.js' | grep -v node_modules    # 0
+grep -rn "new ObjectId"      backend/src --include='*.js' | grep -v node_modules        # 0
+grep -rn "JSON\.parse"       backend/src/services/campaignSync.js backend/src/services/sceneGenerator backend/src/services/livingWorld | grep -v ".test.js"  # minimal
 
-# 6. E2E smoke manual:
-#   a) /register → nowy user
-#   b) /character/new → tworzenie postaci (sprawdzić że FE nie wysyła careerData/characteristics/advances — drop w Fazie)
-#   c) /campaigns/new → kampania
-#   d) Scene-gen SSE działa, scene zapisany, embedding w DB
-#   e) docker compose exec db psql … "SELECT id, left(embedding::text, 50) FROM \"CampaignScene\" LIMIT 1;" — widać numery, nie null
-#   f) retrieval działa: `searchCampaignMemory` zwraca top-K (log w terminalu / admin endpoint)
-#   g) Living World tick: `POST /admin/livingWorld/npcs/tick-batch`, NPC przemieszcza się, WorldEvent zapisany
-#   h) Multiplayer: 2 browsery, create room, join, scene-gen (host), sprawdzić że players/characters w DB
-
-# 7. Docker logs clean
-docker compose logs backend --tail=200 | grep -i error   # expect: 0 substantial errors
+# E2E smoke manual: register → character → campaign → scene-gen → embedding w DB → vector search → LW tick → MP 2-browser
+docker compose logs backend --tail=200 | grep -i error   # 0 substantial
 ```
 
----
-
-## Ryzyka i mitigations
+## F1 ryzyka
 
 | Ryzyko | Wpływ | Mitigation |
 |---|---|---|
-| `Unsupported("vector")` w Prisma ogranicza Prisma CRUD dla embedding pól | Średni | Wszystkie embeddingi przez `$executeRawUnsafe`/`$queryRaw` (~6 plików razem). Już dziś Mongo wymagał osobnej ścieżki — zamieniamy jedną osobną ścieżkę na drugą. |
-| HNSW cold start (pusty indeks) | Niski | HNSW builds incrementally — zero startup cost. |
-| `prisma migrate dev` nie wygeneruje `CREATE EXTENSION` | Niski | Prisma dopisze `CREATE EXTENSION` dla rozszerzeń zadeklarowanych w `datasource db { extensions = [vector] }` (Prisma 6). Jeśli nie, dopisujemy ręcznie do migration.sql przed deploy. |
-| FK cascade kaskaduje coś niechcąco (np. delete WorldLocation kasuje CampaignDiscoveredLocation) | Niski | Już przeanalizowane per-model. Cascade tam gdzie logika mówi "obiekt podrzędny nie ma sensu bez parenta". Delete WorldLocation w produkcji nie powinien się zdarzyć (canonical=true → chroniony kodem). |
-| Dekompozycja Character na tabele → więcej JOINów przy load GET /characters/:id | Średni | Prisma `include: { skills, inventoryItems, materials, clearedDungeons }` — 1 query z 4 joinami vs dziś 1 query z parse 4 JSON-ów. Bench równoważne lub lepsze. |
-| FIFO trigger niepoprawnie kasuje recent entries | Średni | Test na seeded data — insert 51 entries, verify count = 50 i oldest zniknął |
-| JSON.parse cleanup przeoczy jakieś miejsce → silent regres | Średni | grep-driven list + testy E2E na każdą ścieżkę (`campaignSync`, `processStateChanges`, `livingWorld`) |
-| Transakcje blokują zbyt długo (LLM call wewnątrz) | Wysoki | Transakcje **tylko wokół DB writes**. LLM calls przed transakcją, wynik → mutacja w transakcji. Scene-gen pipeline już tak działa. |
-| Enumy w Prisma — zmiana wartości wymaga migracji SQL | Niski | Przed migracją zweryfikować że wszystkie dotychczasowe wartości są w enum definition. Grep po literałach string w kodzie (np. `attitude: 'hostile'`). |
-| WFRP fields drop psuje Playwright mocks | Niski | `e2e/helpers/mock-responses.js` zawiera `careerData` — zaktualizować mock |
+| `Unsupported("vector")` ogranicza Prisma CRUD | Średni | Embeddingi przez `$executeRawUnsafe`/`$queryRaw` (~6 plików). Już dziś Mongo wymagał osobnej ścieżki |
+| `prisma migrate dev` nie wygeneruje `CREATE EXTENSION` | Niski | Prisma 6 wspiera `extensions = [vector]` w `datasource db`. Fallback: dopisać do migration.sql |
+| FK cascade kaskaduje coś niechcąco | Niski | Per-model przeanalizowane. Cascade tam gdzie podrzędne nie ma sensu bez parenta |
+| JSON.parse cleanup przeoczy miejsce | Średni | grep-driven list + E2E na każdą ścieżkę |
+| Transakcje blokują przez LLM call | Wysoki | Transakcje **tylko wokół DB writes**. LLM przed wrap |
+| Enumy — zmiana wartości wymaga migracji | Niski | Tylko zamknięte zbiory są enumami; reszta `String` |
+| WFRP drop psuje Playwright mocks | Niski | Aktualizacja `e2e/helpers/mock-responses.js` |
 
 ---
 
-## Ryzykowna zmiana do potwierdzenia
+# F1 retrospektywa
 
-**Rozbicie coreState na scalar columns** (`currentLocation`, `currentLocationId`, `gameTime`, `weather`, `sessionTitle`, `boundsMinX/MaxX/MinY/MaxY`) + reszta do `transientState JSONB` — wymusza zmianę w `storage.js` `_parseBackendCampaign` i `campaignSerialize.js`. Jeśli okaże się że hot-path bardziej komplikuje niż pomaga (np. scene-gen pipeline liczy na jeden obiekt), fallback: zostawić `coreState Json @default("{}")` jako monolit. Decyzja na stole — jeśli wolisz cofnąć do monolitu, powiedz. Rekomenduję rozbicie bo eliminuje write-amp, ale nie jest tak egzystencjalne jak reszta dekompozycji.
+**Zakres:** wszystkie 10 sub-tasków (F1.1–F1.10) shipped. 710 backend testów ✅, 1103 frontend testów ✅, `prisma validate` ✅. Build + seed + first scene zweryfikowane manualnie przez usera (`npm run dev` → seed świata + interakcja).
+
+## Zmiany vs plan
+
+| Plan | Co faktycznie wyszło |
+|---|---|
+| `LocationType` enum: 11 wartości | **15 wartości** — dodane `mountain`, `ruin`, `camp`, `cave` (seed `seedWorld.js` używa, mid-play creator może emitować). Init migration zaktualizowana inline (pre-prod, dane puste). |
+| Hard-code `DATABASE_URL` w docker-compose dla containera (`db:5432`) | Tak — pierwszy boot pokazał że `${DATABASE_URL:-...}` w compose dziedziczył `localhost:5432` z root `.env` i container nie mógł sięgnąć Postgresa. Container teraz zawsze używa `db:5432`, host-side prisma z `localhost:5432` przez `backend/.env`. Te dwa URLe są **świadomie nieskorelowane**. |
+| `setup.js` step [4/5] = `prisma db push` (Mongo era) | Przepisane na `docker compose up -d db` + `pg_isready` polling + `prisma migrate deploy`. Fresh clone teraz działa one-shot przez `npm run setup`. |
+| Brak skryptów convenience | Dodane w root `package.json`: `db:up` (compose up samego db) + `db:reset` (drop volume + restart). |
+| F1.6 transakcje na 6 endpointach | **3 transakcje** wystarczyły jako high-value: DELETE/PUT campaign + scene save+character.update. Reszta (POST campaign, processStateChanges batch, admin approve, postCampaignPromotion) zostawione z catch-and-log — handlerzy są idempotentni. Można dorzucić w F2 jeśli krzyczy. |
+| F1.4 JSON cleanup tylko critical path | Wyszło wszystko co miało wpływ na runtime — łącznie z 80+ plikami. Guarded helpers (`typeof === 'string' ? JSON.parse(...) : Array.isArray(...) ? ... : []`) zostawione celowo: tolerują legacy JSON-string + native JSONB w jednym miejscu, nic nie psują. Mogą zostać oczyszczone gdy będzie powód. |
+
+## Znane długi z F1
+
+1. **`stats: JSON.stringify(...)` na `LocationPromotionCandidate.stats` / `NPCPromotionCandidate.stats`** — kolumny są `Json` w schemie, ale zostawiłem stringify na write w paru testach (zaktualizowanych) bo było ergonomiczniej dla expect-string-contains. Same write paths w produkcji **już używają obiektu**. Spójność: ✅.
+2. **`CampaignNPC.smallModelVerdict` = `String?`** (intencjonalnie, nie `Json`). Verdict jest stored-as-blob bo nikt go nie filtruje SQLem. Trzymać tak chyba że F4/F5 znajdzie powód.
+3. **Boundary validation locationType** — AI mid-play może emitować nieznany `locationType` → dziś leci do enuma → throw. Defensywny coerce-to-`generic` w [locations.js:158](backend/src/services/sceneGenerator/processStateChanges/locations.js#L158) (przy `BLOCKED_MIDPLAY_LOCATION_TYPES`) odłożony do "as-needed". Jeśli playtest pokaże throw, dodać tam.
+4. **`coreState` ciągle 15-25KB JSONB monolit** — zaplanowane do dekompozycji w F5. F1 świadomie nie ruszał (lean diff).
+5. **`bestiary.js` ciągle używa WFRP `characteristics` (ws/bs/s/t/...)** — to osobny refactor (combat data WFRP→RPGon), nie część Postgres migracji. Nie blokuje.
+6. **`auth.js` health check** był Mongo-only (`$runCommandRaw({ ping: 1 })`); zmienione na `$queryRaw\`SELECT 1\``. ✅
+7. **Test mocks z `coreState: JSON.stringify(...)`** zaktualizowane na obiekty (`postCampaignWriteback.test.js`).
+
+## Pliki dotknięte (top-level)
+
+- **Schema:** `backend/prisma/schema.prisma` (full rewrite), `backend/prisma/migrations/0000_init_postgres/{migration.sql,migration_lock.toml}` (NEW).
+- **Embedding:** `embeddingWrite.js` (NEW), `vectorSearchService.js` + `livingWorld/ragService.js` (rewrite).
+- **Mongo dropouts:** `mongoNative.js`, `createVectorIndexes.js`, `createRefreshTokenTtlIndex.js` deleted. `worldStateService.toObjectIdString` deleted (dead).
+- **Refresh tokens:** `refreshTokenService.js` (`startPeriodicCleanup`/`stopPeriodicCleanup`), wired from `server.js`.
+- **Config:** `docker-compose.yml` (db service + healthcheck + hard-coded container DATABASE_URL), `config.js`, `backend/.env.example`, `.env.example`, `backend/package.json` (drop `mongodb` dep), `backend/scripts/setup.js`, root `package.json` (`db:up`, `db:reset`).
+- **Transakcje:** `routes/campaigns/crud.js` (DELETE+PUT), `sceneGenerator/generateSceneStream.js` (scene save + character.update).
+- **WFRP drop FE:** `CharacterCreationModal.jsx`, `CharacterPanel.jsx`, `PartyPanel.jsx`, `CharacterPicker.jsx`, `CampaignCreatorPage.jsx`, `JoinRoomPage.jsx`, `LobbyPage.jsx`, `PlayerLobby.jsx`, `CharacterLibrary.jsx`, `storage/{characters,migrations}.js`, `exportLog.js`, `e2e/helpers/mock-responses.js`, `multiplayerAI/campaignGeneration.js`.
+- **Docs:** `CLAUDE.md`, `README.md`, `knowledge/concepts/persistence.md`, `knowledge/concepts/auth.md`, `knowledge/decisions/cloud-run-no-redis.md`, `knowledge/decisions/atlas-only-no-local-mongo.md` (SUPERSEDED), `knowledge/decisions/embeddings-native-driver.md` (SUPERSEDED), `knowledge/decisions/postgres-dev.md` (NEW), `knowledge/decisions/embeddings-pgvector.md` (NEW).
+
+## Verified manualnie
+
+- ✅ Fresh clone: `npm run setup` → db up + migrate + secrets generated. `npm run dev` → backend boots na :3001, frontend na :5173.
+- ✅ Schema migrate apply na pustym Postgresie.
+- ✅ `seedWorld` po enum-extend pełni success (15 LocationType wartości).
+- ✅ `npm test` (1813 testów łącznie BE+FE).
+
+## Niezweryfikowane manualnie (do playtest)
+
+- Vector search end-to-end (RAG query w Living World).
+- Multiplayer save/restore z `MultiplayerSessionPlayer` join table.
+- Post-campaign writeback flow (Phase 12 promotion + memory).
+- Cloud Tasks deploy (F6 — hosting decyzja osobna).
 
 ---
 
-## Explicit non-goals (tego NIE robimy nawet w tej dużej migracji)
+# F2 — Write-path scaling
 
-- **PostGIS** — coords są euklidesowe 2D flat, Dijkstra <1000 nodes w JS
+**Cel:** wyciąć N+1 i write-amp na hot pathach. Zmiany których przy spike nie chcesz robić pod presją.
+
+**Trigger:** przed publicznym exposure / przed >100 DAU. Nie blokuje codziennej pracy.
+
+## F2 schema delta — child tables dla append-heavy capped lists
+
+```prisma
+model WorldNpcKnowledge {
+  id          BigInt   @id @default(autoincrement())
+  npcId       String   @db.Uuid
+  content     String
+  source      String
+  kind        String
+  confidence  Float?
+  similarity  Float?
+  sensitivity String?
+  addedAt     DateTime @default(now()) @db.Timestamptz
+  learnedAt   DateTime? @db.Timestamptz
+  npc         WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  @@index([npcId, addedAt])
+}
+
+model WorldNpcDialogTurn {
+  id          BigInt   @id @default(autoincrement())
+  npcId       String   @db.Uuid
+  campaignId  String   @db.Uuid
+  playerMsg   String
+  npcResponse String
+  gameTime    DateTime @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  npc         WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@index([npcId, campaignId, createdAt])
+}
+
+model WorldLocationKnowledge {
+  id         BigInt   @id @default(autoincrement())
+  locationId String   @db.Uuid
+  content    String
+  source     String
+  kind       String
+  confidence Float?
+  similarity Float?
+  addedAt    DateTime @default(now()) @db.Timestamptz
+  location   WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@index([locationId, addedAt])
+}
+
+model CampaignNpcExperience {
+  id            BigInt   @id @default(autoincrement())
+  campaignNpcId String   @db.Uuid
+  content       String
+  importance    String?
+  sceneIndex    Int?
+  addedAt       DateTime @default(now()) @db.Timestamptz
+  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+  @@index([campaignNpcId, addedAt])
+}
+
+model CampaignDmMemoryEntry {
+  id         BigInt   @id @default(autoincrement())
+  campaignId String   @db.Uuid
+  at         DateTime @default(now()) @db.Timestamptz
+  plannedFor String?
+  status     String?
+  summary    String
+  agent      CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+  @@index([campaignId, at])
+}
+
+model CampaignDmPendingHook {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  campaignId  String   @db.Uuid
+  kind        String
+  summary     String
+  idealTiming String?
+  priority    Int      @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  agent       CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+  @@index([campaignId, priority])
+}
+```
+
+**Drop kolumn JSONB** (po migracji danych F1→F2; dla pre-prod = po prostu drop):
+- `WorldNPC.knowledgeBase`, `WorldNPC.dialogHistory`
+- `WorldLocation.knowledgeBase`
+- `CampaignNPC.experienceLog`
+- `CampaignDmAgent.dmMemory`, `CampaignDmAgent.pendingHooks`
+
+## F2 FIFO triggery
+
+```sql
+-- cap 50 WorldNpcKnowledge per npc
+CREATE OR REPLACE FUNCTION trim_world_npc_knowledge() RETURNS trigger AS $$
+BEGIN
+  DELETE FROM "WorldNpcKnowledge"
+  WHERE "npcId" = NEW."npcId"
+    AND id IN (
+      SELECT id FROM "WorldNpcKnowledge"
+      WHERE "npcId" = NEW."npcId"
+      ORDER BY "addedAt" DESC OFFSET 50
+    );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER trim_world_npc_knowledge_tr
+AFTER INSERT ON "WorldNpcKnowledge" FOR EACH ROW EXECUTE FUNCTION trim_world_npc_knowledge();
+
+-- analogicznie:
+-- WorldNpcDialogTurn cap 50 per (npcId, campaignId)
+-- WorldLocationKnowledge cap 50 per locationId
+-- CampaignNpcExperience cap N (50? sprawdzić obecny cap w npcMemoryUpdates handler)
+-- CampaignDmMemoryEntry cap 20 per campaignId
+-- CampaignDmPendingHook cap 12 per campaignId (ORDER BY priority ASC)
+```
+
+## F2 bulk upsert (drop loop findUnique+upsert)
+
+```js
+// zamiast pętli w syncNPCsToNormalized
+await prisma.$executeRaw`
+  INSERT INTO "CampaignNPC" (id, "campaignId", "npcId", name, attitude, disposition, ...)
+  SELECT * FROM UNNEST(
+    ${ids}::uuid[], ${cids}::uuid[], ${npcIds}::text[], ${names}::text[],
+    ${attitudes}::text[], ${dispositions}::int[], ...
+  )
+  ON CONFLICT ("campaignId","npcId") DO UPDATE SET
+    attitude = EXCLUDED.attitude,
+    disposition = EXCLUDED.disposition,
+    ...
+`;
+```
+
+Aplikujemy do: `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`, `processNpcChanges`. Z 40+ queries → 1 per batch.
+
+Alternative: `prisma.createMany({ skipDuplicates: true })` + `updateMany` w pętli. Gorsze (2N queries) ale Prisma-native — fallback jeśli raw SQL UNNEST okaże się problematyczny w testach.
+
+## F2 connection pool tuning
+
+`DATABASE_URL` → dodać `?connection_limit=10&pool_timeout=20`. Dla Cloud Run z N instancjami: pool per-instance × N ≤ Postgres `max_connections`. Przy F6 → PgBouncer.
+
+## F2 pliki do zmiany
+| Plik | Zmiana |
+|---|---|
+| `backend/prisma/schema.prisma` | Dodać 6 nowych modeli, drop 6 JSONB kolumn |
+| `backend/prisma/migrations/0001_child_tables_fifo/migration.sql` | Auto + manual: 6 trigger functions + triggers |
+| `backend/src/services/livingWorld/{npcDialog,npcMemoryUpdates,dmMemoryService,campaignSandbox,npcAgentLoop,postCampaignMemoryPromotion,postCampaignLocationPromotion,worldStateService}.js` | Append do child table zamiast push do JSONB array |
+| `backend/src/services/aiContextTools/contextBuilders/npcBaseline.js` | Read z child table (`prisma.worldNpcKnowledge.findMany` + `prisma.campaignNpcExperience.findMany`) zamiast z `WorldNPC.knowledgeBase` |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/npcMemoryUpdates.js` | INSERT do `CampaignNpcExperience` |
+| `backend/src/services/campaignSync.js` | Loop → bulk upsert |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/{npcs,knowledgeCodex,quests,locations}.js` | Loop → bulk upsert |
+| `knowledge/concepts/npc-clone-architecture.md` | Update — `knowledgeBase`/`experienceLog` z child tables |
+
+## F2 weryfikacja
+```bash
+# FIFO trigger test
+psql -c "INSERT INTO \"WorldNpcKnowledge\" (npcId, content, source, kind) SELECT '<npc-uuid>', 'k'||g, 'test', 'fact' FROM generate_series(1, 60) g;"
+psql -c "SELECT count(*) FROM \"WorldNpcKnowledge\" WHERE npcId = '<npc-uuid>';"   # = 50
+
+# Bulk upsert test
+# load campaign with 30 NPCs, save → assert query count drop (Prisma debug log: 1 INSERT zamiast 30)
+```
+
+## F2 ryzyka
+| Ryzyko | Mitigation |
+|---|---|
+| FIFO trigger kasuje recent gdy clock-skew na addedAt | Test seeded data; addedAt = `default(now())`, monotonic |
+| Bulk UNNEST z dynamic kolumnami trudne w utrzymaniu | Fallback `createMany`+`updateMany`; raw SQL tylko tam gdzie measurable QPS savings |
+| Stage 3 NPC memory cosine search wymaga child table indexed by entityType | `WorldEntityEmbedding` już indeksuje — tylko zmiana sourcing w `npcBaseline.js` |
+
+---
+
+# F3 — Reference normalization
+
+**Cel:** wyciąć wszystkie `Json @default("[]")` które są pure Mongo workaroundami (array of foreign IDs bez FK).
+
+**Trigger:** po F2, przy najbliższym oknie. Niski risk, czysta zmiana.
+
+## F3 schema delta — join tables zamiast JSON arrays of IDs
+
+```prisma
+model CampaignDiscoveredLocation {                          // replaces Campaign.discovered/heardAbout/discoveredSubLocationIds
+  campaignId   String         @db.Uuid
+  locationId   String         @db.Uuid
+  state        DiscoveryState
+  discoveredAt DateTime       @default(now()) @db.Timestamptz
+  campaign     Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  location     WorldLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@id([campaignId, locationId])
+  @@index([locationId])
+}
+
+model UserDiscoveredLocation {                              // replaces UserWorldKnowledge.discovered/heardAbout/discoveredSubLocationIds
+  userId        String         @db.Uuid
+  locationId    String         @db.Uuid
+  state         DiscoveryState
+  discoveredAt  DateTime       @default(now()) @db.Timestamptz
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  location      WorldLocation  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@id([userId, locationId])
+  @@index([locationId])
+}
+
+model UserDiscoveredEdge {                                  // replaces UserWorldKnowledge.discoveredEdgeIds
+  userId        String   @db.Uuid
+  edgeId        String   @db.Uuid
+  discoveredAt  DateTime @default(now()) @db.Timestamptz
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  edge          WorldLocationEdge  @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+  @@id([userId, edgeId])
+}
+
+model WorldEdgeDiscovery {                                  // replaces WorldLocationEdge.discoveredByCampaigns
+  edgeId       String   @db.Uuid
+  campaignId   String   @db.Uuid
+  discoveredAt DateTime @default(now()) @db.Timestamptz
+  edge         WorldLocationEdge @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+  campaign     Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@id([edgeId, campaignId])
+  @@index([campaignId])
+}
+
+model WorldNpcKnownLocation {                               // replaces WorldNPC.knownLocationIds
+  npcId      String   @db.Uuid
+  locationId String   @db.Uuid
+  grantedBy  String                                         // "seed" | "promotion" | "dialog"
+  grantedAt  DateTime @default(now()) @db.Timestamptz
+  npc        WorldNPC      @relation(fields: [npcId], references: [id], onDelete: Cascade)
+  location   WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@id([npcId, locationId])
+  @@index([locationId])
+}
+
+model CharacterClearedDungeon {                             // replaces Character.clearedDungeonIds
+  characterId String   @db.Uuid
+  dungeonId   String   @db.Uuid
+  clearedAt   DateTime @default(now()) @db.Timestamptz
+  character   Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  dungeon     WorldLocation @relation(fields: [dungeonId], references: [id])
+  @@id([characterId, dungeonId])
+}
+
+model CampaignQuestPrerequisite {                           // replaces CampaignQuest.prerequisiteQuestIds
+  questId        String @db.Uuid
+  prerequisiteId String @db.Uuid
+  quest          CampaignQuest @relation("questSide",  fields: [questId],        references: [id], onDelete: Cascade)
+  prerequisite   CampaignQuest @relation("prereqSide", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+  @@id([questId, prerequisiteId])
+}
+```
+
+**Drop kolumn JSONB:**
+- `Campaign.discoveredLocationIds`, `heardAboutLocationIds`, `discoveredSubLocationIds`
+- `UserWorldKnowledge.discoveredLocationIds`, `heardAboutLocationIds`, `discoveredSubLocationIds`, `discoveredEdgeIds`
+- `WorldLocationEdge.discoveredByCampaigns`
+- `WorldNPC.knownLocationIds`
+- `Character.clearedDungeonIds`
+- `CampaignQuest.prerequisiteQuestIds`
+
+## F3 pliki do zmiany
+| Plik | Zmiana |
+|---|---|
+| `backend/prisma/schema.prisma` | Dodać 7 join tables, drop 9 JSON kolumn |
+| `backend/src/services/livingWorld/userDiscoveryService.js` | Operuje na `UserDiscoveredLocation`/`Edge` zamiast JSON array |
+| `backend/src/services/livingWorld/{positionCalculator,worldStateService}.js` | `WorldEdgeDiscovery` queries |
+| `backend/src/services/livingWorld/{seedWorld,questGoalAssigner}.js` | `WorldNpcKnownLocation` zamiast `knownLocationIds` |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/locations.js` | INSERT do `CampaignDiscoveredLocation` |
+| `backend/src/services/characterMutations.js` | `CharacterClearedDungeon` write |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/quests.js` | `CampaignQuestPrerequisite` |
+| FE: `src/services/storage.js`, fog-of-war helpers | Backend zwraca relations — drop JSON parse |
+| `knowledge/concepts/fog-of-war.md` | Update na join tables |
+
+## F3 weryfikacja
+```sql
+-- po migracji każda relacja queryable bez parse:
+SELECT count(*) FROM "CampaignDiscoveredLocation" WHERE "campaignId" = '<uuid>';
+SELECT count(*) FROM "WorldEdgeDiscovery" WHERE "edgeId" = '<uuid>';
+```
+E2E: discover location → assert row w join table. Fog-of-war FE działa identycznie.
+
+---
+
+# F4 — Hot-path entity decomposition
+
+**Cel:** atomic partial updates + FK validation gdzie naprawdę warto.
+
+**Trigger:** po F3.
+
+## F4 schema delta
+
+```prisma
+model CharacterSkill {
+  characterId String @db.Uuid
+  skillName   String
+  level       Int    @default(0)
+  xp          Int    @default(0)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  @@id([characterId, skillName])
+  @@index([characterId, level])
+}
+
+model CharacterInventoryItem {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  characterId String   @db.Uuid
+  itemId      String                                          // stable ID z src/data/
+  baseType    String?
+  name        String
+  quantity    Int      @default(1)
+  props       Json     @default("{}")
+  addedAt     DateTime @default(now()) @db.Timestamptz
+  character   Character @relation("charInvItems", fields: [characterId], references: [id], onDelete: Cascade)
+  asMainHand  Character[] @relation("equipMain")
+  asOffHand   Character[] @relation("equipOff")
+  asArmour    Character[] @relation("equipArm")
+  @@index([characterId, itemId])
+}
+
+model CharacterMaterial {
+  characterId String @db.Uuid
+  materialKey String
+  quantity    Int    @default(0)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  @@id([characterId, materialKey])
+}
+
+model CampaignQuestObjective {
+  id           BigInt @id @default(autoincrement())
+  questId      String @db.Uuid
+  objectiveKey String
+  description  String
+  progress     Int    @default(0)
+  targetAmount Int    @default(1)
+  status       String @default("pending")
+  quest        CampaignQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
+  @@unique([questId, objectiveKey])
+}
+
+model CampaignNpcRelationship {
+  id            BigInt @id @default(autoincrement())
+  campaignNpcId String @db.Uuid
+  targetType    String                                         // "npc" | "character" | "faction"
+  targetRef     String
+  relation      String
+  strength      Int    @default(0)
+  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+  @@index([campaignNpcId])
+}
+```
+
+**Character — equipped FK:**
+```prisma
+model Character {
+  // ... (jak F1) PLUS:
+  equippedMainHandId String? @db.Uuid
+  equippedOffHandId  String? @db.Uuid
+  equippedArmourId   String? @db.Uuid
+  equippedMainHand   CharacterInventoryItem? @relation("equipMain", fields: [equippedMainHandId], references: [id])
+  equippedOffHand    CharacterInventoryItem? @relation("equipOff",  fields: [equippedOffHandId],  references: [id])
+  equippedArmour     CharacterInventoryItem? @relation("equipArm",  fields: [equippedArmourId],   references: [id])
+  // DROP: equipped Json
+  // DROP: skills, inventory, materialBag Json
+  inventoryItems  CharacterInventoryItem[] @relation("charInvItems")
+  characterSkills CharacterSkill[]
+  materials       CharacterMaterial[]
+}
+```
+
+## F4 pliki do zmiany
+| Plik | Zmiana |
+|---|---|
+| `backend/prisma/schema.prisma` | 5 nowych modeli, equipped FK, drop 4 JSONB kolumn |
+| `src/services/characterMutations.js`, `backend/src/services/characterMutations.js` | XP add → `UPDATE CharacterSkill SET xp = xp + N WHERE …`. Add item → `INSERT CharacterInventoryItem`. Stack material → `UPSERT CharacterMaterial` |
+| `src/services/combatEngine.js`, `magicEngine.js`, `craftingEngine.js`, `alchemyEngine.js` | Read z relations zamiast `char.skills[name]` / `char.inventory.find` |
+| `src/components/character/*.jsx` (sheet, inventory, skills) | Read z `char.characterSkills`, `char.inventoryItems`, `char.materials` |
+| `backend/src/services/aiContextTools/contextBuilders/character.js` | Include child relations |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/character.js` | Update child tables |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/quests.js` | Objectives → `CampaignQuestObjective` upserts |
+| `backend/src/services/livingWorld/campaignSandbox.js`, `worldStateService.js` | Relationships → `CampaignNpcRelationship` |
+| FE: `src/services/storage.js`, `_parseBackendCampaign` | Spłaszcz `characterSkills` na `char.skills` map (kompatybilność store) lub zaktualizuj store |
+
+## F4 weryfikacja
+```sql
+SELECT * FROM "CharacterSkill" WHERE "characterId" = '<uuid>' ORDER BY level DESC;
+-- atomic update bez full rewrite:
+UPDATE "CharacterSkill" SET xp = xp + 50 WHERE "characterId" = '<uuid>' AND "skillName" = 'walka_mieczem';
+-- equipped FK enforced:
+UPDATE "Character" SET "equippedMainHandId" = '<deleted-item-uuid>' WHERE id = '<char>';   -- FK violation
+```
+
+## F4 ryzyka
+| Ryzyko | Mitigation |
+|---|---|
+| Loadowanie character → 4 JOINy zamiast 1 row | Prisma `include`, jeden query plan, bench równoważny lub lepszy niż dziś (Mongo loadowała 1 row + parse 4 JSONów) |
+| FE store oczekuje `char.skills` jako map | `_parseBackendCampaign` robi spłaszczenie — store pozostaje stabilny |
+| Equipped FK blokuje delete itema | Cascade nie chcemy (chcemy explicit unequip). Default `onDelete: Restrict` (Prisma default dla nullable FK) — równoważne z dzisiejszą walidacją w UI |
+
+---
+
+# F5 — `coreState` surface trimming
+
+**Cel:** koniec write-amp na auto-save. Hot-path scalars na kolumny, reszta `transientState JSONB`.
+
+**Trigger:** po F4.
+
+## F5 schema delta
+
+```prisma
+model Campaign {
+  // ... (jak F4) PLUS:
+  currentLocation   String?                                  // flavor name (z LLM)
+  currentLocationId String?  @db.Uuid
+  gameTime          DateTime? @db.Timestamptz
+  weather           String?
+  sessionTitle      String?
+  boundsMinX        Float?
+  boundsMaxX        Float?
+  boundsMinY        Float?
+  boundsMaxY        Float?
+
+  transientState    Json     @default("{}")                  // RENAME z `coreState`; trzymaj resztę (combat state, chat buffer, temp world facts)
+
+  currentLocationFk WorldLocation? @relation("campaignCurrentLoc", fields: [currentLocationId], references: [id])
+  // DROP: coreState (rename), worldBounds Json
+}
+```
+
+`CampaignNPC.lastLocation` flavor string — DROP (display przez `lastLocFk.displayName`).
+
+## F5 pliki do zmiany
+| Plik | Zmiana |
+|---|---|
+| `backend/prisma/schema.prisma` | Add scalars, rename coreState → transientState, drop worldBounds Json + CampaignNPC.lastLocation |
+| `backend/src/services/campaignSerialize.js` | `stripNormalizedFromCoreState` uproszczone |
+| `backend/src/services/campaignSync.js` | Update sets `currentLocationId`, `gameTime`, ... osobno |
+| `backend/src/routes/campaigns/crud.js` (PUT) | Rozdzielić scalar vs transientState payload |
+| `src/services/storage.js` `_parseBackendCampaign` | Zmerge'uj scalary z transientState do gameState shape (kompatybilność store) |
+| `src/services/storage/migrations.js` | Drop legacy parse |
+| `backend/src/services/sceneGenerator/processStateChanges/handlers/locations.js` | `currentLocationId` set bezpośrednio |
+| `knowledge/concepts/persistence.md` | Update sekcja "coreState vs normalized" |
+| `knowledge/concepts/living-world.md` | "Three things that look the same" — uaktualnić jeśli się zmieni mapowanie |
+
+## F5 weryfikacja
+```sql
+-- atomic location update bez rewrite całego coreState:
+UPDATE "Campaign" SET "currentLocationId" = '<uuid>', "gameTime" = now() WHERE id = '<campaign>';
+-- index:
+EXPLAIN SELECT id FROM "Campaign" WHERE "currentLocationId" = '<uuid>';   -- index scan
+```
+
+## F5 ryzyka
+| Ryzyko | Mitigation |
+|---|---|
+| Scene-gen pipeline liczy na jeden obiekt `coreState` | `_parseBackendCampaign` mergeuje kolumny scalar + transientState → spójny `gameState` dla store. Backend BBE dostaje split — zmiana dotyczy tylko serializacji |
+| Jakieś pole "transient" okaże się hot-path | Po profile: przenieś do scalar w kolejnej iteracji F5+ |
+
+---
+
+# F6 — Production scale-out (metric-driven)
+
+**Cel:** infra-led odpowiedź na realny load. Nie spekulatywnie — każdy punkt triggered konkretnym pomiarem.
+
+| Punkt | Trigger | Akcja |
+|---|---|---|
+| Connection pool tuning | Po wyborze hostingu / przy pierwszym `too many connections` | PgBouncer przed Cloud SQL/Neon, `connection_limit` per Cloud Run instance |
+| Read replica | Read QPS > 70% capacity / read latency p95 wzrasta | Cloud SQL replica + Prisma `replicas` extension |
+| `WorldEvent` partycjonowanie | row count > 1M | Range partition po `createdAt` (monthly) |
+| `CampaignScene` partycjonowanie | row count > 5M | Range partition po `createdAt` |
+| Materialized views | Slow aggregate query > 500ms | Konkretna query → MV + refresh strategy |
+| `pg_cron` zamiast `setInterval` | Migracja na hosting który wspiera (Cloud SQL `cloudsql.enable_pg_cron=on`) | `RefreshToken` cleanup, ewentualnie cleanup `WorldEvent` starszych niż N dni |
+| HNSW tuning | Vector recall < 90% w testach | `m`, `ef_construction`, `ef_search` |
+
+## F6 hosting decyzja (osobna sesja)
+
+Co wszystkie muszą spełnić: PostgreSQL 16+, pgvector 0.7+, Cloud Run reachable (unix socket lub private IP).
+
+- **Google Cloud SQL** — ten sam region co Cloud Run (`europe-west1`), Cloud Run Connector (unix socket), pgvector dostępne, pg_cron flagą
+- **Neon** — serverless skalowanie do zera, pgvector, branche DB dla PR preview, PgBouncer wbudowany. Cold start latency do sprawdzenia
+- **Supabase** — overkill (auth/storage/realtime nieużywane), ale pgvector + pg_cron
+- **Self-hosted Postgres na GCE VM** — kontrola pełna, niższy koszt, ops burden
+
+## F6 dokumenty
+| Plik | Zmiana |
+|---|---|
+| `cloudbuild.yaml` | Update pod wybrany hosting |
+| `Deployment checklist — Cloud Run bez Red.txt` | Sekcja "Postgres prod hosting" |
+| `knowledge/decisions/postgres-prod-hosting.md` | **NEW** — decyzja po wyborze |
+
+---
+
+## Explicit non-goals (żadnej fazy)
+
+- **PostGIS** — coords euklidesowe 2D flat, Dijkstra <1000 nodes w JS
 - **pg_trgm / full-text search** — fuzzy dedupe przez JS substring + RAG
 - **Recursive CTE** — graph traversal w JS
-- **RLS** — `WHERE userId = $1` w kodzie wystarcza dla 50 DAU
-- **Partycjonowanie `WorldEvent` / `CampaignScene`** — <1M wierszy → btree wystarczy
-- **Read replicas** — 50 DAU
-- **Materialized views** — brak slow aggregates, profile po implementacji, dodaj JEŚLI trzeba
+- **RLS** — `WHERE userId = $1` w kodzie wystarcza
 - **LISTEN/NOTIFY** — Cloud Tasks dalej obsługują post-scene work
-- **pg_cron** — lazy sweep `setInterval` dla RefreshToken wystarczy w Fazie 1; pg_cron gdy wybierzemy prod hosting
-- **Atlas Search (tsvector)** — nieużywane dziś, nie dodajemy
-- **`generated always as stored` columns** — spekulatywne, nie wiadomo co denormalizować; profile po użyciu
-- **Production hosting decyzja** — osobna sesja
-- **Zmiana nazw tabel/kolumn na snake_case** — zostawiamy camelCase jak dziś (mniej zmian w kodzie)
+- **Atlas Search (tsvector)** — nieużywane dziś
+- **`generated always as stored` columns** — spekulatywne
+- **Zmiana nazw na snake_case** — camelCase zostaje

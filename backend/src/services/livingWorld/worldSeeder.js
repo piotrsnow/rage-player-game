@@ -159,7 +159,7 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
       const row = await prisma.worldLocation.create({
         data: {
           canonicalName: name,
-          aliases: JSON.stringify([name]),
+          aliases: [name],
           description: '',
           category: type,
           locationType: type,
@@ -241,8 +241,8 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
     await prisma.campaign.update({
       where: { id: campaignId },
       data: {
-        settlementCaps: JSON.stringify(caps),
-        worldBounds: JSON.stringify(bounds),
+        settlementCaps: caps,
+        worldBounds: bounds,
       },
     });
   } catch (err) {

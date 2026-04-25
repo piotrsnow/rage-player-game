@@ -200,7 +200,6 @@ export default function LobbyPage() {
         ...pendingCampaign,
         character: {
           ...libraryCharacter,
-          career: libraryCharacter.career || libraryCharacter.careerData,
           localId: pendingCampaign.character?.localId || libraryCharacter.localId,
           backendId: libraryCharacter.backendId || libraryCharacter.id || pendingCampaign.character?.backendId,
         },

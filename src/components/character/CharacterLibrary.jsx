@@ -32,7 +32,7 @@ function BrowsingView({ character, settings, onBack }) {
           <span className="w-1 h-1 bg-primary rounded-full" />
           <span>{t('character.age')}: {character.age ?? 23}</span>
           <span className="w-1 h-1 bg-primary rounded-full" />
-          <span>{character.xp || 0} {t('common.xp')}</span>
+          <span>{character.characterXp || 0} {t('common.xp')}</span>
         </div>
       </div>
 

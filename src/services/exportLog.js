@@ -56,12 +56,11 @@ export function exportAsMarkdown(campaignState) {
     lines.push('');
     lines.push(`- **Name:** ${character.name}`);
     lines.push(`- **Species:** ${character.species || 'Human'}`);
-    lines.push(`- **Career:** ${character.career?.name || 'Unknown'} (${character.career?.tierName || 'Tier 1'}), ${character.career?.status || ''}`);
     lines.push(`- **Level:** ${character.characterLevel || 1}`);
     lines.push(`- **Wounds:** ${character.wounds}/${character.maxWounds}`);
-    if (character.characteristics) {
-      const c = character.characteristics;
-      lines.push(`- **Characteristics:** WS ${c.ws} | BS ${c.bs} | S ${c.s} | T ${c.t} | I ${c.i} | Ag ${c.ag} | Dex ${c.dex} | Int ${c.int} | WP ${c.wp} | Fel ${c.fel}`);
+    if (character.attributes) {
+      const a = character.attributes;
+      lines.push(`- **Attributes:** Sił ${a.sila} | Int ${a.inteligencja} | Cha ${a.charyzma} | Zrę ${a.zrecznosc} | Wyt ${a.wytrzymalosc} | Szc ${a.szczescie}`);
     }
     if (character.inventory?.length) {
       lines.push('');

@@ -11,6 +11,8 @@ import {
   withRetry,
   fetchCampaignCharacters,
   reconstructFromNormalized,
+  getCampaignCharacterIds,
+  getCharacterIdsForCampaigns,
 } from '../../services/campaignSync.js';
 
 const ELEVENLABS_URL = 'https://api.elevenlabs.io/v1';
@@ -37,7 +39,7 @@ export async function publicCampaignRoutes(fastify) {
         select: {
           id: true, name: true, genre: true, tone: true,
           rating: true, playCount: true,
-          coreState: true, characterIds: true, createdAt: true,
+          coreState: true, createdAt: true,
           user: { select: { email: true } },
         },
         orderBy,
@@ -48,15 +50,18 @@ export async function publicCampaignRoutes(fastify) {
     ]);
 
     const campaignIds = campaigns.map((c) => c.id);
-    const sceneCounts = await prisma.campaignScene.groupBy({
-      by: ['campaignId', 'sceneIndex'],
-      where: { campaignId: { in: campaignIds } },
-    });
+    const [sceneCounts, charIdsByCampaign] = await Promise.all([
+      prisma.campaignScene.groupBy({
+        by: ['campaignId', 'sceneIndex'],
+        where: { campaignId: { in: campaignIds } },
+      }),
+      getCharacterIdsForCampaigns(campaignIds),
+    ]);
     const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
-    const firstCharIds = campaigns
-      .map((c) => (Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null))
-      .filter(Boolean);
+    const firstCharIds = [...new Set(
+      [...charIdsByCampaign.values()].map((ids) => ids[0]).filter(Boolean),
+    )];
     const firstChars = firstCharIds.length > 0
       ? await prisma.character.findMany({
           where: { id: { in: firstCharIds } },
@@ -67,10 +72,9 @@ export async function publicCampaignRoutes(fastify) {
 
     return {
       campaigns: campaigns.map((c) => {
-        let parsed = {};
-        try { parsed = JSON.parse(c.coreState); } catch { /* empty */ }
-        const firstId = Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null;
-        const firstChar = firstId ? charById.get(firstId) : null;
+        const parsed = c.coreState || {};
+        const characterIds = charIdsByCampaign.get(c.id) || [];
+        const firstChar = characterIds[0] ? charById.get(characterIds[0]) : null;
         return {
           id: c.id,
           name: c.name,
@@ -96,11 +100,6 @@ export async function publicCampaignRoutes(fastify) {
   fastify.get('/public/:id', async (request, reply) => {
     const campaign = await prisma.campaign.findFirst({
       where: { id: request.params.id, isPublic: true },
-      select: {
-        id: true, name: true, genre: true, tone: true,
-        rating: true, playCount: true,
-        coreState: true, characterIds: true, isPublic: true, createdAt: true,
-      },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
@@ -111,22 +110,21 @@ export async function publicCampaignRoutes(fastify) {
       }),
     );
 
-    let coreState = {};
-    try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
-
+    const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState);
 
+    const characterIds = await getCampaignCharacterIds(campaign.id);
     const [scenes, characters] = await Promise.all([
       prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
         select: SCENE_CLIENT_SELECT,
       }),
-      fetchCampaignCharacters(campaign.characterIds || []),
+      fetchCampaignCharacters(characterIds),
     ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
-    return { ...campaign, coreState, scenes: dedupedScenes, characters };
+    return { ...campaign, coreState, characterIds, scenes: dedupedScenes, characters };
   });
 
   fastify.get('/share/:token', async (request, reply) => {
@@ -134,28 +132,27 @@ export async function publicCampaignRoutes(fastify) {
       where: { shareToken: request.params.token },
       select: {
         id: true, name: true, genre: true, tone: true,
-        coreState: true, characterIds: true, createdAt: true,
+        coreState: true, createdAt: true,
         user: { select: { email: true } },
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found or link expired' });
 
-    let coreState = {};
-    try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
-
+    const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState);
 
     if (!coreState.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
       coreState.narratorVoiceId = config.elevenlabsDefaultVoiceId;
     }
 
+    const characterIds = await getCampaignCharacterIds(campaign.id);
     const [scenes, characters] = await Promise.all([
       prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
         select: SCENE_CLIENT_SELECT,
       }),
-      fetchCampaignCharacters(campaign.characterIds || []),
+      fetchCampaignCharacters(characterIds),
     ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
@@ -189,7 +186,7 @@ export async function publicCampaignRoutes(fastify) {
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
     if (existing) {
       const url = await store.getUrl(existing.path);
-      const meta = JSON.parse(existing.metadata);
+      const meta = existing.metadata || {};
       return { url, alignment: meta.alignment || null };
     }
 
@@ -227,7 +224,7 @@ export async function publicCampaignRoutes(fastify) {
         size: audioBytes.length,
         backend: config.mediaBackend,
         path: cacheKey,
-        metadata: JSON.stringify({ ...cacheParams, alignment: data.alignment }),
+        metadata: { ...cacheParams, alignment: data.alignment },
       },
       update: {},
     });

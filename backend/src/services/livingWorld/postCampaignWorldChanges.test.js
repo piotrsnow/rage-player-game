@@ -240,24 +240,28 @@ describe('appendKnowledgeEntry', () => {
   const newEntry = { content: 'NEW', source: 'llm_extraction:c1' };
 
   it('appends to an existing parsed array', () => {
-    const raw = JSON.stringify([{ content: 'old', source: 'baseline' }]);
-    const next = JSON.parse(appendKnowledgeEntry(raw, newEntry));
+    const next = appendKnowledgeEntry([{ content: 'old', source: 'baseline' }], newEntry);
     expect(next).toHaveLength(2);
     expect(next[1]).toEqual(newEntry);
   });
 
+  it('still tolerates a legacy JSON-string input', () => {
+    const next = appendKnowledgeEntry(JSON.stringify([{ content: 'old', source: 'baseline' }]), newEntry);
+    expect(next).toHaveLength(2);
+  });
+
   it('starts fresh when input is null/empty/malformed', () => {
-    expect(JSON.parse(appendKnowledgeEntry(null, newEntry))).toEqual([newEntry]);
-    expect(JSON.parse(appendKnowledgeEntry('', newEntry))).toEqual([newEntry]);
-    expect(JSON.parse(appendKnowledgeEntry('{malformed', newEntry))).toEqual([newEntry]);
+    expect(appendKnowledgeEntry(null, newEntry)).toEqual([newEntry]);
+    expect(appendKnowledgeEntry('', newEntry)).toEqual([newEntry]);
+    expect(appendKnowledgeEntry('{malformed', newEntry)).toEqual([newEntry]);
   });
 
   it('caps FIFO when total exceeds cap', () => {
     const many = Array.from({ length: 52 }, (_, i) => ({ content: `k${i}`, source: 'baseline' }));
-    const result = JSON.parse(appendKnowledgeEntry(JSON.stringify(many), newEntry, { cap: 50 }));
+    const result = appendKnowledgeEntry(many, newEntry, { cap: 50 });
     expect(result).toHaveLength(50);
     expect(result[result.length - 1]).toEqual(newEntry);
-    expect(result[0].content).toBe('k3'); // first 3 dropped (52 + 1 new → slice last 50)
+    expect(result[0].content).toBe('k3');
   });
 });
 
@@ -353,7 +357,7 @@ describe('applyWorldStateChanges', () => {
   });
 
   it('HIGH tier writes to WorldNPC.knowledgeBase when not dryRun', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1', knowledgeBase: '[]' });
+    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1', knowledgeBase: [] });
     prisma.worldNPC.update.mockResolvedValue({});
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
@@ -363,8 +367,7 @@ describe('applyWorldStateChanges', () => {
     expect(prisma.worldNPC.update).toHaveBeenCalledTimes(1);
     expect(result.appliedKnowledge).toHaveLength(1);
     const writtenData = prisma.worldNPC.update.mock.calls[0][0].data;
-    const parsed = JSON.parse(writtenData.knowledgeBase);
-    expect(parsed[0].source).toBe('llm_extraction:c1');
+    expect(writtenData.knowledgeBase[0].source).toBe('llm_extraction:c1');
   });
 
   it('skips HIGH write when WorldNPC row no longer exists', async () => {
@@ -486,8 +489,7 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
     expect(result.ok).toBe(true);
     expect(prisma.worldLocation.update).toHaveBeenCalledTimes(1);
     const data = prisma.worldLocation.update.mock.calls[0][0].data;
-    const parsed = JSON.parse(data.knowledgeBase);
-    expect(parsed[0]).toMatchObject({
+    expect(data.knowledgeBase[0]).toMatchObject({
       content: expect.stringContaining('spalony przez bandytów'),
       source: 'llm_extraction:c1',
       kind: 'locationBurned',

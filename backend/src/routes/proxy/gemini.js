@@ -1,7 +1,7 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
-import { generateKey, toObjectId } from '../../services/hashService.js';
+import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, getGeneratedImageScale } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
@@ -98,14 +98,14 @@ export async function geminiProxyRoutes(fastify) {
       where: { key: cacheKey },
       create: {
         userId: request.user.id,
-        campaignId: toObjectId(campaignId),
+        campaignId: toUuid(campaignId),
         key: cacheKey,
         type: 'image',
         contentType,
         size: buffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });
@@ -199,7 +199,7 @@ export async function geminiProxyRoutes(fastify) {
         size: resultBuffer.length,
         backend: config.mediaBackend,
         path: storagePath,
-        metadata: JSON.stringify(cacheParams),
+        metadata: cacheParams,
       },
       update: {},
     });

@@ -54,7 +54,7 @@ export async function processLocationChanges(campaignId, newLocations, { prevLoc
       where: { id: campaignId },
       select: { worldBounds: true },
     });
-    if (campaign?.worldBounds) bounds = JSON.parse(campaign.worldBounds);
+    bounds = campaign?.worldBounds || null;
   } catch { bounds = null; }
 
   for (const entry of newLocations) {
@@ -230,7 +230,7 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
       created = await prisma.worldLocation.create({
         data: {
           canonicalName,
-          aliases: JSON.stringify([entry.name]),
+          aliases: [entry.name],
           description: entry.description || '',
           category: locationType,
           locationType,

@@ -146,7 +146,7 @@ Rules:
 
 async function proposeAction({ npc, recentEvents = [], provider = 'openai', timeoutMs = 5000 }) {
   const eventsDigest = recentEvents.slice(0, 6).map((e) => {
-    const payload = e.payload ? (typeof e.payload === 'string' ? e.payload : JSON.stringify(e.payload)) : '';
+    const payload = e.payload ? JSON.stringify(e.payload) : '';
     return `[${e.eventType}] ${payload.slice(0, 160)}`;
   }).join('\n');
 
@@ -158,7 +158,7 @@ async function proposeAction({ npc, recentEvents = [], provider = 'openai', time
     npc.personality ? `Personality: ${npc.personality}` : null,
     npc.alignment ? `Alignment: ${npc.alignment}` : null,
     npc.activeGoal ? `Active goal: ${npc.activeGoal}` : null,
-    npc.goalProgress ? `Goal progress: ${typeof npc.goalProgress === 'string' ? npc.goalProgress : JSON.stringify(npc.goalProgress)}` : null,
+    npc.goalProgress ? `Goal progress: ${JSON.stringify(npc.goalProgress)}` : null,
     currentLocName ? `Current location: ${currentLocName}` : (npc.currentLocationId ? `Current location id: ${npc.currentLocationId}` : null),
     homeLocName && homeLocName !== currentLocName ? `Home location: ${homeLocName}. Return here when your current goal is done.` : null,
     eventsDigest ? `\nRecent activity:\n${eventsDigest}` : null,
@@ -244,16 +244,12 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
     } else {
       log.warn({ npcId: npc.id, to: action.toLocation }, 'NPC move: findOrCreateWorldLocation returned null');
     }
-    updateData.goalProgress = JSON.stringify(
-      buildNextGoalProgress(parseProgress(npc.goalProgress), action, now),
-    );
+    updateData.goalProgress = buildNextGoalProgress(parseProgress(npc.goalProgress), action, now);
   } else if (action.kind === 'work_on_goal') {
-    updateData.goalProgress = JSON.stringify(
-      buildNextGoalProgress(parseProgress(npc.goalProgress), action, now),
-    );
+    updateData.goalProgress = buildNextGoalProgress(parseProgress(npc.goalProgress), action, now);
   } else if (action.kind === 'finished') {
     updateData.activeGoal = null;
-    updateData.goalProgress = JSON.stringify({ ...parseProgress(npc.goalProgress) || {}, finishedAt: now.toISOString(), reason: action.reason });
+    updateData.goalProgress = { ...parseProgress(npc.goalProgress) || {}, finishedAt: now.toISOString(), reason: action.reason };
   }
 
   await prisma.worldNPC.update({ where: { id: npc.id }, data: updateData });
@@ -280,9 +276,7 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
 }
 
 function parseProgress(gp) {
-  if (!gp) return null;
-  if (typeof gp === 'object') return gp;
-  try { return JSON.parse(gp); } catch { return null; }
+  return (gp && typeof gp === 'object') ? gp : null;
 }
 
 async function resolveLocationName(locationId) {

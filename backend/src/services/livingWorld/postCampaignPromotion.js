@@ -349,7 +349,7 @@ export async function persistPromotionCandidates(campaignId, candidates, {
       name: npc.name || 'unknown',
       role: npc.role || null,
       personality: npc.personality || null,
-      stats: JSON.stringify(statsWithDedup),
+      stats: statsWithDedup,
       dialogSample: stats.dialogSample || null,
       smallModelVerdict: verdict ? JSON.stringify(verdict) : null,
       status: classification.status,

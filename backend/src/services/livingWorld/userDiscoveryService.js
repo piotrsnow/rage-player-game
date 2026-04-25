@@ -15,15 +15,9 @@
 // Physical visit promotes heard → visited automatically (we remove from
 // the heard-about list on discovery).
 //
-// Used by:
-//   - admin map view (restrict graph to visible nodes)
-//   - travel intent (limit Dijkstra to known edges; unknown → exploration)
-//   - player map UI (Round C) to colour nodes by fog state
-//
-// Shape of UserWorldKnowledge:
-//   discoveredLocationIds: JSON array of canonical WorldLocation.id
-//   discoveredEdgeIds:     JSON array of WorldLocationEdge.id
-//   heardAboutLocationIds: JSON array of canonical WorldLocation.id
+// F3 will replace these JSON arrays with join tables (UserDiscoveredLocation
+// / UserDiscoveredEdge / CampaignDiscoveredLocation). For F1 we keep them as
+// JSONB arrays so the call surface stays identical.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
@@ -35,19 +29,14 @@ async function loadOrCreate(userId) {
   let row = await prisma.userWorldKnowledge.findUnique({ where: { userId } });
   if (!row) {
     row = await prisma.userWorldKnowledge.create({
-      data: { userId, discoveredLocationIds: '[]', discoveredEdgeIds: '[]' },
+      data: { userId, discoveredLocationIds: [], discoveredEdgeIds: [], heardAboutLocationIds: [] },
     });
   }
   return row;
 }
 
-function parseJsonArray(str) {
-  try {
-    const arr = JSON.parse(str || '[]');
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
-  }
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 async function fetchLocationCanonicality(locationId) {
@@ -82,9 +71,9 @@ async function readCampaignFogSets(campaignId) {
     });
     if (!c) return null;
     return {
-      discoveredLocationIds: new Set(parseJsonArray(c.discoveredLocationIds)),
-      discoveredSubLocationIds: new Set(parseJsonArray(c.discoveredSubLocationIds)),
-      heardAboutLocationIds: new Set(parseJsonArray(c.heardAboutLocationIds)),
+      discoveredLocationIds: new Set(asArray(c.discoveredLocationIds)),
+      discoveredSubLocationIds: new Set(asArray(c.discoveredSubLocationIds)),
+      heardAboutLocationIds: new Set(asArray(c.heardAboutLocationIds)),
     };
   } catch {
     return null;
@@ -92,15 +81,7 @@ async function readCampaignFogSets(campaignId) {
 }
 
 /**
- * Mark a location as discovered ("visited" fog state). Routes by canonicality:
- *   - `isCanonical=true`  → `UserWorldKnowledge.discoveredLocationIds`
- *   - `isCanonical=false` → `Campaign.discoveredLocationIds`
- *     (or `Campaign.discoveredSubLocationIds` when the location has a parent)
- *
- * Promotes heard→visited by removing the id from the matching heard-about
- * list. `campaignId` is optional for backward compatibility with existing
- * canonical-only callers (postSceneWork.js passes only user+location).
- *
+ * Mark a location as discovered ("visited" fog state). Routes by canonicality.
  * Idempotent — silent on failure (discovery must never block scene flow).
  */
 export async function markLocationDiscovered({ userId, locationId, campaignId = null }) {
@@ -110,8 +91,8 @@ export async function markLocationDiscovered({ userId, locationId, campaignId = 
 
     if (isCanonical) {
       const row = await loadOrCreate(userId);
-      const ids = new Set(parseJsonArray(row.discoveredLocationIds));
-      const heard = new Set(parseJsonArray(row.heardAboutLocationIds));
+      const ids = new Set(asArray(row.discoveredLocationIds));
+      const heard = new Set(asArray(row.heardAboutLocationIds));
       const changed = !ids.has(locationId) || heard.has(locationId);
       if (!changed) return;
       ids.add(locationId);
@@ -119,16 +100,15 @@ export async function markLocationDiscovered({ userId, locationId, campaignId = 
       await prisma.userWorldKnowledge.update({
         where: { userId },
         data: {
-          discoveredLocationIds: JSON.stringify([...ids]),
-          heardAboutLocationIds: JSON.stringify([...heard]),
+          discoveredLocationIds: [...ids],
+          heardAboutLocationIds: [...heard],
         },
       });
       return;
     }
 
-    // Non-canonical → per-campaign. Sublocations go to the sub list so the
-    // map UI can distinguish them from top-level discoveries.
-    if (!campaignId) return; // can't route non-canonical without a campaign
+    // Non-canonical → per-campaign.
+    if (!campaignId) return;
     const fog = await readCampaignFogSets(campaignId);
     if (!fog) return;
     const targetSet = parentLocationId ? fog.discoveredSubLocationIds : fog.discoveredLocationIds;
@@ -139,8 +119,8 @@ export async function markLocationDiscovered({ userId, locationId, campaignId = 
     targetSet.add(locationId);
     heard.delete(locationId);
     await campaignFogPatch(campaignId, {
-      [targetKey]: JSON.stringify([...targetSet]),
-      heardAboutLocationIds: JSON.stringify([...heard]),
+      [targetKey]: [...targetSet],
+      heardAboutLocationIds: [...heard],
     });
   } catch (err) {
     log.warn({ err: err?.message, userId, locationId, campaignId }, 'markLocationDiscovered failed');
@@ -149,11 +129,7 @@ export async function markLocationDiscovered({ userId, locationId, campaignId = 
 
 /**
  * Mark a location as "heard about" (dashed-outline fog state). Skipped if
- * already discovered — we never demote visited → heard. Canonical goes to
- * `UserWorldKnowledge.heardAboutLocationIds`, non-canonical to the campaign.
- *
- * Called from processStateChanges when an NPC reveals a location in dialog
- * (Phase 4b bucket `locationMentioned: [{locationId, byNpcId}]`).
+ * already discovered — we never demote visited → heard.
  */
 export async function markLocationHeardAbout({ userId, locationId, campaignId = null }) {
   if (!userId || !locationId) return;
@@ -161,14 +137,14 @@ export async function markLocationHeardAbout({ userId, locationId, campaignId = 
     const { isCanonical } = await fetchLocationCanonicality(locationId);
     if (isCanonical) {
       const row = await loadOrCreate(userId);
-      const visited = new Set(parseJsonArray(row.discoveredLocationIds));
-      if (visited.has(locationId)) return; // already visited, don't demote
-      const heard = new Set(parseJsonArray(row.heardAboutLocationIds));
+      const visited = new Set(asArray(row.discoveredLocationIds));
+      if (visited.has(locationId)) return;
+      const heard = new Set(asArray(row.heardAboutLocationIds));
       if (heard.has(locationId)) return;
       heard.add(locationId);
       await prisma.userWorldKnowledge.update({
         where: { userId },
-        data: { heardAboutLocationIds: JSON.stringify([...heard]) },
+        data: { heardAboutLocationIds: [...heard] },
       });
       return;
     }
@@ -179,7 +155,7 @@ export async function markLocationHeardAbout({ userId, locationId, campaignId = 
     if (fog.heardAboutLocationIds.has(locationId)) return;
     fog.heardAboutLocationIds.add(locationId);
     await campaignFogPatch(campaignId, {
-      heardAboutLocationIds: JSON.stringify([...fog.heardAboutLocationIds]),
+      heardAboutLocationIds: [...fog.heardAboutLocationIds],
     });
   } catch (err) {
     log.warn({ err: err?.message, userId, locationId, campaignId }, 'markLocationHeardAbout failed');
@@ -187,8 +163,7 @@ export async function markLocationHeardAbout({ userId, locationId, campaignId = 
 }
 
 /**
- * Mark an edge as discovered. Bidirectional — if A→B is discovered, B→A is
- * also discovered (we find the matching reverse edge and include it).
+ * Mark an edge as discovered. Bidirectional.
  */
 export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocationId }) {
   if (!userId || !fromLocationId || !toLocationId) return;
@@ -207,13 +182,12 @@ export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocat
     if (edgeIds.length === 0) return;
 
     const row = await loadOrCreate(userId);
-    const knownEdges = new Set(parseJsonArray(row.discoveredEdgeIds));
-    const knownLocs = new Set(parseJsonArray(row.discoveredLocationIds));
+    const knownEdges = new Set(asArray(row.discoveredEdgeIds));
+    const knownLocs = new Set(asArray(row.discoveredLocationIds));
     let changed = false;
     for (const id of edgeIds) {
       if (!knownEdges.has(id)) { knownEdges.add(id); changed = true; }
     }
-    // Walking an edge also reveals both endpoints.
     for (const loc of [fromLocationId, toLocationId]) {
       if (!knownLocs.has(loc)) { knownLocs.add(loc); changed = true; }
     }
@@ -221,8 +195,8 @@ export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocat
     await prisma.userWorldKnowledge.update({
       where: { userId },
       data: {
-        discoveredEdgeIds: JSON.stringify([...knownEdges]),
-        discoveredLocationIds: JSON.stringify([...knownLocs]),
+        discoveredEdgeIds: [...knownEdges],
+        discoveredLocationIds: [...knownLocs],
       },
     });
   } catch (err) {
@@ -232,9 +206,7 @@ export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocat
 
 /**
  * Load a user's full discovery set. Always includes the capital and any
- * `knownByDefault=true` canonical locations (looked up once on read).
- * Returns a minimal shape for back-compat with existing callers that only
- * care about the canonical visited set + edge set.
+ * `knownByDefault=true` canonical locations.
  */
 export async function loadDiscovery(userId) {
   if (!userId) return { locationIds: new Set(), edgeIds: new Set() };
@@ -245,24 +217,14 @@ export async function loadDiscovery(userId) {
       select: { id: true },
     }),
   ]);
-  const locationIds = new Set(parseJsonArray(row?.discoveredLocationIds));
-  const edgeIds = new Set(parseJsonArray(row?.discoveredEdgeIds));
+  const locationIds = new Set(asArray(row?.discoveredLocationIds));
+  const edgeIds = new Set(asArray(row?.discoveredEdgeIds));
   for (const c of knownByDefault) locationIds.add(c.id);
   return { locationIds, edgeIds };
 }
 
 /**
- * Load the full three-state fog-of-war view for a campaign. Merges the
- * per-user canonical set with the per-campaign non-canonical set. Caller
- * uses this for the player-facing map in Round C.
- *
- * Returns:
- *   {
- *     visited: Set<locationId>,         // fully explored; sublocations unlocked
- *     heardAbout: Set<locationId>,      // name visible, drill-down locked
- *     discoveredSubLocationIds: Set,    // non-canonical sublocations visited
- *     discoveredEdgeIds: Set,           // traversed edges (canonical only)
- *   }
+ * Load the full three-state fog-of-war view for a campaign.
  */
 export async function loadCampaignFog({ userId, campaignId }) {
   const empty = {
@@ -282,21 +244,19 @@ export async function loadCampaignFog({ userId, campaignId }) {
       });
       if (!c) return null;
       return {
-        discoveredLocationIds: parseJsonArray(c.discoveredLocationIds),
-        discoveredSubLocationIds: parseJsonArray(c.discoveredSubLocationIds),
-        heardAboutLocationIds: parseJsonArray(c.heardAboutLocationIds),
+        discoveredLocationIds: asArray(c.discoveredLocationIds),
+        discoveredSubLocationIds: asArray(c.discoveredSubLocationIds),
+        heardAboutLocationIds: asArray(c.heardAboutLocationIds),
       };
     })(),
   ]);
-  // Canonical heard-about lives on UserWorldKnowledge.heardAboutLocationIds;
-  // fetch separately so `loadDiscovery` stays backward compatible.
   const heardRow = await prisma.userWorldKnowledge.findUnique({
     where: { userId },
     select: { heardAboutLocationIds: true },
   }).catch(() => null);
 
   const visited = new Set(canon.locationIds);
-  const heardAbout = new Set(parseJsonArray(heardRow?.heardAboutLocationIds));
+  const heardAbout = new Set(asArray(heardRow?.heardAboutLocationIds));
   const subLocs = new Set();
 
   if (campaignFog) {
@@ -304,7 +264,6 @@ export async function loadCampaignFog({ userId, campaignId }) {
     for (const id of campaignFog.discoveredSubLocationIds) subLocs.add(id);
     for (const id of campaignFog.heardAboutLocationIds) heardAbout.add(id);
   }
-  // A visited entry outranks a heard-about entry (cross-source as well).
   for (const id of visited) heardAbout.delete(id);
 
   return {

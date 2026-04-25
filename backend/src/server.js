@@ -42,6 +42,7 @@ import {
 } from './services/roomManager.js';
 import { prisma } from './lib/prisma.js';
 import { logger } from './lib/logger.js';
+import { startPeriodicCleanup as startRefreshTokenCleanup, stopPeriodicCleanup as stopRefreshTokenCleanup } from './services/refreshTokenService.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const STATIC_ROOT = resolve(__dirname, '..', 'public', 'dist');
@@ -82,7 +83,7 @@ await fastify.register(idempotencyPlugin);
 fastify.get('/health', async (request, reply) => {
   let dbOk = false;
   try {
-    await prisma.$runCommandRaw({ ping: 1 });
+    await prisma.$queryRaw`SELECT 1`;
     dbOk = true;
   } catch (err) {
     fastify.log.warn({ err }, 'Health check DB ping failed');
@@ -187,6 +188,7 @@ await fastify.register(async (app) => {
 }, { prefix: '/v1/admin/livingWorld' });
 
 startRoomCleanup();
+startRefreshTokenCleanup();
 
 if (existsSync(STATIC_ROOT)) {
   await fastify.register(fastifyStatic, {
@@ -245,6 +247,7 @@ async function gracefulShutdown(signal) {
   fastify.log.info(`[shutdown] received ${signal} — draining`);
 
   stopRoomCleanup();
+  stopRefreshTokenCleanup();
 
   try {
     const savedCount = await saveAllActiveRooms();

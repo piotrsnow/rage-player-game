@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { createMediaStore } from '../services/mediaStore.js';
-import { generateKey, toObjectId } from '../services/hashService.js';
+import { generateKey, toUuid } from '../services/hashService.js';
 import { config } from '../config.js';
 const store = createMediaStore(config);
 
@@ -75,7 +75,7 @@ export async function mediaRoutes(fastify) {
           data: { lastAccessedAt: new Date() },
         });
         const url = await store.getUrl(asset.path);
-        return { cached: true, key, url, metadata: JSON.parse(asset.metadata) };
+        return { cached: true, key, url, metadata: asset.metadata };
       }
 
       return { cached: false, key };
@@ -101,19 +101,19 @@ export async function mediaRoutes(fastify) {
         where: { key },
         create: {
           userId: request.user.id,
-          campaignId: toObjectId(campaignId),
+          campaignId: toUuid(campaignId),
           key,
           type,
           contentType,
           size: buffer.length,
           backend: config.mediaBackend,
           path: storagePath,
-          metadata: JSON.stringify(metadata || {}),
+          metadata: metadata || {},
         },
         update: {
           size: buffer.length,
           path: storagePath,
-          metadata: JSON.stringify(metadata || {}),
+          metadata: metadata || {},
           lastAccessedAt: new Date(),
         },
       });

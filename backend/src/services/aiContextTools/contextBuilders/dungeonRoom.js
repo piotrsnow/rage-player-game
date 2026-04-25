@@ -40,10 +40,8 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
   const exits = exitEdges.map((e) => {
     const target = exitById.get(e.toLocationId);
     let cleared = false;
-    if (target?.roomMetadata) {
-      try {
-        cleared = JSON.parse(target.roomMetadata).entryCleared === true;
-      } catch { /* ignore */ }
+    if (target?.roomMetadata && typeof target.roomMetadata === 'object') {
+      cleared = target.roomMetadata.entryCleared === true;
     }
     return {
       direction: e.direction || 'unknown',

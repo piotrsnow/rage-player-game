@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { embedText, buildSceneEmbeddingText } from '../../services/embeddingService.js';
-import { writeEmbedding } from '../../services/vectorSearchService.js';
+import { writeEmbedding } from '../../services/embeddingWrite.js';
 import { SCENE_BODY_SCHEMA, SCENE_BULK_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'ai' });
@@ -46,13 +46,13 @@ export async function sceneRoutes(fastify) {
       sceneIndex,
       narrative: scene.narrative || '',
       chosenAction: scene.chosenAction || null,
-      suggestedActions: JSON.stringify(normalizedSuggestedActions),
-      dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
+      suggestedActions: normalizedSuggestedActions,
+      dialogueSegments: scene.dialogueSegments || [],
       imagePrompt: scene.imagePrompt || null,
       imageUrl: normalizedImageUrl,
       soundEffect: scene.soundEffect || null,
-      diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
-      stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
+      diceRoll: scene.diceRoll ?? null,
+      stateChanges: scene.stateChanges ?? null,
       scenePacing: scene.scenePacing || 'exploration',
     };
 
@@ -127,13 +127,13 @@ export async function sceneRoutes(fastify) {
             sceneIndex,
             narrative: scene.narrative || '',
             chosenAction: scene.chosenAction || null,
-            suggestedActions: JSON.stringify(normalizedSuggestedActions),
-            dialogueSegments: JSON.stringify(scene.dialogueSegments || []),
+            suggestedActions: normalizedSuggestedActions,
+            dialogueSegments: scene.dialogueSegments || [],
             imagePrompt: scene.imagePrompt || null,
             imageUrl: scene.imageUrl || scene.image || null,
             soundEffect: scene.soundEffect || null,
-            diceRoll: scene.diceRoll ? JSON.stringify(scene.diceRoll) : null,
-            stateChanges: scene.stateChanges ? JSON.stringify(scene.stateChanges) : null,
+            diceRoll: scene.diceRoll ?? null,
+            stateChanges: scene.stateChanges ?? null,
             scenePacing: scene.scenePacing || 'exploration',
           };
 
@@ -203,12 +203,6 @@ export async function sceneRoutes(fastify) {
     }
     const uniqueScenes = Array.from(dedupedByIndex.values());
 
-    return uniqueScenes.map((s) => ({
-      ...s,
-      suggestedActions: JSON.parse(s.suggestedActions || '[]'),
-      dialogueSegments: JSON.parse(s.dialogueSegments || '[]'),
-      diceRoll: s.diceRoll ? JSON.parse(s.diceRoll) : null,
-      stateChanges: s.stateChanges ? JSON.parse(s.stateChanges) : null,
-    }));
+    return uniqueScenes;
   });
 }

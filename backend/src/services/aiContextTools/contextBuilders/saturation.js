@@ -15,10 +15,10 @@ import { prisma } from '../../../lib/prisma.js';
  * whichever ratio is lower. null means no hint needed.
  */
 export async function buildSaturationHint({ campaign, location, ambientNpcCount = 0 }) {
-  let caps = null;
-  let bounds = null;
-  try { caps = campaign?.settlementCaps ? JSON.parse(campaign.settlementCaps) : null; } catch { caps = null; }
-  try { bounds = campaign?.worldBounds ? JSON.parse(campaign.worldBounds) : null; } catch { bounds = null; }
+  const caps = (campaign?.settlementCaps && typeof campaign.settlementCaps === 'object')
+    ? campaign.settlementCaps : null;
+  const bounds = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
+    ? campaign.worldBounds : null;
 
   let settlementBudget = null;
   if (caps && bounds && Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX)) {

@@ -273,14 +273,15 @@ async function persistSeed({ dungeon, rooms, theme, difficulty }) {
       : room.role === 'entrance' ? 'Wejście'
       : `Komnata ${room.id + 1}`;
     const name = `${dungeon.canonicalName} — ${nameSuffix} (${room.id})`;
+    const meta = { ...room.contents, roomId: room.id, theme, difficulty };
     const created = await prisma.worldLocation.upsert({
       where: { canonicalName: name },
       update: {
-        roomMetadata: JSON.stringify({ ...room.contents, roomId: room.id, theme, difficulty }),
+        roomMetadata: meta,
       },
       create: {
         canonicalName: name,
-        aliases: JSON.stringify([name]),
+        aliases: [name],
         description: room.contents?.flavorSeed || '',
         category: 'dungeon_room',
         locationType: 'dungeon_room',
@@ -293,7 +294,7 @@ async function persistSeed({ dungeon, rooms, theme, difficulty }) {
         positionConfidence: 1.0,
         maxKeyNpcs: 0,
         maxSubLocations: 0,
-        roomMetadata: JSON.stringify({ ...room.contents, roomId: room.id, theme, difficulty }),
+        roomMetadata: meta,
         embeddingText: `${name}: ${room.contents?.flavorSeed || room.role}`,
       },
     });
@@ -414,9 +415,5 @@ function inferTheme(dungeon) {
  */
 export function parseRoomMetadata(worldLocation) {
   if (!worldLocation?.roomMetadata) return null;
-  try {
-    return JSON.parse(worldLocation.roomMetadata);
-  } catch {
-    return null;
-  }
+  return worldLocation.roomMetadata;
 }

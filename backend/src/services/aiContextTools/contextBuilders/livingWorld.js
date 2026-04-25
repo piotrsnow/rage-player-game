@@ -1,5 +1,6 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
+import { getCampaignCharacterIds } from '../../campaignSync.js';
 import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
 import { listNpcsAtLocation } from '../../livingWorld/campaignSandbox.js';
 import { forLocation as worldEventsForLocation, parseEventPayload } from '../../livingWorld/worldEventLog.js';
@@ -49,7 +50,6 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     where: { id: campaignId },
     select: {
       livingWorldEnabled: true,
-      characterIds: true,
       userId: true,
       worldBounds: true,
       settlementCaps: true,
@@ -64,9 +64,8 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   const location = await findOrCreateWorldLocation(currentLocation);
   if (!location) return null;
 
-  const actorCharacterId = Array.isArray(campaign.characterIds) && campaign.characterIds[0]
-    ? campaign.characterIds[0]
-    : null;
+  const characterIds = await getCampaignCharacterIds(campaignId);
+  const actorCharacterId = characterIds[0] || null;
 
   // Parallel: NPCs at this location (campaign-sandbox aware — returns
   // CampaignNPC shadows, auto-cloning canonical WorldNPCs at first encounter)

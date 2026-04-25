@@ -21,7 +21,7 @@ function CharacterSummaryBadge({ characterData, t }) {
       <div className="flex flex-wrap gap-2 mt-1">
         {ATTRIBUTE_KEYS.map((key) => (
           <span key={key} className="text-[9px] text-on-surface-variant">
-            {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{(characterData.attributes || characterData.characteristics)?.[key]}</strong>
+            {t(`rpgAttributeShort.${key}`)}: <strong className="text-tertiary">{characterData.attributes?.[key]}</strong>
           </span>
         ))}
       </div>

@@ -63,12 +63,7 @@ export default function JoinRoomPage() {
     const charId = ch.backendId || ch.localId || ch.id;
     return charId === selectedCharacterId;
   }) || null;
-  const selectedCharacterForJoin = selectedCharacter
-    ? {
-        ...selectedCharacter,
-        career: selectedCharacter.career || selectedCharacter.careerData || null,
-      }
-    : null;
+  const selectedCharacterForJoin = selectedCharacter || null;
 
   useEffect(() => {
     if (mp.state.isMultiplayer && mp.state.roomCode) {

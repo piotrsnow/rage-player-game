@@ -355,7 +355,7 @@ describe('persistPromotionCandidates', () => {
     expect(prisma.nPCPromotionCandidate.upsert).toHaveBeenCalledTimes(1);
     const call = prisma.nPCPromotionCandidate.upsert.mock.calls[0][0];
     expect(call.where).toEqual({ campaignId_campaignNpcId: { campaignId: 'c1', campaignNpcId: 'cn1' } });
-    expect(call.create.stats).toContain('"score":18');
+    expect(call.create.stats.score).toBe(18);
     expect(call.create.status).toBe('pending');
     // Indexed for future cross-campaign dedup.
     expect(ragService.index).toHaveBeenCalledWith('promotion_candidate', 'cn1', expect.stringContaining('Gerent'));
@@ -371,9 +371,8 @@ describe('persistPromotionCandidates', () => {
     await persistPromotionCandidates('c1', [baseCandidate()]);
 
     const call = prisma.nPCPromotionCandidate.upsert.mock.calls[0][0];
-    const stats = JSON.parse(call.create.stats);
-    expect(stats.dedupeOfId).toBe('other-cn');
-    expect(stats.dedupeSimilarity).toBeCloseTo(0.91);
+    expect(call.create.stats.dedupeOfId).toBe('other-cn');
+    expect(call.create.stats.dedupeSimilarity).toBeCloseTo(0.91);
   });
 
   it('dedup: does NOT stash when rag match points at the same candidate id', async () => {
@@ -386,8 +385,7 @@ describe('persistPromotionCandidates', () => {
     await persistPromotionCandidates('c1', [baseCandidate()]);
 
     const call = prisma.nPCPromotionCandidate.upsert.mock.calls[0][0];
-    const stats = JSON.parse(call.create.stats);
-    expect(stats.dedupeOfId).toBeUndefined();
+    expect(call.create.stats.dedupeOfId).toBeUndefined();
   });
 
   it('verdict: rejects auto-reject candidates with status=rejected and reviewNotes', async () => {
@@ -475,7 +473,7 @@ describe('persistPromotionCandidates', () => {
     expect(call.update).not.toHaveProperty('status');
     expect(call.update).not.toHaveProperty('reviewNotes');
     // Stats + verdict still refresh.
-    expect(call.update.stats).toContain('"score":18');
+    expect(call.update.stats.score).toBe(18);
     expect(call.update.smallModelVerdict).toContain('"recommend":"no"');
   });
 

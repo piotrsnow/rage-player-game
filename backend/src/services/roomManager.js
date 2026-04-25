@@ -479,32 +479,19 @@ export function closeAllRoomSockets(code = 1001, reason = 'Server shutting down'
   return closed;
 }
 
-function serializePlayersForDB(room) {
-  const players = [];
+function buildPlayerRowsForDB(sessionId, room) {
+  const rows = [];
   for (const [, p] of room.players) {
-    players.push({
+    rows.push({
+      sessionId,
       odId: p.odId,
-      userId: p.userId,
-      name: p.name,
-      gender: p.gender,
-      photo: p.photo,
-      isHost: p.isHost,
-      voiceId: p.voiceId || null,
-      voiceName: p.voiceName || null,
+      userId: p.userId || null,
+      name: p.name || '',
       characterId: p.characterId || null,
-      // characterData snapshot is intentionally NOT persisted — the Character
-      // record is the source of truth on rehydration. We only save IDs.
+      isHost: !!p.isHost,
     });
   }
-  return JSON.stringify(players);
-}
-
-function collectCharacterIdsForRoom(room) {
-  const ids = [];
-  for (const [, p] of room.players) {
-    if (p.characterId) ids.push(p.characterId);
-  }
-  return ids;
+  return rows;
 }
 
 /**
@@ -529,29 +516,35 @@ export async function saveRoomToDB(roomCode) {
     const hostPlayer = room.players.get(room.hostId);
     if (!hostPlayer) return;
 
-    const characterIds = collectCharacterIdsForRoom(room);
     const slimGameState = stripCharactersFromGameStateForDB(room.gameState);
 
-    await prisma.multiplayerSession.upsert({
+    const session = await prisma.multiplayerSession.upsert({
       where: { roomCode },
       create: {
         roomCode,
         hostId: hostPlayer.userId,
         phase: room.phase,
-        players: serializePlayersForDB(room),
-        characterIds,
-        gameState: JSON.stringify(slimGameState),
-        settings: JSON.stringify(room.settings),
+        gameState: slimGameState,
+        settings: room.settings,
       },
       update: {
         hostId: hostPlayer.userId,
         phase: room.phase,
-        players: serializePlayersForDB(room),
-        characterIds,
-        gameState: JSON.stringify(slimGameState),
-        settings: JSON.stringify(room.settings),
+        gameState: slimGameState,
+        settings: room.settings,
       },
     });
+
+    // Replace the session's player rows. Cheap because Prisma does the
+    // delete+createMany in two statements; concurrent saves are serialized
+    // by the same row lock on MultiplayerSession.
+    const playerRows = buildPlayerRowsForDB(session.id, room);
+    await prisma.$transaction([
+      prisma.multiplayerSessionPlayer.deleteMany({ where: { sessionId: session.id } }),
+      ...(playerRows.length > 0
+        ? [prisma.multiplayerSessionPlayer.createMany({ data: playerRows })]
+        : []),
+    ]);
   } catch (err) {
     log.warn({ err }, 'Failed to save room to DB');
   }
@@ -572,21 +565,19 @@ export async function loadActiveSessionsFromDB() {
   try {
     const sessions = await prisma.multiplayerSession.findMany({
       where: { phase: 'playing' },
+      include: { players: true },
     });
 
     for (const session of sessions) {
       if (rooms.has(session.roomCode)) continue;
 
-      const players = JSON.parse(session.players || '[]');
-      const gameState = JSON.parse(session.gameState || 'null');
-      const settings = JSON.parse(session.settings || '{}');
+      const gameState = session.gameState || null;
+      const settings = session.settings || {};
+      const players = session.players || [];
 
       if (!gameState) continue;
 
-      // Rehydrate Character snapshots from the Character collection. Each
-      // player's characterId points at a row that holds the authoritative
-      // state — we never trust embedded snapshots from the gameState blob.
-      const characterIds = Array.isArray(session.characterIds) ? session.characterIds : [];
+      const characterIds = players.map((p) => p.characterId).filter(Boolean);
       const charRows = characterIds.length > 0
         ? await prisma.character.findMany({ where: { id: { in: characterIds } } })
         : [];
@@ -597,7 +588,11 @@ export async function loadActiveSessionsFromDB() {
       for (const p of players) {
         const characterData = p.characterId ? charById.get(p.characterId) || null : null;
         playerMap.set(p.odId, {
-          ...p,
+          odId: p.odId,
+          userId: p.userId,
+          name: p.name,
+          characterId: p.characterId || null,
+          isHost: !!p.isHost,
           ws: null,
           pendingAction: null,
           lastSoloActionAt: null,
@@ -608,7 +603,6 @@ export async function loadActiveSessionsFromDB() {
         }
       }
 
-      // Rebuild gameState.characters from the freshly-loaded Character snapshots.
       gameState.characters = refreshedCharacters;
       if (refreshedCharacters[0]) gameState.character = refreshedCharacters[0];
 
@@ -636,14 +630,17 @@ export async function loadActiveSessionsFromDB() {
 
 export async function findSessionInDB(roomCode) {
   try {
-    const session = await prisma.multiplayerSession.findUnique({ where: { roomCode } });
+    const session = await prisma.multiplayerSession.findUnique({
+      where: { roomCode },
+      include: { players: true },
+    });
     if (!session) return null;
     return {
       roomCode: session.roomCode,
       phase: session.phase,
-      players: JSON.parse(session.players || '[]'),
-      gameState: JSON.parse(session.gameState || 'null'),
-      settings: JSON.parse(session.settings || '{}'),
+      players: session.players || [],
+      gameState: session.gameState || null,
+      settings: session.settings || {},
       hostUserId: session.hostId,
     };
   } catch {

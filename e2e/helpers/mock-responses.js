@@ -11,10 +11,8 @@ export function mockCampaignCreationResponse() {
     characterSuggestion: {
       name: 'E2E Tester',
       species: 'Human',
-      career: { name: 'Soldier', class: 'Warrior', tier: 1 },
-      characteristics: { ws: 35, bs: 30, s: 30, t: 30, i: 25, ag: 30, dex: 25, int: 25, wp: 25, fel: 20 },
+      attributes: { sila: 14, inteligencja: 10, charyzma: 8, zrecznosc: 12, wytrzymalosc: 13, szczescie: 5 },
       skills: {},
-      talents: ['Warrior Born'],
       backstory: 'A veteran of countless skirmishes.',
       inventory: [
         { id: 'sword-1', name: 'Hand Weapon', type: 'weapon', quantity: 1 },

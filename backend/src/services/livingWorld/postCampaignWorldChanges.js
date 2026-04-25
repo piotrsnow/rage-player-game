@@ -170,23 +170,23 @@ export function computeIdempotencyKey({ kind, targetHint, newValue }) {
 }
 
 /**
- * Pure — merge a new knowledgeBase entry into an existing raw string.
- * Preserves non-baseline and non-same-source entries, caps total at
- * NPC_KNOWLEDGE_CAP via FIFO drop on overflow. Returns the serialized JSON.
+ * Pure — merge a new knowledgeBase entry into an existing raw value
+ * (JSONB array or legacy JSON string). Preserves prior entries, caps total
+ * at NPC_KNOWLEDGE_CAP via FIFO drop on overflow. Returns a plain array
+ * ready to write into a JSONB column.
  */
 export function appendKnowledgeEntry(rawKnowledgeBase, newEntry, { cap = NPC_KNOWLEDGE_CAP } = {}) {
   let parsed = [];
-  if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
+  if (Array.isArray(rawKnowledgeBase)) {
+    parsed = rawKnowledgeBase;
+  } else if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
     try {
       const j = JSON.parse(rawKnowledgeBase);
       if (Array.isArray(j)) parsed = j;
     } catch { /* malformed — reset */ }
-  } else if (Array.isArray(rawKnowledgeBase)) {
-    parsed = rawKnowledgeBase;
   }
   const merged = [...parsed, newEntry];
-  const trimmed = merged.length > cap ? merged.slice(merged.length - cap) : merged;
-  return JSON.stringify(trimmed);
+  return merged.length > cap ? merged.slice(merged.length - cap) : merged;
 }
 
 /**

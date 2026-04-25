@@ -1,14 +1,31 @@
 services:
-  # MongoDB lives on Atlas (managed replica set). Set DATABASE_URL in
-  # `.env` to your Atlas SRV string — the backend service reads it
-  # directly. No local mongo service in this file; Prisma transactions
-  # need a real replica set and running a single-node RS in docker just
-  # to mimic Atlas wasn't worth the operational weight for a solo dev
-  # who already has an Atlas cluster.
+  # Postgres 16 + pgvector. Local container for dev; in prod use Cloud SQL
+  # for Postgres or any managed Postgres with the `vector` extension. The
+  # `pgvector/pgvector:pg16` image bundles pgvector pre-installed; the
+  # CREATE EXTENSION statement runs in the init migration.
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rpgon
+      POSTGRES_PASSWORD: rpgon
+      POSTGRES_DB: rpgon
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rpgon -d rpgon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   backend:
     build: .
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3001:8080"
     environment:
@@ -18,8 +35,11 @@ services:
       NODE_ENV: "${NODE_ENV:-development}"
       PORT: "8080"
       HOST: "0.0.0.0"
-      # Atlas SRV connection string — mandatory. No local mongo fallback.
-      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL in .env to your Atlas SRV connection string}"
+      # Container always reaches the bundled `db` service via docker network.
+      # `localhost` would mean the container itself. Host-side `prisma migrate`
+      # reads its own DATABASE_URL from backend/.env (localhost:5432) — the two
+      # are intentionally not synced.
+      DATABASE_URL: "postgresql://rpgon:rpgon@db:5432/rpgon"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3001}"
@@ -62,3 +82,4 @@ services:
 
 volumes:
   media-data:
+  pg-data:

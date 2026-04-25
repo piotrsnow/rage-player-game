@@ -228,18 +228,12 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
         continue;
       }
 
-      let currentLog = [];
-      if (row.experienceLog) {
-        try {
-          const parsed = JSON.parse(row.experienceLog);
-          if (Array.isArray(parsed)) currentLog = parsed;
-        } catch { /* malformed — reset */ }
-      }
+      const currentLog = Array.isArray(row.experienceLog) ? row.experienceLog : [];
       const nextLog = appendMemoryEntries(currentLog, newEntries);
 
       await prisma.campaignNPC.update({
         where: { id: row.id },
-        data: { experienceLog: JSON.stringify(nextLog) },
+        data: { experienceLog: nextLog },
       });
       applied += newEntries.length;
 

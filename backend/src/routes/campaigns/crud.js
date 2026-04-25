@@ -15,6 +15,8 @@ import {
   syncNPCsToNormalized,
   syncKnowledgeToNormalized,
   syncQuestsToNormalized,
+  getCampaignCharacterIds,
+  getCharacterIdsForCampaigns,
 } from '../../services/campaignSync.js';
 import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
 import { getOrCloneCampaignNpc } from '../../services/livingWorld/campaignSandbox.js';
@@ -29,22 +31,26 @@ export async function crudCampaignRoutes(app) {
       where: { userId: request.user.id },
       select: {
         id: true, name: true, genre: true, tone: true,
-        characterIds: true, totalCost: true,
-        lastSaved: true, createdAt: true,
+        totalCost: true, lastSaved: true, createdAt: true,
       },
       orderBy: { lastSaved: 'desc' },
     });
 
     const campaignIds = campaigns.map((c) => c.id);
-    const sceneCounts = await prisma.campaignScene.groupBy({
-      by: ['campaignId', 'sceneIndex'],
-      where: { campaignId: { in: campaignIds } },
-    });
+    const [sceneCounts, charIdsByCampaign] = await Promise.all([
+      prisma.campaignScene.groupBy({
+        by: ['campaignId', 'sceneIndex'],
+        where: { campaignId: { in: campaignIds } },
+      }),
+      getCharacterIdsForCampaigns(campaignIds),
+    ]);
     const sceneCountMap = buildDistinctSceneCountMap(sceneCounts);
 
-    const allFirstIds = campaigns
-      .map((c) => (Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null))
-      .filter(Boolean);
+    const allFirstIds = [...new Set(
+      [...charIdsByCampaign.values()]
+        .map((ids) => ids[0])
+        .filter(Boolean),
+    )];
     const firstChars = allFirstIds.length > 0
       ? await prisma.character.findMany({
           where: { id: { in: allFirstIds } },
@@ -54,8 +60,8 @@ export async function crudCampaignRoutes(app) {
     const charById = new Map(firstChars.map((c) => [c.id, c]));
 
     return campaigns.map((c) => {
-      const firstId = Array.isArray(c.characterIds) && c.characterIds.length > 0 ? c.characterIds[0] : null;
-      const firstChar = firstId ? charById.get(firstId) : null;
+      const characterIds = charIdsByCampaign.get(c.id) || [];
+      const firstChar = characterIds[0] ? charById.get(characterIds[0]) : null;
       return {
         id: c.id,
         name: c.name,
@@ -63,7 +69,7 @@ export async function crudCampaignRoutes(app) {
         tone: c.tone,
         lastSaved: c.lastSaved,
         createdAt: c.createdAt,
-        characterIds: c.characterIds || [],
+        characterIds,
         characterName: firstChar?.name || '',
         characterSpecies: firstChar?.species || '',
         characterLevel: firstChar?.characterLevel || 1,
@@ -79,24 +85,24 @@ export async function crudCampaignRoutes(app) {
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
-    let coreState = {};
-    try { coreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
-
+    const coreState = campaign.coreState || {};
     await reconstructFromNormalized(campaign.id, coreState);
 
+    const characterIds = await getCampaignCharacterIds(campaign.id);
     const [scenes, characters] = await Promise.all([
       prisma.campaignScene.findMany({
         where: { campaignId: campaign.id },
         orderBy: { sceneIndex: 'asc' },
         select: SCENE_CLIENT_SELECT,
       }),
-      fetchCampaignCharacters(campaign.characterIds || []),
+      fetchCampaignCharacters(characterIds),
     ]);
     const dedupedScenes = dedupeScenesByIndexAsc(scenes);
 
     return {
       ...campaign,
       coreState,
+      characterIds,
       scenes: dedupedScenes,
       characters,
     };
@@ -136,9 +142,6 @@ export async function crudCampaignRoutes(app) {
       }
 
       // G1 — validate difficultyTier against the primary character's level.
-      // Prevents clients from spoofing an over-the-cap tier. Picks the
-      // character with the highest level across the party so multiplayer
-      // groups get the most permissive allowed tier.
       if (typeof difficultyTier === 'string') {
         const maxLevel = owned.reduce((acc, c) => Math.max(acc, Number(c.characterLevel) || 1), 1);
         const allowed = maxLevel <= 5 ? ['low']
@@ -158,8 +161,7 @@ export async function crudCampaignRoutes(app) {
         name: name || '',
         genre: genre || '',
         tone: tone || '',
-        coreState: JSON.stringify(slim),
-        characterIds,
+        coreState: slim,
         totalCost: extractTotalCost(slim),
         lastSaved: new Date(),
         shareToken: crypto.randomUUID(),
@@ -167,12 +169,17 @@ export async function crudCampaignRoutes(app) {
         ...(typeof worldTimeRatio === 'number' ? { worldTimeRatio } : {}),
         ...(Number.isInteger(worldTimeMaxGapDays) ? { worldTimeMaxGapDays } : {}),
         ...(typeof difficultyTier === 'string' ? { difficultyTier } : {}),
+        ...(characterIds.length > 0
+          ? {
+              participants: {
+                create: characterIds.map((characterId) => ({ characterId, role: 'player' })),
+              },
+            }
+          : {}),
       },
     });
 
-    // Phase A — per-campaign world seeding. Only runs for Living World opt-in
-    // campaigns. Fire-and-forget with error log: if seeding fails we still want
-    // the campaign to exist; scene-gen will tolerate an empty world.locations[].
+    // Phase A — per-campaign world seeding.
     let seededStartingLocation = null;
     if (livingWorldEnabled === true) {
       try {
@@ -185,11 +192,9 @@ export async function crudCampaignRoutes(app) {
         if (seededStartingLocation) {
           if (!slim.world) slim.world = {};
           slim.world.currentLocation = seededStartingLocation;
-          // Persist the updated coreState so the FE reads the seeded starting location
-          // on its follow-up load. Separate update to avoid retrying the whole create.
           await prisma.campaign.update({
             where: { id: campaign.id },
-            data: { coreState: JSON.stringify(slim) },
+            data: { coreState: slim },
           }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
         }
       } catch (err) {
@@ -212,21 +217,14 @@ export async function crudCampaignRoutes(app) {
       }).catch((err) => log.error({ err, campaignId: campaign.id }, 'Failed to lock characters to campaign'));
     }
 
-    // Round B (Phase 3) — honour a start-spawn bind if campaignGenerator
-    // attached one. `_startSpawn` is the picker's {settlement, sublocation,
-    // npc} decision, threaded through from the SSE generation phase.
-    //   - Override `coreState.world.currentLocation` to the sublocation.
-    //   - Mark every active quest with a matching questGiverId as forced.
-    //   - Auto-clone the canonical NPC into CampaignNPC so the first scene
-    //     already has the shadow.
-    //   - Register the settlement + sublocation as discovered canonical.
+    // Round B (Phase 3) — start-spawn bind.
     const startSpawn = parsed?._startSpawn || null;
     if (startSpawn?.sublocationName) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: { coreState: JSON.stringify(slim) },
+        data: { coreState: slim },
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
     }
     if (startSpawn?.npcName && Array.isArray(quests?.active)) {
@@ -234,9 +232,6 @@ export async function crudCampaignRoutes(app) {
         if (q && typeof q.questGiverId === 'string'
           && q.questGiverId.trim().toLowerCase() === String(startSpawn.npcName).toLowerCase()) {
           q.forcedGiver = true;
-          // Also force locationId to the sublocation so any downstream
-          // logic that resolves quests by location aligns with the start
-          // bind (picker guarantees sublocation exists).
           if (startSpawn.sublocationName) q.locationId = startSpawn.sublocationName;
         }
       }
@@ -246,9 +241,6 @@ export async function crudCampaignRoutes(app) {
     await syncKnowledgeToNormalized(campaign.id, knowledgeEvents, knowledgeDecisions).catch((err) => log.error({ err, campaignId: campaign.id }, 'Knowledge sync wrapper failed'));
     await syncQuestsToNormalized(campaign.id, quests).catch((err) => log.error({ err, campaignId: campaign.id }, 'Quest sync wrapper failed'));
 
-    // Post-sync start-spawn wiring. Safe to run after syncNPCsToNormalized —
-    // the canonical NPC was never in the `npcs` payload (LLM only wrote
-    // CampaignNPCs for its invented roster), so the clone gets its own row.
     if (startSpawn?.npcCanonicalId) {
       try {
         const canonical = await prisma.worldNPC.findUnique({
@@ -275,7 +267,7 @@ export async function crudCampaignRoutes(app) {
     if (quests.active?.length || quests.completed?.length) fullState.quests = quests;
 
     const characters = await fetchCampaignCharacters(characterIds);
-    return { ...campaign, coreState: fullState, scenes: [], characters };
+    return { ...campaign, coreState: fullState, characterIds, scenes: [], characters };
   });
 
   app.put('/:id', { schema: { body: CAMPAIGN_WRITE_SCHEMA } }, async (request, reply) => {
@@ -292,15 +284,7 @@ export async function crudCampaignRoutes(app) {
     if (genre !== undefined) updateData.genre = genre;
     if (tone !== undefined) updateData.tone = tone;
 
-    // Keep the character's cached lockedCampaignName in sync if the campaign
-    // was renamed. Non-critical — ignore failure.
-    if (name !== undefined && name !== existing.name) {
-      await prisma.character.updateMany({
-        where: { lockedCampaignId: request.params.id },
-        data: { lockedCampaignName: name || '' },
-      }).catch((err) => log.error({ err, campaignId: request.params.id }, 'Failed to sync lockedCampaignName'));
-    }
-
+    let participantsUpdate = null;
     if (Array.isArray(rawCharIds)) {
       const ids = rawCharIds.filter((id) => typeof id === 'string' && id);
       if (ids.length > 0) {
@@ -315,7 +299,7 @@ export async function crudCampaignRoutes(app) {
           }
         }
       }
-      updateData.characterIds = ids;
+      participantsUpdate = ids;
     }
 
     let pendingSync = null;
@@ -325,18 +309,40 @@ export async function crudCampaignRoutes(app) {
       const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
         stripNormalizedFromCoreState(parsed);
 
-      updateData.coreState = JSON.stringify(slim);
+      updateData.coreState = slim;
       updateData.totalCost = extractTotalCost(slim);
 
       pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
     }
 
-    const campaign = await withRetry(() =>
+    // One tx so a partial save can't leave campaign.name out of sync with
+    // each Character.lockedCampaignName, or the participants set out of sync
+    // with the campaign row.
+    const txOps = [
       prisma.campaign.update({
         where: { id: request.params.id },
         data: updateData,
       }),
-    );
+    ];
+    if (name !== undefined && name !== existing.name) {
+      txOps.push(prisma.character.updateMany({
+        where: { lockedCampaignId: request.params.id },
+        data: { lockedCampaignName: name || '' },
+      }));
+    }
+    if (participantsUpdate !== null) {
+      txOps.push(prisma.campaignParticipant.deleteMany({ where: { campaignId: request.params.id } }));
+      if (participantsUpdate.length > 0) {
+        txOps.push(prisma.campaignParticipant.createMany({
+          data: participantsUpdate.map((characterId) => ({
+            campaignId: request.params.id,
+            characterId,
+            role: 'player',
+          })),
+        }));
+      }
+    }
+    const [campaign] = await withRetry(() => prisma.$transaction(txOps));
 
     if (pendingSync) {
       const { campaignId, npcs, knowledgeEvents, knowledgeDecisions, quests } = pendingSync;
@@ -345,9 +351,8 @@ export async function crudCampaignRoutes(app) {
       await syncQuestsToNormalized(campaignId, quests).catch((err) => log.error({ err, campaignId }, 'Quest sync wrapper failed'));
     }
 
-    let parsedCoreState = {};
-    try { parsedCoreState = JSON.parse(campaign.coreState); } catch { /* corrupted data */ }
-    return { ...campaign, coreState: parsedCoreState };
+    const characterIds = await getCampaignCharacterIds(request.params.id);
+    return { ...campaign, characterIds, coreState: campaign.coreState || {} };
   });
 
   app.delete('/:id', async (request, reply) => {
@@ -356,19 +361,16 @@ export async function crudCampaignRoutes(app) {
     });
     if (!existing) return reply.code(404).send({ error: 'Campaign not found' });
 
-    await Promise.all([
-      prisma.campaignScene.deleteMany({ where: { campaignId: request.params.id } }),
-      prisma.campaignNPC.deleteMany({ where: { campaignId: request.params.id } }),
-      prisma.campaignKnowledge.deleteMany({ where: { campaignId: request.params.id } }),
-      prisma.campaignCodex.deleteMany({ where: { campaignId: request.params.id } }),
-      prisma.campaignQuest.deleteMany({ where: { campaignId: request.params.id } }),
-      // Release any characters locked to this campaign back into the library.
+    // FK ON DELETE CASCADE drops Campaign* child rows in one shot; the
+    // character unlock is bundled into the same tx so a half-completed
+    // delete can't leave characters bound to a non-existent campaign.
+    await prisma.$transaction([
       prisma.character.updateMany({
         where: { lockedCampaignId: request.params.id },
         data: { lockedCampaignId: null, lockedCampaignName: null, lockedLocation: null },
       }),
+      prisma.campaign.delete({ where: { id: request.params.id } }),
     ]);
-    await prisma.campaign.delete({ where: { id: request.params.id } });
     return { success: true };
   });
 }

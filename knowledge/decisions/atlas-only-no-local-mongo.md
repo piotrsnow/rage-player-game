@@ -1,5 +1,7 @@
 # Decision — MongoDB Atlas only, no local mongo container
 
+> **SUPERSEDED 2026-04 by [postgres-dev.md](postgres-dev.md).** The project moved to Postgres 16 + pgvector. Local dev now runs the bundled `db` service in `docker-compose.yml`; no Atlas account required. Kept for historical context.
+
 ## Context
 
 Prisma transactions against MongoDB require a **real replica set**. Atlas is a replica set out of the box; a local docker mongo is single-node by default. The project also relies on Atlas Vector Search for embeddings, which local mongo can't run at all.

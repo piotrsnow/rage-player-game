@@ -276,7 +276,7 @@ export default function PartyPanel({
               >
                 <div className="text-[8px] text-on-surface-variant">{t(`rpgAttributeShort.${key}`)}</div>
                 <div className="text-[10px] font-bold text-on-surface tabular-nums">
-                  {(active.attributes || active.characteristics)?.[key] ?? '—'}
+                  {active.attributes?.[key] ?? '—'}
                 </div>
               </div>
             ))}

@@ -1,8 +1,6 @@
 import bcrypt from 'bcrypt';
-import { ObjectId } from 'mongodb';
 import { prisma } from '../lib/prisma.js';
 import { resolveApiKey } from '../services/apiKeyService.js';
-import { getCollection } from '../services/mongoNative.js';
 import {
   issueRefreshToken,
   verifyRefreshToken,
@@ -23,7 +21,8 @@ import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
 //   - PUT  /settings          → bearer-auth, patches user settings + API keys
 //   - GET  /api-keys          → bearer-auth, returns masked key previews
 //
-// Refresh tokens are stored in MongoDB with a TTL index — no Redis dependency.
+// Refresh tokens are stored in Postgres; expired rows swept periodically by
+// `startPeriodicCleanup` in refreshTokenService (no Redis dependency).
 
 const SALT_ROUNDS = 12;
 const ACCESS_TOKEN_TTL = '15m';
@@ -91,33 +90,12 @@ async function completeAuthResponse(fastify, reply, user, deviceInfo) {
 }
 
 async function updateUserSettingsDocument(userId, data) {
-  const users = await getCollection('User');
-  const update = {
-    ...data,
-    updatedAt: new Date(),
-  };
-
-  const result = await users.findOneAndUpdate(
-    { _id: new ObjectId(userId) },
-    { $set: update },
-    {
-      returnDocument: 'after',
-      projection: { _id: 1, email: 1, settings: 1 },
-    },
-  );
-
-  const user = result && typeof result === 'object' && 'value' in result
-    ? result.value
-    : result;
-  if (!user) {
-    throw { statusCode: 404, message: 'User not found' };
-  }
-
-  return {
-    id: user._id.toString(),
-    email: user.email,
-    settings: user.settings,
-  };
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data,
+    select: { id: true, email: true, settings: true },
+  });
+  return user;
 }
 
 export async function authRoutes(fastify) {
@@ -224,10 +202,7 @@ export async function authRoutes(fastify) {
     });
     if (!user) throw { statusCode: 404, message: 'User not found' };
 
-    return {
-      ...user,
-      settings: JSON.parse(user.settings),
-    };
+    return user;
   });
 
   fastify.put('/settings', {
@@ -248,11 +223,10 @@ export async function authRoutes(fastify) {
 
     if (settings !== undefined) {
       const MAX_SETTINGS_SIZE = 64 * 1024;
-      const serialized = JSON.stringify(settings);
-      if (serialized.length > MAX_SETTINGS_SIZE) {
+      if (JSON.stringify(settings).length > MAX_SETTINGS_SIZE) {
         return reply.code(400).send({ error: 'Settings payload too large' });
       }
-      data.settings = serialized;
+      data.settings = settings;
     }
 
     if (apiKeys !== undefined) {
@@ -262,7 +236,7 @@ export async function authRoutes(fastify) {
 
     const user = await updateUserSettingsDocument(request.user.id, data);
 
-    return { ...user, settings: JSON.parse(user.settings) };
+    return user;
   });
 
   fastify.get('/api-keys', { onRequest: [fastify.authenticate] }, async (request) => {

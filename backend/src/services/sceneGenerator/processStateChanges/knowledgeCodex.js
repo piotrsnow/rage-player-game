@@ -5,7 +5,7 @@ import {
   buildCodexEmbeddingText,
   embedText,
 } from '../../embeddingService.js';
-import { writeEmbedding } from '../../vectorSearchService.js';
+import { writeEmbedding } from '../../embeddingWrite.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -17,9 +17,9 @@ export async function processKnowledgeUpdates(campaignId, ku) {
       entries.push({
         entryType: 'event',
         summary: e.summary || e,
-        content: JSON.stringify(e),
+        content: e,
         importance: e.importance,
-        tags: JSON.stringify(e.tags || []),
+        tags: e.tags || [],
       });
     }
   }
@@ -28,9 +28,9 @@ export async function processKnowledgeUpdates(campaignId, ku) {
       entries.push({
         entryType: 'decision',
         summary: `${d.choice} -> ${d.consequence}`,
-        content: JSON.stringify(d),
+        content: d,
         importance: d.importance,
-        tags: JSON.stringify(d.tags || []),
+        tags: d.tags || [],
       });
     }
   }
@@ -59,14 +59,14 @@ export async function processCodexUpdates(campaignId, codexUpdates) {
       });
 
       if (existing) {
-        const existingFragments = JSON.parse(existing.fragments || '[]');
+        const existingFragments = Array.isArray(existing.fragments) ? [...existing.fragments] : [];
         if (cu.fragment) existingFragments.push(cu.fragment);
 
         const updated = await prisma.campaignCodex.update({
           where: { id: existing.id },
           data: {
-            fragments: JSON.stringify(existingFragments),
-            tags: JSON.stringify(cu.tags || JSON.parse(existing.tags || '[]')),
+            fragments: existingFragments,
+            tags: cu.tags || existing.tags || [],
           },
         });
         const embText = buildCodexEmbeddingText(updated);
@@ -80,16 +80,15 @@ export async function processCodexUpdates(campaignId, codexUpdates) {
               codexKey: cu.id,
               name: cu.name,
               category: cu.category || 'concept',
-              tags: JSON.stringify(cu.tags || []),
-              fragments: JSON.stringify(cu.fragment ? [cu.fragment] : []),
-              relatedEntries: JSON.stringify(cu.relatedEntries || []),
+              tags: cu.tags || [],
+              fragments: cu.fragment ? [cu.fragment] : [],
+              relatedEntries: cu.relatedEntries || [],
             },
           });
           const embText = buildCodexEmbeddingText(created);
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignCodex', created.id, emb, embText);
         } catch (createErr) {
-          // P2002 = unique constraint (campaignId+codexKey) — retry created it already, safe to skip
           if (createErr.code !== 'P2002') throw createErr;
         }
       }

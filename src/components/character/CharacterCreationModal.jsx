@@ -124,7 +124,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
     const sp = SPECIES[char.species] || SPECIES.Human;
     const added = {};
     for (const key of ATTRIBUTE_KEYS) {
-      const finalVal = (char.attributes || char.characteristics)?.[key] || CREATION_LIMITS.baseAttribute;
+      const finalVal = char.attributes?.[key] || CREATION_LIMITS.baseAttribute;
       const mod = sp.attributes[key] || 0;
       added[key] = Math.max(0, finalVal - CREATION_LIMITS.baseAttribute - mod);
     }

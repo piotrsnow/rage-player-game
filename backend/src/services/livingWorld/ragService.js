@@ -11,13 +11,9 @@
 //     { entityType: 'lore_chunk' }, topK=5)` once WorldLoreSection is chunked.
 //
 // Storage: `WorldEntityEmbedding` table, unique on (entityType, entityId).
-// Vectors are kept inline as Prisma Json (BSON array under the hood) — a
-// swap to Atlas `$vectorSearch` later is one createIndex entry + one query
-// rewrite without touching call sites.
-//
-// Similarity: naive in-process cosine. Acceptable up to ~5k rows / <50ms
-// per query per Phase 9 sizing. When/if that breaks, migrate the query
-// path to Atlas Vector Search (add a filter on `entityType` in the aggregation).
+// pgvector HNSW index on `embedding`; cosine distance via `<=>` operator.
+// Writes use `$executeRawUnsafe` because `Unsupported("vector(1536)")` columns
+// can't be bound through the typed Prisma client.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
@@ -37,20 +33,8 @@ function assertEntityType(entityType) {
   }
 }
 
-function cosineSimilarity(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return 0;
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    const ai = a[i];
-    const bi = b[i];
-    dot += ai * bi;
-    normA += ai * ai;
-    normB += bi * bi;
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
+function vectorLiteral(embedding) {
+  return `[${embedding.join(',')}]`;
 }
 
 /**
@@ -68,11 +52,18 @@ export async function index(entityType, entityId, text) {
     const embedding = await embedText(text);
     if (!embedding) return null;
 
-    await prisma.worldEntityEmbedding.upsert({
-      where: { entityType_entityId: { entityType, entityId } },
-      create: { entityType, entityId, text, embedding },
-      update: { text, embedding },
-    });
+    const vec = vectorLiteral(embedding);
+    // Manual upsert via raw SQL — `embedding` is Unsupported("vector(1536)")
+    // and can't go through prisma.worldEntityEmbedding.upsert.
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "WorldEntityEmbedding" ("entityType", "entityId", "text", "embedding", "updatedAt")
+       VALUES ($1, $2, $3, $4::vector, now())
+       ON CONFLICT ("entityType", "entityId") DO UPDATE SET
+         "text" = EXCLUDED."text",
+         "embedding" = EXCLUDED."embedding",
+         "updatedAt" = now()`,
+      entityType, entityId, text, vec,
+    );
     return embedding;
   } catch (err) {
     log.warn({ err: err?.message, entityType, entityId }, 'ragService.index failed');
@@ -103,39 +94,60 @@ export async function query(queryText, { filters = {}, topK = 5, minSim = 0.5 } 
   }
   if (!queryEmbedding) return [];
 
-  const where = {};
-  if (filters.entityType) {
-    if (Array.isArray(filters.entityType)) {
-      filters.entityType.forEach(assertEntityType);
-      where.entityType = { in: filters.entityType };
-    } else {
-      assertEntityType(filters.entityType);
-      where.entityType = filters.entityType;
-    }
-  }
-  if (Array.isArray(filters.entityIds) && filters.entityIds.length) {
-    where.entityId = { in: filters.entityIds };
+  const vec = vectorLiteral(queryEmbedding);
+
+  // Build WHERE dynamically. Parameter list grows with filters; we pass them
+  // through tagged-template positional binds for safety.
+  const entityTypeFilter = filters.entityType
+    ? Array.isArray(filters.entityType)
+      ? (filters.entityType.forEach(assertEntityType), filters.entityType)
+      : (assertEntityType(filters.entityType), [filters.entityType])
+    : null;
+
+  const entityIdFilter = Array.isArray(filters.entityIds) && filters.entityIds.length
+    ? filters.entityIds
+    : null;
+
+  let rows;
+  if (entityTypeFilter && entityIdFilter) {
+    rows = await prisma.$queryRaw`
+      SELECT "entityType", "entityId", "text",
+             1 - ("embedding" <=> ${vec}::vector) AS similarity
+      FROM "WorldEntityEmbedding"
+      WHERE "entityType" = ANY(${entityTypeFilter}::text[])
+        AND "entityId" = ANY(${entityIdFilter}::text[])
+      ORDER BY "embedding" <=> ${vec}::vector
+      LIMIT ${topK}
+    `;
+  } else if (entityTypeFilter) {
+    rows = await prisma.$queryRaw`
+      SELECT "entityType", "entityId", "text",
+             1 - ("embedding" <=> ${vec}::vector) AS similarity
+      FROM "WorldEntityEmbedding"
+      WHERE "entityType" = ANY(${entityTypeFilter}::text[])
+      ORDER BY "embedding" <=> ${vec}::vector
+      LIMIT ${topK}
+    `;
+  } else if (entityIdFilter) {
+    rows = await prisma.$queryRaw`
+      SELECT "entityType", "entityId", "text",
+             1 - ("embedding" <=> ${vec}::vector) AS similarity
+      FROM "WorldEntityEmbedding"
+      WHERE "entityId" = ANY(${entityIdFilter}::text[])
+      ORDER BY "embedding" <=> ${vec}::vector
+      LIMIT ${topK}
+    `;
+  } else {
+    rows = await prisma.$queryRaw`
+      SELECT "entityType", "entityId", "text",
+             1 - ("embedding" <=> ${vec}::vector) AS similarity
+      FROM "WorldEntityEmbedding"
+      ORDER BY "embedding" <=> ${vec}::vector
+      LIMIT ${topK}
+    `;
   }
 
-  const candidates = await prisma.worldEntityEmbedding.findMany({
-    where,
-    select: { entityType: true, entityId: true, text: true, embedding: true },
-  });
-
-  const scored = [];
-  for (const c of candidates) {
-    const sim = cosineSimilarity(queryEmbedding, c.embedding);
-    if (sim >= minSim) {
-      scored.push({
-        entityId: c.entityId,
-        entityType: c.entityType,
-        similarity: sim,
-        text: c.text,
-      });
-    }
-  }
-  scored.sort((a, b) => b.similarity - a.similarity);
-  return scored.slice(0, topK);
+  return rows.filter((r) => r.similarity >= minSim);
 }
 
 /**

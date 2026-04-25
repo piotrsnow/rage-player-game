@@ -73,8 +73,8 @@ ${language === 'pl' ? 'Write ALL text in Polish.' : ''}`;
       money: cd.money || { gold: 0, silver: 5, copper: 0 },
       statuses: cd.statuses || [],
       backstory: cd.backstory || '',
-      xp: cd.xp ?? 0,
-      xpSpent: cd.xpSpent ?? 0,
+      characterLevel: cd.characterLevel ?? 1,
+      characterXp: cd.characterXp ?? 0,
       needs: { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 },
     };
   });
