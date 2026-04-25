@@ -20,7 +20,11 @@ export async function loadCampaignState(campaignId) {
       select: { coreState: true, livingWorldEnabled: true },
     }),
     prisma.campaignNPC.findMany({ where: { campaignId } }),
-    prisma.campaignQuest.findMany({ where: { campaignId }, orderBy: { createdAt: 'asc' } }),
+    prisma.campaignQuest.findMany({
+      where: { campaignId },
+      orderBy: { createdAt: 'asc' },
+      include: { prerequisites: { select: { prerequisiteId: true } } },
+    }),
     prisma.campaignCodex.findMany({
       where: { campaignId },
       select: { codexKey: true, name: true, category: true, fragments: true },
@@ -68,7 +72,9 @@ export async function loadCampaignState(campaignId) {
         id: q.questId, name: q.name, type: q.type, description: q.description,
         completionCondition: q.completionCondition, questGiverId: q.questGiverId,
         turnInNpcId: q.turnInNpcId, locationId: q.locationId,
-        prerequisiteQuestIds: Array.isArray(q.prerequisiteQuestIds) ? q.prerequisiteQuestIds : [],
+        prerequisiteQuestIds: Array.isArray(q.prerequisites)
+          ? q.prerequisites.map((p) => p.prerequisiteId)
+          : [],
         objectives: Array.isArray(q.objectives) ? q.objectives : [],
         reward: q.reward ?? null,
       };

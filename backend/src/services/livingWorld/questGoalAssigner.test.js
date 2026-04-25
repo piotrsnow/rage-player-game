@@ -8,7 +8,7 @@ function q(overrides = {}) {
     status: 'active',
     questGiverId: null,
     turnInNpcId: null,
-    prerequisiteQuestIds: '[]',
+    prerequisites: [],
     ...overrides,
   };
 }
@@ -41,7 +41,7 @@ describe('classifyQuestRole', () => {
   it('identifies giver_next when prerequisites done and quest not started', () => {
     const quests = [
       q({ questId: 'q0', status: 'completed' }),
-      q({ questId: 'q1', questGiverId: 'edric', status: 'available', prerequisiteQuestIds: '["q0"]' }),
+      q({ questId: 'q1', questGiverId: 'edric', status: 'available', prerequisites: [{ prerequisiteId: 'q0' }] }),
     ];
     const r = classifyQuestRole('edric', quests);
     expect(r?.kind).toBe('giver_next');
@@ -51,7 +51,7 @@ describe('classifyQuestRole', () => {
   it('does NOT mark giver_next when prerequisites unfinished', () => {
     const quests = [
       q({ questId: 'q0', status: 'active' }),
-      q({ questId: 'q1', questGiverId: 'edric', status: 'available', prerequisiteQuestIds: '["q0"]' }),
+      q({ questId: 'q1', questGiverId: 'edric', status: 'available', prerequisites: [{ prerequisiteId: 'q0' }] }),
     ];
     const r = classifyQuestRole('edric', quests);
     expect(r).toBeNull();
@@ -69,26 +69,26 @@ describe('classifyQuestRole', () => {
     const quests = [
       q({ questId: 'q0', status: 'completed' }),
       q({ questId: 'q1', status: 'completed' }),
-      q({ questId: 'qA', questGiverId: 'e', status: 'available', prerequisiteQuestIds: '["q0"]' }),
-      q({ questId: 'qB', questGiverId: 'e', status: 'available', prerequisiteQuestIds: '["q0","q1"]' }),
+      q({ questId: 'qA', questGiverId: 'e', status: 'available', prerequisites: [{ prerequisiteId: 'q0' }] }),
+      q({ questId: 'qB', questGiverId: 'e', status: 'available', prerequisites: [{ prerequisiteId: 'q0' }, { prerequisiteId: 'q1' }] }),
     ];
     const r = classifyQuestRole('e', quests);
     expect(r?.kind).toBe('giver_next');
     expect(r?.quest.questId).toBe('qB'); // longer prereq chain wins
   });
 
-  it('handles array form of prerequisiteQuestIds (back-compat)', () => {
+  it('handles plain string-id array form (legacy/test convenience)', () => {
     const quests = [
       q({ questId: 'q0', status: 'completed' }),
-      q({ questId: 'q1', questGiverId: 'e', status: 'available', prerequisiteQuestIds: ['q0'] }),
+      q({ questId: 'q1', questGiverId: 'e', status: 'available', prerequisites: ['q0'] }),
     ];
     const r = classifyQuestRole('e', quests);
     expect(r?.kind).toBe('giver_next');
   });
 
-  it('handles malformed prerequisiteQuestIds gracefully', () => {
+  it('handles malformed prerequisites gracefully', () => {
     const quests = [
-      q({ questId: 'q1', questGiverId: 'e', status: 'available', prerequisiteQuestIds: 'not json' }),
+      q({ questId: 'q1', questGiverId: 'e', status: 'available', prerequisites: 'not an array' }),
     ];
     const r = classifyQuestRole('e', quests);
     // Malformed → empty prereqs → every([]) true → quest available

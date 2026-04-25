@@ -180,8 +180,21 @@ export async function processLocationMentions(campaignId, mentions) {
     if (toSet) { toSet.add(e.fromLocationId); }
   }
 
+  // Pre-fetch explicit known-location entries for all WorldNPCs in scope.
+  const explicitKnownByNpcId = new Map();
+  if (worldNpcRows.length > 0) {
+    const explicitRows = await prisma.worldNpcKnownLocation.findMany({
+      where: { npcId: { in: worldNpcRows.map((n) => n.id) } },
+      select: { npcId: true, locationId: true },
+    }).catch(() => []);
+    for (const r of explicitRows) {
+      if (!explicitKnownByNpcId.has(r.npcId)) explicitKnownByNpcId.set(r.npcId, new Set());
+      explicitKnownByNpcId.get(r.npcId).add(r.locationId);
+    }
+  }
+
   // Resolve each ident → Set<knownLocationId>. Edge adjacency + explicit
-  // knownLocationIds on the WorldNPC (seed + admin authored).
+  // WorldNpcKnownLocation entries (seed + admin authored).
   const knownByIdent = new Map();
   for (const ident of uniqIdents) {
     const cNpc = campaignNpcByIdent.get(ident);
@@ -192,9 +205,8 @@ export async function processLocationMentions(campaignId, mentions) {
 
     const anchor = cNpc?.lastLocationId || wNpc?.currentLocationId || null;
     const known = new Set(anchor ? adjacencyByAnchor.get(anchor) || [anchor] : []);
-    if (Array.isArray(wNpc?.knownLocationIds)) {
-      for (const id of wNpc.knownLocationIds) if (id) known.add(id);
-    }
+    const explicit = wNpc?.id ? explicitKnownByNpcId.get(wNpc.id) : null;
+    if (explicit) for (const id of explicit) known.add(id);
     knownByIdent.set(ident, known);
   }
 

@@ -10,15 +10,16 @@ export function slugify(value) {
   return String(value || '').toLowerCase().replace(/\s+/g, '_');
 }
 
+/**
+ * Pure — extract prerequisite quest ids from an F3 `prerequisites` relation
+ * array (each row has a `prerequisiteId` UUID). Tolerates a plain id array
+ * for legacy/test inputs.
+ */
 export function parsePrereqs(raw) {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => (typeof entry === 'string' ? entry : entry?.prerequisiteId))
+    .filter((id) => typeof id === 'string' && id.length > 0);
 }
 
 /**
@@ -56,12 +57,12 @@ export function classifyQuestRole(npcId, quests) {
   const pending = quests.filter((q) => {
     if (q.status === 'active' || q.status === 'in_progress' || q.status === 'completed') return false;
     if (slugify(q.questGiverId) !== target) return false;
-    const prereqs = parsePrereqs(q.prerequisiteQuestIds);
+    const prereqs = parsePrereqs(q.prerequisites);
     return prereqs.every((id) => completed.has(id));
   });
   if (pending.length > 0) {
     // Prefer the one with the most prerequisites (latest in chain)
-    pending.sort((a, b) => parsePrereqs(b.prerequisiteQuestIds).length - parsePrereqs(a.prerequisiteQuestIds).length);
+    pending.sort((a, b) => parsePrereqs(b.prerequisites).length - parsePrereqs(a.prerequisites).length);
     return { kind: 'giver_next', quest: pending[0] };
   }
 

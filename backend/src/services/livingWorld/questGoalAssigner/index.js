@@ -71,9 +71,20 @@ export async function assignGoalsForCampaign(campaignId) {
     const [campaign, quests, campaignNpcs] = await Promise.all([
       prisma.campaign.findUnique({
         where: { id: campaignId },
-        select: { id: true, characterIds: true, coreState: true },
+        select: {
+          id: true,
+          coreState: true,
+          participants: {
+            select: { characterId: true },
+            orderBy: { joinedAt: 'asc' },
+            take: 1,
+          },
+        },
       }),
-      prisma.campaignQuest.findMany({ where: { campaignId } }),
+      prisma.campaignQuest.findMany({
+        where: { campaignId },
+        include: { prerequisites: { select: { prerequisiteId: true } } },
+      }),
       prisma.campaignNPC.findMany({
         where: { campaignId },
         select: {
@@ -85,7 +96,7 @@ export async function assignGoalsForCampaign(campaignId) {
     ]);
     if (!campaign) return { assigned: 0, cleared: 0, unchanged: 0 };
 
-    const actorCharacterId = Array.isArray(campaign.characterIds) ? campaign.characterIds[0] : null;
+    const actorCharacterId = campaign.participants?.[0]?.characterId || null;
     const characterName = actorCharacterId
       ? await resolveCharacterName(actorCharacterId)
       : null;

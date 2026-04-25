@@ -316,7 +316,7 @@ export function applyCharacterStateChanges(character, changes) {
 const CHARACTER_JSON_FIELDS = [
   'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
   'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
-  'knownTitles', 'clearedDungeonIds', 'activeDungeonState',
+  'knownTitles', 'activeDungeonState',
 ];
 
 /**

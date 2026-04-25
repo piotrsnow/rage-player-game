@@ -905,8 +905,6 @@ async function upsertWildLocation(loc) {
 }
 
 async function upsertNpc(npc, locationId) {
-  const knownLocationIds = Array.isArray(npc.knownLocationIds) ? npc.knownLocationIds : [];
-
   const row = await prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
     update: {
@@ -919,7 +917,6 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
-      knownLocationIds,
     },
     create: {
       canonicalId: npc.canonicalId,
@@ -932,7 +929,6 @@ async function upsertNpc(npc, locationId) {
       keyNpc: true,
       alive: true,
       category: npc.category || 'commoner',
-      knownLocationIds,
     },
   });
 
@@ -1051,9 +1047,10 @@ const NPC_KNOWLEDGE_SEED = [
 ];
 
 async function seedNpcKnowledge(locationByName) {
-  // Resolve each NPC's hinted locations → location ids, persist as JSON array.
-  // Missing names are dropped silently (pre-existing DB may not have every
-  // location yet — idempotent re-seeding tolerates partials).
+  // Resolve each NPC's hinted locations → location ids, replace the seed
+  // slice in WorldNpcKnownLocation. Missing names are dropped silently
+  // (pre-existing DB may not have every location yet — idempotent re-seeding
+  // tolerates partials).
   let updated = 0;
   for (const entry of NPC_KNOWLEDGE_SEED) {
     const ids = entry.locations
@@ -1061,13 +1058,22 @@ async function seedNpcKnowledge(locationByName) {
       .filter(Boolean);
     if (!ids.length) continue;
     try {
-      await prisma.worldNPC.update({
+      const npc = await prisma.worldNPC.findUnique({
         where: { canonicalId: entry.canonicalId },
-        data: { knownLocationIds: ids },
+        select: { id: true },
+      });
+      if (!npc) continue;
+      // Replace seed-grant slice — preserve promotion/dialog grants.
+      await prisma.worldNpcKnownLocation.deleteMany({
+        where: { npcId: npc.id, grantedBy: 'seed' },
+      });
+      await prisma.worldNpcKnownLocation.createMany({
+        data: ids.map((locationId) => ({ npcId: npc.id, locationId, grantedBy: 'seed' })),
+        skipDuplicates: true,
       });
       updated += 1;
     } catch (err) {
-      log.warn({ err: err?.message, canonicalId: entry.canonicalId }, 'NPC knownLocationIds seed failed');
+      log.warn({ err: err?.message, canonicalId: entry.canonicalId }, 'NPC knownLocations seed failed');
     }
   }
   return updated;

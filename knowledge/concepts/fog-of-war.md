@@ -8,13 +8,23 @@ Tracks which locations + edges a player has seen, with a split between
 
 | State | Canonical source | Non-canonical source | Player UX |
 |---|---|---|---|
-| **Unknown** | absent from both sets | absent from campaign sets | invisible on map |
-| **Heard-about** | `UserWorldKnowledge.heardAboutLocationIds` | `Campaign.heardAboutLocationIds` | visible on map with dashed outline, drill-down locked (Round C) |
-| **Visited** | `UserWorldKnowledge.discoveredLocationIds` | `Campaign.discoveredLocationIds` | full colour, clickable, drill-down unlocked |
+| **Unknown** | no row in `UserDiscoveredLocation` | no row in `CampaignDiscoveredLocation` | invisible on map |
+| **Heard-about** | `UserDiscoveredLocation` row, `state='heard_about'` | `CampaignDiscoveredLocation` row, `state='heard_about'` | visible on map with dashed outline, drill-down locked (Round C) |
+| **Visited** | `UserDiscoveredLocation` row, `state='visited'` | `CampaignDiscoveredLocation` row, `state='visited'` | full colour, clickable, drill-down unlocked |
 
-A visited entry outranks heard-about even across sources — the loader in
-`userDiscoveryService.loadCampaignFog` removes visited ids from the
-heard-about set before returning.
+State promotion `heard_about → visited` is an UPDATE on the existing row
+(unique on `(userId, locationId)` for canonical, `(campaignId, locationId)`
+for non-canonical). A `visited` row never demotes back to `heard_about` —
+once a player physically visits a location it stays known.
+
+The loader in `userDiscoveryService.loadCampaignFog` still removes visited
+ids from the heard-about set before returning, so even cross-source overlaps
+(e.g. canon visited but campaign-row left at heard-about) render correctly.
+
+Sublocations (rows where `WorldLocation.parentLocationId IS NOT NULL`) split
+out of the main visited set into `discoveredSubLocationIds` for UI rendering
+— the loader uses the parent FK to discriminate at read time, no schema
+flag needed.
 
 ## Where canonicality comes from
 
@@ -29,25 +39,33 @@ heard-about set before returning.
 
 ## Helpers (`backend/src/services/livingWorld/userDiscoveryService.js`)
 
-- `markLocationDiscovered({ userId, locationId, campaignId? })` — promotes
-  heard→visited. Canonical writes land on `UserWorldKnowledge`; non-canonical
-  routes through `Campaign.discoveredLocationIds` (or
-  `discoveredSubLocationIds` if the location has a `parentLocationId`).
-  `campaignId` is optional for backward compatibility with canonical-only
-  callers (e.g. `postSceneWork.js`).
-- `markLocationHeardAbout({ userId, locationId, campaignId? })` — adds to
-  the heard-about list, skipping silently if the location is already
-  visited (we never demote).
-- `loadDiscovery(userId)` — canonical visited-only view; auto-includes any
-  `knownByDefault=true` row plus every `locationType=capital`. Existing
-  callers (admin map, travel Dijkstra) keep working.
+- `markLocationDiscovered({ userId, locationId, campaignId? })` — sets
+  state=`visited`. Canonical writes land on `UserDiscoveredLocation`;
+  non-canonical routes through `CampaignDiscoveredLocation`. `campaignId`
+  is optional for canonical-only callers (e.g. `postSceneWork.js`).
+- `markLocationHeardAbout({ userId, locationId, campaignId? })` — sets
+  state=`heard_about` if no row exists; no-op when state is already
+  `visited` (we never demote). Same canonical/campaign routing.
+- `loadDiscovery(userId)` — account-level visited-only view; queries
+  `UserDiscoveredLocation` for `state='visited'` plus every `WorldLocation`
+  with `locationType='capital'` or `knownByDefault=true`. Existing callers
+  (admin map, travel Dijkstra) keep working.
 - `loadCampaignFog({ userId, campaignId })` — full three-state view merging
-  canonical + campaign sources. Returns
-  `{ visited, heardAbout, discoveredSubLocationIds, discoveredEdgeIds }`.
+  account-level (canonical) + campaign-level (non-canonical) sources.
+  Returns `{ visited, heardAbout, discoveredSubLocationIds, discoveredEdgeIds }`.
   Used by the Round C player map and any future fog-aware prompt helpers.
+- `planLocationFogMutation(currentState, newState)` — pure helper exposed
+  for testability. Returns `{ kind: 'noop' | 'insert' | 'update' }`. Encodes
+  the state machine: never demote `visited→heard_about`, never re-write the
+  same state.
 
-Edge discovery stays in [travelGraph.js](../../backend/src/services/livingWorld/travelGraph.js)
-(`markEdgeDiscovered({ fromLocationId, toLocationId, campaignId })`).
+Edge discovery splits the same way:
+- `markEdgeDiscoveredByUser({ userId, fromLocationId, toLocationId })` —
+  account-level, writes `UserDiscoveredEdge` (bidirectional, also flips both
+  endpoint locations to visited).
+- `markEdgeDiscovered({ fromLocationId, toLocationId, campaignId })` in
+  [travelGraph.js](../../backend/src/services/livingWorld/travelGraph.js) —
+  campaign-level, writes `CampaignEdgeDiscovery`.
 
 ## Call sites
 

@@ -117,22 +117,14 @@ async function markDungeonClearedForCampaign({ campaignId, dungeonId }) {
     const characterId = participant?.characterId || null;
     if (!characterId) return;
 
-    const character = await prisma.character.findUnique({
-      where: { id: characterId },
-      select: { clearedDungeonIds: true },
+    // INSERT into CharacterClearedDungeon — ON CONFLICT DO NOTHING via skipDuplicates.
+    await prisma.characterClearedDungeon.createMany({
+      data: [{ characterId, dungeonId }],
+      skipDuplicates: true,
     });
-    if (!character) return;
-
-    const cleared = Array.isArray(character.clearedDungeonIds) ? [...character.clearedDungeonIds] : [];
-    if (cleared.includes(dungeonId)) return;
-
-    cleared.push(dungeonId);
     await prisma.character.update({
       where: { id: characterId },
-      data: {
-        clearedDungeonIds: cleared,
-        activeDungeonState: null,
-      },
+      data: { activeDungeonState: null },
     });
     log.info({ characterId, dungeonId }, 'dungeon cleared — recorded for character');
   } catch (err) {

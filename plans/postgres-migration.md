@@ -6,10 +6,11 @@
 |---|---|---|
 | **F1** | ✅ **Zrobione** | Engine swap + JSONB cleanup + transakcje + Postgres dev stack. Zobacz [F1 retrospektywa](#f1-retrospektywa). |
 | **F2** | ✅ **Zrobione** | 6 child tables + FIFO triggery + bulk upsert (3 sync funkcje). Zobacz [F2 retrospektywa](#f2-retrospektywa). |
-| **F3** | ⏭️ Następna | Reference normalization — join tables zamiast `Json[]` of foreign IDs. |
-| F4-F6 | Pending | Bez zmian planu. |
+| **F3** | ✅ **Zrobione** | 7 join tables + `DiscoveryState` enum, drop 10 JSONB kolumn. Canonical → user-account scope, non-canonical → campaign scope. Zobacz [F3 retrospektywa](#f3-retrospektywa). |
+| **F4** | ⏭️ Następna | Hot-path entity decomposition — skills/inventory/materials/objectives/relationships. |
+| F5-F6 | Pending | Bez zmian planu. |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2 (znane długi techniczne), potem skocz do [F3 — Reference normalization](#f3--reference-normalization) i poproś o plan startowy.
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2+F3 (znane długi techniczne), potem skocz do [F4 — Hot-path entity decomposition](#f4--hot-path-entity-decomposition) i poproś o plan startowy.
 
 ## Context
 
@@ -1422,9 +1423,63 @@ model CampaignQuestPrerequisite {                           // replaces Campaign
 ```sql
 -- po migracji każda relacja queryable bez parse:
 SELECT count(*) FROM "CampaignDiscoveredLocation" WHERE "campaignId" = '<uuid>';
-SELECT count(*) FROM "WorldEdgeDiscovery" WHERE "edgeId" = '<uuid>';
+SELECT count(*) FROM "CampaignEdgeDiscovery" WHERE "edgeId" = '<uuid>';
 ```
 E2E: discover location → assert row w join table. Fog-of-war FE działa identycznie.
+
+# F3 retrospektywa
+
+**Zakres:** 6 sub-tasków (F3.1–F3.6) shipped. 1155 unit testów ✅, `prisma validate` ✅, `npm run build` ✅, live state-machine sanity-check (`heard_about → visited` UPDATE).
+
+## Zmiany vs plan
+
+| Plan | Co faktycznie wyszło |
+|---|---|
+| `WorldEdgeDiscovery` (per-campaign) | **Renamed → `CampaignEdgeDiscovery`** — discovery scope jest per-campaign, nazwa odzwierciedla. |
+| 9 JSONB cols do drop | **10 cols** — Char.clearedDungeonIds (1) + Campaign.{discovered,heardAbout,discoveredSub}LocationIds (3) + CampaignQuest.prerequisiteQuestIds (1) + WorldLocationEdge.discoveredByCampaigns (1) + UserWorldKnowledge.{discoveredLoc,discoveredEdge,heardAboutLoc}Ids (3) + WorldNPC.knownLocationIds (1). |
+| `DiscoveryState` enum z 3 wartości (`unknown/heard_about/visited`) | **2 wartości** (`heard_about`, `visited`) — `unknown` to brak rowu, nie wartość. Zgodnie z user-decyzją. |
+| Pure helpers wybiórczo (per F2 wzorzec) | Dodany `planLocationFogMutation(currentState, newState)` w `userDiscoveryService.js` — pure state-machine plan-builder dla testów. Zwraca `{kind: 'noop'\|'insert'\|'update'}`. Caller robi DB op. |
+| `Campaign.discoveredSubLocationIds` jako osobny field | **Dropped** — sublokacje rozróżnia reader przez `WorldLocation.parentLocationId` join, jeden `state` field na `CampaignDiscoveredLocation` wystarczy. |
+| FE update — `worldConsistency.js`, `aiResponse/schemas.js`, `applyStateChangesHandler/quests.js`, `PlayerWorldMap.jsx` | **No-op w FE.** Backend (`campaignSync.reconstructFromNormalized`, `loadCampaignFog`) zachowuje coreState/fog shape contracts dla FE — `prerequisiteQuestIds: string[]`, `discoveredEdgeIds: Set/array`. FE nie wie że pod spodem są relations. |
+
+## Pre-existing F1 bug naprawiony przy okazji
+
+`questGoalAssigner/index.js` selectował `Campaign.characterIds` które F1 dropło (na rzecz `CampaignParticipant`). Po refactor: `participants: { take: 1, orderBy: { joinedAt: 'asc' } }`.
+
+## Pliki dotknięte (top-level)
+
+- **Schema:** `backend/prisma/schema.prisma` (7 nowych modeli, 10 dropped JSONB pól, `DiscoveryState` enum, reverse relations).
+- **Migracja:** `backend/prisma/migrations/20260425162229_reference_normalization/migration.sql` (auto-gen).
+- **Core service rewrite (F3.2):** `backend/src/services/livingWorld/userDiscoveryService.js` — 5 funkcji przepisane na DB upsert+state-machine, dodany pure helper `planLocationFogMutation`.
+- **Living World secondary (F3.3):** `travelGraph.js` (CampaignEdgeDiscovery upsert), `campaignSandbox.js` (`resolveNpcKnownLocations` reads WorldNpcKnownLocation), `dungeonEntry.js` (CharacterClearedDungeon createMany), `questGoalAssigner/{index,questRole}.js` (relation include + parsePrereqs przyjmuje rows z `prerequisiteId`).
+- **Sync rewrites (F3.4):** `campaignSync.js` (`syncQuestsToNormalized` osobny prereq-replace pass + `reconstructFromNormalized` mapping); `campaignLoader.js` (include prerequisites); `seedWorld.js` (`seedNpcKnowledge` → WorldNpcKnownLocation createMany); `processStateChanges/livingWorld.js` (explicit known-loc lookup batch).
+- **Routes:** `adminLivingWorld.js` (`_count.campaignDiscoveries` zamiast tablicy), `characters.js` + `characterMutations.js` (drop `clearedDungeonIds` z whitelist).
+- **Tests:** `questGoalAssigner.test.js` (prereqs shape `[{prerequisiteId}]` zamiast JSON-string).
+- **Docs:** `knowledge/concepts/fog-of-war.md` (nowe modele + state machine + planLocationFogMutation).
+
+## Znane długi z F3
+
+1. **Comment-rot** — kilka plików ma docstringi typu "Character.clearedDungeonIds (permanent)" które już są niezgodne. Lista (low priority): `aiContextTools/contextBuilders/dungeonRoom.js:12`, `livingWorld/dungeonSeedGenerator.js:10`, `livingWorld/dungeonEntry.js:77`, `livingWorld/campaignSandbox.js:{41,164,208}`, `aiContextTools/contextBuilders/hearsay.js:9`, `sceneGenerator/contextSection.js:104`, `services/postSceneWork.js:90`, `processStateChanges/locations.js:{274-276}`, `seedWorld.js:975`. Naprawić przy najbliższym dotyku.
+2. **`processStateChanges/locations.js` deferred non-canonical sub-location handling** — komentarz mówił że "discoveredSubLocationIds" wymagana, my teraz robimy reader-side parent-FK detection. Sprawdzić w playtest czy fog-of-war na sub-lokacjach (rooms w dungeonach) renderuje się jak należy.
+3. **`hasDiscovered({userId, locationId})` z non-canonical** — nie ma campaignId-aware ścieżki, zwraca false. Caller potrzebujący per-campaign `hasDiscovered` musi użyć `loadCampaignFog`. Jeśli emerge use case → dodać explicit campaignId param.
+4. **Idempotent prereq sync** — `syncQuestsToNormalized` robi `deleteMany + createMany` dla prereqs touched dependents. To replace-strategy. Jeśli kiedyś prereq history będzie potrzebna (audit), zmień na incremental upsert.
+
+## Verified manualnie
+
+- ✅ `prisma validate` po pełnej zmianie schemy.
+- ✅ `db:reset` → wszystkie 4 migracje czysto applied (F1 init, F1 rpgon-rename, F2 child_tables_fifo, F3 reference_normalization).
+- ✅ Live state machine: `INSERT heard_about` → `UPDATE → visited` działa (PK `(userId, locationId)` na `UserDiscoveredLocation`).
+- ✅ Cascade delete z User → cascade cleanup wszystkich child rows (UserDiscoveredLocation/Edge, UserWorldKnowledge).
+- ✅ `npm test` 1155 unit testów pass; `npm run build` zielony.
+
+## Niezweryfikowane manualnie (do playtest)
+
+- E2E discover location → fog-of-war na map FE.
+- `loadCampaignFog` dla campaign z mieszanką canonical (visited + heard) i non-canonical (visited + heard) — czy unia render'uje się czysto.
+- Sublokacje (`parentLocationId` set) — drill-down w PlayerWorldMap (czy reader-side parent-FK split działa identycznie jak stary `discoveredSubLocationIds`).
+- Edge discovery podczas trawelu (multiplayer może mieć dwóch graczy → dwa `UserDiscoveredEdge` rows + jeden `CampaignEdgeDiscovery`).
+- Quest prerequisites — `assignGoalsForCampaign` po kompletnym save/load cyklu (czy `q.prerequisites` relation poprawnie hydruje się do `prerequisiteQuestIds: string[]` w coreState).
+- NPC explicit known locations — seed → re-seed (czy `seedNpcKnowledge` replace-by-grantedBy='seed' nie dropuje promotion/dialog grants).
 
 ---
 

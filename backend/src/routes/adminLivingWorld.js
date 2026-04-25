@@ -357,7 +357,7 @@ export async function adminLivingWorldRoutes(fastify) {
           terrainType: true,
           direction: true,
           gated: true,
-          discoveredByCampaigns: true,
+          _count: { select: { campaignDiscoveries: true } },
         },
       }),
     ]);
@@ -416,7 +416,7 @@ export async function adminLivingWorldRoutes(fastify) {
     return {
       nodes,
       edges: overworldEdges.map((e) => {
-        const campaignCount = Array.isArray(e.discoveredByCampaigns) ? e.discoveredByCampaigns.length : 0;
+        const campaignCount = e._count?.campaignDiscoveries || 0;
         return {
           id: e.id,
           from: e.fromLocationId,

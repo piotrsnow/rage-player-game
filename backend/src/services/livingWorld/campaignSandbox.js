@@ -193,11 +193,10 @@ function enrichedShape(shadow, world = null) {
     lastTickAt: world?.lastTickAt || null,
     lastTickSceneIndex: world?.lastTickSceneIndex ?? null,
     tickIntervalScenes: world?.tickIntervalScenes ?? 2,
-    // Canonical-only: keyNpc, homeLocationId, knownLocationIds.
+    // Canonical-only: keyNpc, homeLocationId.
     keyNpc: world ? world.keyNpc !== false : true,
     currentLocationId: shadow.lastLocationId || world?.currentLocationId || null,
     homeLocationId: world?.homeLocationId || null,
-    knownLocationIds: world?.knownLocationIds || '[]',
   };
 }
 
@@ -284,8 +283,8 @@ export async function listNpcsAtLocation(locationId, { campaignId = null, aliveO
  *   - the NPC's own location (lastLocationId / canonical currentLocationId)
  *   - every WorldLocationEdge neighbour of that location
  *
- * Explicit knowledge (WorldNPC.knownLocationIds JSON array) is merged on
- * top so seeded "scout NPCs" reach further than 1 hop.
+ * Explicit knowledge (WorldNpcKnownLocation rows) is merged on top so
+ * seeded "scout NPCs" reach further than 1 hop.
  *
  * Returns `Set<locationId>`. Empty if the NPC has no location AND no
  * explicit knowledge entries.
@@ -315,10 +314,17 @@ export async function resolveNpcKnownLocations({ campaignNpc, worldNpc }) {
       log.warn({ err: err?.message, anchorLocationId }, 'resolveNpcKnownLocations edges failed');
     }
   }
-  // Explicit knowledge list (seed + admin authored).
-  const explicit = worldNpc?.knownLocationIds;
-  if (Array.isArray(explicit)) {
-    for (const id of explicit) if (id) known.add(id);
+  // Explicit knowledge from WorldNpcKnownLocation rows (seed + admin authored).
+  if (worldNpc?.id) {
+    try {
+      const explicit = await prisma.worldNpcKnownLocation.findMany({
+        where: { npcId: worldNpc.id },
+        select: { locationId: true },
+      });
+      for (const e of explicit) if (e.locationId) known.add(e.locationId);
+    } catch (err) {
+      log.warn({ err: err?.message, worldNpcId: worldNpc.id }, 'resolveNpcKnownLocations explicit lookup failed');
+    }
   }
   known.delete(null);
   known.delete(undefined);

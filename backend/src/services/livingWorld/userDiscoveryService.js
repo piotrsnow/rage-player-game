@@ -1,127 +1,121 @@
 // Living World Phase 7 + Round A — hybrid world discovery.
 //
-// Tracks two parallel sets of "fog of war" state:
+// Tracks two parallel sets of "fog of war" state via F3 join tables:
 //   - Canonical locations (seedWorld.js, `WorldLocation.isCanonical=true`)
-//     live in `UserWorldKnowledge` so the player carries their memory of
-//     the canon across campaigns.
-//   - Non-canonical locations (AI-generated mid-play, isCanonical=false)
-//     live in `Campaign.discoveredLocationIds` — they only exist in one
+//     live in `UserDiscoveredLocation` so the player carries their memory
+//     of the canon across campaigns.
+//   - Non-canonical locations (AI-generated mid-play, `isCanonical=false`)
+//     live in `CampaignDiscoveredLocation` — they only exist in one
 //     playthrough and must not leak to parallel campaigns.
 //
-// A third "heard-about" state ("widzisz na mapie dashed, nie możesz wejść
-// w sublokacje") is tracked alongside:
-//   canonical → UserWorldKnowledge.heardAboutLocationIds
-//   non-canonical → Campaign.heardAboutLocationIds
-// Physical visit promotes heard → visited automatically (we remove from
-// the heard-about list on discovery).
+// Two states per row: `heard_about` (dashed-outline on map) and `visited`
+// (full color). A `visited` row never demotes back to `heard_about`; once
+// a player physically visits a location it stays known. State promotion
+// `heard_about → visited` is an UPDATE on the existing row.
 //
-// F3 will replace these JSON arrays with join tables (UserDiscoveredLocation
-// / UserDiscoveredEdge / CampaignDiscoveredLocation). For F1 we keep them as
-// JSONB arrays so the call surface stays identical.
+// Edges follow the same per-user / per-campaign split via `UserDiscoveredEdge`
+// and `CampaignEdgeDiscovery`. Edges have no canonicality split — both
+// trackers can hold any edge.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'userDiscoveryService' });
 
-async function loadOrCreate(userId) {
+/**
+ * Pure — given the currently-stored discovery state (or null) and the new
+ * state we want to record, decide whether to insert, update, or no-op.
+ * Encodes the "never demote visited → heard_about" rule.
+ */
+export function planLocationFogMutation(currentState, newState) {
+  if (newState !== 'heard_about' && newState !== 'visited') return { kind: 'noop' };
+  if (!currentState) return { kind: 'insert' };
+  if (currentState === newState) return { kind: 'noop' };
+  if (currentState === 'visited' && newState === 'heard_about') return { kind: 'noop' };
+  return { kind: 'update' };
+}
+
+async function ensureUserKnowledgeRow(userId) {
   if (!userId) return null;
-  let row = await prisma.userWorldKnowledge.findUnique({ where: { userId } });
-  if (!row) {
-    row = await prisma.userWorldKnowledge.create({
-      data: { userId, discoveredLocationIds: [], discoveredEdgeIds: [], heardAboutLocationIds: [] },
-    });
-  }
-  return row;
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-async function fetchLocationCanonicality(locationId) {
-  if (!locationId) return { isCanonical: true, parentLocationId: null };
   try {
-    const loc = await prisma.worldLocation.findUnique({
-      where: { id: locationId },
-      select: { isCanonical: true, parentLocationId: true },
+    return await prisma.userWorldKnowledge.upsert({
+      where: { userId },
+      create: { userId },
+      update: {},
     });
-    if (!loc) return { isCanonical: true, parentLocationId: null };
-    return { isCanonical: loc.isCanonical !== false, parentLocationId: loc.parentLocationId };
-  } catch {
-    return { isCanonical: true, parentLocationId: null };
-  }
-}
-
-async function campaignFogPatch(campaignId, patch) {
-  if (!campaignId) return;
-  try {
-    await prisma.campaign.update({ where: { id: campaignId }, data: patch });
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, keys: Object.keys(patch) }, 'campaignFogPatch failed');
-  }
-}
-
-async function readCampaignFogSets(campaignId) {
-  if (!campaignId) return null;
-  try {
-    const c = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { discoveredLocationIds: true, discoveredSubLocationIds: true, heardAboutLocationIds: true },
-    });
-    if (!c) return null;
-    return {
-      discoveredLocationIds: new Set(asArray(c.discoveredLocationIds)),
-      discoveredSubLocationIds: new Set(asArray(c.discoveredSubLocationIds)),
-      heardAboutLocationIds: new Set(asArray(c.heardAboutLocationIds)),
-    };
-  } catch {
+    log.warn({ err: err?.message, userId }, 'ensureUserKnowledgeRow failed');
     return null;
   }
 }
 
+async function fetchLocationCanonicality(locationId) {
+  if (!locationId) return { isCanonical: true };
+  try {
+    const loc = await prisma.worldLocation.findUnique({
+      where: { id: locationId },
+      select: { isCanonical: true },
+    });
+    return { isCanonical: loc?.isCanonical !== false };
+  } catch {
+    return { isCanonical: true };
+  }
+}
+
+async function applyUserLocationState(userId, locationId, newState) {
+  const existing = await prisma.userDiscoveredLocation.findUnique({
+    where: { userId_locationId: { userId, locationId } },
+    select: { state: true },
+  });
+  const plan = planLocationFogMutation(existing?.state || null, newState);
+  if (plan.kind === 'noop') return;
+  if (plan.kind === 'insert') {
+    await ensureUserKnowledgeRow(userId);
+    await prisma.userDiscoveredLocation.create({
+      data: { userId, locationId, state: newState },
+    });
+    return;
+  }
+  await prisma.userDiscoveredLocation.update({
+    where: { userId_locationId: { userId, locationId } },
+    data: { state: newState },
+  });
+}
+
+async function applyCampaignLocationState(campaignId, locationId, newState) {
+  const existing = await prisma.campaignDiscoveredLocation.findUnique({
+    where: { campaignId_locationId: { campaignId, locationId } },
+    select: { state: true },
+  });
+  const plan = planLocationFogMutation(existing?.state || null, newState);
+  if (plan.kind === 'noop') return;
+  if (plan.kind === 'insert') {
+    await prisma.campaignDiscoveredLocation.create({
+      data: { campaignId, locationId, state: newState },
+    });
+    return;
+  }
+  await prisma.campaignDiscoveredLocation.update({
+    where: { campaignId_locationId: { campaignId, locationId } },
+    data: { state: newState },
+  });
+}
+
 /**
- * Mark a location as discovered ("visited" fog state). Routes by canonicality.
- * Idempotent — silent on failure (discovery must never block scene flow).
+ * Mark a location as discovered ("visited" fog state). Routes by canonicality:
+ * canonical → user-account-level, non-canonical → campaign-level. Idempotent —
+ * silent on failure (discovery must never block scene flow).
  */
 export async function markLocationDiscovered({ userId, locationId, campaignId = null }) {
   if (!userId || !locationId) return;
   try {
-    const { isCanonical, parentLocationId } = await fetchLocationCanonicality(locationId);
-
+    const { isCanonical } = await fetchLocationCanonicality(locationId);
     if (isCanonical) {
-      const row = await loadOrCreate(userId);
-      const ids = new Set(asArray(row.discoveredLocationIds));
-      const heard = new Set(asArray(row.heardAboutLocationIds));
-      const changed = !ids.has(locationId) || heard.has(locationId);
-      if (!changed) return;
-      ids.add(locationId);
-      heard.delete(locationId);
-      await prisma.userWorldKnowledge.update({
-        where: { userId },
-        data: {
-          discoveredLocationIds: [...ids],
-          heardAboutLocationIds: [...heard],
-        },
-      });
+      await applyUserLocationState(userId, locationId, 'visited');
       return;
     }
-
-    // Non-canonical → per-campaign.
     if (!campaignId) return;
-    const fog = await readCampaignFogSets(campaignId);
-    if (!fog) return;
-    const targetSet = parentLocationId ? fog.discoveredSubLocationIds : fog.discoveredLocationIds;
-    const targetKey = parentLocationId ? 'discoveredSubLocationIds' : 'discoveredLocationIds';
-    const heard = fog.heardAboutLocationIds;
-    const changed = !targetSet.has(locationId) || heard.has(locationId);
-    if (!changed) return;
-    targetSet.add(locationId);
-    heard.delete(locationId);
-    await campaignFogPatch(campaignId, {
-      [targetKey]: [...targetSet],
-      heardAboutLocationIds: [...heard],
-    });
+    await applyCampaignLocationState(campaignId, locationId, 'visited');
   } catch (err) {
     log.warn({ err: err?.message, userId, locationId, campaignId }, 'markLocationDiscovered failed');
   }
@@ -129,41 +123,27 @@ export async function markLocationDiscovered({ userId, locationId, campaignId = 
 
 /**
  * Mark a location as "heard about" (dashed-outline fog state). Skipped if
- * already discovered — we never demote visited → heard.
+ * already visited — we never demote `visited` → `heard_about`.
  */
 export async function markLocationHeardAbout({ userId, locationId, campaignId = null }) {
   if (!userId || !locationId) return;
   try {
     const { isCanonical } = await fetchLocationCanonicality(locationId);
     if (isCanonical) {
-      const row = await loadOrCreate(userId);
-      const visited = new Set(asArray(row.discoveredLocationIds));
-      if (visited.has(locationId)) return;
-      const heard = new Set(asArray(row.heardAboutLocationIds));
-      if (heard.has(locationId)) return;
-      heard.add(locationId);
-      await prisma.userWorldKnowledge.update({
-        where: { userId },
-        data: { heardAboutLocationIds: [...heard] },
-      });
+      await applyUserLocationState(userId, locationId, 'heard_about');
       return;
     }
     if (!campaignId) return;
-    const fog = await readCampaignFogSets(campaignId);
-    if (!fog) return;
-    if (fog.discoveredLocationIds.has(locationId) || fog.discoveredSubLocationIds.has(locationId)) return;
-    if (fog.heardAboutLocationIds.has(locationId)) return;
-    fog.heardAboutLocationIds.add(locationId);
-    await campaignFogPatch(campaignId, {
-      heardAboutLocationIds: [...fog.heardAboutLocationIds],
-    });
+    await applyCampaignLocationState(campaignId, locationId, 'heard_about');
   } catch (err) {
     log.warn({ err: err?.message, userId, locationId, campaignId }, 'markLocationHeardAbout failed');
   }
 }
 
 /**
- * Mark an edge as discovered. Bidirectional.
+ * Mark an edge as discovered by this user. Bidirectional — both directions
+ * (forward + reverse edge rows, if present) flip to discovered when one is
+ * traversed. Also flips both endpoint locations to `visited`.
  */
 export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocationId }) {
   if (!userId || !fromLocationId || !toLocationId) return;
@@ -181,50 +161,56 @@ export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocat
     const edgeIds = [edgeForward?.id, edgeReverse?.id].filter(Boolean);
     if (edgeIds.length === 0) return;
 
-    const row = await loadOrCreate(userId);
-    const knownEdges = new Set(asArray(row.discoveredEdgeIds));
-    const knownLocs = new Set(asArray(row.discoveredLocationIds));
-    let changed = false;
-    for (const id of edgeIds) {
-      if (!knownEdges.has(id)) { knownEdges.add(id); changed = true; }
-    }
-    for (const loc of [fromLocationId, toLocationId]) {
-      if (!knownLocs.has(loc)) { knownLocs.add(loc); changed = true; }
-    }
-    if (!changed) return;
-    await prisma.userWorldKnowledge.update({
-      where: { userId },
-      data: {
-        discoveredEdgeIds: [...knownEdges],
-        discoveredLocationIds: [...knownLocs],
-      },
+    await ensureUserKnowledgeRow(userId);
+    await prisma.userDiscoveredEdge.createMany({
+      data: edgeIds.map((edgeId) => ({ userId, edgeId })),
+      skipDuplicates: true,
     });
+    // Endpoint locations become visited (both sides of a traversed edge).
+    await Promise.all([
+      applyUserLocationState(userId, fromLocationId, 'visited').catch(() => {}),
+      applyUserLocationState(userId, toLocationId, 'visited').catch(() => {}),
+    ]);
   } catch (err) {
     log.warn({ err: err?.message, userId, fromLocationId, toLocationId }, 'markEdgeDiscoveredByUser failed');
   }
 }
 
 /**
- * Load a user's full discovery set. Always includes the capital and any
- * `knownByDefault=true` canonical locations.
+ * Load the user's full account-level discovery set. Always includes the capital
+ * and any `knownByDefault=true` canonical locations (they're seeded "known"
+ * from boot — no DB write needed for them to show up on the map).
  */
 export async function loadDiscovery(userId) {
   if (!userId) return { locationIds: new Set(), edgeIds: new Set() };
-  const [row, knownByDefault] = await Promise.all([
-    prisma.userWorldKnowledge.findUnique({ where: { userId } }),
+  const [locRows, edgeRows, knownByDefault] = await Promise.all([
+    prisma.userDiscoveredLocation.findMany({
+      where: { userId, state: 'visited' },
+      select: { locationId: true },
+    }),
+    prisma.userDiscoveredEdge.findMany({
+      where: { userId },
+      select: { edgeId: true },
+    }),
     prisma.worldLocation.findMany({
       where: { OR: [{ locationType: 'capital' }, { knownByDefault: true }] },
       select: { id: true },
     }),
   ]);
-  const locationIds = new Set(asArray(row?.discoveredLocationIds));
-  const edgeIds = new Set(asArray(row?.discoveredEdgeIds));
+  const locationIds = new Set(locRows.map((r) => r.locationId));
   for (const c of knownByDefault) locationIds.add(c.id);
+  const edgeIds = new Set(edgeRows.map((r) => r.edgeId));
   return { locationIds, edgeIds };
 }
 
 /**
- * Load the full three-state fog-of-war view for a campaign.
+ * Load the full three-state fog-of-war view for a campaign. Merges:
+ *   - account-level canonical discovery (UserDiscoveredLocation/Edge)
+ *   - campaign-level non-canonical discovery (CampaignDiscoveredLocation)
+ *
+ * Returns sets keyed by location id. `discoveredSubLocationIds` separates
+ * sublocations from main visited locs (UI uses it to render dungeon-room
+ * gates differently from town-square spots).
  */
 export async function loadCampaignFog({ userId, campaignId }) {
   const empty = {
@@ -234,57 +220,83 @@ export async function loadCampaignFog({ userId, campaignId }) {
     discoveredEdgeIds: new Set(),
   };
   if (!userId) return empty;
-  const [canon, campaignFog] = await Promise.all([
-    loadDiscovery(userId),
-    (async () => {
-      if (!campaignId) return null;
-      const c = await prisma.campaign.findUnique({
-        where: { id: campaignId },
-        select: { discoveredLocationIds: true, discoveredSubLocationIds: true, heardAboutLocationIds: true },
-      });
-      if (!c) return null;
-      return {
-        discoveredLocationIds: asArray(c.discoveredLocationIds),
-        discoveredSubLocationIds: asArray(c.discoveredSubLocationIds),
-        heardAboutLocationIds: asArray(c.heardAboutLocationIds),
-      };
-    })(),
+
+  const [userVisited, userHeard, edgeRows, capitalsAndDefaults, campaignRows] = await Promise.all([
+    prisma.userDiscoveredLocation.findMany({
+      where: { userId, state: 'visited' },
+      select: { locationId: true },
+    }),
+    prisma.userDiscoveredLocation.findMany({
+      where: { userId, state: 'heard_about' },
+      select: { locationId: true },
+    }),
+    prisma.userDiscoveredEdge.findMany({
+      where: { userId },
+      select: { edgeId: true },
+    }),
+    prisma.worldLocation.findMany({
+      where: { OR: [{ locationType: 'capital' }, { knownByDefault: true }] },
+      select: { id: true },
+    }),
+    campaignId
+      ? prisma.campaignDiscoveredLocation.findMany({
+          where: { campaignId },
+          select: {
+            locationId: true,
+            state: true,
+            location: { select: { parentLocationId: true } },
+          },
+        })
+      : Promise.resolve([]),
   ]);
-  const heardRow = await prisma.userWorldKnowledge.findUnique({
-    where: { userId },
-    select: { heardAboutLocationIds: true },
-  }).catch(() => null);
 
-  const visited = new Set(canon.locationIds);
-  const heardAbout = new Set(asArray(heardRow?.heardAboutLocationIds));
+  const visited = new Set(userVisited.map((r) => r.locationId));
+  for (const c of capitalsAndDefaults) visited.add(c.id);
+  const heardAbout = new Set(userHeard.map((r) => r.locationId));
   const subLocs = new Set();
+  const edgeIds = new Set(edgeRows.map((r) => r.edgeId));
 
-  if (campaignFog) {
-    for (const id of campaignFog.discoveredLocationIds) visited.add(id);
-    for (const id of campaignFog.discoveredSubLocationIds) subLocs.add(id);
-    for (const id of campaignFog.heardAboutLocationIds) heardAbout.add(id);
+  for (const row of campaignRows) {
+    const isSubLocation = !!row.location?.parentLocationId;
+    if (row.state === 'visited') {
+      if (isSubLocation) subLocs.add(row.locationId);
+      else visited.add(row.locationId);
+    } else if (row.state === 'heard_about') {
+      heardAbout.add(row.locationId);
+    }
   }
+  // Never show heard-about for something already visited.
   for (const id of visited) heardAbout.delete(id);
 
   return {
     visited,
     heardAbout,
     discoveredSubLocationIds: subLocs,
-    discoveredEdgeIds: canon.edgeIds,
+    discoveredEdgeIds: edgeIds,
   };
 }
 
 /**
- * Check whether a user has seen a given location. Capital short-circuits
- * to true without a DB write (seeded at world boot).
+ * Check whether a user has visited a given location. Capital short-circuits
+ * to true without a DB read (always-known from world boot).
  */
 export async function hasDiscovered({ userId, locationId }) {
   if (!userId || !locationId) return false;
   const loc = await prisma.worldLocation.findUnique({
     where: { id: locationId },
-    select: { locationType: true },
+    select: { locationType: true, isCanonical: true, knownByDefault: true },
   });
-  if (loc?.locationType === 'capital') return true;
-  const { locationIds } = await loadDiscovery(userId);
-  return locationIds.has(locationId);
+  if (!loc) return false;
+  if (loc.locationType === 'capital' || loc.knownByDefault) return true;
+
+  if (loc.isCanonical !== false) {
+    const row = await prisma.userDiscoveredLocation.findUnique({
+      where: { userId_locationId: { userId, locationId } },
+      select: { state: true },
+    });
+    return row?.state === 'visited';
+  }
+  // Non-canonical needs a campaign context — caller should use loadCampaignFog
+  // for that path. Without campaignId we can't tell, so assume not discovered.
+  return false;
 }

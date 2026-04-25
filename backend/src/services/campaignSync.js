@@ -191,6 +191,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
   // Bulk: findMany existing → split into createMany (new) + per-row update.
   const valid = all.filter((q) => q.id && q.name).map((q) => ({
     questId: q.id,
+    prereqIds: Array.isArray(q.prerequisiteQuestIds) ? q.prerequisiteQuestIds.filter(Boolean) : [],
     data: {
       name: q.name,
       type: q.type || 'side',
@@ -199,7 +200,6 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       questGiverId: q.questGiverId || null,
       turnInNpcId: q.turnInNpcId || q.questGiverId || null,
       locationId: q.locationId || null,
-      prerequisiteQuestIds: q.prerequisiteQuestIds || [],
       objectives: q.objectives || [],
       reward: q.reward ?? null,
       status: q._status,
@@ -246,6 +246,46 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       log.error({ err, id: u.id }, 'Quest update failed');
     }
   }
+
+  // Sync prerequisites — DB-side ids, not the questId string. We need the
+  // freshly-persisted CampaignQuest rows to map (campaignId, questId) → id.
+  const allValid = valid.filter((v) => v.prereqIds.length > 0);
+  if (allValid.length === 0) return;
+  try {
+    const dbRows = await prisma.campaignQuest.findMany({
+      where: { campaignId, questId: { in: valid.map((v) => v.questId) } },
+      select: { id: true, questId: true },
+    });
+    const idByQuestId2 = new Map(dbRows.map((r) => [r.questId, r.id]));
+
+    const prereqInserts = [];
+    const dependentIds = [];
+    for (const v of allValid) {
+      const dependentId = idByQuestId2.get(v.questId);
+      if (!dependentId) continue;
+      dependentIds.push(dependentId);
+      for (const prereqQuestId of v.prereqIds) {
+        const prereqId = idByQuestId2.get(prereqQuestId);
+        if (!prereqId) continue;
+        prereqInserts.push({ questId: dependentId, prerequisiteId: prereqId });
+      }
+    }
+
+    // Replace prereq slice for the touched dependents — drop existing then bulk insert.
+    if (dependentIds.length > 0) {
+      await prisma.campaignQuestPrerequisite.deleteMany({
+        where: { questId: { in: dependentIds } },
+      });
+    }
+    if (prereqInserts.length > 0) {
+      await prisma.campaignQuestPrerequisite.createMany({
+        data: prereqInserts,
+        skipDuplicates: true,
+      });
+    }
+  } catch (err) {
+    log.error({ err, campaignId }, 'Quest prerequisites sync failed');
+  }
 }
 
 export async function reconstructFromNormalized(campaignId, coreState) {
@@ -290,6 +330,7 @@ export async function reconstructFromNormalized(campaignId, coreState) {
   const dbQuests = await prisma.campaignQuest.findMany({
     where: { campaignId },
     orderBy: { createdAt: 'asc' },
+    include: { prerequisites: { select: { prerequisite: { select: { questId: true } } } } },
   });
   if (dbQuests.length > 0) {
     const active = [];
@@ -304,7 +345,9 @@ export async function reconstructFromNormalized(campaignId, coreState) {
         questGiverId: q.questGiverId,
         turnInNpcId: q.turnInNpcId,
         locationId: q.locationId,
-        prerequisiteQuestIds: q.prerequisiteQuestIds || [],
+        prerequisiteQuestIds: Array.isArray(q.prerequisites)
+          ? q.prerequisites.map((p) => p.prerequisite?.questId).filter(Boolean)
+          : [],
         objectives: q.objectives || [],
         reward: q.reward ?? null,
       };

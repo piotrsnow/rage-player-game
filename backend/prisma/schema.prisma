@@ -40,6 +40,11 @@ enum LocationType {
   dungeon_room
 }
 
+enum DiscoveryState {
+  heard_about
+  visited
+}
+
 enum ReviewStatus {
   pending
   approved
@@ -136,7 +141,6 @@ model Character {
   lockedLocation     String?
   statuses           Json    @default("[]")
   needs              Json    @default("{\"hunger\":100,\"thirst\":100,\"bladder\":100,\"hygiene\":100,\"rest\":100}")
-  clearedDungeonIds  Json    @default("[]")
   activeDungeonState Json?
 
   backstory           String @default("")
@@ -158,6 +162,7 @@ model Character {
   mpPlayers       MultiplayerSessionPlayer[]
   npcAttributions WorldNpcAttribution[]
   reputations     WorldReputation[]
+  clearedDungeons CharacterClearedDungeon[]
 
   @@index([userId])
   @@index([lockedCampaignId])
@@ -190,11 +195,6 @@ model Campaign {
   settlementCaps      Json?
   worldBounds         Json?
 
-  // F3 → CampaignDiscoveredLocation join table
-  discoveredLocationIds    Json @default("[]")
-  discoveredSubLocationIds Json @default("[]")
-  heardAboutLocationIds    Json @default("[]")
-
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
@@ -213,6 +213,8 @@ model Campaign {
   locationPromotionCandidates LocationPromotionCandidate[]
   achievements                Achievement[]
   worldNpcDialogTurns         WorldNpcDialogTurn[]
+  discoveredLocations         CampaignDiscoveredLocation[]
+  edgeDiscoveries             CampaignEdgeDiscovery[]
 
   @@index([userId])
   @@index([isPublic])
@@ -359,8 +361,6 @@ model CampaignQuest {
   questGiverId         String?
   turnInNpcId          String?
   locationId           String?
-  // F3 → CampaignQuestPrerequisite
-  prerequisiteQuestIds Json      @default("[]")
   // F4 → CampaignQuestObjective
   objectives           Json      @default("[]")
   reward               Json?
@@ -370,7 +370,9 @@ model CampaignQuest {
   createdAt            DateTime  @default(now()) @db.Timestamptz
   updatedAt            DateTime  @updatedAt      @db.Timestamptz
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign         Campaign                    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  prerequisites    CampaignQuestPrerequisite[] @relation("questSide")
+  prerequisiteFor  CampaignQuestPrerequisite[] @relation("prereqSide")
 
   @@unique([campaignId, questId])
   @@index([campaignId])
@@ -497,6 +499,10 @@ model WorldLocation {
   campaignNpcsLastHere        CampaignNPC[]                @relation("campaignNpcLastLoc")
   locationPromotionCandidates LocationPromotionCandidate[]
   knowledgeEntries            WorldLocationKnowledge[]
+  campaignDiscoveries         CampaignDiscoveredLocation[]
+  userDiscoveries             UserDiscoveredLocation[]
+  npcKnownByEntries           WorldNpcKnownLocation[]
+  characterClearedDungeons    CharacterClearedDungeon[]
 
   @@index([region])
   @@index([parentLocationId])
@@ -515,12 +521,12 @@ model WorldLocationEdge {
   direction      String?
   gated          Boolean     @default(false)
   gateHint       String?
-  // F3 → WorldEdgeDiscovery
-  discoveredByCampaigns Json @default("[]")
   createdAt      DateTime    @default(now()) @db.Timestamptz
 
   from WorldLocation @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
   to   WorldLocation @relation("toLoc",   fields: [toLocationId],   references: [id], onDelete: Cascade)
+  campaignDiscoveries CampaignEdgeDiscovery[]
+  userDiscoveries     UserDiscoveredEdge[]
 
   @@unique([fromLocationId, toLocationId])
   @@index([fromLocationId])
@@ -529,15 +535,11 @@ model WorldLocationEdge {
 
 model UserWorldKnowledge {
   userId                   String   @id @db.Uuid
-  // F3 → UserDiscoveredLocation (state=visited)
-  discoveredLocationIds    Json     @default("[]")
-  // F3 → UserDiscoveredEdge
-  discoveredEdgeIds        Json     @default("[]")
-  // F3 → UserDiscoveredLocation (state=heard_about)
-  heardAboutLocationIds    Json     @default("[]")
   updatedAt                DateTime @updatedAt @db.Timestamptz
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  discoveredLocations UserDiscoveredLocation[]
+  discoveredEdges     UserDiscoveredEdge[]
 }
 
 model WorldNPC {
@@ -559,8 +561,6 @@ model WorldNPC {
   lockedAt              DateTime? @db.Timestamptz
   lockedSnapshot        Json?
 
-  // F3 → WorldNpcKnownLocation
-  knownLocationIds   Json    @default("[]")
 
   activeGoal         String?
   goalProgress       Json?
@@ -582,10 +582,11 @@ model WorldNPC {
 
   currentLocation WorldLocation? @relation("npcCurrentLoc", fields: [currentLocationId], references: [id], onDelete: SetNull)
   homeLocation    WorldLocation? @relation("npcHomeLoc",    fields: [homeLocationId],    references: [id], onDelete: SetNull)
-  campaignShadows CampaignNPC[]
-  attributions    WorldNpcAttribution[]
+  campaignShadows  CampaignNPC[]
+  attributions     WorldNpcAttribution[]
   knowledgeEntries WorldNpcKnowledge[]
-  dialogTurns     WorldNpcDialogTurn[]
+  dialogTurns      WorldNpcDialogTurn[]
+  knownLocations   WorldNpcKnownLocation[]
 
   @@index([currentLocationId])
   @@index([alive])
@@ -707,6 +708,112 @@ model WorldLocationKnowledge {
   location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@index([locationId, addedAt])
+}
+
+// F3 — replaces Campaign.{discovered,heardAbout,discoveredSub}LocationIds.
+// Per-campaign fog-of-war. By design holds only NON-canonical (campaign-created)
+// locations — canonical lookups land in UserDiscoveredLocation so the player
+// carries that knowledge across campaigns.
+model CampaignDiscoveredLocation {
+  campaignId   String         @db.Uuid
+  locationId   String         @db.Uuid
+  state        DiscoveryState
+  discoveredAt DateTime       @default(now()) @db.Timestamptz
+
+  campaign Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, locationId])
+  @@index([locationId])
+  @@index([campaignId, state])
+}
+
+// F3 — replaces UserWorldKnowledge.{discovered,heardAbout}LocationIds.
+// Account-level fog-of-war for canonical (world-seeded) locations only.
+model UserDiscoveredLocation {
+  userId       String         @db.Uuid
+  locationId   String         @db.Uuid
+  state        DiscoveryState
+  discoveredAt DateTime       @default(now()) @db.Timestamptz
+
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  location      WorldLocation      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+  @@index([locationId])
+  @@index([userId, state])
+}
+
+// F3 — replaces UserWorldKnowledge.discoveredEdgeIds. Per-user edge discovery.
+model UserDiscoveredEdge {
+  userId       String   @db.Uuid
+  edgeId       String   @db.Uuid
+  discoveredAt DateTime @default(now()) @db.Timestamptz
+
+  userKnowledge UserWorldKnowledge @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  edge          WorldLocationEdge  @relation(fields: [edgeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, edgeId])
+  @@index([edgeId])
+}
+
+// F3 — replaces WorldLocationEdge.discoveredByCampaigns.
+// Renamed vs plan (was "WorldEdgeDiscovery") because the discovery scope is
+// per-campaign, not per-world.
+model CampaignEdgeDiscovery {
+  edgeId       String   @db.Uuid
+  campaignId   String   @db.Uuid
+  discoveredAt DateTime @default(now()) @db.Timestamptz
+
+  edge     WorldLocationEdge @relation(fields: [edgeId],     references: [id], onDelete: Cascade)
+  campaign Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@id([edgeId, campaignId])
+  @@index([campaignId])
+}
+
+// F3 — replaces WorldNPC.knownLocationIds. NPC's geographic awareness graph;
+// `grantedBy` flags provenance: 'seed' (hand-authored), 'promotion' (post-
+// campaign promote), 'dialog' (learned in conversation).
+model WorldNpcKnownLocation {
+  npcId      String   @db.Uuid
+  locationId String   @db.Uuid
+  grantedBy  String   @default("seed")
+  grantedAt  DateTime @default(now()) @db.Timestamptz
+
+  npc      WorldNPC      @relation(fields: [npcId],      references: [id], onDelete: Cascade)
+  location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([npcId, locationId])
+  @@index([locationId])
+}
+
+// F3 — replaces Character.clearedDungeonIds. Dungeon-clear history per
+// character (dungeons are canonical WorldLocations of locationType=dungeon).
+model CharacterClearedDungeon {
+  characterId String   @db.Uuid
+  dungeonId   String   @db.Uuid
+  clearedAt   DateTime @default(now()) @db.Timestamptz
+
+  character Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  dungeon   WorldLocation @relation(fields: [dungeonId],   references: [id], onDelete: Cascade)
+
+  @@id([characterId, dungeonId])
+  @@index([dungeonId])
+}
+
+// F3 — replaces CampaignQuest.prerequisiteQuestIds. Self-join on CampaignQuest.
+// `questSide` = the dependent quest, `prereqSide` = the prerequisite that must
+// complete first.
+model CampaignQuestPrerequisite {
+  questId        String @db.Uuid
+  prerequisiteId String @db.Uuid
+
+  quest        CampaignQuest @relation("questSide",  fields: [questId],        references: [id], onDelete: Cascade)
+  prerequisite CampaignQuest @relation("prereqSide", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+
+  @@id([questId, prerequisiteId])
+  @@index([prerequisiteId])
 }
 
 model WorldLoreSection {

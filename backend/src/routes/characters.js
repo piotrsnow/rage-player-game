@@ -74,7 +74,7 @@ function buildUpdatePayload(body) {
   const jsonFields = [
     'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
     'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
-    'knownTitles', 'clearedDungeonIds', 'activeDungeonState',
+    'knownTitles', 'activeDungeonState',
   ];
   for (const key of jsonFields) {
     if (body[key] !== undefined) data[key] = body[key];

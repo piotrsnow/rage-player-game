@@ -5,9 +5,9 @@
 // this module only cares about edges + paths.
 //
 // Distance semantics: `edge.distance` is km (matches regionX/Y units).
-// Dijkstra uses distance as cost. `discoveredByCampaigns` is a JSON array of
-// campaignIds — edges only enter the visible graph for campaigns that have
-// traversed them (or have them marked at seed time).
+// Dijkstra uses distance as cost. Edge visibility for a campaign is tracked
+// in the `CampaignEdgeDiscovery` join table — edges only enter the visible
+// graph once a campaign traverses them (or they were marked at seed time).
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
@@ -38,37 +38,33 @@ export async function upsertEdge({
 
   const existing = await prisma.worldLocationEdge.findFirst({
     where: { fromLocationId, toLocationId },
+    select: { id: true },
   });
 
-  const discovered = new Set();
-  if (existing && Array.isArray(existing.discoveredByCampaigns)) {
-    for (const id of existing.discoveredByCampaigns) discovered.add(id);
-  }
-  if (discoveredByCampaignId) discovered.add(discoveredByCampaignId);
+  const edge = existing
+    ? existing
+    : await prisma.worldLocationEdge.create({
+        data: {
+          fromLocationId,
+          toLocationId,
+          distance,
+          difficulty,
+          terrainType,
+          direction,
+          gated,
+          gateHint,
+        },
+      });
 
-  const data = {
-    fromLocationId,
-    toLocationId,
-    distance,
-    difficulty,
-    terrainType,
-    direction,
-    gated,
-    gateHint,
-    discoveredByCampaigns: [...discovered],
-  };
-
-  if (existing) {
-    return prisma.worldLocationEdge.update({
-      where: { id: existing.id },
-      data: {
-        // Don't overwrite difficulty/terrain/distance on re-traversal —
-        // first-write wins. Discovery set merged above.
-        discoveredByCampaigns: data.discoveredByCampaigns,
-      },
-    });
+  if (discoveredByCampaignId) {
+    await prisma.campaignEdgeDiscovery.upsert({
+      where: { edgeId_campaignId: { edgeId: edge.id, campaignId: discoveredByCampaignId } },
+      create: { edgeId: edge.id, campaignId: discoveredByCampaignId },
+      update: {},
+    }).catch((err) => log.warn({ err: err?.message, edgeId: edge.id, campaignId: discoveredByCampaignId },
+      'upsertEdge: discovery row failed'));
   }
-  return prisma.worldLocationEdge.create({ data });
+  return edge;
 }
 
 /**
@@ -86,14 +82,13 @@ export async function markEdgeDiscovered({ fromLocationId, toLocationId, campaig
 async function markDirection({ fromLocationId, toLocationId, campaignId }) {
   const edge = await prisma.worldLocationEdge.findFirst({
     where: { fromLocationId, toLocationId },
+    select: { id: true },
   });
   if (!edge) return;
-  const prev = Array.isArray(edge.discoveredByCampaigns) ? [...edge.discoveredByCampaigns] : [];
-  if (prev.includes(campaignId)) return;
-  prev.push(campaignId);
-  await prisma.worldLocationEdge.update({
-    where: { id: edge.id },
-    data: { discoveredByCampaigns: prev },
+  await prisma.campaignEdgeDiscovery.upsert({
+    where: { edgeId_campaignId: { edgeId: edge.id, campaignId } },
+    create: { edgeId: edge.id, campaignId },
+    update: {},
   }).catch((err) => log.warn({ err: err?.message, edgeId: edge.id }, 'markDirection failed'));
 }
 
@@ -102,20 +97,33 @@ async function markDirection({ fromLocationId, toLocationId, campaignId }) {
  * fromId → [{ toId, distance, difficulty, terrainType, direction }].
  */
 export async function loadCampaignGraph(campaignId) {
-  const edges = await prisma.worldLocationEdge.findMany({
+  if (!campaignId) {
+    const edges = await prisma.worldLocationEdge.findMany({
+      select: {
+        fromLocationId: true, toLocationId: true,
+        distance: true, difficulty: true, terrainType: true, direction: true,
+      },
+    });
+    return buildAdjacency(edges);
+  }
+  // Visible edges = those with a CampaignEdgeDiscovery row for this campaign.
+  const discoveries = await prisma.campaignEdgeDiscovery.findMany({
+    where: { campaignId },
     select: {
-      fromLocationId: true,
-      toLocationId: true,
-      distance: true,
-      difficulty: true,
-      terrainType: true,
-      direction: true,
-      discoveredByCampaigns: true,
+      edge: {
+        select: {
+          fromLocationId: true, toLocationId: true,
+          distance: true, difficulty: true, terrainType: true, direction: true,
+        },
+      },
     },
   });
+  return buildAdjacency(discoveries.map((d) => d.edge).filter(Boolean));
+}
+
+function buildAdjacency(edges) {
   const adj = new Map();
   for (const e of edges) {
-    if (!isEdgeVisibleTo(e, campaignId)) continue;
     const list = adj.get(e.fromLocationId) || [];
     list.push({
       toId: e.toLocationId,
@@ -127,12 +135,6 @@ export async function loadCampaignGraph(campaignId) {
     adj.set(e.fromLocationId, list);
   }
   return adj;
-}
-
-function isEdgeVisibleTo(edge, campaignId) {
-  if (!campaignId) return true;
-  const list = Array.isArray(edge.discoveredByCampaigns) ? edge.discoveredByCampaigns : [];
-  return list.includes(campaignId);
 }
 
 /**
