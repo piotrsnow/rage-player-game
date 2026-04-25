@@ -1,42 +1,24 @@
 import { describe, it, expect } from 'vitest';
 import {
-  selectKeyNpcsWithWorldId,
   selectKeyNpcsForMemory,
+  selectKeyNpcsWithWorldId,
   formatBaselineEntries,
   formatExperienceEntries,
 } from './npcBaseline.js';
 
-describe('selectKeyNpcsWithWorldId', () => {
-  it('returns [] on empty / mismatched input', () => {
-    expect(selectKeyNpcsWithWorldId([], [])).toEqual([]);
-    expect(selectKeyNpcsWithWorldId(null, null)).toEqual([]);
-  });
-
-  it('skips ephemeral NPCs (worldNpcId=null)', () => {
-    const ambient = [{ worldNpcId: null, keyNpc: true }];
-    const withGoals = [{ name: 'Ephemeral' }];
-    expect(selectKeyNpcsWithWorldId(ambient, withGoals)).toEqual([]);
-  });
-
-  it('skips background NPCs (keyNpc=false)', () => {
-    const ambient = [{ worldNpcId: 'w1', keyNpc: false }];
-    const withGoals = [{ name: 'Villager' }];
-    expect(selectKeyNpcsWithWorldId(ambient, withGoals)).toEqual([]);
-  });
-
-  it('returns {worldNpcId, npcName} for each key NPC with canonical link', () => {
+describe('selectKeyNpcsWithWorldId (legacy alias)', () => {
+  it('drops ephemeral NPCs without worldNpcId', () => {
     const ambient = [
-      { worldNpcId: 'w1', keyNpc: true },
-      { worldNpcId: 'w2', keyNpc: true },
+      { id: 'cnpc1', worldNpcId: 'w1', keyNpc: true },
+      { id: 'cnpc2', worldNpcId: null, keyNpc: true },
     ];
-    const withGoals = [{ name: 'Gerent' }, { name: 'Lyana' }];
-    expect(selectKeyNpcsWithWorldId(ambient, withGoals)).toEqual([
-      { worldNpcId: 'w1', npcName: 'Gerent' },
-      { worldNpcId: 'w2', npcName: 'Lyana' },
-    ]);
+    const withGoals = [{ name: 'Linked' }, { name: 'Ephemeral' }];
+    const result = selectKeyNpcsWithWorldId(ambient, withGoals);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ worldNpcId: 'w1', npcName: 'Linked' });
   });
 
-  it('tolerates missing goalEntry at same index', () => {
+  it('skips entries when withGoals slot is null', () => {
     const ambient = [{ worldNpcId: 'w1', keyNpc: true }];
     const withGoals = [null];
     expect(selectKeyNpcsWithWorldId(ambient, withGoals)).toEqual([]);
@@ -44,73 +26,67 @@ describe('selectKeyNpcsWithWorldId', () => {
 });
 
 describe('formatBaselineEntries', () => {
-  it('returns [] for null/empty/undefined input', () => {
+  it('returns [] for null/non-array input', () => {
     expect(formatBaselineEntries(null)).toEqual([]);
-    expect(formatBaselineEntries('')).toEqual([]);
     expect(formatBaselineEntries(undefined)).toEqual([]);
+    expect(formatBaselineEntries('not-an-array')).toEqual([]);
   });
 
-  it('parses JSON string and shapes entries', () => {
-    const kb = JSON.stringify([
+  it('shapes WorldNpcKnowledge baseline rows', () => {
+    const rows = [
+      { content: 'Knows the king personally', source: 'baseline' },
+      { content: 'Hates the baron', source: 'baseline' },
+    ];
+    expect(formatBaselineEntries(rows)).toEqual([
       { content: 'Knows the king personally', source: 'baseline' },
       { content: 'Hates the baron', source: 'baseline' },
     ]);
-    expect(formatBaselineEntries(kb)).toEqual([
-      { content: 'Knows the king personally', source: 'baseline' },
-      { content: 'Hates the baron', source: 'baseline' },
-    ]);
   });
 
-  it('accepts pre-parsed array too', () => {
-    const kb = [{ content: 'fact A', source: 'baseline' }];
-    expect(formatBaselineEntries(kb)).toEqual([{ content: 'fact A', source: 'baseline' }]);
-  });
-
-  it('filters empty / malformed entries', () => {
-    const kb = JSON.stringify([
+  it('filters empty/malformed rows', () => {
+    const rows = [
       { content: 'valid', source: 'baseline' },
       { content: '' },
       { content: '   ' },
       null,
       { source: 'baseline' }, // missing content
-    ]);
-    expect(formatBaselineEntries(kb)).toEqual([
+    ];
+    expect(formatBaselineEntries(rows)).toEqual([
       { content: 'valid', source: 'baseline' },
     ]);
   });
 
   it('defaults missing source to baseline', () => {
-    const kb = JSON.stringify([{ content: 'fact' }]);
-    expect(formatBaselineEntries(kb)).toEqual([{ content: 'fact', source: 'baseline' }]);
+    expect(formatBaselineEntries([{ content: 'fact' }])).toEqual([
+      { content: 'fact', source: 'baseline' },
+    ]);
   });
 
-  it('preserves non-baseline source (Stage 2 lived experience)', () => {
-    const kb = JSON.stringify([{ content: 'lived fact', source: 'campaign:abc' }]);
-    expect(formatBaselineEntries(kb)).toEqual([
+  it('drops cross-campaign rows (those go through formatCrossCampaignEntries)', () => {
+    const rows = [
+      { content: 'baseline fact', source: 'baseline' },
       { content: 'lived fact', source: 'campaign:abc' },
+    ];
+    expect(formatBaselineEntries(rows)).toEqual([
+      { content: 'baseline fact', source: 'baseline' },
     ]);
   });
 
   it('caps at maxEntries (default 6)', () => {
-    const kb = JSON.stringify(
-      Array.from({ length: 10 }, (_, i) => ({ content: `fact ${i}`, source: 'baseline' })),
-    );
-    expect(formatBaselineEntries(kb)).toHaveLength(6);
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      content: `fact ${i}`,
+      source: 'baseline',
+    }));
+    expect(formatBaselineEntries(rows)).toHaveLength(6);
   });
 
   it('respects custom cap', () => {
-    const kb = JSON.stringify([
+    const rows = [
       { content: 'a', source: 'baseline' },
       { content: 'b', source: 'baseline' },
       { content: 'c', source: 'baseline' },
-    ]);
-    expect(formatBaselineEntries(kb, 2)).toHaveLength(2);
-  });
-
-  it('returns [] for malformed JSON without throwing', () => {
-    expect(formatBaselineEntries('{not json')).toEqual([]);
-    expect(formatBaselineEntries('null')).toEqual([]);
-    expect(formatBaselineEntries('"plain string"')).toEqual([]);
+    ];
+    expect(formatBaselineEntries(rows, 2)).toHaveLength(2);
   });
 });
 
@@ -150,29 +126,26 @@ describe('selectKeyNpcsForMemory', () => {
 });
 
 describe('formatExperienceEntries', () => {
-  it('returns [] for null/empty/malformed input', () => {
+  it('returns [] for null/non-array input', () => {
     expect(formatExperienceEntries(null)).toEqual([]);
-    expect(formatExperienceEntries('')).toEqual([]);
-    expect(formatExperienceEntries('{not json')).toEqual([]);
+    expect(formatExperienceEntries(undefined)).toEqual([]);
+    expect(formatExperienceEntries('not-an-array')).toEqual([]);
   });
 
   it('tags all entries with source=campaign_current', () => {
-    const log = JSON.stringify([
+    const rows = [
       { content: 'a', importance: 'minor', addedAt: 'ts1' },
       { content: 'b', importance: 'major', addedAt: 'ts2' },
-    ]);
-    expect(formatExperienceEntries(log)).toEqual([
+    ];
+    expect(formatExperienceEntries(rows)).toEqual([
       { content: 'a', source: 'campaign_current' },
       { content: 'b', source: 'campaign_current' },
     ]);
   });
 
   it('keeps the NEWEST entries when over cap', () => {
-    // Cap = 8 by default; add 10 entries, check tail of last 8.
-    const log = JSON.stringify(
-      Array.from({ length: 10 }, (_, i) => ({ content: `m${i}`, importance: 'minor' })),
-    );
-    const result = formatExperienceEntries(log);
+    const rows = Array.from({ length: 10 }, (_, i) => ({ content: `m${i}`, importance: 'minor' }));
+    const result = formatExperienceEntries(rows);
     expect(result).toHaveLength(8);
     expect(result.map((e) => e.content)).toEqual([
       'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9',
@@ -180,79 +153,76 @@ describe('formatExperienceEntries', () => {
   });
 
   it('respects custom cap', () => {
-    const log = JSON.stringify([
-      { content: 'a' }, { content: 'b' }, { content: 'c' },
-    ]);
-    expect(formatExperienceEntries(log, 2)).toEqual([
+    const rows = [{ content: 'a' }, { content: 'b' }, { content: 'c' }];
+    expect(formatExperienceEntries(rows, 2)).toEqual([
       { content: 'b', source: 'campaign_current' },
       { content: 'c', source: 'campaign_current' },
     ]);
   });
 
   it('filters missing / blank content', () => {
-    const log = JSON.stringify([
+    const rows = [
       { content: 'keep' },
       { content: '' },
       { content: '   ' },
       null,
       {},
-    ]);
-    expect(formatExperienceEntries(log)).toEqual([
+    ];
+    expect(formatExperienceEntries(rows)).toEqual([
       { content: 'keep', source: 'campaign_current' },
     ]);
   });
 
-  // Stage 2a.1 — importance-aware merge.
   describe('Stage 2a.1 — importance-aware selection', () => {
     it('keeps a single major entry over a flood of newer minor entries', () => {
-      const log = JSON.stringify([
+      const rows = [
         { content: 'PIVOTAL', importance: 'major', addedAt: '2026-04-01T00:00:00Z' },
         ...Array.from({ length: 10 }, (_, i) => ({
           content: `trivia${i}`,
           importance: 'minor',
           addedAt: `2026-04-02T00:${String(i).padStart(2, '0')}:00Z`,
         })),
-      ]);
-      const result = formatExperienceEntries(log);
+      ];
+      const result = formatExperienceEntries(rows);
       expect(result).toHaveLength(8);
       expect(result.map((e) => e.content)).toContain('PIVOTAL');
     });
 
     it('within same importance tier, newer wins', () => {
-      const log = JSON.stringify([
+      const rows = [
         { content: 'old_minor', importance: 'minor', addedAt: '2026-04-01T00:00:00Z' },
         ...Array.from({ length: 8 }, (_, i) => ({
           content: `new_minor_${i}`,
           importance: 'minor',
           addedAt: `2026-04-02T${String(i).padStart(2, '0')}:00:00Z`,
         })),
-      ]);
-      const result = formatExperienceEntries(log);
+      ];
+      const result = formatExperienceEntries(rows);
       expect(result).toHaveLength(8);
       expect(result.map((e) => e.content)).not.toContain('old_minor');
     });
 
     it('treats missing importance as lowest rank (dropped first)', () => {
-      const log = JSON.stringify([
+      const rows = [
         ...Array.from({ length: 8 }, (_, i) => ({
           content: `minor${i}`,
           importance: 'minor',
           addedAt: `2026-04-01T${String(i).padStart(2, '0')}:00:00Z`,
         })),
         { content: 'no_importance_field', addedAt: '2026-04-02T00:00:00Z' },
-      ]);
-      const result = formatExperienceEntries(log);
+      ];
+      const result = formatExperienceEntries(rows);
       expect(result).toHaveLength(8);
       expect(result.map((e) => e.content)).not.toContain('no_importance_field');
     });
 
     it('renders surviving entries in chronological (append) order, not importance order', () => {
-      const log = JSON.stringify([
+      const rows = [
         { content: 'first_minor', importance: 'minor', addedAt: '2026-04-01T00:00:00Z' },
         { content: 'mid_major',   importance: 'major', addedAt: '2026-04-02T00:00:00Z' },
         { content: 'last_minor',  importance: 'minor', addedAt: '2026-04-03T00:00:00Z' },
-      ]);
-      const result = formatExperienceEntries(log);
+      ];
+      const result = formatExperienceEntries(rows);
       expect(result.map((e) => e.content)).toEqual(['first_minor', 'mid_major', 'last_minor']);
     });
   });

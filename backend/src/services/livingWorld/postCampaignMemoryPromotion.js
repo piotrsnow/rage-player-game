@@ -1,24 +1,25 @@
 // Round E — NPC memory Stage 2b.
 //
-// Cross-campaign promotion of `CampaignNPC.experienceLog` entries to the
-// linked `WorldNPC.knowledgeBase`. Runs as part of the post-campaign
-// write-back after Phase 12b promotion candidates so newly admin-linked
-// NPCs (worldNpcId set at approve time) can also carry their lived memory
-// forward — though the typical case is canonical WorldNPCs that were
-// seeded + shadowed via `getOrCloneCampaignNpc`.
+// Cross-campaign promotion of `CampaignNpcExperience` entries to the linked
+// `WorldNpcKnowledge` rows. Runs as part of the post-campaign write-back
+// after Phase 12b promotion candidates so newly admin-linked NPCs (worldNpcId
+// set at approve time) can also carry their lived memory forward — though
+// the typical case is canonical WorldNPCs that were seeded + shadowed via
+// `getOrCloneCampaignNpc`.
 //
 // Policy (conservative):
 //   - Only `importance: 'major'` entries are promoted. Minor memories stay
 //     campaign-local. Cross-campaign memory is for narratively load-bearing
 //     events, not small talk.
-//   - Idempotent via SOURCE-TAG replace: before appending, drop any existing
-//     knowledgeBase entries with `source === 'campaign:<campaignId>'`. Re-running
-//     the pipeline replaces the slice for this campaign with the current
-//     experienceLog state — no duplication, no leftover-from-last-run drift.
-//   - FIFO-capped at `NPC_KNOWLEDGE_CAP=50` (same cap used by Phase 12
-//     `appendKnowledgeEntry`). When a canonical NPC's cross-campaign history
-//     inflates past 15 entries, Stage 3 RAG recall takes over at read time —
-//     we keep the full history in storage, not just a newest-N window.
+//   - Idempotent via SOURCE-TAG replace: before appending, DELETE existing
+//     `WorldNpcKnowledge` rows with `source = 'campaign:<campaignId>'`.
+//     Re-running the pipeline replaces the slice for this campaign with the
+//     current experienceLog state — no duplication, no leftover-from-last-run
+//     drift.
+//   - FIFO cap (50 per npc) is enforced by the AFTER-INSERT trigger, not in
+//     app code. When a canonical NPC's cross-campaign history inflates past
+//     15 entries, Stage 3 RAG recall takes over at read time — we keep the
+//     full history in storage, not just a newest-N window.
 //
 // Non-throwing: per-NPC failures log + skip, pipeline returns a summary.
 
@@ -29,64 +30,34 @@ import { memoryEntityId } from '../sceneGenerator/processStateChanges/npcMemoryU
 
 const log = childLogger({ module: 'postCampaignMemoryPromotion' });
 
-const NPC_KNOWLEDGE_CAP = 50;
 const DEFAULT_IMPORTANCE_FILTER = ['major'];
 
 /**
- * Pure — parse an `experienceLog` JSON string into entries, filter by
- * importance, shape into WorldNPC.knowledgeBase entry format. Returns
- * `[{content, source, importance, addedAt}]`. Invalid JSON → [].
+ * Pure — filter raw experience rows by importance + project to the WorldNpcKnowledge
+ * INSERT shape. Drops entries with empty content. Source tag is keyed by campaignId
+ * so re-runs can DELETE-replace this slice idempotently.
  */
-export function buildPromotableEntries(experienceLogRaw, campaignId, { importanceFilter = DEFAULT_IMPORTANCE_FILTER } = {}) {
-  let parsed = [];
-  if (typeof experienceLogRaw === 'string' && experienceLogRaw) {
-    try {
-      const j = JSON.parse(experienceLogRaw);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — treat as empty */ }
-  } else if (Array.isArray(experienceLogRaw)) {
-    parsed = experienceLogRaw;
-  }
+export function buildPromotableEntries(experienceRows, campaignId, { importanceFilter = DEFAULT_IMPORTANCE_FILTER } = {}) {
+  if (!Array.isArray(experienceRows)) return [];
   const source = `campaign:${campaignId || 'unknown'}`;
   const allow = Array.isArray(importanceFilter) && importanceFilter.length > 0
     ? new Set(importanceFilter)
     : null;
-  return parsed
+  return experienceRows
     .filter((e) => e && typeof e.content === 'string' && e.content.trim())
     .filter((e) => !allow || allow.has(e.importance))
     .map((e) => ({
       content: e.content,
       source,
+      kind: 'campaign_memory',
       importance: e.importance || 'minor',
-      addedAt: e.addedAt || new Date().toISOString(),
+      addedAt: e.addedAt instanceof Date ? e.addedAt : new Date(e.addedAt || Date.now()),
     }));
 }
 
 /**
- * Pure — merge new cross-campaign entries into an existing knowledgeBase
- * (JSONB array or legacy JSON string), replacing any prior entries tagged
- * with the same campaign source. FIFO-cap on total length. Returns a plain
- * array ready to write into a JSONB column.
- */
-export function mergeKnowledgeBaseForCampaign(rawKnowledgeBase, campaignEntries, campaignId, { cap = NPC_KNOWLEDGE_CAP } = {}) {
-  let parsed = [];
-  if (Array.isArray(rawKnowledgeBase)) {
-    parsed = rawKnowledgeBase;
-  } else if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
-    try {
-      const j = JSON.parse(rawKnowledgeBase);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — rebuild */ }
-  }
-  const sourceTag = `campaign:${campaignId || 'unknown'}`;
-  const preserved = parsed.filter((e) => e && e.source !== sourceTag);
-  const merged = [...preserved, ...(Array.isArray(campaignEntries) ? campaignEntries : [])];
-  return merged.length > cap ? merged.slice(merged.length - cap) : merged;
-}
-
-/**
  * I/O — promote major experienceLog entries from every CampaignNPC in a
- * campaign with `worldNpcId` set into the linked WorldNPC.knowledgeBase.
+ * campaign with `worldNpcId` set into the linked WorldNpcKnowledge rows.
  * Returns `{ promoted: [{worldNpcId, entryCount}], skipped: [{reason, ...}] }`.
  * `dryRun=true` collects without writes.
  */
@@ -99,7 +70,14 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
   try {
     shadows = await prisma.campaignNPC.findMany({
       where: { campaignId, worldNpcId: { not: null } },
-      select: { id: true, worldNpcId: true, experienceLog: true },
+      select: {
+        id: true,
+        worldNpcId: true,
+        experiences: {
+          orderBy: { addedAt: 'asc' },
+          select: { content: true, importance: true, addedAt: true },
+        },
+      },
     });
   } catch (err) {
     log.warn({ err: err?.message, campaignId }, 'promoteExperienceLogsToCanonical: shadow load failed');
@@ -108,8 +86,10 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
 
   if (shadows.length === 0) return { promoted, skipped };
 
+  const sourceTag = `campaign:${campaignId}`;
+
   for (const shadow of shadows) {
-    const entries = buildPromotableEntries(shadow.experienceLog, campaignId, { importanceFilter });
+    const entries = buildPromotableEntries(shadow.experiences, campaignId, { importanceFilter });
     if (entries.length === 0) {
       skipped.push({ worldNpcId: shadow.worldNpcId, reason: 'no_promotable_entries' });
       continue;
@@ -122,24 +102,36 @@ export async function promoteExperienceLogsToCanonical(campaignId, { dryRun = fa
     try {
       const canonical = await prisma.worldNPC.findUnique({
         where: { id: shadow.worldNpcId },
-        select: { id: true, knowledgeBase: true },
+        select: { id: true },
       });
       if (!canonical) {
         skipped.push({ worldNpcId: shadow.worldNpcId, reason: 'world_npc_not_found' });
         continue;
       }
-      const nextKnowledgeBase = mergeKnowledgeBaseForCampaign(
-        canonical.knowledgeBase, entries, campaignId,
-      );
-      await prisma.worldNPC.update({
-        where: { id: canonical.id },
-        data: { knowledgeBase: nextKnowledgeBase },
+
+      // Idempotent replace: drop prior promotions from this campaign before inserting fresh.
+      await prisma.worldNpcKnowledge.deleteMany({
+        where: { npcId: canonical.id, source: sourceTag },
       });
+      await prisma.worldNpcKnowledge.createMany({
+        data: entries.map((e) => ({
+          npcId: canonical.id,
+          content: e.content,
+          source: e.source,
+          kind: e.kind,
+          importance: e.importance,
+          addedAt: e.addedAt,
+        })),
+      });
+
       // Stage 3 wiring — fire-and-forget index each promoted entry so the
       // cross-campaign knowledge pool is searchable alongside in-campaign
       // experience. Stable id scheme: `wknw:<worldNpcId>:<addedAt>`.
       for (const entry of entries) {
-        const eid = memoryEntityId('wknw', canonical.id, entry);
+        const eid = memoryEntityId('wknw', canonical.id, {
+          ...entry,
+          addedAt: entry.addedAt instanceof Date ? entry.addedAt.toISOString() : entry.addedAt,
+        });
         if (!eid) continue;
         ragService.index('npc_memory', eid, entry.content)
           .catch(() => { /* non-fatal */ });

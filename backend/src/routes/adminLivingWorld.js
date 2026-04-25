@@ -94,7 +94,7 @@ export async function adminLivingWorldRoutes(fastify) {
     const { id } = request.params;
     const npc = await prisma.worldNPC.findUnique({ where: { id } });
     if (!npc) return reply.code(404).send({ error: 'Not found' });
-    const [events, attributions] = await Promise.all([
+    const [events, attributions, knowledgeBase, dialogHistory] = await Promise.all([
       prisma.worldEvent.findMany({
         where: { worldNpcId: id },
         orderBy: { createdAt: 'desc' },
@@ -105,14 +105,24 @@ export async function adminLivingWorldRoutes(fastify) {
         orderBy: { createdAt: 'desc' },
         take: 50,
       }),
+      prisma.worldNpcKnowledge.findMany({
+        where: { npcId: id },
+        orderBy: { addedAt: 'desc' },
+        take: 50,
+      }),
+      prisma.worldNpcDialogTurn.findMany({
+        where: { npcId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
     ]);
     return {
       npc,
       events,
       attributions,
       goalProgress: npc.goalProgress ? safeJson(npc.goalProgress) : null,
-      dialogHistory: safeJson(npc.dialogHistory),
-      knowledgeBase: safeJson(npc.knowledgeBase),
+      dialogHistory,
+      knowledgeBase,
       pauseSnapshot: npc.pauseSnapshot ? safeJson(npc.pauseSnapshot) : null,
       lockedSnapshot: npc.lockedSnapshot ? safeJson(npc.lockedSnapshot) : null,
     };

@@ -1,14 +1,14 @@
 // Living World Phase 4 — DM agent memory store.
 //
-// Each living-world campaign has one CampaignDmAgent row with two rolling
-// lists:
-//   - dmMemory       — short log of what the DM planned / introduced / is
-//                      waiting to resolve. Injected into system prompt so
-//                      premium stays coherent across scenes.
-//   - pendingHooks   — quest ideas / intrigue seeds the DM wants to weave
-//                      in when timing is right (not yet delivered to player).
+// Each living-world campaign has one CampaignDmAgent row plus two child
+// tables holding rolling lists:
+//   - CampaignDmMemoryEntry — short log of what the DM planned/introduced/
+//                             is waiting to resolve. Cap 20 via FIFO trigger.
+//   - CampaignDmPendingHook — quest ideas/intrigue seeds the DM keeps in
+//                             reserve. Cap 12 via FIFO trigger.
 //
-// Entries are capped — oldest dropped to keep prompt size bounded.
+// Caps are enforced in Postgres (AFTER INSERT triggers in the F2 migration);
+// app code only handles dedup-by-summary and upsert-by-id semantics.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
@@ -19,66 +19,60 @@ export const DM_MEMORY_CAP = 20;
 export const PENDING_HOOKS_CAP = 12;
 
 /**
- * Pure helper — clamp a rolling list to the cap, keeping newest entries.
- * Exported for testability.
+ * Pure — given the set of summaries already persisted, return the subset of
+ * `additions` that would be net-new INSERTs (case-insensitive dedup, drops
+ * blanks). Order preserved. Exported for testability.
  */
-export function clampList(list, cap) {
-  if (!Array.isArray(list)) return [];
-  if (list.length <= cap) return list;
-  return list.slice(list.length - cap);
-}
-
-/**
- * Pure helper — merge newly-emitted memory entries into existing dmMemory.
- * Dedupes by `summary` text (case-insensitive) so the same plan isn't
- * re-logged every scene. Exported for testability.
- */
-export function mergeMemoryEntries(existing, additions) {
-  const base = Array.isArray(existing) ? existing : [];
-  const add = Array.isArray(additions) ? additions : [];
-  const seen = new Set(base.map((e) => (e.summary || '').toLowerCase().trim()).filter(Boolean));
-  const merged = [...base];
-  for (const entry of add) {
+export function planMemoryInserts(existingSummaries, additions) {
+  const seen = new Set(
+    (Array.isArray(existingSummaries) ? existingSummaries : [])
+      .map((s) => (s || '').toLowerCase().trim())
+      .filter(Boolean),
+  );
+  const out = [];
+  for (const entry of Array.isArray(additions) ? additions : []) {
     const key = (entry?.summary || '').toLowerCase().trim();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    merged.push({
-      at: entry.at || new Date().toISOString(),
-      status: entry.status || 'planned',
+    out.push({
       summary: entry.summary,
+      status: entry.status || 'planned',
       plannedFor: entry.plannedFor || null,
     });
   }
-  return clampList(merged, DM_MEMORY_CAP);
+  return out;
 }
 
 /**
- * Pure helper — reconcile pendingHooks: add new, update status on existing
- * (matched by id), drop "delivered" older than 5 entries back.
+ * Pure — split incoming hook additions into create/update against the set of
+ * already-persisted hook ids. Returns `{ toCreate, toUpdate, toDelete }`
+ * shaped for prisma calls. Hooks without id/summary are dropped silently.
  */
-export function mergePendingHooks(existing, additions, resolvedIds = []) {
-  const base = Array.isArray(existing) ? existing : [];
-  const add = Array.isArray(additions) ? additions : [];
-  const resolved = new Set(resolvedIds);
+export function planHookMutations(existingHookIds, additions, resolvedHookIds = []) {
+  const existing = new Set(Array.isArray(existingHookIds) ? existingHookIds : []);
+  const resolved = new Set(Array.isArray(resolvedHookIds) ? resolvedHookIds : []);
+  const toCreate = [];
+  const toUpdate = [];
 
-  // Drop resolved hooks entirely
-  let next = base.filter((h) => !resolved.has(h.id));
-
-  // Upsert new hooks by id
-  const byId = new Map(next.map((h) => [h.id, h]));
-  for (const hook of add) {
+  for (const hook of Array.isArray(additions) ? additions : []) {
     if (!hook?.id || !hook?.summary) continue;
-    byId.set(hook.id, {
-      id: hook.id,
+    const data = {
       kind: hook.kind || 'generic',
       summary: hook.summary,
       idealTiming: hook.idealTiming || null,
       priority: hook.priority || 'normal',
-      createdAt: byId.has(hook.id) ? byId.get(hook.id).createdAt : new Date().toISOString(),
-    });
+    };
+    if (existing.has(hook.id)) {
+      toUpdate.push({ id: hook.id, ...data });
+    } else {
+      toCreate.push({ id: hook.id, ...data });
+    }
   }
-  next = Array.from(byId.values());
-  return clampList(next, PENDING_HOOKS_CAP);
+  return {
+    toCreate,
+    toUpdate,
+    toDelete: [...resolved].filter((id) => existing.has(id)),
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -86,15 +80,16 @@ export function mergePendingHooks(existing, additions, resolvedIds = []) {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Fetch the DM agent row for a campaign, creating an empty one if absent.
+ * Ensure a CampaignDmAgent row exists for the campaign (FK target for the
+ * memory + hook child tables). Returns the row, or null on failure.
  */
 export async function getOrCreateDmAgent(campaignId) {
   if (!campaignId) return null;
   try {
-    const existing = await prisma.campaignDmAgent.findUnique({ where: { campaignId } });
-    if (existing) return existing;
-    return await prisma.campaignDmAgent.create({
-      data: { campaignId, dmMemory: [], pendingHooks: [] },
+    return await prisma.campaignDmAgent.upsert({
+      where: { campaignId },
+      create: { campaignId },
+      update: {},
     });
   } catch (err) {
     log.warn({ err, campaignId }, 'getOrCreateDmAgent failed');
@@ -103,10 +98,9 @@ export async function getOrCreateDmAgent(campaignId) {
 }
 
 /**
- * Apply a DM summary update — merges new memory entries + pendingHooks
- * + drops resolved hooks. Idempotent via dedupe in mergeMemoryEntries.
- *
- * @returns updated CampaignDmAgent row or null on failure
+ * Apply a DM summary update — INSERTs deduped memory entries, upserts new
+ * hooks by id, deletes resolved hooks. Caps are enforced by FIFO triggers
+ * (no JS clamping needed). Returns the touched agent row, or null on failure.
  */
 export async function updateDmAgent(
   campaignId,
@@ -114,22 +108,54 @@ export async function updateDmAgent(
 ) {
   if (!campaignId) return null;
   try {
-    const row = await getOrCreateDmAgent(campaignId);
-    if (!row) return null;
+    const agent = await getOrCreateDmAgent(campaignId);
+    if (!agent) return null;
 
-    const dmMemory = Array.isArray(row.dmMemory) ? row.dmMemory : [];
-    const pendingHooks = Array.isArray(row.pendingHooks) ? row.pendingHooks : [];
+    if (memoryEntries.length > 0) {
+      const existing = await prisma.campaignDmMemoryEntry.findMany({
+        where: { campaignId },
+        select: { summary: true },
+      });
+      const toInsert = planMemoryInserts(existing.map((r) => r.summary), memoryEntries);
+      if (toInsert.length > 0) {
+        await prisma.campaignDmMemoryEntry.createMany({
+          data: toInsert.map((e) => ({ campaignId, ...e })),
+        });
+      }
+    }
 
-    const nextMemory = mergeMemoryEntries(dmMemory, memoryEntries);
-    const nextHooks = mergePendingHooks(pendingHooks, hookAdditions, resolvedHookIds);
+    if (hookAdditions.length > 0 || resolvedHookIds.length > 0) {
+      const existingHooks = await prisma.campaignDmPendingHook.findMany({
+        where: { campaignId },
+        select: { id: true },
+      });
+      const plan = planHookMutations(
+        existingHooks.map((h) => h.id),
+        hookAdditions,
+        resolvedHookIds,
+      );
+
+      if (plan.toDelete.length > 0) {
+        await prisma.campaignDmPendingHook.deleteMany({
+          where: { campaignId, id: { in: plan.toDelete } },
+        });
+      }
+      if (plan.toCreate.length > 0) {
+        await prisma.campaignDmPendingHook.createMany({
+          data: plan.toCreate.map((h) => ({ campaignId, ...h })),
+        });
+      }
+      for (const h of plan.toUpdate) {
+        await prisma.campaignDmPendingHook.update({
+          where: { id: h.id },
+          data: { kind: h.kind, summary: h.summary, idealTiming: h.idealTiming, priority: h.priority },
+        });
+      }
+    }
 
     return await prisma.campaignDmAgent.update({
-      where: { campaignId: row.campaignId },
-      data: {
-        dmMemory: nextMemory,
-        pendingHooks: nextHooks,
-        lastUpdatedAt: new Date(),
-      },
+      where: { campaignId },
+      data: { lastUpdatedAt: new Date() },
     });
   } catch (err) {
     log.warn({ err, campaignId }, 'updateDmAgent failed');
@@ -138,17 +164,42 @@ export async function updateDmAgent(
 }
 
 /**
- * Read DM agent row + parse JSON fields for consumption by system prompt.
- * Returns `{ dmMemory: [], pendingHooks: [] }` when there is no row yet.
+ * Read DM agent rolling state for prompt injection. Returns
+ * `{ dmMemory: [], pendingHooks: [] }` (chronological asc) — empty arrays
+ * when no agent or DB error.
  */
 export async function readDmAgentState(campaignId) {
   if (!campaignId) return { dmMemory: [], pendingHooks: [] };
   try {
-    const row = await prisma.campaignDmAgent.findUnique({ where: { campaignId } });
-    if (!row) return { dmMemory: [], pendingHooks: [] };
+    const [memoryRows, hookRows] = await Promise.all([
+      prisma.campaignDmMemoryEntry.findMany({
+        where: { campaignId },
+        orderBy: { at: 'asc' },
+        take: DM_MEMORY_CAP,
+        select: { summary: true, status: true, plannedFor: true, at: true },
+      }),
+      prisma.campaignDmPendingHook.findMany({
+        where: { campaignId },
+        orderBy: { createdAt: 'asc' },
+        take: PENDING_HOOKS_CAP,
+        select: { id: true, kind: true, summary: true, idealTiming: true, priority: true, createdAt: true },
+      }),
+    ]);
     return {
-      dmMemory: Array.isArray(row.dmMemory) ? row.dmMemory : [],
-      pendingHooks: Array.isArray(row.pendingHooks) ? row.pendingHooks : [],
+      dmMemory: memoryRows.map((r) => ({
+        summary: r.summary,
+        status: r.status || 'planned',
+        plannedFor: r.plannedFor,
+        at: r.at?.toISOString?.() || null,
+      })),
+      pendingHooks: hookRows.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        summary: r.summary,
+        idealTiming: r.idealTiming,
+        priority: r.priority,
+        createdAt: r.createdAt?.toISOString?.() || null,
+      })),
     };
   } catch (err) {
     log.warn({ err, campaignId }, 'readDmAgentState failed');

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   npcNameToId,
-  appendMemoryEntries,
   toMemoryEntry,
   detectMirrorTargets,
   buildMirrorEntry,
@@ -36,41 +35,6 @@ describe('toMemoryEntry', () => {
     const now = new Date('2026-04-23T12:00:00Z');
     const entry = toMemoryEntry({ memory: 'lost faith', importance: 'major' }, { now });
     expect(entry.importance).toBe('major');
-  });
-});
-
-describe('appendMemoryEntries', () => {
-  const e = (content) => ({ content, importance: 'minor', addedAt: 'ts' });
-
-  it('appends to an existing log', () => {
-    const next = appendMemoryEntries([e('a')], [e('b')]);
-    expect(next.map((x) => x.content)).toEqual(['a', 'b']);
-  });
-
-  it('treats null/non-array existing log as empty', () => {
-    const next = appendMemoryEntries(null, [e('a')]);
-    expect(next).toEqual([e('a')]);
-  });
-
-  it('returns existing when no new entries', () => {
-    const log = [e('a')];
-    expect(appendMemoryEntries(log, [])).toEqual(log);
-  });
-
-  it('caps FIFO (oldest drops) when over maxEntries', () => {
-    const existing = [e('1'), e('2'), e('3'), e('4')];
-    const incoming = [e('5'), e('6')];
-    const next = appendMemoryEntries(existing, incoming, { maxEntries: 4 });
-    expect(next.map((x) => x.content)).toEqual(['3', '4', '5', '6']);
-  });
-
-  it('does not mutate input arrays', () => {
-    const existing = [e('a')];
-    const incoming = [e('b')];
-    const next = appendMemoryEntries(existing, incoming);
-    expect(existing).toEqual([e('a')]);
-    expect(incoming).toEqual([e('b')]);
-    expect(next).not.toBe(existing);
   });
 });
 

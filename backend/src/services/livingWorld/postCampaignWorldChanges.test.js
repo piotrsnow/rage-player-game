@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../lib/prisma.js', () => ({
   prisma: {
-    worldNPC: { findUnique: vi.fn(), update: vi.fn() },
-    worldLocation: { findUnique: vi.fn(), update: vi.fn() },
+    worldNPC: { findUnique: vi.fn() },
+    worldLocation: { findUnique: vi.fn() },
+    worldNpcKnowledge: { create: vi.fn() },
+    worldLocationKnowledge: { create: vi.fn() },
     pendingWorldStateChange: { upsert: vi.fn() },
   },
 }));
@@ -21,7 +23,6 @@ import {
   correlateWithShadowDiff,
   classifyConfidence,
   buildKnowledgeEntry,
-  appendKnowledgeEntry,
   computeIdempotencyKey,
   applyWorldStateChanges,
   applyLocationKnowledgeChange,
@@ -30,9 +31,11 @@ import {
 
 beforeEach(() => {
   prisma.worldNPC.findUnique.mockReset();
-  prisma.worldNPC.update.mockReset();
   prisma.worldLocation.findUnique.mockReset();
-  prisma.worldLocation.update.mockReset();
+  prisma.worldNpcKnowledge.create.mockReset();
+  prisma.worldNpcKnowledge.create.mockResolvedValue({});
+  prisma.worldLocationKnowledge.create.mockReset();
+  prisma.worldLocationKnowledge.create.mockResolvedValue({});
   prisma.pendingWorldStateChange.upsert.mockReset();
   prisma.pendingWorldStateChange.upsert.mockResolvedValue({});
 });
@@ -236,35 +239,6 @@ describe('buildKnowledgeEntry', () => {
   });
 });
 
-describe('appendKnowledgeEntry', () => {
-  const newEntry = { content: 'NEW', source: 'llm_extraction:c1' };
-
-  it('appends to an existing parsed array', () => {
-    const next = appendKnowledgeEntry([{ content: 'old', source: 'baseline' }], newEntry);
-    expect(next).toHaveLength(2);
-    expect(next[1]).toEqual(newEntry);
-  });
-
-  it('still tolerates a legacy JSON-string input', () => {
-    const next = appendKnowledgeEntry(JSON.stringify([{ content: 'old', source: 'baseline' }]), newEntry);
-    expect(next).toHaveLength(2);
-  });
-
-  it('starts fresh when input is null/empty/malformed', () => {
-    expect(appendKnowledgeEntry(null, newEntry)).toEqual([newEntry]);
-    expect(appendKnowledgeEntry('', newEntry)).toEqual([newEntry]);
-    expect(appendKnowledgeEntry('{malformed', newEntry)).toEqual([newEntry]);
-  });
-
-  it('caps FIFO when total exceeds cap', () => {
-    const many = Array.from({ length: 52 }, (_, i) => ({ content: `k${i}`, source: 'baseline' }));
-    const result = appendKnowledgeEntry(many, newEntry, { cap: 50 });
-    expect(result).toHaveLength(50);
-    expect(result[result.length - 1]).toEqual(newEntry);
-    expect(result[0].content).toBe('k3');
-  });
-});
-
 describe('applyWorldStateChanges', () => {
   const basePipeline = (change, resolved, tier, reason = 'x') => ({
     change, resolved, tier, reason,
@@ -356,18 +330,22 @@ describe('applyWorldStateChanges', () => {
     expect(result.pending).toHaveLength(0);
   });
 
-  it('HIGH tier writes to WorldNPC.knowledgeBase when not dryRun', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1', knowledgeBase: [] });
-    prisma.worldNPC.update.mockResolvedValue({});
+  it('HIGH tier inserts into WorldNpcKnowledge when not dryRun', async () => {
+    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1' });
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
       campaignId: 'c1',
     });
-    expect(prisma.worldNPC.update).toHaveBeenCalledTimes(1);
+    expect(prisma.worldNpcKnowledge.create).toHaveBeenCalledTimes(1);
     expect(result.appliedKnowledge).toHaveLength(1);
-    const writtenData = prisma.worldNPC.update.mock.calls[0][0].data;
-    expect(writtenData.knowledgeBase[0].source).toBe('llm_extraction:c1');
+    const writtenData = prisma.worldNpcKnowledge.create.mock.calls[0][0].data;
+    expect(writtenData).toMatchObject({
+      npcId: 'w1',
+      source: 'llm_extraction:c1',
+      kind: 'npcDeath',
+    });
+    expect(writtenData.content).toContain('zginął pod bramą');
   });
 
   it('skips HIGH write when WorldNPC row no longer exists', async () => {
@@ -382,8 +360,8 @@ describe('applyWorldStateChanges', () => {
   });
 
   it('write failure lands in skipped with write_failed reason', async () => {
-    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1', knowledgeBase: '[]' });
-    prisma.worldNPC.update.mockRejectedValue(new Error('db down'));
+    prisma.worldNPC.findUnique.mockResolvedValue({ id: 'w1' });
+    prisma.worldNpcKnowledge.create.mockRejectedValue(new Error('db down'));
     const resolved = { entityId: 'w1', entityType: 'npc', similarity: 0.9 };
     const result = await applyWorldStateChanges({
       classifications: [basePipeline(npcDeathChange, resolved, 'high')],
@@ -477,9 +455,8 @@ describe('computeIdempotencyKey (Phase 12 closeout)', () => {
 });
 
 describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
-  it('appends to WorldLocation.knowledgeBase on happy path', async () => {
-    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1', knowledgeBase: '[]' });
-    prisma.worldLocation.update.mockResolvedValue({});
+  it('inserts into WorldLocationKnowledge on happy path', async () => {
+    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1' });
 
     const resolved = { entityId: 'loc1', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({
@@ -487,13 +464,14 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(prisma.worldLocation.update).toHaveBeenCalledTimes(1);
-    const data = prisma.worldLocation.update.mock.calls[0][0].data;
-    expect(data.knowledgeBase[0]).toMatchObject({
-      content: expect.stringContaining('spalony przez bandytów'),
+    expect(prisma.worldLocationKnowledge.create).toHaveBeenCalledTimes(1);
+    const data = prisma.worldLocationKnowledge.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      locationId: 'loc1',
       source: 'llm_extraction:c1',
       kind: 'locationBurned',
     });
+    expect(data.content).toContain('spalony przez bandytów');
   });
 
   it('rejects non-location resolved shapes', async () => {
@@ -514,9 +492,9 @@ describe('applyLocationKnowledgeChange (Phase 12 closeout)', () => {
     expect(result).toEqual({ ok: false, reason: 'world_location_not_found' });
   });
 
-  it('returns reason=write_failed when update throws', async () => {
-    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1', knowledgeBase: '[]' });
-    prisma.worldLocation.update.mockRejectedValue(new Error('db down'));
+  it('returns reason=write_failed when create throws', async () => {
+    prisma.worldLocation.findUnique.mockResolvedValue({ id: 'loc1' });
+    prisma.worldLocationKnowledge.create.mockRejectedValue(new Error('db down'));
     const resolved = { entityId: 'loc1', entityType: 'location', similarity: 0.9 };
     const result = await applyLocationKnowledgeChange({
       change: locBurnedChange, resolved, campaignId: 'c1',

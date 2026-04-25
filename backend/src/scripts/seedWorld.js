@@ -907,25 +907,7 @@ async function upsertWildLocation(loc) {
 async function upsertNpc(npc, locationId) {
   const knownLocationIds = Array.isArray(npc.knownLocationIds) ? npc.knownLocationIds : [];
 
-  // Stage 1 — hand-authored baseline knowledge seeded into `WorldNPC.knowledgeBase`.
-  // Shape: [{ content, source: 'baseline' }]. Stage 2 (Phase 11 lived experience)
-  // will append entries with `source: 'campaign:{id}'` post-campaign.
-  const baselineEntries = Array.isArray(npc.baselineKnowledge)
-    ? npc.baselineKnowledge.map((content) => ({ content, source: 'baseline' }))
-    : [];
-
-  // Merge-preserving update: on reseed we REPLACE the baseline slice only.
-  // Entries with any other `source` (future lived experience from Phase 11)
-  // are preserved so seed reboot doesn't wipe campaign-promoted memories.
-  const existing = await prisma.worldNPC.findUnique({
-    where: { canonicalId: npc.canonicalId },
-    select: { knowledgeBase: true },
-  });
-  const existingArr = Array.isArray(existing?.knowledgeBase) ? existing.knowledgeBase : [];
-  const preservedEntries = existingArr.filter((e) => e && e.source && e.source !== 'baseline');
-  const knowledgeBase = [...baselineEntries, ...preservedEntries];
-
-  return prisma.worldNPC.upsert({
+  const row = await prisma.worldNPC.upsert({
     where: { canonicalId: npc.canonicalId },
     update: {
       name: npc.name,
@@ -938,7 +920,6 @@ async function upsertNpc(npc, locationId) {
       alive: true,
       category: npc.category || 'commoner',
       knownLocationIds,
-      knowledgeBase,
     },
     create: {
       canonicalId: npc.canonicalId,
@@ -952,9 +933,29 @@ async function upsertNpc(npc, locationId) {
       alive: true,
       category: npc.category || 'commoner',
       knownLocationIds,
-      knowledgeBase,
     },
   });
+
+  // Stage 1 — hand-authored baseline knowledge seeded into WorldNpcKnowledge.
+  // On re-seed, REPLACE the baseline slice only. Entries with any other
+  // `source` (lived experience from campaigns) are preserved so seed reboot
+  // doesn't wipe campaign-promoted memories. FIFO trigger caps at 50 per npc.
+  await prisma.worldNpcKnowledge.deleteMany({
+    where: { npcId: row.id, source: 'baseline' },
+  });
+  const baselineContents = Array.isArray(npc.baselineKnowledge) ? npc.baselineKnowledge : [];
+  if (baselineContents.length > 0) {
+    await prisma.worldNpcKnowledge.createMany({
+      data: baselineContents.map((content) => ({
+        npcId: row.id,
+        content,
+        source: 'baseline',
+        kind: 'baseline',
+      })),
+    });
+  }
+
+  return row;
 }
 
 async function upsertMainLoreSection() {

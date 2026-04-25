@@ -5,10 +5,11 @@
 | Faza | Status | Notatka |
 |---|---|---|
 | **F1** | ✅ **Zrobione** | Engine swap + JSONB cleanup + transakcje + Postgres dev stack. Zobacz [F1 retrospektywa](#f1-retrospektywa). |
-| **F2** | ⏭️ Następna | Write-path scaling — child tables + FIFO triggery + bulk upsert. **Zacząć od tego w kolejnej sesji.** |
-| F3-F6 | Pending | Bez zmian planu. |
+| **F2** | ✅ **Zrobione** | 6 child tables + FIFO triggery + bulk upsert (3 sync funkcje). Zobacz [F2 retrospektywa](#f2-retrospektywa). |
+| **F3** | ⏭️ Następna | Reference normalization — join tables zamiast `Json[]` of foreign IDs. |
+| F4-F6 | Pending | Bez zmian planu. |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywę F1 (znane długi techniczne), potem skocz do [F2 — Write-path scaling](#f2--write-path-scaling) i poproś o plan startowy.
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2 (znane długi techniczne), potem skocz do [F3 — Reference normalization](#f3--reference-normalization) i poproś o plan startowy.
 
 ## Context
 
@@ -1245,6 +1246,75 @@ psql -c "SELECT count(*) FROM \"WorldNpcKnowledge\" WHERE npcId = '<npc-uuid>';"
 | FIFO trigger kasuje recent gdy clock-skew na addedAt | Test seeded data; addedAt = `default(now())`, monotonic |
 | Bulk UNNEST z dynamic kolumnami trudne w utrzymaniu | Fallback `createMany`+`updateMany`; raw SQL tylko tam gdzie measurable QPS savings |
 | Stage 3 NPC memory cosine search wymaga child table indexed by entityType | `WorldEntityEmbedding` już indeksuje — tylko zmiana sourcing w `npcBaseline.js` |
+
+# F2 retrospektywa
+
+**Zakres:** 5 sub-tasków (F2.1–F2.5) shipped. 1155 unit testów ✅, 103 testy F2 (4 plików) ✅, `prisma validate` ✅, `npm run build` ✅, FIFO trigger live-verified (60→50 + 25→20).
+
+## Zmiany vs plan
+
+| Plan | Co faktycznie wyszło |
+|---|---|
+| `WorldNpcDialogTurn.gameTime DateTime` non-null | DROP — `npcDialog.js` zapisuje `at: new Date().toISOString()` (wall-clock = `createdAt`). Dodany `emote String?` (plan pominął, kod używa). |
+| `CampaignDmPendingHook.priority Int` | `String @default("normal")` — dmMemoryService używa stringów `'normal'\|'high'\|'low'`. |
+| Trigger pendingHooks `ORDER BY priority ASC` | Standard FIFO `ORDER BY createdAt DESC` — plan kasowałby najwyższe priorytety, niezgodnie z `clampList` semantyką. |
+| `WorldNpcKnowledge` schema z planu | + dodane `importance String?` — postCampaignMemoryPromotion + npcBaseline filter by importance. Bez tego field readery nie mają sygnału. |
+| Bulk UNNEST raw SQL | Prisma-native (`findMany` → split → `createMany` + per-row update). Dla 100 DAU 1+1+N queries vs 2N teraz wystarczy z marginesem. UNNEST odłożony do F6 jeśli profile pokaże hot spot. |
+| F2 plik wymienia `processNpcChanges` (npcs.js) | Świadomie pominięty — funkcja jest embedding-bound (HTTP call per NPC) a nie DB-bound; refactor by dał ~2 query oszczędności na N=5. Niewarte. |
+
+## Pure helpers — co wycięte / co zostało
+
+**Wycięte** (cap przeszedł do triggerów, dedup/upsert do prisma):
+- `clampList`, `mergeMemoryEntries`, `mergePendingHooks` w `dmMemoryService.js`
+- `appendMemoryEntries` w `npcMemoryUpdates.js`
+- `appendKnowledgeEntry` w `postCampaignWorldChanges.js`
+- `mergeKnowledgeBaseForCampaign` w `postCampaignMemoryPromotion.js`
+
+**Dodane** (testowalne plan-buildery):
+- `planMemoryInserts(existingSummaries, additions)` w dmMemoryService — dedup-only
+- `planHookMutations(existingHookIds, additions, resolvedIds)` — split na `{toCreate, toUpdate, toDelete}`
+
+**Zmienione kontrakty** (string-input dropped, Array-input only):
+- `formatBaselineEntries`, `formatCrossCampaignEntries`, `parseExperienceEntries`, `formatExperienceEntries` w npcBaseline — przyjmują typed rows z `findMany`, nie raw JSONB strings.
+- `buildPromotableEntries` w postCampaignMemoryPromotion — to samo.
+
+## Bug naprawiony przy okazji
+
+`npcDialog.js` system prompt iterował po `k.topic` ale entries zawsze były `{content, source, ...}` (kwestia od ery Mongo). Naprawione na `k.content`.
+
+## Pliki dotknięte (top-level)
+
+- **Schema:** `backend/prisma/schema.prisma` (6 nowych modeli, 6 dropped JSONB pól, reverse relations).
+- **Migracja:** `backend/prisma/migrations/20260425150505_child_tables_fifo/migration.sql` (auto-gen + 6 plpgsql trigger functions ręcznie).
+- **Writers (F2.2):** `livingWorld/{npcDialog,dmMemoryService,postCampaignWorldChanges,postCampaignMemoryPromotion}.js`, `sceneGenerator/processStateChanges/npcMemoryUpdates.js`, `scripts/seedWorld.js`.
+- **Readers (F2.3):** `aiContextTools/contextBuilders/npcBaseline.js`, `routes/adminLivingWorld.js` (admin NPC dump). `livingWorld.js` contextBuilder + `dmMemoryUpdater.js` przesz przez nowe `readDmAgentState` API bez zmian.
+- **Bulk upsert (F2.4):** `services/campaignSync.js` (3 funkcje: `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized`).
+- **Tests:** 4 pliki przepisane (`dmMemoryService.test.js`, `npcMemoryUpdates.test.js`, `npcBaseline.test.js`, `postCampaignWorldChanges.test.js`) — drop legacy pure helpers, mockuj nowe child-table prisma.
+
+## Znane długi z F2
+
+1. **Connection pool tuning odłożone** — plan F2 wymieniał `?connection_limit=10&pool_timeout=20` w `DATABASE_URL`. Pominąłem w tej sesji (każda Cloud Run instancja może chcieć innego limitu, ten config naprawdę należy do F6). DEV bez tego fine.
+2. **`processNpcChanges` w `npcs.js` zostawione bez bulk** — patrz wyżej, embedding-bound. Jeśli profile pokaże inaczej — patch.
+3. **`coreState.world.knowledgeBase` w campaignSerialize/campaignSync** — to NIE jest pole DB (in-memory JS shape), zostaje. F5 zniszczy `coreState` monolit.
+4. **Comment-rot:** parę plików ma docstringi typu "writes to WorldNPC.knowledgeBase" które już są niezgodne (writes to WorldNpcKnowledge). Nie blocking — naprawia się przy najbliższym dotyku.
+5. **`prisma migrate dev --create-only` non-interactive blokuje przy data-loss warnings** — workaround: `db:reset` + `migrate deploy` przed `migrate dev`. Pre-prod, brak konsekwencji. F6 prod migration musi mieć inny flow.
+
+## Verified manualnie
+
+- ✅ `prisma validate` po pełnej zmianie schemy.
+- ✅ `db:reset` → `migrate deploy` → wszystkie 3 migracje czysto applied na fresh DB.
+- ✅ Live FIFO trigger: 60 INSERT do `WorldNpcKnowledge` → 50 zostało; 25 INSERT do `CampaignNpcExperience` → 20 zostało.
+- ✅ Cascade delete: usunięcie `WorldNPC` row → `WorldNpcKnowledge` cascade-droppe (FK ON DELETE CASCADE).
+- ✅ All 6 trigger functions registered + 6 triggers active w `information_schema.triggers`.
+- ✅ `importance` column na `WorldNpcKnowledge` (text, nullable).
+- ✅ `npm test` 1155 unit testów pass; `npm run build` zielony.
+
+## Niezweryfikowane manualnie (do playtest)
+
+- E2E save → load → save campaign'a (czy bulk upsert reconstructs OK po pełnym cyklu).
+- Cross-campaign Stage 2b (post-campaign experienceLog → WorldNpcKnowledge promotion) — kod gotowy, nie strzelano live.
+- Multiplayer save/restore — F2 nie tknęło multiplayer state, ale warto sprawdzić.
+- Admin Living World NPC view (`adminLivingWorld.js` zmienione — admin UI dump powinien teraz pokazywać `dialogHistory` + `knowledgeBase` jako rows z child tables).
 
 ---
 

@@ -16,8 +16,8 @@ import { listDeferred, appendDeferred } from './deferredOutbox.js';
 
 const log = childLogger({ module: 'npcDialog' });
 
-const HISTORY_CAP = 50; // rolling buffer per (npc, campaign)
-const HISTORY_CONTEXT = 10; // injected into system prompt
+const HISTORY_CONTEXT = 10; // injected into system prompt (DB cap=50 via FIFO trigger)
+const KNOWLEDGE_CONTEXT = 50;
 const RECENT_EVENT_CONTEXT = 20;
 const STANDARD_TIMEOUT_MS = 8000;
 
@@ -56,13 +56,13 @@ export async function generate({
     return fallbackReply('[NPC jest gdzieś indziej, w trasie z kimś innym]');
   }
 
-  const dialogHistory = parseDialogHistoryForCampaign(npc.dialogHistory, campaignId);
-  const knowledgeEntries = parseKnowledgeBase(npc.knowledgeBase);
-
-  // Recent events: prefer deferred (own trip) when companion, else campaign-tier events
-  const recentEvents = isCompanion
-    ? await listDeferred({ campaignId, worldNpcId })
-    : await forNpc({ worldNpcId, campaignId, limit: RECENT_EVENT_CONTEXT });
+  const [dialogHistory, knowledgeEntries, recentEvents] = await Promise.all([
+    loadRecentDialogTurns(worldNpcId, campaignId, HISTORY_CONTEXT),
+    loadKnowledgeEntries(worldNpcId, KNOWLEDGE_CONTEXT),
+    isCompanion
+      ? listDeferred({ campaignId, worldNpcId })
+      : forNpc({ worldNpcId, campaignId, limit: RECENT_EVENT_CONTEXT }),
+  ]);
 
   const systemPrompt = buildSystemPrompt({
     npc,
@@ -99,11 +99,10 @@ export async function generate({
     stateChange: parsed.stateChange && typeof parsed.stateChange === 'object' ? parsed.stateChange : null,
   };
 
-  // Persist exchange — rolling buffer per campaign
-  await appendToHistory({
+  // Persist exchange — INSERT into WorldNpcDialogTurn; FIFO trigger trims at 50
+  await appendDialogTurn({
     worldNpcId,
     campaignId,
-    npc,
     playerMessage,
     reply,
   });
@@ -158,7 +157,7 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
     const safeKnowledge = knowledgeEntries
       .filter((k) => k.sensitivity !== 'never_share')
       .slice(0, 12)
-      .map((k) => `- ${k.topic}${k.source ? ` (heard from: ${k.source})` : ''}`);
+      .map((k) => `- ${k.content}${k.source ? ` (heard from: ${k.source})` : ''}`);
     if (safeKnowledge.length > 0) {
       lines.push('\n## What you know');
       lines.push(safeKnowledge.join('\n'));
@@ -201,40 +200,49 @@ function buildSystemPrompt({ npc, isCompanion, dialogHistory, knowledgeEntries, 
   return lines.join('\n');
 }
 
-function parseDialogHistoryForCampaign(raw, campaignId) {
-  if (!raw || typeof raw !== 'object') return [];
-  const arr = raw[campaignId];
-  return Array.isArray(arr) ? arr : [];
-}
-
-function parseKnowledgeBase(raw) {
-  return Array.isArray(raw) ? raw : [];
-}
-
-async function appendToHistory({ worldNpcId, campaignId, npc, playerMessage, reply }) {
-  const allHistory = (npc.dialogHistory && typeof npc.dialogHistory === 'object')
-    ? { ...npc.dialogHistory }
-    : {};
-
-  const list = Array.isArray(allHistory[campaignId]) ? [...allHistory[campaignId]] : [];
-  list.push({
-    playerMsg: truncate(playerMessage, 600),
-    npcResponse: truncate(reply.dialog, 600),
-    emote: reply.emote || null,
-    at: new Date().toISOString(),
-  });
-
-  while (list.length > HISTORY_CAP) list.shift();
-
-  allHistory[campaignId] = list;
-
+// Load most-recent dialog turns ascending (oldest → newest) for prompt rendering.
+async function loadRecentDialogTurns(worldNpcId, campaignId, limit) {
   try {
-    await prisma.worldNPC.update({
-      where: { id: worldNpcId },
-      data: { dialogHistory: allHistory },
+    const rows = await prisma.worldNpcDialogTurn.findMany({
+      where: { npcId: worldNpcId, campaignId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { playerMsg: true, npcResponse: true, emote: true, createdAt: true },
+    });
+    return rows.reverse();
+  } catch (err) {
+    log.warn({ err, worldNpcId, campaignId }, 'loadRecentDialogTurns failed (non-fatal)');
+    return [];
+  }
+}
+
+async function loadKnowledgeEntries(worldNpcId, limit) {
+  try {
+    return await prisma.worldNpcKnowledge.findMany({
+      where: { npcId: worldNpcId },
+      orderBy: { addedAt: 'desc' },
+      take: limit,
+      select: { content: true, source: true, kind: true, sensitivity: true },
     });
   } catch (err) {
-    log.warn({ err, worldNpcId, campaignId }, 'Failed to persist dialog history (non-fatal)');
+    log.warn({ err, worldNpcId }, 'loadKnowledgeEntries failed (non-fatal)');
+    return [];
+  }
+}
+
+async function appendDialogTurn({ worldNpcId, campaignId, playerMessage, reply }) {
+  try {
+    await prisma.worldNpcDialogTurn.create({
+      data: {
+        npcId: worldNpcId,
+        campaignId,
+        playerMsg: truncate(playerMessage, 600),
+        npcResponse: truncate(reply.dialog, 600),
+        emote: reply.emote || null,
+      },
+    });
+  } catch (err) {
+    log.warn({ err, worldNpcId, campaignId }, 'Failed to persist dialog turn (non-fatal)');
   }
 }
 

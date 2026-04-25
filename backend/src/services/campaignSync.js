@@ -70,11 +70,13 @@ export async function getCharacterIdsForCampaigns(campaignIds) {
 
 export async function syncNPCsToNormalized(campaignId, npcs) {
   if (!Array.isArray(npcs) || npcs.length === 0) return;
-  for (const npc of npcs) {
-    if (!npc.name) continue;
-    const npcId = npc.name.toLowerCase().replace(/\s+/g, '_');
-    try {
-      const data = {
+  // Bulk: findMany existing → split into createMany (new) + per-row update.
+  // Cuts query count from 2N (upsert) to ~2 + (N - newCount).
+  const valid = npcs
+    .filter((n) => n && n.name)
+    .map((npc) => ({
+      data: {
+        npcId: npc.name.toLowerCase().replace(/\s+/g, '_'),
         name: npc.name,
         gender: npc.gender || 'unknown',
         role: npc.role || null,
@@ -86,14 +88,46 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         factionId: npc.factionId || null,
         notes: npc.notes || null,
         relationships: npc.relationships || [],
-      };
-      await prisma.campaignNPC.upsert({
-        where: { campaignId_npcId: { campaignId, npcId } },
-        create: { campaignId, npcId, ...data },
-        update: data,
-      });
+      },
+    }));
+  if (valid.length === 0) return;
+
+  let existing = [];
+  try {
+    existing = await prisma.campaignNPC.findMany({
+      where: { campaignId, npcId: { in: valid.map((v) => v.data.npcId) } },
+      select: { id: true, npcId: true },
+    });
+  } catch (err) {
+    log.error({ err, campaignId }, 'NPC sync existing-lookup failed');
+    return;
+  }
+  const idByNpcId = new Map(existing.map((r) => [r.npcId, r.id]));
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const v of valid) {
+    const existingId = idByNpcId.get(v.data.npcId);
+    if (existingId) {
+      const { npcId: _drop, ...updateData } = v.data;
+      toUpdate.push({ id: existingId, data: updateData });
+    } else {
+      toCreate.push({ campaignId, ...v.data });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    try {
+      await prisma.campaignNPC.createMany({ data: toCreate, skipDuplicates: true });
     } catch (err) {
-      log.error({ err, npcName: npc.name }, 'NPC sync failed');
+      log.error({ err, count: toCreate.length }, 'NPC bulk createMany failed');
+    }
+  }
+  for (const u of toUpdate) {
+    try {
+      await prisma.campaignNPC.update({ where: { id: u.id }, data: u.data });
+    } catch (err) {
+      log.error({ err, id: u.id }, 'NPC update failed');
     }
   }
 }
@@ -106,46 +140,43 @@ export async function syncKnowledgeToNormalized(campaignId, events, decisions) {
   });
   const existingKeys = new Set(existing.map((e) => `${e.entryType}:${e.summary}`));
 
+  const toInsert = [];
   for (const e of events) {
     const summary = e.summary || (typeof e === 'string' ? e : '');
     if (!summary) continue;
     if (existingKeys.has(`event:${summary}`)) continue;
-    try {
-      await prisma.campaignKnowledge.create({
-        data: {
-          campaignId,
-          entryType: 'event',
-          summary,
-          content: e,
-          importance: e.importance || null,
-          tags: e.tags || [],
-          sceneIndex: e.sceneIndex ?? null,
-        },
-      });
-    } catch (err) {
-      log.error({ err }, 'Knowledge event sync failed');
-    }
+    existingKeys.add(`event:${summary}`);
+    toInsert.push({
+      campaignId,
+      entryType: 'event',
+      summary,
+      content: e,
+      importance: e.importance || null,
+      tags: e.tags || [],
+      sceneIndex: e.sceneIndex ?? null,
+    });
   }
-
   for (const d of decisions) {
     const summary = `${d.choice || ''} -> ${d.consequence || ''}`;
     if (!d.choice) continue;
     if (existingKeys.has(`decision:${summary}`)) continue;
-    try {
-      await prisma.campaignKnowledge.create({
-        data: {
-          campaignId,
-          entryType: 'decision',
-          summary,
-          content: d,
-          importance: d.importance || null,
-          tags: d.tags || [],
-          sceneIndex: d.sceneIndex ?? null,
-        },
-      });
-    } catch (err) {
-      log.error({ err }, 'Knowledge decision sync failed');
-    }
+    existingKeys.add(`decision:${summary}`);
+    toInsert.push({
+      campaignId,
+      entryType: 'decision',
+      summary,
+      content: d,
+      importance: d.importance || null,
+      tags: d.tags || [],
+      sceneIndex: d.sceneIndex ?? null,
+    });
+  }
+
+  if (toInsert.length === 0) return;
+  try {
+    await prisma.campaignKnowledge.createMany({ data: toInsert });
+  } catch (err) {
+    log.error({ err, count: toInsert.length }, 'Knowledge bulk createMany failed');
   }
 }
 
@@ -157,31 +188,62 @@ export async function syncQuestsToNormalized(campaignId, quests) {
     ...completed.map((q) => ({ ...q, _status: 'completed' })),
   ];
   if (all.length === 0) return;
-  for (const q of all) {
-    if (!q.id || !q.name) continue;
+  // Bulk: findMany existing → split into createMany (new) + per-row update.
+  const valid = all.filter((q) => q.id && q.name).map((q) => ({
+    questId: q.id,
+    data: {
+      name: q.name,
+      type: q.type || 'side',
+      description: q.description || '',
+      completionCondition: q.completionCondition || null,
+      questGiverId: q.questGiverId || null,
+      turnInNpcId: q.turnInNpcId || q.questGiverId || null,
+      locationId: q.locationId || null,
+      prerequisiteQuestIds: q.prerequisiteQuestIds || [],
+      objectives: q.objectives || [],
+      reward: q.reward ?? null,
+      status: q._status,
+      completedAt: q.completedAt ? new Date(q.completedAt) : null,
+      forcedGiver: q.forcedGiver === true,
+    },
+  }));
+  if (valid.length === 0) return;
+
+  let existing = [];
+  try {
+    existing = await prisma.campaignQuest.findMany({
+      where: { campaignId, questId: { in: valid.map((v) => v.questId) } },
+      select: { id: true, questId: true },
+    });
+  } catch (err) {
+    log.error({ err, campaignId }, 'Quest sync existing-lookup failed');
+    return;
+  }
+  const idByQuestId = new Map(existing.map((r) => [r.questId, r.id]));
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const v of valid) {
+    const existingId = idByQuestId.get(v.questId);
+    if (existingId) {
+      toUpdate.push({ id: existingId, data: v.data });
+    } else {
+      toCreate.push({ campaignId, questId: v.questId, ...v.data });
+    }
+  }
+
+  if (toCreate.length > 0) {
     try {
-      const data = {
-        name: q.name,
-        type: q.type || 'side',
-        description: q.description || '',
-        completionCondition: q.completionCondition || null,
-        questGiverId: q.questGiverId || null,
-        turnInNpcId: q.turnInNpcId || q.questGiverId || null,
-        locationId: q.locationId || null,
-        prerequisiteQuestIds: q.prerequisiteQuestIds || [],
-        objectives: q.objectives || [],
-        reward: q.reward ?? null,
-        status: q._status,
-        completedAt: q.completedAt ? new Date(q.completedAt) : null,
-        forcedGiver: q.forcedGiver === true,
-      };
-      await prisma.campaignQuest.upsert({
-        where: { campaignId_questId: { campaignId, questId: q.id } },
-        create: { campaignId, questId: q.id, ...data },
-        update: data,
-      });
+      await prisma.campaignQuest.createMany({ data: toCreate, skipDuplicates: true });
     } catch (err) {
-      log.error({ err, questName: q.name }, 'Quest sync failed');
+      log.error({ err, count: toCreate.length }, 'Quest bulk createMany failed');
+    }
+  }
+  for (const u of toUpdate) {
+    try {
+      await prisma.campaignQuest.update({ where: { id: u.id }, data: u.data });
+    } catch (err) {
+      log.error({ err, id: u.id }, 'Quest update failed');
     }
   }
 }

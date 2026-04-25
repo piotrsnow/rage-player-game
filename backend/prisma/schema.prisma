@@ -212,6 +212,7 @@ model Campaign {
   npcPromotionCandidates      NPCPromotionCandidate[]
   locationPromotionCandidates LocationPromotionCandidate[]
   achievements                Achievement[]
+  worldNpcDialogTurns         WorldNpcDialogTurn[]
 
   @@index([userId])
   @@index([isPublic])
@@ -303,8 +304,6 @@ model CampaignNPC {
   pendingIntroHint          String?
   activeGoal                String?
   goalProgress              Json?
-  // F2 → CampaignNpcExperience
-  experienceLog             Json     @default("[]")
   hasAcknowledgedFame       Boolean  @default(false)
   interactionCount          Int      @default(0)
   dialogCharCount           Int      @default(0)
@@ -321,6 +320,7 @@ model CampaignNPC {
   campaign     Campaign       @relation(fields: [campaignId],     references: [id], onDelete: Cascade)
   worldNpc     WorldNPC?      @relation(fields: [worldNpcId],     references: [id], onDelete: SetNull)
   lastLocFk    WorldLocation? @relation("campaignNpcLastLoc", fields: [lastLocationId], references: [id], onDelete: SetNull)
+  experiences  CampaignNpcExperience[]
 
   @@unique([campaignId, npcId])
   @@index([campaignId])
@@ -397,13 +397,58 @@ model CampaignLocationSummary {
 
 model CampaignDmAgent {
   campaignId    String   @id @db.Uuid
-  // F2 → CampaignDmMemoryEntry
-  dmMemory      Json     @default("[]")
-  // F2 → CampaignDmPendingHook
-  pendingHooks  Json     @default("[]")
   lastUpdatedAt DateTime @default(now()) @db.Timestamptz
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign           Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  memoryEntries      CampaignDmMemoryEntry[]
+  pendingHookEntries CampaignDmPendingHook[]
+}
+
+// F2 — child table replacing CampaignNPC.experienceLog JSONB array.
+// FIFO-capped at 20 per campaignNpcId via trigger.
+model CampaignNpcExperience {
+  id            BigInt   @id @default(autoincrement())
+  campaignNpcId String   @db.Uuid
+  content       String
+  importance    String?
+  sceneIndex    Int?
+  addedAt       DateTime @default(now()) @db.Timestamptz
+
+  campaignNpc CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+
+  @@index([campaignNpcId, addedAt])
+}
+
+// F2 — child table replacing CampaignDmAgent.dmMemory JSONB array.
+// FIFO-capped at 20 per campaignId via trigger.
+model CampaignDmMemoryEntry {
+  id         BigInt   @id @default(autoincrement())
+  campaignId String   @db.Uuid
+  at         DateTime @default(now()) @db.Timestamptz
+  plannedFor String?
+  status     String?
+  summary    String
+
+  agent CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+
+  @@index([campaignId, at])
+}
+
+// F2 — child table replacing CampaignDmAgent.pendingHooks JSONB array.
+// FIFO-capped at 12 per campaignId via trigger (oldest dropped, NOT lowest priority —
+// `clampList` semantics in dmMemoryService.js).
+model CampaignDmPendingHook {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  campaignId  String   @db.Uuid
+  kind        String   @default("generic")
+  summary     String
+  idealTiming String?
+  priority    String   @default("normal")
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  agent CampaignDmAgent @relation(fields: [campaignId], references: [campaignId], onDelete: Cascade)
+
+  @@index([campaignId, createdAt])
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -435,8 +480,6 @@ model WorldLocation {
 
   aliases       Json    @default("[]")
   roomMetadata  Json?
-  // F2 → WorldLocationKnowledge
-  knowledgeBase Json    @default("[]")
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -453,6 +496,7 @@ model WorldLocation {
   npcsHome                    WorldNPC[]                   @relation("npcHomeLoc")
   campaignNpcsLastHere        CampaignNPC[]                @relation("campaignNpcLastLoc")
   locationPromotionCandidates LocationPromotionCandidate[]
+  knowledgeEntries            WorldLocationKnowledge[]
 
   @@index([region])
   @@index([parentLocationId])
@@ -515,10 +559,6 @@ model WorldNPC {
   lockedAt              DateTime? @db.Timestamptz
   lockedSnapshot        Json?
 
-  // F2 → WorldNpcDialogTurn (per-campaign sub-collection)
-  dialogHistory      Json    @default("{}")
-  // F2 → WorldNpcKnowledge
-  knowledgeBase      Json    @default("[]")
   // F3 → WorldNpcKnownLocation
   knownLocationIds   Json    @default("[]")
 
@@ -544,6 +584,8 @@ model WorldNPC {
   homeLocation    WorldLocation? @relation("npcHomeLoc",    fields: [homeLocationId],    references: [id], onDelete: SetNull)
   campaignShadows CampaignNPC[]
   attributions    WorldNpcAttribution[]
+  knowledgeEntries WorldNpcKnowledge[]
+  dialogTurns     WorldNpcDialogTurn[]
 
   @@index([currentLocationId])
   @@index([alive])
@@ -611,6 +653,60 @@ model WorldNpcAttribution {
 
   @@index([actorCharacterId, createdAt])
   @@index([worldNpcId])
+}
+
+// F2 — child table replacing WorldNPC.knowledgeBase JSONB array.
+// FIFO-capped at 50 per npcId via plpgsql trigger (see migration SQL).
+model WorldNpcKnowledge {
+  id          BigInt    @id @default(autoincrement())
+  npcId       String    @db.Uuid
+  content     String
+  source      String
+  kind        String
+  importance  String?
+  confidence  Float?
+  similarity  Float?
+  sensitivity String?
+  addedAt     DateTime  @default(now()) @db.Timestamptz
+  learnedAt   DateTime? @db.Timestamptz
+
+  npc WorldNPC @relation(fields: [npcId], references: [id], onDelete: Cascade)
+
+  @@index([npcId, addedAt])
+}
+
+// F2 — child table replacing WorldNPC.dialogHistory JSONB map.
+// FIFO-capped at 50 per (npcId, campaignId) via trigger.
+model WorldNpcDialogTurn {
+  id          BigInt   @id @default(autoincrement())
+  npcId       String   @db.Uuid
+  campaignId  String   @db.Uuid
+  playerMsg   String
+  npcResponse String
+  emote       String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  npc      WorldNPC @relation(fields: [npcId],      references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([npcId, campaignId, createdAt])
+}
+
+// F2 — child table replacing WorldLocation.knowledgeBase JSONB array.
+// FIFO-capped at 50 per locationId via trigger.
+model WorldLocationKnowledge {
+  id         BigInt   @id @default(autoincrement())
+  locationId String   @db.Uuid
+  content    String
+  source     String
+  kind       String
+  confidence Float?
+  similarity Float?
+  addedAt    DateTime @default(now()) @db.Timestamptz
+
+  location WorldLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, addedAt])
 }
 
 model WorldLoreSection {

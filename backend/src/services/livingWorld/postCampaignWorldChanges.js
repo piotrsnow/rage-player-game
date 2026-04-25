@@ -36,8 +36,8 @@ const log = childLogger({ module: 'postCampaignWorldChanges' });
 
 const MIN_SIM_CONSIDER = 0.6;  // below → skipped as LOW
 const MIN_SIM_AUTO = 0.75;     // combined with shadow corroboration → HIGH
-const NPC_KNOWLEDGE_CAP = 50;  // runaway-guard on WorldNPC.knowledgeBase
-const LOCATION_KNOWLEDGE_CAP = 50; // mirror of NPC cap for WorldLocation.knowledgeBase
+// FIFO caps for WorldNpcKnowledge / WorldLocationKnowledge are enforced by
+// AFTER-INSERT triggers in the F2 migration (50 per parent).
 
 // Kinds whose target is an NPC (used to pick the right RAG entityType).
 const NPC_SUBJECT_KINDS = new Set(['npcDeath', 'npcRelocation', 'newRumor']);
@@ -170,26 +170,6 @@ export function computeIdempotencyKey({ kind, targetHint, newValue }) {
 }
 
 /**
- * Pure — merge a new knowledgeBase entry into an existing raw value
- * (JSONB array or legacy JSON string). Preserves prior entries, caps total
- * at NPC_KNOWLEDGE_CAP via FIFO drop on overflow. Returns a plain array
- * ready to write into a JSONB column.
- */
-export function appendKnowledgeEntry(rawKnowledgeBase, newEntry, { cap = NPC_KNOWLEDGE_CAP } = {}) {
-  let parsed = [];
-  if (Array.isArray(rawKnowledgeBase)) {
-    parsed = rawKnowledgeBase;
-  } else if (typeof rawKnowledgeBase === 'string' && rawKnowledgeBase) {
-    try {
-      const j = JSON.parse(rawKnowledgeBase);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — reset */ }
-  }
-  const merged = [...parsed, newEntry];
-  return merged.length > cap ? merged.slice(merged.length - cap) : merged;
-}
-
-/**
  * I/O — upsert one pending world state change into `PendingWorldStateChange`,
  * keyed by `(campaignId, idempotencyKey)`. Stickiness contract: on UPDATE we
  * refresh resolver signals (`targetEntityId`/`targetEntityType`/`confidence`/
@@ -315,16 +295,14 @@ export async function applyWorldStateChanges({ classifications, campaignId, dryR
     try {
       const row = await prisma.worldNPC.findUnique({
         where: { id: resolved.entityId },
-        select: { id: true, knowledgeBase: true },
+        select: { id: true },
       });
       if (!row) {
         skipped.push({ change, reason: 'world_npc_not_found' });
         continue;
       }
-      const nextKnowledgeBase = appendKnowledgeEntry(row.knowledgeBase, entry);
-      await prisma.worldNPC.update({
-        where: { id: row.id },
-        data: { knowledgeBase: nextKnowledgeBase },
+      await prisma.worldNpcKnowledge.create({
+        data: knowledgeEntryToInsertData(entry, row.id, 'npc'),
       });
       appliedKnowledge.push({ worldNpcId: resolved.entityId, entry });
     } catch (err) {
@@ -335,6 +313,24 @@ export async function applyWorldStateChanges({ classifications, campaignId, dryR
   }
 
   return { appliedKnowledge, pending, skipped, dryRun };
+}
+
+/**
+ * Pure — map a `buildKnowledgeEntry` result + parent FK to a WorldNpcKnowledge
+ * or WorldLocationKnowledge `data` payload. The two child tables share most
+ * columns; the FK column name differs (`npcId` vs `locationId`).
+ */
+function knowledgeEntryToInsertData(entry, parentId, kind) {
+  const fk = kind === 'location' ? { locationId: parentId } : { npcId: parentId };
+  return {
+    ...fk,
+    content: entry.content,
+    source: entry.source,
+    kind: entry.kind,
+    confidence: Number.isFinite(entry.confidence) ? entry.confidence : null,
+    similarity: Number.isFinite(entry.similarity) ? entry.similarity : null,
+    addedAt: entry.addedAt ? new Date(entry.addedAt) : new Date(),
+  };
 }
 
 /**
@@ -352,13 +348,11 @@ export async function applyLocationKnowledgeChange({ change, resolved, campaignI
   try {
     const row = await prisma.worldLocation.findUnique({
       where: { id: resolved.entityId },
-      select: { id: true, knowledgeBase: true },
+      select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_location_not_found' };
-    const nextKnowledgeBase = appendKnowledgeEntry(row.knowledgeBase, entry, { cap: LOCATION_KNOWLEDGE_CAP });
-    await prisma.worldLocation.update({
-      where: { id: row.id },
-      data: { knowledgeBase: nextKnowledgeBase },
+    await prisma.worldLocationKnowledge.create({
+      data: knowledgeEntryToInsertData(entry, row.id, 'location'),
     });
     return { ok: true, entry };
   } catch (err) {
@@ -382,13 +376,11 @@ export async function applyNpcKnowledgeChange({ change, resolved, campaignId }) 
   try {
     const row = await prisma.worldNPC.findUnique({
       where: { id: resolved.entityId },
-      select: { id: true, knowledgeBase: true },
+      select: { id: true },
     });
     if (!row) return { ok: false, reason: 'world_npc_not_found' };
-    const nextKnowledgeBase = appendKnowledgeEntry(row.knowledgeBase, entry, { cap: NPC_KNOWLEDGE_CAP });
-    await prisma.worldNPC.update({
-      where: { id: row.id },
-      data: { knowledgeBase: nextKnowledgeBase },
+    await prisma.worldNpcKnowledge.create({
+      data: knowledgeEntryToInsertData(entry, row.id, 'npc'),
     });
     return { ok: true, entry };
   } catch (err) {

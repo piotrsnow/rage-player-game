@@ -75,89 +75,67 @@ export const selectKeyNpcsWithWorldId = (ambient, withGoals) =>
     .filter((e) => e.worldNpcId)
     .map(({ worldNpcId, npcName }) => ({ worldNpcId, npcName }));
 
-/** Pure — parse a raw `knowledgeBase` string and shape it for prompt rendering. */
-export function formatBaselineEntries(knowledgeBaseRaw, maxEntries = MAX_BASELINE_ENTRIES_PER_NPC) {
-  let parsed = [];
-  if (typeof knowledgeBaseRaw === 'string' && knowledgeBaseRaw) {
-    try {
-      const j = JSON.parse(knowledgeBaseRaw);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — treat as empty */ }
-  } else if (Array.isArray(knowledgeBaseRaw)) {
-    parsed = knowledgeBaseRaw;
-  }
-  return parsed
-    .filter((e) => e && typeof e.content === 'string' && e.content.trim())
+/**
+ * Pure — shape `WorldNpcKnowledge` rows tagged `source = 'baseline'` for prompt
+ * rendering. Caller guarantees rows are pre-filtered if needed; helper still
+ * handles non-array inputs defensively.
+ */
+export function formatBaselineEntries(rows, maxEntries = MAX_BASELINE_ENTRIES_PER_NPC) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((e) => e && typeof e.content === 'string' && e.content.trim()
+      && (e.source === 'baseline' || !e.source))
     .slice(0, maxEntries)
     .map((e) => ({ content: e.content, source: e.source || 'baseline' }));
 }
 
 /**
- * Pure — parse a raw `knowledgeBase` into the FULL cross-campaign slice
- * (all entries tagged `source: campaign:<id>` from Stage 2b). Distinct from
- * `formatBaselineEntries` which caps hand-authored 'baseline' entries at 6.
- * Each returned entry carries the `addedAt` timestamp so RAG recall can
- * reconstruct `memoryEntityId('wknw', worldNpcId, entry)` deterministically.
+ * Pure — pull the cross-campaign slice (rows tagged `source: 'campaign:<id>'`)
+ * out of a `WorldNpcKnowledge` row set. Each returned entry carries `addedAt`
+ * (ISO-string normalized) so RAG recall can reconstruct
+ * `memoryEntityId('wknw', worldNpcId, entry)` deterministically.
  */
-export function formatCrossCampaignEntries(knowledgeBaseRaw) {
-  let parsed = [];
-  if (typeof knowledgeBaseRaw === 'string' && knowledgeBaseRaw) {
-    try {
-      const j = JSON.parse(knowledgeBaseRaw);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — treat as empty */ }
-  } else if (Array.isArray(knowledgeBaseRaw)) {
-    parsed = knowledgeBaseRaw;
-  }
-  return parsed
+export function formatCrossCampaignEntries(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
     .filter((e) => e && typeof e.content === 'string' && e.content.trim()
       && typeof e.source === 'string' && e.source.startsWith('campaign:'))
     .map((e) => ({
       content: e.content,
       source: e.source,
-      addedAt: e.addedAt || null,
+      addedAt: e.addedAt instanceof Date ? e.addedAt.toISOString() : (e.addedAt || null),
     }));
 }
 
 /**
- * Pure — parse experienceLog into unprocessed entries preserving importance
- * and addedAt. Used by Stage 3 RAG recall when the static slice would drop
- * narratively-relevant entries. Distinct from `formatExperienceEntries`
- * which applies the top-N importance cap and strips metadata for prompt.
+ * Pure — passthrough for `CampaignNpcExperience` rows, dropping rows with
+ * empty content. Used by Stage 3 RAG recall when the static slice would
+ * drop narratively-relevant entries. `addedAt` is normalized to ISO string
+ * so downstream `memoryEntityId` calls produce stable RAG keys.
  */
-export function parseExperienceEntries(experienceLogRaw) {
-  let parsed = [];
-  if (typeof experienceLogRaw === 'string' && experienceLogRaw) {
-    try {
-      const j = JSON.parse(experienceLogRaw);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — treat as empty */ }
-  } else if (Array.isArray(experienceLogRaw)) {
-    parsed = experienceLogRaw;
-  }
-  return parsed.filter((e) => e && typeof e.content === 'string' && e.content.trim());
+export function parseExperienceEntries(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((e) => e && typeof e.content === 'string' && e.content.trim())
+    .map((e) => ({
+      content: e.content,
+      importance: e.importance || 'minor',
+      addedAt: e.addedAt instanceof Date ? e.addedAt.toISOString() : (e.addedAt || null),
+    }));
 }
 
 /**
- * Pure — parse a raw `experienceLog` string and shape it for prompt rendering.
+ * Pure — shape `CampaignNpcExperience` rows for the static-slice prompt path.
  *
  * Stage 2a.1 ordering: sort by `importance DESC, addedAt DESC`, then slice
  * the top N. This keeps narratively load-bearing `major` memories in the
  * prompt even after many trivial `minor` entries accumulate; within a tier,
- * newer wins. Output is rendered newest-first within the top-N (callers
- * already expect narrative order where most-recent reads first).
+ * newer wins. Output is rendered chronologically (matches the old
+ * `[NPC_MEMORY]` block expectation).
  */
-export function formatExperienceEntries(experienceLogRaw, maxEntries = MAX_EXPERIENCE_ENTRIES_PER_NPC) {
-  let parsed = [];
-  if (typeof experienceLogRaw === 'string' && experienceLogRaw) {
-    try {
-      const j = JSON.parse(experienceLogRaw);
-      if (Array.isArray(j)) parsed = j;
-    } catch { /* malformed — treat as empty */ }
-  } else if (Array.isArray(experienceLogRaw)) {
-    parsed = experienceLogRaw;
-  }
-  const filtered = parsed.filter((e) => e && typeof e.content === 'string' && e.content.trim());
+export function formatExperienceEntries(rows, maxEntries = MAX_EXPERIENCE_ENTRIES_PER_NPC) {
+  if (!Array.isArray(rows)) return [];
+  const filtered = rows.filter((e) => e && typeof e.content === 'string' && e.content.trim());
 
   // Stage 2a.1 — two-pass selection:
   //   (1) rank by importance DESC, addedAt DESC (recency tiebreak within tier)
@@ -170,13 +148,19 @@ export function formatExperienceEntries(experienceLogRaw, maxEntries = MAX_EXPER
     .sort((a, b) => {
       const byImportance = importanceRank(b.entry.importance) - importanceRank(a.entry.importance);
       if (byImportance !== 0) return byImportance;
-      const aTime = a.entry.addedAt || '';
-      const bTime = b.entry.addedAt || '';
+      const aTime = isoOrEmpty(a.entry.addedAt);
+      const bTime = isoOrEmpty(b.entry.addedAt);
       if (aTime !== bTime) return bTime.localeCompare(aTime);
       return b.originalIdx - a.originalIdx;
     });
   const surviving = ranked.slice(0, maxEntries).sort((a, b) => a.originalIdx - b.originalIdx);
   return surviving.map(({ entry }) => ({ content: entry.content, source: 'campaign_current' }));
+}
+
+function isoOrEmpty(v) {
+  if (!v) return '';
+  if (v instanceof Date) return v.toISOString();
+  return typeof v === 'string' ? v : '';
 }
 
 /**
@@ -227,22 +211,33 @@ export async function buildNpcMemory({ ambientNpcs, ambientNpcsWithGoals, sceneQ
   const worldNpcIds = [...new Set(selection.map((e) => e.worldNpcId).filter(Boolean))];
   const campaignNpcIds = [...new Set(selection.map((e) => e.campaignNpcId).filter(Boolean))];
 
-  const [worldRows, campaignRows] = await Promise.all([
+  const [knowledgeRows, experienceRows] = await Promise.all([
     worldNpcIds.length > 0
-      ? prisma.worldNPC.findMany({
-          where: { id: { in: worldNpcIds } },
-          select: { id: true, knowledgeBase: true },
+      ? prisma.worldNpcKnowledge.findMany({
+          where: { npcId: { in: worldNpcIds } },
+          orderBy: { addedAt: 'asc' },
+          select: { npcId: true, content: true, source: true, addedAt: true, importance: true, sensitivity: true },
         }).catch(() => [])
       : Promise.resolve([]),
     campaignNpcIds.length > 0
-      ? prisma.campaignNPC.findMany({
-          where: { id: { in: campaignNpcIds } },
-          select: { id: true, experienceLog: true },
+      ? prisma.campaignNpcExperience.findMany({
+          where: { campaignNpcId: { in: campaignNpcIds } },
+          orderBy: { addedAt: 'asc' },
+          select: { campaignNpcId: true, content: true, importance: true, addedAt: true },
         }).catch(() => [])
       : Promise.resolve([]),
   ]);
-  const baselineById = new Map(worldRows.map((r) => [r.id, r.knowledgeBase]));
-  const experienceById = new Map(campaignRows.map((r) => [r.id, r.experienceLog]));
+  // Group rows by parent id so per-NPC pure helpers see a flat list each.
+  const baselineById = new Map();
+  for (const row of knowledgeRows) {
+    if (!baselineById.has(row.npcId)) baselineById.set(row.npcId, []);
+    baselineById.get(row.npcId).push(row);
+  }
+  const experienceById = new Map();
+  for (const row of experienceRows) {
+    if (!experienceById.has(row.campaignNpcId)) experienceById.set(row.campaignNpcId, []);
+    experienceById.get(row.campaignNpcId).push(row);
+  }
 
   const result = [];
   const hasSceneQuery = typeof sceneQueryText === 'string' && sceneQueryText.trim().length > 0;

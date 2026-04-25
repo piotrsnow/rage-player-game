@@ -22,8 +22,6 @@ import * as ragService from '../../livingWorld/ragService.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
-const MAX_LOG_ENTRIES_PER_NPC = 20;
-
 // Stage 2a.2 — cap on how many OTHER NPCs can get a mirror entry from a
 // single source memory. Prevents one memory mentioning four NPCs from
 // fanning out into four separate writes, which risks flooding secondary
@@ -33,19 +31,6 @@ const MAX_MIRROR_TARGETS_PER_SOURCE = 3;
 /** Pure — slug an NPC name to match `CampaignNPC.npcId`. Mirrors npcs.js. */
 export function npcNameToId(name) {
   return String(name || '').trim().toLowerCase().replace(/\s+/g, '_');
-}
-
-/**
- * Pure — append new memory entries to an existing log, respecting the cap.
- * Drops the oldest entries when the cap is exceeded (FIFO). Returns the
- * NEW log as a fresh array (immutable).
- */
-export function appendMemoryEntries(existingLog, newEntries, { maxEntries = MAX_LOG_ENTRIES_PER_NPC } = {}) {
-  const existing = Array.isArray(existingLog) ? existingLog : [];
-  const incoming = Array.isArray(newEntries) ? newEntries : [];
-  const merged = [...existing, ...incoming];
-  if (merged.length <= maxEntries) return merged;
-  return merged.slice(merged.length - maxEntries);
 }
 
 /** Pure — convert a validated LLM update to the storage-entry shape. */
@@ -169,7 +154,7 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
   // detection (scanning memory text for OTHER NPC mentions).
   const campaignNpcs = await prisma.campaignNPC.findMany({
     where: { campaignId },
-    select: { id: true, npcId: true, name: true, experienceLog: true },
+    select: { id: true, npcId: true, name: true },
   }).catch(() => []);
   if (campaignNpcs.length === 0) {
     log.info({ campaignId }, 'npcMemoryUpdates: no CampaignNPCs in campaign — bucket dropped');
@@ -228,12 +213,15 @@ export async function processNpcMemoryUpdates(campaignId, rawUpdates) {
         continue;
       }
 
-      const currentLog = Array.isArray(row.experienceLog) ? row.experienceLog : [];
-      const nextLog = appendMemoryEntries(currentLog, newEntries);
-
-      await prisma.campaignNPC.update({
-        where: { id: row.id },
-        data: { experienceLog: nextLog },
+      // INSERT into CampaignNpcExperience — FIFO trigger trims at 20.
+      // `addedAt` set explicitly so we can compose deterministic RAG ids.
+      await prisma.campaignNpcExperience.createMany({
+        data: newEntries.map((entry) => ({
+          campaignNpcId: row.id,
+          content: entry.content,
+          importance: entry.importance || 'minor',
+          addedAt: new Date(entry.addedAt),
+        })),
       });
       applied += newEntries.length;
 
