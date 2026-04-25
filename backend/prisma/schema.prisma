@@ -106,8 +106,8 @@ model Achievement {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Character (F1 — collections stay JSONB; F4 decomposes skills/inventory/
-// materialBag into child tables and equipped becomes FK).
+// Character (F4 — skills/inventory/materials decomposed into child tables;
+// equipped slots are itemKey text refs validated app-side, no FK).
 // ═══════════════════════════════════════════════════════════════════════
 
 model Character {
@@ -119,7 +119,6 @@ model Character {
   species         String
 
   attributes      Json   @default("{}")
-  skills          Json   @default("{}")
   wounds          Int    @default(0)
   maxWounds       Int    @default(0)
   movement        Int    @default(4)
@@ -130,10 +129,13 @@ model Character {
   mana            Json   @default("{\"current\":0,\"max\":0}")
   spells          Json   @default("{\"known\":[],\"usageCounts\":{},\"scrolls\":[]}")
 
-  inventory       Json   @default("[]")
-  materialBag     Json   @default("[]")
   money           Json   @default("{\"gold\":0,\"silver\":0,\"copper\":0}")
-  equipped        Json   @default("{\"mainHand\":null,\"offHand\":null,\"armour\":null}")
+  // F4: equipped slot stores itemKey (slugify(name)) referencing
+  // CharacterInventoryItem.itemKey. No FK constraint — app-level invariant
+  // (cleared on quantity → 0 / DELETE via clearEquippedRefs helper).
+  equippedMainHand String?
+  equippedOffHand  String?
+  equippedArmour   String?
 
   status             String?
   lockedCampaignId   String?
@@ -163,9 +165,56 @@ model Character {
   npcAttributions WorldNpcAttribution[]
   reputations     WorldReputation[]
   clearedDungeons CharacterClearedDungeon[]
+  inventoryItems  CharacterInventoryItem[]
+  characterSkills CharacterSkill[]
+  materials       CharacterMaterial[]
 
   @@index([userId])
   @@index([lockedCampaignId])
+}
+
+// F4 — skills as a child table. Atomic UPDATE xp = xp + delta WHERE
+// (characterId, skillName) instead of full-rewrite of a skills JSONB blob.
+model CharacterSkill {
+  characterId String   @db.Uuid
+  skillName   String
+  level       Int      @default(0)
+  xp          Int      @default(0)
+  cap         Int      @default(10)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, skillName])
+  @@index([characterId, level])
+}
+
+// F4 — inventory keyed by slugify(name). Items with the same name stack
+// (quantity-merge); props of the latest write win. See
+// shared/domain/itemKeys.js for the slug rules.
+model CharacterInventoryItem {
+  characterId String   @db.Uuid
+  itemKey     String
+  displayName String
+  baseType    String?
+  quantity    Int      @default(1)
+  props       Json     @default("{}")
+  imageUrl    String?
+  addedAt     DateTime @default(now()) @db.Timestamptz
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, itemKey])
+  @@index([characterId, addedAt])
+}
+
+// F4 — materialBag as a child table. Same pattern as items; PK is the
+// lowercased name (no `props`, no slot semantics).
+model CharacterMaterial {
+  characterId String   @db.Uuid
+  materialKey String
+  displayName String
+  quantity    Int      @default(0)
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@id([characterId, materialKey])
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -298,8 +347,6 @@ model CampaignNPC {
   lastLocationId            String?  @db.Uuid
   factionId                 String?
   notes                     String?
-  // F4 → CampaignNpcRelationship
-  relationships             Json     @default("[]")
   worldNpcId                String?  @db.Uuid
   isAgent                   Boolean  @default(false)
   category                  String   @default("commoner")
@@ -319,15 +366,33 @@ model CampaignNPC {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
 
-  campaign     Campaign       @relation(fields: [campaignId],     references: [id], onDelete: Cascade)
-  worldNpc     WorldNPC?      @relation(fields: [worldNpcId],     references: [id], onDelete: SetNull)
-  lastLocFk    WorldLocation? @relation("campaignNpcLastLoc", fields: [lastLocationId], references: [id], onDelete: SetNull)
-  experiences  CampaignNpcExperience[]
+  campaign      Campaign       @relation(fields: [campaignId],     references: [id], onDelete: Cascade)
+  worldNpc      WorldNPC?      @relation(fields: [worldNpcId],     references: [id], onDelete: SetNull)
+  lastLocFk     WorldLocation? @relation("campaignNpcLastLoc", fields: [lastLocationId], references: [id], onDelete: SetNull)
+  experiences   CampaignNpcExperience[]
+  relationships CampaignNpcRelationship[]
 
   @@unique([campaignId, npcId])
   @@index([campaignId])
   @@index([worldNpcId])
   @@index([campaignId, worldNpcId])
+}
+
+// F4 — replaces CampaignNPC.relationships JSONB.
+// targetType = "npc" | "character" | "faction"; targetRef is the unique
+// reference within that namespace (npc name today, since `npcName` was the
+// shape used). Unique on the triple so `relation` updates idempotently.
+model CampaignNpcRelationship {
+  id            BigInt @id @default(autoincrement())
+  campaignNpcId String @db.Uuid
+  targetType    String
+  targetRef     String
+  relation      String
+  strength      Int    @default(0)
+  campaignNpc   CampaignNPC @relation(fields: [campaignNpcId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignNpcId, targetType, targetRef])
+  @@index([campaignNpcId])
 }
 
 model CampaignCodex {
@@ -361,8 +426,6 @@ model CampaignQuest {
   questGiverId         String?
   turnInNpcId          String?
   locationId           String?
-  // F4 → CampaignQuestObjective
-  objectives           Json      @default("[]")
   reward               Json?
   status               String    @default("active")
   completedAt          DateTime? @db.Timestamptz
@@ -373,10 +436,31 @@ model CampaignQuest {
   campaign         Campaign                    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   prerequisites    CampaignQuestPrerequisite[] @relation("questSide")
   prerequisiteFor  CampaignQuestPrerequisite[] @relation("prereqSide")
+  objectives       CampaignQuestObjective[]
 
   @@unique([campaignId, questId])
   @@index([campaignId])
   @@index([campaignId, status])
+}
+
+// F4 — replaces CampaignQuest.objectives JSONB. displayOrder is the
+// canonical sort key (insertion order from AI). Replace-on-quest-update
+// strategy (deleteMany + createMany), same pattern as F3 prerequisites.
+model CampaignQuestObjective {
+  id           BigInt @id @default(autoincrement())
+  questId      String @db.Uuid
+  displayOrder Int    @default(0)
+  description  String
+  progress     Int    @default(0)
+  targetAmount Int    @default(1)
+  status       String @default("pending")
+  // Per-objective JSONB bag for AI-emitted metadata (onComplete triggers,
+  // hints, location targets). Read by quest-trigger handlers and surfaced
+  // back into the FE shape verbatim.
+  metadata     Json   @default("{}")
+  quest        CampaignQuest @relation(fields: [questId], references: [id], onDelete: Cascade)
+
+  @@index([questId, displayOrder])
 }
 
 model CampaignLocationSummary {

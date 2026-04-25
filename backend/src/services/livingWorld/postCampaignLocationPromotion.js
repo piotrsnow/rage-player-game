@@ -69,12 +69,15 @@ export function computeQuestObjectiveCounts(locations, quests) {
     const objectives = Array.isArray(q.objectives) ? q.objectives : [];
     for (const obj of objectives) {
       if (!obj) continue;
+      // F4: AI-emitted objective fields live in metadata; tolerate the
+      // legacy flat shape too in case a caller passes a coreState quest.
+      const meta = obj.metadata || obj;
       for (const loc of locations) {
-        if (obj.locationId && obj.locationId === loc.id) {
+        if (meta.locationId && meta.locationId === loc.id) {
           counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
           break;
         }
-        if (obj.locationName && fuzzyLocationNameMatch(obj.locationName, loc.canonicalName)) {
+        if (meta.locationName && fuzzyLocationNameMatch(meta.locationName, loc.canonicalName)) {
           counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
           break;
         }
@@ -177,7 +180,10 @@ export async function collectLocationCandidates(campaignId, { topN = DEFAULT_TOP
       }),
       prisma.campaignQuest.findMany({
         where: { campaignId },
-        select: { questId: true, objectives: true },
+        select: {
+          questId: true,
+          objectives: { select: { description: true, metadata: true } },
+        },
       }),
     ]);
 

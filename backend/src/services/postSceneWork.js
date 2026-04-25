@@ -86,8 +86,8 @@ export async function handlePostSceneWork({
     phase1Tasks.push(
       generateLocationSummary(campaignId, newLoc, prevLoc, provider, { timeoutMs: llmNanoTimeoutMs }),
     );
-    // Phase 7 — record the travel in UserWorldKnowledge (owner) + flip the
-    // edge's discoveredByCampaigns bit. Best-effort, never blocks.
+    // Phase 7 — record the travel in UserDiscoveredLocation/Edge (owner) +
+    // upsert a CampaignEdgeDiscovery row. Best-effort, never blocks.
     if (campaign?.livingWorldEnabled && campaign.userId) {
       phase1Tasks.push(
         (async () => {

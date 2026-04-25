@@ -101,7 +101,7 @@ export function buildContextSection(contextBlocks) {
       }
       // Round B (Phase 4b) — NPC hearsay policy. Each key NPC gets a list
       // of locations they are authorized to reveal in dialog (own location
-      // + 1-hop edges + explicit knownLocationIds). Premium MUST NOT reveal
+      // + 1-hop edges + explicit WorldNpcKnownLocation grants). Premium MUST NOT reveal
       // other locations from this NPC; processStateChanges enforces via the
       // `locationMentioned` bucket policy check.
       if (Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {

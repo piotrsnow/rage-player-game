@@ -2,6 +2,7 @@ import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
 import { createStartingSkills } from '../../data/rpgSystem';
 import { shortId } from '../../utils/ids';
+import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 
 export function createDefaultNeeds() {
   return { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 };
@@ -22,12 +23,12 @@ export function normalizeCustomAttackPresets(presets) {
 
 export const PERIOD_START_HOUR = { morning: 6, afternoon: 12, evening: 18, night: 22 };
 
-/** Merge new materials into the bag, stacking by name (case-insensitive). */
+/** Merge new materials into the bag, stacking by slugified name. */
 export function stackMaterials(bag, newItems) {
   const result = bag.map((m) => ({ ...m }));
   for (const item of newItems) {
-    const lower = (item.name || '').toLowerCase();
-    const existing = result.find((m) => (m.name || '').toLowerCase() === lower);
+    const key = slugifyItemName(item.name);
+    const existing = result.find((m) => slugifyItemName(m.name) === key);
     if (existing) {
       existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
     } else {
@@ -35,6 +36,32 @@ export function stackMaterials(bag, newItems) {
         name: item.name,
         quantity: item.quantity || 1,
       });
+    }
+  }
+  return result;
+}
+
+/**
+ * F4 — merge regular inventory items by slugify(name). Mirrors BE persistence
+ * so optimistic FE updates don't show duplicate rows for one scene before
+ * the server reconcile collapses them.
+ */
+export function stackInventory(inventory, newItems) {
+  const result = inventory.map((it) => ({ ...it, props: it.props ? { ...it.props } : {} }));
+  for (const item of newItems) {
+    const key = slugifyItemName(item.name);
+    const existing = result.find((i) => slugifyItemName(i.name) === key);
+    if (existing) {
+      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
+      // Latest write wins for non-quantity props.
+      const KNOWN_COLS = new Set(['id', 'name', 'baseType', 'quantity', 'props', 'imageUrl', 'addedAt']);
+      for (const [k, v] of Object.entries(item)) {
+        if (!KNOWN_COLS.has(k) && v !== undefined) existing[k] = v;
+        else if (k === 'baseType' && v) existing.baseType = v;
+        else if (k === 'imageUrl' && v) existing.imageUrl = v;
+      }
+    } else {
+      result.push({ ...item, id: key, name: item.name, quantity: item.quantity || 1 });
     }
   }
   return result;

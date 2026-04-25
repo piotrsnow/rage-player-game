@@ -4,7 +4,10 @@ export async function handleGetQuest(campaignId, questName) {
   const query = questName.toLowerCase();
 
   // Try normalized CampaignQuest first
-  const dbQuests = await prisma.campaignQuest.findMany({ where: { campaignId } });
+  const dbQuests = await prisma.campaignQuest.findMany({
+    where: { campaignId },
+    include: { objectives: { orderBy: { displayOrder: 'asc' } } },
+  });
 
   let match;
   if (dbQuests.length > 0) {
@@ -12,7 +15,7 @@ export async function handleGetQuest(campaignId, questName) {
       (q) => q.name?.toLowerCase().includes(query) || q.description?.toLowerCase().includes(query),
     );
     if (match) {
-      const objectives = Array.isArray(match.objectives) ? match.objectives : [];
+      const objectives = match.objectives || [];
       const reward = match.reward ?? null;
       const lines = [
         `Quest: ${match.name}`,
@@ -25,7 +28,8 @@ export async function handleGetQuest(campaignId, questName) {
       if (objectives.length) {
         lines.push('Objectives:');
         for (const obj of objectives) {
-          lines.push(`  ${obj.completed ? '[X]' : '[ ]'} ${obj.description}`);
+          const done = obj.status === 'done' || obj.completed === true;
+          lines.push(`  ${done ? '[X]' : '[ ]'} ${obj.description}`);
         }
       }
       if (reward) lines.push(`Reward: ${JSON.stringify(reward)}`);

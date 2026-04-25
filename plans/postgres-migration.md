@@ -7,10 +7,11 @@
 | **F1** | ✅ **Zrobione** | Engine swap + JSONB cleanup + transakcje + Postgres dev stack. Zobacz [F1 retrospektywa](#f1-retrospektywa). |
 | **F2** | ✅ **Zrobione** | 6 child tables + FIFO triggery + bulk upsert (3 sync funkcje). Zobacz [F2 retrospektywa](#f2-retrospektywa). |
 | **F3** | ✅ **Zrobione** | 7 join tables + `DiscoveryState` enum, drop 10 JSONB kolumn. Canonical → user-account scope, non-canonical → campaign scope. Zobacz [F3 retrospektywa](#f3-retrospektywa). |
-| **F4** | ⏭️ Następna | Hot-path entity decomposition — skills/inventory/materials/objectives/relationships. |
-| F5-F6 | Pending | Bez zmian planu. |
+| **F4** | ✅ **Zrobione** | 5 child tables (skills/inventory/materials/objectives/relationships), equipped jako 3 text columns, drop 6 JSONB kolumn. Items+materials stack by `slugify(name)`. Zobacz [F4 retrospektywa](#f4-retrospektywa). |
+| **F5** | ⏭️ Następna | `coreState` surface trimming — hot scalars na kolumny + `transientState JSONB`. |
+| F6 | Pending | Production scale-out (metric-driven). |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2+F3 (znane długi techniczne), potem skocz do [F4 — Hot-path entity decomposition](#f4--hot-path-entity-decomposition) i poproś o plan startowy.
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2+F3+F4 (znane długi techniczne), potem skocz do [F5 — `coreState` surface trimming](#f5--corestate-surface-trimming) i poproś o plan startowy.
 
 ## Context
 
@@ -1596,6 +1597,92 @@ UPDATE "Character" SET "equippedMainHandId" = '<deleted-item-uuid>' WHERE id = '
 | Loadowanie character → 4 JOINy zamiast 1 row | Prisma `include`, jeden query plan, bench równoważny lub lepszy niż dziś (Mongo loadowała 1 row + parse 4 JSONów) |
 | FE store oczekuje `char.skills` jako map | `_parseBackendCampaign` robi spłaszczenie — store pozostaje stabilny |
 | Equipped FK blokuje delete itema | Cascade nie chcemy (chcemy explicit unequip). Default `onDelete: Restrict` (Prisma default dla nullable FK) — równoważne z dzisiejszą walidacją w UI |
+
+# F4 retrospektywa
+
+**Zakres:** 6 sub-tasków (F4.1–F4.6) shipped. 708 BE tests ✅ (nowych F4: 14), 1177 FE tests ✅ (nowych F4: 22), `prisma validate` ✅, `npm run build` ✅, `db:reset` + 4 migracji deploy czysto.
+
+## Decyzje + zmiany vs plan
+
+| Plan | Co faktycznie wyszło |
+|---|---|
+| Equipped jako 3 nullable FK z `onDelete: SetNull` | **Equipped jako 3 nullable TEXT kolumny** (`equippedMainHand/OffHand/Armour`) bez FK constraint. Powód: items stack by `slugify(name)` (option A), więc PK inventory to `(characterId, itemKey)` — composite FK z trzech slotów do tego samego character'a wyglądałby groteskowo. Invariant trzymany app-side przez `clearStaleEquipped` w `persistCharacterSnapshot`. |
+| `CharacterMaterial.materialKey` jako PK | Tak, `materialKey = slugify(name)` + `displayName` osobno. Materials stackują się po slugu (NFKD + Ł→l + strip non-alphanum). |
+| `CharacterInventoryItem.id BigInt PK` + `itemKey String` osobno | **Drop osobnego `id`.** PK = `(characterId, itemKey)` analogicznie do CharacterMaterial. Items stack by name — `props` JSONB chłonie wszystkie AI-emit fields, latest-write-wins na quantity-collision. |
+| `CampaignQuestObjective` z `objectiveKey` + status='pending\|done' | + dodane `metadata Json @default("{}")`. AI emituje `onComplete`/`hint`/`locationId`/`locationName` na objective — wszystko leci do metadata, surfaced back przez serializer. Bez tego trigger `onComplete.moveNpcToPlayer` (Round B Phase 4) by zdechł. |
+| `CampaignNpcRelationship` z osobnym `targetType String` | Tak, + `@@unique([campaignNpcId, targetType, targetRef])` żeby update'y były idempotentne (writer robi delete-then-insert per NPC). |
+| Ekwipunek jako "delete row" przy quantity → 0 | OK przez `splitCharacterSnapshot` → tylko niepuste-stack rows lecą do `createMany`. |
+
+## Pure helpers — co dodane
+
+**Nowe** (w shared/):
+- `slugifyItemName(name)` w [shared/domain/itemKeys.js](../shared/domain/itemKeys.js) — używane FE+BE, NFKD + explicit Ł→l mapping (NFKD nie dekomponuje Ł), fallback `'unnamed'` dla pustych/symbolowych input. 8 unit testów.
+
+**Nowe** (w backend/):
+- `reconstructCharacterSnapshot(row)` — DB row → FE shape, spread `props` na top-level dla compat z `i.damage` direct access.
+- `splitCharacterSnapshot(snapshot)` — inverse, ze stacking on writes.
+- `clearStaleEquipped(snapshot)` — invariant guard, called inside persist.
+- `loadCharacterSnapshot(where)` / `loadCharacterSnapshotById(id)` — shorthand `findFirst({include}) + reconstruct`.
+- `persistCharacterSnapshot(characterId, snapshot, client?)` — replace-strategy w `$transaction`. Akceptuje `tx` z outer-tx (scene+character w jednym commicie w `generateSceneStream`).
+- `createCharacterWithRelations(userId, payload)` — POST handler.
+
+**Zmodyfikowane**:
+- `applyCharacterStateChanges` (BE+FE) — `newItems` regular items teraz stackują przez `stackInventory` zamiast pushować duplikaty. `removeItemsByName` matchuje przez slugify (case+accent insensitive).
+- `processQuestObjectiveUpdates` — atomic `prisma.campaignQuestObjective.update` zamiast pełnego rewrite array'a. Auto-complete sprawdza `quest.objectives.every(o => o.status === 'done')` z child relation.
+- `processNpcChanges` — `replaceNpcRelationships(campaignNpcId, list)` helper, drop `relationships` z create/update payload na `CampaignNPC`.
+
+## F2/F3 comment-rot cleanup (przy okazji F4)
+
+Naprawione (z F2 + F3 retrospektyw):
+- `aiContextTools/contextBuilders/dungeonRoom.js`, `livingWorld/dungeonSeedGenerator.js`, `livingWorld/dungeonEntry.js` — `Character.clearedDungeonIds` → `CharacterClearedDungeon` (F3)
+- `livingWorld/campaignSandbox.js` (3 miejsca), `aiContextTools/contextBuilders/hearsay.js`, `sceneGenerator/contextSection.js`, `seedWorld.js` — `WorldNPC.knownLocationIds` → `WorldNpcKnownLocation grants` (F3)
+- `services/postSceneWork.js` — `discoveredByCampaigns bit` → `CampaignEdgeDiscovery row` (F3)
+- `processStateChanges/locations.js` — `discoveredLocationIds` → `CampaignDiscoveredLocation` (F3)
+
+## Pliki dotknięte (top-level)
+
+- **Schema:** [backend/prisma/schema.prisma](../backend/prisma/schema.prisma) (5 nowych modeli + reverse relations, 3 equipped TEXT kolumny, drop 6 JSONB pól, `metadata` JSONB na objectives).
+- **Migracja:** `backend/prisma/migrations/20260425173314_hot_path_decomposition/migration.sql` (auto-gen).
+- **Bridge (NEW):** [backend/src/services/characterRelations.js](../backend/src/services/characterRelations.js) — load/persist/reconstruct/split/clearStaleEquipped + 17 unit testów.
+- **Shared (NEW):** [shared/domain/itemKeys.js](../shared/domain/itemKeys.js) + 8 unit testów.
+- **Mutators:** [backend/src/services/characterMutations.js](../backend/src/services/characterMutations.js) — pure mutator z stacking, drop `characterToPrismaUpdate`/`deserializeCharacterRow`. + 7 nowych BE testów.
+- **FE store:** [src/stores/handlers/applyStateChangesHandler/character.js](../src/stores/handlers/applyStateChangesHandler/character.js), [src/stores/handlers/_shared.js](../src/stores/handlers/_shared.js) (dodane `stackInventory`), [src/stores/handlers/inventoryHandlers.js](../src/stores/handlers/inventoryHandlers.js) (USE_MANA_CRYSTAL decrement-or-drop).
+- **Routes:** [backend/src/routes/characters.js](../backend/src/routes/characters.js) (full rewrite na bridge), `routes/campaigns.saveState.test.js` (mock update).
+- **Sync:** [backend/src/services/campaignSync.js](../backend/src/services/campaignSync.js) — `syncNPCsToNormalized` + `syncQuestsToNormalized` z relationships/objectives replace-after-upsert; `reconstructFromNormalized` + `fetchCampaignCharacters` z relations.
+- **Scene gen:** [generateSceneStream.js](../backend/src/services/sceneGenerator/generateSceneStream.js) (function-form `$transaction` + persist via bridge), [campaignLoader.js](../backend/src/services/sceneGenerator/campaignLoader.js) (relations include + reshape), [processStateChanges/quests.js](../backend/src/services/sceneGenerator/processStateChanges/quests.js) (atomic objective updates), [processStateChanges/npcs.js](../backend/src/services/sceneGenerator/processStateChanges/npcs.js) (replaceNpcRelationships).
+- **Multiplayer:** [multiplayerSceneFlow.js](../backend/src/services/multiplayerSceneFlow.js), [roomManager.js](../backend/src/services/roomManager.js) — load via bridge.
+- **Context tools:** [aiContextTools/handlers/npc.js](../backend/src/services/aiContextTools/handlers/npc.js), [/quest.js](../backend/src/services/aiContextTools/handlers/quest.js) — relations include + tolerate both shapes.
+- **Promotion pipeline:** [postCampaignLocationPromotion.js](../backend/src/services/livingWorld/postCampaignLocationPromotion.js) — objective `metadata` lookup.
+- **Docs:** [knowledge/concepts/persistence.md](../knowledge/concepts/persistence.md) (F4 bridge sekcja + 2 nowe debugging tips), [CLAUDE.md](../CLAUDE.md) (DB tabela + critical-path entry).
+- **Comment rot:** 8 plików z F2/F3 retro listy.
+
+## Znane długi z F4
+
+1. **Replace-strategy zamiast atomic UPDATE** dla skills/inventory/materials w `persistCharacterSnapshot`. Plan F4 mówił "atomic XP add" / "atomic material stack" — odłożone do F6 jeśli profile pokaże, że full-snapshot persist to bottleneck. Dla 0-100 DAU per-character single-user write nie jest hot path.
+2. **`CharacterInventoryItem.id` jako BigInt zostało utracone** — items są keyed `(characterId, itemKey)`. Konsekwencja: dwa miecze z różnymi `props` (np. enchantami) zlepią się w jeden stack po nazwie, props ostatniego wygrywają. Akceptowalne dla mass-produced equipment, dla unikatów AI musiałby emit unikatowe `name` (np. "Miecz Olafa +1" vs "Miecz Olafa +2") — co zwykle robi i tak.
+3. **Equipped bez FK constraint** — invariant trzymany app-side przez `clearStaleEquipped`. Każdy nowy custom write path do character musi go wywołać sam (alternatywnie zawsze przejść przez `persistCharacterSnapshot`).
+4. **`CampaignQuestObjective` BigInt PK nie jest stabilne między quest-updates** — `syncQuestsToNormalized` robi delete+createMany przy każdym quest sync. AI nie widzi objective ID i tak (premium prompt rendering description-only), więc to nie problem dla LLM-loop. Ale `obj.id`-based dedup w `checkQuestObjectives` (memoryCompressor) jest teraz no-op — może powtarzać check'i tych samych objectives. Niski impact (nano koszt).
+5. **`fetchCampaignCharacters` ma N rows × 4 includes** — dla MP z 4 graczami to 4 character rows + 4×3=12 child queries. Akceptowalne, single-digit ms. Bench odłożony do F6.
+6. **`processNpcChanges` per-NPC delete+insert relationships** — N×2 queries dla N NPCs. Dla typowej sceny N=3-5, akceptowalne. Bulk by wymagał `unnest` + temp tables — niewarte na tej skali.
+7. **`mergeUpdateBody` w `routes/characters.js` PUT** — full-snapshot replace nawet przy częściowej zmianie. PUT z `{name: 'X'}` przepisze inventory, skills, materialBag z istniejącego snapshot. Funkcjonalnie identycznie z dzisiaj, ale zużywa transakcję na rzeczy które nie zmienione. Profile-driven optymalizacja.
+
+## Verified manualnie
+
+- ✅ `prisma validate` po pełnej zmianie schemy.
+- ✅ `db:reset` → 4 migracje (init, rpgon, child_tables_fifo, reference_normalization, hot_path_decomposition) czysto applied.
+- ✅ All 708 BE tests + 1177 FE tests pass; `npm run build` zielony.
+- ✅ `slugifyItemName` round-trip dla Polish chars (`Skóra` ≡ `skora`, `Łuk +1` → `luk_1`).
+- ✅ `persistCharacterSnapshot` z mockowanym `tx` — split rows match expected shape.
+- ✅ `clearStaleEquipped` nulls deleted refs, leaves live ones.
+
+## Niezweryfikowane manualnie (do playtest)
+
+- E2E save → load → save character'a (inventory stack collapse na BE round-trip).
+- Equipped slot zachowuje się przy USE_MANA_CRYSTAL (decrement) + przy `removeItems` (pełen drop).
+- Quest objective `onComplete.moveNpcToPlayer` trigger po F4 (metadata bridge).
+- Multiplayer save/restore — characters z relations po `loadActiveSessionsFromDB`.
+- Campaign generator initial quest seed → `objectives` w child table z metadata.
+- `postCampaignLocationPromotion` skoring po objective metadata locationId/locationName.
 
 ---
 

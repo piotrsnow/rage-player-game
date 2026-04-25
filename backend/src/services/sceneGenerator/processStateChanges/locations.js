@@ -270,10 +270,10 @@ async function processTopLevelEntry(campaignId, entry, anchor, bounds = null) {
   // semantic hint. Fire-and-forget; ragService swallows provider errors.
   ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
 
-  // Round B — non-canonical locations need to land in the campaign's
-  // `discoveredLocationIds` since that's how the player map shows them.
-  // Canonical seed locations pass through this path only on a merge hit,
-  // where UserWorldKnowledge is the correct target — markLocationDiscovered
+  // Round B — non-canonical locations need a CampaignDiscoveredLocation
+  // row since that's how the player map shows them. Canonical seed
+  // locations pass through this path only on a merge hit, where
+  // UserDiscoveredLocation is the correct target — markLocationDiscovered
   // routes by isCanonical so this single call is safe for both.
   try {
     const campaignRow = await prisma.campaign.findUnique({

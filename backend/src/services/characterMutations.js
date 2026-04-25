@@ -1,16 +1,21 @@
 /**
  * Backend character mutation helpers.
  *
- * Mirrors the AI-driven character state-change branches from the frontend
- * GameContext APPLY_STATE_CHANGES reducer (src/contexts/GameContext.jsx).
- * Operates on a deserialized character snapshot (plain JS object with parsed
- * JSON fields) and returns the mutated snapshot. The caller is responsible for
- * persisting it back to Prisma via re-serializing the JSON fields.
+ * Mirrors the AI-driven character state-change branches from the FE store
+ * handler (src/stores/handlers/applyStateChangesHandler/character.js).
+ * Operates on the FE-shape snapshot (plain JS object with `skills` map,
+ * `inventory` array, `equipped` object, `materialBag` array — same shape
+ * the FE store consumes) and returns the mutated snapshot. The caller
+ * persists it back to Postgres through `persistCharacterSnapshot` from
+ * characterRelations.js, which fans the snapshot back out into the F4
+ * child tables (CharacterSkill / CharacterInventoryItem / CharacterMaterial).
  *
  * Used by:
  *   - backend/src/routes/characters.js PATCH /:id/state-changes (manual deltas)
  *   - backend/src/services/sceneGenerator.js processStateChanges (AI scene flow)
  */
+
+import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 
 // ── RPGon constants (mirrored from src/data/rpgSystem.js) ──
 
@@ -56,17 +61,43 @@ function normalizeMoney(money) {
   return { gold, silver, copper };
 }
 
-// ── Material stacking ──
+// ── Material / inventory stacking (F4: name-keyed merge for both) ──
 
 function stackMaterials(bag, newItems) {
   const result = (bag || []).map((m) => ({ ...m }));
   for (const item of newItems) {
-    const lower = (item.name || '').toLowerCase();
-    const existing = result.find((m) => (m.name || '').toLowerCase() === lower);
+    const key = slugifyItemName(item.name);
+    const existing = result.find((m) => slugifyItemName(m.name) === key);
     if (existing) {
       existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
     } else {
       result.push({ name: item.name, quantity: item.quantity || 1 });
+    }
+  }
+  return result;
+}
+
+/**
+ * Stack regular inventory items by slugify(name). After F4, items are
+ * keyed in the DB by itemKey, so the in-memory snapshot must merge by the
+ * same rule — otherwise FE would briefly show duplicate rows that the
+ * next BE reconcile collapses into one.
+ */
+function stackInventory(inventory, newItems) {
+  const result = (inventory || []).map((it) => ({ ...it, props: it.props ? { ...it.props } : {} }));
+  for (const item of newItems) {
+    const key = slugifyItemName(item.name);
+    const existing = result.find((i) => slugifyItemName(i.name) === key);
+    if (existing) {
+      existing.quantity = (existing.quantity || 1) + (item.quantity || 1);
+      // Latest write wins for non-quantity props (matches DB stacking).
+      const knownColumns = new Set(['id', 'name', 'baseType', 'quantity', 'props', 'imageUrl', 'addedAt']);
+      for (const [k, v] of Object.entries(item)) {
+        if (!knownColumns.has(k)) existing[k] = v;
+        else if (k !== 'id' && k !== 'name' && k !== 'quantity' && v !== undefined) existing[k] = v;
+      }
+    } else {
+      result.push({ ...item, id: key, name: item.name, quantity: item.quantity || 1 });
     }
   }
   return result;
@@ -212,7 +243,7 @@ export function applyCharacterStateChanges(character, changes) {
     next.spells = spells;
   }
 
-  // ── Inventory: items + materials ──
+  // ── Inventory: items + materials (F4: both stack by slugify(name)) ──
   if (changes.newItems) {
     const regularItems = [];
     const materialItems = [];
@@ -221,7 +252,7 @@ export function applyCharacterStateChanges(character, changes) {
       else regularItems.push(item);
     }
     if (regularItems.length > 0) {
-      next.inventory = [...(next.inventory || []), ...regularItems];
+      next.inventory = stackInventory(next.inventory || [], regularItems);
     }
     if (materialItems.length > 0) {
       next.materialBag = stackMaterials(next.materialBag || [], materialItems);
@@ -241,10 +272,10 @@ export function applyCharacterStateChanges(character, changes) {
     let inv = [...(next.inventory || [])];
     for (const { name, quantity } of changes.removeItemsByName) {
       let toRemove = quantity;
-      const lower = (name || '').toLowerCase();
+      const key = slugifyItemName(name);
 
       bag = bag.reduce((acc, item) => {
-        if (toRemove <= 0 || (item.name || '').toLowerCase() !== lower) {
+        if (toRemove <= 0 || slugifyItemName(item.name) !== key) {
           acc.push(item);
           return acc;
         }
@@ -256,7 +287,7 @@ export function applyCharacterStateChanges(character, changes) {
 
       if (toRemove > 0) {
         inv = inv.reduce((acc, item) => {
-          if (toRemove <= 0 || (item.name || '').toLowerCase() !== lower) {
+          if (toRemove <= 0 || slugifyItemName(item.name) !== key) {
             acc.push(item);
             return acc;
           }
@@ -307,49 +338,4 @@ export function applyCharacterStateChanges(character, changes) {
   }
 
   return next;
-}
-
-// ── Prisma serialization helpers ──
-// Postgres + JSONB: Prisma roundtrips Json columns as native objects/arrays,
-// so writes pass-through directly and reads are already deserialized.
-
-const CHARACTER_JSON_FIELDS = [
-  'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
-  'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
-  'knownTitles', 'activeDungeonState',
-];
-
-/**
- * Build a Prisma update payload from a mutated character snapshot.
- */
-export function characterToPrismaUpdate(snapshot) {
-  if (!snapshot) return {};
-  const data = {};
-
-  const scalars = [
-    'name', 'age', 'gender', 'species',
-    'wounds', 'maxWounds', 'movement',
-    'characterLevel', 'characterXp', 'attributePoints',
-    'backstory', 'portraitUrl', 'voiceId', 'voiceName',
-    'campaignCount', 'fame', 'infamy', 'status',
-    'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
-  ];
-  for (const key of scalars) {
-    if (snapshot[key] !== undefined) data[key] = snapshot[key];
-  }
-
-  for (const key of CHARACTER_JSON_FIELDS) {
-    if (snapshot[key] !== undefined) data[key] = snapshot[key];
-  }
-
-  return data;
-}
-
-/**
- * Identity passthrough kept for callsite stability — Prisma already returns
- * Json columns as native values from Postgres. Callers used to need a parse
- * wrapper for the Mongo provider's String-as-JSON storage.
- */
-export function deserializeCharacterRow(row) {
-  return row || null;
 }

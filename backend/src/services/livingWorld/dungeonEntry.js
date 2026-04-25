@@ -73,9 +73,9 @@ export async function handleDungeonEntry({ stateChanges, prevLoc = null }) {
  * the room's persisted metadata. Called from processStateChanges AFTER the
  * scene has committed. Idempotent — flags only flip one way (false → true).
  *
- * Also: on entryCleared for a BOSS room, flushes the dungeon id into the
- * active character's clearedDungeonIds if the character still has the
- * activeDungeonState pointing at it.
+ * Also: on entryCleared for a BOSS room, inserts a CharacterClearedDungeon
+ * row for the active character if they still have activeDungeonState
+ * pointing at it.
  */
 export async function applyDungeonRoomState({ campaignId, prevLoc, flags }) {
   if (!prevLoc || !flags || typeof flags !== 'object') return;

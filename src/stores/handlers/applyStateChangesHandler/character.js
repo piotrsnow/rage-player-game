@@ -1,6 +1,7 @@
 import { SKILL_CAPS, xpForSkillLevel } from '../../../data/rpgSystem';
 import { calculateMaxWounds, normalizeMoney } from '../../../services/gameState';
-import { stackMaterials } from '../_shared';
+import { stackMaterials, stackInventory } from '../_shared';
+import { slugifyItemName } from '../../../../shared/domain/itemKeys.js';
 
 /**
  * All direct character-sheet mutations — wounds, status, mana, attributes,
@@ -122,8 +123,10 @@ function applyInventoryAndMaterials(draft, changes) {
       else regularItems.push(item);
     }
     if (regularItems.length > 0) {
-      if (!draft.character.inventory) draft.character.inventory = [];
-      draft.character.inventory.push(...regularItems);
+      // F4 — stack-merge inventory by slugify(name). BE writes do the same;
+      // skipping the merge here would briefly show duplicate rows until the
+      // server reconcile snaps them back together.
+      draft.character.inventory = stackInventory(draft.character.inventory || [], regularItems);
     }
     if (materialItems.length > 0) {
       draft.character.materialBag = stackMaterials(draft.character.materialBag || [], materialItems);
@@ -149,10 +152,10 @@ function applyRemovals(draft, changes) {
 
   if (changes.removeItemsByName) {
     const removeFromArray = (arr, name, remaining) => {
-      const lower = name.toLowerCase();
+      const key = slugifyItemName(name);
       const out = [];
       for (const item of arr) {
-        if (remaining <= 0 || (item.name || '').toLowerCase() !== lower) {
+        if (remaining <= 0 || slugifyItemName(item.name) !== key) {
           out.push(item);
           continue;
         }

@@ -14,6 +14,7 @@ export async function handleGetNPC(campaignId, npcName) {
       campaignId,
       name: { contains: npcName, mode: 'insensitive' },
     },
+    include: { relationships: true },
   });
 
   if (npc) {
@@ -39,6 +40,9 @@ export async function handleGetNPC(campaignId, npcName) {
 }
 
 export function formatNPC(npc) {
+  // Accept either F4 relation rows ({relation, targetRef}) or the
+  // FE-shape ({type, npcName}) when this function is called against
+  // already-reconstructed snapshots.
   const relationships = Array.isArray(npc.relationships) ? npc.relationships : [];
 
   const lines = [
@@ -52,7 +56,9 @@ export function formatNPC(npc) {
     npc.lastLocation ? `Last seen: ${npc.lastLocation}` : null,
     npc.notes ? `Notes: ${npc.notes}` : null,
     relationships.length > 0
-      ? `Relationships: ${relationships.map((r) => `${r.type}: ${r.npcName}`).join(', ')}`
+      ? `Relationships: ${relationships
+          .map((r) => `${r.type ?? r.relation}: ${r.npcName ?? r.targetRef}`)
+          .join(', ')}`
       : null,
   ];
 

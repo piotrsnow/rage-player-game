@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
-import { deserializeCharacterRow } from './characterMutations.js';
+import { reconstructCharacterSnapshot } from './characterRelations.js';
 
 const log = childLogger({ module: 'roomManager' });
 
@@ -579,9 +579,16 @@ export async function loadActiveSessionsFromDB() {
 
       const characterIds = players.map((p) => p.characterId).filter(Boolean);
       const charRows = characterIds.length > 0
-        ? await prisma.character.findMany({ where: { id: { in: characterIds } } })
+        ? await prisma.character.findMany({
+          where: { id: { in: characterIds } },
+          include: {
+            characterSkills: true,
+            inventoryItems: { orderBy: { addedAt: 'asc' } },
+            materials: true,
+          },
+        })
         : [];
-      const charById = new Map(charRows.map((r) => [r.id, deserializeCharacterRow(r)]));
+      const charById = new Map(charRows.map((r) => [r.id, reconstructCharacterSnapshot(r)]));
 
       const playerMap = new Map();
       const refreshedCharacters = [];

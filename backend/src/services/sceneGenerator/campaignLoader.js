@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
-import { deserializeCharacterRow } from '../characterMutations.js';
+import { loadCharacterSnapshotById } from '../characterRelations.js';
 import { getCampaignCharacterIds } from '../campaignSync.js';
 
 /**
@@ -19,11 +19,17 @@ export async function loadCampaignState(campaignId) {
       where: { id: campaignId },
       select: { coreState: true, livingWorldEnabled: true },
     }),
-    prisma.campaignNPC.findMany({ where: { campaignId } }),
+    prisma.campaignNPC.findMany({
+      where: { campaignId },
+      include: { relationships: true },
+    }),
     prisma.campaignQuest.findMany({
       where: { campaignId },
       orderBy: { createdAt: 'asc' },
-      include: { prerequisites: { select: { prerequisiteId: true } } },
+      include: {
+        prerequisites: { select: { prerequisiteId: true } },
+        objectives: { orderBy: { displayOrder: 'asc' } },
+      },
     }),
     prisma.campaignCodex.findMany({
       where: { campaignId },
@@ -47,9 +53,8 @@ export async function loadCampaignState(campaignId) {
   const activeCharacterId = characterIds[0] || null;
   let activeCharacter = null;
   if (activeCharacterId) {
-    const row = await prisma.character.findUnique({ where: { id: activeCharacterId } });
-    if (row) {
-      activeCharacter = deserializeCharacterRow(row);
+    activeCharacter = await loadCharacterSnapshotById(activeCharacterId);
+    if (activeCharacter) {
       coreState.character = activeCharacter;
     }
   }
@@ -60,7 +65,12 @@ export async function loadCampaignState(campaignId) {
       name: n.name, gender: n.gender, role: n.role,
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
-      notes: n.notes, relationships: Array.isArray(n.relationships) ? n.relationships : [],
+      notes: n.notes,
+      relationships: (n.relationships || []).map((r) => ({
+        npcName: r.targetRef,
+        type: r.relation,
+        ...(r.strength ? { strength: r.strength } : {}),
+      })),
     }));
   }
 
@@ -75,7 +85,13 @@ export async function loadCampaignState(campaignId) {
         prerequisiteQuestIds: Array.isArray(q.prerequisites)
           ? q.prerequisites.map((p) => p.prerequisiteId)
           : [],
-        objectives: Array.isArray(q.objectives) ? q.objectives : [],
+        objectives: (q.objectives || []).map((o) => ({
+          description: o.description,
+          completed: o.status === 'done',
+          progress: o.progress,
+          target: o.targetAmount,
+          ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),
+        })),
         reward: q.reward ?? null,
       };
       if (q.status === 'completed') completed.push({ ...quest, completedAt: q.completedAt });

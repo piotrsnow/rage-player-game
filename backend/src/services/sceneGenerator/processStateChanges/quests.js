@@ -47,16 +47,20 @@ export async function resolveActiveQuest(campaignId, rawId) {
   return null;
 }
 
+/**
+ * Resolve an AI-emitted objective ref against a list of CampaignQuestObjective
+ * rows (or FE-shape objectives). Premium prompt sees `description` only —
+ * the BigInt PK is not exposed — so primary match is description-equality
+ * and the fallback is single-pending heuristic.
+ */
 export function resolveObjective(objectives, rawObjectiveId) {
   if (!Array.isArray(objectives) || objectives.length === 0) return null;
-  const exact = objectives.find((o) => o.id === rawObjectiveId);
-  if (exact) return exact;
   const normalized = typeof rawObjectiveId === 'string' ? rawObjectiveId.trim().toLowerCase() : '';
   if (normalized) {
     const byDesc = objectives.find((o) => (o.description || '').trim().toLowerCase() === normalized);
     if (byDesc) return byDesc;
   }
-  const pending = objectives.filter((o) => !o.completed);
+  const pending = objectives.filter((o) => !(o.completed || o.status === 'done'));
   if (pending.length === 1) return pending[0];
   return null;
 }
@@ -146,26 +150,28 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
     try {
       const quest = await resolveActiveQuest(campaignId, update.questId);
       if (!quest) continue;
-      const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
+
+      const objectives = await prisma.campaignQuestObjective.findMany({
+        where: { questId: quest.id },
+        orderBy: { displayOrder: 'asc' },
+      });
       const targetObj = resolveObjective(objectives, update.objectiveId);
       if (!targetObj) {
         log.warn({ campaignId, questId: quest.questId, objectiveId: update.objectiveId }, 'Objective id from premium did not match — ignored');
         continue;
       }
-      const updated = objectives.map(obj => {
-        if (obj.id !== targetObj.id) return obj;
-        const next = { ...obj };
-        if (update.completed) next.completed = true;
-        if (update.addProgress) {
-          const prev = obj.progress || '';
-          next.progress = prev ? `${prev}; ${update.addProgress}` : update.addProgress;
-        }
-        return next;
-      });
-      await prisma.campaignQuest.update({
-        where: { id: quest.id },
-        data: { objectives: updated },
-      });
+
+      const updateData = {};
+      if (update.completed) updateData.status = 'done';
+      if (typeof update.addProgress === 'number') {
+        updateData.progress = (targetObj.progress || 0) + update.addProgress;
+      }
+      if (Object.keys(updateData).length > 0) {
+        await prisma.campaignQuestObjective.update({
+          where: { id: targetObj.id },
+          data: updateData,
+        });
+      }
       if (update.completed) touchedQuestIds.add(quest.questId);
 
       // Round B (Phase 4) — `onComplete.moveNpcToPlayer` trigger. When the
@@ -174,9 +180,10 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
       // current location, (b) stash the message on `pendingIntroHint` so the
       // next scene prompt surfaces "NPC just arrived with news". The trigger
       // fires once per objective completion — no further bookkeeping.
-      if (update.completed && targetObj.onComplete?.moveNpcToPlayer) {
+      const onComplete = targetObj.metadata?.onComplete;
+      if (update.completed && onComplete?.moveNpcToPlayer) {
         try {
-          await fireMoveNpcToPlayerTrigger(campaignId, targetObj.onComplete);
+          await fireMoveNpcToPlayerTrigger(campaignId, onComplete);
         } catch (err) {
           log.warn({ err: err?.message, campaignId, questId: quest.questId }, 'moveNpcToPlayer trigger failed');
         }
@@ -196,10 +203,11 @@ export async function processQuestObjectiveUpdates(campaignId, questUpdates, alr
     try {
       const quest = await prisma.campaignQuest.findFirst({
         where: { campaignId, questId },
+        include: { objectives: true },
       });
       if (!quest || quest.status === 'completed') continue;
-      const objectives = Array.isArray(quest.objectives) ? quest.objectives : [];
-      if (objectives.length > 0 && objectives.every(o => o.completed)) {
+      const objectives = quest.objectives || [];
+      if (objectives.length > 0 && objectives.every((o) => o.status === 'done')) {
         await prisma.campaignQuest.update({
           where: { id: quest.id },
           data: { status: 'completed', completedAt: new Date() },

@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
-import { deserializeCharacterRow } from './characterMutations.js';
+import { reconstructCharacterSnapshot } from './characterRelations.js';
 
 const log = childLogger({ module: 'campaigns' });
 
@@ -29,8 +29,13 @@ export async function fetchCampaignCharacters(characterIds) {
   if (!Array.isArray(characterIds) || characterIds.length === 0) return [];
   const rows = await prisma.character.findMany({
     where: { id: { in: characterIds } },
+    include: {
+      characterSkills: true,
+      inventoryItems: { orderBy: { addedAt: 'asc' } },
+      materials: true,
+    },
   });
-  const byId = new Map(rows.map((r) => [r.id, deserializeCharacterRow(r)]));
+  const byId = new Map(rows.map((r) => [r.id, reconstructCharacterSnapshot(r)]));
   return characterIds.map((id) => byId.get(id)).filter(Boolean);
 }
 
@@ -75,6 +80,7 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
   const valid = npcs
     .filter((n) => n && n.name)
     .map((npc) => ({
+      relationships: Array.isArray(npc.relationships) ? npc.relationships : [],
       data: {
         npcId: npc.name.toLowerCase().replace(/\s+/g, '_'),
         name: npc.name,
@@ -87,7 +93,6 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
         lastLocation: npc.lastLocation || null,
         factionId: npc.factionId || null,
         notes: npc.notes || null,
-        relationships: npc.relationships || [],
       },
     }));
   if (valid.length === 0) return;
@@ -110,15 +115,18 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
     const existingId = idByNpcId.get(v.data.npcId);
     if (existingId) {
       const { npcId: _drop, ...updateData } = v.data;
-      toUpdate.push({ id: existingId, data: updateData });
+      toUpdate.push({ id: existingId, npcId: v.data.npcId, data: updateData, relationships: v.relationships });
     } else {
-      toCreate.push({ campaignId, ...v.data });
+      toCreate.push({ campaignId, ...v.data, _npcKey: v.data.npcId, _relationships: v.relationships });
     }
   }
 
   if (toCreate.length > 0) {
     try {
-      await prisma.campaignNPC.createMany({ data: toCreate, skipDuplicates: true });
+      await prisma.campaignNPC.createMany({
+        data: toCreate.map(({ _npcKey, _relationships, ...row }) => row),
+        skipDuplicates: true,
+      });
     } catch (err) {
       log.error({ err, count: toCreate.length }, 'NPC bulk createMany failed');
     }
@@ -129,6 +137,51 @@ export async function syncNPCsToNormalized(campaignId, npcs) {
     } catch (err) {
       log.error({ err, id: u.id }, 'NPC update failed');
     }
+  }
+
+  // F4 — replace relationships for every touched NPC. Need fresh DB ids
+  // (created rows weren't returned by createMany), so re-resolve in one shot.
+  try {
+    const allTouched = [...toUpdate, ...toCreate];
+    if (allTouched.length === 0) return;
+    const allNpcIds = allTouched.map((r) => r.npcId ?? r._npcKey);
+    const dbRows = await prisma.campaignNPC.findMany({
+      where: { campaignId, npcId: { in: allNpcIds } },
+      select: { id: true, npcId: true },
+    });
+    const idByNpcKey = new Map(dbRows.map((r) => [r.npcId, r.id]));
+
+    const targetNpcDbIds = allTouched.map((r) => idByNpcKey.get(r.npcId ?? r._npcKey)).filter(Boolean);
+    if (targetNpcDbIds.length > 0) {
+      await prisma.campaignNpcRelationship.deleteMany({
+        where: { campaignNpcId: { in: targetNpcDbIds } },
+      });
+    }
+
+    const relInserts = [];
+    for (const t of allTouched) {
+      const dbId = idByNpcKey.get(t.npcId ?? t._npcKey);
+      const relList = t.relationships ?? t._relationships ?? [];
+      if (!dbId || relList.length === 0) continue;
+      for (const rel of relList) {
+        if (!rel || !rel.npcName) continue;
+        relInserts.push({
+          campaignNpcId: dbId,
+          targetType: 'npc',
+          targetRef: rel.npcName,
+          relation: rel.type || 'unknown',
+          strength: typeof rel.strength === 'number' ? rel.strength : 0,
+        });
+      }
+    }
+    if (relInserts.length > 0) {
+      await prisma.campaignNpcRelationship.createMany({
+        data: relInserts,
+        skipDuplicates: true,
+      });
+    }
+  } catch (err) {
+    log.error({ err, campaignId }, 'NPC relationships sync failed');
   }
 }
 
@@ -192,6 +245,7 @@ export async function syncQuestsToNormalized(campaignId, quests) {
   const valid = all.filter((q) => q.id && q.name).map((q) => ({
     questId: q.id,
     prereqIds: Array.isArray(q.prerequisiteQuestIds) ? q.prerequisiteQuestIds.filter(Boolean) : [],
+    objectives: Array.isArray(q.objectives) ? q.objectives : [],
     data: {
       name: q.name,
       type: q.type || 'side',
@@ -200,7 +254,6 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       questGiverId: q.questGiverId || null,
       turnInNpcId: q.turnInNpcId || q.questGiverId || null,
       locationId: q.locationId || null,
-      objectives: q.objectives || [],
       reward: q.reward ?? null,
       status: q._status,
       completedAt: q.completedAt ? new Date(q.completedAt) : null,
@@ -247,10 +300,8 @@ export async function syncQuestsToNormalized(campaignId, quests) {
     }
   }
 
-  // Sync prerequisites — DB-side ids, not the questId string. We need the
-  // freshly-persisted CampaignQuest rows to map (campaignId, questId) → id.
-  const allValid = valid.filter((v) => v.prereqIds.length > 0);
-  if (allValid.length === 0) return;
+  // F4 — replace objectives + prerequisites for every touched quest. Need
+  // fresh DB ids so re-resolve in one shot.
   try {
     const dbRows = await prisma.campaignQuest.findMany({
       where: { campaignId, questId: { in: valid.map((v) => v.questId) } },
@@ -258,23 +309,64 @@ export async function syncQuestsToNormalized(campaignId, quests) {
     });
     const idByQuestId2 = new Map(dbRows.map((r) => [r.questId, r.id]));
 
+    const allDependentIds = valid.map((v) => idByQuestId2.get(v.questId)).filter(Boolean);
+
+    // ── Objectives (replace strategy) ──
+    if (allDependentIds.length > 0) {
+      await prisma.campaignQuestObjective.deleteMany({
+        where: { questId: { in: allDependentIds } },
+      });
+    }
+    const objectiveInserts = [];
+    for (const v of valid) {
+      const dbId = idByQuestId2.get(v.questId);
+      if (!dbId) continue;
+      v.objectives.forEach((obj, idx) => {
+        if (!obj) return;
+        const description = obj.description || obj.text || '';
+        if (!description) return;
+        const completed = obj.completed === true || obj.status === 'done';
+        // Stash AI-emitted metadata (onComplete triggers, hints,
+        // locationId/locationName for promotion-pipeline scoring, etc.) in
+        // JSONB. Anything not in the column set survives roundtrip via the
+        // reader-side serializer.
+        const KNOWN_COLS = new Set(['description', 'text', 'completed', 'status', 'progress', 'target', 'id']);
+        const metadata = {};
+        for (const [k, v2] of Object.entries(obj)) {
+          if (!KNOWN_COLS.has(k) && v2 !== undefined && v2 !== null) metadata[k] = v2;
+        }
+        objectiveInserts.push({
+          questId: dbId,
+          displayOrder: idx,
+          description,
+          progress: typeof obj.progress === 'number' ? obj.progress : (completed ? 1 : 0),
+          targetAmount: typeof obj.target === 'number' ? obj.target : 1,
+          status: completed ? 'done' : 'pending',
+          metadata,
+        });
+      });
+    }
+    if (objectiveInserts.length > 0) {
+      await prisma.campaignQuestObjective.createMany({ data: objectiveInserts });
+    }
+
+    // ── Prerequisites (replace strategy, scoped to dependents with prereqs) ──
     const prereqInserts = [];
-    const dependentIds = [];
-    for (const v of allValid) {
+    const dependentWithPrereqs = [];
+    for (const v of valid) {
+      if (v.prereqIds.length === 0) continue;
       const dependentId = idByQuestId2.get(v.questId);
       if (!dependentId) continue;
-      dependentIds.push(dependentId);
+      dependentWithPrereqs.push(dependentId);
       for (const prereqQuestId of v.prereqIds) {
         const prereqId = idByQuestId2.get(prereqQuestId);
         if (!prereqId) continue;
         prereqInserts.push({ questId: dependentId, prerequisiteId: prereqId });
       }
     }
-
-    // Replace prereq slice for the touched dependents — drop existing then bulk insert.
-    if (dependentIds.length > 0) {
+    if (dependentWithPrereqs.length > 0) {
       await prisma.campaignQuestPrerequisite.deleteMany({
-        where: { questId: { in: dependentIds } },
+        where: { questId: { in: dependentWithPrereqs } },
       });
     }
     if (prereqInserts.length > 0) {
@@ -284,14 +376,17 @@ export async function syncQuestsToNormalized(campaignId, quests) {
       });
     }
   } catch (err) {
-    log.error({ err, campaignId }, 'Quest prerequisites sync failed');
+    log.error({ err, campaignId }, 'Quest objectives/prerequisites sync failed');
   }
 }
 
 export async function reconstructFromNormalized(campaignId, coreState) {
   if (!coreState.world) coreState.world = {};
 
-  const dbNpcs = await prisma.campaignNPC.findMany({ where: { campaignId } });
+  const dbNpcs = await prisma.campaignNPC.findMany({
+    where: { campaignId },
+    include: { relationships: true },
+  });
   if (dbNpcs.length > 0) {
     coreState.world.npcs = dbNpcs.map((n) => ({
       name: n.name,
@@ -304,7 +399,11 @@ export async function reconstructFromNormalized(campaignId, coreState) {
       lastLocation: n.lastLocation,
       factionId: n.factionId,
       notes: n.notes,
-      relationships: n.relationships || [],
+      relationships: (n.relationships || []).map((r) => ({
+        npcName: r.targetRef,
+        type: r.relation,
+        ...(r.strength ? { strength: r.strength } : {}),
+      })),
     }));
   }
 
@@ -330,7 +429,10 @@ export async function reconstructFromNormalized(campaignId, coreState) {
   const dbQuests = await prisma.campaignQuest.findMany({
     where: { campaignId },
     orderBy: { createdAt: 'asc' },
-    include: { prerequisites: { select: { prerequisite: { select: { questId: true } } } } },
+    include: {
+      prerequisites: { select: { prerequisite: { select: { questId: true } } } },
+      objectives: { orderBy: { displayOrder: 'asc' } },
+    },
   });
   if (dbQuests.length > 0) {
     const active = [];
@@ -348,7 +450,13 @@ export async function reconstructFromNormalized(campaignId, coreState) {
         prerequisiteQuestIds: Array.isArray(q.prerequisites)
           ? q.prerequisites.map((p) => p.prerequisite?.questId).filter(Boolean)
           : [],
-        objectives: q.objectives || [],
+        objectives: (q.objectives || []).map((o) => ({
+          description: o.description,
+          completed: o.status === 'done',
+          progress: o.progress,
+          target: o.targetAmount,
+          ...(o.metadata && typeof o.metadata === 'object' ? o.metadata : {}),
+        })),
         reward: q.reward ?? null,
       };
       if (q.status === 'completed') {

@@ -6,7 +6,7 @@ import { resolveNpcKnownLocations } from '../../livingWorld/campaignSandbox.js';
  *
  * For each key NPC at the location, resolve the set of locations they're
  * authorized to reveal in dialog: own location + 1-hop edge neighbours +
- * explicit WorldNPC.knownLocationIds. Scene prompt renders this as
+ * explicit WorldNpcKnownLocation grants. Scene prompt renders this as
  * [NPC_KNOWLEDGE] blocks so premium respects scope ("ask the commoner about
  * the far dungeon → NPC says I don't know"). Post-scene policy in
  * `processStateChanges.processLocationMentions` rejects `locationMentioned`

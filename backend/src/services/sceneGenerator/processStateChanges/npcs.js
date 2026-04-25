@@ -47,6 +47,27 @@ export function initialInteractionFields(sceneIndex, now = new Date()) {
   };
 }
 
+/**
+ * F4 — replace the relationship slice for a single CampaignNPC. Pure
+ * delete-then-insert; relationships are flavor metadata, no audit need.
+ */
+async function replaceNpcRelationships(campaignNpcId, relationships, prismaClient = prisma) {
+  if (!campaignNpcId) return;
+  await prismaClient.campaignNpcRelationship.deleteMany({ where: { campaignNpcId } });
+  const inserts = (relationships || [])
+    .filter((r) => r && r.npcName)
+    .map((r) => ({
+      campaignNpcId,
+      targetType: 'npc',
+      targetRef: r.npcName,
+      relation: r.type || 'unknown',
+      strength: typeof r.strength === 'number' ? r.strength : 0,
+    }));
+  if (inserts.length > 0) {
+    await prismaClient.campaignNpcRelationship.createMany({ data: inserts, skipDuplicates: true });
+  }
+}
+
 export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false, sceneIndex = null } = {}) {
   const affectedNpcIds = [];
 
@@ -66,17 +87,17 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (npcChange.disposition != null) contentUpdate.disposition = npcChange.disposition;
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
-        if (npcChange.relationships) {
-          contentUpdate.relationships = npcChange.relationships;
-        }
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
 
-        const hasContentUpdate = Object.keys(contentUpdate).length > 0;
+        const hasContentUpdate = Object.keys(contentUpdate).length > 0 || Array.isArray(npcChange.relationships);
         const statsDelta = computeInteractionDelta(existing, sceneIndex);
         const updated = await prisma.campaignNPC.update({
           where: { id: existing.id },
           data: { ...statsDelta, ...contentUpdate },
         });
+        if (Array.isArray(npcChange.relationships)) {
+          await replaceNpcRelationships(existing.id, npcChange.relationships);
+        }
         // Only re-embed + queue downstream work when LLM actually changed
         // state — bare mentions tick stats but don't require embedding churn.
         if (hasContentUpdate) {
@@ -97,10 +118,12 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               personality: npcChange.personality || null,
               attitude: npcChange.attitude || 'neutral',
               disposition: npcChange.disposition ?? 0,
-              relationships: npcChange.relationships || [],
               ...initialInteractionFields(sceneIndex),
             },
           });
+          if (Array.isArray(npcChange.relationships) && npcChange.relationships.length > 0) {
+            await replaceNpcRelationships(created.id, npcChange.relationships);
+          }
           const embText = buildNPCEmbeddingText(created);
           const emb = await embedText(embText);
           if (emb) writeEmbedding('CampaignNPC', created.id, emb, embText);

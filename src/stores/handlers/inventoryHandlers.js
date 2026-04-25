@@ -55,6 +55,14 @@ export const inventoryHandlers = {
       return;
     }
 
-    char.inventory = char.inventory.filter((i) => i?.id !== itemId);
+    // F4 — items stack by name now, so "consuming one" means decrementing
+    // the stack rather than dropping the whole row. Drop only when the
+    // last copy is consumed.
+    const idx = char.inventory.findIndex((i) => i?.id === itemId);
+    if (idx >= 0) {
+      const qty = char.inventory[idx].quantity || 1;
+      if (qty <= 1) char.inventory.splice(idx, 1);
+      else char.inventory[idx] = { ...char.inventory[idx], quantity: qty - 1 };
+    }
   },
 };

@@ -972,7 +972,7 @@ async function upsertMainLoreSection() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// NPC explicit knownLocationIds — Phase 2b. Key NPCs get
+// NPC explicit WorldNpcKnownLocation grants — Phase 2b. Key NPCs get
 // authorized knowledge beyond their implicit 1-hop radius.
 // Resolved after all locations exist so we can lookup by name.
 // ─────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
 import { prisma } from '../lib/prisma.js';
+import { applyCharacterStateChanges } from '../services/characterMutations.js';
 import {
-  applyCharacterStateChanges,
-  characterToPrismaUpdate,
-  deserializeCharacterRow,
-} from '../services/characterMutations.js';
+  loadCharacterSnapshot,
+  persistCharacterSnapshot,
+  createCharacterWithRelations,
+} from '../services/characterRelations.js';
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -12,12 +13,13 @@ function normalizeCharacterAge(age) {
 }
 
 /**
- * Build a Prisma create payload from a request body. Json columns get
- * pass-through values (Prisma serializes to JSONB).
+ * Build the FE-shape snapshot bundle for create/update. The route accepts
+ * the same body shape it always has — `{skills: {...}, inventory: [...],
+ * equipped: {...}, materialBag: [...]}` — and createCharacterWithRelations
+ * / persistCharacterSnapshot fan it out across the F4 child tables.
  */
-function buildCreatePayload(userId, body) {
+function snapshotFromBody(body) {
   return {
-    userId,
     name: body.name || 'Adventurer',
     age: normalizeCharacterAge(body.age),
     gender: body.gender || '',
@@ -54,32 +56,27 @@ function buildCreatePayload(userId, body) {
 }
 
 /**
- * Selective PUT update — only writes fields actually present in the body.
+ * Selective PUT update — merge body deltas onto the existing snapshot so
+ * only relations the caller actually touched get rewritten.
  */
-function buildUpdatePayload(body) {
-  const data = {};
-  const scalarPassthrough = [
+function mergeUpdateBody(existingSnapshot, body) {
+  const merged = { ...existingSnapshot };
+  const passthrough = [
     'name', 'gender', 'species',
     'wounds', 'maxWounds', 'movement',
     'characterLevel', 'characterXp', 'attributePoints',
     'backstory', 'portraitUrl', 'voiceId', 'voiceName',
     'campaignCount', 'fame', 'infamy', 'status',
     'lockedCampaignId', 'lockedCampaignName', 'lockedLocation',
+    'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
+    'customAttackPresets', 'knownTitles', 'activeDungeonState',
+    'skills', 'inventory', 'materialBag', 'equipped',
   ];
-  for (const key of scalarPassthrough) {
-    if (body[key] !== undefined) data[key] = body[key];
+  for (const key of passthrough) {
+    if (body[key] !== undefined) merged[key] = body[key];
   }
-  if (body.age !== undefined) data.age = normalizeCharacterAge(body.age);
-
-  const jsonFields = [
-    'attributes', 'skills', 'mana', 'spells', 'inventory', 'materialBag',
-    'money', 'equipped', 'statuses', 'needs', 'customAttackPresets',
-    'knownTitles', 'activeDungeonState',
-  ];
-  for (const key of jsonFields) {
-    if (body[key] !== undefined) data[key] = body[key];
-  }
-  return data;
+  if (body.age !== undefined) merged.age = normalizeCharacterAge(body.age);
+  return merged;
 }
 
 const CHARACTER_BODY_SCHEMA = {
@@ -151,64 +148,61 @@ export async function characterRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
   fastify.get('/', async (request) => {
+    // List view doesn't need relations — character library cards only use
+    // scalar fields. Loading inventory/skills for every entry would be a
+    // noticeable hit once the library has a couple dozen characters.
     const characters = await prisma.character.findMany({
       where: { userId: request.user.id },
       orderBy: { updatedAt: 'desc' },
     });
-    return characters;
+    return characters.map((c) => ({
+      ...c,
+      // Stub the FE-shape collections so list cards that read e.g.
+      // `char.equipped.mainHand` don't trip on undefined.
+      skills: {},
+      inventory: [],
+      materialBag: [],
+      equipped: {
+        mainHand: c.equippedMainHand ?? null,
+        offHand: c.equippedOffHand ?? null,
+        armour: c.equippedArmour ?? null,
+      },
+    }));
   });
 
   fastify.get('/:id', async (request, reply) => {
-    const character = await prisma.character.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
-    });
-    if (!character) return reply.code(404).send({ error: 'Character not found' });
-    return character;
+    const snapshot = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
+    if (!snapshot) return reply.code(404).send({ error: 'Character not found' });
+    return snapshot;
   });
 
   fastify.post('/', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request) => {
-    const character = await prisma.character.create({
-      data: buildCreatePayload(request.user.id, request.body || {}),
-    });
-    return character;
+    return createCharacterWithRelations(request.user.id, snapshotFromBody(request.body || {}));
   });
 
   fastify.put('/:id', { schema: { body: CHARACTER_BODY_SCHEMA } }, async (request, reply) => {
-    const existing = await prisma.character.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
-    });
+    const existing = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
-
-    const character = await prisma.character.update({
-      where: { id: request.params.id },
-      data: buildUpdatePayload(request.body || {}),
-    });
-    return character;
+    const merged = mergeUpdateBody(existing, request.body || {});
+    return persistCharacterSnapshot(request.params.id, merged);
   });
 
   /**
    * PATCH /:id/state-changes — apply an AI/manual state-change delta atomically.
-   * Returns the updated Character row.
+   * Returns the updated character snapshot.
    */
   fastify.patch('/:id/state-changes', { schema: { body: STATE_CHANGES_SCHEMA } }, async (request, reply) => {
-    const existing = await prisma.character.findFirst({
-      where: { id: request.params.id, userId: request.user.id },
-    });
+    const existing = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
 
-    const mutated = applyCharacterStateChanges(deserializeCharacterRow(existing), request.body || {});
-    const updateData = characterToPrismaUpdate(mutated);
-
-    const updated = await prisma.character.update({
-      where: { id: request.params.id },
-      data: updateData,
-    });
-    return updated;
+    const mutated = applyCharacterStateChanges(existing, request.body || {});
+    return persistCharacterSnapshot(request.params.id, mutated);
   });
 
   fastify.delete('/:id', async (request, reply) => {
     const existing = await prisma.character.findFirst({
       where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
     });
     if (!existing) return reply.code(404).send({ error: 'Character not found' });
 

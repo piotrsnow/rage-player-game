@@ -11,10 +11,8 @@ import {
 } from '../diceResolver.js';
 import { resolveAndApplyRewards } from '../rewardResolver.js';
 import { generateWrapupFallback, pickWrapupSpeaker } from '../questWrapupFallback.js';
-import {
-  applyCharacterStateChanges,
-  characterToPrismaUpdate,
-} from '../characterMutations.js';
+import { applyCharacterStateChanges } from '../characterMutations.js';
+import { persistCharacterSnapshot } from '../characterRelations.js';
 import { loadCampaignState } from './campaignLoader.js';
 import { tryTradeShortcut, tryCombatFastPath } from './shortcuts.js';
 import { getInlineEntityKeys } from './inlineKeys.js';
@@ -418,31 +416,31 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       }
     }
 
-    const sceneCreateOp = prisma.campaignScene.create({
-      data: {
-        campaignId,
-        sceneIndex: newSceneIndex,
-        narrative: sceneResult.narrative || '',
-        chosenAction: playerAction,
-        suggestedActions: sceneResult.suggestedActions || [],
-        dialogueSegments: sceneResult.dialogueSegments || [],
-        imagePrompt: sceneResult.imagePrompt || null,
-        soundEffect: sceneResult.soundEffect || null,
-        diceRoll: sceneResult.diceRolls ?? sceneResult.diceRoll ?? null,
-        stateChanges: sceneResult.stateChanges ?? null,
-        scenePacing: sceneResult.scenePacing || 'exploration',
-      },
-    });
+    const sceneCreateData = {
+      campaignId,
+      sceneIndex: newSceneIndex,
+      narrative: sceneResult.narrative || '',
+      chosenAction: playerAction,
+      suggestedActions: sceneResult.suggestedActions || [],
+      dialogueSegments: sceneResult.dialogueSegments || [],
+      imagePrompt: sceneResult.imagePrompt || null,
+      soundEffect: sceneResult.soundEffect || null,
+      diceRoll: sceneResult.diceRolls ?? sceneResult.diceRoll ?? null,
+      stateChanges: sceneResult.stateChanges ?? null,
+      scenePacing: sceneResult.scenePacing || 'exploration',
+    };
 
-    const txOps = [sceneCreateOp];
+    // Scene + character must commit together. Function-form $transaction so
+    // persistCharacterSnapshot can fan out to the F4 child tables inside the
+    // same tx as the scene insert.
     const persistChar = activeCharacterId && updatedCharacter && updatedCharacter !== activeCharacter;
-    if (persistChar) {
-      txOps.push(prisma.character.update({
-        where: { id: activeCharacterId },
-        data: characterToPrismaUpdate(updatedCharacter),
-      }));
-    }
-    const [savedScene] = await prisma.$transaction(txOps);
+    const savedScene = await prisma.$transaction(async (tx) => {
+      const scene = await tx.campaignScene.create({ data: sceneCreateData });
+      if (persistChar) {
+        await persistCharacterSnapshot(activeCharacterId, updatedCharacter, tx);
+      }
+      return scene;
+    });
 
     // 9. Enqueue post-scene work via Cloud Tasks (prod) or inline (dev).
     // Fire-and-forget: don't block the 'complete' event on enqueue failure.
@@ -508,19 +506,33 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
   let nextObjective = null;
   let questGiverId = null;
 
+  // dbQuests rows after F4 carry `objectives` as a child-table relation
+  // (rows shaped {description, status, progress, targetAmount, ...}). FE-shape
+  // active quests use {description, completed, ...}. normalizeObjective folds
+  // both into the FE shape so downstream lookups stay uniform.
+  const normalizeObjective = (o) => o && ({
+    ...o,
+    completed: o.completed === true || o.status === 'done',
+    id: o.id ?? o.description,
+  });
+
   if (completedObjUpdates.length > 0) {
     const upd = completedObjUpdates[0];
     const quest = activeQuests.find((q) => q.id === upd.questId)
       || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === upd.questId) : null);
-    const objectives = Array.isArray(quest?.objectives) ? quest.objectives : [];
-    completedObjective = objectives.find((o) => o.id === upd.objectiveId) || { id: upd.objectiveId, description: upd.objectiveId };
-    nextObjective = objectives.find((o) => !o.completed && o.id !== upd.objectiveId) || null;
+    const objectives = (Array.isArray(quest?.objectives) ? quest.objectives : []).map(normalizeObjective);
+    const matchKey = typeof upd.objectiveId === 'string' ? upd.objectiveId.toLowerCase() : '';
+    completedObjective = objectives.find((o) =>
+      o && (o.id === upd.objectiveId
+        || (matchKey && (o.description || '').toLowerCase() === matchKey)))
+      || { id: upd.objectiveId, description: upd.objectiveId };
+    nextObjective = objectives.find((o) => o && !o.completed && o.id !== completedObjective.id) || null;
     questGiverId = quest?.questGiverId || null;
   } else if (completedQuestIds.length > 0) {
     const id = completedQuestIds[0];
     const quest = activeQuests.find((q) => q.id === id)
       || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === id) : null);
-    const objectives = Array.isArray(quest?.objectives) ? quest.objectives : [];
+    const objectives = (Array.isArray(quest?.objectives) ? quest.objectives : []).map(normalizeObjective);
     completedObjective = objectives[objectives.length - 1] || { description: quest?.name || id };
     nextObjective = null;
     questGiverId = quest?.questGiverId || null;

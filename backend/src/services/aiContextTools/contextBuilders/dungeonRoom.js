@@ -9,7 +9,7 @@ import { localizeRoomMetadata } from '../../livingWorld/contentLocalizer.js';
  * of repeating combat).
  *
  * Note: per-character cleared state is tracked in Character.activeDungeonState
- * (transient) and Character.clearedDungeonIds (permanent). This block only
+ * (transient) and the CharacterClearedDungeon join table (permanent). This block only
  * surfaces the static room data; the caller (sceneGenerator) decides whether
  * to merge character-side state before rendering.
  */

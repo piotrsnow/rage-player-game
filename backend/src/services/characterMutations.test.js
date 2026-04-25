@@ -177,4 +177,60 @@ describe('applyCharacterStateChanges', () => {
       expect(result.wounds).toBe(24);
     });
   });
+
+  describe('inventory stacking (F4 — name-keyed)', () => {
+    it('stacks newItems with the same slugified name into one row with summed qty', () => {
+      const c = baseCharacter({
+        inventory: [{ id: 'mikstura_zycia', name: 'Mikstura Życia', quantity: 1 }],
+      });
+      const result = applyCharacterStateChanges(c, {
+        newItems: [
+          { name: 'Mikstura Życia', quantity: 2 },
+          { name: 'mikstura zycia', quantity: 1 },
+        ],
+      });
+      expect(result.inventory).toHaveLength(1);
+      expect(result.inventory[0]).toMatchObject({
+        id: 'mikstura_zycia',
+        name: 'Mikstura Życia',
+        quantity: 4,
+      });
+    });
+
+    it('keeps materials separate from items even when names collide', () => {
+      const c = baseCharacter();
+      const result = applyCharacterStateChanges(c, {
+        newItems: [
+          { name: 'Skóra', quantity: 3, type: 'material' },
+          { name: 'Skóra', quantity: 1 },
+        ],
+      });
+      expect(result.materialBag).toEqual([{ name: 'Skóra', quantity: 3 }]);
+      expect(result.inventory).toHaveLength(1);
+      expect(result.inventory[0]).toMatchObject({ name: 'Skóra', quantity: 1 });
+    });
+
+    it('removeItemsByName drains the materialBag first, then spills into inventory', () => {
+      const c = baseCharacter({
+        materialBag: [{ name: 'Skóra', quantity: 2 }],
+        inventory: [{ id: 'skora', name: 'Skóra', quantity: 5 }],
+      });
+      const result = applyCharacterStateChanges(c, {
+        removeItemsByName: [{ name: 'Skóra', quantity: 4 }],
+      });
+      // bag drained completely (-2), inventory loses the remaining 2
+      expect(result.materialBag).toEqual([]);
+      expect(result.inventory[0].quantity).toBe(3);
+    });
+
+    it('matches removeItemsByName regardless of accent/case', () => {
+      const c = baseCharacter({
+        materialBag: [{ name: 'mikstura zycia', quantity: 5 }],
+      });
+      const result = applyCharacterStateChanges(c, {
+        removeItemsByName: [{ name: 'Mikstura Życia', quantity: 2 }],
+      });
+      expect(result.materialBag[0].quantity).toBe(3);
+    });
+  });
 });

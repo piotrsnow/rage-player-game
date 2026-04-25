@@ -30,11 +30,16 @@ How campaign state is saved and loaded. The frontend owns an in-memory Zustand s
 | `Campaign` | `coreState` (lean ~15-25KB JSONB), metadata, totalCost, share tokens |
 | `CampaignScene` | Normalized scene rows with pgvector embeddings (HNSW) |
 | `CampaignNPC` | NPC rows with embeddings + per-campaign shadow over `WorldNPC` |
+| `CampaignNpcRelationship` | F4 — child table replacing `CampaignNPC.relationships` JSONB |
 | `CampaignKnowledge` | Running facts, events, decisions, plot threads, location summaries |
 | `CampaignCodex` | Lore entries with embeddings |
-| `CampaignQuest` | Quest rows with status + objectives |
+| `CampaignQuest` | Quest rows with status (objectives in child table after F4) |
+| `CampaignQuestObjective` | F4 — child table replacing `CampaignQuest.objectives` JSONB; carries `metadata` JSONB for AI-emitted onComplete triggers, hints, location refs |
 | `CampaignParticipant` | Join table (campaign ↔ character + role); replaces the old `characterIds[]` array |
-| `Character` | Reusable character library. Owns the character-to-campaign lock (`lockedCampaignId`, `lockedCampaignName`, `lockedLocation`). |
+| `Character` | Reusable character library. Owns the character-to-campaign lock (`lockedCampaignId`, `lockedCampaignName`, `lockedLocation`). After F4: skills/inventory/materials live in child tables; equipped slots are three text columns (`equippedMainHand`/`OffHand`/`Armour`) holding `itemKey` references. |
+| `CharacterSkill` | F4 — child table; PK `(characterId, skillName)`. Atomic XP/level updates without rewriting the whole skills blob. |
+| `CharacterInventoryItem` | F4 — child table; PK `(characterId, itemKey)` where `itemKey = slugify(name)`. Items stack by name; `props` JSONB carries arbitrary AI metadata. |
+| `CharacterMaterial` | F4 — child table; PK `(characterId, materialKey)`. Same name-keyed stacking as inventory. |
 | `MultiplayerSession` + `MultiplayerSessionPlayer` | Room state backup with normalized players join table |
 | `MediaAsset` | User-generated images/music/TTS (content-addressable) |
 | `PrefabAsset`, `Wanted3D` | 3D model catalog |
@@ -62,11 +67,24 @@ On load:
 
 ## JSONB native columns
 
-Postgres + Prisma map `Json` Prisma fields directly to native JSONB — no `JSON.parse` / `JSON.stringify` at boundaries. Pass and read JS objects/arrays as-is. This applies to `Campaign.coreState`, `CampaignNPC.details`, `CampaignQuest.objectives`, and every other JSON-shaped field across the schema.
+Postgres + Prisma map `Json` Prisma fields directly to native JSONB — no `JSON.parse` / `JSON.stringify` at boundaries. Pass and read JS objects/arrays as-is. This applies to `Campaign.coreState`, `CampaignNPC.notes` shape fields, `CharacterInventoryItem.props`, `CampaignQuestObjective.metadata`, and every other JSON-shaped field across the schema.
 
 When adding a new JSONB field, declare it `Json` (or `Json @default("[]")` for arrays / `Json @default("{}")` for objects). The default literal is a string because Prisma's parser, but the value at runtime is a real object/array.
 
 **Embeddings** live in dedicated `vector(1536)` columns (Prisma `Unsupported("vector(1536)")?`) and are written via `embeddingWrite.js` / queried via `<=>` cosine distance through `$queryRaw`. See [decisions/embeddings-pgvector.md](../decisions/embeddings-pgvector.md).
+
+## F4 — Character relations bridge
+
+`Character` no longer stores `skills`, `inventory`, `equipped`, or `materialBag` as JSONB columns. They live in child tables and are bridged back to the FE-shape snapshot (`{skills: {...}, inventory: [...], equipped: {mainHand, offHand, armour}, materialBag: [...]}`) by [backend/src/services/characterRelations.js](../../backend/src/services/characterRelations.js):
+
+- **`loadCharacterSnapshot(where)`** — `findFirst` with relations + `reconstructCharacterSnapshot`. Use this anywhere you previously did `prisma.character.findFirst` and read `.skills` / `.inventory` etc.
+- **`reconstructCharacterSnapshot(row)`** — pure DB row → FE snapshot converter. Inventory rows surface as `{id: itemKey, name, quantity, props, ...spreadProps}` so existing FE lookups (`inventory.find(i => i.id === slot)`) keep working unchanged.
+- **`splitCharacterSnapshot(snapshot)`** — inverse: returns `{scalars, skillRows, inventoryRows, materialRows}` ready for `createMany`. Stacks duplicate-by-name inventory and material entries.
+- **`persistCharacterSnapshot(characterId, snapshot, client?)`** — replace-strategy persist (deleteMany + createMany per relation) inside `$transaction`. Pass an existing `tx` client from a higher-level transaction so the writes share the outer atomicity (e.g. scene + character commit together in `generateSceneStream`).
+- **`createCharacterWithRelations(userId, payload)`** — POST handler equivalent: creates the row + fans out relations in one tx.
+- **`clearStaleEquipped(snapshot)`** — invariant guard called automatically inside `persistCharacterSnapshot`. Nulls any `equipped*` slot whose `itemKey` is no longer in the inventory. There's no FK on equipped — the snapshot bridge enforces consistency app-side.
+
+Items stack by `slugify(name)` (see [shared/domain/itemKeys.js](../../shared/domain/itemKeys.js)). Two items with the same name merge into one stack regardless of `props`; the latest write's props win. This is the F4 "option A" decision — accept the loss of per-stack uniqueness in exchange for predictable PKs and atomic-update headroom.
 
 ## Auto-save queue
 
@@ -122,6 +140,8 @@ A character is available to pick iff `!lockedCampaignId || isSafeLocation(locked
 4. **"NPC lost personality after reload."** JSONB column round-trips JS objects directly — if a field reads `undefined`, the write payload was missing it. Check `syncNPCsToNormalized` is including the field on upsert.
 5. **"Character locked to a campaign I deleted."** The DELETE handler should clear lock fields; if it didn't, check if you're hitting the right delete path and that `Character.lockedCampaignId` is nulled.
 6. **"Double row created after a retry."** Missing `{ idempotent: true }` on a POST that should have it. Check the 3 routes that opt in and match them in `apiClient.js` call sites.
+7. **"Equipped slot points at a deleted item."** F4 — equipped is text, not FK. Validate that `persistCharacterSnapshot` is being called (it scrubs stale refs via `clearStaleEquipped`). If a custom write path bypasses the bridge, add an explicit `clearStaleEquipped(snapshot)` before the write.
+8. **"Item shows up twice in inventory after AI gives me one."** FE optimistic update isn't using `stackInventory` — check `applyStateChangesHandler/character.js`. BE always stacks; FE has to mirror or the rows briefly diverge.
 
 ## Related
 

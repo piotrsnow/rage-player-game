@@ -16,9 +16,9 @@ import { hourToPeriod, decayNeeds } from './timeUtils.js';
 import { validateMultiplayerStateChanges } from './stateValidator.js';
 import { applyMultiplayerSceneStateChanges } from '../../../shared/domain/multiplayerState.js';
 import {
-  deserializeCharacterRow,
-  characterToPrismaUpdate,
-} from './characterMutations.js';
+  loadCharacterSnapshot,
+  persistCharacterSnapshot,
+} from './characterRelations.js';
 import { normalizeMultiplayerStateChanges } from '../../../shared/contracts/multiplayer.js';
 
 const log = childLogger({ module: 'multiplayer' });
@@ -79,14 +79,9 @@ export async function persistMultiplayerCharactersToDB(room, mutatedCharacters) 
     const player = room.players.get(character.odId);
     if (!player?.characterId) continue;
     updates.push(
-      prisma.character
-        .update({
-          where: { id: player.characterId },
-          data: characterToPrismaUpdate(character),
-        })
-        .catch((err) => {
-          log.warn({ err, characterId: player.characterId }, 'Failed to persist character');
-        }),
+      persistCharacterSnapshot(player.characterId, character).catch((err) => {
+        log.warn({ err, characterId: player.characterId }, 'Failed to persist character');
+      }),
     );
   }
   await Promise.all(updates);
@@ -99,11 +94,7 @@ export async function persistMultiplayerCharactersToDB(room, mutatedCharacters) 
  */
 export async function fetchOwnedCharacter(characterId, userId) {
   if (!characterId) return null;
-  const row = await prisma.character.findFirst({
-    where: { id: characterId, userId },
-  });
-  if (!row) return null;
-  return deserializeCharacterRow(row);
+  return loadCharacterSnapshot({ id: characterId, userId });
 }
 
 export function buildArrivalNarrative(playerName, language = 'en') {

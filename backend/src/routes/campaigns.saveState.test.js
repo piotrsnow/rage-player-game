@@ -19,8 +19,8 @@ vi.mock('../services/hashService.js', () => ({ generateKey: vi.fn(() => 'mock-ke
 vi.mock('../services/mediaStore.js', () => ({
   createMediaStore: () => ({ put: vi.fn(), get: vi.fn(), getUrl: vi.fn(), delete: vi.fn() }),
 }));
-vi.mock('../services/characterMutations.js', () => ({
-  deserializeCharacterRow: vi.fn((row) => row),
+vi.mock('../services/characterRelations.js', () => ({
+  reconstructCharacterSnapshot: vi.fn((row) => row),
 }));
 
 import { extractTotalCost, stripNormalizedFromCoreState } from './campaigns.js';

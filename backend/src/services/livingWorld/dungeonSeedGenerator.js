@@ -7,8 +7,8 @@
 //   - WorldLocationEdge rows for corridors (direction = N|S|E|W|up|down)
 //
 // Seed = dungeonId (user spec: global, same layout for every player).
-// Per-character progress tracked in Character.clearedDungeonIds /
-// activeDungeonState (separate concern, not here).
+// Per-character progress tracked in CharacterClearedDungeon (join table) /
+// Character.activeDungeonState (separate concern, not here).
 //
 // Idempotent: re-calling on a dungeon that already has child rooms is a
 // no-op (detected by counting child WorldLocations). First call persists

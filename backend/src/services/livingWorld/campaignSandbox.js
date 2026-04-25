@@ -38,7 +38,7 @@ function slugifyName(value) {
 /**
  * Resolve the CampaignNPC shadow for a WorldNPC in a given campaign. If no
  * shadow exists yet, clone one from the canonical WorldNPC (snapshot: name,
- * role, personality, alignment, category, knownLocationIds → note only,
+ * role, personality, alignment, category, WorldNpcKnownLocation grants → note only,
  * keyNpc, currentLocationId → lastLocationId).
  *
  * Returns null when inputs are invalid or the WorldNPC has been deleted.
@@ -161,7 +161,7 @@ export async function clearCampaignNpcIntroHint(campaignNpcId) {
  * Rule: shadow fields ALWAYS win. WorldNPC values are fallbacks for
  * uncloned NPCs (which shouldn't happen in normal flow — the enumerator
  * auto-clones — but let's be defensive) and for fields that remain
- * canonical-only (keyNpc, homeLocationId, knownLocationIds).
+ * canonical-only (keyNpc, homeLocationId, WorldNpcKnownLocation grants).
  *
  * Ephemeral shadows (no worldNpcId, no WorldNPC lookup) return their own
  * fields with defaults filled in.
@@ -205,7 +205,7 @@ function enrichedShape(shadow, world = null) {
  *
  * Returns an array of enriched CampaignNPC shadows (`enrichedShape`):
  * CampaignNPC columns + WorldNPC fallback fields (activeGoal, goalProgress,
- * pausedAt, keyNpc, homeLocationId, knownLocationIds) so downstream
+ * pausedAt, keyNpc, homeLocationId, knownLocations from join) so downstream
  * scene-gen code reads the same field names as it did with the old
  * canonical list.
  *
