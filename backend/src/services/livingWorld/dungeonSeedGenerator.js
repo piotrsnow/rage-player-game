@@ -4,7 +4,7 @@
 // row (locationType='dungeon'), builds a room graph + populates contents
 // (traps/enemies/loot/puzzles/flavor) + persists as:
 //   - WorldLocation rows with locationType='dungeon_room' (one per room)
-//   - WorldLocationEdge rows for corridors (direction = N|S|E|W|up|down)
+//   - Road rows for corridors (direction = N|S|E|W|up|down)
 //
 // Seed = dungeonId (user spec: global, same layout for every player).
 // Per-character progress tracked in CharacterClearedDungeon (join table) /

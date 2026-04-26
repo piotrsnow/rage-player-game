@@ -1,11 +1,16 @@
 // Living World — per-campaign initial world seeder.
 //
 // Called from POST /v1/campaigns when livingWorldEnabled is true. Creates a
-// bounded set of settlement WorldLocations (hamlets/villages/towns/cities)
-// arranged on a ring around (0,0) where the global capital `Yeralden` lives,
-// auto-edges them to neighbors + capital, then picks a starting settlement
-// via a weighted roll and persists campaign-level caps/bounds on the Campaign
-// row.
+// bounded set of settlement rows (hamlets/villages/towns/cities) arranged on
+// a ring around (0,0) where the global capital `Yeralden` lives, then picks
+// a starting settlement via a weighted roll and persists campaign-level
+// caps/bounds on the Campaign row.
+//
+// F5b — per-campaign settlements live in `CampaignLocation` (per-campaign
+// sandbox), NOT canonical `WorldLocation`. They show on the player map via
+// regionX/regionY and travel distance is Euclidean. Roads are canonical-only
+// (capital + heartland villages from `seedWorld.js`); the ring + capital
+// edges that earlier versions created are intentionally dropped.
 //
 // Capital is NOT seeded here — `seedWorld.js` (server startup) owns Yeralden.
 // We call it here as a belt-and-suspenders in case startup skipped it.
@@ -22,11 +27,14 @@ import { childLogger } from '../../lib/logger.js';
 import { getTemplate } from './settlementTemplates.js';
 import { pickSettlementName } from './nameBank.js';
 import { seedWorld } from '../../scripts/seedWorld.js';
-import { upsertEdge } from './travelGraph.js';
-import { euclidean } from './positionCalculator.js';
 import * as ragService from './ragService.js';
 import { buildLocationEmbeddingText } from '../embeddingService.js';
-import { packWorldBounds } from '../locationRefs.js';
+import {
+  packWorldBounds,
+  slugifyLocationName,
+  LOCATION_KIND_WORLD,
+  LOCATION_KIND_CAMPAIGN,
+} from '../locationRefs.js';
 
 const log = childLogger({ module: 'worldSeeder' });
 
@@ -46,7 +54,6 @@ const WEIGHTS_WITH_CAPITAL = { hamlet: 5, village: 55, town: 0, city: 20, capita
 
 const RING_FRACTION = 0.7;      // ring radius = boundsKm * RING_FRACTION
 const MIN_RING_RADIUS = 1.5;    // km — floor to avoid cluster-on-capital on Short
-const CAPITAL_EDGE_RANGE = 10;  // km — auto-edge to capital if within this range
 
 export function isCapitalStartEligible({ length, difficultyTier } = {}) {
   return length === 'Long' || difficultyTier === 'high' || difficultyTier === 'deadly';
@@ -111,13 +118,24 @@ function pickStartingType({ seededTypes, length, difficultyTier }) {
 }
 
 /**
- * Seed the initial per-campaign world for a Living World campaign.
+ * Seed the initial per-campaign world for a Living World campaign. The
+ * starting-location pointer returned in `startingLocationKind/Id` is the
+ * polymorphic ref the caller should write to `Campaign.currentLocationKind/Id`.
  *
  * @param {string} campaignId
  * @param {object} opts
  * @param {'Short'|'Medium'|'Long'} [opts.length]
  * @param {'low'|'medium'|'high'|'deadly'} [opts.difficultyTier]
- * @returns {Promise<{startingLocationName:string|null, startingType:string, settlementIds:string[], bounds:object, caps:object, capitalId:string|null}>}
+ * @returns {Promise<{
+ *   startingLocationName: string|null,
+ *   startingLocationKind: 'world'|'campaign'|null,
+ *   startingLocationId: string|null,
+ *   startingType: string,
+ *   settlementIds: string[],
+ *   bounds: object,
+ *   caps: object,
+ *   capitalId: string|null,
+ * }>}
  */
 export async function seedInitialWorld(campaignId, { length, difficultyTier } = {}) {
   if (!campaignId) throw new Error('seedInitialWorld: campaignId required');
@@ -134,12 +152,21 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
   const seedList = buildSeedList(plan);
   const totalSettlements = seedList.length;
 
-  // Preload existing canonical names across the whole DB so nameBank avoids collisions
-  // with any location seeded by prior campaigns (Yeralden and its sublocations included).
-  const existingNames = new Set(
-    (await prisma.worldLocation.findMany({ select: { canonicalName: true } }))
-      .map((r) => r.canonicalName),
-  );
+  // Preload existing names from BOTH canonical WorldLocation and this campaign's
+  // CampaignLocation so the nameBank avoids collisions with seeded canonical
+  // (Yeralden + heartland villages) AND any CampaignLocations already in this
+  // campaign (e.g. on a re-seed).
+  const [worldNames, campaignNames] = await Promise.all([
+    prisma.worldLocation.findMany({ select: { canonicalName: true } }),
+    prisma.campaignLocation.findMany({
+      where: { campaignId },
+      select: { name: true },
+    }),
+  ]);
+  const existingNames = new Set([
+    ...worldNames.map((r) => r.canonicalName),
+    ...campaignNames.map((r) => r.name),
+  ]);
 
   const ringRadius = Math.max(MIN_RING_RADIUS, plan.boundsKm * RING_FRACTION);
   const positions = ringPositions(totalSettlements, ringRadius);
@@ -155,11 +182,14 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
     const { regionX, regionY } = positions[i];
     const name = pickSettlementName(type, existingNames);
     const template = getTemplate(type);
+    const slug = slugifyLocationName(name);
 
     try {
-      const row = await prisma.worldLocation.create({
+      const row = await prisma.campaignLocation.create({
         data: {
-          canonicalName: name,
+          campaignId,
+          name,
+          canonicalSlug: slug,
           aliases: [name],
           description: '',
           category: type,
@@ -173,65 +203,55 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
           embeddingText: `${name} (${type})`,
         },
       });
-      // Round E Phase 9 — fire-and-forget RAG indexing for campaign-seeded settlement.
-      ragService.index('location', row.id, buildLocationEmbeddingText(row)).catch(() => {});
+      ragService.index('campaign_location', row.id, buildLocationEmbeddingText(row)).catch(() => {});
       created.push({ ...row, type });
     } catch (err) {
       if (err?.code === 'P2002') {
-        log.warn({ name }, 'Canonical name collision during seed; skipping');
+        log.warn({ name }, 'CampaignLocation slug collision during seed; skipping');
         continue;
       }
       throw err;
     }
   }
 
-  // Edges: ring neighbors + every seeded settlement within CAPITAL_EDGE_RANGE
-  // of (0,0) gets a capital edge. Directional edges — issue both ways.
-  const edgeOps = [];
-  for (let i = 0; i < created.length; i += 1) {
-    const a = created[i];
-    if (created.length > 1) {
-      const b = created[(i + 1) % created.length];
-      if (b.id !== a.id) {
-        const d = Math.round(euclidean(
-          { regionX: a.regionX, regionY: a.regionY },
-          { regionX: b.regionX, regionY: b.regionY },
-        ) * 100) / 100;
-        edgeOps.push(upsertEdge({ fromLocationId: a.id, toLocationId: b.id, distance: d, difficulty: 'safe', terrainType: 'road', discoveredByCampaignId: campaignId }));
-        edgeOps.push(upsertEdge({ fromLocationId: b.id, toLocationId: a.id, distance: d, difficulty: 'safe', terrainType: 'road', discoveredByCampaignId: campaignId }));
-      }
-    }
-    if (capital) {
-      const dCap = Math.round(euclidean(
-        { regionX: a.regionX, regionY: a.regionY },
-        { regionX: capital.regionX || 0, regionY: capital.regionY || 0 },
-      ) * 100) / 100;
-      if (dCap <= CAPITAL_EDGE_RANGE) {
-        edgeOps.push(upsertEdge({ fromLocationId: a.id, toLocationId: capital.id, distance: dCap, difficulty: 'safe', terrainType: 'road', discoveredByCampaignId: campaignId }));
-        edgeOps.push(upsertEdge({ fromLocationId: capital.id, toLocationId: a.id, distance: dCap, difficulty: 'safe', terrainType: 'road', discoveredByCampaignId: campaignId }));
-      }
-    }
-  }
-  await Promise.allSettled(edgeOps);
+  // F5b — Roads are canonical-only (FK to WorldLocation). Per-campaign
+  // settlements are off-graph by design; the player travels via map
+  // "travel by selection" using Euclidean distance on regionX/regionY.
 
   // Pick the starting settlement type, then pick a concrete row of that type.
   const seededTypes = new Set(created.map((c) => c.type));
   const startingType = pickStartingType({ seededTypes, length, difficultyTier });
 
   let startingLocationName = null;
+  let startingLocationKind = null;
+  let startingLocationId = null;
+
   if (startingType === 'capital') {
-    startingLocationName = capital?.canonicalName
-      || created.find((c) => c.type === 'village')?.canonicalName
-      || created[0]?.canonicalName
-      || null;
+    if (capital) {
+      startingLocationName = capital.canonicalName;
+      startingLocationKind = LOCATION_KIND_WORLD;
+      startingLocationId = capital.id;
+    } else {
+      const fallback = created.find((c) => c.type === 'village') || created[0] || null;
+      if (fallback) {
+        startingLocationName = fallback.name;
+        startingLocationKind = LOCATION_KIND_CAMPAIGN;
+        startingLocationId = fallback.id;
+      }
+    }
   } else {
     const candidates = created.filter((c) => c.type === startingType);
-    if (candidates.length > 0) {
-      startingLocationName = candidates[Math.floor(Math.random() * candidates.length)].canonicalName;
-    } else if (created.length > 0) {
-      startingLocationName = created[0].canonicalName;
-    } else {
-      startingLocationName = capital?.canonicalName || null;
+    const pick = candidates.length > 0
+      ? candidates[Math.floor(Math.random() * candidates.length)]
+      : (created[0] || null);
+    if (pick) {
+      startingLocationName = pick.name;
+      startingLocationKind = LOCATION_KIND_CAMPAIGN;
+      startingLocationId = pick.id;
+    } else if (capital) {
+      startingLocationName = capital.canonicalName;
+      startingLocationKind = LOCATION_KIND_WORLD;
+      startingLocationId = capital.id;
     }
   }
 
@@ -258,13 +278,16 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
       difficultyTier: difficultyTier || 'low',
       settlements: created.length,
       startingLocationName,
+      startingLocationKind,
       startingType,
     },
-    'Per-campaign world seeded',
+    'Per-campaign world seeded (CampaignLocation)',
   );
 
   return {
     startingLocationName,
+    startingLocationKind,
+    startingLocationId,
     startingType,
     settlementIds: created.map((c) => c.id),
     bounds,

@@ -156,8 +156,6 @@ export async function adminLivingWorldRoutes(fastify) {
         description: true,
         aliases: true,
         createdAt: true,
-        isCanonical: true,
-        createdByCampaignId: true,
       },
     });
     return { rows };
@@ -342,11 +340,9 @@ export async function adminLivingWorldRoutes(fastify) {
           maxKeyNpcs: true,
           maxSubLocations: true,
           dangerLevel: true,
-          isCanonical: true,
-          createdByCampaignId: true,
         },
       }),
-      prisma.worldLocationEdge.findMany({
+      prisma.road.findMany({
         where: { terrainType: { not: 'dungeon_corridor' } },
         select: {
           id: true,
@@ -395,6 +391,10 @@ export async function adminLivingWorldRoutes(fastify) {
       childCounts = new Map(grouped.map((r) => [r.parentLocationId, r._count]));
     }
 
+    // F5b — every WorldLocation row IS canonical (the flag was dropped). The
+    // legacy `isCanonical`/`createdByCampaignId` fields are kept on the
+    // payload for FE back-compat (always true / always null) so existing
+    // admin UI code doesn't choke on missing keys.
     const nodes = locations.map((l) => ({
       id: l.id,
       name: l.canonicalName,
@@ -409,8 +409,8 @@ export async function adminLivingWorldRoutes(fastify) {
       childCount: childCounts.get(l.id) || 0,
       roomCount: roomCounts.get(l.id) || 0,
       dangerLevel: l.dangerLevel || 'safe',
-      isCanonical: l.isCanonical !== false,
-      createdByCampaignId: l.createdByCampaignId || null,
+      isCanonical: true,
+      createdByCampaignId: null,
     }));
 
     return {
@@ -440,14 +440,14 @@ export async function adminLivingWorldRoutes(fastify) {
   fastify.get('/canon-graph', guard(), async () => {
     const [locations, edges, npcs] = await Promise.all([
       prisma.worldLocation.findMany({
-        where: { parentLocationId: null, isCanonical: true },
+        where: { parentLocationId: null },
         select: {
           id: true, canonicalName: true, displayName: true, locationType: true,
           regionX: true, regionY: true, region: true, dangerLevel: true,
           maxKeyNpcs: true, maxSubLocations: true,
         },
       }),
-      prisma.worldLocationEdge.findMany({
+      prisma.road.findMany({
         where: { terrainType: { not: 'dungeon_corridor' } },
         select: {
           id: true, fromLocationId: true, toLocationId: true,
@@ -542,7 +542,6 @@ export async function adminLivingWorldRoutes(fastify) {
         id: true, canonicalName: true, displayName: true,
         locationType: true, slotType: true, slotKind: true,
         subGridX: true, subGridY: true,
-        isCanonical: true, createdByCampaignId: true,
         dangerLevel: true, description: true,
       },
     });
@@ -886,7 +885,9 @@ export async function adminLivingWorldRoutes(fastify) {
       if (candidate.status === 'approved') {
         return reply.code(409).send({ error: 'already approved' });
       }
-      const promoted = await promoteWorldLocationToCanonical(candidate.worldLocationId);
+      // F5b — promote DESTRUCTIVELY copies the source CampaignLocation into a
+      // new canonical WorldLocation, relinks polymorphic refs, deletes source.
+      const promoted = await promoteWorldLocationToCanonical(candidate.sourceLocationId);
       if (!promoted.ok) {
         return reply.code(422).send({ error: 'promote_failed', reason: promoted.reason });
       }

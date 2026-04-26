@@ -281,7 +281,7 @@ export async function listNpcsAtLocation(locationId, { campaignId = null, aliveO
  *
  * Implicit knowledge:
  *   - the NPC's own location (lastLocationId / canonical currentLocationId)
- *   - every WorldLocationEdge neighbour of that location
+ *   - every Road neighbour of that location
  *
  * Explicit knowledge (WorldNpcKnownLocation rows) is merged on top so
  * seeded "scout NPCs" reach further than 1 hop.
@@ -297,7 +297,7 @@ export async function resolveNpcKnownLocations({ campaignNpc, worldNpc }) {
   if (anchorLocationId) {
     known.add(anchorLocationId);
     try {
-      const edges = await prisma.worldLocationEdge.findMany({
+      const edges = await prisma.road.findMany({
         where: {
           OR: [
             { fromLocationId: anchorLocationId },

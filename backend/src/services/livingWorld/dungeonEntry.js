@@ -17,8 +17,9 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { findOrCreateWorldLocation } from './worldStateService.js';
+import { resolveLocationByName } from './worldStateService.js';
 import { ensureDungeonSeeded } from './dungeonSeedGenerator.js';
+import { LOCATION_KIND_WORLD } from '../locationRefs.js';
 
 const log = childLogger({ module: 'dungeonEntry' });
 
@@ -31,14 +32,20 @@ const log = childLogger({ module: 'dungeonEntry' });
  * @param {object} params.stateChanges   — parsed stateChanges from premium (mutated)
  * @param {string} [params.prevLoc]     — previous scene's location name
  */
-export async function handleDungeonEntry({ stateChanges, prevLoc = null }) {
+export async function handleDungeonEntry({ stateChanges, prevLoc = null, campaignId = null }) {
   const nextLoc = stateChanges?.currentLocation;
   if (!nextLoc || typeof nextLoc !== 'string') return;
   if (nextLoc === prevLoc) return;
 
   try {
-    const target = await findOrCreateWorldLocation(nextLoc);
-    if (!target) return;
+    const resolved = await resolveLocationByName(nextLoc, { campaignId });
+    if (!resolved) return;
+
+    // F5b — dungeon seeding is canonical-only (rooms become WorldLocation rows
+    // and Roads connect them). CampaignLocation dungeons stay as flat AI-created
+    // locations without auto-seeded rooms.
+    if (resolved.kind !== LOCATION_KIND_WORLD) return;
+    const target = resolved.row;
 
     // Already in a dungeon room — nothing to do.
     if (target.locationType === 'dungeon_room') return;
@@ -118,8 +125,10 @@ async function markDungeonClearedForCampaign({ campaignId, dungeonId }) {
     if (!characterId) return;
 
     // INSERT into CharacterClearedDungeon — ON CONFLICT DO NOTHING via skipDuplicates.
+    // F5b — `dungeonKind` is polymorphic; canonical dungeons (the only ones
+    // that get auto-seeded rooms) are kind='world'.
     await prisma.characterClearedDungeon.createMany({
-      data: [{ characterId, dungeonId }],
+      data: [{ characterId, dungeonKind: LOCATION_KIND_WORLD, dungeonId }],
       skipDuplicates: true,
     });
     await prisma.character.update({

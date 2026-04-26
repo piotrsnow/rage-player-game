@@ -1,7 +1,7 @@
 // F5 — bridge between the legacy in-memory shapes (FE/AI) and the
 // decomposed Postgres columns introduced by the coreState surface trim.
 //
-// Two concerns:
+// Three concerns:
 //   1. worldBounds — JSONB blob {minX,maxX,minY,maxY} ↔ 4 nullable Float
 //      columns on Campaign. unpackWorldBounds/packWorldBounds keep the
 //      legacy shape callable so the 5 readers and the seeder don't all
@@ -9,6 +9,18 @@
 //   2. currentLocation — flavor name lifted out of coreState.world into
 //      Campaign.currentLocationName. liftCurrentLocationFromCoreState pulls
 //      it on save; injectCurrentLocationIntoCoreState merges it back on read.
+//   3. F5b — polymorphic location refs. `kind+id` pair on Campaign /
+//      CampaignNPC / CampaignDiscoveredLocation / CharacterClearedDungeon /
+//      LocationPromotionCandidate resolves to either a canonical WorldLocation
+//      (kind=world) or a per-campaign CampaignLocation (kind=campaign).
+//      No DB FK — packLocationRef / readLocationRef / lookupLocationByKindId
+//      keep callsites honest about the discriminator.
+
+// F5b — polymorphic location-kind discriminator values. Use these constants
+// instead of bare string literals so a typo surfaces as a missing import.
+export const LOCATION_KIND_WORLD = 'world';
+export const LOCATION_KIND_CAMPAIGN = 'campaign';
+const LOCATION_KINDS = new Set([LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN]);
 
 /**
  * Read 4 bounds columns off a Campaign row and return the legacy
@@ -77,4 +89,99 @@ export function injectCurrentLocationIntoCoreState(coreState, currentLocationNam
   // Don't clobber an in-memory write that beat the column (paranoia — saves
   // are write-then-read, but the DB is the source of truth on a fresh load).
   if (!coreState.world.currentLocation) coreState.world.currentLocation = currentLocationName;
+}
+
+// ─── F5b polymorphic location refs ──────────────────────────────────────
+
+/**
+ * Pack a row (or `{ kind, id }` literal) into the polymorphic FK column
+ * pair shape `{ kind, id }`. Returns `{ kind: null, id: null }` when input
+ * is missing/invalid so the caller can spread into a Prisma `data` payload
+ * to clear both columns.
+ *
+ * - Pass a CampaignLocation row → `{ kind: 'campaign', id }`
+ * - Pass a WorldLocation row → `{ kind: 'world', id }` (assumes the row
+ *   came from `prisma.worldLocation.*`; CampaignLocation must be tagged
+ *   explicitly via `defaultKind` if the row source is ambiguous).
+ * - Pass `{ kind, id }` directly → returned unchanged after validation.
+ *
+ * `defaultKind` resolves the ambiguous case: rows fetched via
+ * `prisma.worldLocation` should pass `LOCATION_KIND_WORLD`, rows from
+ * `prisma.campaignLocation` should pass `LOCATION_KIND_CAMPAIGN`.
+ */
+export function packLocationRef(loc, defaultKind = null) {
+  if (!loc) return { kind: null, id: null };
+  // Direct ref shape
+  if (typeof loc.kind === 'string' && typeof loc.id === 'string') {
+    if (!LOCATION_KINDS.has(loc.kind)) return { kind: null, id: null };
+    return { kind: loc.kind, id: loc.id };
+  }
+  // Row shape — kind disambiguated by caller via defaultKind
+  if (typeof loc.id === 'string' && defaultKind && LOCATION_KINDS.has(defaultKind)) {
+    return { kind: defaultKind, id: loc.id };
+  }
+  return { kind: null, id: null };
+}
+
+/**
+ * Read a polymorphic FK pair off a row by column-name prefix. Defaults
+ * (`prefix='currentLocation'`) match the Campaign columns; pass
+ * `'lastLocation'` for CampaignNPC, `'sourceLocation'` for
+ * LocationPromotionCandidate, `'parentLocation'` for CampaignLocation,
+ * `'location'` for CampaignDiscoveredLocation, `'dungeon'` for
+ * CharacterClearedDungeon. Returns `null` when either column is missing
+ * so callers can do `if (!ref) skip` without juggling two booleans.
+ */
+export function readLocationRef(row, prefix = 'currentLocation') {
+  if (!row) return null;
+  const kind = row[`${prefix}Kind`];
+  const id = row[`${prefix}Id`];
+  if (typeof kind !== 'string' || typeof id !== 'string') return null;
+  if (!LOCATION_KINDS.has(kind)) return null;
+  return { kind, id };
+}
+
+/**
+ * Resolve a polymorphic ref to a single row. Returns `null` if either
+ * column is missing or the target row was deleted. `select` is forwarded
+ * as-is — pass the columns you actually need to keep selects narrow.
+ *
+ * The two table shapes overlap on `{ id, name|canonicalName, region,
+ * regionX, regionY, locationType, parentLocationId, ... }` but diverge on
+ * a few fields (WorldLocation has `canonicalName + displayName + aliases`,
+ * CampaignLocation has `name + canonicalSlug + parentLocationKind`).
+ * Callers that need cross-kind logic should normalise after this returns.
+ */
+export async function lookupLocationByKindId({ prisma, kind, id, select = null }) {
+  if (!prisma || typeof kind !== 'string' || typeof id !== 'string') return null;
+  if (!LOCATION_KINDS.has(kind)) return null;
+  const args = { where: { id } };
+  if (select) args.select = select;
+  if (kind === LOCATION_KIND_WORLD) {
+    return prisma.worldLocation.findUnique(args);
+  }
+  return prisma.campaignLocation.findUnique(args);
+}
+
+/**
+ * Slugify a location name for the CampaignLocation `canonicalSlug` column
+ * (used by the in-campaign uniqueness constraint). Lowercase, trim,
+ * collapse whitespace + non-alphanum to single dashes, strip leading /
+ * trailing dashes. Same shape as the WorldLocation `canonicalName`
+ * convention but applied at the slug column instead of the display name.
+ *
+ * Handles polish letters (ąćęłńóśźż) by transliterating to ascii so
+ * "Karczma Pod Skowronkiem" and "Karczma pod skowronkiem" collide.
+ */
+export function slugifyLocationName(name) {
+  if (typeof name !== 'string') return '';
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return '';
+  const transliterated = trimmed
+    .replace(/ą/g, 'a').replace(/ć/g, 'c').replace(/ę/g, 'e')
+    .replace(/ł/g, 'l').replace(/ń/g, 'n').replace(/ó/g, 'o')
+    .replace(/ś/g, 's').replace(/ź/g, 'z').replace(/ż/g, 'z');
+  return transliterated
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }

@@ -1,8 +1,11 @@
 // Living World Phase 7 — travel graph.
 //
 // Pure graph logic (Dijkstra, detour detection) + thin DB helpers for
-// WorldLocationEdge CRUD. Position math lives in positionCalculator.js;
-// this module only cares about edges + paths.
+// Road CRUD (renamed from WorldLocationEdge in F5b). Roads are
+// canonical-only — connect two WorldLocation rows. Campaign-scoped
+// CampaignLocations are off-graph; distance to/from them is Euclidean.
+// Position math lives in positionCalculator.js; this module only cares
+// about edges + paths.
 //
 // Distance semantics: `edge.distance` is km (matches regionX/Y units).
 // Dijkstra uses distance as cost. Edge visibility for a campaign is tracked
@@ -36,14 +39,14 @@ export async function upsertEdge({
 }) {
   if (!fromLocationId || !toLocationId || fromLocationId === toLocationId) return null;
 
-  const existing = await prisma.worldLocationEdge.findFirst({
+  const existing = await prisma.road.findFirst({
     where: { fromLocationId, toLocationId },
     select: { id: true },
   });
 
   const edge = existing
     ? existing
-    : await prisma.worldLocationEdge.create({
+    : await prisma.road.create({
         data: {
           fromLocationId,
           toLocationId,
@@ -80,7 +83,7 @@ export async function markEdgeDiscovered({ fromLocationId, toLocationId, campaig
 }
 
 async function markDirection({ fromLocationId, toLocationId, campaignId }) {
-  const edge = await prisma.worldLocationEdge.findFirst({
+  const edge = await prisma.road.findFirst({
     where: { fromLocationId, toLocationId },
     select: { id: true },
   });
@@ -98,7 +101,7 @@ async function markDirection({ fromLocationId, toLocationId, campaignId }) {
  */
 export async function loadCampaignGraph(campaignId) {
   if (!campaignId) {
-    const edges = await prisma.worldLocationEdge.findMany({
+    const edges = await prisma.road.findMany({
       select: {
         fromLocationId: true, toLocationId: true,
         distance: true, difficulty: true, terrainType: true, direction: true,

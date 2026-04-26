@@ -21,6 +21,8 @@ import {
 import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
 import { getOrCloneCampaignNpc } from '../../services/livingWorld/campaignSandbox.js';
 import { markLocationDiscovered } from '../../services/livingWorld/userDiscoveryService.js';
+import { resolveLocationByName } from '../../services/livingWorld/worldStateService.js';
+import { LOCATION_KIND_WORLD } from '../../services/locationRefs.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -184,9 +186,10 @@ export async function crudCampaignRoutes(app) {
     });
 
     // Phase A — per-campaign world seeding.
-    // F5 — currentLocation persisted to its own column rather than re-stuffing
-    // back into coreState. Memory copy of slim.world.currentLocation kept so
-    // the response carries the live name to FE.
+    // F5b — currentLocation lives in 3 columns: name (flavor) + kind + id
+    // (polymorphic FK). The seeder returns all three when it picks a starting
+    // settlement, so the write covers both the human name and the polymorphic
+    // pointer in a single update.
     let seededStartingLocation = null;
     if (livingWorldEnabled === true) {
       try {
@@ -201,7 +204,11 @@ export async function crudCampaignRoutes(app) {
           slim.world.currentLocation = seededStartingLocation;
           await prisma.campaign.update({
             where: { id: campaign.id },
-            data: { currentLocationName: seededStartingLocation },
+            data: {
+              currentLocationName: seededStartingLocation,
+              currentLocationKind: seedResult.startingLocationKind || null,
+              currentLocationId: seedResult.startingLocationId || null,
+            },
           }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
         }
       } catch (err) {
@@ -225,15 +232,23 @@ export async function crudCampaignRoutes(app) {
     }
 
     // Round B (Phase 3) — start-spawn bind.
-    // F5 — same lift: column write, in-memory slim.world.currentLocation kept
-    // for the response payload only.
+    // F5b — name override + polymorphic ref resolution. Sublocation names
+    // can hit either canonical WorldLocation (e.g. capital sublocs from
+    // seedWorld) or this campaign's CampaignLocation rows; resolveLocationByName
+    // handles both. Null kind/id is fine (means we couldn't resolve), the name
+    // still carries.
     const startSpawn = parsed?._startSpawn || null;
     if (startSpawn?.sublocationName) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
+      const resolved = await resolveLocationByName(startSpawn.sublocationName, { campaignId: campaign.id }).catch(() => null);
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: { currentLocationName: startSpawn.sublocationName },
+        data: {
+          currentLocationName: startSpawn.sublocationName,
+          currentLocationKind: resolved?.kind || null,
+          currentLocationId: resolved?.row?.id || null,
+        },
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
     }
     if (startSpawn?.npcName && Array.isArray(quests?.active)) {
@@ -261,6 +276,7 @@ export async function crudCampaignRoutes(app) {
           if (canonical.currentLocationId) {
             await markLocationDiscovered({
               userId: request.user.id,
+              locationKind: LOCATION_KIND_WORLD,
               locationId: canonical.currentLocationId,
               campaignId: campaign.id,
             });
@@ -333,6 +349,14 @@ export async function crudCampaignRoutes(app) {
       // F5 — currentLocationName lifted to its own column. Always set
       // (including null) so a save that clears the field reaches the column.
       updateData.currentLocationName = currentLocationName || null;
+      // F5b — invalidate the polymorphic kind+id pair when the name changes
+      // so a stale ref doesn't outlive its display name. Writers that know
+      // the new ref (seed, startSpawn, AI top-level entry) re-set the pair
+      // explicitly; auto-save just clears + relies on name lookups downstream.
+      if (currentLocationName !== existing.currentLocationName) {
+        updateData.currentLocationKind = null;
+        updateData.currentLocationId = null;
+      }
 
       pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
     }

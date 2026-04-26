@@ -1,8 +1,9 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
+import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
+import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { runPostCampaignWorldWriteback } from '../../livingWorld/postCampaignWriteback.js';
 import {
@@ -161,7 +162,7 @@ export async function processLocationMentions(campaignId, mentions) {
     if (anchor) anchorLocationIds.add(anchor);
   }
   const edgeRows = anchorLocationIds.size > 0
-    ? await prisma.worldLocationEdge.findMany({
+    ? await prisma.road.findMany({
       where: {
         OR: [
           { fromLocationId: { in: [...anchorLocationIds] } },
@@ -231,7 +232,14 @@ export async function processLocationMentions(campaignId, mentions) {
         );
         continue;
       }
-      await markLocationHeardAbout({ userId: campaign.userId, locationId, campaignId });
+      // Hearsay is canonical-only — `existingLocationIds` is filtered against
+      // WorldLocation, so kind=world is the right discriminator.
+      await markLocationHeardAbout({
+        userId: campaign.userId,
+        locationKind: LOCATION_KIND_WORLD,
+        locationId,
+        campaignId,
+      });
     } catch (err) {
       log.warn({ err: err?.message, campaignId, locationId, byNpcIdent }, 'locationMentioned: handler failed');
     }
@@ -258,8 +266,11 @@ export async function processWorldImpactEvent({
   let worldLocationId = null;
   if (currentLocationName) {
     try {
-      const loc = await findOrCreateWorldLocation(currentLocationName);
-      worldLocationId = loc?.id || null;
+      // F5b — WorldEvent.worldLocationId is canonical-only (FK to WorldLocation).
+      // If the player is at a CampaignLocation we leave the column null and the
+      // event still attaches via campaignId.
+      const resolved = await resolveLocationByName(currentLocationName, { campaignId });
+      worldLocationId = resolved?.kind === LOCATION_KIND_WORLD ? resolved.row.id : null;
     } catch {
       // Non-fatal — event still attaches via campaignId
     }
@@ -327,8 +338,8 @@ export async function processCampaignComplete({
   let worldLocationId = null;
   if (currentLocationName) {
     try {
-      const loc = await findOrCreateWorldLocation(currentLocationName);
-      worldLocationId = loc?.id || null;
+      const resolved = await resolveLocationByName(currentLocationName, { campaignId });
+      worldLocationId = resolved?.kind === LOCATION_KIND_WORLD ? resolved.row.id : null;
     } catch {
       // Non-fatal — event can still attach via campaignId
     }

@@ -13,8 +13,9 @@ import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
 import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
 import { onLocationEntry, onDeadlinePass } from './livingWorld/globalNpcTriggers.js';
 import { markLocationDiscovered, markEdgeDiscoveredByUser } from './livingWorld/userDiscoveryService.js';
-import { findOrCreateWorldLocation } from './livingWorld/worldStateService.js';
+import { resolveLocationByName } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
+import { LOCATION_KIND_WORLD } from './locationRefs.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -88,29 +89,46 @@ export async function handlePostSceneWork({
     );
     // Phase 7 — record the travel in UserDiscoveredLocation/Edge (owner) +
     // upsert a CampaignEdgeDiscovery row. Best-effort, never blocks.
+    // F5b — both locations may be canonical OR campaign-scoped; resolve
+    // polymorphically and pass the right kind to markLocationDiscovered.
+    // markEdgeDiscoveredByUser is canonical-only (Roads), so we only call it
+    // when both endpoints resolve to canonical WorldLocations.
     if (campaign?.livingWorldEnabled && campaign.userId) {
       phase1Tasks.push(
         (async () => {
           try {
-            const [prevRow, newRow] = await Promise.all([
-              findOrCreateWorldLocation(prevLoc),
-              findOrCreateWorldLocation(newLoc),
+            const [prevRef, newRef] = await Promise.all([
+              resolveLocationByName(prevLoc, { campaignId }),
+              resolveLocationByName(newLoc, { campaignId }),
             ]);
-            if (!prevRow?.id || !newRow?.id) return;
-            await Promise.allSettled([
-              markLocationDiscovered({ userId: campaign.userId, locationId: newRow.id, campaignId }),
-              markLocationDiscovered({ userId: campaign.userId, locationId: prevRow.id, campaignId }),
-              markEdgeDiscoveredByUser({
+            if (!prevRef?.row?.id || !newRef?.row?.id) return;
+            const tasks = [
+              markLocationDiscovered({
                 userId: campaign.userId,
-                fromLocationId: prevRow.id,
-                toLocationId: newRow.id,
-              }),
-              markEdgeDiscovered({
-                fromLocationId: prevRow.id,
-                toLocationId: newRow.id,
+                locationKind: newRef.kind,
+                locationId: newRef.row.id,
                 campaignId,
               }),
-            ]);
+              markLocationDiscovered({
+                userId: campaign.userId,
+                locationKind: prevRef.kind,
+                locationId: prevRef.row.id,
+                campaignId,
+              }),
+            ];
+            if (prevRef.kind === LOCATION_KIND_WORLD && newRef.kind === LOCATION_KIND_WORLD) {
+              tasks.push(markEdgeDiscoveredByUser({
+                userId: campaign.userId,
+                fromLocationId: prevRef.row.id,
+                toLocationId: newRef.row.id,
+              }));
+              tasks.push(markEdgeDiscovered({
+                fromLocationId: prevRef.row.id,
+                toLocationId: newRef.row.id,
+                campaignId,
+              }));
+            }
+            await Promise.allSettled(tasks);
           } catch (err) {
             log.warn({ err: err?.message, prevLoc, newLoc }, 'discovery marking failed (non-fatal)');
           }
@@ -186,11 +204,14 @@ export async function handlePostSceneWork({
 
       if (newLoc && prevLoc && newLoc !== prevLoc) {
         try {
-          const newRow = await findOrCreateWorldLocation(newLoc);
-          if (newRow?.id) {
+          // F5b — onLocationEntry queries WorldNPC.currentLocationId (canonical
+          // FK), so it's only meaningful when the player entered a canonical
+          // WorldLocation. CampaignLocations don't anchor canonical NPCs.
+          const resolved = await resolveLocationByName(newLoc, { campaignId });
+          if (resolved?.kind === LOCATION_KIND_WORLD && resolved.row?.id) {
             await onLocationEntry({
               campaignId,
-              worldLocationId: newRow.id,
+              worldLocationId: resolved.row.id,
               provider,
             });
           }

@@ -1,9 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   unpackWorldBounds,
   packWorldBounds,
   liftCurrentLocationFromCoreState,
   injectCurrentLocationIntoCoreState,
+  packLocationRef,
+  readLocationRef,
+  lookupLocationByKindId,
+  slugifyLocationName,
+  LOCATION_KIND_WORLD,
+  LOCATION_KIND_CAMPAIGN,
 } from './locationRefs.js';
 
 describe('unpackWorldBounds', () => {
@@ -108,5 +114,126 @@ describe('injectCurrentLocationIntoCoreState', () => {
     const cs = { world: { currentLocation: 'OverridePath' } };
     injectCurrentLocationIntoCoreState(cs, 'ColumnPath');
     expect(cs.world.currentLocation).toBe('OverridePath');
+  });
+});
+
+describe('packLocationRef', () => {
+  it('returns nulls for missing input', () => {
+    expect(packLocationRef(null)).toEqual({ kind: null, id: null });
+    expect(packLocationRef(undefined)).toEqual({ kind: null, id: null });
+  });
+
+  it('passes through a literal {kind,id} ref', () => {
+    expect(packLocationRef({ kind: 'world', id: 'abc' })).toEqual({ kind: 'world', id: 'abc' });
+    expect(packLocationRef({ kind: 'campaign', id: 'xyz' })).toEqual({ kind: 'campaign', id: 'xyz' });
+  });
+
+  it('rejects unknown kinds', () => {
+    expect(packLocationRef({ kind: 'galaxy', id: 'abc' })).toEqual({ kind: null, id: null });
+  });
+
+  it('packs a row using defaultKind', () => {
+    expect(packLocationRef({ id: 'wl1', canonicalName: 'Krynsk' }, LOCATION_KIND_WORLD))
+      .toEqual({ kind: 'world', id: 'wl1' });
+    expect(packLocationRef({ id: 'cl1', name: 'Karczma' }, LOCATION_KIND_CAMPAIGN))
+      .toEqual({ kind: 'campaign', id: 'cl1' });
+  });
+
+  it('returns nulls when row has no id', () => {
+    expect(packLocationRef({ name: 'no-id' }, LOCATION_KIND_WORLD)).toEqual({ kind: null, id: null });
+  });
+
+  it('returns nulls when defaultKind is unknown', () => {
+    expect(packLocationRef({ id: 'x' }, 'galaxy')).toEqual({ kind: null, id: null });
+  });
+});
+
+describe('readLocationRef', () => {
+  it('returns null when columns are missing', () => {
+    expect(readLocationRef(null)).toBeNull();
+    expect(readLocationRef({})).toBeNull();
+    expect(readLocationRef({ currentLocationKind: 'world' })).toBeNull();
+    expect(readLocationRef({ currentLocationId: 'abc' })).toBeNull();
+  });
+
+  it('reads the default currentLocation prefix', () => {
+    expect(readLocationRef({ currentLocationKind: 'world', currentLocationId: 'abc' }))
+      .toEqual({ kind: 'world', id: 'abc' });
+  });
+
+  it('honours custom prefixes', () => {
+    expect(readLocationRef({ lastLocationKind: 'campaign', lastLocationId: 'xyz' }, 'lastLocation'))
+      .toEqual({ kind: 'campaign', id: 'xyz' });
+  });
+
+  it('rejects unknown kind values', () => {
+    expect(readLocationRef({ currentLocationKind: 'galaxy', currentLocationId: 'abc' })).toBeNull();
+  });
+});
+
+describe('lookupLocationByKindId', () => {
+  function makePrisma() {
+    return {
+      worldLocation: { findUnique: vi.fn().mockResolvedValue({ id: 'w1', canonicalName: 'Krynsk' }) },
+      campaignLocation: { findUnique: vi.fn().mockResolvedValue({ id: 'c1', name: 'Karczma' }) },
+    };
+  }
+
+  it('returns null on bad input', async () => {
+    const prisma = makePrisma();
+    expect(await lookupLocationByKindId({ prisma, kind: 'galaxy', id: 'a' })).toBeNull();
+    expect(await lookupLocationByKindId({ prisma, kind: null, id: 'a' })).toBeNull();
+    expect(await lookupLocationByKindId({ prisma, kind: 'world', id: null })).toBeNull();
+  });
+
+  it('routes world kind to worldLocation', async () => {
+    const prisma = makePrisma();
+    const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_WORLD, id: 'w1' });
+    expect(out).toEqual({ id: 'w1', canonicalName: 'Krynsk' });
+    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'w1' } });
+    expect(prisma.campaignLocation.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('routes campaign kind to campaignLocation', async () => {
+    const prisma = makePrisma();
+    const out = await lookupLocationByKindId({ prisma, kind: LOCATION_KIND_CAMPAIGN, id: 'c1' });
+    expect(out).toEqual({ id: 'c1', name: 'Karczma' });
+    expect(prisma.campaignLocation.findUnique).toHaveBeenCalledWith({ where: { id: 'c1' } });
+    expect(prisma.worldLocation.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('forwards select to Prisma', async () => {
+    const prisma = makePrisma();
+    await lookupLocationByKindId({
+      prisma, kind: 'world', id: 'w1', select: { id: true, canonicalName: true },
+    });
+    expect(prisma.worldLocation.findUnique).toHaveBeenCalledWith({
+      where: { id: 'w1' }, select: { id: true, canonicalName: true },
+    });
+  });
+});
+
+describe('slugifyLocationName', () => {
+  it('lowercases + collapses non-alphanum to dashes', () => {
+    expect(slugifyLocationName('Karczma Pod Skowronkiem')).toBe('karczma-pod-skowronkiem');
+  });
+
+  it('strips leading/trailing dashes', () => {
+    expect(slugifyLocationName('  --Bandit Camp!--  ')).toBe('bandit-camp');
+  });
+
+  it('transliterates polish letters', () => {
+    expect(slugifyLocationName('Łąka Świętego Józefa')).toBe('laka-swietego-jozefa');
+  });
+
+  it('handles non-string input', () => {
+    expect(slugifyLocationName(null)).toBe('');
+    expect(slugifyLocationName(undefined)).toBe('');
+    expect(slugifyLocationName(42)).toBe('');
+  });
+
+  it('returns empty for blank/whitespace', () => {
+    expect(slugifyLocationName('   ')).toBe('');
+    expect(slugifyLocationName('')).toBe('');
   });
 });

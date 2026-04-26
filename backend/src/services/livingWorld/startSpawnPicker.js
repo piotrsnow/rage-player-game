@@ -46,10 +46,10 @@ function weightedPick(items, weightFn) {
  */
 export async function pickStartSpawn() {
   try {
-    // 1. Pick a top-level canonical settlement.
+    // 1. Pick a top-level canonical settlement. F5b — every WorldLocation row
+    // is canonical (the isCanonical flag was dropped); no extra filter needed.
     const settlements = await prisma.worldLocation.findMany({
       where: {
-        isCanonical: true,
         parentLocationId: null,
         locationType: { in: TOP_LEVEL_TYPES },
       },
@@ -77,7 +77,6 @@ export async function pickStartSpawn() {
     const sublocations = await prisma.worldLocation.findMany({
       where: {
         parentLocationId: settlement.id,
-        isCanonical: true,
       },
       select: {
         id: true, canonicalName: true, category: true, slotType: true,

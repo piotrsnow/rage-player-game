@@ -161,15 +161,10 @@ export async function livingWorldRoutes(fastify) {
 
     const [locations, fog, full] = await Promise.all([
       listLocationsForCampaign(campaignId, {
-        select: {
-          id: true, canonicalName: true, displayName: true,
-          locationType: true, dangerLevel: true,
-          regionX: true, regionY: true,
-          parentLocationId: true, isCanonical: true,
-          description: true, region: true,
-          subGridX: true, subGridY: true,
-          slotType: true, slotKind: true,
-        },
+        // F5b — listLocationsForCampaign merges canonical WorldLocation +
+        // per-campaign CampaignLocation; each row carries `kind` + a
+        // normalized `displayName`. We omit `select` to take both shapes
+        // wholesale; merge happens in locationQueries.
       }),
       loadCampaignFog({ userId: request.user.id, campaignId }),
       prisma.campaign.findUnique({
@@ -179,11 +174,14 @@ export async function livingWorldRoutes(fastify) {
       }),
     ]);
 
-    const locationIds = locations.map((l) => l.id);
-    const edges = locationIds.length === 0 ? [] : await prisma.worldLocationEdge.findMany({
+    // F5b — Roads connect canonical WorldLocation only. Filter the locations
+    // list down to canonical IDs before querying so we don't ask Postgres for
+    // edges involving CampaignLocation IDs (no rows would match anyway).
+    const canonicalIds = locations.filter((l) => l.kind === 'world').map((l) => l.id);
+    const edges = canonicalIds.length === 0 ? [] : await prisma.road.findMany({
       where: {
-        fromLocationId: { in: locationIds },
-        toLocationId: { in: locationIds },
+        fromLocationId: { in: canonicalIds },
+        toLocationId: { in: canonicalIds },
       },
       select: {
         id: true, fromLocationId: true, toLocationId: true,
@@ -195,11 +193,14 @@ export async function livingWorldRoutes(fastify) {
     const core = full?.coreState || {};
     const currentName = full?.currentLocationName || core?.world?.currentLocation || null;
     if (currentName) {
+      // F5b — match across the merged canonical + campaign list. `displayName`
+      // is normalized in locationQueries (canonicalName for WorldLocation,
+      // name for CampaignLocation) so a single string compare hits both kinds.
       const match = locations.find(
         (l) => l.displayName === currentName || l.canonicalName === currentName
       );
       if (match) currentLocationId = match.id;
-      else log.warn({ campaignId, currentName }, 'currentLocation name has no exact WorldLocation match');
+      else log.warn({ campaignId, currentName }, 'currentLocation name has no row match');
     }
 
     // NOTE: we intentionally do NOT return Campaign.worldBounds. The player

@@ -14,6 +14,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../embeddingService.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, slugifyLocationName } from '../locationRefs.js';
 import * as ragService from './ragService.js';
 
 const log = childLogger({ module: 'worldStateService' });
@@ -132,6 +133,154 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
   ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
 
   return created;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// CampaignLocation (F5b — per-campaign sandbox; AI mid-play creates here)
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * F5b — fuzzy resolve a location name across BOTH canonical WorldLocation
+ * and this-campaign CampaignLocation. Canonical takes priority (so AI saying
+ * "Krynsk" hits the canonical Krynsk even if a campaign also has a same-name
+ * sandbox row). Returns `{ kind, row }` or `null`. Pure lookup — never
+ * creates. Pass `region` to narrow the canonical search.
+ */
+export async function resolveLocationByName(rawName, { campaignId = null, region = null } = {}) {
+  if (!rawName || typeof rawName !== 'string') return null;
+  const name = rawName.trim();
+  if (!name) return null;
+  const norm = normalizeLocationName(name);
+  if (!norm) return null;
+
+  // Canonical — exact canonicalName hit
+  const exact = await prisma.worldLocation.findUnique({ where: { canonicalName: name } });
+  if (exact) return { kind: LOCATION_KIND_WORLD, row: exact };
+
+  // Canonical — fuzzy via aliases / normalized name / substring
+  const wlCandidates = await prisma.worldLocation.findMany({
+    where: region ? { region } : undefined,
+    select: {
+      id: true, canonicalName: true, displayName: true, aliases: true,
+      region: true, regionX: true, regionY: true, locationType: true,
+      parentLocationId: true, description: true, embeddingText: true,
+      maxKeyNpcs: true, maxSubLocations: true, dangerLevel: true,
+      knownByDefault: true,
+    },
+  });
+  for (const rec of wlCandidates) {
+    if (matchesByNormName(rec.canonicalName, rec.aliases, norm)) {
+      return { kind: LOCATION_KIND_WORLD, row: rec };
+    }
+  }
+
+  // Campaign sandbox — exact slug, then fuzzy
+  if (campaignId) {
+    const slug = slugifyLocationName(name);
+    if (slug) {
+      const slugHit = await prisma.campaignLocation.findUnique({
+        where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
+      });
+      if (slugHit) return { kind: LOCATION_KIND_CAMPAIGN, row: slugHit };
+    }
+    const clCandidates = await prisma.campaignLocation.findMany({
+      where: { campaignId },
+      select: {
+        id: true, name: true, canonicalSlug: true, aliases: true,
+        region: true, regionX: true, regionY: true, locationType: true,
+        parentLocationKind: true, parentLocationId: true,
+        description: true, embeddingText: true, dangerLevel: true,
+      },
+    });
+    for (const rec of clCandidates) {
+      if (matchesByNormName(rec.name, rec.aliases, norm)) {
+        return { kind: LOCATION_KIND_CAMPAIGN, row: rec };
+      }
+    }
+  }
+
+  return null;
+}
+
+function matchesByNormName(displayOrCanonical, aliases, queryNorm) {
+  const recNorm = normalizeLocationName(displayOrCanonical || '');
+  if (recNorm === queryNorm) return true;
+  const aliasArr = Array.isArray(aliases) ? aliases : [];
+  if (aliasArr.some((a) => normalizeLocationName(a) === queryNorm)) return true;
+  if (recNorm && queryNorm && (recNorm.includes(queryNorm) || queryNorm.includes(recNorm))) return true;
+  return false;
+}
+
+/**
+ * F5b — find OR create a CampaignLocation row in the per-campaign sandbox.
+ * Caller must have already resolved against canonical via
+ * `resolveLocationByName` if cross-table dedup is desired; this function
+ * only dedupes against this-campaign CampaignLocations by `canonicalSlug`.
+ *
+ * Returns the CampaignLocation row. Idempotent on (campaignId, slug).
+ */
+export async function findOrCreateCampaignLocation(rawName, {
+  campaignId,
+  region = null,
+  description = '',
+  locationType = 'generic',
+  category = null,
+  regionX = 0,
+  regionY = 0,
+  positionConfidence = 0.5,
+  parentLocationKind = null,
+  parentLocationId = null,
+  slotType = null,
+  slotKind = 'custom',
+  dangerLevel = 'safe',
+  aliases = null,
+  maxKeyNpcs = null,
+  maxSubLocations = null,
+} = {}) {
+  if (!rawName || typeof rawName !== 'string' || !campaignId) return null;
+  const name = rawName.trim();
+  if (!name) return null;
+  const slug = slugifyLocationName(name);
+  if (!slug) return null;
+
+  const existing = await prisma.campaignLocation.findUnique({
+    where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
+  });
+  if (existing) return existing;
+
+  const embText = description ? `${name}: ${description}` : name;
+  const data = {
+    campaignId,
+    name,
+    canonicalSlug: slug,
+    description,
+    category: category || locationType || 'generic',
+    locationType,
+    region,
+    aliases: aliases || [name],
+    regionX, regionY, positionConfidence,
+    parentLocationKind, parentLocationId,
+    slotType, slotKind, dangerLevel,
+    embeddingText: embText,
+  };
+  if (typeof maxKeyNpcs === 'number') data.maxKeyNpcs = maxKeyNpcs;
+  if (typeof maxSubLocations === 'number') data.maxSubLocations = maxSubLocations;
+
+  try {
+    const created = await prisma.campaignLocation.create({ data });
+    // Separate RAG entityType keeps campaign rows from polluting world-scope
+    // semantic queries; promotion (Phase 12c) reindexes as 'location' on flip.
+    ragService.index('campaign_location', created.id, embText).catch(() => {});
+    return created;
+  } catch (err) {
+    if (err?.code === 'P2002') {
+      // Race on (campaignId, slug) — re-lookup
+      return prisma.campaignLocation.findUnique({
+        where: { campaignId_canonicalSlug: { campaignId, canonicalSlug: slug } },
+      });
+    }
+    throw err;
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────

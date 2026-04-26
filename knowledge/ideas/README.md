@@ -21,6 +21,7 @@ Never silently act on an idea here as if it were an established pattern. The con
 - [autonomous-npcs](autonomous-npcs.md) — NPCs with persistent goals that tick in the background
 - [combat-auto-resolve](combat-auto-resolve.md) — AFK handling in multiplayer combat rounds
 - [declarative-event-routing](declarative-event-routing.md) — config-driven event dispatch
+- [deja-vu-npc-memory](deja-vu-npc-memory.md) — surface past-campaign memories as dream-like fragments in canonical NPCs (post-F5b)
 - [deferred-event-batching](deferred-event-batching.md) — debounced multi-event batching
 - [living-world-admin-extras](living-world-admin-extras.md) — 2D map, audit UI, reputation dashboard, bulk moderation, cost panel (Phase 6 extras, deferred)
 - [living-world-atonement-loop](living-world-atonement-loop.md) — redemption-arc quest to clear vendetta state (deferred)

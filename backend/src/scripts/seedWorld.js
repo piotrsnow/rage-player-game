@@ -9,9 +9,11 @@
 //   • Bidirectional roads from each settlement to its nearest neighbour
 //   • One starter `WorldLoreSection` (slug="main")
 //
-// Every canonical location seeded here is `isCanonical=true`. AI-generated
-// runtime locations stay `isCanonical=false` (see `processStateChanges.js`
-// and the Round A fog-of-war split in `userDiscoveryService.js`).
+// F5b — every location seeded here is a canonical `WorldLocation` row. AI
+// mid-play creation lands in `CampaignLocation` (per-campaign sandbox) and
+// is promoted into canonical via the admin queue. `isCanonical` and
+// `createdByCampaignId` columns dropped — kind discriminated by which table
+// holds the row, not by a flag on WorldLocation.
 //
 // Pantheon (lore, no faction tags):
 //   Serneth  — bóg życia (good, worshipped in villages)
@@ -742,8 +744,8 @@ function buildWildRoads(capital, wildNodes) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Upsert helpers — every canonical upsert carries isCanonical=true
-// + dangerLevel + subGrid coords where applicable.
+// Upsert helpers — canonical WorldLocation upserts carry dangerLevel +
+// subGrid coords where applicable. F5b dropped `isCanonical` / `createdByCampaignId`.
 // ─────────────────────────────────────────────────────────────
 
 async function upsertCapital() {
@@ -759,7 +761,6 @@ async function upsertCapital() {
       maxKeyNpcs: 70,
       maxSubLocations: 25,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: true,
       dangerLevel: 'safe',
       displayName: CAPITAL_NAME,
@@ -778,7 +779,6 @@ async function upsertCapital() {
       maxKeyNpcs: 70,
       maxSubLocations: 25,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: true,
       dangerLevel: 'safe',
       displayName: CAPITAL_NAME,
@@ -801,7 +801,6 @@ async function upsertSublocation(parent, sub) {
       regionX: parentX,
       regionY: parentY,
       positionConfidence: 1.0,
-      isCanonical: true,
       dangerLevel: 'safe',
       subGridX: sub.subGridX ?? null,
       subGridY: sub.subGridY ?? null,
@@ -820,7 +819,6 @@ async function upsertSublocation(parent, sub) {
       regionX: parentX,
       regionY: parentY,
       positionConfidence: 1.0,
-      isCanonical: true,
       dangerLevel: 'safe',
       subGridX: sub.subGridX ?? null,
       subGridY: sub.subGridY ?? null,
@@ -843,7 +841,6 @@ async function upsertVillage(village) {
       maxKeyNpcs: template.maxKeyNpcs,
       maxSubLocations: template.maxSubLocations,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: false,
       dangerLevel: 'safe',
       displayName: village.canonicalName,
@@ -861,7 +858,6 @@ async function upsertVillage(village) {
       maxKeyNpcs: template.maxKeyNpcs,
       maxSubLocations: template.maxSubLocations,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: false,
       dangerLevel: 'safe',
       displayName: village.canonicalName,
@@ -880,7 +876,6 @@ async function upsertWildLocation(loc) {
       regionY: loc.regionY,
       positionConfidence: 1.0,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: false,
       dangerLevel: loc.dangerLevel || 'safe',
       displayName: loc.canonicalName,
@@ -896,7 +891,6 @@ async function upsertWildLocation(loc) {
       regionY: loc.regionY,
       positionConfidence: 1.0,
       parentLocationId: null,
-      isCanonical: true,
       knownByDefault: false,
       dangerLevel: loc.dangerLevel || 'safe',
       displayName: loc.canonicalName,
@@ -1106,10 +1100,10 @@ async function backfillRagEmbeddings(locationByName) {
     });
     const npcStats = await batchBackfillMissing('npc', npcs, buildNPCEmbeddingText);
 
-    // Canonical WorldLocations only — non-canonical entries belong to a
-    // campaign and are indexed at creation time in processStateChanges.
+    // F5b — every WorldLocation row is canonical. CampaignLocation rows
+    // (per-campaign sandbox) are indexed under the separate `campaign_location`
+    // entityType at creation time in processStateChanges/locations.js.
     const locations = await prisma.worldLocation.findMany({
-      where: { isCanonical: true },
       select: {
         id: true,
         canonicalName: true,

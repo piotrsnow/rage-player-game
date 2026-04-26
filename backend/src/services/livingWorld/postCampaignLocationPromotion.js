@@ -1,49 +1,48 @@
 // Round E Phase 12c — post-campaign LOCATION promotion batch.
+// F5b — source rows are now `CampaignLocation` (per-campaign sandbox), not
+// `WorldLocation isCanonical=false`. Pipeline:
 //
-// Mirror of Phase 12b (NPC promotion) for non-canonical WorldLocations
-// created mid-campaign. Pipeline:
-//   1. Collect — WorldLocation rows where `isCanonical=false` AND
-//      `createdByCampaignId=campaignId`. These are AI-generated mid-play
-//      locations (per `processStateChanges/locations.js`).
-//   2. Score — sceneCount (from `CampaignLocationSummary` fuzzy-match by
-//      name) + questObjectiveCount (#CampaignQuest rows referencing the
-//      location by name). Visit-heavy + quest-tethered locations score
-//      higher; raw existence isn't enough.
-//   3. Dedup — cosine similarity vs existing `LocationPromotionCandidate`
-//      rows at `entityType='location_promotion_candidate'`. Match ≥ 0.85
-//      stashes `stats.dedupeOfId` + `stats.dedupeSimilarity` so the admin
-//      UI can collapse dupes without schema churn (same pattern as NPCs).
-//   4. Persist — upsert keyed by `[campaignId, worldLocationId]`. Stats
-//      refresh on re-run; admin decisions (`status`, `reviewedBy`,
-//      `reviewedAt`, `reviewNotes`) stay sticky.
-//   5. RAG index — fire-and-forget so the NEXT campaign's candidates
-//      dedup against this one.
+//   1. Collect — `CampaignLocation` rows for this campaign that the player
+//      actually engaged with (sceneCount + quest-objective count). Score-zero
+//      rows are dropped.
+//   2. Dedup — cosine similarity vs existing
+//      `LocationPromotionCandidate` rows at
+//      `entityType='location_promotion_candidate'`.
+//      Match ≥ 0.85 stashes `stats.dedupeOfId` + `stats.dedupeSimilarity` so
+//      the admin UI can collapse dupes without schema churn.
+//   3. Persist — upsert keyed by
+//      `[campaignId, sourceLocationKind, sourceLocationId]`. Stats refresh on
+//      re-run; admin decisions stay sticky.
+//   4. RAG index — fire-and-forget so the NEXT campaign's candidates dedup
+//      against this one.
+//   5. Promote — admin approval (route in `adminLivingWorld.js`) calls
+//      `promoteCampaignLocationToCanonical(id)` which destructively COPIES
+//      the CampaignLocation into a new canonical WorldLocation, RELINKS all
+//      polymorphic refs that pointed at the source CampaignLocation, then
+//      deletes the source row.
 //
-// LLM verdict is intentionally omitted in the 12c MVP. All candidates
-// land `status='pending'` and wait for manual admin review. When playtest
-// signals admin fatigue, add a small-model pass analogous to
-// `postCampaignPromotionVerdict.js`.
+// LLM verdict is intentionally omitted in the MVP. All candidates land
+// `status='pending'` and wait for manual admin review.
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import * as ragService from './ragService.js';
+import {
+  LOCATION_KIND_WORLD,
+  LOCATION_KIND_CAMPAIGN,
+} from '../locationRefs.js';
 
 const log = childLogger({ module: 'postCampaignLocationPromotion' });
 
 const DEFAULT_TOP_N = 5;
 const DEDUP_SIMILARITY_THRESHOLD = 0.85;
 
-// Score weights. Quest-tethered locations (a quest pointed the player here)
-// are strong promotion signals — the campaign author built around them. Raw
-// scene count is the baseline: a lot of scenes at a location = the player
-// cared enough to return.
 const WEIGHT_QUEST_OBJECTIVE = 5;
 
 /**
  * Pure — fuzzy compare two location names. Mirrors the strategy used in
  * memoryCompressor's location dedup (substring match in either direction,
- * case-insensitive). Intentionally loose — AI-created locations end up
- * with auto-suffixes like `Chatka myśliwego_abc123`.
+ * case-insensitive).
  */
 export function fuzzyLocationNameMatch(a, b) {
   if (!a || !b) return false;
@@ -54,30 +53,24 @@ export function fuzzyLocationNameMatch(a, b) {
 
 /**
  * Pure — count how many `CampaignQuest` rows reference a given location
- * (by objective locationId / locationName match). Returns a `Map<worldLocationId, count>`.
- * Quest objectives can be stored with either ID or name — we support both so
- * this doesn't depend on which shape scene-gen chose.
+ * by objective locationId / locationName. Returns a `Map<id, count>`.
  */
 export function computeQuestObjectiveCounts(locations, quests) {
   const counts = new Map();
   if (!Array.isArray(locations) || !Array.isArray(quests)) return counts;
-  for (const loc of locations) {
-    counts.set(loc.id, 0);
-  }
+  for (const loc of locations) counts.set(loc.id, 0);
   for (const q of quests) {
     if (!q) continue;
     const objectives = Array.isArray(q.objectives) ? q.objectives : [];
     for (const obj of objectives) {
       if (!obj) continue;
-      // F4: AI-emitted objective fields live in metadata; tolerate the
-      // legacy flat shape too in case a caller passes a coreState quest.
       const meta = obj.metadata || obj;
       for (const loc of locations) {
         if (meta.locationId && meta.locationId === loc.id) {
           counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
           break;
         }
-        if (meta.locationName && fuzzyLocationNameMatch(meta.locationName, loc.canonicalName)) {
+        if (meta.locationName && fuzzyLocationNameMatch(meta.locationName, loc.name)) {
           counts.set(loc.id, (counts.get(loc.id) || 0) + 1);
           break;
         }
@@ -87,19 +80,10 @@ export function computeQuestObjectiveCounts(locations, quests) {
   return counts;
 }
 
-/**
- * Pure — compute a promotion score. Zero-score candidates are dropped.
- */
 export function scoreLocationCandidate({ sceneCount = 0, questObjectiveCount = 0 }) {
   return (sceneCount || 0) + (questObjectiveCount || 0) * WEIGHT_QUEST_OBJECTIVE;
 }
 
-/**
- * Pure — join the raw location list with scene/summary counts, quest-objective
- * counts, and return the top-N by score. Zero-score candidates are dropped
- * (no need to surface a location nobody visited). Ties broken by sceneCount
- * DESC then canonicalName ASC for deterministic ordering.
- */
 export function selectTopNLocationCandidates(locations, sceneCountByLocId, questCountByLocId, topN = DEFAULT_TOP_N) {
   if (!Array.isArray(locations) || locations.length === 0) return [];
   const scored = [];
@@ -107,10 +91,7 @@ export function selectTopNLocationCandidates(locations, sceneCountByLocId, quest
     if (!loc) continue;
     const sceneCount = sceneCountByLocId.get(loc.id) || 0;
     const questObjectiveCount = questCountByLocId.get(loc.id) || 0;
-    const stats = {
-      sceneCount,
-      questObjectiveCount,
-    };
+    const stats = { sceneCount, questObjectiveCount };
     const score = scoreLocationCandidate(stats);
     if (score <= 0) continue;
     scored.push({ loc, stats: { ...stats, score } });
@@ -118,30 +99,20 @@ export function selectTopNLocationCandidates(locations, sceneCountByLocId, quest
   scored.sort((a, b) => {
     if (b.stats.score !== a.stats.score) return b.stats.score - a.stats.score;
     if (b.stats.sceneCount !== a.stats.sceneCount) return b.stats.sceneCount - a.stats.sceneCount;
-    return (a.loc.canonicalName || '').localeCompare(b.loc.canonicalName || '');
+    return (a.loc.name || '').localeCompare(b.loc.name || '');
   });
   return scored.slice(0, topN);
 }
 
-/**
- * Pure — text used to embed a location candidate for dedup search. Name +
- * type + region + description snippet. Description truncated to 200 chars so
- * similarly-named locations with divergent long descriptions still collide.
- */
-export function buildLocationCandidateEmbeddingText({ canonicalName, displayName, locationType, region, description }) {
+export function buildLocationCandidateEmbeddingText({ name, displayName, locationType, region, description }) {
   const parts = [];
-  if (displayName || canonicalName) parts.push(String(displayName || canonicalName).trim());
+  if (displayName || name) parts.push(String(displayName || name).trim());
   if (locationType) parts.push(String(locationType).trim());
   if (region) parts.push(String(region).trim());
   if (description) parts.push(String(description).trim().slice(0, 200));
   return parts.filter(Boolean).join(' — ');
 }
 
-/**
- * I/O — RAG query for an existing `location_promotion_candidate` row above
- * the dedup threshold. Returns `{match: {entityId, similarity} | null}`.
- * Non-throwing.
- */
 export async function findDuplicateLocationCandidate(text) {
   if (!text || !text.trim()) return { match: null };
   try {
@@ -159,7 +130,7 @@ export async function findDuplicateLocationCandidate(text) {
 }
 
 /**
- * I/O — collect top-N non-canonical locations from this campaign. Joins
+ * I/O — collect top-N CampaignLocation candidates for promotion. Joins
  * scene-count (CampaignLocationSummary fuzzy-match on `locationName`) and
  * quest-objective counts.
  */
@@ -167,11 +138,11 @@ export async function collectLocationCandidates(campaignId, { topN = DEFAULT_TOP
   if (!campaignId) return [];
   try {
     const [locations, summaries, quests] = await Promise.all([
-      prisma.worldLocation.findMany({
-        where: { isCanonical: false, createdByCampaignId: campaignId },
+      prisma.campaignLocation.findMany({
+        where: { campaignId },
         select: {
-          id: true, canonicalName: true, displayName: true, locationType: true,
-          region: true, description: true, parentLocationId: true,
+          id: true, name: true, locationType: true, region: true,
+          description: true, parentLocationId: true,
         },
       }),
       prisma.campaignLocationSummary.findMany({
@@ -187,15 +158,11 @@ export async function collectLocationCandidates(campaignId, { topN = DEFAULT_TOP
       }),
     ]);
 
-    // Map each WorldLocation.id → aggregate sceneCount from fuzzy-matching
-    // CampaignLocationSummary rows. One summary might match multiple locations
-    // with very similar names; we sum conservatively to avoid dropping signal.
     const sceneCountByLocId = new Map();
     for (const loc of locations) sceneCountByLocId.set(loc.id, 0);
     for (const summary of summaries) {
       for (const loc of locations) {
-        if (fuzzyLocationNameMatch(summary.locationName, loc.canonicalName)
-            || (loc.displayName && fuzzyLocationNameMatch(summary.locationName, loc.displayName))) {
+        if (fuzzyLocationNameMatch(summary.locationName, loc.name)) {
           sceneCountByLocId.set(loc.id, (sceneCountByLocId.get(loc.id) || 0) + (summary.sceneCount || 0));
         }
       }
@@ -211,10 +178,10 @@ export async function collectLocationCandidates(campaignId, { topN = DEFAULT_TOP
 
 /**
  * I/O — upsert candidates into `LocationPromotionCandidate`, keyed by
- * `[campaignId, worldLocationId]`. Stats refresh on re-run; admin decisions
- * stay sticky. Dedup via RAG stashes `dedupeOfId`/`dedupeSimilarity` in the
- * `stats` JSON so the UI can collapse. `dryRun=true` reports would-write
- * entries without touching the DB.
+ * `[campaignId, sourceLocationKind, sourceLocationId]`. F5b sources are
+ * always `kind='campaign'` (CampaignLocation) — the kind column exists for
+ * forward compatibility (e.g. relisting an admin-rejected CampaignLocation
+ * after edits).
  */
 export async function persistLocationCandidates(campaignId, candidates, { dryRun = false } = {}) {
   const persisted = [];
@@ -235,9 +202,10 @@ export async function persistLocationCandidates(campaignId, candidates, { dryRun
 
     const createRow = {
       campaignId,
-      worldLocationId: loc.id,
-      canonicalName: loc.canonicalName,
-      displayName: loc.displayName || null,
+      sourceLocationKind: LOCATION_KIND_CAMPAIGN,
+      sourceLocationId: loc.id,
+      canonicalName: loc.name,
+      displayName: loc.name,
       locationType: loc.locationType || null,
       region: loc.region || null,
       description: loc.description || null,
@@ -251,8 +219,15 @@ export async function persistLocationCandidates(campaignId, candidates, { dryRun
     }
 
     try {
+      const compositeKey = {
+        campaignId_sourceLocationKind_sourceLocationId: {
+          campaignId,
+          sourceLocationKind: LOCATION_KIND_CAMPAIGN,
+          sourceLocationId: loc.id,
+        },
+      };
       const existing = await prisma.locationPromotionCandidate.findUnique({
-        where: { campaignId_worldLocationId: { campaignId, worldLocationId: loc.id } },
+        where: compositeKey,
         select: { status: true, reviewedBy: true },
       });
       const adminTouched = existing && (existing.reviewedBy || (existing.status && existing.status !== 'pending'));
@@ -268,30 +243,25 @@ export async function persistLocationCandidates(campaignId, candidates, { dryRun
       if (!adminTouched) updateData.status = createRow.status;
 
       await prisma.locationPromotionCandidate.upsert({
-        where: { campaignId_worldLocationId: { campaignId, worldLocationId: loc.id } },
+        where: compositeKey,
         create: createRow,
         update: updateData,
       });
 
       if (embeddingText) {
         ragService.index('location_promotion_candidate', loc.id, embeddingText)
-          .catch((err) => log.warn({ err: err?.message, worldLocationId: loc.id }, 'location candidate index failed'));
+          .catch((err) => log.warn({ err: err?.message, sourceLocationId: loc.id }, 'location candidate index failed'));
       }
       persisted.push(createRow);
     } catch (err) {
-      log.warn({ err: err?.message, worldLocationId: loc.id }, 'persistLocationCandidates write failed');
-      skipped.push({ worldLocationId: loc.id, reason: 'write_failed', error: err?.message });
+      log.warn({ err: err?.message, sourceLocationId: loc.id }, 'persistLocationCandidates write failed');
+      skipped.push({ sourceLocationId: loc.id, reason: 'write_failed', error: err?.message });
     }
   }
 
   return { persisted, skipped };
 }
 
-/**
- * Orchestrator — collect + dedup + persist in one call. Returns
- * `{collected, persisted, skipped}` so the writeback phase can thread it
- * into its return value for observability.
- */
 export async function runLocationPromotionPipeline({ campaignId, dryRun = false, topN = DEFAULT_TOP_N } = {}) {
   const collected = await collectLocationCandidates(campaignId, { topN });
   const { persisted, skipped } = await persistLocationCandidates(campaignId, collected, { dryRun });
@@ -307,43 +277,108 @@ export async function runLocationPromotionPipeline({ campaignId, dryRun = false,
 }
 
 /**
- * I/O — admin-triggered promotion of a non-canonical WorldLocation to
- * canonical. Called by the Phase 13a approval route. Non-throwing.
+ * I/O — admin-triggered DESTRUCTIVE promotion of a CampaignLocation to a
+ * canonical WorldLocation. Called by the Phase 13a approval route.
  *
  * Flow:
- *   1. Load the non-canonical WorldLocation. Reject if missing or already canonical.
- *   2. Flip `isCanonical=true`, null out `createdByCampaignId` (audit trail
- *      lives in LocationPromotionCandidate row + this timestamp).
- *   3. Fire-and-forget RAG reindex as `entityType='location'` so future
- *      `findOrCreateWorldLocation` dedup queries see it as canonical.
+ *   1. Load the source CampaignLocation. Reject if missing.
+ *   2. CREATE a new WorldLocation with the source's display fields. The new
+ *      `canonicalName` defaults to the source `name`; collisions surface as
+ *      P2002 and abort.
+ *   3. RELINK every polymorphic FK that pointed at the source CampaignLocation
+ *      (Campaign.currentLocation*, CampaignNPC.lastLocation*,
+ *      CampaignDiscoveredLocation, CharacterClearedDungeon) to point at the
+ *      new WorldLocation by flipping kind→'world' and id→new uuid.
+ *   4. DELETE the source CampaignLocation row.
+ *   5. Reindex as canonical `entityType='location'` so future canonical
+ *      lookups dedup against it.
  */
-export async function promoteWorldLocationToCanonical(worldLocationId) {
-  if (!worldLocationId) return { ok: false, reason: 'missing_world_location_id' };
+export async function promoteCampaignLocationToCanonical(campaignLocationId) {
+  if (!campaignLocationId) return { ok: false, reason: 'missing_source_id' };
   try {
-    const existing = await prisma.worldLocation.findUnique({
-      where: { id: worldLocationId },
-      select: { id: true, isCanonical: true, canonicalName: true, displayName: true, locationType: true, region: true, description: true },
+    const source = await prisma.campaignLocation.findUnique({ where: { id: campaignLocationId } });
+    if (!source) return { ok: false, reason: 'campaign_location_not_found' };
+
+    const worldLocation = await prisma.$transaction(async (tx) => {
+      const created = await tx.worldLocation.create({
+        data: {
+          canonicalName: source.name,
+          displayName: source.name,
+          aliases: Array.isArray(source.aliases) ? source.aliases : [source.name],
+          description: source.description || '',
+          category: source.category || source.locationType || 'generic',
+          locationType: source.locationType || 'generic',
+          region: source.region || null,
+          regionX: source.regionX || 0,
+          regionY: source.regionY || 0,
+          positionConfidence: 1.0,
+          subGridX: source.subGridX || null,
+          subGridY: source.subGridY || null,
+          maxKeyNpcs: source.maxKeyNpcs || 10,
+          maxSubLocations: source.maxSubLocations || 5,
+          slotType: source.slotType || null,
+          slotKind: source.slotKind || 'custom',
+          dangerLevel: source.dangerLevel || 'safe',
+          knownByDefault: false,
+          embeddingText: source.embeddingText || source.name,
+        },
+      });
+
+      // Relink polymorphic refs pointing at the source CampaignLocation.
+      const newRef = { kind: LOCATION_KIND_WORLD, id: created.id };
+      await Promise.all([
+        tx.campaign.updateMany({
+          where: { currentLocationKind: LOCATION_KIND_CAMPAIGN, currentLocationId: source.id },
+          data: { currentLocationKind: newRef.kind, currentLocationId: newRef.id },
+        }),
+        tx.campaignNPC.updateMany({
+          where: { lastLocationKind: LOCATION_KIND_CAMPAIGN, lastLocationId: source.id },
+          data: { lastLocationKind: newRef.kind, lastLocationId: newRef.id },
+        }),
+        tx.campaignDiscoveredLocation.updateMany({
+          where: { locationKind: LOCATION_KIND_CAMPAIGN, locationId: source.id },
+          data: { locationKind: newRef.kind, locationId: newRef.id },
+        }),
+        tx.characterClearedDungeon.updateMany({
+          where: { dungeonKind: LOCATION_KIND_CAMPAIGN, dungeonId: source.id },
+          data: { dungeonKind: newRef.kind, dungeonId: newRef.id },
+        }),
+      ]);
+
+      // Drop the source. Cascades clean up nothing — no children FK to
+      // CampaignLocation in the schema today.
+      await tx.campaignLocation.delete({ where: { id: source.id } });
+      return created;
     });
-    if (!existing) return { ok: false, reason: 'world_location_not_found' };
-    if (existing.isCanonical) {
-      return { ok: false, reason: 'already_canonical' };
-    }
-    const updated = await prisma.worldLocation.update({
-      where: { id: worldLocationId },
-      data: {
-        isCanonical: true,
-        createdByCampaignId: null,
-      },
+
+    const embeddingText = buildLocationCandidateEmbeddingText({
+      name: worldLocation.canonicalName,
+      displayName: worldLocation.displayName,
+      locationType: worldLocation.locationType,
+      region: worldLocation.region,
+      description: worldLocation.description,
     });
-    // Reindex as canonical location so future retrieval finds it.
-    const embeddingText = buildLocationCandidateEmbeddingText(updated);
     if (embeddingText) {
-      ragService.index('location', updated.id, embeddingText)
-        .catch((err) => log.warn({ err: err?.message, worldLocationId }, 'promoted location index failed'));
+      ragService.index('location', worldLocation.id, embeddingText)
+        .catch((err) => log.warn({ err: err?.message, worldLocationId: worldLocation.id }, 'promoted location index failed'));
     }
-    return { ok: true, worldLocation: updated };
+
+    log.info(
+      { sourceCampaignLocationId: campaignLocationId, worldLocationId: worldLocation.id, name: worldLocation.canonicalName },
+      'CampaignLocation destructively promoted to canonical WorldLocation',
+    );
+    return { ok: true, worldLocation };
   } catch (err) {
-    log.warn({ err: err?.message, worldLocationId }, 'promoteWorldLocationToCanonical failed');
+    if (err?.code === 'P2002') {
+      log.warn({ campaignLocationId }, 'promoteCampaignLocationToCanonical: canonicalName collision');
+      return { ok: false, reason: 'canonical_name_collision' };
+    }
+    log.warn({ err: err?.message, campaignLocationId }, 'promoteCampaignLocationToCanonical failed');
     return { ok: false, reason: 'write_failed', error: err?.message };
   }
 }
+
+/** @deprecated F5b — kept as a thin alias for callers that still reference the
+ * pre-F5b name. New code should call `promoteCampaignLocationToCanonical`
+ * directly. */
+export const promoteWorldLocationToCanonical = promoteCampaignLocationToCanonical;

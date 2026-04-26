@@ -23,7 +23,7 @@ export async function buildDungeonRoomBlock(roomLocation, contentLanguage = 'pl'
 
   // Exits — find edges where THIS room is the "from" side. Each gives us
   // the target room + direction + gated flag.
-  const exitEdges = await prisma.worldLocationEdge.findMany({
+  const exitEdges = await prisma.road.findMany({
     where: { fromLocationId: roomLocation.id, terrainType: 'dungeon_corridor' },
     select: {
       toLocationId: true, direction: true, gated: true, gateHint: true,

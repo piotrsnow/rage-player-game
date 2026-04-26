@@ -318,6 +318,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         await handleDungeonEntry({
           stateChanges: sceneResult.stateChanges,
           prevLoc: coreState.world?.currentLocation || null,
+          campaignId,
         });
       } catch (err) {
         log.warn({ err: err?.message }, 'handleDungeonEntry failed (non-fatal)');
