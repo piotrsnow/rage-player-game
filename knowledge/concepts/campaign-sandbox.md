@@ -57,7 +57,7 @@ them in when the NPC takes on a quest role.
 | Writer | Target |
 |---|---|
 | `assignGoalsForCampaign` | CampaignNPC only — sets the shadow's campaign-level `activeGoal` and `goalProgress`. **Never mirrors to WorldNPC.** |
-| `setCampaignNpcLocation` / `setCampaignNpcIntroHint` / `clearCampaignNpcIntroHint` | CampaignNPC only. |
+| `setCampaignNpcLocation` / `setCampaignNpcIntroHint` / `clearCampaignNpcIntroHint` | CampaignNPC only. F5b: `setCampaignNpcLocation` accepts a polymorphic `{ kind, id }` ref (or back-compat bare string treated as `kind='world'`); writes both `lastLocationKind` and `lastLocationId`. |
 | `npcAgentLoop.runNpcTick` | WorldNPC only — mutates the canonical `activeGoal`, `goalProgress`, `lastTickAt`, etc. Independent of any campaign. |
 | `globalNpcTriggers.onLocationEntry` / `onDeadlinePass` / `onCrossCampaignMajor` | Queries WorldNPC, triggers `runNpcTick` on the canonical row. |
 | `npcTickDispatcher` | WorldNPC. Round B dropped the `goalTargetCampaignId` filter (dead hack from the pre-shadow era). |

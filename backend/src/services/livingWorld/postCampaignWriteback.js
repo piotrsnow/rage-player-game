@@ -47,6 +47,11 @@ const DEFAULT_AUTO_APPLY_FIELDS = ['alive', 'location'];
  * synthetic field compares `clone.lastLocationId` to `canonical.currentLocationId`.
  * Only emits a change for fields where `clone` holds a NON-NULL newer value
  * (we don't promote "NPC forgot their personality" nulls back to canonical).
+ *
+ * F5b — `WorldNPC.currentLocationId` is a canonical FK, so a clone whose
+ * `lastLocationKind='campaign'` (NPC roamed to an AI-created sandbox location)
+ * is filtered out of the location diff. Pre-F5b clones with no kind column
+ * default to canonical (`kind=null` treated as `world` for back-compat).
  */
 export function diffNpcFields(clone, canonical) {
   if (!clone || !canonical) return [];
@@ -56,7 +61,8 @@ export function diffNpcFields(clone, canonical) {
     if (field === 'location') {
       const cloneLoc = clone.lastLocationId ?? null;
       const canonLoc = canonical.currentLocationId ?? null;
-      if (cloneLoc !== canonLoc && cloneLoc !== null) {
+      const cloneKind = clone.lastLocationKind ?? 'world';
+      if (cloneLoc !== canonLoc && cloneLoc !== null && cloneKind === 'world') {
         changes.push({ field: 'location', oldValue: canonLoc, newValue: cloneLoc });
       }
       continue;
@@ -134,6 +140,7 @@ export async function collectCampaignShadowDiff(campaignId) {
       name: true,
       worldNpcId: true,
       alive: true,
+      lastLocationKind: true,
       lastLocationId: true,
       role: true,
       personality: true,

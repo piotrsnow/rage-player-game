@@ -4,6 +4,8 @@ import {
   setCampaignNpcLocation,
   setCampaignNpcIntroHint,
 } from '../../livingWorld/campaignSandbox.js';
+import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
+import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -89,14 +91,18 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
   });
   if (!campaign) return;
 
+  // F5b — player's currentLocation may be canonical OR a CampaignLocation;
+  // resolve polymorphically so the moveNpcToPlayer trigger can pin the NPC
+  // shadow to the right kind+id pair.
+  let playerLocationKind = null;
   let playerLocationId = null;
   const locName = campaign.currentLocationName || campaign.coreState?.world?.currentLocation;
   if (locName) {
-    const row = await prisma.worldLocation.findFirst({
-      where: { canonicalName: locName },
-      select: { id: true },
-    }).catch(() => null);
-    playerLocationId = row?.id || null;
+    const resolved = await resolveLocationByName(locName, { campaignId }).catch(() => null);
+    if (resolved) {
+      playerLocationKind = resolved.kind;
+      playerLocationId = resolved.row.id;
+    }
   }
   if (!playerLocationId) return;
 
@@ -117,7 +123,7 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
   }
 
   if (worldNpcId) {
-    await setCampaignNpcLocation(campaignId, worldNpcId, playerLocationId);
+    await setCampaignNpcLocation(campaignId, worldNpcId, { kind: playerLocationKind, id: playerLocationId });
     await setCampaignNpcIntroHint(campaignId, worldNpcId, message || null);
     return;
   }
@@ -138,6 +144,7 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
     await prisma.campaignNPC.update({
       where: { id: ephemeral.id },
       data: {
+        lastLocationKind: playerLocationKind || LOCATION_KIND_WORLD,
         lastLocationId: playerLocationId,
         pendingIntroHint: message || null,
       },

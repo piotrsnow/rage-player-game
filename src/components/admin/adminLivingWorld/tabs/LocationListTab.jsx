@@ -34,7 +34,7 @@ export default function LocationListTab() {
             {rows.map((l) => (
               <tr key={l.id} onClick={() => setDetailId(l.id)} className="border-t border-outline-variant/10 hover:bg-surface-container/30 cursor-pointer">
                 <td className="px-2 py-1 text-center">
-                  <ScopeIcon isCanonical={l.isCanonical} />
+                  <ScopeIcon />
                 </td>
                 <td className="px-2 py-1 font-bold text-on-surface">{l.canonicalName}</td>
                 <td className="px-2 py-1">{l.region || '—'}</td>
@@ -61,9 +61,9 @@ function LocationDetailModal({ id, onClose }) {
     <ModalShell onClose={onClose} title={location.canonicalName}>
       <div className="text-[11px] text-on-surface">
         <div className="flex items-center gap-2 mb-3">
-          <ScopeIcon isCanonical={location.isCanonical} />
+          <ScopeIcon />
           <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
-            {location.isCanonical ? 'World (canonical)' : `Campaign-scoped${location.createdByCampaignId ? ` · ${location.createdByCampaignId.slice(-6)}` : ''}`}
+            World (canonical)
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3 mb-3">
@@ -94,23 +94,18 @@ function LocationDetailModal({ id, onClose }) {
   );
 }
 
-function ScopeIcon({ isCanonical }) {
-  if (isCanonical) {
-    return (
-      <span
-        title="Canonical world location (shared across all campaigns)"
-        className="material-symbols-outlined text-[14px] text-primary"
-      >
-        public
-      </span>
-    );
-  }
+// F5b — `/v1/admin/livingWorld/locations` returns WorldLocation rows only,
+// every one of which is canonical (the isCanonical flag was dropped). The
+// admin Location List is canonical-only — campaign-scoped CampaignLocations
+// surface in the promotion queue (PromotionsTab) until admin approves them
+// into canonical.
+function ScopeIcon() {
   return (
     <span
-      title="Campaign-scoped location (not promoted to canonical world yet)"
-      className="material-symbols-outlined text-[14px] text-tertiary"
+      title="Canonical world location (shared across all campaigns)"
+      className="material-symbols-outlined text-[14px] text-primary"
     >
-      flag
+      public
     </span>
   );
 }

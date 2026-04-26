@@ -12,6 +12,12 @@
 // (capital + heartland villages from `seedWorld.js`); the ring + capital
 // edges that earlier versions created are intentionally dropped.
 //
+// FUTURE — see knowledge/ideas/biome-tiles.md. When biome tiles land, ring
+// placement should be constrained to settlement-friendly biomes (plains,
+// hills, coast) instead of dropping settlements on whatever ring slot lands
+// on a mountain peak or swamp. Each created CampaignLocation will also pick
+// up `tileId` from its (gridX, gridY) lookup.
+//
 // Capital is NOT seeded here — `seedWorld.js` (server startup) owns Yeralden.
 // We call it here as a belt-and-suspenders in case startup skipped it.
 //

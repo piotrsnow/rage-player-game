@@ -28,24 +28,18 @@ flag needed.
 
 ## Where canonicality comes from
 
-- **`WorldLocation.isCanonical`** — set to `true` for every row upserted by
-  [seedWorld.js](../../backend/src/scripts/seedWorld.js) (hand-authored
-  canon). Defaults to `false` for AI-generated rows written at runtime.
-- **`WorldLocation.knownByDefault`** — `true` only for the capital. Every
-  user sees Yeralden from turn zero without having to visit it. Other
-  canonical locations start hidden and must be discovered.
-- **`WorldLocation.createdByCampaignId`** — non-null for AI-generated rows;
-  preserved even after a Round E promotion so the audit trail stays.
+F5b removed the `isCanonical`/`createdByCampaignId` flags from `WorldLocation`. The canonical/non-canonical split is now **table-level**:
+
+- **`WorldLocation`** — every row is canonical. Hand-authored by [seedWorld.js](../../backend/src/scripts/seedWorld.js) or admin-promoted from a `CampaignLocation` via the destructive promotion pipeline (`postCampaignLocationPromotion.promoteCampaignLocationToCanonical`).
+- **`CampaignLocation`** — per-campaign sandbox for AI mid-play emissions. Cascades on `Campaign` delete; never visible across campaigns.
+- **`WorldLocation.knownByDefault`** — `true` only for the capital. Every user sees Yeralden from turn zero without having to visit it. Other canonical locations start hidden and must be discovered.
+
+Discovery rows on `CampaignDiscoveredLocation` carry a `locationKind` discriminator (`'world' | 'campaign'`) — the same uuid can represent either kind given which table it points at.
 
 ## Helpers (`backend/src/services/livingWorld/userDiscoveryService.js`)
 
-- `markLocationDiscovered({ userId, locationId, campaignId? })` — sets
-  state=`visited`. Canonical writes land on `UserDiscoveredLocation`;
-  non-canonical routes through `CampaignDiscoveredLocation`. `campaignId`
-  is optional for canonical-only callers (e.g. `postSceneWork.js`).
-- `markLocationHeardAbout({ userId, locationId, campaignId? })` — sets
-  state=`heard_about` if no row exists; no-op when state is already
-  `visited` (we never demote). Same canonical/campaign routing.
+- `markLocationDiscovered({ userId, locationKind, locationId, campaignId? })` — sets state=`visited`. `locationKind='world'` (default for back-compat) routes to `UserDiscoveredLocation` (account-level). `locationKind='campaign'` routes to `CampaignDiscoveredLocation` and requires `campaignId`.
+- `markLocationHeardAbout({ userId, locationKind, locationId, campaignId? })` — sets state=`heard_about` if no row exists; no-op when state is already `visited` (we never demote). Same kind-based routing.
 - `loadDiscovery(userId)` — account-level visited-only view; queries
   `UserDiscoveredLocation` for `state='visited'` plus every `WorldLocation`
   with `locationType='capital'` or `knownByDefault=true`. Existing callers
@@ -78,10 +72,7 @@ Edge discovery splits the same way:
 
 ## Open edges
 
-- **`markEdgeDiscoveredByUser` is canonical-only.** Non-canonical edges are
-  campaign-scoped via `WorldLocationEdge.discoveredByCampaigns` already. If
-  we ever want per-user heard-about edges (rumour of a secret path), the
-  symmetric helper will need the same canonical/non-canonical split.
+- **`markEdgeDiscoveredByUser` is canonical-only by design.** F5b made `Road` (renamed from `WorldLocationEdge`) canonical-only — both endpoints FK to `WorldLocation`. CampaignLocations are off-graph; the player travels to/from them via map "travel by selection" without consulting Roads. Per-user heard-about for hypothetical campaign-scoped edges is not on the roadmap.
 - **Heard→heard doesn't update `updatedAt` on UserWorldKnowledge.** Prisma
   auto-updates it on every write, so repeated hearsay still bumps the
   timestamp. Fine for now; revisit if fog queries get cache-keyed by

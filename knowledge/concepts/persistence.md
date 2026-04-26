@@ -94,7 +94,7 @@ Two pieces of `coreState` were JSONB-shaped despite having fixed shape and frequ
 **Schema delta:**
 
 - `Campaign.boundsMinX/MaxX/MinY/MaxY Float?` — replaces `worldBounds Json?`. Holds the per-campaign AI/seeder placement guardrail. Accessed by 5 readers (worldBoundsHint, seededSettlements, saturation, livingWorld builder, processStateChanges/locations) + the seeder writer.
-- `Campaign.currentLocationName String?` — flavor name of the player's current location, lifted from `coreState.world.currentLocation`. **No FK in F5.** F5b will introduce `CampaignLocation` and add a polymorphic FK pointer.
+- `Campaign.currentLocationName String?` — flavor name of the player's current location, lifted from `coreState.world.currentLocation`. F5b adds the polymorphic FK pointer (`currentLocationKind` + `currentLocationId`) — see below.
 
 **Bridge — [backend/src/services/locationRefs.js](../../backend/src/services/locationRefs.js):**
 
@@ -109,6 +109,54 @@ Two pieces of `coreState` were JSONB-shaped despite having fixed shape and frequ
 3. **Other write paths** that PATCH coreState (admin `/ai/campaigns/:id/core`, `crud.js` POST seedInitialWorld + startSpawn, `postCampaignWriteback`) lift currentLocation defensively.
 
 **FE is unchanged** — every read site for `gameState.world.currentLocation` keeps working because the bridge re-injects on load.
+
+## F5b — `CampaignLocation` per-campaign sandbox + polymorphic location refs
+
+F5 left `currentLocationName` as a flavor string with no FK target type. F5b introduces the polymorphic ref + a separate per-campaign sandbox table so AI mid-play creation doesn't pollute canonical world state.
+
+**Schema delta:**
+
+- **NEW model `CampaignLocation`** — per-campaign sandbox, cascades on `Campaign` delete. Carries its own `regionX/regionY` so it shows on the player map next to canonical settlements. `parentLocationKind`/`parentLocationId` is polymorphic (a campaign-created sublocation can live inside a canonical city OR another CampaignLocation). PK uniqueness is `[campaignId, canonicalSlug]` via `slugifyLocationName`.
+- **5 polymorphic FK pairs** `xLocationKind String? + xLocationId Uuid?`, no DB FK constraint:
+  - `Campaign.currentLocation{Kind,Id}`
+  - `CampaignNPC.lastLocation{Kind,Id}` (the existing `lastLocation` text column stays as flavor display cache for unresolvable AI emissions)
+  - `CampaignDiscoveredLocation.location{Kind,Id}` (PK widened to triple)
+  - `CharacterClearedDungeon.dungeon{Kind,Id}` (PK widened to triple)
+  - `LocationPromotionCandidate.sourceLocation{Kind,Id}` (renamed from `worldLocationId`)
+- **Renames**: `WorldLocationEdge` → `Road` (canonical-only travel infrastructure).
+- **Drops**: `WorldLocation.isCanonical`, `WorldLocation.createdByCampaignId`, the composite index on those two, plus four reverse relations on `WorldLocation` (campaignNpcsLastHere, campaignDiscoveries, locationPromotionCandidates, characterClearedDungeons) and `CampaignNPC.lastLocFk`. After F5b, **every WorldLocation row is canonical** — kind discrimination lives in the polymorphic `kind` column on the referencing row, not on the target.
+
+**Bridge — `locationRefs.js` additions:**
+
+- `LOCATION_KIND_WORLD` / `LOCATION_KIND_CAMPAIGN` constants — use these instead of bare strings.
+- `packLocationRef(rowOrLiteral, defaultKind)` — produce the `{kind, id}` shape for spreading into a Prisma `data` payload. `defaultKind` disambiguates rows fetched via `prisma.worldLocation.*` vs `prisma.campaignLocation.*`.
+- `readLocationRef(row, prefix)` — extract a polymorphic pair off a row by column-name prefix. Returns `null` if either column is missing.
+- `lookupLocationByKindId({ prisma, kind, id, select })` — single-row resolver. Routes to the right table by kind. Pass narrow `select` to keep queries cheap.
+- `slugifyLocationName(name)` — lowercase + transliterate Polish letters + collapse non-alphanum to dashes; powers `CampaignLocation.canonicalSlug` uniqueness.
+
+**Polymorphic resolution helpers — `worldStateService.js`:**
+
+- `resolveLocationByName(name, { campaignId, region })` — fuzzy lookup canonical FIRST, then this-campaign CampaignLocation. Returns `{ kind, row } | null`. Pure lookup, never creates. Use this for anchor/parent resolution in scene processing.
+- `findOrCreateCampaignLocation(name, { campaignId, ... })` — creation only into the per-campaign sandbox. AI mid-play emissions land here; `findOrCreateWorldLocation` is now reserved for canonical-only seed paths.
+
+**Roads stay canonical-only.** The `Road` model FK both endpoints to `WorldLocation`. AI-created CampaignLocations are off-graph by design — distance to/from them is Euclidean on `regionX/regionY`. Per-campaign `worldSeeder.js` creates settlements as CampaignLocations and **does not** create Roads between them (regression vs pre-F5b, accepted user-decision).
+
+**Promotion is destructive.** `promoteCampaignLocationToCanonical(campaignLocationId)` (in `postCampaignLocationPromotion.js`):
+
+1. CREATE a new `WorldLocation` from the source CampaignLocation's columns.
+2. RELINK every polymorphic FK that pointed at the source — Campaign.currentLocation*, CampaignNPC.lastLocation*, CampaignDiscoveredLocation, CharacterClearedDungeon — flipping `kind: 'campaign'` → `'world'` and `id: source.id` → `created.id` in one transaction.
+3. DELETE the source CampaignLocation.
+4. RAG reindex as `entityType='location'` so future canonical lookups dedup against it.
+
+Promotion is admin-triggered via `POST /v1/admin/livingWorld/location-promotion-candidates/:id/approve`. The candidate row's `[campaignId, sourceLocationKind, sourceLocationId]` composite key keeps stats sticky across re-runs.
+
+**Reader contract for callers:**
+
+- A `null` `currentLocationKind/Id` on Campaign means "AI emitted a name we couldn't resolve" — fall back to the `currentLocationName` string.
+- `CampaignNPC.lastLocationKind` defaults to `'world'` for back-compat (rows pre-F5b have no kind column).
+- Auto-apply paths that write to canonical FKs (`postCampaignWriteback.diffNpcFields`, `postCampaignPromotion.promoteCampaignNpcToCanonical`) MUST filter out `kind='campaign'` location values — those would FK-violate against `WorldLocation`.
+
+**Fog-of-war Set keys stay bare uuid.** UUIDs are globally unique across `WorldLocation` + `CampaignLocation`, so `loadCampaignFog` returns `Set<id>` and the FE renders both kinds without a discriminator. The `kind` discriminator only matters when looking up the source row in `userDiscoveryService.applyCampaignLocationState`.
 
 ## Auto-save queue
 

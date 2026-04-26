@@ -123,6 +123,11 @@ async function processSublocationEntry(campaignId, entry) {
 const BLOCKED_MIDPLAY_LOCATION_TYPES = new Set(['hamlet', 'village', 'town', 'city', 'capital']);
 
 async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null) {
+  // FUTURE — see knowledge/ideas/biome-tiles.md. When the biome-tile grid lands,
+  // this path should clamp the placed position to the current tile's bounds AND
+  // inherit the tile's biome → locationType mapping (mountains tile → mountain
+  // locationType when AI doesn't specify). Today AI inventions land with
+  // `locationType='generic'` whenever the LLM omits it; tiles will fix the root.
   if (!anchorRef?.row) {
     log.warn({ campaignId, name: entry.name }, 'Top-level location skipped — no anchor (prevLoc)');
     return;

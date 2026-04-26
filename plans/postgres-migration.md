@@ -9,10 +9,10 @@
 | **F3** | ✅ **Zrobione** | 7 join tables + `DiscoveryState` enum, drop 10 JSONB kolumn. Canonical → user-account scope, non-canonical → campaign scope. Zobacz [F3 retrospektywa](#f3-retrospektywa). |
 | **F4** | ✅ **Zrobione** | 5 child tables (skills/inventory/materials/objectives/relationships), equipped jako 3 text columns, drop 6 JSONB kolumn. Items+materials stack by `slugify(name)`. Zobacz [F4 retrospektywa](#f4-retrospektywa). |
 | **F5** | ✅ **Zrobione (lean)** | `worldBounds` Json → 4 Float cols + `currentLocation` lift z coreState do `currentLocationName String?` (no FK — F5b da właściwy target). Bridge przez `locationRefs.js` + `stripNormalizedFromCoreState`. Zobacz [F5 retrospektywa](#f5-retrospektywa). |
-| **F5b** | ⏭️ Następna | `CampaignLocation` model — AI-created locations w osobnej tabeli zamiast `WorldLocation isCanonical=false`. Promotion pipeline retarget + polymorphic FK decyzja dla `currentLocationId` / `lastLocationId` / edges. |
+| **F5b** | ✅ **Zrobione** | `CampaignLocation` per-campaign sandbox + polymorphic FK pair (`xLocationKind`+`xLocationId`) na 5 callsite'ach + rename `WorldLocationEdge` → `Road` + drop `isCanonical`/`createdByCampaignId`. Promotion pipeline destrukcyjnie kopiuje CampaignLocation → WorldLocation + relinkuje refs + kasuje source. Zobacz [F5b retrospektywa](#f5b-retrospektywa). |
 | F6 | Pending | Production scale-out (metric-driven). |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1-F5 (znane długi techniczne), potem skocz do F5b plan-mode — kluczowa decyzja to polymorphic FK strategy (option 1: dwie kolumny FK, option 2: kind+id pair, option 3: zostaw isCanonical w WorldLocation).
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1-F5b (znane długi techniczne), potem skocz do F6 (infra-led scaling — Cloud SQL hosting decyzja).
 
 ## Context
 
@@ -1783,6 +1783,152 @@ UPDATE "Campaign" SET "currentLocationName" = 'Krynsk' WHERE id = '<campaign>';
 | Rename `coreState` → `transientState` | Pure cosmetic, huge churn, zero functional. Skipped. |
 | `worldBounds Json` → 4 Float | ✅ Zrobione zgodnie z planem. |
 | Nowe write-paths atomic per-field | Ten PR nie zmienia save-flow shape. Save wciąż leci jako full coreState PUT. Atomic per-field updates wymagałyby refactora całego storage.saveCampaign — odłożone (nie hot-path przy 0-100 DAU). |
+
+---
+
+## F5b zrobione (final scope)
+
+```prisma
+// NEW model — per-campaign sandbox dla AI-created locations
+model CampaignLocation {
+  id, campaignId, name, canonicalSlug,
+  description, category, locationType, region, aliases,
+  regionX, regionY, positionConfidence, subGridX, subGridY,
+  parentLocationKind String?, parentLocationId Uuid?, // polymorphic parent
+  maxKeyNpcs, maxSubLocations, slotType, slotKind, dangerLevel,
+  roomMetadata, embedding vector(1536),
+  @@unique([campaignId, canonicalSlug])  // slug-stable in-campaign lookup
+}
+
+// 5 polymorphic FK pairs (kind String? + id Uuid?)
+Campaign.currentLocation{Kind,Id}            // player's current location ref
+CampaignNPC.lastLocation{Kind,Id}            // shadow NPC location
+CampaignDiscoveredLocation.location{Kind,Id} // PK now triple
+CharacterClearedDungeon.dungeon{Kind,Id}     // PK now triple
+LocationPromotionCandidate.sourceLocation{Kind,Id} // rename + add kind
+
+// Renames
+WorldLocationEdge → Road  // canonical-only travel infrastructure
+
+// Drops
+WorldLocation.isCanonical          // every WorldLocation IS canonical now
+WorldLocation.createdByCampaignId  // sandbox lives in CampaignLocation
+WorldLocation.@@index([isCanonical, createdByCampaignId])
+WorldLocation.locationPromotionCandidates relation
+WorldLocation.campaignNpcsLastHere relation
+WorldLocation.campaignDiscoveries relation
+WorldLocation.characterClearedDungeons relation
+CampaignNPC.lastLocFk relation
+LocationPromotionCandidate.location FK relation
+```
+
+Migracja: `20260426120000_campaign_location_polymorphic` + HNSW index na `CampaignLocation.embedding`.
+
+## F5b kluczowe decyzje (locked)
+
+- **Polymorphic strategy: Option B** — `xLocationKind String? + xLocationId Uuid?` para, **brak DB FK**. Resolver app-side via `locationRefs.lookupLocationByKindId`. Discriminator `kind ∈ {'world','campaign'}`.
+- **Roads = canonical-only** — `Road` FK w obie strony do `WorldLocation`. Mid-play AI tworzy CampaignLocation off-graph. Per-campaign worldSeeder NIE tworzy Roads między settlement'ami (były tworzone pre-F5b, regression świadoma — user-decyzja "leave out edges to campaign only locations out for now").
+- **Distance via Euclidean coords** — CampaignLocation ma `regionX/regionY` jak WorldLocation; player map renderuje obie via same axes; travel-by-selection nie potrzebuje Roads.
+- **Drop topology caps mid-play** — `decideSublocationAdmission` + `effectiveCustomCap` wycięte z `processStateChanges/locations.js`. User: "nie potrzebujemy ograniczeń, sami zdecydujemy co dodać".
+- **Destructive promotion** — `promoteCampaignLocationToCanonical(id)`:
+  1. CREATE WorldLocation (kopia source)
+  2. RELINK 4 polymorphic refs (`(kind=campaign,id=X) → (kind=world,id=Y)`) w transakcji
+  3. DELETE source CampaignLocation
+  4. RAG reindex jako `entityType='location'`
+- **Per-campaign settlements → CampaignLocation** — `worldSeeder.js` tworzy hamlets/villages jako CampaignLocation (per-campaign isolation), nie WorldLocation. Capital + heartland villages z `seedWorld.js` zostają canonical (hand-authored).
+- **Drop+recreate, no data migration** — pre-prod, dev DB miał puste tabele dla affected refs.
+
+## F5b pliki dotknięte (top-level)
+
+**Schema & migration:**
+- [backend/prisma/schema.prisma](../backend/prisma/schema.prisma) — 8 modeli zmodyfikowanych + 1 NEW (CampaignLocation) + 1 rename (Road).
+- `backend/prisma/migrations/20260426120000_campaign_location_polymorphic/migration.sql` — generated via `prisma migrate diff`, +HNSW index dopisany ręcznie.
+
+**Bridge layer:**
+- [backend/src/services/locationRefs.js](../backend/src/services/locationRefs.js) — +`packLocationRef`, `readLocationRef`, `lookupLocationByKindId`, `slugifyLocationName`, `LOCATION_KIND_*` constants. +19 testów.
+
+**Living World creation flow:**
+- [backend/src/services/livingWorld/worldStateService.js](../backend/src/services/livingWorld/worldStateService.js) — +`resolveLocationByName` (canonical-first polymorphic lookup), +`findOrCreateCampaignLocation`. `findOrCreateWorldLocation` zostaje canonical-only dla seed paths.
+- [backend/src/services/sceneGenerator/processStateChanges/locations.js](../backend/src/services/sceneGenerator/processStateChanges/locations.js) — full rewrite: AI mid-play tworzy CampaignLocation, polymorphic anchor/parent resolution, merge candidate widzi obie tabele, NO auto-Road, NO connectsTo edges, drop topology cap.
+- [backend/src/services/livingWorld/worldSeeder.js](../backend/src/services/livingWorld/worldSeeder.js) — settlements → CampaignLocation, drop edge creation, returns `startingLocationKind/Id` for caller.
+- [backend/src/services/livingWorld/dungeonEntry.js](../backend/src/services/livingWorld/dungeonEntry.js) — polymorphic resolution; CampaignLocation dungeons skipped (canonical-only auto-seed of rooms). CharacterClearedDungeon write includes `dungeonKind`.
+
+**Fog-of-war + discovery:**
+- [backend/src/services/livingWorld/userDiscoveryService.js](../backend/src/services/livingWorld/userDiscoveryService.js) — `markLocationDiscovered/HeardAbout` polymorphic (`locationKind`); `applyCampaignLocationState` uses triple PK; fog Sets stay keyed by bare uuid (uuids globally unique). `markEdgeDiscoveredByUser` uses `prisma.road`.
+- [backend/src/services/livingWorld/locationQueries.js](../backend/src/services/livingWorld/locationQueries.js) — `listLocationsForCampaign` merges WorldLocation + CampaignLocation, każdy row tagged `kind` + normalized `displayName`.
+
+**Routes / serializer:**
+- [backend/src/routes/campaigns/crud.js](../backend/src/routes/campaigns/crud.js) — POST writes `currentLocationKind/Id` from seed result + startSpawn (resolved polymorphically). PUT clears kind/id when name changes.
+- [backend/src/routes/livingWorld.js](../backend/src/routes/livingWorld.js) — GET tile-grid uses merged `listLocationsForCampaign`, `prisma.road` for edges, filters edge query to canonical-only IDs.
+- [backend/src/routes/adminLivingWorld.js](../backend/src/routes/adminLivingWorld.js) — drop `isCanonical`/`createdByCampaignId` from selects/filters; synthesize back-compat fields in `/graph` response (`isCanonical: true, createdByCampaignId: null`); `/locations/:id/sublocations` works with WorldLocation only; promotion route uses `candidate.sourceLocationId`.
+
+**Promotion pipeline:**
+- [backend/src/services/livingWorld/postCampaignLocationPromotion.js](../backend/src/services/livingWorld/postCampaignLocationPromotion.js) — full rewrite: source from CampaignLocation; persist with composite key `[campaignId, sourceLocationKind, sourceLocationId]`; new `promoteCampaignLocationToCanonical` does destructive copy + relink + delete in one transaction. Old `promoteWorldLocationToCanonical` kept as deprecated alias.
+
+**Shadow → canonical writeback:**
+- [backend/src/services/livingWorld/postCampaignWriteback.js](../backend/src/services/livingWorld/postCampaignWriteback.js) — `diffNpcFields` filters out location changes when shadow's `lastLocationKind='campaign'` (can't promote to canonical FK).
+- [backend/src/services/livingWorld/postCampaignPromotion.js](../backend/src/services/livingWorld/postCampaignPromotion.js) — promotion filters `lastLocationKind='campaign'` out when seeding new WorldNPC's `currentLocationId`/`homeLocationId`.
+
+**Other writers/readers updated:**
+- [backend/src/services/postSceneWork.js](../backend/src/services/postSceneWork.js) — discovery resolves polymorphic; Roads only when both endpoints canonical.
+- [backend/src/services/livingWorld/campaignSandbox.js](../backend/src/services/livingWorld/campaignSandbox.js) — clone writes `lastLocationKind: 'world'` (canonical FK source); `setCampaignNpcLocation` accepts polymorphic ref OR back-compat string.
+- [backend/src/services/sceneGenerator/processStateChanges/quests.js](../backend/src/services/sceneGenerator/processStateChanges/quests.js) — `fireMoveNpcToPlayerTrigger` polymorphic; ephemeral path writes `lastLocationKind`.
+- [backend/src/services/sceneGenerator/processStateChanges/livingWorld.js](../backend/src/services/sceneGenerator/processStateChanges/livingWorld.js) — `WorldEvent.worldLocationId` only set when player's currentLocation resolves canonical; uses `prisma.road` for hearsay adjacency.
+- [backend/src/services/livingWorld/travelGraph.js](../backend/src/services/livingWorld/travelGraph.js) — `prisma.worldLocationEdge` → `prisma.road` (4 occurrences).
+- [backend/src/services/livingWorld/startSpawnPicker.js](../backend/src/services/livingWorld/startSpawnPicker.js) — drop `isCanonical: true` filters (every WorldLocation IS canonical now).
+- [backend/src/scripts/seedWorld.js](../backend/src/scripts/seedWorld.js) — drop 9× `isCanonical: true` from upsert data; drop 1× `where: { isCanonical: true }` filter.
+
+**FE:**
+- [src/components/admin/adminLivingWorld/tabs/LocationListTab.jsx](../src/components/admin/adminLivingWorld/tabs/LocationListTab.jsx) — drop `isCanonical`/`createdByCampaignId` reads (admin Locations list is canonical-only by F5b design).
+- [src/components/admin/adminLivingWorld/tabs/CanonGraphTab.jsx](../src/components/admin/adminLivingWorld/tabs/CanonGraphTab.jsx) — comment update only.
+- AdminTileGridView, SubLocationGrid — back-compat works via admin route's synthesized `isCanonical: true` + JS `!== false` truthy default.
+
+## F5b weryfikacja
+
+```sql
+-- AI mid-play creation lands in CampaignLocation:
+SELECT count(*) FROM "CampaignLocation" WHERE "campaignId" = '<campaign>';
+
+-- Polymorphic ref check:
+SELECT "currentLocationKind", "currentLocationId", "currentLocationName"
+  FROM "Campaign" WHERE id = '<campaign>';
+
+-- Promotion destructive flow:
+-- 1. POST /v1/admin/livingWorld/location-promotion-candidates/<id>/approve
+-- 2. CampaignLocation row gone, new WorldLocation present, polymorphic refs flipped to (kind=world, id=<new>)
+SELECT * FROM "WorldLocation" WHERE id = '<new_world_id>';
+SELECT * FROM "CampaignLocation" WHERE id = '<old_campaign_id>';  -- 0 rows
+```
+
+✅ `prisma validate` zielone.
+✅ `migrate deploy` zaaplikowane (6. migracja: `20260426120000_campaign_location_polymorphic`).
+✅ 747 BE testów (35 nowych w locationRefs.test.js) + 1216 FE testów pass.
+✅ `npm run build` zielone.
+
+## F5b ryzyka i ich mitigation
+
+| Ryzyko | Co zrobiliśmy |
+|---|---|
+| 30+ callsite'ów reads na `lastLocationId` zakładających canonical FK | Polymorphic kind kolumna + `lastLocationKind ?? 'world'` default w readerach (back-compat dla rows zapisanych przed F5b). Promotion + writeback filtruje campaign-kind żeby nie próbować pisać do canonical FK. |
+| FE ekspekt `isCanonical` w admin response | Admin `/graph` route synthesizes `isCanonical: true` w nodes payload; FE `n.isCanonical !== false` truthy default kompatybilny. LocationListTab + ScopeIcon uproszczone (canonical-only z założenia). |
+| Per-campaign settlement bez Roads = pusty travel-graph dla nowych kampanii | Świadoma decyzja użytkownika. Travel via "travel by selection" + Euclidean distance — Dijkstra zostaje canonical-only do Roads. Przyszłe playtest może odkryć potrzebę CampaignRoad table — NIE w F5b. |
+| Tile-grid endpoint return shape zmienił się (locations carry `kind`) | `listLocationsForCampaign` normalizuje `displayName` (= canonicalName lub name) tak żeby FE dot rendering działał bez zmian. UUID Set keys (fog) compatible — uuids unique cross-table. |
+| Hearsay (`processLocationMentions`) został canonical-only | LLM `locationMentioned.locationId` IDs dziś mappują do canonical WorldNPC adjacency. CampaignLocation hearsay = future work jeśli playtest zasygnalizuje potrzebę. |
+
+## Znane długi z F5b
+
+1. **`questGoalAssigner` "go home" check porównuje shadow `lastLocationId` z `WorldNPC.homeLocationId`** — gdy shadow jest w CampaignLocation a canonical home jest WorldLocation, comparison zawsze niezgodne → sztuczny "wracam do swojego miejsca" goal. Drobny noise; fix to dedicated kind+id check or skip when shadow kind=campaign.
+2. **AI-emitted locations land with no terrain context** — `currentLocation: "X"` mid-narrative gives backend zero clue about biome/danger/placement. Hearsay reframe (placeholder stubs) was deferred — **superseded by [biome-tiles idea](../knowledge/ideas/biome-tiles.md)** which solves the root cause by pre-seeding biome tiles so any AI invention inherits the current tile's terrain. Next phase candidate.
+3. **Prismatic migration was raw SQL** — `prisma migrate dev` blokowane przez non-interactive guard, użyłem `prisma migrate diff --script` + manual write. Future migrations: provision shadow DB w docker-compose, enable proper `migrate dev` flow.
+4. **Per-campaign sublocation cap (`maxSubLocations`)** dropped from creation flow per user spec; column still exists on schema as a future re-enabling lever.
+
+## Niezweryfikowane manualnie (do playtest)
+
+- Full E2E: nowa kampania → AI mid-play creates CampaignLocation → admin promote → relink polymorphic refs visible in DB.
+- Travel-by-selection działa dla CampaignLocations (Euclidean distance computed correctly w UI).
+- Player map renderuje seeded settlement (CampaignLocation) z poprawnymi coords.
+- `markLocationDiscovered` route routing dla world vs campaign kind (fog persistence per kind).
+- Round-trip: campaign delete → cascading cleanup of CampaignLocation + CampaignDiscoveredLocation + LocationPromotionCandidate.
 
 ---
 

@@ -77,7 +77,10 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
         personality: world.personality || null,
         alignment: world.alignment || 'neutral',
         alive: world.alive !== false,
-        lastLocation: null, // flavor string; authoritative FK is lastLocationId
+        lastLocation: null, // flavor string; authoritative FK is lastLocationKind+lastLocationId
+        // F5b — `world.currentLocationId` is canonical FK (WorldNPC →
+        // WorldLocation), so the clone's lastLocation pair is always kind=world.
+        lastLocationKind: world.currentLocationId ? 'world' : null,
         lastLocationId: world.currentLocationId || null,
         worldNpcId: world.id,
         isAgent: true,
@@ -97,21 +100,32 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
 }
 
 /**
- * Set CampaignNPC.lastLocationId for a (campaignId, worldNpcId) shadow.
- * Auto-clones if the shadow doesn't exist yet. Silent on failure.
+ * Set CampaignNPC.lastLocation (polymorphic FK pair) for a (campaignId,
+ * worldNpcId) shadow. Auto-clones if the shadow doesn't exist yet. Silent on
+ * failure.
+ *
+ * F5b — accepts either a `{ kind, id }` polymorphic ref OR (back-compat) a
+ * bare locationId string which is treated as kind='world'.
  */
-export async function setCampaignNpcLocation(campaignId, worldNpcId, locationId) {
+export async function setCampaignNpcLocation(campaignId, worldNpcId, ref) {
   if (!campaignId || !worldNpcId) return false;
+  // Coerce the back-compat bare-string call site into the polymorphic shape.
+  const { kind, id } = typeof ref === 'string' || ref == null
+    ? { kind: ref ? 'world' : null, id: ref || null }
+    : { kind: ref.kind || null, id: ref.id || null };
   try {
     const shadow = await getOrCloneCampaignNpc(campaignId, worldNpcId);
     if (!shadow) return false;
     await prisma.campaignNPC.update({
       where: { id: shadow.id },
-      data: { lastLocationId: locationId || null },
+      data: {
+        lastLocationKind: id ? kind : null,
+        lastLocationId: id || null,
+      },
     });
     return true;
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, worldNpcId, locationId }, 'setCampaignNpcLocation failed');
+    log.warn({ err: err?.message, campaignId, worldNpcId, kind, id }, 'setCampaignNpcLocation failed');
     return false;
   }
 }

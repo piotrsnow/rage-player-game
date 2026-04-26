@@ -493,6 +493,7 @@ export async function promoteCampaignNpcToWorld(campaignNpcId, { reviewedBy = nu
       role: true,
       personality: true,
       worldNpcId: true,
+      lastLocationKind: true,
       lastLocationId: true,
       category: true,
     },
@@ -526,6 +527,13 @@ export async function promoteCampaignNpcToWorld(campaignNpcId, { reviewedBy = nu
     const embText = buildNPCEmbeddingText({
       name, role, personality: shadow.personality,
     });
+    // F5b — currentLocationId / homeLocationId are canonical FKs. Only seed
+    // them from the shadow when its lastLocation pointed at a canonical
+    // WorldLocation; CampaignLocation refs would FK-fail and they wouldn't
+    // make sense as a canonical NPC's permanent home anyway.
+    const canonicalLastLocId = (shadow.lastLocationKind ?? 'world') === 'world'
+      ? (shadow.lastLocationId || null)
+      : null;
     const created = await prisma.worldNPC.create({
       data: {
         canonicalId,
@@ -534,8 +542,8 @@ export async function promoteCampaignNpcToWorld(campaignNpcId, { reviewedBy = nu
         personality: shadow.personality || null,
         alignment: 'neutral',
         alive: true,
-        currentLocationId: shadow.lastLocationId || null,
-        homeLocationId: shadow.lastLocationId || null,
+        currentLocationId: canonicalLastLocId,
+        homeLocationId: canonicalLastLocId,
         category: shadow.category || 'commoner',
         embeddingText: embText,
       },

@@ -3,7 +3,7 @@
 // SVG force-directed render of the authoritative world state:
 //   - Top-level canonical WorldLocations as nodes (reusing the `locationType`
 //     palette from mapHelpers).
-//   - Overworld `WorldLocationEdge`s as lines, colored by difficulty.
+//   - Overworld `Road`s as lines, colored by difficulty.
 //   - Canonical WorldNPCs orbit their `homeLocationId` (falls back to
 //     `currentLocationId`) — categorically colored via `NPC_CATEGORY_COLORS`.
 //     NPCs without any location link cluster at the grid origin.
