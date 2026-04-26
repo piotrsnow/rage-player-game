@@ -12,13 +12,18 @@ Frontend: useSceneGeneration.generateScene(playerAction)
 
 Backend route: POST /v1/ai/campaigns/:id/generate-scene-stream
   ├── writeSseHead(request, reply) ← SSE headers, hijack, manual CORS
-  ├── subscribe pub/sub channel    ← scene-job:<jobId>:events
-  ├── enqueueJob('generate-scene') ← BullMQ queue for the provider
-  └── subscriber forwards every pub/sub message as data: {...}\n\n
-
-Worker handler: aiWorker.js → generate-scene handler
-  └── generateSceneStream(campaignId, action, opts, onEvent)
+  └── generateSceneStream(campaignId, action, opts, onEvent)  ← inline (no Redis/BullMQ)
+        └── onEvent forwards each event to reply.raw as data: {...}\n\n
 ```
+
+Post-scene async work (embedding, NPC/quest sync, memory compression, location summary,
+NPC tick batch) runs **after** the SSE complete event:
+- **Prod**: enqueued via `enqueuePostSceneWork(payload)` to a Google Cloud Tasks queue,
+  which calls `POST /v1/internal/post-scene-work` (OIDC-authenticated).
+- **Dev**: same `enqueuePostSceneWork` runs the handler inline (fire-and-forget).
+
+See [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md) for why there's
+no BullMQ/Redis in this pipeline.
 
 ## Phases inside `generateSceneStream`
 
@@ -89,7 +94,7 @@ When adding a new LLM call, thread an abort signal through and test both premium
 Check in this order:
 
 1. **Is the frontend even reaching the backend?** Network tab for `/generate-scene-stream`. If it's failing fast, the mechanics resolver or stream setup is the problem.
-2. **SSE events arriving?** Watch the `data: {...}` lines. If only `intent` + `context_ready` land and then nothing, the large model is hanging — check LLM timeout, provider status, bull-board at `/v1/admin/queues`.
+2. **SSE events arriving?** Watch the `data: {...}` lines. If only `intent` + `context_ready` land and then nothing, the large model is hanging — check LLM timeout (DM Settings `llmPremiumTimeoutMs`) and provider status. There's no queue dashboard since the route runs inline (no BullMQ/Redis).
 3. **Parse errors in console?** `parseAIResponseLean` failed — the large model returned malformed JSON. Check the accumulated chunks for truncation; the Zod schema errors in `src/services/aiResponse/` usually name the failing field.
 4. **`stateChanges` applied but something missing?** `applySceneStateChanges.js` → handlers in `src/stores/handlers/` → validator in `src/services/stateValidator.js` + `shared/domain/stateValidation.js`.
 5. **Dice roll wrong?** Nano intent classifier resolved it → pre-roll reconciliation in `diceResolution.js`. See [rpgon-mechanics.md](rpgon-mechanics.md).
@@ -97,7 +102,7 @@ Check in this order:
 
 ## Gotchas
 
-- **`coreState` is a JSON string in Prisma**, not an object. `loadCampaignState` parses it. Don't accidentally double-parse.
+- **`coreState` is native JSONB in Postgres** (Prisma `Json` type) — round-trips as a JS object, no `JSON.parse` needed at boundaries. `loadCampaignState` consumes it directly.
 - **Quest auto-completion is deterministic.** When `questUpdates` marks all objectives done, both FE handler and BE `processQuestObjectiveUpdates` auto-complete the quest. No nano safety-net — manual `verifyQuestObjective` is the player-facing fallback.
 - **Backend is the sole AI path.** Don't reintroduce a FE-direct dispatch path. Per-user keys flow through: `loadUserApiKeys(prisma, userId)` → `userApiKeys` option → `requireServerApiKey(keyName, userApiKeys, label)`.
 - **`sceneGenerator.js` (1L) is a thin facade** re-exporting `generateSceneStream`. Don't add logic there.

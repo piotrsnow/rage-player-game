@@ -80,10 +80,10 @@ Always wrap writes in try/catch — once the client disconnects, `raw.write` thr
 
 ## Current routes using this pattern
 
-- `POST /v1/ai/generate-campaign` — SSE with BullMQ pub/sub bridge (channel `campaign-job:<jobId>:events`). Inline SSE fallback when Redis disabled.
-- `POST /v1/ai/campaigns/:id/generate-scene-stream` — SSE with BullMQ pub/sub bridge (channel `scene-job:<jobId>:events`).
+- `POST /v1/ai/generate-campaign` — SSE inline (no queue/Redis); the handler streams provider chunks straight to `reply.raw`.
+- `POST /v1/ai/campaigns/:id/generate-scene-stream` — SSE inline; calls `generateSceneStream(...)` directly with an `onEvent` callback that writes to `reply.raw`.
 
-Both use the same `writeSseHead` helper and the same subscribe-before-enqueue ordering from [bullmq-queues.md](bullmq-queues.md).
+Both use the same `writeSseHead` helper. **Post-scene async work (embedding, sync, memory compression) runs after the `complete` event via Cloud Tasks (prod) or inline (dev) — see [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md).**
 
 ## Client parser (frontend)
 
@@ -171,5 +171,5 @@ Worked example with full test setup: [e2e/specs/combat.spec.js](../../e2e/specs/
 ## Related
 
 - [bullmq-queues.md](bullmq-queues.md) — the pub/sub bridge pattern these routes use
-- [decisions/bullmq-vs-sse-routes.md](../decisions/bullmq-vs-sse-routes.md) — why these routes use BullMQ + SSE
+- [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md) — why these routes are inline SSE (no BullMQ/Redis)
 - [e2e-campaign-seeding.md](e2e-campaign-seeding.md) — the companion pattern for `GET /campaigns/:id` mock

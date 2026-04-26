@@ -11,7 +11,7 @@ RPGON was running on docker compose (backend + Valkey + BullMQ worker). Deployin
 
 Full delete of Redis, BullMQ, Valkey, and all fallback/dead-code paths. Cloud-Run-native architecture:
 
-1. **Refresh tokens → MongoDB** with TTL index (was the only hard Redis blocker).
+1. **Refresh tokens → Postgres `RefreshToken` table** (was the only hard Redis blocker). Originally Mongo with TTL index; the F1 Postgres migration kept the table shape and added an in-process 10-min `setInterval` reaper (`startPeriodicCleanup` in [refreshTokenService.js](../../backend/src/services/refreshTokenService.js)) since Postgres has no equivalent of Mongo's `expireAfterSeconds`.
 2. **Post-scene async work → Cloud Tasks** queue with OIDC-authenticated HTTP push handler. Inline fire-and-forget fallback for local dev.
 3. **Embedding cache → in-memory L1 LRU only** (L2 Redis cache removed). At 50 DAU the hit rate improvement from L2 was negligible.
 4. **Idempotency → in-memory Map with 5min TTL** (was Redis-backed). Single-instance Cloud Run doesn't need cross-instance dedup.

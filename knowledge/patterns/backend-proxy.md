@@ -19,14 +19,14 @@ Frontend never talks directly to OpenAI / Anthropic / Gemini / ElevenLabs / Stab
 - **Centralized retry + fallback + cost tracking.** Retries, provider fallback, and cost logging live in one place instead of being duplicated in the FE.
 - **CORS-free.** No upstream CORS headache.
 - **Model routing.** The backend picks the right tier per task via `resolveModel` ([concepts/model-tiering.md](../concepts/model-tiering.md)).
-- **Observability.** Every upstream call lands in bull-board / logs / cost tracker.
+- **Observability.** Every upstream call lands in pino logs + the in-memory cost tracker.
 
 ## Frontend AI dispatch (preferred)
 
 The frontend uses `src/services/ai/service.js` → every method dispatches to a backend endpoint:
 
-- `generateCampaign` → `POST /v1/ai/generate-campaign` (SSE via BullMQ + pub/sub bridge, inline SSE fallback)
-- `generateSceneViaBackendStream` → `POST /v1/ai/campaigns/:id/generate-scene-stream` (SSE via BullMQ + pub/sub bridge)
+- `generateCampaign` → `POST /v1/ai/generate-campaign` (inline SSE — no Redis/BullMQ)
+- `generateSceneViaBackendStream` → `POST /v1/ai/campaigns/:id/generate-scene-stream` (inline SSE)
 - `generateStoryPrompt` → `POST /v1/ai/generate-story-prompt` (non-streaming nano)
 - `generateCombatCommentary` → `POST /v1/ai/combat-commentary`
 - `verifyObjective` → `POST /v1/ai/verify-objective`

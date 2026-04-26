@@ -89,8 +89,9 @@ const visibility = actionType === 'killed' && victimAlignment === 'good' && !jus
 export function anonymizeEvent(event, { ownUserId, ownCampaignId }) {
   if (event.userId === ownUserId) return null; // skip self-echo
 
-  const payload = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
-  const anon = { ...payload };
+  // F1 Postgres migration: WorldEvent.payload is native JSONB (Prisma `Json`),
+  // round-trips as a JS object — no `JSON.parse` needed.
+  const anon = { ...event.payload };
   delete anon.actorCharacterName;
   delete anon.actorCampaignId;
   delete anon.actorUserId;
@@ -127,14 +128,15 @@ const filtered = crossUserEvents
 ### Conflict resolution (first-write-wins for kills)
 
 ```js
-// worldStateService.killWorldNpc — make it CAS via native driver
-const collection = await getCollection('WorldNPC');
-const result = await collection.findOneAndUpdate(
-  { _id: new ObjectId(worldNpcId), alive: true },
-  { $set: { alive: false, killedAt: new Date(), killedByCampaignId: campaignId } },
-  { returnDocument: 'after' },
-);
-return { killed: result.value !== null };
+// worldStateService.killWorldNpc — atomic conditional UPDATE via Prisma.
+// F1 Postgres migration: `updateMany` returns affected row count; the
+// `where: { alive: true }` clause acts as the CAS gate. No CAS-via-Mongo
+// driver needed.
+const result = await prisma.worldNPC.updateMany({
+  where: { id: worldNpcId, alive: true },
+  data: { alive: false, killedAt: new Date(), killedByCampaignId: campaignId },
+});
+return { killed: result.count > 0 };
 ```
 
 ## Related

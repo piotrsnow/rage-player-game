@@ -10,9 +10,20 @@
 | **F4** | ✅ **Zrobione** | 5 child tables (skills/inventory/materials/objectives/relationships), equipped jako 3 text columns, drop 6 JSONB kolumn. Items+materials stack by `slugify(name)`. Zobacz [F4 retrospektywa](#f4-retrospektywa). |
 | **F5** | ✅ **Zrobione (lean)** | `worldBounds` Json → 4 Float cols + `currentLocation` lift z coreState do `currentLocationName String?` (no FK — F5b da właściwy target). Bridge przez `locationRefs.js` + `stripNormalizedFromCoreState`. Zobacz [F5 retrospektywa](#f5-retrospektywa). |
 | **F5b** | ✅ **Zrobione** | `CampaignLocation` per-campaign sandbox + polymorphic FK pair (`xLocationKind`+`xLocationId`) na 5 callsite'ach + rename `WorldLocationEdge` → `Road` + drop `isCanonical`/`createdByCampaignId`. Promotion pipeline destrukcyjnie kopiuje CampaignLocation → WorldLocation + relinkuje refs + kasuje source. Zobacz [F5b retrospektywa](#f5b-retrospektywa). |
-| F6 | Pending | Production scale-out (metric-driven). |
+| F6 | Pending | Production scale-out — **scope w tej sekcji = wybór hostingu (CSQL vs Neon)**. Reszta scaling work (PgBouncer, partitioning, N+1 fixes, embedding pruning) wycięta do [scaling-and-debt.md](scaling-and-debt.md). |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1-F5b (znane długi techniczne), potem skocz do F6 (infra-led scaling — Cloud SQL hosting decyzja).
+**Postgres migration is functionally DONE — F1-F5b shipped, schema clean, 747 BE / 1216 FE tests green.** F6 hosting choice is gated on traffic projections (Cloud SQL vs Neon decision tree below). All known debts + pre-scale optimizations live in [scaling-and-debt.md](scaling-and-debt.md).
+
+## Resume w kolejnej sesji
+
+Migracja jest funkcjonalnie skończona. Outstanding work został wycięty do dedykowanych planów:
+
+**[scaling-and-debt.md](scaling-and-debt.md)** — wszystkie znane długi techniczne (P0-P3) z F1-F5b retrospektyw, plus pre-scale optimizations (N+1 fixes, connection pool, partitioning) wykryte w audycie pipeline'u dla 1k-180k scen/dzień. **Live work queue.**
+
+**[postgres-migration.md F6 sekcja](#f6--production-scale-out-metric-driven)** — pozostała wybór hostingu (Cloud SQL vs Neon, finalists). Trigger-driven punkty (replica, partitioning, pg_cron) są referencowane też z `scaling-and-debt.md` jako P2.
+
+**Inne tracki niezwiązane z migracją** (feature work):
+- **F5c biome tiles** — sketch w [knowledge/ideas/biome-tiles.md](../knowledge/ideas/biome-tiles.md). Rozwiązuje F5b znany dług #2 (AI emituje location bez kontekstu terenu). Wymaga zatwierdzenia 8 design questions zanim implementacja.
 
 ## Context
 
@@ -1936,31 +1947,84 @@ SELECT * FROM "CampaignLocation" WHERE id = '<old_campaign_id>';  -- 0 rows
 
 **Cel:** infra-led odpowiedź na realny load. Nie spekulatywnie — każdy punkt triggered konkretnym pomiarem.
 
+**Zakres tej sekcji:** wybór hostingu (Cloud SQL vs Neon — finalists). Reszta scaling work (PgBouncer setup, partitioning, embedding pruning, N+1 fixes, etc.) wycięta do osobnego planu — patrz [scaling-and-debt.md](scaling-and-debt.md).
+
+## F6 workload model (z audytu pipeline'u)
+
+Z `generateSceneStream` + `assembleContext` + `processStateChanges` + `postSceneWork`:
+
+| Metryka | Wartość |
+|---|---|
+| Queries/scenę typical | **~165** (~250 heavy) |
+| Storage growth/mc per 1000 scen/dzień | ~750MB |
+| Parallel queries peak (assembleContext fanout) | ~30 per concurrent scene gen |
+| HNSW index po roku przy 1000/dzień | ~9GB embedding data |
+
+## F6 hosting decyzja: Cloud SQL vs Neon (finalists)
+
+Wymagania: PostgreSQL 16+, pgvector 0.7+, Cloud Run reachable, region `europe-west1`.
+
+**Odpadli:**
+- **Supabase** — overkill (auth/storage/realtime niewykorzystane = 80% wartości subskrypcji w koszu, scaling cost wyższy niż CSQL przy 50k+/dzień).
+- **Self-hosted GCE** — ops burden (backup/HA/upgrades/oncall) zjada delta cenową ($30/mc) powyżej 10k scen/dzień. Pre-prod = za drogi w czasie.
+
+### Breakpoint table — kiedy co eksploduje
+
+| Scenes/dzień | Cloud SQL `db-custom-1-3840` ($50/mc) | Neon Launch ($19/mc) | Co wybucha |
+|---|---|---|---|
+| 1,000 | ✅ | ✅ | nic |
+| 5,000 | ⚠️ pool exhaustion bez PgBouncera | ✅ (~$25/mc z CU overage) | connection pool (CSQL bez PgBouncer fail przy bursty assembleContext) |
+| 10,000 | ⚠️ CPU 60% util, 1vCPU borderline, RAM tight dla HNSW | ⚠️ ~250 CU-hours/mc — borderline 300 cap | Neon Launch CU-hour cap, CSQL needs `db-custom-2-7680` |
+| 50,000 | ❌ wymaga `db-custom-4-15GB` ($200/mc) + replica | ❌ wymaga Scale ($69/mc + ~$300 overage) | RAM dla HNSW, replica for read split |
+| **180,000 (peak target: 1800 DAU × 100 scen/h)** | **~$700-900/mc** + replica + partitioning | **~$1200-1500/mc** | architektura mainframe — partitioning, replica, archival, dedicated DBA brain |
+
+### Cloud SQL — kiedy wybrać
+
+**Plus:** Najwięcej scaling levers (replica, tier dial, Cloud Run Connector unix socket = zero networking konfiguracji), zero vendor lock-in (standardowy Postgres), predictable bill, free egress same-region.
+
+**Minus:** Always-on $50/mc baseline (płacisz nawet przy 0 ruchu), brak natywnego DB branching (PR preview = manual snapshot/restore), HA = 2x cost (~$100/mc), wymaga PgBouncera samodzielnie (sidecar w Cloud Run lub serverless instance).
+
+### Neon — kiedy wybrać
+
+**Plus:** Tańszy ~$19-30/mc przy <10k scen/dzień, scale-to-zero (free przy idle), wbudowany PgBouncer, DB branching za free (PR preview = `git checkout`-style baza), pgvector first-class.
+
+**Minus:** Cold start 0.5-2s przy pierwszym requeście po idle (przy 1800 DAU ciągłym ruchem to nie istnieje, ale dla pre-prod demo boli), CU-hour billing nieprzewidywalny (burst traffic = burst cost, $0.16/CU-hour overage), IP allowlisting dopiero w Scale tier ($69/mc).
+
+### Decyzja drzewo
+
+```
+Czy realistyczny playtest najbliższe 6mc to <10k scen/dzień?
+├── Tak  → Neon Launch (~$30/mc realistic). Migracja na CSQL gdy uderzysz 10k.
+└── Nie  → Cloud SQL od razu (od $50/mc, więcej levers, mniej migracji w przyszłości).
+
+Czy budżet super-tight i każdy $/mc liczy się?
+├── Tak  → Neon — realny scale-to-zero przy idle = $0 w okresach przerwy.
+└── Nie  → Cloud SQL — predictable bill, less surprises.
+```
+
+### Migracja Neon → CSQL (gdy uderzysz w breakpoint)
+
+`pg_dump` z Neon → `pg_restore` do CSQL + DATABASE_URL flip. ~30min downtime jeśli dobrze zaplanowane (pause writes, dump, restore, resume). Schema portability gwarantowana — brak vendor-specific features w użyciu.
+
+## F6 trigger-driven punkty (post-hosting)
+
 | Punkt | Trigger | Akcja |
 |---|---|---|
-| Connection pool tuning | Po wyborze hostingu / przy pierwszym `too many connections` | PgBouncer przed Cloud SQL/Neon, `connection_limit` per Cloud Run instance |
-| Read replica | Read QPS > 70% capacity / read latency p95 wzrasta | Cloud SQL replica + Prisma `replicas` extension |
+| Connection pool / PgBouncer | Pierwsze `too many connections` (~5k scen/dzień) | CSQL: PgBouncer sidecar transaction-mode. Neon: enable `-pooler` endpoint (free). |
+| Read replica | Read QPS > 70% capacity / read p95 grows | CSQL replica + Prisma `replicas` extension |
 | `WorldEvent` partycjonowanie | row count > 1M | Range partition po `createdAt` (monthly) |
 | `CampaignScene` partycjonowanie | row count > 5M | Range partition po `createdAt` |
 | Materialized views | Slow aggregate query > 500ms | Konkretna query → MV + refresh strategy |
-| `pg_cron` zamiast `setInterval` | Migracja na hosting który wspiera (Cloud SQL `cloudsql.enable_pg_cron=on`) | `RefreshToken` cleanup, ewentualnie cleanup `WorldEvent` starszych niż N dni |
+| `pg_cron` zamiast `setInterval` | Hosting wspiera (CSQL: `cloudsql.enable_pg_cron=on`) | `RefreshToken` cleanup, `WorldEvent` >N dni cleanup |
 | HNSW tuning | Vector recall < 90% w testach | `m`, `ef_construction`, `ef_search` |
-
-## F6 hosting decyzja (osobna sesja)
-
-Co wszystkie muszą spełnić: PostgreSQL 16+, pgvector 0.7+, Cloud Run reachable (unix socket lub private IP).
-
-- **Google Cloud SQL** — ten sam region co Cloud Run (`europe-west1`), Cloud Run Connector (unix socket), pgvector dostępne, pg_cron flagą
-- **Neon** — serverless skalowanie do zera, pgvector, branche DB dla PR preview, PgBouncer wbudowany. Cold start latency do sprawdzenia
-- **Supabase** — overkill (auth/storage/realtime nieużywane), ale pgvector + pg_cron
-- **Self-hosted Postgres na GCE VM** — kontrola pełna, niższy koszt, ops burden
+| Embedding pruning | DB storage growth > 50GB/mc | Drop `CampaignScene.embedding` >30 dni (RAG primary index w `WorldEntityEmbedding`, scene text zostaje) |
 
 ## F6 dokumenty
 | Plik | Zmiana |
 |---|---|
-| `cloudbuild.yaml` | Update pod wybrany hosting |
+| `cloudbuild.yaml` | Update pod wybrany hosting (Cloud SQL Connector vs Neon connection string) |
 | `Deployment checklist — Cloud Run bez Red.txt` | Sekcja "Postgres prod hosting" |
-| `knowledge/decisions/postgres-prod-hosting.md` | **NEW** — decyzja po wyborze |
+| `knowledge/decisions/postgres-prod-hosting.md` | **NEW** — decyzja po wyborze + migration plan Neon→CSQL gdy breakpoint |
 
 ---
 

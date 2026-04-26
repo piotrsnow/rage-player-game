@@ -27,14 +27,14 @@ From `_parseBackendCampaign()` — the parser expects:
   name: 'Campaign Name',
   genre: 'Fantasy',
   tone: 'Dramatic',
-  coreState: JSON.stringify({
+  coreState: {
     campaign: { id, backendId, name, genre, tone, language },
     world: { currentLocation, npcs: [], factions: {}, facts: [] },
     combat: { active, round, turnIndex, log: [], combatants: [...], reason },
     scenes: [],
     chatHistory: [],
     ai: { costs: {} },
-  }),
+  },
   characters: [/* character array — first one becomes state.character */],
   characterIds: ['char-id'],
   scenes: [],
@@ -46,7 +46,7 @@ From `_parseBackendCampaign()` — the parser expects:
 
 ### Key quirks
 
-- **`coreState` is a JSON string**, not an object. The parser runs `typeof full.coreState === 'string' ? JSON.parse(...) : (full.coreState || {})`, so either works — but the real backend returns a string, so match that for realism.
+- **`coreState` is a JS object** (post-Postgres migration: native JSONB, no `JSON.stringify` round-trip). The parser still tolerates strings (`typeof full.coreState === 'string' ? JSON.parse(...) : (full.coreState || {})`) but the real backend returns an object — match that for realism.
 - **`characters` is a top-level array**, not nested inside `coreState`. `_parseBackendCampaign` copies `full.characters[0]` onto `state.character`. Skip this and the frontend will have `state.character = null` and redirect.
 - **`combat` lives inside `coreState`**. Put `active: true, round: 1, turnIndex: 0, combatants: [...]` there to land in gameplay with CombatPanel rendered.
 

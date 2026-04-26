@@ -48,9 +48,11 @@ File types:
 |---|---|
 | [decisions/two-stage-pipeline.md](decisions/two-stage-pipeline.md) | Nano selection + code assembly over AI tool-calling loop |
 | [decisions/no-byok.md](decisions/no-byok.md) | Backend is the sole AI dispatch path; no FE-direct provider calls |
-| [decisions/bullmq-vs-sse-routes.md](decisions/bullmq-vs-sse-routes.md) | BullMQ + pub/sub bridge + SSE vs inline SSE vs poll-only |
-| [decisions/atlas-only-no-local-mongo.md](decisions/atlas-only-no-local-mongo.md) | Atlas SRV everywhere, no local mongo container |
-| [decisions/embeddings-native-driver.md](decisions/embeddings-native-driver.md) | Native MongoDB driver for embeddings (Prisma can't do BSON arrays) |
+| [decisions/cloud-run-no-redis.md](decisions/cloud-run-no-redis.md) | Cloud Run native, no Redis/BullMQ; refresh tokens in Postgres + Cloud Tasks for async |
+| [decisions/postgres-dev.md](decisions/postgres-dev.md) | Postgres 16 + pgvector everywhere (dev container + Cloud SQL prod) |
+| [decisions/embeddings-pgvector.md](decisions/embeddings-pgvector.md) | pgvector `vector(1536)` + HNSW indexes + `<=>` cosine through Prisma `$queryRaw` |
+| [decisions/atlas-only-no-local-mongo.md](decisions/atlas-only-no-local-mongo.md) | **SUPERSEDED** by postgres-dev — historical record of the Atlas-only era |
+| [decisions/embeddings-native-driver.md](decisions/embeddings-native-driver.md) | **SUPERSEDED** by embeddings-pgvector — historical record of the native MongoDB driver workaround |
 | [decisions/rpgon-custom-system.md](decisions/rpgon-custom-system.md) | Custom d50 system (RPGon) instead of WFRP |
 | [decisions/currency-three-tier-pl.md](decisions/currency-three-tier-pl.md) | Złota/Srebrna/Miedziana Korona, `1 ZK = 20 SK = 240 MK` |
 | [decisions/titles-from-achievements.md](decisions/titles-from-achievements.md) | Character identity via achievement-unlocked titles, not classes |

@@ -1,5 +1,14 @@
 # Idea — Living World vector search (semantic NPC/location dedupe)
 
+> **PARTIALLY SUPERSEDED 2026-04 by the Postgres migration + Round E Phase 9 RAG service.**
+> The Atlas-specific concerns in this sketch (shared-tier index cap, `mongoNative.js`,
+> `$vectorSearch` aggregation) no longer apply — embeddings live in pgvector
+> `vector(1536)` columns with HNSW indexes, and world-scope dedupe runs through
+> [`livingWorld/ragService.js`](../../backend/src/services/livingWorld/ragService.js).
+> The idea's *substance* (semantic NPC/location dedupe at write time, similarity
+> thresholds, embedding cache) is still relevant; the implementation sketch below
+> needs translation to pgvector `<=>` cosine + Prisma `$queryRaw` if revived.
+
 ## What it is
 
 Atlas Vector Search indexes on `WorldNPC.embedding` and `WorldLocation.embedding`,

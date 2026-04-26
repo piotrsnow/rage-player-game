@@ -77,7 +77,7 @@ Runs **parallel** DB fetches (`Promise.all`) for exactly the categories the sele
 - `expand_quests` → `prisma.campaignQuest.findMany`
 - `expand_location` → `getLocationSummary(currentLocation)` (already-compressed nano summary)
 - `expand_codex` → `prisma.campaignCodex.findMany`
-- `needs_memory_search` → `searchCampaignMemory(memory_query)` (Atlas Vector Search via `mongoNative.js`)
+- `needs_memory_search` → `searchCampaignMemory(memory_query)` (pgvector cosine via `vectorSearchService.searchScenes` / `searchKnowledge`, `<=>` operator + HNSW index)
 
 `skipKeys` avoids duplicating entities already inlined in the system prompt's static sections — computed by `getInlineEntityKeys`.
 
@@ -97,7 +97,7 @@ Both: silent on nano timeout, return empty/null.
 
 - Heuristic intent caps `expand_npcs` at the names in the action
 - `expand_codex` + `expand_quests` are capped in the nano prompt itself (max 3 each)
-- Memory search is capped at top-5 results by Atlas Vector Search score
+- Memory search is capped at top-5 results by pgvector cosine score
 - `getInlineEntityKeys` prevents duplicates with the system prompt
 
 Net effect: total prompt stays in the ~3.5-7k token range for typical scenes. A runaway selection could blow past that, but hasn't happened in practice. **Add explicit budget enforcement if scenes start hitting model context limits or cost spikes**.
@@ -113,4 +113,4 @@ Net effect: total prompt stays in the ~3.5-7k token range for typical scenes. A 
 
 - [scene-generation.md](scene-generation.md) — the orchestrator that drives this
 - [decisions/two-stage-pipeline.md](../decisions/two-stage-pipeline.md) — context selection vs tool calling
-- [decisions/embeddings-native-driver.md](../decisions/embeddings-native-driver.md) — why Atlas Vector Search needs native BSON
+- [decisions/embeddings-pgvector.md](../decisions/embeddings-pgvector.md) — pgvector + HNSW + `<=>` cosine setup

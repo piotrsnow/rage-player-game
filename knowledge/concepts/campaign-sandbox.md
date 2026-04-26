@@ -22,7 +22,7 @@ narration.
 | `lastTickAt`, `lastTickSceneIndex`, `tickIntervalScenes` | **canonical only** — tick scheduler runs on the world-level goal | — |
 | `pausedAt`, `pauseSnapshot` | **canonical only** — Phase 2 lifecycle pause on location leave | — |
 | `goalDeadlineAt`, `lastLocationPingAt` | **canonical only** — tick scheduler infra | — |
-| `knownLocationIds` | **canonical only** (seeded scope doesn't vary per campaign) | — |
+| known-location grants (`WorldNpcKnownLocation`) | **canonical only** (seeded scope doesn't vary per campaign) | — |
 | `keyNpc`, `homeLocationId` | **canonical only** | — |
 | `pendingIntroHint` | — | shadow owns (one-shot per campaign, set by quest trigger) |
 | `category` | canonical default | shadow override |
@@ -35,9 +35,9 @@ reads the canonical value and ignores the shadow.
 The merged view for scene-gen lives in
 [`campaignSandbox.listNpcsAtLocation`](../../backend/src/services/livingWorld/campaignSandbox.js):
 returns an "enriched shape" where shadow values win for campaign-scoped
-fields (activeGoal, goalProgress, lastLocationId, pendingIntroHint,
+fields (activeGoal, goalProgress, lastLocationKind/Id, pendingIntroHint,
 category) and canonical values fill in for canonical-only fields (keyNpc,
-homeLocationId, knownLocationIds, tick infra).
+homeLocationId, `WorldNpcKnownLocation` grants, tick infra).
 
 ## Clone triggers
 
@@ -68,11 +68,11 @@ them in when the NPC takes on a quest role.
 [`campaignSandbox.resolveNpcKnownLocations`](../../backend/src/services/livingWorld/campaignSandbox.js)
 returns the set of location ids an NPC is ALLOWED to reveal in dialog:
 
-1. The NPC's anchor location (shadow `lastLocationId` OR canonical
-   `currentLocationId`).
-2. Every 1-hop neighbour via `WorldLocationEdge`.
-3. Every id in canonical `WorldNPC.knownLocationIds` (seed-authored —
-   Kapitan Gerent knows dungeons, Eleya knows wilderness, etc.).
+1. The NPC's anchor location (shadow `lastLocationId` if `lastLocationKind='world'`,
+   else canonical `currentLocationId`).
+2. Every 1-hop canonical neighbour via `Road` (renamed from `WorldLocationEdge` in F5b).
+3. Every grant row in `WorldNpcKnownLocation` for this NPC (seed-authored, formerly
+   the `WorldNPC.knownLocationIds` JSON array — F3 normalized to a join table).
 
 Used by the `[NPC_KNOWLEDGE]` prompt block (scene-gen) and the
 `locationMentioned` policy handler in `processStateChanges` (rejects
@@ -110,5 +110,6 @@ These are gone entirely — DO NOT reintroduce:
   `pausedAt`/`pauseSnapshot`. If we want per-campaign pause semantics
   (each playthrough pauses independently) that'd be a future migration.
   For now, pause is world-level.
-- `CampaignNPC.lastLocation` (flavor string) stays as-is; authoritative
-  resolution is `lastLocationId` FK.
+- `CampaignNPC.lastLocation` (flavor string display cache) stays as-is;
+  authoritative resolution is the polymorphic `lastLocationKind` +
+  `lastLocationId` pair (F5b — kind ∈ `{'world','campaign'}`).

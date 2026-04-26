@@ -21,7 +21,7 @@ plan called for:
 - **Bulk moderation** — mass-release stale locks, purge `moderation_removed`
   events, migrate NPCs between locations.
 - **Cost / analytics panel** — NPC-tick cost per campaign, nano call
-  volume, Cloud Tasks success rate, Atlas query p95.
+  volume, Cloud Tasks success rate, Postgres query p95.
 - **Semantic NPC search** — `GET /v1/admin/livingWorld/npcs/search?q=...`
   using `searchNPCs()` vector search. Depends on
   [living-world-vector-search.md](living-world-vector-search.md) being
@@ -104,15 +104,20 @@ const moves = await prisma.worldEvent.findMany({
 Requires new table:
 
 ```prisma
+// Schema sketch — translate to current Postgres conventions:
+// UUIDv7 PKs (`@default(uuid(7)) @db.Uuid`), explicit FK relations with
+// onDelete cascade, `@db.Timestamptz` on createdAt. The pre-Postgres
+// `@map("_id") @db.ObjectId` notation is obsolete.
 model WorldReputationHistory {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  reputationId String  @db.ObjectId
-  scoreBefore Int
-  scoreAfter  Int
-  delta       Int
-  triggerType String   // attribution_id or "atonement" or "admin_reset"
-  triggerRef  String?  @db.ObjectId
-  createdAt   DateTime @default(now())
+  id           String   @id @default(uuid(7)) @db.Uuid
+  reputationId String   @db.Uuid
+  scoreBefore  Int
+  scoreAfter   Int
+  delta        Int
+  triggerType  String   // attribution_id or "atonement" or "admin_reset"
+  triggerRef   String?  @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  reputation   WorldReputation @relation(fields: [reputationId], references: [id], onDelete: Cascade)
   @@index([reputationId, createdAt])
 }
 ```

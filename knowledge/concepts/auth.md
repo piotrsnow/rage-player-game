@@ -5,7 +5,7 @@ Cookie-based refresh + short-lived JWT access tokens. Double-submit CSRF. Access
 ## Files
 
 - [backend/src/routes/auth.js](../../backend/src/routes/auth.js) — all `/v1/auth/*` endpoints: /register, /login, /refresh, /logout, /me, /settings, /api-keys
-- [backend/src/services/refreshTokenService.js](../../backend/src/services/refreshTokenService.js) — opaque random refresh tokens in MongoDB (`RefreshToken` collection, TTL index on `expiresAt`). Cookie format `<userId>.<tokenId>`, 30d TTL. Exports `issueRefreshToken`, `verifyRefreshToken`, `revokeRefreshToken`, `revokeAllUserRefreshTokens`. No Redis dependency — see [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md).
+- [backend/src/services/refreshTokenService.js](../../backend/src/services/refreshTokenService.js) — opaque random refresh tokens in Postgres (`RefreshToken` table, btree index on `expiresAt`, reaped by an in-process 10-min `setInterval`). Cookie format `<userId>.<tokenId>`, 30d TTL. Exports `issueRefreshToken`, `verifyRefreshToken`, `revokeRefreshToken`, `revokeAllUserRefreshTokens`, `startPeriodicCleanup`/`stopPeriodicCleanup`. No Redis dependency — see [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md).
 - [backend/src/services/apiKeyService.js](../../backend/src/services/apiKeyService.js) — AES-256 encryption for user-provided LLM API keys. `encrypt`, `decrypt`, `resolveApiKey(encryptedUserKeys, keyName)` (per-user precedence with env fallback), `requireServerApiKey(keyName, encryptedKeys?, providerLabel)` (throws 503 if neither configured), `loadUserApiKeys(prisma, userId)` (fetches `User.apiKeys` row)
 - [backend/src/plugins/csrf.js](../../backend/src/plugins/csrf.js) — double-submit cookie CSRF. Opt-in per route via `config: { csrf: true }`. Constant-time compare. Applied to `/v1/auth/refresh` and `/v1/auth/logout`.
 - [backend/src/middleware/requireAuth.js](../../backend/src/middleware/requireAuth.js) + [backend/src/plugins/auth.js](../../backend/src/plugins/auth.js) — JWT verification + `fastify.authenticate` decorator
@@ -24,7 +24,7 @@ POST /v1/auth/login    { email, password }
 Both return `{ accessToken, user }` in the response body AND set an httpOnly refresh cookie + a readable CSRF cookie.
 
 - **Access token:** short-lived JWT (15min), signed with `JWT_SECRET`, returned in JSON body. FE stores in memory only. Payload: `{ id, email, isAdmin }` — the `isAdmin` claim is what `fastify.requireAdmin` reads (no per-request DB lookup).
-- **Refresh token:** opaque random string (32 bytes hex), stored server-side in the `RefreshToken` MongoDB collection (TTL index on `expiresAt`). 30d TTL. Sent as httpOnly cookie, path `/v1/auth`, SameSite=Strict.
+- **Refresh token:** opaque random string (32 bytes hex), stored server-side in the Postgres `RefreshToken` table (btree index on `expiresAt`, in-process reaper). 30d TTL. Sent as httpOnly cookie, path `/v1/auth`, SameSite=Strict.
 - **CSRF token:** random 32-byte hex, path `/` (so FE can read it from anywhere), NOT httpOnly (JS needs to read it to inject X-CSRF-Token header).
 
 ### Refresh
@@ -38,7 +38,7 @@ Backend:
 
 1. Reads `refresh_token` cookie → parses `<userId>.<tokenId>`
 2. Reads `X-CSRF-Token` header, compares to `csrf_token` cookie via constant-time compare (in `csrf.js` plugin)
-3. Verifies the `RefreshToken` row exists in MongoDB and hasn't expired
+3. Verifies the `RefreshToken` row exists in Postgres and hasn't expired (`verifyRefreshToken` reaps eagerly on miss to short-circuit reuse of an expired cookie between reaper ticks)
 4. Reads `isAdmin` off the User row and mints a new 15min access token with it baked in
 5. **No refresh rotation yet** — same refresh token stays valid for its full TTL (deferred until a real threat model demands it)
 

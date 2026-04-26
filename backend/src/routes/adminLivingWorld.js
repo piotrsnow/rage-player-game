@@ -604,10 +604,9 @@ export async function adminLivingWorldRoutes(fastify) {
   });
 
   // Bulk reorder. Body: { order: [{slug, order}, ...] }. Missing slugs are
-  // ignored; duplicate order values are accepted (rendering does tie-break
-  // by createdAt). Runs in a sequential loop rather than a transaction
-  // because MongoDB transactions require a replicaSet — the upstream Atlas
-  // connection does, but we keep it loop-based for local dev parity.
+  // ignored; duplicate order values are accepted (rendering tie-breaks by
+  // createdAt). Sequential loop — wrap in $transaction if partial-failure
+  // rollback ever becomes a concern.
   fastify.post('/lore/reorder', guard(), async (request, reply) => {
     const body = request.body || {};
     const list = Array.isArray(body.order) ? body.order : null;

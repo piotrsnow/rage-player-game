@@ -11,8 +11,9 @@ grid as non-canonical rows.
 emits a `hearsayByNpc` array: for each key NPC at the current location, the
 set of locations they are ALLOWED to reveal. Resolved by
 [`resolveNpcKnownLocations`](../../backend/src/services/livingWorld/campaignSandbox.js)
-as `own location ∪ 1-hop edges ∪ canonical knownLocationIds`. Rendered in
-the system prompt as:
+as `own location ∪ 1-hop canonical Road neighbours ∪ WorldNpcKnownLocation grants`
+(F3 normalized the legacy `WorldNPC.knownLocationIds` JSON array into a join
+table; F5b renamed `WorldLocationEdge` → `Road`). Rendered in the system prompt as:
 
     ## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić
     - Kapitan Gerent wie o:
@@ -32,8 +33,12 @@ the system prompt as:
 **Policy enforcement** — [`processLocationMentions`](../../backend/src/services/sceneGenerator/processStateChanges.js)
 rejects entries whose location isn't in the NPC's `resolveNpcKnownLocations`
 set; accepted entries call `markLocationHeardAbout` so the player's fog
-flips the location into the dashed-outline "heard-about" state (canonical →
-`UserWorldKnowledge.heardAboutLocationIds`; non-canonical → `Campaign.heardAboutLocationIds`).
+flips the location into the dashed-outline "heard-about" state. F3 normalized
+fog: canonical hearsay → `UserHeardAboutLocation` join table (per-user account
+scope); per-campaign hearsay → `CampaignDiscoveredLocation` row with
+`state='heard_about'` (the legacy `Campaign.heardAboutLocationIds`/`UserWorldKnowledge.*Ids`
+JSON arrays were dropped). F5b note: hearsay flow is currently canonical-only —
+`processLocationMentions` does not target `CampaignLocation` rows yet.
 
 Violations are logged as policy warnings — nothing crashes, the AI just
 doesn't get to smuggle unknown locations past the fog.
@@ -73,16 +78,20 @@ that look the same but aren't"). A campaign with `boundsKm=2.5`
 (Short) restricts where AI/worldSeeder drops new rows, but the player
 still sees the full canonical world on their map.
 
-### Row shape
+### Row shape (post-F5b)
 
-- `isCanonical: false`, `createdByCampaignId=<campaign>`, `displayName=<raw AI name>`.
-- `canonicalName` is auto-suffixed with `__<campaignIdShort>` so two
-  campaigns inventing "Chatka Myśliwego" stay unique globally.
-- `dangerLevel` defaults to `safe`; premium can emit a value explicitly
-  on the entry.
-- Post-create, `markLocationDiscovered` is called with the campaign id so
-  the location immediately lands in the player's fog as "visited" (routed
-  to `Campaign.discoveredLocationIds` because `isCanonical=false`).
+AI-created locations land in **`CampaignLocation`** (per-campaign sandbox,
+not `WorldLocation`):
+
+- `campaignId=<campaign>`, `name=<raw AI name>`, `canonicalSlug=slugify(name)`
+  (slug-stable in-campaign lookup, unique per campaign).
+- `dangerLevel` defaults to `safe`; premium can emit a value explicitly.
+- Post-create, `markLocationDiscovered` is called with the polymorphic
+  `(kind='campaign', id=<row>)` ref so the location immediately lands in
+  the player's fog as "visited" (`CampaignDiscoveredLocation` row with
+  `state='visited'`, triple PK `[campaignId, locationKind, locationId]`).
+- Promotion to canonical (`WorldLocation`) is admin-gated via
+  `LocationPromotionCandidate` queue — see [postgres-migration.md F5b](../../plans/postgres-migration.md).
 
 ## [WORLD BOUNDS] prompt hint
 
@@ -102,7 +111,9 @@ campaign's eastern bound is 2 km away.
 
 [`locationQueries.listLocationsForCampaign(campaignId, opts)`](../../backend/src/services/livingWorld/locationQueries.js)
 is the single-source query for "every location this campaign may see" —
-canonical rows + non-canonical rows scoped to this campaign. Options:
+canonical `WorldLocation` rows + per-campaign `CampaignLocation` rows
+(F5b: each result row tagged with `kind` ∈ `{'world','campaign'}`,
+normalized `displayName`). Options:
 
 - `topLevelOnly` — drop sublocations
 - `includeSubs` — default true

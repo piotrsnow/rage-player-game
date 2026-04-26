@@ -29,9 +29,10 @@ Defined in [adminLivingWorld.js](../../backend/src/routes/adminLivingWorld.js):
 - `PUT /lore/:slug` — upsert (title + content + order). Slug validated to
   `[a-z0-9_-]+`
 - `DELETE /lore/:slug` — remove one
-- `POST /lore/reorder` — body `{ order: [{slug, order}] }`; updates each
-  row's `order` in a sequential loop (no transaction — MongoDB transactions
-  need a replicaSet)
+- `POST /lore/reorder` — body `{ order: [{slug, order}] }`; updates each row's
+  `order` in a sequential loop. Missing slugs ignored; duplicate `order` values
+  accepted (rendering ties-break by `createdAt`). Could be wrapped in
+  `prisma.$transaction` later if partial-failure rollback becomes a real concern
 
 All gated by `fastify.authenticate + fastify.requireAdmin`.
 

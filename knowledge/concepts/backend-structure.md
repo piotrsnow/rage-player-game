@@ -123,9 +123,9 @@ See [multiplayer.md](multiplayer.md).
 
 ### Data & storage
 
-- [embeddingService.js](../../backend/src/services/embeddingService.js) — OpenAI text-embedding-3-small wrapper with L1 + L2 (Redis) cache
-- [vectorSearchService.js](../../backend/src/services/vectorSearchService.js) — Atlas Vector Search
-- [mongoNative.js](../../backend/src/services/mongoNative.js) — native MongoDB driver for embeddings (BSON arrays that Prisma can't represent)
+- [embeddingService.js](../../backend/src/services/embeddingService.js) — OpenAI text-embedding-3-small wrapper with in-memory LRU cache (100 entries, 1h TTL)
+- [vectorSearchService.js](../../backend/src/services/vectorSearchService.js) — pgvector cosine search via `$queryRaw` `<=>` operator (campaign scenes + knowledge + codex)
+- [embeddingWrite.js](../../backend/src/services/embeddingWrite.js) — `$executeRawUnsafe` writer for `vector(1536)` columns (Prisma can't bind vector params natively)
 - [mediaStore.js](../../backend/src/services/mediaStore.js) — media storage abstraction
 - [localStore.js](../../backend/src/services/localStore.js), [gcpStore.js](../../backend/src/services/gcpStore.js)
 - [hashService.js](../../backend/src/services/hashService.js) — content-addressable hashing
@@ -135,22 +135,20 @@ See [multiplayer.md](multiplayer.md).
 ### Auth
 
 - [apiKeyService.js](../../backend/src/services/apiKeyService.js) — AES-256 key encryption, `encrypt`, `decrypt`, `resolveApiKey`, `requireServerApiKey`, `loadUserApiKeys` (+ test)
-- [refreshTokenService.js](../../backend/src/services/refreshTokenService.js) — opaque refresh tokens in Redis, O(1) revoke (+ test)
+- [refreshTokenService.js](../../backend/src/services/refreshTokenService.js) — opaque refresh tokens in Postgres `RefreshToken` table; in-process 10-min `setInterval` reaper (`startPeriodicCleanup`/`stopPeriodicCleanup` wired from `server.js`). O(1) revoke by tokenId.
 
-### Queues + workers
+### Async work (Cloud Tasks, no Redis/BullMQ)
 
-- [services/queues/aiQueue.js](../../backend/src/services/queues/aiQueue.js) — per-provider BullMQ queues (`ai-openai`, `ai-anthropic`, `ai-gemini`, `ai-stability`, `ai-meshy`). `getQueue`, `enqueueJob`, `getJobStatus`, `findJobAcrossQueues`, `closeAllQueues`. Redis-off safe.
-- [workers/aiWorker.js](../../backend/src/workers/aiWorker.js) — worker pool + handler registry by `job.name`. Registered: `generate-scene`, `generate-campaign` (both stream via pub/sub bridge). Dual mode: in-process (default) or standalone (`WORKER_MODE=1`). Exports `sceneJobChannel`, `campaignJobChannel`.
-- [services/redisClient.js](../../backend/src/services/redisClient.js) — singleton ioredis clients. `getRedisClient()` (regular: retries 3, readyCheck on) vs `getBullMQConnection()` (null retries, no ready check — for BLPOP). `isRedisEnabled`, `pingRedis`, `closeRedis`, `getRedisStatus`.
-
-See [patterns/bullmq-queues.md](../patterns/bullmq-queues.md).
+- [services/cloudTasks.js](../../backend/src/services/cloudTasks.js) — `enqueuePostSceneWork(payload)` enqueues into a Google Cloud Tasks queue in prod; in dev it runs the handler inline. See [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md).
+- [services/postSceneWork.js](../../backend/src/services/postSceneWork.js) — `processPostSceneWork(payload)` async pipeline: scene embedding, NPC/quest sync, nano state extraction, memory compression, location summary, NPC tick batch.
+- [services/oidcVerify.js](../../backend/src/services/oidcVerify.js) — verifies Cloud Tasks OIDC tokens on the `/v1/internal/post-scene-work` route.
 
 ### Plugins
 
 - [plugins/csrf.js](../../backend/src/plugins/csrf.js) — double-submit cookie CSRF. Opt-in via `config: { csrf: true }`. Constant-time compare.
-- [plugins/idempotency.js](../../backend/src/plugins/idempotency.js) — `Idempotency-Key` header, Redis-backed SET NX + 60s pending → 24h completed cache. Opt-in via `config: { idempotency: true }`. 409 on concurrent races, replay with `idempotent-replay: true`.
+- [plugins/idempotency.js](../../backend/src/plugins/idempotency.js) — `Idempotency-Key` header, in-memory `Map` keyed by `userId:idempotencyKey` (60s pending → 24h completed). Opt-in via `config: { idempotency: true }`. 409 on concurrent races, replay with `idempotent-replay: true`.
 - [plugins/rateLimitKey.js](../../backend/src/plugins/rateLimitKey.js) — custom keyGenerator for `@fastify/rate-limit`. Returns `u:<userId>` when JWT verifies, `ip:<address>` fallback.
-- [plugins/bullBoard.js](../../backend/src/plugins/bullBoard.js) — bull-board UI at `/v1/admin/queues`, gated by `authenticate` + `admin` claim. Admin flag not yet on User model → effectively locked.
+- [plugins/requireAdmin.js](../../backend/src/plugins/requireAdmin.js) — `fastify.requireAdmin` reads JWT `isAdmin` claim (no DB lookup); paired with `fastify.authenticate`.
 - [plugins/auth.js](../../backend/src/plugins/auth.js) — JWT plugin + `fastify.authenticate` decorator
 - [plugins/cors.js](../../backend/src/plugins/cors.js) — CORS + `resolveSseCorsOrigin()` allowlist for SSE raw writes
 
@@ -159,7 +157,7 @@ See [patterns/bullmq-queues.md](../patterns/bullmq-queues.md).
 - [backend/src/lib/prisma.js](../../backend/src/lib/prisma.js) — Prisma client singleton
 - [backend/src/lib/logger.js](../../backend/src/lib/logger.js) — pino + `childLogger({ bindings })`
 - [backend/src/middleware/requireAuth.js](../../backend/src/middleware/requireAuth.js) — JWT middleware
-- [backend/src/server.js](../../backend/src/server.js) — boot: plugin registration, queue startup, graceful shutdown ordering (rooms → sockets → workers → queues → redis → fastify)
+- [backend/src/server.js](../../backend/src/server.js) — boot: plugin registration, refresh-token reaper (`startPeriodicCleanup`), graceful shutdown ordering (rooms → sockets → fastify → reaper stop)
 
 ## Data
 
@@ -167,8 +165,8 @@ See [patterns/bullmq-queues.md](../patterns/bullmq-queues.md).
 
 ## Scripts
 
-- `backend/src/scripts/createVectorIndexes.js` — one-time: creates Atlas Vector Search indexes
-- `backend/src/scripts/migrateCoreState.js` — DB migration script (ad hoc)
+- `backend/src/scripts/seedWorld.js` — idempotent canonical world seed (capital + heartland villages + wilderness + dungeons + NPCs). Runs on every boot. See [decisions/hand-authored-world-seed.md](../decisions/hand-authored-world-seed.md).
+- HNSW vector indexes are created in the init migration `backend/prisma/migrations/0000_init_postgres/migration.sql` — no separate script.
 
 ## Shared (`shared/`)
 
@@ -209,7 +207,7 @@ Pure logic used by both FE and BE. No React, no fastify. Safe to import from eit
 | Context assembly | [backend/src/services/aiContextTools.js](../../backend/src/services/aiContextTools.js) `assembleContext` |
 | New AI single-shot endpoint | Add handler in `ai.js` + service via `aiJsonCall.js` |
 | New WS message | Add handler in `multiplayer/handlers/<group>.js`, register in `connection.js` dispatcher `HANDLERS` map |
-| Queue / worker change | [backend/src/services/queues/aiQueue.js](../../backend/src/services/queues/aiQueue.js), [backend/src/workers/aiWorker.js](../../backend/src/workers/aiWorker.js) |
+| Async post-scene work | [backend/src/services/cloudTasks.js](../../backend/src/services/cloudTasks.js) (enqueue) + [backend/src/services/postSceneWork.js](../../backend/src/services/postSceneWork.js) (handler) |
 | Auth flow | [backend/src/routes/auth.js](../../backend/src/routes/auth.js) + [backend/src/services/refreshTokenService.js](../../backend/src/services/refreshTokenService.js) |
 | SSE plumbing | [backend/src/routes/ai.js](../../backend/src/routes/ai.js) `writeSseHead` + [patterns/sse-streaming.md](../patterns/sse-streaming.md) |
 | Bestiary / encounter | [backend/src/data/equipment/bestiary.js](../../backend/src/data/equipment/bestiary.js) + `sceneGenerator/enemyFill.js` |
