@@ -10,6 +10,11 @@ export function extractTotalCost(coreState) {
  * Strip normalized branches out of coreState before saving.
  * Character data is NOT touched here — characters live in their own collection
  * and are referenced via Campaign.characterIds.
+ *
+ * F5 — also lifts `world.currentLocation` (flavor name) onto its own
+ * `currentLocationName` field. Caller writes it to the dedicated
+ * Campaign.currentLocationName column; reconstructFromNormalized injects it
+ * back into coreState.world on read.
  */
 export function stripNormalizedFromCoreState(coreStateObj) {
   const slim = { ...coreStateObj };
@@ -19,6 +24,14 @@ export function stripNormalizedFromCoreState(coreStateObj) {
   const npcs = slim.world?.npcs || [];
   if (slim.world && 'npcs' in slim.world) {
     const { npcs: _n, ...worldRest } = slim.world;
+    slim.world = worldRest;
+  }
+
+  let currentLocationName = null;
+  if (slim.world && typeof slim.world === 'object' && 'currentLocation' in slim.world) {
+    const raw = slim.world.currentLocation;
+    currentLocationName = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+    const { currentLocation: _drop, ...worldRest } = slim.world;
     slim.world = worldRest;
   }
 
@@ -32,7 +45,7 @@ export function stripNormalizedFromCoreState(coreStateObj) {
   const quests = slim.quests || { active: [], completed: [] };
   delete slim.quests;
 
-  return { slim, npcs, knowledgeEvents, knowledgeDecisions, quests };
+  return { slim, npcs, knowledgeEvents, knowledgeDecisions, quests, currentLocationName };
 }
 
 export const SCENE_CLIENT_SELECT = {

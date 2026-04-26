@@ -1,4 +1,5 @@
 import { prisma } from '../../../lib/prisma.js';
+import { unpackWorldBounds } from '../../locationRefs.js';
 
 /**
  * Phase C — compute saturation budgets for the current campaign + location.
@@ -17,11 +18,11 @@ import { prisma } from '../../../lib/prisma.js';
 export async function buildSaturationHint({ campaign, location, ambientNpcCount = 0 }) {
   const caps = (campaign?.settlementCaps && typeof campaign.settlementCaps === 'object')
     ? campaign.settlementCaps : null;
-  const bounds = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
-    ? campaign.worldBounds : null;
+  // F5 — bounds source moved to 4 Float columns; unpacked to legacy shape.
+  const bounds = unpackWorldBounds(campaign);
 
   let settlementBudget = null;
-  if (caps && bounds && Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX)) {
+  if (caps && bounds) {
     const capTotal = ['hamlet', 'village', 'town', 'city']
       .reduce((a, t) => a + (Number(caps[t]) || 0), 0);
     if (capTotal > 0) {

@@ -86,7 +86,9 @@ export async function crudCampaignRoutes(app) {
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
     const coreState = campaign.coreState || {};
-    await reconstructFromNormalized(campaign.id, coreState);
+    await reconstructFromNormalized(campaign.id, coreState, {
+      currentLocationName: campaign.currentLocationName || null,
+    });
 
     const characterIds = await getCampaignCharacterIds(campaign.id);
     const [scenes, characters] = await Promise.all([
@@ -125,7 +127,7 @@ export async function crudCampaignRoutes(app) {
     } = request.body;
     const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
 
-    const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+    const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests, currentLocationName } =
       stripNormalizedFromCoreState(parsed);
 
     const characterIds = Array.isArray(rawCharIds) ? rawCharIds.filter((id) => typeof id === 'string' && id) : [];
@@ -165,6 +167,8 @@ export async function crudCampaignRoutes(app) {
         totalCost: extractTotalCost(slim),
         lastSaved: new Date(),
         shareToken: crypto.randomUUID(),
+        // F5 — currentLocationName lifted from coreState.world.currentLocation
+        currentLocationName: currentLocationName || null,
         ...(livingWorldEnabled === true ? { livingWorldEnabled: true } : {}),
         ...(typeof worldTimeRatio === 'number' ? { worldTimeRatio } : {}),
         ...(Number.isInteger(worldTimeMaxGapDays) ? { worldTimeMaxGapDays } : {}),
@@ -180,6 +184,9 @@ export async function crudCampaignRoutes(app) {
     });
 
     // Phase A — per-campaign world seeding.
+    // F5 — currentLocation persisted to its own column rather than re-stuffing
+    // back into coreState. Memory copy of slim.world.currentLocation kept so
+    // the response carries the live name to FE.
     let seededStartingLocation = null;
     if (livingWorldEnabled === true) {
       try {
@@ -194,7 +201,7 @@ export async function crudCampaignRoutes(app) {
           slim.world.currentLocation = seededStartingLocation;
           await prisma.campaign.update({
             where: { id: campaign.id },
-            data: { coreState: slim },
+            data: { currentLocationName: seededStartingLocation },
           }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to persist seeded currentLocation'));
         }
       } catch (err) {
@@ -218,13 +225,15 @@ export async function crudCampaignRoutes(app) {
     }
 
     // Round B (Phase 3) — start-spawn bind.
+    // F5 — same lift: column write, in-memory slim.world.currentLocation kept
+    // for the response payload only.
     const startSpawn = parsed?._startSpawn || null;
     if (startSpawn?.sublocationName) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
       await prisma.campaign.update({
         where: { id: campaign.id },
-        data: { coreState: slim },
+        data: { currentLocationName: startSpawn.sublocationName },
       }).catch((err) => log.warn({ err, campaignId: campaign.id }, 'Failed to override currentLocation for startSpawn'));
     }
     if (startSpawn?.npcName && Array.isArray(quests?.active)) {
@@ -266,6 +275,16 @@ export async function crudCampaignRoutes(app) {
     if (npcs.length > 0) { if (!fullState.world) fullState.world = {}; fullState.world.npcs = npcs; }
     if (quests.active?.length || quests.completed?.length) fullState.quests = quests;
 
+    // F5 — re-inject currentLocation (input or seeded/startSpawn override) so
+    // the response carries the FE-shape `world.currentLocation`.
+    const responseCurrentLoc = (slim.world && slim.world.currentLocation)
+      || currentLocationName
+      || null;
+    if (responseCurrentLoc) {
+      if (!fullState.world) fullState.world = {};
+      fullState.world.currentLocation = responseCurrentLoc;
+    }
+
     const characters = await fetchCampaignCharacters(characterIds);
     return { ...campaign, coreState: fullState, characterIds, scenes: [], characters };
   });
@@ -306,11 +325,14 @@ export async function crudCampaignRoutes(app) {
 
     if (rawCoreState !== undefined) {
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
-      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
+      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests, currentLocationName } =
         stripNormalizedFromCoreState(parsed);
 
       updateData.coreState = slim;
       updateData.totalCost = extractTotalCost(slim);
+      // F5 — currentLocationName lifted to its own column. Always set
+      // (including null) so a save that clears the field reaches the column.
+      updateData.currentLocationName = currentLocationName || null;
 
       pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
     }
@@ -352,7 +374,15 @@ export async function crudCampaignRoutes(app) {
     }
 
     const characterIds = await getCampaignCharacterIds(request.params.id);
-    return { ...campaign, characterIds, coreState: campaign.coreState || {} };
+    // F5 — synthesize coreState.world.currentLocation back into the response
+    // so the FE re-merge sees the same shape it sent (the client may rely on
+    // round-trip equality for some sync paths).
+    const responseCore = campaign.coreState || {};
+    if (campaign.currentLocationName) {
+      if (!responseCore.world) responseCore.world = {};
+      if (!responseCore.world.currentLocation) responseCore.world.currentLocation = campaign.currentLocationName;
+    }
+    return { ...campaign, characterIds, coreState: responseCore };
   });
 
   app.delete('/:id', async (request, reply) => {

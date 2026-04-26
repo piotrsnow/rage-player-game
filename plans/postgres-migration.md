@@ -1,6 +1,6 @@
 # Migracja MongoDB Atlas → PostgreSQL (fazowo)
 
-## Status (2026-04-25)
+## Status (2026-04-26)
 
 | Faza | Status | Notatka |
 |---|---|---|
@@ -8,10 +8,11 @@
 | **F2** | ✅ **Zrobione** | 6 child tables + FIFO triggery + bulk upsert (3 sync funkcje). Zobacz [F2 retrospektywa](#f2-retrospektywa). |
 | **F3** | ✅ **Zrobione** | 7 join tables + `DiscoveryState` enum, drop 10 JSONB kolumn. Canonical → user-account scope, non-canonical → campaign scope. Zobacz [F3 retrospektywa](#f3-retrospektywa). |
 | **F4** | ✅ **Zrobione** | 5 child tables (skills/inventory/materials/objectives/relationships), equipped jako 3 text columns, drop 6 JSONB kolumn. Items+materials stack by `slugify(name)`. Zobacz [F4 retrospektywa](#f4-retrospektywa). |
-| **F5** | ⏭️ Następna | `coreState` surface trimming — hot scalars na kolumny + `transientState JSONB`. |
+| **F5** | ✅ **Zrobione (lean)** | `worldBounds` Json → 4 Float cols + `currentLocation` lift z coreState do `currentLocationName String?` (no FK — F5b da właściwy target). Bridge przez `locationRefs.js` + `stripNormalizedFromCoreState`. Zobacz [F5 retrospektywa](#f5-retrospektywa). |
+| **F5b** | ⏭️ Następna | `CampaignLocation` model — AI-created locations w osobnej tabeli zamiast `WorldLocation isCanonical=false`. Promotion pipeline retarget + polymorphic FK decyzja dla `currentLocationId` / `lastLocationId` / edges. |
 | F6 | Pending | Production scale-out (metric-driven). |
 
-**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1+F2+F3+F4 (znane długi techniczne), potem skocz do [F5 — `coreState` surface trimming](#f5--corestate-surface-trimming) i poproś o plan startowy.
+**Resume w kolejnej sesji:** otwórz tę sekcję, przejrzyj retrospektywy F1-F5 (znane długi techniczne), potem skocz do F5b plan-mode — kluczowa decyzja to polymorphic FK strategy (option 1: dwie kolumny FK, option 2: kind+id pair, option 3: zostaw isCanonical w WorldLocation).
 
 ## Context
 
@@ -1688,60 +1689,100 @@ Naprawione (z F2 + F3 retrospektyw):
 
 # F5 — `coreState` surface trimming
 
-**Cel:** koniec write-amp na auto-save. Hot-path scalars na kolumny, reszta `transientState JSONB`.
+**Cel pierwotny:** koniec write-amp na auto-save. Hot-path scalars na kolumny, reszta `transientState JSONB`.
 
-**Trigger:** po F4.
+**Co faktycznie zrobiliśmy (lean F5):** pierwotny plan (`gameTime`, `weather`, `sessionTitle`, FK `currentLocationId`, rename `coreState` → `transientState`, drop `CampaignNPC.lastLocation`) okazał się w większości spekulatywny — `gameTime`/`weather`/`sessionTitle` nie istnieją jako Campaign-level fields, rename byłby pure cosmetic touching every callsite, a `CampaignNPC.lastLocation` pozostał (column ma value jako display cache + AI-emit fallback gdy resolver nie znajdzie WorldLocation matcha). FK na `currentLocation` przesunięty do F5b — dopiero gdy `CampaignLocation` model wprowadzi właściwy target type, wtedy FK ma sens (point-at-either WorldLocation albo CampaignLocation).
 
-## F5 schema delta
+## F5 zrobione (final scope)
 
 ```prisma
 model Campaign {
-  // ... (jak F4) PLUS:
-  currentLocation   String?                                  // flavor name (z LLM)
-  currentLocationId String?  @db.Uuid
-  gameTime          DateTime? @db.Timestamptz
-  weather           String?
-  sessionTitle      String?
-  boundsMinX        Float?
-  boundsMaxX        Float?
-  boundsMinY        Float?
-  boundsMaxY        Float?
+  // ... PLUS:
+  // F5 — worldBounds JSONB → 4 nullable Float kolumny
+  boundsMinX          Float?
+  boundsMaxX          Float?
+  boundsMinY          Float?
+  boundsMaxY          Float?
 
-  transientState    Json     @default("{}")                  // RENAME z `coreState`; trzymaj resztę (combat state, chat buffer, temp world facts)
+  // F5 — flavor name lifted from coreState.world.currentLocation
+  // (no FK in F5, F5b doda właściwy polymorphic target)
+  currentLocationName String?
 
-  currentLocationFk WorldLocation? @relation("campaignCurrentLoc", fields: [currentLocationId], references: [id])
-  // DROP: coreState (rename), worldBounds Json
+  // DROP: worldBounds Json?
 }
 ```
 
-`CampaignNPC.lastLocation` flavor string — DROP (display przez `lastLocFk.displayName`).
+## F5 schema delta — co NIE poszło
+- ❌ `gameTime DateTime?` — nigdzie w kodzie nie istnieje jako Campaign-level field. Per-event timestamp na `WorldEvent`. Pure plan-spec drift.
+- ❌ `weather String?` — żyje per-scene w `atmosphere.weather` JSON, nie na poziomie Campaign.
+- ❌ `sessionTitle String?` — nie istnieje w żadnej formie.
+- ❌ `currentLocationId Uuid? FK` — wstrzymane do F5b. Z `CampaignLocation` w drodze, FK miałby zły target type. Sama lift do `currentLocationName String?` daje 90% wartości (column-based reads, no JSONB scan), reszta przyjdzie z F5b.
+- ❌ rename `coreState` → `transientState` — pure cosmetic, blast radius huge, zero functional gain.
+- ❌ drop `CampaignNPC.lastLocation` — column zostaje. AI emituje free-text ("Krynsk", "the inn") which nie zawsze rozwiązuje się do WorldLocation row. Column działa jako display cache + fallback dla unresolved cases. F5b zrewizuje to gdy CampaignLocation będzie target.
 
-## F5 pliki do zmiany
-| Plik | Zmiana |
-|---|---|
-| `backend/prisma/schema.prisma` | Add scalars, rename coreState → transientState, drop worldBounds Json + CampaignNPC.lastLocation |
-| `backend/src/services/campaignSerialize.js` | `stripNormalizedFromCoreState` uproszczone |
-| `backend/src/services/campaignSync.js` | Update sets `currentLocationId`, `gameTime`, ... osobno |
-| `backend/src/routes/campaigns/crud.js` (PUT) | Rozdzielić scalar vs transientState payload |
-| `src/services/storage.js` `_parseBackendCampaign` | Zmerge'uj scalary z transientState do gameState shape (kompatybilność store) |
-| `src/services/storage/migrations.js` | Drop legacy parse |
-| `backend/src/services/sceneGenerator/processStateChanges/handlers/locations.js` | `currentLocationId` set bezpośrednio |
-| `knowledge/concepts/persistence.md` | Update sekcja "coreState vs normalized" |
-| `knowledge/concepts/living-world.md` | "Three things that look the same" — uaktualnić jeśli się zmieni mapowanie |
+## F5 pliki dotknięte (top-level)
+
+- **Schema:** [backend/prisma/schema.prisma](../backend/prisma/schema.prisma) (4 bounds kolumny + currentLocationName, drop worldBounds Json).
+- **Migracja:** `backend/prisma/migrations/20260426002146_corestate_surface_trim/migration.sql`.
+- **Bridge (NEW):** [backend/src/services/locationRefs.js](../backend/src/services/locationRefs.js) — `unpackWorldBounds`/`packWorldBounds` + `liftCurrentLocationFromCoreState`/`injectCurrentLocationIntoCoreState`. 16 unit testów.
+- **Serializer:** [backend/src/services/campaignSerialize.js](../backend/src/services/campaignSerialize.js) — `stripNormalizedFromCoreState` zwraca `currentLocationName`. +5 nowych testów.
+- **Reconstruct:** [backend/src/services/campaignSync.js](../backend/src/services/campaignSync.js) — `reconstructFromNormalized({currentLocationName})` injektuje z powrotem do coreState.world.
+- **CRUD:** [backend/src/routes/campaigns/crud.js](../backend/src/routes/campaigns/crud.js) — POST/PUT writes column, GET reads column → reconstruct. seedInitialWorld + startSpawn paths piszą column zamiast re-stuff'ować coreState.
+- **Public/share:** [backend/src/routes/campaigns/public.js](../backend/src/routes/campaigns/public.js) — `/public/:id` + `/share/:token` wybierają column + przekazują do reconstruct.
+- **Scene gen loader:** [backend/src/services/sceneGenerator/campaignLoader.js](../backend/src/services/sceneGenerator/campaignLoader.js) — `loadCampaignState` selektuje + injektuje currentLocationName, więc każdy downstream consumer (generateSceneStream, intentClassifier, shortcuts, prompt builders) widzi standardową `coreState.world.currentLocation`.
+- **PATCH defensywnie:** [backend/src/routes/ai/coreState.js](../backend/src/routes/ai/coreState.js) — jeśli ktoś PATCHuje `world.currentLocation`, lift też się dzieje (column truth).
+- **Inne czytelniki:** [livingWorld.js GET tile-grid](../backend/src/routes/livingWorld.js), [questGoalAssigner/index.js](../backend/src/services/livingWorld/questGoalAssigner/index.js), [postCampaignWriteback.js](../backend/src/services/livingWorld/postCampaignWriteback.js), [processStateChanges/quests.js fireMoveNpcToPlayerTrigger](../backend/src/services/sceneGenerator/processStateChanges/quests.js) — selektują + dodają fallback `column ?? coreState.world.currentLocation`.
+- **5 worldBounds readers:** [worldBoundsHint.js](../backend/src/services/aiContextTools/contextBuilders/worldBoundsHint.js), [seededSettlements.js](../backend/src/services/aiContextTools/contextBuilders/seededSettlements.js), [saturation.js](../backend/src/services/aiContextTools/contextBuilders/saturation.js), [livingWorld.js](../backend/src/services/aiContextTools/contextBuilders/livingWorld.js) (select 4 cols zamiast worldBounds), [processStateChanges/locations.js](../backend/src/services/sceneGenerator/processStateChanges/locations.js).
+- **Worldbounds writer:** [worldSeeder.js](../backend/src/services/livingWorld/worldSeeder.js) — pakuje przez `packWorldBounds`.
+- **Docs:** [knowledge/concepts/persistence.md](../knowledge/concepts/persistence.md) (F5 sekcja + zaktualizowane "coreState vs normalized").
 
 ## F5 weryfikacja
+
 ```sql
--- atomic location update bez rewrite całego coreState:
-UPDATE "Campaign" SET "currentLocationId" = '<uuid>', "gameTime" = now() WHERE id = '<campaign>';
--- index:
-EXPLAIN SELECT id FROM "Campaign" WHERE "currentLocationId" = '<uuid>';   -- index scan
+-- atomic bounds update bez rewrite coreState:
+UPDATE "Campaign" SET "boundsMinX" = -10, "boundsMaxX" = 10, "boundsMinY" = -10, "boundsMaxY" = 10 WHERE id = '<campaign>';
+
+-- atomic location update bez rewrite coreState:
+UPDATE "Campaign" SET "currentLocationName" = 'Krynsk' WHERE id = '<campaign>';
 ```
 
-## F5 ryzyka
-| Ryzyko | Mitigation |
+✅ `prisma validate` zielone.
+✅ `migrate deploy` zaaplikowane (5. migracja: `20260426002146_corestate_surface_trim`).
+✅ 728 BE testów + 1197 FE testów pass.
+✅ `npm run build` zielone.
+
+## F5 ryzyka i ich mitigation
+| Ryzyko | Co zrobiliśmy |
 |---|---|
-| Scene-gen pipeline liczy na jeden obiekt `coreState` | `_parseBackendCampaign` mergeuje kolumny scalar + transientState → spójny `gameState` dla store. Backend BBE dostaje split — zmiana dotyczy tylko serializacji |
-| Jakieś pole "transient" okaże się hot-path | Po profile: przenieś do scalar w kolejnej iteracji F5+ |
+| Scene-gen widzi `coreState.world.currentLocation` w 15+ miejscach | `loadCampaignState` injektuje column → coreState.world.currentLocation przed rozdaniem do prompt builderów. Zero zmian w consumerach. |
+| MP path zapisuje przez inny path | MP używa `MultiplayerSession.gameState` JSONB (nietknięty), a auto-save host'a leci przez `apiClient.put('/campaigns/:id')` (lift działa transparentnie). |
+| AI emituje location nazwy które nie matchują WorldLocation | Column jest pure string, no FK constraint; w F5 nie próbujemy resolve'ować. F5b z CampaignLocation rozwiąże to (resolver tworzy CampaignLocation row dla unmatched names). |
+
+## Znane długi z F5
+
+1. **Brak FK na `currentLocationName`** — wstrzymane do F5b z CampaignLocation. Today: pure string, can drift jeśli WorldLocation z tym `displayName` zostanie usunięty/przemianowany.
+2. **`processStateChanges/locations.js` nadal tworzy `WorldLocation isCanonical=false` dla AI-emit'owanych miejsc** — F5b adresuje to (przeniesie do CampaignLocation).
+3. **`/ai/campaigns/:id/core` PATCH lift w deepMerge** — defensive only, route nie jest wołany z FE today.
+4. **`Campaign.lockedLocation` na Character** — flavor string snapshot "gdzie character był przy bind". Nie ruszony (nie zmienia się w trakcie play, czystszy fix przyszedłby z CampaignLocation FK).
+
+## Niezweryfikowane manualnie (do playtest)
+
+- E2E save → load → save campaign'u — `currentLocation` round-trip przez column.
+- Living World seed flow — `worldBounds` 4-col write + reads (szczególnie saturation hint w runtime).
+- Multiplayer save — host's MP autosave musi prawidłowo lift'ować currentLocation do column (FE'side state ma `world.currentLocation`).
+- Public share `/share/:token` — czytany koreState ma `world.currentLocation` zsynthesizowane.
+- Quest auto-trigger `onComplete.moveNpcToPlayer` — używa column-first lookup teraz.
+
+## F5 retrospektywa
+
+| Plan | Co faktycznie wyszło |
+|---|---|
+| Hot scalars: gameTime/weather/sessionTitle | Nie istnieją jako Campaign fields. **Plan-spec drift.** Skipped. |
+| `currentLocationId Uuid? FK` | Wstrzymane do F5b — z CampaignLocation FK będzie miał właściwy target. Lift na sam `currentLocationName String?` daje 90% wartości. |
+| Drop `CampaignNPC.lastLocation` | Zostawione. AI emituje free-text NPC locations które nie zawsze rozwiązują się do WorldLocation row; column to value'able fallback display cache. F5b zrewizuje. |
+| Rename `coreState` → `transientState` | Pure cosmetic, huge churn, zero functional. Skipped. |
+| `worldBounds Json` → 4 Float | ✅ Zrobione zgodnie z planem. |
+| Nowe write-paths atomic per-field | Ten PR nie zmienia save-flow shape. Save wciąż leci jako full coreState PUT. Atomic per-field updates wymagałyby refactora całego storage.saveCampaign — odłożone (nie hot-path przy 0-100 DAU). |
 
 ---
 

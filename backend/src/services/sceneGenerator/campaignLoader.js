@@ -17,7 +17,8 @@ export async function loadCampaignState(campaignId) {
   const [campaign, dbNpcs, dbQuests, dbCodex, dbKnowledge, characterIds] = await Promise.all([
     prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { coreState: true, livingWorldEnabled: true },
+      // F5 — currentLocationName lifted from coreState.world.currentLocation; merged below.
+      select: { coreState: true, livingWorldEnabled: true, currentLocationName: true },
     }),
     prisma.campaignNPC.findMany({
       where: { campaignId },
@@ -48,6 +49,14 @@ export async function loadCampaignState(campaignId) {
 
   if (!campaign) throw new Error('Campaign not found');
   const coreState = campaign.coreState || {};
+
+  // F5 — inject currentLocationName from the dedicated column into the legacy
+  // coreState.world.currentLocation slot so prompt builders + downstream
+  // handlers see the same shape they always did.
+  if (campaign.currentLocationName) {
+    if (!coreState.world) coreState.world = {};
+    if (!coreState.world.currentLocation) coreState.world.currentLocation = campaign.currentLocationName;
+  }
 
   // Single-player → first participant. Multiplayer routes through multiplayerAI.
   const activeCharacterId = characterIds[0] || null;

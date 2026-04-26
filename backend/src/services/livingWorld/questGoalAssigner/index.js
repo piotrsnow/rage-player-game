@@ -71,9 +71,11 @@ export async function assignGoalsForCampaign(campaignId) {
     const [campaign, quests, campaignNpcs] = await Promise.all([
       prisma.campaign.findUnique({
         where: { id: campaignId },
+        // F5 — currentLocation lifted out of coreState into its own column.
         select: {
           id: true,
           coreState: true,
+          currentLocationName: true,
           participants: {
             select: { characterId: true },
             orderBy: { joinedAt: 'asc' },
@@ -100,7 +102,9 @@ export async function assignGoalsForCampaign(campaignId) {
     const characterName = actorCharacterId
       ? await resolveCharacterName(actorCharacterId)
       : null;
-    const playerLocation = (campaign.coreState || {})?.world?.currentLocation || null;
+    const playerLocation = campaign.currentLocationName
+      || (campaign.coreState || {})?.world?.currentLocation
+      || null;
     const playerLocNorm = String(playerLocation || '').toLowerCase().trim();
 
     let assigned = 0;

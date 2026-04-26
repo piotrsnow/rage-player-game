@@ -121,5 +121,31 @@ describe('stripNormalizedFromCoreState', () => {
     expect(result.knowledgeDecisions).toEqual([]);
     expect(result.quests).toEqual({ active: [], completed: [] });
     expect(result.slim).toEqual({});
+    expect(result.currentLocationName).toBeNull();
+  });
+
+  // F5 — currentLocation lift onto its own field for the dedicated column.
+  it('lifts world.currentLocation onto its own field and strips from slim', () => {
+    const input = { world: { currentLocation: 'Krynsk', weather: 'sunny' } };
+    const result = stripNormalizedFromCoreState(input);
+    expect(result.currentLocationName).toBe('Krynsk');
+    expect(result.slim.world.currentLocation).toBeUndefined();
+    expect(result.slim.world.weather).toBe('sunny');
+  });
+
+  it('trims whitespace from lifted currentLocation', () => {
+    const result = stripNormalizedFromCoreState({ world: { currentLocation: '  Lasy Drakwald  ' } });
+    expect(result.currentLocationName).toBe('Lasy Drakwald');
+  });
+
+  it('treats empty/whitespace currentLocation as null', () => {
+    expect(stripNormalizedFromCoreState({ world: { currentLocation: '' } }).currentLocationName).toBeNull();
+    expect(stripNormalizedFromCoreState({ world: { currentLocation: '   ' } }).currentLocationName).toBeNull();
+  });
+
+  it('returns null currentLocationName when world has no currentLocation field', () => {
+    const result = stripNormalizedFromCoreState({ world: { weather: 'rain' } });
+    expect(result.currentLocationName).toBeNull();
+    expect(result.slim.world.weather).toBe('rain');
   });
 });

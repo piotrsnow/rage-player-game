@@ -324,10 +324,16 @@ export async function runPostCampaignWorldWriteback(campaignId, {
   if (!skipExtraction) {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { coreState: true },
+      // F5 — re-merge currentLocationName so coreState.world.currentLocation is
+      // present for downstream prompt builders that may inspect it.
+      select: { coreState: true, currentLocationName: true },
     });
     const coreState = campaign?.coreState;
     if (coreState && typeof coreState === 'object') {
+      if (campaign.currentLocationName) {
+        if (!coreState.world) coreState.world = {};
+        if (!coreState.world.currentLocation) coreState.world.currentLocation = campaign.currentLocationName;
+      }
       factExtraction = (await extractWorldFacts({
         campaignId,
         coreState,

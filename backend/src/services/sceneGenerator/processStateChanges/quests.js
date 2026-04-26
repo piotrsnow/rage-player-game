@@ -84,12 +84,13 @@ export async function fireMoveNpcToPlayerTrigger(campaignId, onComplete) {
 
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    select: { coreState: true, userId: true },
+    // F5 — currentLocation lifted out of coreState into its own column.
+    select: { coreState: true, currentLocationName: true, userId: true },
   });
   if (!campaign) return;
 
   let playerLocationId = null;
-  const locName = campaign.coreState?.world?.currentLocation;
+  const locName = campaign.currentLocationName || campaign.coreState?.world?.currentLocation;
   if (locName) {
     const row = await prisma.worldLocation.findFirst({
       where: { canonicalName: locName },

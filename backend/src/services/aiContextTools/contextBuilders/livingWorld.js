@@ -51,7 +51,8 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     select: {
       livingWorldEnabled: true,
       userId: true,
-      worldBounds: true,
+      // F5 — bounds via 4 Float columns (unpacked downstream by builders)
+      boundsMinX: true, boundsMaxX: true, boundsMinY: true, boundsMaxY: true,
       settlementCaps: true,
       difficultyTier: true,
       user: { select: { contentLanguage: true } },

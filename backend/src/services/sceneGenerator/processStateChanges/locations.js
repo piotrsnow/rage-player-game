@@ -8,6 +8,7 @@ import { upsertEdge } from '../../livingWorld/travelGraph.js';
 import { getTemplate, effectiveCustomCap } from '../../livingWorld/settlementTemplates.js';
 import * as ragService from '../../livingWorld/ragService.js';
 import { buildLocationEmbeddingText } from '../../embeddingService.js';
+import { unpackWorldBounds } from '../../locationRefs.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -48,13 +49,14 @@ export async function processLocationChanges(campaignId, newLocations, { prevLoc
   // Phase F — fetch worldBounds once per batch for out-of-bounds rejection
   // in processTopLevelEntry. Sublocations inherit parent position so they
   // don't need the check. Missing bounds → legacy behaviour (no clamp).
+  // F5 — bounds source moved to 4 Float columns; unpacked to legacy shape.
   let bounds = null;
   try {
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { worldBounds: true },
+      select: { boundsMinX: true, boundsMaxX: true, boundsMinY: true, boundsMaxY: true },
     });
-    bounds = campaign?.worldBounds || null;
+    bounds = unpackWorldBounds(campaign);
   } catch { bounds = null; }
 
   for (const entry of newLocations) {

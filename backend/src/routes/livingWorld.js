@@ -174,7 +174,8 @@ export async function livingWorldRoutes(fastify) {
       loadCampaignFog({ userId: request.user.id, campaignId }),
       prisma.campaign.findUnique({
         where: { id: campaignId },
-        select: { coreState: true },
+        // F5 — currentLocation lifted out of coreState into its own column.
+        select: { coreState: true, currentLocationName: true },
       }),
     ]);
 
@@ -192,7 +193,7 @@ export async function livingWorldRoutes(fastify) {
 
     let currentLocationId = null;
     const core = full?.coreState || {};
-    const currentName = core?.world?.currentLocation || null;
+    const currentName = full?.currentLocationName || core?.world?.currentLocation || null;
     if (currentName) {
       const match = locations.find(
         (l) => l.displayName === currentName || l.canonicalName === currentName

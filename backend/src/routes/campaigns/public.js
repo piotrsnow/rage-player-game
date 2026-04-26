@@ -111,7 +111,9 @@ export async function publicCampaignRoutes(fastify) {
     );
 
     const coreState = campaign.coreState || {};
-    await reconstructFromNormalized(campaign.id, coreState);
+    await reconstructFromNormalized(campaign.id, coreState, {
+      currentLocationName: campaign.currentLocationName || null,
+    });
 
     const characterIds = await getCampaignCharacterIds(campaign.id);
     const [scenes, characters] = await Promise.all([
@@ -132,14 +134,16 @@ export async function publicCampaignRoutes(fastify) {
       where: { shareToken: request.params.token },
       select: {
         id: true, name: true, genre: true, tone: true,
-        coreState: true, createdAt: true,
+        coreState: true, currentLocationName: true, createdAt: true,
         user: { select: { email: true } },
       },
     });
     if (!campaign) return reply.code(404).send({ error: 'Campaign not found or link expired' });
 
     const coreState = campaign.coreState || {};
-    await reconstructFromNormalized(campaign.id, coreState);
+    await reconstructFromNormalized(campaign.id, coreState, {
+      currentLocationName: campaign.currentLocationName || null,
+    });
 
     if (!coreState.narratorVoiceId && config.elevenlabsDefaultVoiceId) {
       coreState.narratorVoiceId = config.elevenlabsDefaultVoiceId;

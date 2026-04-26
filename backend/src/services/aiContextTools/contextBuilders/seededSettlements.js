@@ -1,4 +1,5 @@
 import { prisma } from '../../../lib/prisma.js';
+import { unpackWorldBounds } from '../../locationRefs.js';
 
 /**
  * Phase A — build SEEDED SETTLEMENTS block for a campaign. Lists every
@@ -12,8 +13,8 @@ import { prisma } from '../../../lib/prisma.js';
  */
 export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   const SETTLEMENT_TYPES = ['hamlet', 'village', 'town', 'city', 'capital'];
-  const bounds = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
-    ? campaign.worldBounds : null;
+  // F5 — bounds source moved to 4 Float columns; unpacked to legacy shape.
+  const bounds = unpackWorldBounds(campaign);
 
   // Fetch capital (always visible) + in-bounds settlements.
   const capital = await prisma.worldLocation.findFirst({
@@ -22,7 +23,7 @@ export async function buildSeededSettlementsBlock(campaign, currentLocation) {
   });
 
   let settlementsInBounds = [];
-  if (bounds && Number.isFinite(bounds.minX) && Number.isFinite(bounds.maxX)) {
+  if (bounds) {
     settlementsInBounds = await prisma.worldLocation.findMany({
       where: {
         parentLocationId: null,

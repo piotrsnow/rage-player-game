@@ -52,11 +52,25 @@ export async function coreStateRoutes(fastify) {
       ? campaign.coreState
       : {};
 
+    const merged = deepMerge(currentState, updates);
+
+    // F5 — currentLocation lives on its own column. If the patch landed it
+    // in coreState.world, lift it before persist so the column stays the
+    // source of truth.
+    let currentLocationName;
+    if (merged?.world && typeof merged.world === 'object' && 'currentLocation' in merged.world) {
+      const raw = merged.world.currentLocation;
+      currentLocationName = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+      const { currentLocation: _drop, ...worldRest } = merged.world;
+      merged.world = worldRest;
+    }
+
     await prisma.campaign.update({
       where: { id: campaignId },
       data: {
         lastSaved: new Date(),
-        coreState: deepMerge(currentState, updates),
+        coreState: merged,
+        ...(currentLocationName !== undefined ? { currentLocationName } : {}),
       },
     });
 

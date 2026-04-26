@@ -26,6 +26,7 @@ import { upsertEdge } from './travelGraph.js';
 import { euclidean } from './positionCalculator.js';
 import * as ragService from './ragService.js';
 import { buildLocationEmbeddingText } from '../embeddingService.js';
+import { packWorldBounds } from '../locationRefs.js';
 
 const log = childLogger({ module: 'worldSeeder' });
 
@@ -235,6 +236,7 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
   }
 
   // Persist campaign-level caps + bounds so scene-gen/context can read them later.
+  // F5 — bounds went from JSONB to 4 Float columns; pack via locationRefs helper.
   const caps = { hamlet: plan.hamlet, village: plan.village, town: plan.town, city: plan.city };
   const bounds = { minX: -plan.boundsKm, maxX: plan.boundsKm, minY: -plan.boundsKm, maxY: plan.boundsKm };
   try {
@@ -242,7 +244,7 @@ export async function seedInitialWorld(campaignId, { length, difficultyTier } = 
       where: { id: campaignId },
       data: {
         settlementCaps: caps,
-        worldBounds: bounds,
+        ...packWorldBounds(bounds),
       },
     });
   } catch (err) {

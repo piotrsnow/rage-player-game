@@ -47,22 +47,23 @@ How campaign state is saved and loaded. The frontend owns an in-memory Zustand s
 
 ## `coreState` vs normalized collections
 
-`Campaign.coreState` is a **lean JSON string** holding everything the frontend needs to rehydrate a game session: character snapshots, combat state, world state (time/weather/location/facts), chat history, quest indexes, scene pointers, ai cost totals.
+`Campaign.coreState` is a **lean JSON string** holding everything the frontend needs to rehydrate a game session: character snapshots, combat state, world state (facts), chat history, quest indexes, scene pointers, ai cost totals.
 
-Heavier per-entity data lives in normalized collections (`CampaignNPC`, `CampaignQuest`, `CampaignKnowledge`, `CampaignCodex`, `CampaignScene`) with embeddings for Atlas Vector Search.
+Heavier per-entity data lives in normalized collections (`CampaignNPC`, `CampaignQuest`, `CampaignKnowledge`, `CampaignCodex`, `CampaignScene`) with embeddings for vector search. Hot/structured scalars live in dedicated columns on `Campaign` (post-F5: `currentLocationName` + `boundsMinX/MaxX/MinY/MaxY`).
 
 On save:
 
 1. Frontend builds `coreState` via `storage.saveCampaign(state)` — filters out normalized entities (`stripNormalizedFromCoreState`)
-2. `PUT /v1/campaigns/:id { coreState: JSON.stringify(...), totalCost }` — single-row Campaign update
-3. Scenes are saved separately via `POST /v1/ai/campaigns/:id/scenes` (after scene generation completes) or `POST /v1/ai/campaigns/:id/scenes/bulk`
-4. Backend `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized` sync the normalized collections from the embedded subset in `coreState`
+2. `stripNormalizedFromCoreState` also lifts `world.currentLocation` onto its own field (F5)
+3. `PUT /v1/campaigns/:id { coreState, totalCost }` — single-row Campaign update; backend writes the lifted `currentLocationName` to its column
+4. Scenes are saved separately via `POST /v1/ai/campaigns/:id/scenes` (after scene generation completes) or `POST /v1/ai/campaigns/:id/scenes/bulk`
+5. Backend `syncNPCsToNormalized`, `syncKnowledgeToNormalized`, `syncQuestsToNormalized` sync the normalized collections from the embedded subset in `coreState`
 
 On load:
 
-1. `storage.loadCampaign(id)` → `GET /v1/campaigns/:id` → backend returns `{id, userId, name, genre, tone, coreState (string), characters[], characterIds, scenes[], totalCost, lastSaved, shareToken}`
-2. Backend `reconstructFromNormalized` merges normalized entities into the returned `coreState`
-3. Frontend `_parseBackendCampaign(full)` parses `coreState` string, copies `characters[0]` onto `state.character`, hydrates the rest of the state shape
+1. `storage.loadCampaign(id)` → `GET /v1/campaigns/:id` → backend returns `{id, userId, name, genre, tone, coreState, currentLocationName, boundsMin/MaxX/Y, characters[], characterIds, scenes[], totalCost, lastSaved, shareToken}`
+2. Backend `reconstructFromNormalized` merges normalized entities into the returned `coreState`; the same call also injects `currentLocationName` back into `coreState.world.currentLocation` so the FE shape is unchanged
+3. Frontend `_parseBackendCampaign(full)` parses `coreState`, copies `characters[0]` onto `state.character`, hydrates the rest of the state shape
 4. `gameDispatch({type: 'LOAD_CAMPAIGN', payload: data})` drops it into the store
 
 ## JSONB native columns
@@ -85,6 +86,29 @@ When adding a new JSONB field, declare it `Json` (or `Json @default("[]")` for a
 - **`clearStaleEquipped(snapshot)`** — invariant guard called automatically inside `persistCharacterSnapshot`. Nulls any `equipped*` slot whose `itemKey` is no longer in the inventory. There's no FK on equipped — the snapshot bridge enforces consistency app-side.
 
 Items stack by `slugify(name)` (see [shared/domain/itemKeys.js](../../shared/domain/itemKeys.js)). Two items with the same name merge into one stack regardless of `props`; the latest write's props win. This is the F4 "option A" decision — accept the loss of per-stack uniqueness in exchange for predictable PKs and atomic-update headroom.
+
+## F5 — `coreState` surface trim (currentLocation + worldBounds out of JSONB)
+
+Two pieces of `coreState` were JSONB-shaped despite having fixed shape and frequent reads. F5 lifted both into dedicated columns on `Campaign` while keeping the FE-shape unchanged through a serializer-side bridge.
+
+**Schema delta:**
+
+- `Campaign.boundsMinX/MaxX/MinY/MaxY Float?` — replaces `worldBounds Json?`. Holds the per-campaign AI/seeder placement guardrail. Accessed by 5 readers (worldBoundsHint, seededSettlements, saturation, livingWorld builder, processStateChanges/locations) + the seeder writer.
+- `Campaign.currentLocationName String?` — flavor name of the player's current location, lifted from `coreState.world.currentLocation`. **No FK in F5.** F5b will introduce `CampaignLocation` and add a polymorphic FK pointer.
+
+**Bridge — [backend/src/services/locationRefs.js](../../backend/src/services/locationRefs.js):**
+
+- `unpackWorldBounds(campaign)` — 4 columns → legacy `{minX,maxX,minY,maxY}|null` shape so existing readers don't all need rewriting. Returns null when any column is missing (treats partial bounds as "no bounds").
+- `packWorldBounds(bounds)` — inverse, for spreading into Prisma `data` payloads.
+- `liftCurrentLocationFromCoreState(coreState)` / `injectCurrentLocationIntoCoreState(coreState, name)` — same pair for the location string. The lift is also performed inside `stripNormalizedFromCoreState` (most save paths go through that).
+
+**Round-trip flow:**
+
+1. **Save**: `stripNormalizedFromCoreState` returns `{slim, ..., currentLocationName}`. `crud.js` PUT/POST writes the column; `slim` (no `world.currentLocation`) goes to the JSONB.
+2. **Load**: GET handlers select `currentLocationName` alongside `coreState`, pass it to `reconstructFromNormalized` which injects it back into `coreState.world.currentLocation`. Same merge happens in `campaignLoader.loadCampaignState` so scene-gen sees the legacy shape.
+3. **Other write paths** that PATCH coreState (admin `/ai/campaigns/:id/core`, `crud.js` POST seedInitialWorld + startSpawn, `postCampaignWriteback`) lift currentLocation defensively.
+
+**FE is unchanged** — every read site for `gameState.world.currentLocation` keeps working because the bridge re-injects on load.
 
 ## Auto-save queue
 

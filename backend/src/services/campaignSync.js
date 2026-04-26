@@ -380,8 +380,14 @@ export async function syncQuestsToNormalized(campaignId, quests) {
   }
 }
 
-export async function reconstructFromNormalized(campaignId, coreState) {
+export async function reconstructFromNormalized(campaignId, coreState, { currentLocationName = null } = {}) {
   if (!coreState.world) coreState.world = {};
+
+  // F5 — inject currentLocationName from the dedicated column. Doesn't clobber
+  // anything caller already merged in; first write wins.
+  if (currentLocationName && !coreState.world.currentLocation) {
+    coreState.world.currentLocation = currentLocationName;
+  }
 
   const dbNpcs = await prisma.campaignNPC.findMany({
     where: { campaignId },

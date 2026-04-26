@@ -1,6 +1,4 @@
-import { childLogger } from '../../../lib/logger.js';
-
-const log = childLogger({ module: 'aiContextTools' });
+import { unpackWorldBounds } from '../../locationRefs.js';
 
 /**
  * Round B (Phase 4c) — tells premium how far in each cardinal direction the
@@ -8,20 +6,12 @@ const log = childLogger({ module: 'aiContextTools' });
  * worldBounds. Prevents "you see endless plains to the west" narration
  * when the boundary is 3 km away.
  *
- * Returns null when bounds are unset or malformed. Malformed JSON is
- * log.warn'd — admin-provided bounds failing silently would hide a
- * config drift.
+ * F5 — bounds source moved from worldBounds JSONB to 4 Float columns; reads
+ * still use the unpacked legacy shape via unpackWorldBounds.
  */
 export function computeWorldBoundsHint(campaign, location) {
-  const b = (campaign?.worldBounds && typeof campaign.worldBounds === 'object')
-    ? campaign.worldBounds : null;
+  const b = unpackWorldBounds(campaign);
   if (!b) return null;
-  if (
-    !Number.isFinite(b?.minX) || !Number.isFinite(b?.maxX)
-    || !Number.isFinite(b?.minY) || !Number.isFinite(b?.maxY)
-  ) {
-    return null;
-  }
   const px = location?.regionX ?? 0;
   const py = location?.regionY ?? 0;
   return {

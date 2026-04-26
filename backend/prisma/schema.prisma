@@ -242,7 +242,21 @@ model Campaign {
   // low|medium|high|deadly — encounter cap; separate scale from WorldLocation.dangerLevel
   difficultyTier      String  @default("low")
   settlementCaps      Json?
-  worldBounds         Json?
+
+  // F5 — worldBounds JSONB exploded into 4 nullable Float columns. AI/seeder
+  // placement guardrail; null on legacy/non-living-world campaigns. Read via
+  // unpackWorldBounds(campaign) helper which rebuilds the legacy {minX,maxX,minY,maxY}
+  // shape for callsites that share logic with seeders.
+  boundsMinX          Float?
+  boundsMaxX          Float?
+  boundsMinY          Float?
+  boundsMaxY          Float?
+
+  // F5 — flavor name of the player's current location (AI-emitted free text).
+  // Lifted out of coreState.world.currentLocation on save; synthesized back into
+  // the FE shape on read via reconstructFromNormalized. No FK in F5 (CampaignLocation
+  // model in F5b will give us the right target type for an FK pointer).
+  currentLocationName String?
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt      @db.Timestamptz
