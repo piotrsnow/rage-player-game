@@ -7,7 +7,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { findOrCreateWorldLocation } from './worldStateService.js';
+import { resolveWorldLocation } from './worldStateService.js';
 import { appendEvent, forNpc } from './worldEventLog.js';
 import { summarizeOfflineActivity } from './offlineSummarizer.js';
 import { gameTimeSince, formatGameDuration, wasClamped } from './worldTimeService.js';
@@ -27,7 +27,7 @@ const MIN_GAME_MS_FOR_SUMMARY = 30 * 60 * 1000; // 30 game-minutes
 export async function pauseNpcsAtLocation(prevLocationName) {
   if (!prevLocationName) return { paused: 0, skipped: 0 };
 
-  const location = await findOrCreateWorldLocation(prevLocationName);
+  const location = await resolveWorldLocation(prevLocationName);
   if (!location) return { paused: 0, skipped: 0 };
 
   // Phase 2: skip companions (they travel with the player — pausing them would
@@ -104,7 +104,7 @@ export async function pauseNpcsAtLocation(prevLocationName) {
 export async function resumeNpcsAtLocation(newLocationName, campaign, { provider = 'openai', timeoutMs = 8000 } = {}) {
   if (!newLocationName || !campaign) return { blurbs: [], resumed: 0, skipped: 0 };
 
-  const location = await findOrCreateWorldLocation(newLocationName);
+  const location = await resolveWorldLocation(newLocationName);
   if (!location) return { blurbs: [], resumed: 0, skipped: 0 };
 
   // Phase 2: also skip locked NPCs — they're owned by another campaign and

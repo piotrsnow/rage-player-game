@@ -12,7 +12,7 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { findOrCreateWorldLocation } from './worldStateService.js';
+import { resolveWorldLocation } from './worldStateService.js';
 import { appendDeferred, flushDeferred } from './deferredOutbox.js';
 import { appendEvent } from './worldEventLog.js';
 
@@ -164,7 +164,7 @@ export async function applyCompanionTravel({ campaignId, newLocationName, userId
   });
   if (companions.length === 0) return { moved: 0 };
 
-  const newLoc = await findOrCreateWorldLocation(newLocationName);
+  const newLoc = await resolveWorldLocation(newLocationName);
   if (!newLoc) return { moved: 0 };
 
   const now = new Date();

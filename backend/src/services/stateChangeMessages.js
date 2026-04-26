@@ -6,6 +6,23 @@ function formatMoneyDelta(mc) {
   return parts.join(' ') || '0 CP';
 }
 
+function resolveObjectiveForMessage(quest, rawObjId) {
+  if (!quest?.objectives?.length) return null;
+  const raw = rawObjId == null ? '' : String(rawObjId).trim();
+  if (raw && /^\d+$/.test(raw)) {
+    const idx = Number(raw);
+    if (idx >= 0 && idx < quest.objectives.length) return quest.objectives[idx];
+  }
+  if (raw) {
+    const exact = quest.objectives.find((o) => o.id === rawObjId);
+    if (exact) return exact;
+    const normalized = raw.toLowerCase();
+    const byDesc = quest.objectives.find((o) => (o.description || '').trim().toLowerCase() === normalized);
+    if (byDesc) return byDesc;
+  }
+  return null;
+}
+
 const templates = {
   en: {
     itemGained: (name, item) => `${name} received: ${item}`,
@@ -124,7 +141,7 @@ export function generateStateChangeMessages(stateChanges, characters, language =
       if (!update.completed) continue;
       const quest = activeQuests.find((q) => q.id === update.questId);
       const questName = quest?.name || update.questId;
-      const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
+      const obj = resolveObjectiveForMessage(quest, update.objectiveId);
       const objDesc = obj?.description || update.objectiveId;
       msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t.questObjectiveCompleted(questName, objDesc), timestamp: ts });
     }

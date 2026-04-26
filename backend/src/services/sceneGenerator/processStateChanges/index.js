@@ -6,7 +6,7 @@ import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
+import { resolveWorldLocation, resolveLocationByName } from '../../livingWorld/worldStateService.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
@@ -88,6 +88,29 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
 
   if (livingWorldEnabled && stateChanges.newItems?.length) {
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
+  }
+
+  // Auto-promote: if premium set `currentLocation` to a name that doesn't
+  // resolve anywhere (canonical OR campaign sandbox) AND it isn't already in
+  // newLocations, prepend a synthesized entry so `processLocationChanges` can
+  // create a CampaignLocation with smart position. Without this, the location
+  // is referenced but never materialized — invisible on the map. We never
+  // create a canonical WorldLocation here (resolveWorldLocation removed that
+  // path); the synthesized entry always lands in the per-campaign sandbox.
+  if (livingWorldEnabled && stateChanges.currentLocation) {
+    const name = String(stateChanges.currentLocation).trim();
+    if (name) {
+      const existing = await resolveLocationByName(name, { campaignId }).catch(() => null);
+      if (!existing) {
+        const inNewLocations = Array.isArray(stateChanges.newLocations)
+          && stateChanges.newLocations.some((e) => String(e?.name || '').trim() === name);
+        if (!inNewLocations) {
+          if (!Array.isArray(stateChanges.newLocations)) stateChanges.newLocations = [];
+          stateChanges.newLocations.unshift({ name, locationType: 'generic' });
+          log.info({ campaignId, name }, 'currentLocation references unknown place — auto-promoted to newLocations');
+        }
+      }
+    }
   }
 
   if (livingWorldEnabled && stateChanges.newLocations?.length) {
@@ -204,7 +227,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           let worldLocationId = null;
           if (stateChanges.currentLocation) {
             try {
-              const loc = await findOrCreateWorldLocation(stateChanges.currentLocation);
+              const loc = await resolveWorldLocation(stateChanges.currentLocation);
               worldLocationId = loc?.id || null;
             } catch { /* non-fatal */ }
           }

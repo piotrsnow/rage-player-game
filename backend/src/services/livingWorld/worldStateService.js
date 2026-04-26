@@ -1,7 +1,10 @@
 // Living World — canonical WorldNPC / WorldLocation CRUD + name-based dedupe.
 //
 // Two write paths:
-//   - findOrCreateWorldLocation: fuzzy-name dedupe by normalized canonical name.
+//   - resolveWorldLocation: pure fuzzy-name LOOKUP across canonical only.
+//     NEVER creates — mid-play creation must go through CampaignLocation
+//     sandbox via `findOrCreateCampaignLocation` (smart placement) or admin
+//     promotion. Returns null when the name doesn't resolve.
 //   - findOrCreateWorldNPC: exact-match dedupe on (name + role).
 //
 // Both are idempotent — safe to call from scene processing even with retries.
@@ -57,11 +60,19 @@ export function buildNpcCanonicalId({ name, role }) {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Find an existing WorldLocation via fuzzy normalized-name match, or create
- * a new one. Returns the WorldLocation row. Best-effort embed on create —
- * embedding failure doesn't block returning the record.
+ * Pure LOOKUP — find an existing WorldLocation via fuzzy normalized-name
+ * match across canonical only. Returns null when the name doesn't resolve.
+ *
+ * NEVER creates. Mid-play creation must go through CampaignLocation sandbox
+ * (`findOrCreateCampaignLocation` with smart placement) or admin promotion.
+ * Earlier versions of this function created a rogue WorldLocation at (0,0)
+ * here as a fallback — that bypassed the smart placer and dumped sandbox
+ * settlements onto the canonical map at the origin (overlapping the capital).
+ *
+ * Callers that need polymorphic resolve (canonical OR campaign sandbox)
+ * should use `resolveLocationByName({ campaignId })` instead.
  */
-export async function findOrCreateWorldLocation(rawName, { region = null, description = '' } = {}) {
+export async function resolveWorldLocation(rawName, { region = null } = {}) {
   if (!rawName || typeof rawName !== 'string') return null;
   const name = rawName.trim();
   if (!name) return null;
@@ -101,38 +112,7 @@ export async function findOrCreateWorldLocation(rawName, { region = null, descri
     }
   }
 
-  // Create new canonical record. `embeddingText` is populated but no vector
-  // is computed — see note at top of file.
-  //
-  // NOTE: this path creates a rogue location with no regionX/regionY because
-  // findOrCreateWorldLocation has no positioning context. It's designed for
-  // seed-time creation OR fallback resolution — mid-play, the proper path is
-  // `processLocationChanges → processTopLevelEntry → computeSmartPosition`
-  // (triggered by LLM emitting `newLocations`). When we reach this branch
-  // during a live campaign, it means premium set `currentLocation` to a brand
-  // new place WITHOUT a matching `newLocations` entry. Log a warning so the
-  // regression surfaces in observability; downstream the location will exist
-  // but won't appear on the player map (missing coords).
-  log.warn(
-    { name, region },
-    'findOrCreateWorldLocation: creating location without coordinates — likely a currentLocation change without matching newLocations emission',
-  );
-  const embText = description ? `${name}: ${description}` : name;
-  const created = await prisma.worldLocation.create({
-    data: {
-      canonicalName: name,
-      aliases: [name],
-      description,
-      region,
-      embeddingText: embText,
-    },
-  });
-
-  // Round E Phase 9 — fire-and-forget RAG indexing. ragService.index
-  // internally swallows and logs failures so the caller never sees them.
-  ragService.index('location', created.id, buildLocationEmbeddingText(created)).catch(() => {});
-
-  return created;
+  return null;
 }
 
 // ──────────────────────────────────────────────────────────────────────

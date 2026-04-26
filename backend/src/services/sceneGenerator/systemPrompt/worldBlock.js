@@ -113,7 +113,7 @@ export function buildActiveQuestsBlock(quests) {
   const active = (quests.active || []).filter((q) => q.type === 'main');
   if (active.length === 0) return null;
 
-  const lines = ['Active Quests (use id=... values in stateChanges.completedQuests / questUpdates):'];
+  const lines = ['Active Quests (use id=... for completedQuests; for questUpdates.objectiveId pass the number shown before the objective):'];
   for (const q of active.slice(0, 5)) {
     let line = `- ${q.name} (id=${q.id}) [${q.type || 'side'}]: ${q.description || ''}`;
     if (q.completionCondition) line += ` | Goal: ${q.completionCondition}`;
@@ -121,17 +121,19 @@ export function buildActiveQuestsBlock(quests) {
     const turnIn = q.turnInNpcId || q.questGiverId;
     if (turnIn && turnIn !== q.questGiverId) line += ` | Turn in: ${turnIn}`;
     if (q.objectives?.length) {
-      const done = q.objectives.filter((o) => o.completed);
-      const remaining = q.objectives.filter((o) => !o.completed);
-      if (done.length > 0 && remaining.length > 0) {
-        line += `\n  (${done.length}/${q.objectives.length} completed)`;
+      const doneCount = q.objectives.filter((o) => o.completed).length;
+      if (doneCount > 0 && doneCount < q.objectives.length) {
+        line += `\n  (${doneCount}/${q.objectives.length} completed)`;
       }
-      for (let i = 0; i < remaining.length; i++) {
-        const obj = remaining[i];
-        const marker = i === 0 ? '▶ NEXT' : '[ ]';
-        line += `\n  ${marker} (objId=${obj.id}) ${obj.description}`;
+      let firstPending = true;
+      for (let i = 0; i < q.objectives.length; i++) {
+        const obj = q.objectives[i];
+        if (obj.completed) continue;
+        const marker = firstPending ? '▶ NEXT' : '[ ]';
+        firstPending = false;
+        line += `\n  ${i}. ${marker} ${obj.description}`;
       }
-      if (remaining.length === 0) line += '\n  COMPLETED';
+      if (doneCount === q.objectives.length) line += '\n  COMPLETED';
     }
     lines.push(line);
   }

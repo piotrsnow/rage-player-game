@@ -1,6 +1,7 @@
-import { SKILL_NAMES, STATE_CHANGE_LIMITS } from '../data/rpgSystem';
+import { STATE_CHANGE_LIMITS } from '../data/rpgSystem';
 import { gameData } from './gameDataService';
 import { normalizeMultiplayerStateChanges } from '../../shared/contracts/multiplayer.js';
+import { normalizeSkillName } from './diceRollInference';
 import {
   clamp,
   moneyToCopper,
@@ -115,19 +116,26 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
 
   if (validated.skillProgress && typeof validated.skillProgress === 'object') {
     const maxSkillXpPerScene = 500; // max for a single boss kill
+    const rebuilt = {};
     for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
-      if (!SKILL_NAMES.includes(skillName)) {
+      const canon = normalizeSkillName(skillName);
+      if (!canon) {
         warnings.push(`Unknown skill: "${skillName}"`);
-        delete validated.skillProgress[skillName];
-      } else if (typeof xpVal !== 'number' || xpVal <= 0) {
+        continue;
+      }
+      if (typeof xpVal !== 'number' || xpVal <= 0) {
         warnings.push(`Invalid skill XP for "${skillName}": ${xpVal}`);
-        delete validated.skillProgress[skillName];
-      } else if (xpVal > maxSkillXpPerScene) {
+        continue;
+      }
+      let finalXp = xpVal;
+      if (xpVal > maxSkillXpPerScene) {
         warnings.push(`Skill XP capped for "${skillName}": ${xpVal} -> ${maxSkillXpPerScene}`);
-        validated.skillProgress[skillName] = maxSkillXpPerScene;
+        finalXp = maxSkillXpPerScene;
         corrections.push({ field: 'skillProgress', from: xpVal, to: maxSkillXpPerScene });
       }
+      rebuilt[canon] = (rebuilt[canon] || 0) + finalXp;
     }
+    validated.skillProgress = rebuilt;
   }
 
   if (validated.removeItems && Array.isArray(validated.removeItems) && character?.inventory) {

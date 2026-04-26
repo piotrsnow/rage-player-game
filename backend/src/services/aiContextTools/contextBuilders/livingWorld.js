@@ -1,7 +1,7 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { getCampaignCharacterIds } from '../../campaignSync.js';
-import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
+import { resolveWorldLocation } from '../../livingWorld/worldStateService.js';
 import { listNpcsAtLocation } from '../../livingWorld/campaignSandbox.js';
 import { forLocation as worldEventsForLocation, parseEventPayload } from '../../livingWorld/worldEventLog.js';
 import { getCompanions } from '../../livingWorld/companionService.js';
@@ -62,7 +62,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
 
   const contentLanguage = normalizeLanguage(campaign.user?.contentLanguage);
 
-  const location = await findOrCreateWorldLocation(currentLocation);
+  const location = await resolveWorldLocation(currentLocation);
   if (!location) return null;
 
   const characterIds = await getCampaignCharacterIds(campaignId);

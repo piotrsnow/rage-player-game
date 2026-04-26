@@ -132,6 +132,35 @@ Przy 50k scen/dzień = **~3M wasted queries/dzień (~10% query budget)**.
 - **No token budget enforcement w `assembleContext()`** — total prompt zwykle 3.5-7k tokens, ale runaway selection mógłby przekroczyć. Add explicit counting jeśli scenes hit context limits / cost spikes.
 - **Prisma compound indexes brakuje** na Living World models: `WorldEvent` needs `@@index([eventType, visibility, createdAt])` dla admin events feed; `CampaignNPC` needs `@@index([campaignId, canonicalWorldNpcId])` dla shadow lookups. Verify w `schema.prisma` przed next migration.
 
+### Admin / security hygiene (post-review-cleanup carryover)
+
+- **`PUT /lore/:slug` — add `maxLength: 100000` body schema** (admin może wkleić megabyty lore; admin-controlled blast radius ale higieniczne). 5 min fix w [backend/src/routes/adminLivingWorld.js](../backend/src/routes/adminLivingWorld.js). Test: spróbuj wkleić >100k → spodziewany 400.
+- **`PUT /lore/:slug` — add `config: { idempotency: true }`** (plugin już istnieje, używany w `/ai/campaigns/:id/scenes`). Double-click przy edycji powoduje drugi upsert — brak realnego damage, ale brzydkie. 2 min fix.
+- **DOMPurify w AdminWorldLoreTab markdown preview** — najpierw sprawdź czy preview używa `dangerouslySetInnerHTML` z raw markdown. Jeśli używa react-markdown lub podobnego z domyślnym escape'em → skreśl. Admin-only write + admin-only render = niski priorytet.
+- **CSP enable** — backend [server.js:61](../backend/src/server.js#L61) ma `contentSecurityPolicy: false`. Audit z 2026-04-14 dał ready-to-ship policy (whitelist origins for OpenAI/Anthropic/Stability/ElevenLabs/Meshy + GCS + Google Fonts). **Blocker:** trzeba staging env żeby zweryfikować że Three.js scene rendering, ElevenLabs TTS i image gen nie pękną. Plan: ship as `Content-Security-Policy-Report-Only` first, watch logs week, flip to enforce. **Po no-BYOK cleanup connect-src allowlist można uprościć** — FE rozmawia tylko z własnym BE (zostaje `'self'` + `wss:`).
+- **Proxy route middleware extraction** — `backend/src/routes/proxy/{openai,anthropic,elevenlabs,meshy,stability,gemini}.js` (6 plików) duplikują validation + API key resolution + rate-limit headers + error shape + cache-through-DB. Wymaga dedicated design session — variance między text-gen / image-gen+DB cache / TTS stream / 3D URL-only jest za duża dla shallow refactoru. **Blocker:** najpierw audit po no-BYOK cleanup czy któreś proxy routes nie są już dead code.
+
+---
+
+## P0' — deployment readiness (przed pierwszym publicznym deployem)
+
+Te items blokują prod deploy, nie skalowanie. Atak: przed pierwszym deployem na prod hosting (CSQL/Neon decision z F6).
+
+### `JWT_SECRET` rotation w production env
+
+Tokeny wydane pod starym secret są ważne do ich TTL (15min access + 30d refresh). Rotacja secret kasuje je wszystkie. **Akcja:** zaktualizować `JWT_SECRET` env var na Cloud Run przy najbliższym deploy — wszyscy active users zostaną wylogowani (jednorazowy koszt, akceptowalny pre-prod). Konfig już ma guard w [backend/src/config.js:5-6](../backend/src/config.js#L5) dla missing/weak default.
+
+### OpenAI model IDs verify
+
+Defaults w [backend/src/config.js:99-107](../backend/src/config.js) wskazują na `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`. Przed release potwierdzić że te ID wciąż resolvują u OpenAI. **Akcja:** `curl https://api.openai.com/v1/models` z prod key, grep ID. W razie 404 ustawić `AI_MODEL_*_OPENAI` env var na fallback (`gpt-4o` / `gpt-4o-mini`).
+
+### Cloud Tasks queue setup (prod)
+
+Ze [knowledge/decisions/cloud-run-no-redis.md](../knowledge/decisions/cloud-run-no-redis.md):
+- `gcloud tasks queues create post-scene-work --location=europe-central2`
+- Service account `rage-player-game-runtime` z `roles/cloudtasks.enqueuer`
+- OIDC verify już jest w [oidcVerify.js](../backend/src/services/oidcVerify.js)
+
 ---
 
 ## P2 — measurement-driven (F6 territory)
@@ -148,6 +177,8 @@ Trigger-driven, nie spekulatywne. Każdy punkt wymaga konkretnego pomiaru. Detai
 | `pg_cron` zamiast `setInterval` | Hosting wspiera | `RefreshToken` cleanup, `WorldEvent` >N dni cleanup |
 | HNSW tuning | Vector recall < 90% w testach | `m`, `ef_construction`, `ef_search` |
 | Bulk UNNEST raw SQL (F2 deferred) | Profile pokaże `createMany`+row-loop hot spot | Replace z `INSERT … FROM UNNEST(…)` |
+| `CampaignNPC` shadow GC | Storage growth visible w `CampaignNPC` table (1000+ campaigns × 100 NPCs ≈ 100k rows) | TTL na `updatedAt` (90d threshold) lub batch GC `Campaign.updatedAt < 90d AND status != 'active'` → kaskada usuwa shadow + child tables |
+| `WorldNPC` tick-batch concurrency cap | Auto-dispatch włączony (dziś manual-only) lub `tick-batch` bije w 429 z OpenAI/Anthropic | Concurrency cap per batch (max 10 równocześnie); skip NPCs gdzie `activeGoal`+`goalProgress` nie zmienił się; rollup grupuj po location → jedno group-nano. Patrz [knowledge/ideas/living-world-npc-auto-dispatch.md](../knowledge/ideas/living-world-npc-auto-dispatch.md). |
 
 ---
 
@@ -199,10 +230,11 @@ No code change — confirm w playtest.
 
 ## When to attack each tier
 
-- **P0**: gdy realistycznie zbliżasz się do 5k+ scen/dzień (lub przed publicznym exposure). Order: connection pool/PgBouncer first (P0.2), potem `assignGoalsForCampaign` N+1 (P0.1), reszta według ROI.
-- **P1**: opportunistically — przy każdym dotknięciu pliku z listy, fix lokalny dług przy okazji.
-- **P2**: never preemptively. Wait for trigger metric, then act.
-- **P3**: na next focused playtest sweep — bring this list, confirm or break.
+- **P0** (scaling cliffs): gdy realistycznie zbliżasz się do 5k+ scen/dzień (lub przed publicznym exposure). Order: connection pool/PgBouncer first (P0.2), potem `assignGoalsForCampaign` N+1 (P0.1), reszta według ROI.
+- **P0'** (deployment readiness): przed pierwszym publicznym deployem (jednorazowo). JWT rotation + model ID verify + Cloud Tasks queue setup.
+- **P1** (known debt): opportunistically — przy każdym dotknięciu pliku z listy, fix lokalny dług przy okazji.
+- **P2** (measurement-driven): never preemptively. Wait for trigger metric, then act.
+- **P3** (playtest verification): na next focused playtest sweep — bring this list, confirm or break.
 
 ## Cross-references
 

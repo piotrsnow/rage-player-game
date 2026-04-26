@@ -12,6 +12,25 @@ function isMoneySpent(mc) {
   return (mc.gold || 0) + (mc.silver || 0) + (mc.copper || 0) < 0;
 }
 
+// Mirrors resolveObj in applyStateChangesHandler/quests.js — premium labels each
+// objective with its array index, so objectiveId is just `objectives[Number(raw)]`.
+function resolveObjectiveForMessage(quest, rawObjId) {
+  if (!quest?.objectives?.length) return null;
+  const raw = rawObjId == null ? '' : String(rawObjId).trim();
+  if (raw && /^\d+$/.test(raw)) {
+    const idx = Number(raw);
+    if (idx >= 0 && idx < quest.objectives.length) return quest.objectives[idx];
+  }
+  if (raw) {
+    const exact = quest.objectives.find((o) => o.id === rawObjId);
+    if (exact) return exact;
+    const normalized = raw.toLowerCase();
+    const byDesc = quest.objectives.find((o) => (o.description || '').trim().toLowerCase() === normalized);
+    if (byDesc) return byDesc;
+  }
+  return null;
+}
+
 export function generateStateChangeMessages(stateChanges, state, t) {
   const msgs = [];
   let counter = 0;
@@ -142,7 +161,7 @@ export function generateStateChangeMessages(stateChanges, state, t) {
       const questName = quest?.name || update.questId;
 
       if (update.completed) {
-        const obj = quest?.objectives?.find((o) => o.id === update.objectiveId);
+        const obj = resolveObjectiveForMessage(quest, update.objectiveId);
         const objDesc = obj?.description || update.objectiveId;
         msgs.push({ id: mkId(), role: 'system', subtype: 'quest_objective_completed', content: t('system.questObjectiveCompleted', { quest: questName, objective: objDesc }), timestamp: ts });
       } else if (update.addProgress) {

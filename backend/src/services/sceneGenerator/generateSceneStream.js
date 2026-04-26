@@ -522,11 +522,20 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
     const quest = activeQuests.find((q) => q.id === upd.questId)
       || (Array.isArray(dbQuests) ? dbQuests.find((q) => q.questId === upd.questId) : null);
     const objectives = (Array.isArray(quest?.objectives) ? quest.objectives : []).map(normalizeObjective);
-    const matchKey = typeof upd.objectiveId === 'string' ? upd.objectiveId.toLowerCase() : '';
-    completedObjective = objectives.find((o) =>
-      o && (o.id === upd.objectiveId
-        || (matchKey && (o.description || '').toLowerCase() === matchKey)))
-      || { id: upd.objectiveId, description: upd.objectiveId };
+    const raw = upd.objectiveId == null ? '' : String(upd.objectiveId).trim();
+    if (raw && /^\d+$/.test(raw)) {
+      const idx = Number(raw);
+      if (idx >= 0 && idx < objectives.length) completedObjective = objectives[idx];
+    }
+    if (!completedObjective) {
+      const matchKey = raw.toLowerCase();
+      completedObjective = objectives.find((o) =>
+        o && (o.id === upd.objectiveId
+          || (matchKey && (o.description || '').toLowerCase() === matchKey)));
+    }
+    if (!completedObjective) {
+      completedObjective = { id: upd.objectiveId, description: upd.objectiveId };
+    }
     nextObjective = objectives.find((o) => o && !o.completed && o.id !== completedObjective.id) || null;
     questGiverId = quest?.questGiverId || null;
   } else if (completedQuestIds.length > 0) {

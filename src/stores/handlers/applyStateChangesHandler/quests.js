@@ -133,17 +133,20 @@ function applyQuestUpdates(draft, changes) {
   };
   const resolveObj = (quest, rawObjId) => {
     if (!quest?.objectives?.length) return null;
-    const exact = quest.objectives.find((o) => o.id === rawObjId);
-    if (exact) return exact;
-    const normalized = typeof rawObjId === 'string' ? rawObjId.trim().toLowerCase() : '';
-    if (normalized) {
+    const raw = rawObjId == null ? '' : String(rawObjId).trim();
+    if (raw && /^\d+$/.test(raw)) {
+      const idx = Number(raw);
+      if (idx >= 0 && idx < quest.objectives.length) return quest.objectives[idx];
+    }
+    if (raw) {
+      const exact = quest.objectives.find((o) => o.id === rawObjId);
+      if (exact) return exact;
+      const normalized = raw.toLowerCase();
       const byDesc = quest.objectives.find(
         (o) => (o.description || '').trim().toLowerCase() === normalized,
       );
       if (byDesc) return byDesc;
     }
-    const pending = quest.objectives.filter((o) => !o.completed);
-    if (pending.length === 1) return pending[0];
     return null;
   };
 
@@ -156,6 +159,13 @@ function applyQuestUpdates(draft, changes) {
       console.warn('[quest] objective update did not match', {
         questId: update.questId,
         objectiveId: update.objectiveId,
+        pendingCount: quest.objectives.filter((o) => !o.completed).length,
+        totalCount: quest.objectives.length,
+        objectives: quest.objectives.map((o) => ({
+          desc: o.description?.slice(0, 60),
+          completed: o.completed,
+          id: o.id,
+        })),
       });
       continue;
     }

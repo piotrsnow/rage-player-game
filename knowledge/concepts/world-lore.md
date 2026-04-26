@@ -73,7 +73,8 @@ second use-case surfaces.
 
 Revisit when:
 - lore concat exceeds ~5000 tokens → move to chunked RAG retrieval (Round D
-  in [plans/living-world-grid-quests-triggers-fog.md](../../plans/living-world-grid-quests-triggers-fog.md));
+  is a deferred optional pass; the supersession path is biome-tiles + lore
+  RAG, see [knowledge/ideas/biome-tiles.md](../ideas/biome-tiles.md));
 - multiple NPCs want filtered lore views (farmer shouldn't see royal
   secrets) → add `audienceCategories: []` to `WorldLoreSection` and filter
   per NPC in the preamble builder.

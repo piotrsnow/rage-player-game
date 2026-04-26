@@ -17,7 +17,7 @@ import { prisma } from '../../lib/prisma.js';
 import { callNano } from '../memoryCompressor.js';
 import { childLogger } from '../../lib/logger.js';
 import { appendEvent, forNpc } from './worldEventLog.js';
-import { setWorldNpcLocation, findOrCreateWorldLocation } from './worldStateService.js';
+import { setWorldNpcLocation, resolveWorldLocation } from './worldStateService.js';
 
 const log = childLogger({ module: 'npcAgentLoop' });
 
@@ -235,14 +235,17 @@ export async function runNpcTick(npcId, { provider = 'openai', timeoutMs = 5000,
   let locationIdForEvent = npc.currentLocationId || null;
 
   if (action.kind === 'move') {
-    // Resolve destination to WorldLocation id — create-or-find via findOrCreate.
-    const loc = await findOrCreateWorldLocation(action.toLocation);
+    // Resolve destination to a canonical WorldLocation. NPCs cannot point at
+    // CampaignLocations (WorldNPC.currentLocationId is a canonical-only FK),
+    // so unknown destinations log + skip — NPC stays put rather than falsely
+    // appearing at the canonical capital.
+    const loc = await resolveWorldLocation(action.toLocation);
     if (loc) {
       updateData.currentLocationId = loc.id;
       locationIdForEvent = loc.id;
       log.info({ npcId: npc.id, to: action.toLocation, worldLocationId: loc.id }, 'NPC move resolved');
     } else {
-      log.warn({ npcId: npc.id, to: action.toLocation }, 'NPC move: findOrCreateWorldLocation returned null');
+      log.warn({ npcId: npc.id, to: action.toLocation }, 'NPC move: destination not canonical — staying put');
     }
     updateData.goalProgress = buildNextGoalProgress(parseProgress(npc.goalProgress), action, now);
   } else if (action.kind === 'work_on_goal') {

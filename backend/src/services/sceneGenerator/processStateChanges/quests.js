@@ -51,19 +51,22 @@ export async function resolveActiveQuest(campaignId, rawId) {
 
 /**
  * Resolve an AI-emitted objective ref against a list of CampaignQuestObjective
- * rows (or FE-shape objectives). Premium prompt sees `description` only —
- * the BigInt PK is not exposed — so primary match is description-equality
- * and the fallback is single-pending heuristic.
+ * rows (or FE-shape objectives). Premium prompt labels each objective with its
+ * original array index, so objectiveId is just `objectives[Number(raw)]`.
+ * Description fallback covers verbatim echoes.
  */
 export function resolveObjective(objectives, rawObjectiveId) {
   if (!Array.isArray(objectives) || objectives.length === 0) return null;
-  const normalized = typeof rawObjectiveId === 'string' ? rawObjectiveId.trim().toLowerCase() : '';
-  if (normalized) {
+  const raw = rawObjectiveId == null ? '' : String(rawObjectiveId).trim();
+  if (raw && /^\d+$/.test(raw)) {
+    const idx = Number(raw);
+    if (idx >= 0 && idx < objectives.length) return objectives[idx];
+  }
+  if (raw) {
+    const normalized = raw.toLowerCase();
     const byDesc = objectives.find((o) => (o.description || '').trim().toLowerCase() === normalized);
     if (byDesc) return byDesc;
   }
-  const pending = objectives.filter((o) => !(o.completed || o.status === 'done'));
-  if (pending.length === 1) return pending[0];
   return null;
 }
 

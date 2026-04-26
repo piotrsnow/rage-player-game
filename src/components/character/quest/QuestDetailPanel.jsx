@@ -112,7 +112,7 @@ export default function QuestDetailPanel({ selected, findNpc, onVerifyObjective,
                   <p className={`text-xs leading-relaxed ${obj.completed ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
                     {obj.description}
                   </p>
-                  {obj.progress && !obj.completed && (
+                  {!obj.completed && typeof obj.progress === 'string' && obj.progress.trim() && (
                     <p className="text-[10px] text-primary-dim/70 italic mt-0.5">{obj.progress}</p>
                   )}
                 </div>

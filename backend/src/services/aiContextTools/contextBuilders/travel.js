@@ -1,4 +1,4 @@
-import { findOrCreateWorldLocation } from '../../livingWorld/worldStateService.js';
+import { resolveWorldLocation } from '../../livingWorld/worldStateService.js';
 import { loadCampaignGraph, dijkstra, classifyDetour, expandPath } from '../../livingWorld/travelGraph.js';
 import { generateTravelEvents } from '../../livingWorld/travelEventGenerator.js';
 import { loadDiscovery } from '../../livingWorld/userDiscoveryService.js';
@@ -15,7 +15,7 @@ const DIFFICULTY_RANK = { safe: 0, moderate: 1, dangerous: 2, deadly: 3 };
 export async function buildTravelBlock({ campaignId, userId, startLocation, targetName, provider, timeoutMs }) {
   if (!startLocation?.id || !targetName) return null;
 
-  const target = await findOrCreateWorldLocation(targetName).catch(() => null);
+  const target = await resolveWorldLocation(targetName).catch(() => null);
   if (!target?.id || target.id === startLocation.id) return null;
 
   // Only consider the user's discovered graph. Capital is always in the set;

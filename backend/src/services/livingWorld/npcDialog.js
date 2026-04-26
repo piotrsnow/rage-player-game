@@ -255,4 +255,4 @@ function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
-export const __testing = { buildSystemPrompt, parseDialogHistoryForCampaign };
+export const __testing = { buildSystemPrompt };

@@ -6,10 +6,10 @@
 // shared across every Living World campaign.
 //
 // Keep each list large enough that two adjacent campaigns rarely collide on
-// the same name, and so that fuzzy-dedup in `findOrCreateWorldLocation`
-// doesn't keep routing new campaigns onto the same rows. When a name is
-// already taken (per-campaign already-used set OR an existing WorldLocation
-// with that canonicalName is closer than the new slot's spacing tolerance),
+// the same name, and so that fuzzy-dedup in `resolveWorldLocation` doesn't
+// keep routing new campaigns onto the same rows. When a name is already
+// taken (per-campaign already-used set OR an existing WorldLocation with
+// that canonicalName is closer than the new slot's spacing tolerance),
 // `pickSettlementName` falls through to the next candidate.
 
 const HAMLETS = [
