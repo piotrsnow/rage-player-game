@@ -93,13 +93,15 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
           {!loading && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!disabled) onDelete();
                 }}
-                className="material-symbols-outlined text-sm text-outline hover:text-error transition-colors p-1 rounded-sm hover:bg-error/10"
+                aria-label={t('common.delete', 'Delete')}
+                className="p-1 rounded-sm text-outline hover:text-error hover:bg-error/10 transition-colors flex items-center justify-center"
               >
-                delete
+                <span className="material-symbols-outlined text-sm">delete</span>
               </button>
             </div>
           )}

@@ -1,5 +1,5 @@
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
-import { loadDiscovery } from '../../livingWorld/userDiscoveryService.js';
+import { loadCampaignFog } from '../../livingWorld/userDiscoveryService.js';
 import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
 
 /**
@@ -43,14 +43,16 @@ export async function buildTravelBlock({ campaignId, userId, startLocation, targ
     ? (targetRef.row.canonicalName || targetName)
     : (targetRef.row.name || targetName);
 
-  // Fog check — canonical locations live in the user's account fog;
-  // CampaignLocations live in the campaign fog. We treat any sandbox match
-  // as in-fog because the player already saw / created it in this campaign.
-  let targetInFog = true;
-  if (targetRef.kind === LOCATION_KIND_WORLD) {
-    const { locationIds } = await loadDiscovery(userId).catch(() => ({ locationIds: new Set() }));
-    targetInFog = locationIds.has(targetRef.row.id);
-  }
+  // Fog check — accept BOTH visited and heard-about as travel-eligible.
+  // Heard-about (NPC mentioned the place) flips the location to visible on
+  // the map and clickable for travel; the player doesn't need to have been
+  // there before. `loadCampaignFog` merges canonical (UserDiscoveredLocation)
+  // and sandbox (CampaignDiscoveredLocation) fog, so this works for both
+  // kinds. `loadDiscovery` was visited-only — wrong helper for this.
+  const fog = await loadCampaignFog({ userId, campaignId }).catch(() => ({
+    visited: new Set(), heardAbout: new Set(),
+  }));
+  const targetInFog = fog.visited.has(targetRef.row.id) || fog.heardAbout.has(targetRef.row.id);
 
   return {
     kind: 'travel',

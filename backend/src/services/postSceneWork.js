@@ -12,9 +12,10 @@ import { handleNpcKills } from './livingWorld/reputationHook.js';
 import { assignGoalsForCampaign } from './livingWorld/questGoalAssigner.js';
 import { runTickBatch } from './livingWorld/npcTickDispatcher.js';
 import { onLocationEntry, onDeadlinePass } from './livingWorld/globalNpcTriggers.js';
-import { markLocationDiscovered, markEdgeDiscoveredByUser } from './livingWorld/userDiscoveryService.js';
+import { markLocationDiscovered, markLocationHeardAbout, markEdgeDiscoveredByUser } from './livingWorld/userDiscoveryService.js';
 import { resolveLocationByName } from './livingWorld/worldStateService.js';
 import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
+import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
 import { LOCATION_KIND_WORLD } from './locationRefs.js';
 
 const log = childLogger({ module: 'postSceneWork' });
@@ -69,6 +70,31 @@ export async function handlePostSceneWork({
         .join('\n')
     : '';
 
+  // Hearsay extraction reads NPC speech only — not narration. Build a
+  // dialogue-only transcript so nano can mine `mentionedLocations` without
+  // ever picking a place name from a narrator description (per
+  // hearsay-and-ai-locations.md: only NPC-spoken mentions flip fog-of-war).
+  const sceneDialogueOnly = sceneDialogueSegments
+    .filter((seg) => seg && seg.type === 'dialogue' && typeof seg.text === 'string')
+    .map((seg) => `${seg.character || 'NPC'}: "${seg.text}"`)
+    .join('\n');
+
+  // Constraint set for nano's `mentionedLocations` bucket — every location
+  // this campaign may reference (canonical world rows shared across users
+  // PLUS this campaign's CampaignLocation sandbox). Nano picks names ONLY
+  // from this list; anything off-list is silently dropped on its side.
+  let allowedLocationNames = [];
+  if (campaign?.livingWorldEnabled) {
+    try {
+      const rows = await listLocationsForCampaign(campaignId);
+      allowedLocationNames = rows
+        .map((r) => r.displayName || r.canonicalName || r.name || null)
+        .filter((n) => typeof n === 'string' && n.trim().length > 0);
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'allowedLocationNames lookup failed (non-fatal)');
+    }
+  }
+
   // Phase 1: parallel tasks — embedding, premium stateChanges, memory compression, location summary
   const phase1Tasks = [
     generateSceneEmbedding(scene),
@@ -91,6 +117,8 @@ export async function handlePostSceneWork({
       timeoutMs: llmNanoTimeoutMs,
       sceneIndex: scene.sceneIndex,
       wrapupText,
+      dialogueText: sceneDialogueOnly,
+      allowedLocationNames,
     }),
   );
   if (newLoc && prevLoc && newLoc !== prevLoc) {
@@ -180,12 +208,15 @@ export async function handlePostSceneWork({
 
   // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC
   // promotion + worldNpcId linkage is in place. Best-effort — never blocks.
+  // `judgeKill` reads scene text to decide whether the kill was justified;
+  // we hand it the full transcript (narration + dialogue) since premium no
+  // longer emits a top-level `narrative` field.
   if (campaign?.livingWorldEnabled && stateChanges?.npcs?.some((n) => n?.alive === false)) {
     try {
       await handleNpcKills({
         campaign,
         stateChanges,
-        narrative,
+        narrative: sceneTranscript,
         playerAction,
         provider,
         timeoutMs: llmNanoTimeoutMs,
@@ -264,6 +295,39 @@ export async function handlePostSceneWork({
       } catch (err) {
         log.warn({ err, campaignId }, 'Nano state extraction processing failed (non-fatal)');
       }
+    }
+
+    // Hearsay flips. Nano emitted location names spoken inside the dialogue
+    // block + already filtered to the campaign's allowed-list. Resolve each
+    // to a polymorphic ref and mark heard-about. We bypass `processLocationMentions`
+    // (premium-emitted bucket) on purpose: that path enforces NPC knowledge-
+    // scope (anchor + 1-hop Roads + WorldNpcKnownLocation), but the campaign-
+    // creation seed already authored these locations as legitimately known to
+    // the questgiver — re-checking would only block legitimate flips. Keeps
+    // the strict premium path intact for mid-play `stateChanges.locationMentioned`.
+    const mentions = Array.isArray(nanoState.mentionedLocations) ? nanoState.mentionedLocations : [];
+    if (mentions.length > 0 && campaign?.livingWorldEnabled && campaign?.userId) {
+      const flipResults = await Promise.allSettled(mentions.map(async (name) => {
+        const ref = await resolveLocationByName(name, { campaignId });
+        if (!ref?.row?.id) return { name, flipped: false, reason: 'unresolved' };
+        await markLocationHeardAbout({
+          userId: campaign.userId,
+          locationKind: ref.kind,
+          locationId: ref.row.id,
+          campaignId,
+        });
+        return { name, flipped: true, kind: ref.kind, id: ref.row.id };
+      }));
+      const flipped = flipResults
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter((v) => v?.flipped);
+      const unresolved = flipResults
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter((v) => v && !v.flipped);
+      log.info(
+        { campaignId, sceneIndex: scene.sceneIndex, flipped: flipped.length, unresolved: unresolved.length, mentions: mentions.length },
+        'Hearsay heard-about flips',
+      );
     }
   }
   const failures = results.filter((r) => r.status === 'rejected');

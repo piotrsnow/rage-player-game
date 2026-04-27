@@ -161,7 +161,8 @@ Return JSON:
   "codexFragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
   "knowledgeEvents": [{"summary":"","importance":"low|medium|high","tags":[]}],
   "knowledgeDecisions": [{"choice":"","consequence":""}],
-  "needsRestoration": {"hunger":50} or null
+  "needsRestoration": {"hunger":50} or null,
+  "mentionedLocations": ["<exact name from Allowed locations>"]
 }
 
 BUCKET ROUTING — each fact picks EXACTLY ONE bucket. Do NOT echo the same beat across multiple buckets. When a fact could fit several, pick the MOST SPECIFIC one below and skip the others:
@@ -197,6 +198,7 @@ GM NOTES rules:
 OTHER:
 - hookAdditions: do NOT include an id — the database assigns one.
 - needsRestoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.
+- mentionedLocations: place names spoken BY AN NPC INSIDE THE "Dialogue" BLOCK only — never extract from the "Narrative" block. Pick names ONLY from the "Allowed locations" list (verbatim, case-preserving). Names NOT on that list are silently skipped. Generic regions ("las", "góry", "miasto") never count. Empty array if no Dialogue block, no Allowed list, or no qualifying mentions. No artificial cap — extract every distinct allowed-list location named.
 
 Rules:
 - dominated: true if scene has NO new information, NO state change, NO NPC reveals, NO combat result. A dramatic question with no answer = dominated.
@@ -222,7 +224,13 @@ function isDominatedScene(narrative, playerAction) {
  * Called async after each scene generation. Returns extracted state for
  * the caller to process.
  */
-export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, { timeoutMs, sceneIndex, wrapupText = null } = {}) {
+export async function compressSceneToSummary(campaignId, narrative, playerAction, provider, {
+  timeoutMs,
+  sceneIndex,
+  wrapupText = null,
+  dialogueText = '',
+  allowedLocationNames = [],
+} = {}) {
   if (isDominatedScene(narrative, playerAction)) {
     log.info({ campaignId, sceneIndex, playerAction }, 'compressSceneToSummary SKIP (dominated)');
     return null;
@@ -269,13 +277,27 @@ export async function compressSceneToSummary(campaignId, narrative, playerAction
     const narrativeBlock = wrapupText
       ? `${(narrative || '').slice(0, 1000)}\n\n[Quest wrap-up / next-objective teaser]: ${wrapupText}`
       : (narrative || '').slice(0, 1000);
+    // Dialogue block is fed separately from narrative so `mentionedLocations`
+    // extraction can target NPC speech only — narration mentions never flip
+    // fog-of-war (see hearsay-and-ai-locations.md). Allowed locations list is
+    // the universe `listLocationsForCampaign` returns for this campaign:
+    // canonical world + this-campaign sandbox. Names outside that set are
+    // silently dropped on the resolver side, but constraining nano up-front
+    // saves a round of fuzzy-match attempts on hallucinated names.
+    const dialogueBlock = (typeof dialogueText === 'string' && dialogueText.trim())
+      ? `\n\nDialogue (use ONLY for mentionedLocations — do NOT extract location names from the Narrative block above):\n${dialogueText.slice(0, 4000)}`
+      : '';
+    const allowedListBlock = (Array.isArray(allowedLocationNames) && allowedLocationNames.length > 0)
+      ? `\n\nAllowed locations (mentionedLocations must be picked verbatim from this list — names not here are skipped):\n${allowedLocationNames.map((n) => `- ${n}`).join('\n')}`
+      : '';
+
     const userPrompt = `Player action: "${playerAction || 'N/A'}"
 
 Narrative:
 ${narrativeBlock}
 
 Current summary (${currentSummary.length} facts):
-${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}`;
+${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty)'}${questContext ? `\n\nActive quests (next objective): ${questContext}` : ''}${codexSummary ? `\nKnown codex (do not duplicate): ${codexSummary}` : ''}${dialogueBlock}${allowedListBlock}`;
 
     // Reasoning tier + bumped maxTokens: 5.4-nano spends thinking tokens
     // before JSON output AND we now emit more fields (memory + gmNotes +
@@ -381,6 +403,28 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     const knowledgeDecisionsList = Array.isArray(result.knowledgeDecisions) ? result.knowledgeDecisions : [];
     const codexFragmentsList = Array.isArray(result.codexFragments) ? result.codexFragments : [];
 
+    // Hearsay catch — names spoken inside the Dialogue block. Filter against
+    // the allowed list (case-insensitive) so a hallucinated entry can't slip
+    // past the resolver further down the pipeline. Caller (`postSceneWork`)
+    // resolves the surviving names to (kind, id) and flips heard-about.
+    const allowedSet = new Set(
+      (Array.isArray(allowedLocationNames) ? allowedLocationNames : [])
+        .map((n) => (typeof n === 'string' ? n.toLowerCase() : ''))
+        .filter(Boolean),
+    );
+    const rawMentions = Array.isArray(result.mentionedLocations) ? result.mentionedLocations : [];
+    const mentionedLocations = [];
+    const seenLower = new Set();
+    for (const m of rawMentions) {
+      const name = typeof m === 'string' ? m.trim() : '';
+      if (!name) continue;
+      const lower = name.toLowerCase();
+      if (seenLower.has(lower)) continue;
+      if (allowedSet.size > 0 && !allowedSet.has(lower)) continue;
+      seenLower.add(lower);
+      mentionedLocations.push(name);
+    }
+
     log.info({
       campaignId,
       sceneIndex,
@@ -393,15 +437,17 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
       resolvedHooks: resolvedHookIds.length,
       knowledge: knowledgeEventsList.length + knowledgeDecisionsList.length,
       codex: codexFragmentsList.length,
+      mentionedLocations: mentionedLocations.length,
     }, 'compressSceneToSummary DONE');
 
-    // Return extracted state for further processing (knowledge, codex) by
-    // postSceneWork's phase 6 fan-out into CampaignKnowledge + CampaignCodex.
+    // Return extracted state for further processing (knowledge, codex,
+    // hearsay flips) by postSceneWork's phase 2 fan-out.
     return {
       knowledgeUpdates: (knowledgeEventsList.length || knowledgeDecisionsList.length)
         ? { events: knowledgeEventsList, decisions: knowledgeDecisionsList }
         : null,
       codexUpdates: codexFragmentsList,
+      mentionedLocations,
     };
   } catch (err) {
     log.error({ err }, 'Memory compression failed');

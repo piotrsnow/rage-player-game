@@ -47,6 +47,37 @@ canonical → `UserDiscoveredLocation` (account scope), sandbox →
 Violations are logged as policy warnings — nothing crashes, the AI just
 doesn't get to smuggle unknown locations past the fog.
 
+### Nano fallback path (post-scene)
+
+The premium `stateChanges.locationMentioned` bucket is opt-in — premium can
+forget to emit it, and the firstScene `dialogueSegments` (authored by
+`campaignGenerator`) never go through premium's `stateChanges` pipeline at
+all. To close that gap, the post-scene nano extractor in
+[`compressSceneToSummary`](../../backend/src/services/memoryCompressor.js)
+mines NPC-spoken location mentions as a separate bucket:
+
+- `postSceneWork` builds two extra inputs: `dialogueText` (only segments where
+  `type === 'dialogue'`, formatted `Speaker: "text"`) and `allowedLocationNames`
+  (full `listLocationsForCampaign` output — canonical world + this campaign's
+  sandbox).
+- Nano emits `mentionedLocations: ["<exact allowed-list name>", …]`. Prompt
+  rule constrains source to the Dialogue block (narration is excluded) and the
+  allowed list (off-list names are skipped). No artificial cap.
+- `compressSceneToSummary` filters the result against the allowed set
+  (case-insensitive) and dedups before returning it alongside
+  `knowledgeUpdates` / `codexUpdates`.
+- `postSceneWork` resolves each surviving name via `resolveLocationByName` and
+  calls `markLocationHeardAbout` directly. **The per-NPC knowledge-scope check
+  is intentionally bypassed** — at campaign creation time the questgiver was
+  authored with knowledge of the locations they reference (`knownByQuestGiver`
+  in `initialLocations`), so re-validating mid-play would only block legitimate
+  flips. The strict `processLocationMentions` path is retained for premium-
+  emitted `stateChanges.locationMentioned` (where premium might mis-attribute).
+
+Net effect: an NPC saying "idź do Słonecznych Łanów" in firstScene
+flips that location to heard-about as part of the existing post-scene work,
+even though the firstScene JSON has no `stateChanges` field.
+
 ## AI-created campaign locations
 
 **Top-level creation is fully blocked mid-play.** Whatever locationType the
