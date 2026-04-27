@@ -38,6 +38,7 @@ enum LocationType {
   cave
   interior
   dungeon_room
+  campaignPlace
 }
 
 enum DiscoveryState {

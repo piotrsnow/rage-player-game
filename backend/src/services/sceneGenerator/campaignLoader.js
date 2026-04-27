@@ -18,7 +18,16 @@ export async function loadCampaignState(campaignId) {
     prisma.campaign.findUnique({
       where: { id: campaignId },
       // F5 — currentLocationName lifted from coreState.world.currentLocation; merged below.
-      select: { coreState: true, livingWorldEnabled: true, currentLocationName: true },
+      // F5b — currentLocationKind/Id pair surfaced for the travel resolver
+      // (needs the polymorphic ref to load the row + its locationType +
+      // parent walk-up chain).
+      select: {
+        coreState: true,
+        livingWorldEnabled: true,
+        currentLocationName: true,
+        currentLocationKind: true,
+        currentLocationId: true,
+      },
     }),
     prisma.campaignNPC.findMany({
       where: { campaignId },
@@ -56,6 +65,28 @@ export async function loadCampaignState(campaignId) {
   if (campaign.currentLocationName) {
     if (!coreState.world) coreState.world = {};
     if (!coreState.world.currentLocation) coreState.world.currentLocation = campaign.currentLocationName;
+  }
+
+  // Load `currentLocationType` so the conditional prompt rules can decide
+  // whether to surface the sublocation-creation slot (in a settlement /
+  // canonical sublocation) or the dungeon-room navigation slot
+  // (currentLocationType='dungeon_room'). Wilderness/null = no slot offered.
+  if (campaign.currentLocationKind && campaign.currentLocationId) {
+    try {
+      const row = campaign.currentLocationKind === 'world'
+        ? await prisma.worldLocation.findUnique({
+            where: { id: campaign.currentLocationId },
+            select: { locationType: true },
+          })
+        : await prisma.campaignLocation.findUnique({
+            where: { id: campaign.currentLocationId },
+            select: { locationType: true },
+          });
+      if (row?.locationType) {
+        if (!coreState.world) coreState.world = {};
+        coreState.world.currentLocationType = row.locationType;
+      }
+    } catch { /* non-fatal — conditional rules just won't fire */ }
   }
 
   // Single-player → first participant. Multiplayer routes through multiplayerAI.
@@ -134,5 +165,8 @@ export async function loadCampaignState(campaignId) {
     dbCodex,
     dbKnowledge,
     livingWorldEnabled: campaign.livingWorldEnabled === true,
+    currentRef: campaign.currentLocationKind && campaign.currentLocationId
+      ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
+      : null,
   };
 }

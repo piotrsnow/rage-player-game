@@ -20,7 +20,11 @@ import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'startSpawnPicker' });
 
-const TOP_LEVEL_TYPES = ['capital', 'city', 'town', 'village', 'hamlet'];
+// Hard rule: campaigns START in either the canonical capital (Yeralden) or
+// one of the seeded villages. No towns/cities/hamlets/wilderness — those exist
+// in the world but are not start-eligible (towns/cities aren't seeded
+// canonically anyway; hamlets are too small to host a quest-giver setup).
+const TOP_LEVEL_TYPES = ['capital', 'village'];
 
 function weightedPick(items, weightFn) {
   if (!items.length) return null;
@@ -65,9 +69,7 @@ export async function pickStartSpawn() {
     const settlement = weightedPick(settlements, (s) => {
       if (s.locationType === 'capital') return 40;
       if (s.locationType === 'village') return 30;
-      if (s.locationType === 'town') return 25;
-      if (s.locationType === 'city') return 20;
-      return 10;
+      return 0;
     });
     if (!settlement) return null;
 
@@ -116,7 +118,31 @@ export async function pickStartSpawn() {
     const pool = npcsByLoc.get(sublocation.id);
     const npc = pool[Math.floor(Math.random() * pool.length)];
 
-    return { settlement, sublocation, npc };
+    // 4. Enrich with the NPC's baseline knowledge + known canonical locations.
+    //    Used by campaignGenerator to anchor the AI quest in this NPC's
+    //    in-fiction perspective and by initialLocationsResolver to validate
+    //    AI-emitted parent/anchor names against the NPC's allowed-knowledge set.
+    const [npcBaselineKnowledgeRows, npcKnownLocationRows] = await Promise.all([
+      prisma.worldNpcKnowledge.findMany({
+        where: { npcId: npc.id, source: 'baseline' },
+        orderBy: { addedAt: 'asc' },
+        select: { content: true },
+        take: 6,
+      }),
+      prisma.worldNpcKnownLocation.findMany({
+        where: { npcId: npc.id, grantedBy: 'seed' },
+        select: { location: { select: { canonicalName: true, locationType: true } } },
+      }),
+    ]);
+    const npcBaselineKnowledge = npcBaselineKnowledgeRows
+      .map((r) => r.content)
+      .filter((c) => typeof c === 'string' && c.trim());
+    const npcKnownLocations = npcKnownLocationRows
+      .map((r) => r.location)
+      .filter((l) => l && typeof l.canonicalName === 'string')
+      .map((l) => ({ canonicalName: l.canonicalName, locationType: l.locationType || null }));
+
+    return { settlement, sublocation, npc, npcBaselineKnowledge, npcKnownLocations };
   } catch (err) {
     log.warn({ err: err?.message }, 'pickStartSpawn failed — returning null');
     return null;

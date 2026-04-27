@@ -7,7 +7,6 @@ import {
 import { markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
 import { computeSmartPosition, findMergeCandidate } from '../../livingWorld/positionCalculator.js';
 import {
-  unpackWorldBounds,
   LOCATION_KIND_WORLD,
   LOCATION_KIND_CAMPAIGN,
 } from '../../locationRefs.js';
@@ -39,52 +38,87 @@ const log = childLogger({ module: 'sceneGenerator' });
  * CampaignLocations are off-graph by design — distance to/from them is
  * Euclidean on regionX/regionY, not Dijkstra over Roads.
  */
-export async function processLocationChanges(campaignId, newLocations, { prevLoc = null } = {}) {
-  if (!Array.isArray(newLocations) || newLocations.length === 0) return;
+/**
+ * Mid-play location processor. Post-(round-no-AI-locations):
+ *   - Top-level entries (parentLocationName=null) are silently rejected.
+ *     BE travel resolver owns currentLocation arbitration; AI is no longer
+ *     allowed to invent new top-level rows mid-play. The creation-time
+ *     `initialLocationsResolver` is the only writer for top-level rows
+ *     during a campaign now.
+ *   - Sublocation entries (parentLocationName set) are still honored —
+ *     player walks into a new tavern/forge/wing inside an existing
+ *     settlement, AI emits the entry, BE materializes it. Returns the
+ *     created refs so the caller (processStateChanges/index.js) can run
+ *     the auto-promote-to-currentLocation rule.
+ *
+ * @returns {Promise<{createdSublocs: Array<{kind:string,row:Object}>}>}
+ */
+export async function processLocationChanges(campaignId, newLocations, { prevLoc: _prevLoc = null } = {}) {
+  if (!Array.isArray(newLocations) || newLocations.length === 0) return { createdSublocs: [] };
 
-  // Resolve anchor once (used by every top-level entry in this batch).
-  // Surface failures via log.warn so downstream "skipped — no anchor"
-  // doesn't mask the root cause.
-  let anchorRef = null;
-  if (prevLoc) {
-    try {
-      anchorRef = await resolveLocationByName(prevLoc, { campaignId });
-    } catch (err) {
-      log.warn({ err: err?.message, campaignId, prevLoc }, 'anchor resolution failed — top-level entries will be skipped');
-    }
-  }
-
-  // F5 — bounds source moved to 4 Float columns; unpacked to legacy shape
-  // for computeSmartPosition (which still expects {minX,maxX,minY,maxY}).
-  let bounds = null;
-  try {
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { boundsMinX: true, boundsMaxX: true, boundsMinY: true, boundsMaxY: true },
-    });
-    bounds = unpackWorldBounds(campaign);
-  } catch { bounds = null; }
-
+  const createdSublocs = [];
   for (const entry of newLocations) {
     if (!entry?.name || typeof entry.name !== 'string') continue;
 
     try {
       if (entry.parentLocationName) {
-        await processSublocationEntry(campaignId, entry);
+        const ref = await processSublocationEntry(campaignId, entry);
+        if (ref) createdSublocs.push(ref);
       } else {
-        await processTopLevelEntry(campaignId, entry, anchorRef, bounds);
+        log.info(
+          { campaignId, name: entry.name, locationType: entry.locationType },
+          'Top-level newLocations emission rejected mid-play — BE travel resolver owns location arbitration',
+        );
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, name: entry.name }, 'processLocationChanges entry failed');
     }
   }
+  return { createdSublocs };
 }
+
+/**
+ * Resolve an anchor token to a canonical WorldLocation row. Used by
+ * `initialLocationsResolver` for `anchor.relativeTo` standalone entries:
+ *   - `'capital'`            → the WorldLocation with locationType='capital'
+ *   - `'questGiver'`         → the canonical sublocation the start-spawn NPC
+ *                              belongs to (via `WorldNPC.currentLocationId`)
+ *   - any other string       → exact-match canonical lookup by canonicalName
+ *
+ * Canonical-only by design — anchoring AI-emitted standalone locations on
+ * a CampaignLocation row would let one ephemeral run influence another's
+ * placement. Returns `{ kind, row }` or `null` when the token doesn't
+ * resolve.
+ */
+export async function resolveAnchorToken(token, campaignId, startSpawn = null) {
+  if (typeof token !== 'string' || !token.trim()) return null;
+  const t = token.trim();
+
+  if (t === 'capital') {
+    const row = await prisma.worldLocation.findFirst({ where: { locationType: 'capital' } });
+    return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+  }
+
+  if (t === 'questGiver') {
+    if (!startSpawn?.npcCurrentLocationId) return null;
+    const row = await prisma.worldLocation.findUnique({ where: { id: startSpawn.npcCurrentLocationId } });
+    return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+  }
+
+  // Exact canonicalName hit only — no fuzzy fallback. Caller validated `t`
+  // against the NPC's allowed-knowledge set before calling, so a miss here
+  // is real (canonical row deleted between seed-spawn pick and POST).
+  const row = await prisma.worldLocation.findUnique({ where: { canonicalName: t } });
+  return row ? { kind: LOCATION_KIND_WORLD, row } : null;
+}
+
+export { processSublocationEntry, processTopLevelEntry };
 
 async function processSublocationEntry(campaignId, entry) {
   const parentRef = await resolveLocationByName(entry.parentLocationName, { campaignId });
   if (!parentRef) {
     log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Parent location resolve failed');
-    return;
+    return null;
   }
   const parent = parentRef.row;
 
@@ -106,7 +140,7 @@ async function processSublocationEntry(campaignId, entry) {
 
   if (!created) {
     log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Sublocation create failed');
-    return;
+    return null;
   }
   log.info(
     { campaignId, parent: parent.canonicalName || parent.name, child: entry.name, parentKind: parentRef.kind },
@@ -114,6 +148,7 @@ async function processSublocationEntry(campaignId, entry) {
   );
 
   await autoDiscoverCreated({ campaignId, kind: LOCATION_KIND_CAMPAIGN, id: created.id });
+  return { kind: LOCATION_KIND_CAMPAIGN, row: created };
 }
 
 // Phase A/B — settlements are seeded at campaign creation; AI cannot invent
@@ -122,17 +157,21 @@ async function processSublocationEntry(campaignId, entry) {
 // This function only runs when livingWorldEnabled is true (gated upstream).
 const BLOCKED_MIDPLAY_LOCATION_TYPES = new Set(['hamlet', 'village', 'town', 'city', 'capital']);
 
-async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null) {
+async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null, { anchorOverride = null } = {}) {
   // FUTURE — see knowledge/ideas/biome-tiles.md. When the biome-tile grid lands,
   // this path should clamp the placed position to the current tile's bounds AND
   // inherit the tile's biome → locationType mapping (mountains tile → mountain
   // locationType when AI doesn't specify). Today AI inventions land with
-  // `locationType='generic'` whenever the LLM omits it; tiles will fix the root.
-  if (!anchorRef?.row) {
+  // `locationType='campaignPlace'` whenever the LLM omits it; tiles will fix the root.
+  // `anchorOverride` (if set) takes precedence over `anchorRef`, used by
+  // `initialLocationsResolver` to anchor on `capital`/`questGiver`/named
+  // canonical locations independently of the scene-start `prevLoc`.
+  const effectiveAnchorRef = anchorOverride && anchorOverride.row ? anchorOverride : anchorRef;
+  if (!effectiveAnchorRef?.row) {
     log.warn({ campaignId, name: entry.name }, 'Top-level location skipped — no anchor (prevLoc)');
     return;
   }
-  const locationType = entry.locationType || 'generic';
+  const locationType = entry.locationType || 'campaignPlace';
 
   if (BLOCKED_MIDPLAY_LOCATION_TYPES.has(locationType)) {
     log.info(
@@ -142,7 +181,7 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null)
     return;
   }
 
-  const anchor = anchorRef.row;
+  const anchor = effectiveAnchorRef.row;
 
   // Existing top-level rows for spacing/collision: pull both canonical
   // WorldLocation and this-campaign CampaignLocation. Sublocations (parent

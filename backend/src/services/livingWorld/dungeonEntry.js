@@ -17,7 +17,6 @@
 
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
-import { resolveLocationByName } from './worldStateService.js';
 import { ensureDungeonSeeded } from './dungeonSeedGenerator.js';
 import { LOCATION_KIND_WORLD } from '../locationRefs.js';
 
@@ -32,46 +31,60 @@ const log = childLogger({ module: 'dungeonEntry' });
  * @param {object} params.stateChanges   — parsed stateChanges from premium (mutated)
  * @param {string} [params.prevLoc]     — previous scene's location name
  */
-export async function handleDungeonEntry({ stateChanges, prevLoc = null, campaignId = null }) {
-  const nextLoc = stateChanges?.currentLocation;
-  if (!nextLoc || typeof nextLoc !== 'string') return;
-  if (nextLoc === prevLoc) return;
+/**
+ * Post-(round-no-AI-locations) signature: takes the post-travel-resolve
+ * `currentRef` instead of mutating an AI-emitted `stateChanges.currentLocation`.
+ * Writes Campaign.currentLocation* directly when a redirect happens, and
+ * returns the new ref so the caller can update its in-memory snapshot.
+ *
+ * Returns either `null` (no redirect) or `{kind, id, name}` (redirected to
+ * entrance room).
+ */
+export async function handleDungeonEntry({ campaignId, currentRef = null, prevLoc = null }) {
+  if (!currentRef?.kind || !currentRef?.id) return null;
+  if (currentRef.kind !== LOCATION_KIND_WORLD) return null;
+  if (currentRef.name && currentRef.name === prevLoc) return null;
 
   try {
-    const resolved = await resolveLocationByName(nextLoc, { campaignId });
-    if (!resolved) return;
-
-    // F5b — dungeon seeding is canonical-only (rooms become WorldLocation rows
-    // and Roads connect them). CampaignLocation dungeons stay as flat AI-created
-    // locations without auto-seeded rooms.
-    if (resolved.kind !== LOCATION_KIND_WORLD) return;
-    const target = resolved.row;
+    const target = await prisma.worldLocation.findUnique({
+      where: { id: currentRef.id },
+      select: { id: true, canonicalName: true, locationType: true },
+    });
+    if (!target) return null;
 
     // Already in a dungeon room — nothing to do.
-    if (target.locationType === 'dungeon_room') return;
-
+    if (target.locationType === 'dungeon_room') return null;
     // Not a top-level dungeon — bail.
-    if (target.locationType !== 'dungeon') return;
+    if (target.locationType !== 'dungeon') return null;
 
     const seed = await ensureDungeonSeeded({ dungeon: target });
     if (!seed?.entranceRoomId) {
       log.warn({ dungeonId: target.id, name: target.canonicalName }, 'dungeon seed produced no entrance room');
-      return;
+      return null;
     }
 
     const entranceRoom = await prisma.worldLocation.findUnique({
       where: { id: seed.entranceRoomId },
-      select: { canonicalName: true },
+      select: { id: true, canonicalName: true },
     });
-    if (!entranceRoom?.canonicalName) return;
+    if (!entranceRoom?.canonicalName) return null;
 
     log.info(
       { dungeon: target.canonicalName, entrance: entranceRoom.canonicalName, seeded: seed.seeded },
       'dungeon entry — redirecting currentLocation to entrance room',
     );
-    stateChanges.currentLocation = entranceRoom.canonicalName;
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        currentLocationName: entranceRoom.canonicalName,
+        currentLocationKind: LOCATION_KIND_WORLD,
+        currentLocationId: entranceRoom.id,
+      },
+    });
+    return { kind: LOCATION_KIND_WORLD, id: entranceRoom.id, name: entranceRoom.canonicalName };
   } catch (err) {
-    log.warn({ err: err?.message, nextLoc }, 'handleDungeonEntry failed (non-fatal)');
+    log.warn({ err: err?.message, currentRef }, 'handleDungeonEntry failed (non-fatal)');
+    return null;
   }
 }
 

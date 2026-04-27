@@ -48,8 +48,6 @@ import {
   buildItemAttributionBlock,
   buildDungeonRoomStaticHint,
   buildDungeonRoomFullSchema,
-  buildNewLocationsStaticHint,
-  buildNewLocationsFullSchema,
   buildQuestGiverHintBlock,
 } from './livingWorldBlock.js';
 
@@ -94,14 +92,14 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
     worldSettingBlock(campaign),
   ];
 
-  // Living World static-content blocks (item attribution + schema hints). Treść
-  // jest niezmienna w sesji — trafia do cache prefix (Anthropic ephemeral,
-  // OpenAI auto-prefix). Pełne schematy dungeon/newLocations lecą warunkowo
-  // w dynamicSections gdy gracz faktycznie ich potrzebuje.
+  // Living World static-content blocks. Item attribution + dungeon-flow hints
+  // stay; the location-policy slot (newLocations / currentLocation) moved
+  // ENTIRELY into conditionalRules — it now fires only when the player is
+  // somewhere a slot is actually available (settlement / canonical-subloc /
+  // dungeon_room). Wilderness scenes don't see it at all.
   if (livingWorldEnabled) {
     staticSections.push(buildItemAttributionBlock());
     staticSections.push(buildDungeonRoomStaticHint());
-    staticSections.push(buildNewLocationsStaticHint());
   }
 
   // DM narrator sliders (poeticism/grittiness/detail/humor/drama) — per-campaign
@@ -146,15 +144,11 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   for (const block of recentContext) dynamicSections.push(block);
 
   if (livingWorldEnabled) {
-    // Pełne schematy wstrzykiwane warunkowo, gdy gracz ich faktycznie potrzebuje:
-    // - dungeon full schema: gdy coreState.dungeonRoom istnieje (gracz w lochu)
-    // - newLocations full schema: gdy intent='travel' lub 'first_scene'
-    //   (gracz się rusza w świecie albo startuje kampanię)
+    // Dungeon-room flow stateChanges (trap/loot/cleared flags) — only when the
+    // player is actually in a dungeon. The currentLocation slot for room-to-
+    // room nav now lives in conditionalRules' LOCATION POLICY block.
     if (cs.dungeonRoom) {
       dynamicSections.push(buildDungeonRoomFullSchema());
-    }
-    if (intent === 'travel' || intent === 'first_scene') {
-      dynamicSections.push(buildNewLocationsFullSchema());
     }
 
     const questGiver = buildQuestGiverHintBlock(questGiverHint);

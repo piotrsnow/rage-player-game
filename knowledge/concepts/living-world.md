@@ -131,10 +131,22 @@ Dropped columns (dead hacks from pre-shadow era):
 - `WorldNPC.goalTargetCampaignId`, `goalTargetCharacterId` — replaced by
   the shadow-split architecture.
 
-Campaign creation (crud.js POST) now honours `parsed._startSpawn` from the
-campaignGenerator SSE stream: overrides `currentLocation` to the picked
-sublocation, flags matching quests with `forcedGiver=true`, clones the
-starter NPC as CampaignNPC, and discovers the sublocation canonically.
+Campaign creation flow (two requests, BE-side handoff):
+1. `POST /v1/ai/generate-campaign` (SSE) — `pickStartSpawn` runs, hard-binds
+   the AI prompt to a canonical (settlement, sublocation, NPC) trio, AND
+   stashes the trio in [startSpawnCache](../../backend/src/services/livingWorld/startSpawnCache.js)
+   keyed by userId (TTL 10 min, single-use).
+2. `POST /v1/campaigns` — `consumeStartSpawn(userId)` reads the cache,
+   overrides `currentLocation` to the picked sublocation, flags matching
+   quests with `forcedGiver=true`, **relinks** the ephemeral CampaignNPC
+   that `syncNPCsToNormalized` just created (matching by name) by setting
+   its `worldNpcId` to the canonical instead of cloning a duplicate, and
+   discovers the sublocation canonically. Cache miss → fall through to
+   seedInitialWorld's CampaignLocation start (no crash).
+
+Why cache-not-FE-round-trip: postProcessCampaignResult on the FE strips
+unknown fields, so an attached `_startSpawn` on the parsed payload was
+silently dropped before the campaign POST ever saw it.
 
 Open follow-ups: `npcLifecycle` pause semantics still operate on canonical
 row (could migrate to shadow if per-campaign pause is ever needed).

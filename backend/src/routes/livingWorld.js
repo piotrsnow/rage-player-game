@@ -217,6 +217,11 @@ export async function livingWorldRoutes(fastify) {
         discoveredSubLocationIds: [...fog.discoveredSubLocationIds],
       },
       currentLocationId,
+      // FE banner fallback when the player is in wilderness (no row match):
+      // `currentLocationId=null` + `currentLocationName='Las'` → render banner
+      // instead of pin. Always include the name so the FE never has to guess
+      // which kind of "no pin" state it's in.
+      currentLocationName: currentName || null,
     });
   });
 

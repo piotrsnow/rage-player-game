@@ -29,6 +29,7 @@ import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
 import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
+import { resolveTravelDestination } from '../livingWorld/travelResolver.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
@@ -56,6 +57,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     userApiKeys = null,
     combatResult = null,
     achievementState = null,
+    userId = null,
   } = options;
   let resolvedMechanics = resolvedMechanicsOpt;
   const creativityEligible = isCreativityEligible(playerAction, { isCustomAction, fromAutoPlayer });
@@ -78,7 +80,9 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       dbQuests,
       dbCodex,
       livingWorldEnabled,
+      currentRef,
     } = await loadCampaignState(campaignId);
+    let activeCurrentRef = currentRef;
 
     // 2. Intent classification. Fetch the most recent scene (narrative +
     // chosenAction + index) so the classifier sees continuity. Fast query —
@@ -99,7 +103,10 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
         timeoutMs: llmNanoTimeoutMs,
       },
     );
-    onEvent({ type: 'intent', data: { intent: intentResult._intent || 'freeform' } });
+    onEvent({ type: 'intent', data: {
+      intent: intentResult._intent || 'freeform',
+      ...(intentResult._travelTarget ? { travelTarget: intentResult._travelTarget } : {}),
+    } });
 
     // 2a. Trade shortcut
     const trade = tryTradeShortcut(intentResult, coreState, dbNpcs);
@@ -116,6 +123,53 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       if (combat.intent) onEvent({ type: 'intent', data: { intent: combat.intent } });
       onEvent({ type: 'complete', data: { scene: combat.result, sceneIndex: -1 } });
       return;
+    }
+
+    // 2a3. Travel resolver — BE-side arbitration of `currentLocation`. AI no
+    // longer emits `stateChanges.currentLocation`; intent classifier extracts
+    // `_travelTarget`, fog-visible matcher resolves it to canonical/campaign
+    // row, miss in civilization is a no-op (AI subloc creation will handle),
+    // miss in wilderness/null lands a flavor name with no row materialized.
+    // Snapshot pre-resolve currentLocation — postSceneWork compares newLoc
+    // vs prevLoc to fire location-summary nano + edge discovery hooks; we
+    // need the scene-start name regardless of any travel resolution that
+    // mutates `coreState.world.currentLocation` in place below.
+    const preResolveLocationName = coreState.world?.currentLocation || null;
+    if (livingWorldEnabled && intentResult._intent === 'travel' && userId) {
+      try {
+        const dest = await resolveTravelDestination({
+          campaignId,
+          userId,
+          currentRef: activeCurrentRef,
+          intent: intentResult,
+          playerAction,
+          dbNpcs,
+          recentScenes: prevSceneRow ? [prevSceneRow] : [],
+          gameStateSummary: typeof coreState.gameStateSummary === 'string' ? coreState.gameStateSummary : '',
+        });
+        if (dest) {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: {
+              currentLocationName: dest.name,
+              currentLocationKind: dest.kind,
+              currentLocationId: dest.id,
+            },
+          }).catch((err) => log.warn({ err: err?.message, campaignId }, 'Failed to persist travel destination'));
+          if (!coreState.world) coreState.world = {};
+          coreState.world.currentLocation = dest.name;
+          // `dest.row.locationType` is set on fog hits; wilderness fallback
+          // leaves it null (and `kind/id=null` so conditional rules don't fire
+          // the sublocation slot — exactly what we want in raw terrain).
+          coreState.world.currentLocationType = dest.row?.locationType || null;
+          activeCurrentRef = dest.kind && dest.id ? { kind: dest.kind, id: dest.id, name: dest.name } : null;
+          onEvent({ type: 'travel_resolved', data: {
+            kind: dest.kind, id: dest.id, name: dest.name, source: dest.source,
+          } });
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'travel resolver failed (non-fatal)');
+      }
     }
 
     // 2b. Pre-roll 3 dice sets + resolve nano-detected skill check
@@ -309,17 +363,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       difficultyTier: coreState.campaign?.difficultyTier || 'medium',
     });
 
-    // 6d2. Dungeon entry hook — if premium emitted a currentLocation that
-    // points to a top-level dungeon, seed it (idempotent) and redirect
-    // currentLocation to the entrance room so FE + next scene see the
-    // deterministic room, not the dungeon stub. Best-effort, non-blocking.
-    if (livingWorldEnabled && sceneResult.stateChanges) {
+    // 6d2. Dungeon entry hook — if travel resolver landed on a top-level
+    // dungeon (canonical), seed it (idempotent) and redirect currentLocation
+    // to the entrance room so FE + next scene see the deterministic room,
+    // not the dungeon stub. Best-effort, non-blocking. Updates Campaign DB
+    // + activeCurrentRef in place so downstream `postResolveLoc` reflects
+    // the entrance room.
+    if (livingWorldEnabled && activeCurrentRef) {
       try {
-        await handleDungeonEntry({
-          stateChanges: sceneResult.stateChanges,
-          prevLoc: coreState.world?.currentLocation || null,
+        const redirected = await handleDungeonEntry({
           campaignId,
+          currentRef: activeCurrentRef,
+          prevLoc: preResolveLocationName,
         });
+        if (redirected) {
+          activeCurrentRef = redirected;
+          if (!coreState.world) coreState.world = {};
+          coreState.world.currentLocation = redirected.name;
+          coreState.world.currentLocationType = 'dungeon_room';
+        }
       } catch (err) {
         log.warn({ err: err?.message }, 'handleDungeonEntry failed (non-fatal)');
       }
@@ -451,13 +513,19 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // Szeptów") lands in gameStateSummary and survives into the next scene's
     // prompt. CampaignScene schema doesn't persist the wrap-up separately,
     // so without this the continuity signal dies after the 'complete' event.
+    // Post-(round-no-AI-locations): `newLoc` is no longer derived from AI's
+    // `stateChanges.currentLocation` — travel resolver already wrote it. We
+    // pass the post-resolve currentLocation NAME so postSceneWork can detect
+    // movement (newLoc !== prevLoc) and trigger location-summary nano + edge
+    // discovery hooks. `prevLoc` is the scene-start name (pre-resolve).
+    const postResolveLoc = activeCurrentRef?.name || coreState.world?.currentLocation || null;
     enqueuePostSceneWork({
       sceneId: savedScene.id,
       campaignId,
       playerAction,
       provider,
-      newLoc: sceneResult.stateChanges?.currentLocation || null,
-      prevLoc: coreState.world?.currentLocation || null,
+      newLoc: postResolveLoc,
+      prevLoc: preResolveLocationName,
       wrapupText: sceneResult.dialogueIfQuestTargetCompleted?.text || null,
       llmNanoTimeoutMs,
     }).catch((err) =>

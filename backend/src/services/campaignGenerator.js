@@ -2,8 +2,9 @@ import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 import { pickStartSpawn } from './livingWorld/startSpawnPicker.js';
+import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startSpawnCache.js';
 
-export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null } = {}, onEvent) {
+export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
   const resolvedModel = model || config.aiModels.premium[resolvedProvider];
@@ -11,9 +12,23 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
   // Round B (Phase 3) — pick a canonical start-spawn trio BEFORE prompt
   // assembly. The picker returns null when no canonical world is seeded
   // yet; campaign-gen then falls back to free-form invention. When present,
-  // the trio is injected into the prompt as a hard bind.
+  // the trio is injected into the prompt as a hard bind AND stashed in the
+  // BE-side cache so `POST /v1/campaigns` (the next request from the same
+  // user) can apply the canonical override without round-tripping through
+  // the FE — postProcessCampaignResult would silently drop unknown fields.
   const startSpawn = await pickStartSpawn().catch(() => null);
   if (startSpawn) {
+    if (userId) {
+      rememberStartSpawn(userId, {
+        settlementName: startSpawn.settlement.canonicalName,
+        sublocationName: startSpawn.sublocation.canonicalName,
+        npcName: startSpawn.npc.name,
+        npcCanonicalId: startSpawn.npc.canonicalId,
+        npcCurrentLocationId: startSpawn.npc.currentLocationId || null,
+        npcBaselineKnowledge: Array.isArray(startSpawn.npcBaselineKnowledge) ? startSpawn.npcBaselineKnowledge : [],
+        npcKnownLocations: Array.isArray(startSpawn.npcKnownLocations) ? startSpawn.npcKnownLocations : [],
+      });
+    }
     onEvent({ type: 'start_spawn', data: {
       settlement: startSpawn.settlement.canonicalName,
       sublocation: startSpawn.sublocation.canonicalName,
@@ -29,21 +44,19 @@ export async function generateCampaignStream(settings, { provider = 'openai', mo
     const accumulated = await streamFn(
       systemPrompt,
       userPrompt,
-      { model: resolvedModel, maxTokens: 8000, apiKey },
+      { model: resolvedModel, maxTokens: 10000, apiKey },
       (text) => onEvent({ type: 'chunk', text }),
     );
 
     const parsed = parseResponse(accumulated);
-    // Round B — attach the picker decision to the payload so the /v1/campaigns
-    // POST handler can override questGiverId / locationId defensively and set
-    // forcedGiver=true when persisting.
-    if (startSpawn && parsed && typeof parsed === 'object') {
-      parsed._startSpawn = {
-        settlementName: startSpawn.settlement.canonicalName,
-        sublocationName: startSpawn.sublocation.canonicalName,
-        npcName: startSpawn.npc.name,
-        npcCanonicalId: startSpawn.npc.canonicalId,
-      };
+    // Forward AI's `initialLocations` to the BE-side cache so POST /v1/campaigns
+    // (next request from this user) can apply them. FE round-tripping isn't an
+    // option — useGameState ignores `aiResult.initialLocations` and stores
+    // `world.locations: []`, so the field would be dropped before campaign
+    // create ever sees it. Same cache, same TTL, same single-use semantics as
+    // the start-spawn binding.
+    if (userId && startSpawn && Array.isArray(parsed?.initialLocations)) {
+      attachInitialLocations(userId, parsed.initialLocations);
     }
     onEvent({ type: 'complete', data: parsed });
   } catch (err) {
@@ -318,6 +331,36 @@ STARTING LOCATION + QUEST-GIVER (HARD BIND — DO NOT DEVIATE):
 `
     : '';
 
+  // Thematic anchor for the AI: the starter NPC's lived knowledge + the
+  // canonical locations they can reference. Quest content + new locations
+  // (`initialLocations`) MUST stay inside this surface so the player meets
+  // the NPC, gets a quest grounded in their world, and travels to thematic
+  // sublocations that the engine actually placed on the map at create time.
+  const baselineFacts = Array.isArray(startSpawn?.npcBaselineKnowledge)
+    ? startSpawn.npcBaselineKnowledge.slice(0, 6)
+    : [];
+  const knownLocs = Array.isArray(startSpawn?.npcKnownLocations)
+    ? startSpawn.npcKnownLocations
+    : [];
+  const npcKnowledgeBlock = startSpawn && (baselineFacts.length || knownLocs.length)
+    ? `
+
+STARTING NPC'S KNOWLEDGE (anchor your quest in this — DO NOT DEVIATE):
+- Lived knowledge:
+${baselineFacts.length ? baselineFacts.map((f) => `  · ${f}`).join('\n') : '  · (none)'}
+- Locations they know (canonical, fixed):
+${knownLocs.length ? knownLocs.map((l) => `  · ${l.canonicalName}${l.locationType ? ` (${l.locationType})` : ''}`).join('\n') : '  · (none)'}
+- Quest narrative MUST reference at least ONE knowledge fact OR one of the known locations above.
+- You MAY introduce NEW thematic locations via \`initialLocations\` (max 5). Each new location MUST either:
+    (a) be a sublocation of one of the NPC's known canonical locations
+        (set \`parentLocationName\` to that exact canonical name), OR
+    (b) be standalone, anchored relative to \`questGiver\`, \`capital\`, or one of
+        the NPC's known canonical names (set \`anchor.relativeTo\`).
+- NEVER reference a fictional or unknown name as parent/anchor — the engine will silently drop the entry.
+- \`biome\` field is a STYLE HINT for your description ("leśna polana" if biome=forest). The resolver does not place by biome today; it will once the biome-tile grid ships.
+`
+    : '';
+
   return `Create a new RPGon campaign with these parameters:
 - Genre: ${settings.genre}
 - Tone: ${settings.tone}
@@ -328,7 +371,7 @@ STARTING LOCATION + QUEST-GIVER (HARD BIND — DO NOT DEVIATE):
 ${characterNameLine}
 ${speciesLine}
 - Player's story idea: "${settings.storyPrompt}"
-${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}
+${langInstruction}${existingCharNote}${humorousToneGuidance}${starterBindBlock}${npcKnowledgeBlock}
 
 Generate the campaign foundation. The game uses the RPGon custom RPG system with 6 attributes (scale 1-25): Sila (Strength), Inteligencja (Intelligence), Charyzma (Charisma), Zrecznosc (Dexterity), Wytrzymalosc (Endurance), Szczescie (Luck). Plus Mana as a magic resource.
 
@@ -396,6 +439,21 @@ Respond with ONLY valid JSON:
     {"name": "NPC_4 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_6"]},
     {"name": "NPC_5 full name", "gender": "male|female", "role": "...", "personality": "...", "location": "...", "attitude": "...", "relatedObjectiveIds": ["obj_7"]}
   ],
+  "initialLocations": [
+    {
+      "name": "string (narratively distinctive, ≥ 2 substantive words)",
+      "locationType": "campaignPlace|wilderness|ruin|camp|cave|forest|dungeon|mountain|interior",
+      "description": "1-2 sentences thematically tied to the NPC's knowledge",
+      "biome": "plains|forest|hills|mountains|swamp|wasteland|coast|urban",
+      "parentLocationName": "<canonical name from NPC's known locations> | null",
+      "anchor": {
+        "relativeTo": "questGiver|capital|<canonical name from NPC's known locations>",
+        "distance": "very_close|close|medium|far|very_far",
+        "direction": "N|NE|E|SE|S|SW|W|NW|null"
+      },
+      "knownByQuestGiver": true
+    }
+  ],
   "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3", "Fact 4", "Fact 5"],
   "campaignStructure": {
     "acts": ${lp.actsJson},
@@ -430,6 +488,16 @@ NPC SOURCE POLICY (Living World):
 - Minor objectives (fetch, deliver, talk to X, search Y) MAY introduce an ephemeral CampaignNPC (unique to this playthrough). These ephemeral NPCs need a name + role + location + personality; they are NOT promoted to the canonical world mid-play.
 - Category hint for each NPC in initialNPCs: guard | merchant | commoner | priest | adventurer (broad bucket). Pick what best matches their role so the questgiver picker can route future offers sanely.
 - Do NOT invent a new "King Torvan" / "Arcykapłanka Lyana" / other canonical names unless the starter bind above names them. Canonical NPCs are authoritative.
+
+IMPORTANT for initialLocations (only when STARTING NPC'S KNOWLEDGE block above is present):
+- Emit 0 to 5 thematic NEW locations the quest will route the player through. These materialize on the map BEFORE scene 1 so the player sees a coherent itinerary.
+- Each entry MUST satisfy ONE of:
+    (a) sublocation: \`parentLocationName\` is set to a canonical name from the NPC's known locations; \`anchor\` is ignored.
+    (b) standalone: \`parentLocationName\` is null; \`anchor.relativeTo\` is \`questGiver\`, \`capital\`, or a canonical name from the NPC's known locations.
+- Names must be narratively distinctive (≥ 2 substantive words). \`description\` ties the place into the quest beats and the NPC's lore.
+- \`knownByQuestGiver\`: set to true when the questgiver should be presumed to know about the place from the start (recorded as a minor experience entry on their shadow row).
+- DO NOT emit settlement types (hamlet/village/town/city/capital) — those are seeded at creation and any AI emit is silently rejected.
+- If the STARTING NPC'S KNOWLEDGE block is missing (campaign without canonical seed), emit \`"initialLocations": []\` — fields below are still required by schema, just leave the array empty.
 
 IMPORTANT for characterSuggestion:
 - The player already has a character with stats/skills/money. Do NOT generate attributes, skills, mana, or money.

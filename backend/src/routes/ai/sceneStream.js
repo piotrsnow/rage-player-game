@@ -55,6 +55,7 @@ export async function sceneStreamRoutes(fastify) {
       provider, model, language, dmSettings, resolvedMechanics,
       needsSystemEnabled, characterNeeds, isFirstScene, sceneCount,
       isCustomAction, fromAutoPlayer, userApiKeys, combatResult, achievementState,
+      userId: request.user.id,
     };
 
     const writeEvent = (event) => {

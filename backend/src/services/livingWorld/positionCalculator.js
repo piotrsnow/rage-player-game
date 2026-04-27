@@ -44,11 +44,14 @@ export const DISTANCE_UNITS = {
 // defaults to the implicit "close" bucket so narration that just mentions
 // "you find a cave" still materializes within walking distance.
 export const DISTANCE_HINT_RANGE = {
-  close:    [0.1, 2.0],
-  near:     [0.1, 2.0],
-  nearby:   [0.1, 2.0],
-  far:      [2.1, 4.0],
-  distant:  [2.1, 4.0],
+  very_close: [0.1, 0.7],
+  close:      [0.1, 2.0],
+  near:       [0.1, 2.0],
+  nearby:     [0.1, 2.0],
+  medium:     [3.0, 5.0],
+  far:        [2.1, 4.0],
+  distant:    [2.1, 4.0],
+  very_far:   [5.0, 10.0],
 };
 
 export const MIN_SECTOR_SPACING = 3; // km — min distance from farthest existing in same sector

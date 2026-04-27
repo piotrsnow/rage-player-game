@@ -18,7 +18,7 @@ export async function campaignStreamRoutes(fastify) {
 
     if (!writeSseHead(request, reply)) return;
 
-    const opts = { provider, model, language, userApiKeys };
+    const opts = { provider, model, language, userApiKeys, userId: request.user?.id };
     const writeEvent = (event) => {
       try {
         reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);

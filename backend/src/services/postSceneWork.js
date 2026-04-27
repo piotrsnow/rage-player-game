@@ -74,7 +74,17 @@ export async function handlePostSceneWork({
     generateSceneEmbedding(scene),
   ];
   if (stateChanges) {
-    phase1Tasks.push(processStateChanges(campaignId, stateChanges, { prevLoc, sceneIndex: scene.sceneIndex }));
+    // Post-(round-no-AI-locations): auto-promote new sublocation → currentLocation
+    // needs the canonical "where the player is now" ref so it can walk up the
+    // parent chain. Travel resolver already wrote `Campaign.currentLocation*`
+    // before this call, so the loaded `campaign` row carries the post-travel
+    // ref — exactly the ancestor anchor we want.
+    const currentRef = campaign?.currentLocationKind && campaign?.currentLocationId
+      ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
+      : null;
+    phase1Tasks.push(processStateChanges(campaignId, stateChanges, {
+      prevLoc, sceneIndex: scene.sceneIndex, currentRef,
+    }));
   }
   phase1Tasks.push(
     compressSceneToSummary(campaignId, sceneTranscript, playerAction, provider, {

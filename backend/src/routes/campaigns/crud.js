@@ -22,7 +22,9 @@ import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
 import { getOrCloneCampaignNpc } from '../../services/livingWorld/campaignSandbox.js';
 import { markLocationDiscovered } from '../../services/livingWorld/userDiscoveryService.js';
 import { resolveLocationByName } from '../../services/livingWorld/worldStateService.js';
-import { LOCATION_KIND_WORLD } from '../../services/locationRefs.js';
+import { consumeStartSpawn, peekStartSpawn } from '../../services/livingWorld/startSpawnCache.js';
+import { applyInitialLocations } from '../../services/livingWorld/initialLocationsResolver.js';
+import { LOCATION_KIND_WORLD, unpackWorldBounds } from '../../services/locationRefs.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -191,6 +193,7 @@ export async function crudCampaignRoutes(app) {
     // settlement, so the write covers both the human name and the polymorphic
     // pointer in a single update.
     let seededStartingLocation = null;
+    let seededBounds = null;
     if (livingWorldEnabled === true) {
       try {
         const campaignLength = typeof parsed?.campaign?.length === 'string' ? parsed.campaign.length : 'Medium';
@@ -199,6 +202,7 @@ export async function crudCampaignRoutes(app) {
           difficultyTier: typeof difficultyTier === 'string' ? difficultyTier : 'low',
         });
         seededStartingLocation = seedResult.startingLocationName;
+        seededBounds = seedResult.bounds || null;
         if (seededStartingLocation) {
           if (!slim.world) slim.world = {};
           slim.world.currentLocation = seededStartingLocation;
@@ -214,6 +218,27 @@ export async function crudCampaignRoutes(app) {
       } catch (err) {
         log.error({ err: err?.message, campaignId: campaign.id }, 'seedInitialWorld failed');
       }
+    }
+
+    // Round B+ — apply AI-emitted initialLocations into the campaign sandbox
+    // before NPC/quest/knowledge sync runs. We peek (don't consume) the
+    // start-spawn cache so the canonical override branch below can still
+    // read npcCanonicalId / sublocationName when it consumes. Cache miss or
+    // missing initialLocations → silent skip.
+    const peekedSpawn = peekStartSpawn(request.user.id);
+    if (peekedSpawn && Array.isArray(peekedSpawn.initialLocations) && peekedSpawn.initialLocations.length > 0) {
+      const allowedAnchorNames = new Set(
+        (peekedSpawn.npcKnownLocations || [])
+          .map((l) => (l && typeof l.canonicalName === 'string' ? l.canonicalName : null))
+          .filter(Boolean),
+      );
+      await applyInitialLocations({
+        campaignId: campaign.id,
+        locations: peekedSpawn.initialLocations.slice(0, 5),
+        bounds: seededBounds || unpackWorldBounds(campaign),
+        startSpawn: peekedSpawn,
+        allowedAnchorNames,
+      }).catch((err) => log.error({ err: err?.message, campaignId: campaign.id }, 'applyInitialLocations failed'));
     }
 
     // Bind characters to this campaign. Lock is cleared on campaign delete
@@ -237,7 +262,12 @@ export async function crudCampaignRoutes(app) {
     // seedWorld) or this campaign's CampaignLocation rows; resolveLocationByName
     // handles both. Null kind/id is fine (means we couldn't resolve), the name
     // still carries.
-    const startSpawn = parsed?._startSpawn || null;
+    //
+    // Source: BE-side cache populated by `generateCampaignStream` for the same
+    // user. The cache is the only path — round-tripping through the FE was
+    // fragile because postProcessCampaignResult drops unknown fields. Cache
+    // miss → `null`, falling back to seedInitialWorld's CampaignLocation start.
+    const startSpawn = consumeStartSpawn(request.user.id);
     if (startSpawn?.sublocationName) {
       if (!slim.world) slim.world = {};
       slim.world.currentLocation = startSpawn.sublocationName;
@@ -269,10 +299,28 @@ export async function crudCampaignRoutes(app) {
       try {
         const canonical = await prisma.worldNPC.findUnique({
           where: { canonicalId: startSpawn.npcCanonicalId },
-          select: { id: true, currentLocationId: true },
+          select: { id: true, name: true, currentLocationId: true },
         });
         if (canonical) {
-          await getOrCloneCampaignNpc(campaign.id, canonical.id);
+          // syncNPCsToNormalized just created an ephemeral CampaignNPC for the
+          // AI's quest-giver (matched by name). If we called getOrCloneCampaignNpc
+          // here it would create a SECOND row with a slug suffix, leaving the
+          // quest pointing at the unlinked ephemeral one. Relink the existing
+          // shadow instead — same npcId slug, just sets worldNpcId+isAgent.
+          const existing = await prisma.campaignNPC.findFirst({
+            where: { campaignId: campaign.id, name: { equals: canonical.name, mode: 'insensitive' } },
+            select: { id: true, worldNpcId: true },
+          });
+          if (existing) {
+            if (!existing.worldNpcId) {
+              await prisma.campaignNPC.update({
+                where: { id: existing.id },
+                data: { worldNpcId: canonical.id, isAgent: true },
+              });
+            }
+          } else {
+            await getOrCloneCampaignNpc(campaign.id, canonical.id);
+          }
           if (canonical.currentLocationId) {
             await markLocationDiscovered({
               userId: request.user.id,

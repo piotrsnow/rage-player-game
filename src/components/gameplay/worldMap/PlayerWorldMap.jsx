@@ -210,6 +210,16 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     );
   }
 
+  // Wilderness banner — when BE travel resolver landed the player in a
+  // server-generated flavor location ("Las", "Pustkowia"...) there's no row
+  // to pin to (currentLocationId=null), so the canvas pulse is suppressed.
+  // The banner reassures the player that the engine knows where they are.
+  // Pre-biome-tiles flavor; once tiles ship, this morphs into a tile
+  // descriptor overlay.
+  const wildernessBanner = data && !data.currentLocationId && data.currentLocationName
+    ? data.currentLocationName
+    : null;
+
   return (
     <div ref={containerRef} className="relative w-full h-[480px] rounded-sm overflow-hidden border border-outline-variant/15">
       <canvas
@@ -220,6 +230,11 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
         onPointerLeave={() => setHoveredId(null)}
         onClick={handleClick}
       />
+      {wildernessBanner && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-sm bg-surface/90 backdrop-blur-sm border border-outline-variant/30 text-[12px] font-medium text-on-surface pointer-events-none">
+          📍 {wildernessBanner}
+        </div>
+      )}
       {loading && !data && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <LoadingSpinner size="sm" text={t('common.loading')} />

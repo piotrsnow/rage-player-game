@@ -6,7 +6,8 @@ import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveWorldLocation, resolveLocationByName } from '../../livingWorld/worldStateService.js';
+import { resolveWorldLocation } from '../../livingWorld/worldStateService.js';
+import { walkUpAncestors } from '../../livingWorld/travelResolver.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
@@ -27,7 +28,18 @@ export { shouldPromoteToGlobal, generateSceneEmbedding };
 
 const log = childLogger({ module: 'sceneGenerator' });
 
-export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null } = {}) {
+// Returns true when `currentId` is a dungeon_room AND `targetName` resolves
+// to another dungeon_room. Lets AI navigate between rooms via
+// `stateChanges.currentLocation` while keeping all other emissions ignored.
+async function isDungeonRoomMove(currentId, targetName) {
+  const [current, target] = await Promise.all([
+    prisma.worldLocation.findUnique({ where: { id: currentId }, select: { locationType: true } }),
+    prisma.worldLocation.findUnique({ where: { canonicalName: targetName }, select: { locationType: true } }),
+  ]);
+  return current?.locationType === 'dungeon_room' && target?.locationType === 'dungeon_room';
+}
+
+export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null, currentRef = null } = {}) {
   // Fetch campaign once to check living-world flag + userId for Phase 4
   // WorldEvent attribution (cheap — same record is already loaded by
   // postSceneWork for the same campaignId).
@@ -77,7 +89,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       data: stateChanges.campaignComplete,
       ownerUserId,
       sceneGameTime,
-      currentLocationName: stateChanges.currentLocation,
+      currentLocationName: currentRef?.name || null,
     });
     await applyFameFromEvent(campaignCharacterIds, {
       eventType: 'campaign_complete',
@@ -90,31 +102,78 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
   }
 
-  // Auto-promote: if premium set `currentLocation` to a name that doesn't
-  // resolve anywhere (canonical OR campaign sandbox) AND it isn't already in
-  // newLocations, prepend a synthesized entry so `processLocationChanges` can
-  // create a CampaignLocation with smart position. Without this, the location
-  // is referenced but never materialized — invisible on the map. We never
-  // create a canonical WorldLocation here (resolveWorldLocation removed that
-  // path); the synthesized entry always lands in the per-campaign sandbox.
-  if (livingWorldEnabled && stateChanges.currentLocation) {
-    const name = String(stateChanges.currentLocation).trim();
-    if (name) {
-      const existing = await resolveLocationByName(name, { campaignId }).catch(() => null);
-      if (!existing) {
-        const inNewLocations = Array.isArray(stateChanges.newLocations)
-          && stateChanges.newLocations.some((e) => String(e?.name || '').trim() === name);
-        if (!inNewLocations) {
-          if (!Array.isArray(stateChanges.newLocations)) stateChanges.newLocations = [];
-          stateChanges.newLocations.unshift({ name, locationType: 'generic' });
-          log.info({ campaignId, name }, 'currentLocation references unknown place — auto-promoted to newLocations');
+  // Post-(round-no-AI-locations): AI no longer emits `stateChanges.currentLocation`
+  // for overworld movement (BE travel resolver owns that field). The single
+  // exception is dungeon-room navigation — when the player is in a dungeon_room
+  // and walks through a labeled exit, AI emits the next room's canonical name
+  // and we honor it because dungeon edges are pre-seeded canonical Roads.
+  // Anything else gets a log warn + ignore.
+  if (typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()) {
+    const targetName = stateChanges.currentLocation.trim();
+    const isDungeonNav = currentRef?.kind === 'world' && currentRef?.id
+      && (await isDungeonRoomMove(currentRef.id, targetName).catch(() => false));
+    if (isDungeonNav) {
+      try {
+        const target = await prisma.worldLocation.findUnique({
+          where: { canonicalName: targetName },
+          select: { id: true, canonicalName: true, locationType: true },
+        });
+        if (target?.locationType === 'dungeon_room') {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: {
+              currentLocationName: target.canonicalName,
+              currentLocationKind: 'world',
+              currentLocationId: target.id,
+            },
+          });
+          log.info({ campaignId, room: target.canonicalName }, 'dungeon-room nav: currentLocation updated from AI emission');
         }
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId, targetName }, 'dungeon-room nav update failed');
       }
+    } else {
+      log.warn(
+        { campaignId, ignored: targetName },
+        'AI emitted stateChanges.currentLocation outside dungeon-nav — ignored (BE travel resolver is authoritative)',
+      );
     }
   }
 
+  let locResult = { createdSublocs: [] };
   if (livingWorldEnabled && stateChanges.newLocations?.length) {
-    await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc });
+    locResult = await processLocationChanges(campaignId, stateChanges.newLocations, { prevLoc }) || { createdSublocs: [] };
+  }
+
+  // Auto-promote: AI emitted exactly one new sublocation whose parent is in
+  // the player's walk-up ancestor chain → set it as currentLocation. Covers
+  // intra-settlement (gracz wchodzi do nowej tawerny), inter-subloc within
+  // canonical settlement (Komnata Tronowa → Skarbiec, both subs of Yeralden),
+  // and child-of-canonical-subloc (Wieża Maga → Pracownia). Multi-subloc
+  // emission (AI mentions kilka budynków) does NOT auto-promote — only one
+  // is the player's actual destination, and we'd guess wrong.
+  if (livingWorldEnabled && locResult.createdSublocs.length === 1 && currentRef) {
+    try {
+      const created = locResult.createdSublocs[0];
+      const parentKey = `${created.row.parentLocationKind}:${created.row.parentLocationId}`;
+      const ancestors = await walkUpAncestors(currentRef);
+      if (ancestors.has(parentKey)) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            currentLocationName: created.row.name,
+            currentLocationKind: created.kind,
+            currentLocationId: created.row.id,
+          },
+        });
+        log.info(
+          { campaignId, sublocId: created.row.id, sublocName: created.row.name },
+          'Auto-promoted new sublocation to currentLocation (parent in walk-up chain)',
+        );
+      }
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId }, 'auto-promote sublocation → currentLocation failed (non-fatal)');
+    }
   }
 
   // Round B (Phase 4b) — hearsay. `locationMentioned` is an array of
@@ -218,16 +277,22 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     // impact already wrote a global event — no duplication.
     if (!hasExplicitImpact) {
       const sideQuests = completedMeta.filter((q) => q.type !== 'main');
+      const auditLocationName = currentRef?.name || null;
       for (const quest of sideQuests) {
         const verdict = await auditQuestWorldImpact(quest, {
-          locationName: stateChanges.currentLocation,
+          locationName: auditLocationName,
           sceneSummary: stateChanges.campaignComplete?.summary || null,
         });
         if (verdict?.isMajor) {
           let worldLocationId = null;
-          if (stateChanges.currentLocation) {
+          if (auditLocationName && currentRef?.kind === 'world') {
+            // Skip the resolveWorldLocation hop when we already know the
+            // canonical id from currentRef. Wilderness/campaign rows leave
+            // `worldLocationId=null` (event still records via campaignId).
+            worldLocationId = currentRef.id;
+          } else if (auditLocationName) {
             try {
-              const loc = await resolveWorldLocation(stateChanges.currentLocation);
+              const loc = await resolveWorldLocation(auditLocationName);
               worldLocationId = loc?.id || null;
             } catch { /* non-fatal */ }
           }
@@ -240,7 +305,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
               gate: 'nano_audit',
               reason: verdict.reason,
               questName: quest.name,
-              locationName: stateChanges.currentLocation || null,
+              locationName: auditLocationName,
             },
             visibility: 'global',
             gameTime: sceneGameTime,

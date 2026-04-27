@@ -13,6 +13,15 @@ const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_
 const LORE_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
 const MAGICAL_LOC_RE = /jaskini|dungeon|ruin|wież|tower|crypt|temple|świątyni|portal|magiczn|arcane|nekromant|podziemn/;
 
+// Location types where AI MAY emit a new sublocation entry. Settlements +
+// canonical sublocations of settlements (interior/dungeon as parents are
+// allowed because canonical sublocs can host their own children, e.g. Wieża
+// Maga → Pracownia). Wilderness/forest/cave/etc. drop out — those are bare
+// terrain, not sublocation hosts.
+const SUBLOCATION_HOST_TYPES = new Set([
+  'capital', 'city', 'town', 'village', 'hamlet', 'interior', 'dungeon',
+]);
+
 export function buildConditionalRules({ intent, coreState, scenePhase = null }) {
   const rules = [];
   const cs = coreState;
@@ -65,6 +74,31 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null }) 
       `Only experienced, friendly NPCs. Not merchants/peasants/hostile.`,
     );
   }
+
+  // Location-policy slots — added ONLY when the player is somewhere a slot
+  // makes sense. Settlement / canonical-subloc → sublocation creation. Inside
+  // a dungeon_room → currentLocation reassignment to the next room. Anywhere
+  // else (wilderness, raw terrain, null) → neither slot is offered, so AI
+  // can't even try to emit them. Keeps the prompt lean and stops drift.
+  const currentLocType = world.currentLocationType || null;
+  if (currentLocType && SUBLOCATION_HOST_TYPES.has(currentLocType)) {
+    const currentLocName = world.currentLocation || '<current settlement>';
+    rules.push(
+      `LOCATION POLICY (sublocation-allowed): the player is inside "${currentLocName}". ` +
+      `If they walk INTO a new tavern/forge/wing/chamber that doesn't already exist, you MAY add ONE entry to stateChanges.newLocations:\n` +
+      `  "newLocations": [{"name":"<≥2 words>", "parentLocationName":"${currentLocName}", "locationType":"interior", "slotType":"<slotType or null>", "description":"<optional>"}]\n` +
+      `- parentLocationName MUST be a real canonical name from above (current settlement OR a canonical sublocation in its walk-up chain). Fictional parents → silent reject.\n` +
+      `- Emit ONE entry when the player actually walks IN — engine auto-promotes that single new sublocation to currentLocation. Multiple emitted entries do NOT auto-promote.\n` +
+      `- Mentioning a building without entering it ≠ a newLocations entry. Just narrate.`,
+    );
+  } else if (currentLocType === 'dungeon_room') {
+    rules.push(
+      `LOCATION POLICY (dungeon-nav): the player is inside a dungeon room. When they walk through a labeled exit, set:\n` +
+      `  "currentLocation": "<exact canonical name from the room's Exits list>"\n` +
+      `Engine validates the target IS another dungeon_room — anything else is ignored. DO NOT use this field for anything else.`,
+    );
+  }
+  // else: no slot offered. Currentlocation + newLocations are BE-controlled.
 
   const mainQuest = (quests.active || []).find((q) => q.type === 'main');
   const allMainDone = mainQuest?.objectives?.length > 0 && mainQuest.objectives.every((o) => o.completed);
