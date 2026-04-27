@@ -15,8 +15,9 @@ hits provider cost and latency quickly. Naive per-scene batch ticks
 ### Global — `WorldNPC`
 
 - Lives in a single `currentLocationId`.
-- Stores its own `activeGoal`, `goalProgress`, `homeLocationId`,
-  `schedule`, `goalDeadlineAt`, `alive`, etc.
+- Stores its own world-level `activeGoal`, `goalProgress`,
+  `homeLocationId`, `schedule`, `goalDeadlineAt`, `alive`, etc.
+  (campaign side does not write these — see "Background goals — archived" below).
 - Tick fires only when an EVENT demands it (see triggers below). No
   per-scene polling of the full roster.
 
@@ -37,25 +38,24 @@ hits provider cost and latency quickly. Naive per-scene batch ticks
   anywhere the campaign goes; the global keeps living at its own
   location for other campaigns.
 
-## Event-driven triggers ([globalNpcTriggers.js](../../backend/src/services/livingWorld/globalNpcTriggers.js))
+## Tick triggers — admin-only
 
-Three entry points, each fire-and-forget with budget caps:
+Auto-triggers were removed 2026-04-28 pending a redesign of the whole
+campaign-side NPC-action mechanic (see
+[knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md)).
+Today `runNpcTick` fires only when an admin clicks **Manual Tick** on the
+admin NPC list:
 
-- **`onLocationEntry`** — player just entered a `WorldLocation` different
-  from the previous scene's. Picks up to 3 NPCs at that location,
-  ordered `keyNpc=true` first then `lastTickAt ASC`, stamps
-  `lastLocationPingAt` immediately to prevent double-fire from
-  concurrent scenes, and runs `runNpcTick(id, { force: true })` on each.
-- **`onDeadlinePass`** — any NPC with `goalDeadlineAt <= sceneGameTime`
-  gets a catch-up tick (max 5 per scene default). The deadline is
-  cleared BEFORE the tick runs so a failed tick doesn't retrigger.
-- **`onCrossCampaignMajor`** — when another campaign writes a
-  `visibility='global'` event in this location, up to 2 local NPCs
-  tick once so the rumour settles into their state.
+- `POST /v1/admin/livingWorld/npcs/:id/tick` ([adminLivingWorld.js](../../backend/src/routes/adminLivingWorld.js)) — single NPC, force-bypasses cadence guards (paused / too_soon).
+- `POST /v1/admin/livingWorld/tick-batch` — batch via [`runTickBatch`](../../backend/src/services/livingWorld/npcTickDispatcher.js), respects cadence.
 
-All three bypass the normal `tickIntervalScenes` cadence via
-`force: true`. Legacy `runTickBatch` remains as a belt-and-suspenders
-fallback at `limit=5` for NPCs not caught by any trigger.
+Deleted along with this change:
+- `globalNpcTriggers.js` (`onLocationEntry`, `onDeadlinePass`, `onCrossCampaignMajor` — first two were per-scene auto, third was always dead code).
+- The `postSceneWork.js` tick-batch fallback (limit=5 per scene).
+
+When auto-triggers return they should be redesigned, not restored —
+the original event model assumed the BE-driven `assignGoalsForCampaign`
+mechanic, which is itself archived.
 
 ## Reconciliation ([cloneReconciliation.js](../../backend/src/services/livingWorld/cloneReconciliation.js))
 
@@ -72,14 +72,14 @@ CampaignNPC with a `worldNpcId`:
 Failures are swallowed — the scene pipeline continues with stale clone
 state rather than blocking.
 
-## Background goals
+## Background goals — archived
 
-For globals without a quest role, `questGoalAssigner.generateBackgroundGoal`
-picks a role-appropriate sideways agenda from a deterministic pool.
-Some entries are tagged `offerable + template` — when surfaced in
-`aiContextTools.buildLivingWorldContext`, premium AI may offer them as a
-radiant quest (`stateChanges.newQuests[].source = 'npc_radiant'`). See
-knowledge/concepts/living-world.md and the G3 flow.
+The BE-driven mechanic that wrote per-shadow `activeGoal` /
+`goalProgress` and surfaced radiant quest offers (Phase G3) was removed.
+Schema columns on `CampaignNPC` remain in place but unused. The concept
++ post-mortem of why it was wrong (BE mapping role → questTemplate is an
+AI-judgment call, not a BE-rule call) live in
+[knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md).
 
 ## Cost shape after the change
 

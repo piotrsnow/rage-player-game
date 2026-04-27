@@ -89,7 +89,6 @@ export function buildContextSection(contextBlocks) {
           if (n.role) bits.push(`(${n.role})`);
           if (n.category) bits.push(`[${n.category}]`);
           if (n.paused) bits.push('[recently away]');
-          if (n.activeGoal) bits.push(`goal: "${n.activeGoal}"`);
           lines.push(`- ${bits.join(' ')}`);
           // Round B — one-shot introduction hint, fired by the quest trigger
           // `onComplete.moveNpcToPlayer`. Tells premium the NPC just arrived
@@ -233,39 +232,12 @@ export function buildContextSection(contextBlocks) {
         .join(', ');
       lines.push(`Persistent NPCs here: ${npcList}`);
 
-      // Phase 5 — per-NPC goal + recent activity + arrival flag, for NPCs
-      // whose goal targets this campaign. Premium sees "Altmar just arrived
-      // with intent X" and narrates naturally.
-      // G6 — ambient chatter for NPCs without active goals/radiants.
-      // Purely flavor: one line per idle NPC, premium decides whether to
-      // weave it in. Zero AI cost, data-only lookup.
-      const ambientIdleNpcs = lw.npcs.filter((n) => !n.activeGoal && !n.recentMilestones?.length && !n.radiantOffer);
-      if (ambientIdleNpcs.length > 0) {
-        lines.push('Ambient chatter (optional — use at most one to color the scene):');
-        for (const n of ambientIdleNpcs.slice(0, 3)) {
-          const line = pickChatterLine({ role: n.role, personality: n.role, disposition: 0 });
-          if (line) lines.push(`  • ${n.name} might say: "${line}"`);
-        }
-      }
-
-      const annotatedNpcs = lw.npcs.filter((n) => n.activeGoal || n.recentMilestones?.length || n.radiantOffer);
-      for (const n of annotatedNpcs) {
-        const parts = [];
-        if (n.recentlyArrived) parts.push('JUST ARRIVED at this location');
-        if (n.activeGoal) parts.push(`active goal: "${n.activeGoal}"`);
-        if (n.recentMilestones?.length) {
-          const ms = n.recentMilestones
-            .map((m) => m.note || '')
-            .filter(Boolean)
-            .join(' → ');
-          if (ms) parts.push(`recent activity: ${ms}`);
-        }
-        if (n.radiantOffer?.template) {
-          parts.push(`radiant quest available: template="${n.radiantOffer.template}" — MAY be offered to the player if interaction is natural; on offer emit stateChanges.newQuests entry with source:"npc_radiant"`);
-        }
-        if (parts.length > 0) {
-          lines.push(`  • ${n.name}: ${parts.join('; ')}`);
-        }
+      // G6 — ambient chatter. Purely flavor: one line per NPC (capped at 3),
+      // premium decides whether to weave it in. Zero AI cost, data-only lookup.
+      lines.push('Ambient chatter (optional — use at most one to color the scene):');
+      for (const n of lw.npcs.slice(0, 3)) {
+        const line = pickChatterLine({ role: n.role, personality: n.role, disposition: 0 });
+        if (line) lines.push(`  • ${n.name} might say: "${line}"`);
       }
     }
     if (lw.recentEvents?.length) {

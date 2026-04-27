@@ -15,18 +15,6 @@
 
 ## P0 — pre-50k scen/dzień (real scaling cliffs)
 
-### P0.1 — N+1 in `assignGoalsForCampaign` (biggest ROI)
-
-**Why:** `questGoalAssigner/index.js` runs **2x per scene** (once w `processStateChanges`, raz w `postSceneWork`). Loops every CampaignNPC, conditionally fires `worldNPC.findUnique` + always fires `campaignNPC.update`. With 10 NPCs = 20-40 round-trips × 2 = ~60 wasted queries/scenę.
-
-Przy 50k scen/dzień = **~3M wasted queries/dzień (~10% query budget)**.
-
-**Fix:** batch `worldNPC` lookups z `findMany({where: { id: { in: ids }}})`, batch updates z `updateMany` (per-status grupy).
-
-**Effort:** 2-3h. Pure factory + integration test.
-
-**Files:** [backend/src/services/livingWorld/questGoalAssigner/index.js](../backend/src/services/livingWorld/questGoalAssigner/index.js).
-
 ### P0.2 — Connection pool exhaustion (~5k scen/dzień)
 
 **Status (2026-04-27):** częściowo rozwiązane — hosting decision = Neon Launch ([knowledge/decisions/postgres-prod-hosting.md](../knowledge/decisions/postgres-prod-hosting.md)). Neon ships built-in PgBouncer (`-pooler` endpoint, free); użycie tej formy connection stringa kasuje immediate breakpoint. **Pozostała praca = PgBouncer sidecar w Cloud Run** triggered TYLKO gdy zmigrujemy na Cloud SQL (CSQL nie ma wbudowanego poolera).
@@ -122,7 +110,6 @@ Przy 50k scen/dzień = **~3M wasted queries/dzień (~10% query budget)**.
 - **`Campaign.lockedLocation` na Character** — flavor string snapshot "gdzie character był przy bind", nie ruszony. Czystszy fix przyszedłby z CampaignLocation FK.
 
 ### F5b debt
-- **`questGoalAssigner` "go home" check kind+id mismatch** — porównuje shadow `lastLocationId` z `WorldNPC.homeLocationId`. Gdy shadow w CampaignLocation a canonical home jest WorldLocation, comparison zawsze niezgodne → sztuczny "wracam do swojego miejsca" goal. Drobny noise. Fix: dedicated kind+id check lub skip gdy shadow kind=campaign.
 - **AI-emitted locations bez terrain context** — `currentLocation: "X"` mid-narrative gives backend zero clue about biome/danger/placement. Hearsay placeholder-stub deferred — **superseded by [biome-tiles idea](../knowledge/ideas/biome-tiles.md)** który solves root cause. Cross-ref: feature track.
 - **`maxSubLocations` cap dropped** z creation flow per user spec; column nadal w schemie jako future re-enabling lever.
 
@@ -207,7 +194,6 @@ No code change — confirm w playtest.
 - `loadCampaignFog` dla campaign z mieszanką canonical + non-canonical (visited + heard)
 - Sublokacje (`parentLocationId`) drill-down w PlayerWorldMap
 - Edge discovery podczas trawelu (multiplayer dwóch graczy → dwa `UserDiscoveredEdge` rows + jeden `CampaignEdgeDiscovery`)
-- Quest prerequisites — `assignGoalsForCampaign` po kompletnym save/load cyklu
 - NPC explicit known locations — seed → re-seed (czy `seedNpcKnowledge` replace-by-grantedBy='seed' nie dropuje promotion/dialog grants)
 
 ### F4
@@ -234,7 +220,7 @@ No code change — confirm w playtest.
 
 ## When to attack each tier
 
-- **P0** (scaling cliffs): gdy realistycznie zbliżasz się do 5k+ scen/dzień (lub przed publicznym exposure). Order: connection pool/PgBouncer first (P0.2), potem `assignGoalsForCampaign` N+1 (P0.1), reszta według ROI.
+- **P0** (scaling cliffs): gdy realistycznie zbliżasz się do 5k+ scen/dzień (lub przed publicznym exposure). Order: connection pool/PgBouncer first (P0.2), reszta według ROI.
 - **P0'** (deployment readiness): przed pierwszym publicznym deployem (jednorazowo). JWT rotation + model ID verify + Cloud Tasks queue setup.
 - **P1** (known debt): opportunistically — przy każdym dotknięciu pliku z listy, fix lokalny dług przy okazji.
 - **P2** (measurement-driven): never preemptively. Wait for trigger metric, then act.

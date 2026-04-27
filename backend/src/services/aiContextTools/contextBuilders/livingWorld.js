@@ -15,7 +15,7 @@ import { buildSeededSettlementsBlock } from './seededSettlements.js';
 import { buildSaturationHint } from './saturation.js';
 import { buildTravelBlock } from './travel.js';
 import { buildDungeonRoomBlock } from './dungeonRoom.js';
-import { mapAmbientNpcsWithGoals, clearSurfacedIntroHints } from './npcGoalMapping.js';
+import { mapAmbientNpcs, clearSurfacedIntroHints } from './npcGoalMapping.js';
 import { buildHearsayByNpc } from './hearsay.js';
 import { buildNpcMemory } from './npcBaseline.js';
 import { computeWorldBoundsHint } from './worldBoundsHint.js';
@@ -191,10 +191,10 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     return null;
   }
 
-  // Round B — Phase 3b moved goal/tick state onto the CampaignNPC shadow,
-  // so it's scoped to this playthrough by construction. The enriched NPC
-  // objects already carry the shadow's activeGoal + goalProgress.
-  const ambientNpcsWithGoals = mapAmbientNpcsWithGoals(ambientNpcs);
+  // Map shadows → prompt-shaped entries. The BE-driven goal/radiant mechanic
+  // is archived to knowledge/ideas/npc-action-assignment.md — only identity
+  // + pendingIntroHint flow through today.
+  const ambientNpcsWithGoals = mapAmbientNpcs(ambientNpcs);
 
   // Round B — clear any pendingIntroHints we just surfaced. Best-effort.
   clearSurfacedIntroHints(ambientNpcsWithGoals);

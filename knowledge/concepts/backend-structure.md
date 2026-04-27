@@ -47,10 +47,9 @@ picture see [living-world.md](living-world.md) and
 
 - `worldEventLog.js` — `appendEvent`, `forLocation`, `forNpc`
 - `worldStateService.js` — `findOrCreateWorldLocation`, `createSublocation`
-- `npcAgentLoop.js` — `runNpcTick`, eligibility, action normalization
-- `npcTickDispatcher.js` — legacy scene-cadence batch (fallback)
-- `globalNpcTriggers.js` — `onLocationEntry`, `onDeadlinePass`, `onCrossCampaignMajor` (event-driven, primary)
-- `questGoalAssigner.js` — quest-role inference, goal templates, `generateBackgroundGoal`. Round E Phase 12b: operates on all `CampaignNPC` rows (canonical lookup is opt-in per-row)
+- `npcAgentLoop.js` — `runNpcTick`, eligibility, action normalization. Admin-only since 2026-04-28 (Manual Tick button + admin batch endpoint); auto-triggers archived
+- `npcTickDispatcher.js` — `runTickBatch`, called only from admin endpoint `POST /v1/admin/livingWorld/tick-batch`
+- `questGoalAssigner.js` — slim barrel (folder name vestigial). `pickQuestGiver` (Phase D weighted picker for `quest_offer_likely`) + `categorize` / `NPC_CATEGORIES` (role → category). The original `assignGoalsForCampaign` orchestrator + `generateBackgroundGoal` were archived; see [knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md)
 - `postCampaignPromotion.js` + `postCampaignPromotionVerdict.js` — post-campaign admin-review promotion pipeline (Round E Phase 12b). Inline `npcPromotion.js` deleted in Slice B — canonical `WorldNPC` rows are never created mid-play anymore
 - `postCampaignWriteback.js`, `postCampaignFactExtraction.js`, `postCampaignWorldChanges.js` — post-campaign orchestrator + Phase 11 LLM fact extraction + Phase 12 world-change pipeline (`PendingWorldStateChange` admin queue + HIGH NPC `knowledgeBase` auto-apply)
 - `npcLifecycle.js` — pause / resume on player location change

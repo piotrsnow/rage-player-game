@@ -31,5 +31,6 @@ Never silently act on an idea here as if it were an established pattern. The con
 - [living-world-npc-auto-dispatch](living-world-npc-auto-dispatch.md) — Cloud Tasks repeatable for background NPC ticks + ASYNC_TOOL loop (Phase 5 auto, deferred)
 - [living-world-scene-orchestration](living-world-scene-orchestration.md) — DM directives + parallel per-NPC standard calls at end of scene (Phase 4 full, deferred)
 - [living-world-vector-search](living-world-vector-search.md) — semantic NPC/location dedupe (deferred, name-dedupe is the current fallback)
+- [npc-action-assignment](npc-action-assignment.md) — campaign-side `CampaignNPC.activeGoal` mechanic + radiant quest hooks; archived 2026-04-28 (post-quest mini-scene replaced the practical job)
 - [prompt-fragment-system](prompt-fragment-system.md) — markdown fragments + LRU cache for prompts
 - [side-quests-between-campaigns](side-quests-between-campaigns.md) — side/personal/faction quests as between-campaign feature (currently disabled in prompts + FE)

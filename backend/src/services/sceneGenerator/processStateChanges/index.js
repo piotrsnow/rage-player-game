@@ -1,7 +1,6 @@
 import { prisma } from '../../../lib/prisma.js';
 import { childLogger } from '../../../lib/logger.js';
 import { getCampaignCharacterIds } from '../../campaignSync.js';
-import { assignGoalsForCampaign } from '../../livingWorld/questGoalAssigner.js';
 import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
@@ -339,21 +338,4 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     });
   }
 
-  // Phase 5 — any quest status change (complete/fail) or objective update
-  // potentially advances the "next quest" pointer → re-run goal assigner.
-  // Also fires on pure NPC changes so freshly-introduced CampaignNPCs that
-  // hold a quest role get their first goal without waiting for the next
-  // scene's postSceneWork pass.
-  if (livingWorldEnabled && (
-    stateChanges.completedQuests?.length
-    || stateChanges.failedQuests?.length
-    || stateChanges.questUpdates?.length
-    || stateChanges.npcs?.length
-  )) {
-    try {
-      await assignGoalsForCampaign(campaignId);
-    } catch (err) {
-      log.warn({ err, campaignId }, 'assignGoalsForCampaign failed (non-fatal)');
-    }
-  }
 }

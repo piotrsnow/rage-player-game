@@ -180,7 +180,7 @@ Give claude success criteria instead of step by step instructions.
 | `PrefabAsset` / `Wanted3D` | 3D model catalog |
 | `Achievement` | Per-user unlocked achievements |
 | `WorldNPC` / `WorldLocation` / `Road` / `WorldEvent` / `WorldReputation` | Living World canonical world state. F5b: `Road` renamed from `WorldLocationEdge` (canonical-only travel infra); `WorldLocation.isCanonical`/`createdByCampaignId` dropped — every WorldLocation IS canonical. |
-| `CampaignNPC` | Per-campaign shadow of WorldNPC (independent activeGoal). F5b: `lastLocation{Kind,Id}` is a polymorphic FK pair into either WorldLocation or CampaignLocation. |
+| `CampaignNPC` | Per-campaign shadow of WorldNPC. F5b: `lastLocation{Kind,Id}` is a polymorphic FK pair into either WorldLocation or CampaignLocation. (Columns `activeGoal`/`goalProgress` exist but are vestigial — see [knowledge/ideas/npc-action-assignment.md](knowledge/ideas/npc-action-assignment.md).) |
 | `CampaignLocation` | F5b — per-campaign sandbox for AI-mid-play-created locations. Promoted to canonical WorldLocation via destructive copy + relink (admin queue). Carries own `regionX/regionY` for player-map rendering; off the canonical Road graph. |
 | `WorldLoreSection` | Admin-editable world lore injected into every scene prompt |
 
@@ -249,7 +249,7 @@ Custom d50 system (not WFRP). Full spec: [RPG_SYSTEM.md](RPG_SYSTEM.md). Code po
 - `knowledge/concepts/backend-structure.md` — `backend/` + `shared/` subdomain map + entry-point cheat sheet
 - `knowledge/concepts/living-world.md` — Living World phase roadmap (1-7 + A-F + Round A/B), tick model, clone architecture, write-back plans
 - `knowledge/concepts/npc-clone-architecture.md` — WorldNPC → CampaignNPC shadow cloning, writer ownership, divergence policy
-- `knowledge/concepts/campaign-sandbox.md` — CampaignNPC shadow with own activeGoal, clone triggers, writer ownership matrix
+- `knowledge/concepts/campaign-sandbox.md` — CampaignNPC shadow ownership, clone triggers, writer matrix (campaign-side activeGoal mechanic archived → `knowledge/ideas/npc-action-assignment.md`)
 - `knowledge/concepts/fog-of-war.md` — three-state location visibility (unknown/heard-about/visited), canonical vs non-canonical split, discovery helpers
 - `knowledge/concepts/world-lore.md` — admin-editable `WorldLoreSection` injected into every scene prompt, cache invalidation
 - `knowledge/concepts/hearsay-and-ai-locations.md` — `[NPC_KNOWLEDGE]` prompt block, `locationMentioned` policy, smart placer for AI-created locations, `[WORLD BOUNDS]` hint
@@ -331,7 +331,7 @@ Current ideas: async-tool-pattern, autonomous-npcs, combat-auto-resolve, declara
 - **`src/services/diceRollInference.js` has legacy aliases** not in `shared/domain/diceRollInference.js`. Fold into the shared version when convenient.
 - **MP guest join doesn't write character campaign lock.** Only host's characters get locked via `POST /v1/campaigns`. Fix in `backend/src/routes/multiplayer/handlers/lobby.js` if guests report losing characters.
 - **Living World Phase 3 is minimal-viable.** Cross-campaign global events read through `forLocation` (payload is meta-only so no leak), but rate limiting (3 major/tydzień/kampania) and full spoiler filter are deferred. See [knowledge/ideas/living-world-cross-user-visibility.md](knowledge/ideas/living-world-cross-user-visibility.md).
-- **NPC auto-dispatch deferred.** Phase 5 ticks are event-driven (player-scene-bound) via `globalNpcTriggers` + on-demand `runNpcTick`. Cloud Tasks scheduled worker for offline-world simulation is a future step; see [knowledge/ideas/living-world-npc-auto-dispatch.md](knowledge/ideas/living-world-npc-auto-dispatch.md).
+- **NPC ticks are admin-only.** Per-scene auto-triggers (`globalNpcTriggers.*`) and the postSceneWork tick-batch fallback were removed 2026-04-28; `runNpcTick` fires only via the admin Manual Tick button (`POST /v1/admin/livingWorld/npcs/:id/tick`) or the admin batch endpoint (`/tick-batch`). The whole tick model needs redesign — see [knowledge/ideas/npc-action-assignment.md](knowledge/ideas/npc-action-assignment.md) and [knowledge/ideas/living-world-npc-auto-dispatch.md](knowledge/ideas/living-world-npc-auto-dispatch.md).
 
 ### Recently split (barrel pattern — import paths preserved)
 
@@ -342,7 +342,7 @@ Current ideas: async-tool-pattern, autonomous-npcs, combat-auto-resolve, declara
 | `backend/src/services/sceneGenerator/processStateChanges.js` | 1277 LOC | barrel → `processStateChanges/{index,schemas,handlers/*,sceneEmbedding}.js` with Zod validators per bucket |
 | `backend/src/services/intentClassifier.js` | 588 LOC | barrel → `intentClassifier/{index,heuristics,nanoSelector,nanoPrompt}.js` |
 | `backend/src/services/sceneGenerator/systemPrompt.js` | 550 LOC | barrel → `systemPrompt/{index,staticRules,conditionalRules,dmSettingsBlock,characterBlock,worldBlock,livingWorldBlock}.js` |
-| `backend/src/services/livingWorld/questGoalAssigner.js` | 557 LOC | barrel → `questGoalAssigner/{index,questRole,npcGiverPicker,backgroundGoals,categories,roleAffinity}.js` |
+| `backend/src/services/livingWorld/questGoalAssigner.js` | 557 LOC | barrel → `questGoalAssigner/{index,npcGiverPicker,categories,roleAffinity}.js` (post-archive: `questRole`, `backgroundGoals`, and the orchestrator removed; folder name is now vestigial) |
 | `src/components/admin/AdminLivingWorldPage.jsx` | 795 LOC | tab switcher → `adminLivingWorld/{tabs/*,shared/*}` |
 
 Barrels keep the old import paths intact — `import { ... } from '.../systemPrompt.js'` and friends still work unchanged.

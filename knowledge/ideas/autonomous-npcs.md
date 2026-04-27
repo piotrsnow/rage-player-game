@@ -1,11 +1,17 @@
 # Idea — autonomous NPCs (background agent loops)
 
-> **Status (2026-04):** PARTIAL realized. Phase 5 ships on-demand nano
-> ticks (`npcAgentLoop.runNpcTick`) with `activeGoal` + `goalProgress`
-> data model, quest-driven goal assignment, and background sideways
-> goals. Event-driven global triggers (`globalNpcTriggers`) replace the
-> naive per-scene scan. Clone separation (`CampaignNPC.worldNpcId` +
-> `cloneReconciliation`) keeps costs flat under concurrent campaigns.
+> **Status (2026-04-28):** PARTIAL realized, but most of the auto layer
+> was rolled back. The mechanic was: nano `runNpcTick` per WorldNPC,
+> `activeGoal` + `goalProgress` data model, quest-driven goal assignment,
+> background sideways goals, plus `globalNpcTriggers` firing per scene.
+> Of those, the BE-driven goal assigner + radiant-offer hooks were
+> archived (see [npc-action-assignment.md](./npc-action-assignment.md))
+> and the `globalNpcTriggers` per-scene auto-fire was deleted along
+> with it. What remains shipped: the nano tick mechanics
+> (`runNpcTick` + `runTickBatch`) wired only to admin Manual Tick,
+> the WorldNPC.activeGoal/goalProgress columns (writable today only by
+> admin-triggered ticks), clone separation (`CampaignNPC.worldNpcId` +
+> `cloneReconciliation`).
 >
 > Full Cloud Tasks dispatcher (NPCs tick offline without any active
 > scene) is still deferred — see

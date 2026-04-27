@@ -17,8 +17,8 @@ narration.
 | `name`, `role`, `personality`, `alignment` | author-of-record / seed canon | cloned on first encounter, editable per-campaign |
 | `alive` | canonical truth; mutated only by Phase 2 kill flow (still operating on canon) | shadow flag authoritative during play |
 | `currentLocationId` | canonical default ("where the NPC normally is") | shadow `lastLocationId` authoritative for this playthrough |
-| `activeGoal` | **world-level goal** — what the NPC is doing in the background (ticked by `npcAgentLoop`) | **campaign-level goal** — role in this quest (set by `assignGoalsForCampaign`) |
-| `goalProgress` | world-tick progress | campaign-goal progress |
+| `activeGoal` | **world-level goal** — what the NPC is doing in the background (ticked by `npcAgentLoop`) | column exists but **vestigial** — BE-driven assigner removed; see [knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md) |
+| `goalProgress` | world-tick progress | column exists but **vestigial** (same idea archive) |
 | `lastTickAt`, `lastTickSceneIndex`, `tickIntervalScenes` | **canonical only** — tick scheduler runs on the world-level goal | — |
 | `pausedAt`, `pauseSnapshot` | **canonical only** — Phase 2 lifecycle pause on location leave | — |
 | `goalDeadlineAt`, `lastLocationPingAt` | **canonical only** — tick scheduler infra | — |
@@ -27,17 +27,18 @@ narration.
 | `pendingIntroHint` | — | shadow owns (one-shot per campaign, set by quest trigger) |
 | `category` | canonical default | shadow override |
 
-`activeGoal` / `goalProgress` exist on BOTH — deliberately — because the
-two live separate lives. The scene assembler renders the shadow value
-(campaign context) and ignores the canonical value. `npcAgentLoop`
-reads the canonical value and ignores the shadow.
+`activeGoal` / `goalProgress` exist on both rows for historical reasons.
+Today only the canonical (WorldNPC) side is read — `npcAgentLoop` writes
+and reads it for world simulation. The shadow columns sit dormant pending
+a redesign of the campaign-scope NPC-action mechanic; see
+[knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md).
 
 The merged view for scene-gen lives in
 [`campaignSandbox.listNpcsAtLocation`](../../backend/src/services/livingWorld/campaignSandbox.js):
 returns an "enriched shape" where shadow values win for campaign-scoped
-fields (activeGoal, goalProgress, lastLocationKind/Id, pendingIntroHint,
-category) and canonical values fill in for canonical-only fields (keyNpc,
-homeLocationId, `WorldNpcKnownLocation` grants, tick infra).
+fields (lastLocationKind/Id, pendingIntroHint, category) and canonical
+values fill in for canonical-only fields (keyNpc, homeLocationId,
+`WorldNpcKnownLocation` grants, tick infra).
 
 ## Clone triggers
 
@@ -49,18 +50,18 @@ homeLocationId, `WorldNpcKnownLocation` grants, tick infra).
 
 Note: fresh shadows start with `activeGoal: null` / `goalProgress: null`.
 They're NOT seeded from canonical `activeGoal` — that would leak the
-world-level goal into campaign narration. `assignGoalsForCampaign` fills
-them in when the NPC takes on a quest role.
+world-level goal into campaign narration. Today nothing writes them on
+the shadow side (the BE assigner was removed); they remain at null for
+the campaign's lifetime.
 
 ## Writers
 
 | Writer | Target |
 |---|---|
-| `assignGoalsForCampaign` | CampaignNPC only — sets the shadow's campaign-level `activeGoal` and `goalProgress`. **Never mirrors to WorldNPC.** |
 | `setCampaignNpcLocation` / `setCampaignNpcIntroHint` / `clearCampaignNpcIntroHint` | CampaignNPC only. F5b: `setCampaignNpcLocation` accepts a polymorphic `{ kind, id }` ref (or back-compat bare string treated as `kind='world'`); writes both `lastLocationKind` and `lastLocationId`. |
 | `npcAgentLoop.runNpcTick` | WorldNPC only — mutates the canonical `activeGoal`, `goalProgress`, `lastTickAt`, etc. Independent of any campaign. |
-| `globalNpcTriggers.onLocationEntry` / `onDeadlinePass` / `onCrossCampaignMajor` | Queries WorldNPC, triggers `runNpcTick` on the canonical row. |
-| `npcTickDispatcher` | WorldNPC. Round B dropped the `goalTargetCampaignId` filter (dead hack from the pre-shadow era). |
+| `npcTickDispatcher.runTickBatch` | WorldNPC, admin-only (`POST /v1/admin/livingWorld/tick-batch`). Round B dropped the `goalTargetCampaignId` filter (dead hack from the pre-shadow era). |
+| Admin Manual Tick (`POST /v1/admin/livingWorld/npcs/:id/tick`) | Single WorldNPC, force-bypasses cadence guards. Auto-triggers (`globalNpcTriggers.*`) were deleted 2026-04-28. |
 | `killWorldNpc`, `companionService`, `npcLifecycle` (pause/resume) | Canonical — these mutate world state intentionally (NPC actually dies / actually joins party / actually pauses life). |
 
 ## Hearsay knowledge resolver
@@ -89,11 +90,12 @@ These are gone entirely — DO NOT reintroduce:
 - `resolveTargetPlayerLocation` in `npcAgentLoop.js` — used the
   `goalTargetCampaignId` hack to inject "player is at X" into the nano
   prompt. World tick is world-level; it doesn't know about campaigns.
-- Mirror write in `assignGoalsForCampaign` — no longer writes shadow
-  changes back to WorldNPC. The two are independent. Round E Phase 12b
-  Slice B also dropped the `worldNpcId: { not: null }` filter — the
-  assigner now operates on the full CampaignNPC shadow pool (canonical
-  home-derivation is opt-in per-row).
+- `assignGoalsForCampaign` orchestrator entirely — the BE-driven mechanic
+  (quest-role goals + "wracam do domu" + radiant offer hooks via
+  `generateBackgroundGoal`) was archived to
+  [knowledge/ideas/npc-action-assignment.md](../ideas/npc-action-assignment.md).
+  Schema columns `CampaignNPC.activeGoal` and `goalProgress` remain in
+  place but unused on the shadow side, awaiting a redesign.
 - `npcTickDispatcher` campaign filter — dispatcher ticks whichever
   WorldNPCs have world-level activeGoals, regardless of who's playing.
 - `maybePromote` + inline `findOrCreateWorldNPC` during play (Round E

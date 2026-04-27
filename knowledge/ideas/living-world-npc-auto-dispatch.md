@@ -2,11 +2,19 @@
 
 ## What it is
 
-Scoped Phase 5 (shipped 2026-04) added `runNpcTick(npcId)` + `runTickBatch()`
-as **on-demand** entrypoints — admin clicks a button, a batch of NPCs ticks.
+`runNpcTick(npcId)` + `runTickBatch()` exist as on-demand entrypoints —
+admin clicks **Manual Tick** in the NPC list, a batch of NPCs ticks. As of
+2026-04-28 those admin clicks are the **only** trigger paths: the per-scene
+auto-triggers (`globalNpcTriggers.onLocationEntry` / `onDeadlinePass` /
+`onCrossCampaignMajor`) and the `postSceneWork` tick-batch fallback were
+removed pending a redesign of the campaign-side NPC-action mechanic (see
+[npc-action-assignment.md](npc-action-assignment.md)).
+
 This idea is the **automated** version: a Cloud Tasks repeatable dispatcher
 that fires every ~30 min and calls `runTickBatch()` so NPCs live even when
-nobody's pressing buttons.
+nobody's pressing buttons. It complements — does not replace — the
+per-scene auto-triggers; both layers will need to be re-thought together
+when the action mechanic returns.
 
 Key parts:
 

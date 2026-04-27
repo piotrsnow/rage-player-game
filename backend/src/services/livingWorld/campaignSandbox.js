@@ -85,10 +85,10 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
         worldNpcId: world.id,
         isAgent: true,
         category,
-        // Round B — shadow.activeGoal starts null. It's populated by
-        // `assignGoalsForCampaign` when a quest role is assigned; it is
-        // INDEPENDENT of WorldNPC.activeGoal (which is the NPC's world-
-        // level background goal, ticked by npcAgentLoop).
+        // Vestigial — campaign-side goal mechanic was archived to
+        // knowledge/ideas/npc-action-assignment.md. Columns stay so admin
+        // serializers / future redesigns have a place to hang things;
+        // nothing writes them today.
         activeGoal: null,
         goalProgress: null,
       },
