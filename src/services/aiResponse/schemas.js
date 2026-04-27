@@ -443,7 +443,6 @@ export const CampaignResponseSchema = z.object({
   initialQuest: InitialQuestSchema.optional(),
   initialNPCs: z.array(InitialNpcSchema).optional().default([]),
   initialWorldFacts: z.array(z.string()).optional().default([]),
-  campaignStructure: z.any().nullable().optional(),
 }).passthrough();
 
 export const CompressionResponseSchema = z.object({

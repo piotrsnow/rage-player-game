@@ -223,7 +223,6 @@ const LENGTH_PARAMS = {
     combat: 1,
     puzzle: 1,
     actsDescription: '3 acts: 5/7/3',
-    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 5, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 7, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 3, "description": "Final confrontation and resolution"}]',
     totalScenes: 15,
   },
   Medium: {
@@ -237,7 +236,6 @@ const LENGTH_PARAMS = {
     combat: 1,
     puzzle: 1,
     actsDescription: '3 acts: 8/12/5',
-    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 8, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 12, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 5, "description": "Final confrontation and resolution"}]',
     totalScenes: 25,
   },
   Long: {
@@ -251,7 +249,6 @@ const LENGTH_PARAMS = {
     combat: 2,
     puzzle: 2,
     actsDescription: '3 acts: 12/18/10',
-    actsJson: '[{"number": 1, "name": "Setup", "targetScenes": 12, "description": "Introduce the world, characters, and central conflict"},{"number": 2, "name": "Confrontation", "targetScenes": 18, "description": "Escalate the conflict, raise the stakes"},{"number": 3, "name": "Climax", "targetScenes": 10, "description": "Final confrontation and resolution"}]',
     totalScenes: 40,
   },
 };
@@ -454,20 +451,10 @@ Respond with ONLY valid JSON:
       "knownByQuestGiver": true
     }
   ],
-  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3", "Fact 4", "Fact 5"],
-  "campaignStructure": {
-    "acts": ${lp.actsJson},
-    "currentAct": 1,
-    "totalTargetScenes": ${lp.totalScenes}
-  }
+  "initialWorldFacts": ["Fact 1 about the world", "Fact 2", "Fact 3", "Fact 4", "Fact 5"]
 }
 
-CAMPAIGN LENGTH: "${settings.length}" → target ~${lp.totalScenes} scenes (${lp.actsDescription}). All quest/NPC/world-fact counts below are scaled for this length.
-
-IMPORTANT for campaignStructure:
-- Use the act structure for length "${settings.length}": ${lp.actsDescription}, totalTargetScenes = ${lp.totalScenes}.
-- Each act needs a name, target scene count, and brief description of its narrative purpose.
-- totalTargetScenes must equal the sum of all act target scenes.
+CAMPAIGN LENGTH: "${settings.length}" → target ~${lp.totalScenes} scenes (${lp.actsDescription}). All quest/NPC/world-fact counts below are scaled for this length. Use the act pacing as an internal narrative shape for objective ordering — do NOT emit a campaignStructure field.
 
 IMPORTANT for initialQuest and initialNPCs:
 - The initialQuest MUST have ${lp.objectives} objectives forming a coherent multi-step story arc — NOT generic placeholders.

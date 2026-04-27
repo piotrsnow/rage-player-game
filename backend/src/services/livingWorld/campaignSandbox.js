@@ -38,8 +38,9 @@ function slugifyName(value) {
 /**
  * Resolve the CampaignNPC shadow for a WorldNPC in a given campaign. If no
  * shadow exists yet, clone one from the canonical WorldNPC (snapshot: name,
- * role, personality, alignment, category, WorldNpcKnownLocation grants → note only,
- * keyNpc, currentLocationId → lastLocationId).
+ * role, personality, category, currentLocationId → lastLocationId).
+ * Canonical-only fields (alignment, keyNpc, homeLocationId, WorldNpcKnownLocation
+ * grants) stay on WorldNPC and are merged into the campaign view by enrichedShape.
  *
  * Returns null when inputs are invalid or the WorldNPC has been deleted.
  * Never throws — callers can treat null as "skip this NPC for now".
@@ -75,7 +76,6 @@ export async function getOrCloneCampaignNpc(campaignId, worldNpcId) {
         name: world.name,
         role: world.role || null,
         personality: world.personality || null,
-        alignment: world.alignment || 'neutral',
         alive: world.alive !== false,
         lastLocation: null, // flavor string; authoritative FK is lastLocationKind+lastLocationId
         // F5b — `world.currentLocationId` is canonical FK (WorldNPC →
@@ -191,7 +191,7 @@ function enrichedShape(shadow, world = null) {
     name: shadow.name || world?.name || null,
     role: shadow.role || world?.role || null,
     personality: shadow.personality || world?.personality || null,
-    alignment: shadow.alignment || world?.alignment || 'neutral',
+    alignment: world?.alignment || 'neutral',
     alive: shadow.alive !== false && (world?.alive !== false),
     category: shadow.category || world?.category || 'commoner',
     pendingIntroHint: shadow.pendingIntroHint || null,

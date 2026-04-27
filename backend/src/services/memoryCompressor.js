@@ -155,8 +155,8 @@ Return JSON:
   "memory": [{"text":"...","importance":"minor|major"}],
   "removeMemory": ["outdated fact text"],
   "gmNotes": [{"summary":"...","status":"planned|introduced|waiting|resolved","plannedFor":"when/where it matters"|null}],
-  "hookAdditions": [{"id":"kebab-slug-unique","kind":"quest|intrigue|reveal|encounter","summary":"...","idealTiming":"..."|null,"priority":"low|normal|high"}],
-  "resolvedHookIds": ["id1"],
+  "hookAdditions": [{"kind":"quest|intrigue|reveal|encounter","summary":"...","idealTiming":"..."|null,"priority":"low|normal|high"}],
+  "resolvedHookIds": ["uuid-from-pending-hooks"],
   "worldFacts": [""],
   "codexFragments": [{"id":"snake_case","name":"","category":"person|place|artifact|event|creature|concept","fragment":{"content":"","source":"NPC name","aspect":"history|description|location|weakness|rumor|technical|political"},"tags":[]}],
   "knowledgeEvents": [{"summary":"","importance":"low|medium|high","tags":[]}],
@@ -164,31 +164,38 @@ Return JSON:
   "needsRestoration": {"hunger":50} or null
 }
 
-Two perspectives on the same scene:
+BUCKET ROUTING — each fact picks EXACTLY ONE bucket. Do NOT echo the same beat across multiple buckets. When a fact could fit several, pick the MOST SPECIFIC one below and skip the others:
 
-MEMORY (player POV — WHO did WHAT with WHAT RESULT):
+1. \`hookAdditions\` — the scene OPENED a new narrative thread that needs follow-up later. Max 2.
+2. \`resolvedHookIds\` — an existing pending hook was DELIVERED on this scene. Copy ids verbatim from the "Pending hooks" list.
+3. \`knowledgeDecisions\` — an inflection-point CHOICE the player made with a stated consequence.
+4. \`codexFragments\` — concrete LORE explicitly stated by an NPC in dialogue (history, weakness, political fact, rumor).
+5. \`worldFacts\` — concrete world info (place names, geography, political structure) NOT spoken by an NPC and NOT plot-pivotal — i.e. context only.
+6. \`knowledgeEvents\` — story-pivotal moment that doesn't fit codex/decision but matters for semantic recall later.
+7. \`memory\` — fallback for any other "WHO did WHAT with WHAT RESULT" beat. Importance 'major' = plot-pivotal, 'minor' = flavor-useful.
+
+THE ONE ALLOWED OVERLAP: \`gmNotes\` may mirror a \`memory\` beat — same event, GM-framing (planned/introduced/waiting/resolved). Do not duplicate gmNotes content into any other bucket.
+
+Examples of correct routing:
+- "Taelor told Cedric to seek Liryana about a rune fragment" — opens a thread → \`hookAdditions\` (summary: "Talk to Liryana about the rune fragment"). The act of receiving the lead → \`memory\` (importance: major). gmNote: "[introduced] Taelor jako źródło wskazówek". NOTHING in worldFacts/codex/knowledgeEvents/knowledgeDecisions — the hook already captures it.
+- "Liryana lives at Zielarnia pod Kopułą" said by Taelor — \`codexFragments\` (NPC-revealed lore about a person). NOT also worldFacts.
+- "Cedric chose to go to Liryana before the ruins" — that's a \`knowledgeDecision\` (consequence: gets a lead first). NOT also memory of the same beat.
+- "Grimwald defeated 3 bandits on the road to Brost" — \`memory\` only.
+
+MEMORY rules:
 - FACT: "Grimwald learned from Marta that Barbara lives in Czarnokorzeń"
-- FACT: "Grimwald defeated 3 bandits on the road to Brost"
 - FACT: "Marta refused to reveal how she knows about Barbara" (blocked info still counts)
 - NOT A FACT: "People at the fire flinched" (atmosphere)
 - NOT A FACT: "Grimwald asked about Mazak" (player action without answer = nothing happened)
-- importance: 'major' = plot-pivotal (major reveal, key death, objective resolved, big decision). 'minor' = flavor-useful (disposition shift, small discovery).
 - Max 5 entries per scene. If nothing happened, return [].
 
-GM NOTES (GM POV — what the scene PLANNED / INTRODUCED / RESOLVED):
+GM NOTES rules:
 - Only things the narrator INTENTIONALLY set up, introduced, or delivered on.
-- Overlap with MEMORY is expected — same beat, different framing.
-  * MEMORY: "Karros zlecił Rudeusowi rozmowę z Mireią" (what happened)
-  * GM NOTE: "[introduced] Karros jako zleceniodawca, [planned] spotkanie z Mireią jako kolejny krok" (narrative state)
 - status values: 'planned' (set up for later), 'introduced' (just made canonical), 'waiting' (pending seed), 'resolved' (paid off).
 - Max 3 entries per scene.
 
-SIDE CHANNELS (independent targets):
-- hookAdditions: max 2. Only if scene OPENED a new narrative thread worth remembering.
-- resolvedHookIds: reference existing hook ids from the state provided. [] if none delivered.
-- worldFacts: concrete world info (place names, political facts, lore). NOT atmosphere.
-- codexFragments: lore explicitly revealed through NPC dialogue.
-- knowledgeEvents/Decisions: key story moments for semantic recall.
+OTHER:
+- hookAdditions: do NOT include an id — the database assigns one.
 - needsRestoration: positive deltas IF character ate (+50-70 hunger), drank (+40-60 thirst), slept (+80-100 rest), bathed (+80 hygiene). null if none.
 
 Rules:

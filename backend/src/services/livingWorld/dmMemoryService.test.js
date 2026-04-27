@@ -48,18 +48,17 @@ describe('planMemoryInserts', () => {
 });
 
 describe('planHookMutations', () => {
-  it('routes new hooks to toCreate, existing to toUpdate', () => {
+  it('treats every addition as a new INSERT (no LLM-supplied id)', () => {
     const plan = planHookMutations(
-      ['existing-hook'],
+      ['existing-hook-uuid'],
       [
-        { id: 'existing-hook', kind: 'quest', summary: 'updated' },
-        { id: 'fresh-hook', kind: 'intrigue', summary: 'brand new' },
+        { kind: 'quest', summary: 'first' },
+        { kind: 'intrigue', summary: 'second' },
       ],
     );
-    expect(plan.toCreate).toHaveLength(1);
-    expect(plan.toCreate[0].id).toBe('fresh-hook');
-    expect(plan.toUpdate).toHaveLength(1);
-    expect(plan.toUpdate[0]).toMatchObject({ id: 'existing-hook', summary: 'updated' });
+    expect(plan.toCreate).toHaveLength(2);
+    expect(plan.toCreate.every((h) => !('id' in h))).toBe(true);
+    expect(plan.toCreate[0]).toMatchObject({ kind: 'quest', summary: 'first' });
   });
 
   it('lists resolved-hook ids in toDelete (only those that actually exist)', () => {
@@ -67,23 +66,23 @@ describe('planHookMutations', () => {
     expect(plan.toDelete).toEqual(['hook1']);
   });
 
-  it('drops hooks without id or summary', () => {
+  it('drops hooks without summary', () => {
     const plan = planHookMutations([], [
-      { kind: 'quest', summary: 'no id' },
-      { id: 'ok', summary: 'fine' },
-      { id: 'empty-summary' },
+      { kind: 'quest', summary: 'fine' },
+      { kind: 'quest' },
+      { summary: '' },
     ]);
     expect(plan.toCreate).toHaveLength(1);
-    expect(plan.toCreate[0].id).toBe('ok');
+    expect(plan.toCreate[0].summary).toBe('fine');
   });
 
   it('defaults kind to "generic" and priority to "normal"', () => {
-    const plan = planHookMutations([], [{ id: 'h', summary: 's' }]);
+    const plan = planHookMutations([], [{ summary: 's' }]);
     expect(plan.toCreate[0]).toMatchObject({ kind: 'generic', priority: 'normal', idealTiming: null });
   });
 
   it('handles empty resolvedHookIds and additions safely', () => {
-    expect(planHookMutations([], [], [])).toEqual({ toCreate: [], toUpdate: [], toDelete: [] });
-    expect(planHookMutations(null, null, null)).toEqual({ toCreate: [], toUpdate: [], toDelete: [] });
+    expect(planHookMutations([], [], [])).toEqual({ toCreate: [], toDelete: [] });
+    expect(planHookMutations(null, null, null)).toEqual({ toCreate: [], toDelete: [] });
   });
 });

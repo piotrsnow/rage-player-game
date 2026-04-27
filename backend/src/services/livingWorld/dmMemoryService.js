@@ -44,33 +44,27 @@ export function planMemoryInserts(existingSummaries, additions) {
 }
 
 /**
- * Pure — split incoming hook additions into create/update against the set of
- * already-persisted hook ids. Returns `{ toCreate, toUpdate, toDelete }`
- * shaped for prisma calls. Hooks without id/summary are dropped silently.
+ * Pure — turn LLM-supplied hook additions into INSERT payloads (DB assigns
+ * the UUID id) and filter `resolvedHookIds` down to ids that actually exist.
+ * Hooks without a summary are dropped silently. FIFO trigger handles cap +
+ * any rare in-flight duplicate summaries.
  */
 export function planHookMutations(existingHookIds, additions, resolvedHookIds = []) {
   const existing = new Set(Array.isArray(existingHookIds) ? existingHookIds : []);
   const resolved = new Set(Array.isArray(resolvedHookIds) ? resolvedHookIds : []);
   const toCreate = [];
-  const toUpdate = [];
 
   for (const hook of Array.isArray(additions) ? additions : []) {
-    if (!hook?.id || !hook?.summary) continue;
-    const data = {
+    if (!hook?.summary) continue;
+    toCreate.push({
       kind: hook.kind || 'generic',
       summary: hook.summary,
       idealTiming: hook.idealTiming || null,
       priority: hook.priority || 'normal',
-    };
-    if (existing.has(hook.id)) {
-      toUpdate.push({ id: hook.id, ...data });
-    } else {
-      toCreate.push({ id: hook.id, ...data });
-    }
+    });
   }
   return {
     toCreate,
-    toUpdate,
     toDelete: [...resolved].filter((id) => existing.has(id)),
   };
 }
@@ -143,12 +137,6 @@ export async function updateDmAgent(
       if (plan.toCreate.length > 0) {
         await prisma.campaignDmPendingHook.createMany({
           data: plan.toCreate.map((h) => ({ campaignId, ...h })),
-        });
-      }
-      for (const h of plan.toUpdate) {
-        await prisma.campaignDmPendingHook.update({
-          where: { id: h.id },
-          data: { kind: h.kind, summary: h.summary, idealTiming: h.idealTiming, priority: h.priority },
         });
       }
     }

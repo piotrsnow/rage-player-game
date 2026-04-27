@@ -4,7 +4,7 @@ import {
   resolveLocationByName,
   findOrCreateCampaignLocation,
 } from '../../livingWorld/worldStateService.js';
-import { markLocationDiscovered } from '../../livingWorld/userDiscoveryService.js';
+import { markLocationDiscovered, markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
 import { computeSmartPosition, findMergeCandidate } from '../../livingWorld/positionCalculator.js';
 import {
   LOCATION_KIND_WORLD,
@@ -114,7 +114,7 @@ export async function resolveAnchorToken(token, campaignId, startSpawn = null) {
 
 export { processSublocationEntry, processTopLevelEntry };
 
-async function processSublocationEntry(campaignId, entry) {
+async function processSublocationEntry(campaignId, entry, { discoveryState = 'visited' } = {}) {
   const parentRef = await resolveLocationByName(entry.parentLocationName, { campaignId });
   if (!parentRef) {
     log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Parent location resolve failed');
@@ -147,7 +147,7 @@ async function processSublocationEntry(campaignId, entry) {
     'CampaignLocation sublocation materialized',
   );
 
-  await autoDiscoverCreated({ campaignId, kind: LOCATION_KIND_CAMPAIGN, id: created.id });
+  await autoDiscoverCreated({ campaignId, kind: LOCATION_KIND_CAMPAIGN, id: created.id, state: discoveryState });
   return { kind: LOCATION_KIND_CAMPAIGN, row: created };
 }
 
@@ -157,7 +157,7 @@ async function processSublocationEntry(campaignId, entry) {
 // This function only runs when livingWorldEnabled is true (gated upstream).
 const BLOCKED_MIDPLAY_LOCATION_TYPES = new Set(['hamlet', 'village', 'town', 'city', 'capital']);
 
-async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null, { anchorOverride = null } = {}) {
+async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null, { anchorOverride = null, discoveryState = 'visited' } = {}) {
   // FUTURE — see knowledge/ideas/biome-tiles.md. When the biome-tile grid lands,
   // this path should clamp the placed position to the current tile's bounds AND
   // inherit the tile's biome → locationType mapping (mountains tile → mountain
@@ -260,7 +260,7 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
     createdRef = { kind: LOCATION_KIND_CAMPAIGN, row: created };
   }
 
-  await autoDiscoverCreated({ campaignId, kind: createdRef.kind, id: createdRef.row.id });
+  await autoDiscoverCreated({ campaignId, kind: createdRef.kind, id: createdRef.row.id, state: discoveryState });
 
   // F5b — `connectsTo` and bidirectional auto-Road both intentionally dropped.
   // Roads are canonical-only; the player will discover routes via map "travel
@@ -268,20 +268,26 @@ async function processTopLevelEntry(campaignId, entry, anchorRef, bounds = null,
   // CampaignLocations is Euclidean on regionX/regionY at runtime.
 }
 
-async function autoDiscoverCreated({ campaignId, kind, id }) {
+// `state` controls the fog mark applied after creation:
+//   'visited'     — mid-play default (player just walked into the new place)
+//   'heard_about' — campaign-creation initialLocations that the questgiver mentioned
+//   null          — skip entirely (location exists in world but stays fully unknown)
+async function autoDiscoverCreated({ campaignId, kind, id, state = 'visited' }) {
+  if (state !== 'visited' && state !== 'heard_about') return;
   try {
     const campaignRow = await prisma.campaign.findUnique({
       where: { id: campaignId },
       select: { userId: true },
     });
     if (!campaignRow?.userId) return;
-    await markLocationDiscovered({
+    const fn = state === 'visited' ? markLocationDiscovered : markLocationHeardAbout;
+    await fn({
       userId: campaignRow.userId,
       locationKind: kind,
       locationId: id,
       campaignId,
     });
   } catch (err) {
-    log.warn({ err: err?.message, campaignId, kind, id }, 'auto-discover after create failed');
+    log.warn({ err: err?.message, campaignId, kind, id, state }, 'auto-discover after create failed');
   }
 }

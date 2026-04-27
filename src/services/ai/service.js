@@ -70,7 +70,6 @@ function postProcessCampaignResult(raw, repairedSegments, settings, language) {
     initialQuest: raw.initialQuest || undefined,
     initialNPCs: Array.isArray(raw.initialNPCs) ? raw.initialNPCs : [],
     initialWorldFacts: Array.isArray(raw.initialWorldFacts) ? raw.initialWorldFacts : [],
-    campaignStructure: raw.campaignStructure || undefined,
   };
 }
 

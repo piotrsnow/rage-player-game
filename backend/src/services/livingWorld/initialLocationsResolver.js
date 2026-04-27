@@ -96,12 +96,20 @@ export async function applyInitialLocations({
     }
     const entry = validation.entry;
 
+    // Fog at campaign start: ALL initialLocations stay fully unknown to the
+    // PLAYER. `knownByQuestGiver` records that the NPC knows the place (so
+    // they can volunteer it when asked), but the player only learns about a
+    // location through actual scene narration — via mid-play
+    // `markLocationHeardAbout` fired from livingWorld.js when the AI mentions
+    // it, or `markLocationDiscovered` when the player visits.
+    const discoveryState = null;
+
     try {
       if (entry.parentLocationName) {
         // Sublocation branch — `processSublocationEntry` resolves the parent
         // by name (canonical-priority). We've already validated the name is
         // in the NPC's allowed set, so the lookup is safe.
-        await processSublocationEntry(campaignId, entry);
+        await processSublocationEntry(campaignId, entry, { discoveryState });
       } else {
         const anchorRef = await resolveAnchorToken(entry.anchor.relativeTo, campaignId, startSpawn);
         if (!anchorRef) {
@@ -120,7 +128,7 @@ export async function applyInitialLocations({
           distanceHint: entry.anchor.distance,
           directionFromCurrent: entry.anchor.direction || null,
         };
-        await processTopLevelEntry(campaignId, topEntry, null, bounds, { anchorOverride: anchorRef });
+        await processTopLevelEntry(campaignId, topEntry, null, bounds, { anchorOverride: anchorRef, discoveryState });
       }
 
       // Track slug as used so a same-batch collision later in the loop drops

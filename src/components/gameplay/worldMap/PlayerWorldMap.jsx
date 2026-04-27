@@ -20,6 +20,15 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
   const [hoveredId, setHoveredId] = useState(null);
   const [popover, setPopover] = useState(null); // {location, screen}
   const [subView, setSubView] = useState(null); // parent location object
+  // Zoom multiplier on top of computePxPerKm. pan is in CSS pixels relative to
+  // the centered grid origin. zoom=1 + pan=0,0 reproduces the un-zoomed view
+  // exactly. Pan is clamped so the grid never wanders fully offscreen.
+  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 });
+  const dragRef = useRef(null); // { startX, startY, startPanX, startPanY, moved }
+  const justDraggedRef = useRef(false);
+
+  const ZOOM_MIN = 1;
+  const ZOOM_MAX = 5;
 
   const topLevelLocations = useMemo(
     () => (data?.locations || []).filter((l) => !l.parentLocationId),
@@ -68,6 +77,68 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     return () => ro.disconnect();
   }, []);
 
+  const baseCell = useMemo(() => computePxPerKm(size.w, size.h), [size]);
+  const cell = baseCell * view.zoom;
+
+  // Pan limit at current zoom — keeps the grid from drifting fully offscreen.
+  // gridPx grows with zoom; when gridPx <= canvas, pan is forced to 0.
+  const clampPan = useCallback((zoom, panX, panY) => {
+    const gridPx = 20 * baseCell * zoom; // GRID_SPAN * cell
+    const limX = Math.max(0, (gridPx - size.w) / 2);
+    const limY = Math.max(0, (gridPx - size.h) / 2);
+    return {
+      panX: Math.max(-limX, Math.min(limX, panX)),
+      panY: Math.max(-limY, Math.min(limY, panY)),
+    };
+  }, [baseCell, size]);
+
+  // Re-clamp pan whenever the canvas resizes — prevents pan getting "stuck"
+  // outside the new bounds after a window resize.
+  useEffect(() => {
+    setView((v) => {
+      const clamped = clampPan(v.zoom, v.panX, v.panY);
+      if (clamped.panX === v.panX && clamped.panY === v.panY) return v;
+      return { ...v, ...clamped };
+    });
+  }, [clampPan]);
+
+  const setZoomAt = useCallback((factor, anchorX, anchorY) => {
+    setPopover(null);
+    setView((prev) => {
+      const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, prev.zoom * factor));
+      if (newZoom === prev.zoom) return prev;
+      const ratio = newZoom / prev.zoom;
+      // Keep the world point under (anchorX, anchorY) anchored on screen.
+      const rawPanX = anchorX - (anchorX - prev.panX) * ratio;
+      const rawPanY = anchorY - (anchorY - prev.panY) * ratio;
+      if (newZoom === 1) return { zoom: 1, panX: 0, panY: 0 };
+      const clamped = clampPan(newZoom, rawPanX, rawPanY);
+      return { zoom: newZoom, ...clamped };
+    });
+  }, [clampPan]);
+
+  const resetView = useCallback(() => {
+    setPopover(null);
+    setView({ zoom: 1, panX: 0, panY: 0 });
+  }, []);
+
+  // Wheel listener bound manually so we can preventDefault (React's onWheel
+  // attaches passive listeners that ignore preventDefault, letting the page
+  // scroll under the map).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      setZoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, sx, sy);
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, [setZoomAt]);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !data) return;
@@ -78,7 +149,12 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     drawParchment(ctx, size.w, size.h);
-    const cell = computePxPerKm(size.w, size.h);
+
+    // Pan applies to the grid + edges + tiles only — parchment stays fixed
+    // so the canvas is always fully painted regardless of how far we panned.
+    ctx.save();
+    ctx.translate(view.panX, view.panY);
+
     drawGridLines(ctx, cell, size.w, size.h);
 
     for (const e of data.edges || []) {
@@ -105,7 +181,8 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
         pulse,
       });
     }
-  }, [data, size, topLevelLocations, locById, fogVisited, fogHeard, discoveredEdges, hoveredId, currentParentId]);
+    ctx.restore();
+  }, [data, size, cell, view.panX, view.panY, topLevelLocations, locById, fogVisited, fogHeard, discoveredEdges, hoveredId, currentParentId]);
 
   useEffect(() => {
     if (subView) return; // pause top-level animation while drill-down is open
@@ -123,27 +200,66 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     setSubView(parent);
   }, []);
 
+  const handlePointerDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    if (view.zoom <= ZOOM_MIN) return; // pan only meaningful when zoomed in
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPanX: view.panX,
+      startPanY: view.panY,
+      moved: false,
+    };
+    canvasRef.current?.setPointerCapture?.(e.pointerId);
+  }, [view]);
+
+  const handlePointerUp = useCallback((e) => {
+    if (dragRef.current?.moved) justDraggedRef.current = true;
+    dragRef.current = null;
+    canvasRef.current?.releasePointerCapture?.(e.pointerId);
+  }, []);
+
   const handlePointerMove = useCallback((e) => {
     if (!data) return;
+    // Snapshot drag start values up-front. React's `setView` updater runs
+    // async and can land AFTER a pointerup has nulled `dragRef.current`,
+    // which previously crashed with "reading 'startPanX' of null".
+    const drag = dragRef.current;
+    if (drag) {
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+      const targetX = drag.startPanX + dx;
+      const targetY = drag.startPanY + dy;
+      setView((v) => {
+        const clamped = clampPan(v.zoom, targetX, targetY);
+        return { ...v, ...clamped };
+      });
+      return;
+    }
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-    const cell = computePxPerKm(size.w, size.h);
+    // Pan-correct the cursor before mapping to world coords.
+    const sx = e.clientX - rect.left - view.panX;
+    const sy = e.clientY - rect.top - view.panY;
     const world = screenToWorld(sx, sy, cell, size.w, size.h);
     const picked = pickLocationAt(world.x, world.y, topLevelLocations, fogVisited, fogHeard);
     // Heard-about tiles are not clickable per spec; skip hover highlight too.
     const hoverable = picked && fogVisited.has(picked.id) ? picked : null;
     setHoveredId(hoverable?.id || null);
-  }, [data, size, topLevelLocations, fogVisited, fogHeard]);
+  }, [data, size, cell, view.panX, view.panY, topLevelLocations, fogVisited, fogHeard, clampPan]);
 
   const handleClick = useCallback((e) => {
+    // Suppress click that follows a drag-pan — pointerup → click sequence.
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
     if (!data) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
-    const cell = computePxPerKm(size.w, size.h);
+    const sx = e.clientX - rect.left - view.panX;
+    const sy = e.clientY - rect.top - view.panY;
     const world = screenToWorld(sx, sy, cell, size.w, size.h);
     const picked = pickLocationAt(world.x, world.y, topLevelLocations, fogVisited, fogHeard);
     if (!picked || !fogVisited.has(picked.id)) {
@@ -156,11 +272,15 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
       return;
     }
     const screen = worldToScreen(picked.regionX, picked.regionY, cell, size.w, size.h);
+    // Add pan offset so popover lands at the actual on-screen tile position.
     setPopover({
       location: picked,
-      screen: { x: Math.min(screen.x + 20, size.w - 200), y: Math.max(screen.y - 10, 8) },
+      screen: {
+        x: Math.min(screen.x + view.panX + 20, size.w - 200),
+        y: Math.max(screen.y + view.panY - 10, 8),
+      },
     });
-  }, [data, size, topLevelLocations, fogVisited, fogHeard, currentParentId, openSubView]);
+  }, [data, size, cell, view.panX, view.panY, topLevelLocations, fogVisited, fogHeard, currentParentId, openSubView]);
 
   const closePopover = useCallback(() => setPopover(null), []);
 
@@ -220,16 +340,49 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     ? data.currentLocationName
     : null;
 
+  const canvasCursor = dragRef.current?.moved
+    ? 'grabbing'
+    : view.zoom > ZOOM_MIN
+      ? 'grab'
+      : 'pointer';
+
   return (
     <div ref={containerRef} className="relative w-full h-[480px] rounded-sm overflow-hidden border border-outline-variant/15">
       <canvas
         ref={canvasRef}
-        className="w-full h-full cursor-pointer"
-        style={{ display: 'block' }}
+        className="w-full h-full"
+        style={{ display: 'block', cursor: canvasCursor, touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onPointerLeave={() => setHoveredId(null)}
         onClick={handleClick}
       />
+      <div className="absolute top-2 right-2 flex flex-col gap-1 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => setZoomAt(1.3, size.w / 2, size.h / 2)}
+          disabled={view.zoom >= ZOOM_MAX}
+          className="w-7 h-7 rounded-sm bg-surface/85 backdrop-blur-sm border border-outline-variant/30 text-on-surface text-base leading-none hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed"
+          title={t('worldMap.zoomIn', 'Zoom in')}
+        >+</button>
+        <button
+          type="button"
+          onClick={() => setZoomAt(1 / 1.3, size.w / 2, size.h / 2)}
+          disabled={view.zoom <= ZOOM_MIN}
+          className="w-7 h-7 rounded-sm bg-surface/85 backdrop-blur-sm border border-outline-variant/30 text-on-surface text-base leading-none hover:bg-surface disabled:opacity-40 disabled:cursor-not-allowed"
+          title={t('worldMap.zoomOut', 'Zoom out')}
+        >−</button>
+        {view.zoom > ZOOM_MIN && (
+          <button
+            type="button"
+            onClick={resetView}
+            className="w-7 h-7 rounded-sm bg-surface/85 backdrop-blur-sm border border-outline-variant/30 text-on-surface text-xs leading-none hover:bg-surface"
+            title={t('worldMap.zoomReset', 'Reset')}
+          >↺</button>
+        )}
+      </div>
       {wildernessBanner && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-sm bg-surface/90 backdrop-blur-sm border border-outline-variant/30 text-[12px] font-medium text-on-surface pointer-events-none">
           📍 {wildernessBanner}

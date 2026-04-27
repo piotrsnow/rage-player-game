@@ -22,15 +22,15 @@ Return ONLY valid JSON:
     { "summary": "one-line Polish note about what DM did/plans", "status": "planned" | "introduced" | "waiting" | "resolved", "plannedFor": "when/where it matters" | null }
   ],
   "hookAdditions": [
-    { "id": "kebab-case-slug-unique-enough", "kind": "quest" | "intrigue" | "reveal" | "encounter", "summary": "one-line Polish seed", "idealTiming": "when to spring it" | null, "priority": "low" | "normal" | "high" }
+    { "kind": "quest" | "intrigue" | "reveal" | "encounter", "summary": "one-line Polish seed", "idealTiming": "when to spring it" | null, "priority": "low" | "normal" | "high" }
   ],
-  "resolvedHookIds": ["id1", "id2"]
+  "resolvedHookIds": ["uuid-from-pending-hooks", "..."]
 }
 
 Rules:
 - memoryEntries: at most 3. Empty array if the scene was routine.
-- hookAdditions: at most 2. Only if the scene genuinely opened a new narrative thread.
-- resolvedHookIds: reference existing hook ids from the state provided. Leave empty if nothing was delivered.
+- hookAdditions: at most 2. Only if the scene genuinely opened a new narrative thread. Do NOT include an id — the database assigns one.
+- resolvedHookIds: copy ids verbatim from the "Pending hooks" list shown in the user message. Leave empty if nothing was delivered.
 - Stay short: each summary ≤ 120 chars. Polish language.
 - Do not fabricate. If no change, return { "memoryEntries": [], "hookAdditions": [], "resolvedHookIds": [] }.`;
 
