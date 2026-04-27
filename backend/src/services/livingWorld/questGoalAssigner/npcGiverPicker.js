@@ -12,7 +12,7 @@
 
 import { prisma } from '../../../lib/prisma.js';
 import { loadCampaignGraph } from '../travelGraph.js';
-import { slugify } from './questRole.js';
+import { slugifyNpcId as slugify } from '../postCampaignPromotion.js';
 import { roleMatchesQuestType } from './roleAffinity.js';
 
 const STORY_FLAGS = /story[-_]critical|lock(?:ed)?[-_]campaign|main[-_]only/i;
