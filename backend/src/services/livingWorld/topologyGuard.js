@@ -34,45 +34,42 @@ export function decideNpcAdmission({ currentKeyNpcCount = 0, maxKeyNpcs = 10 }) 
 /**
  * Decide whether a new sublocation fits into a parent settlement's slot system.
  *
+ * Sublocations are per-campaign (CampaignLocation sandbox), so there is no
+ * global capacity to protect. Capacity caps (`maxSubLocations`,
+ * `optionalCap`, `customCap`) are no longer enforced — sublokacje per
+ * kampania mogą rosnąć dowolnie. We still classify the slotType so the
+ * prompt + admin UI can group filled slots by required/optional/custom,
+ * and we still reject obviously-bad emissions (empty name, generic name).
+ *
  * Caller provides:
  *   parentLocationType — 'village' | 'town' | ...
- *   childrenBySlot = { required: [name...], optional: [name...], custom: [name...] }
- *   slotType        — what AI emitted (may be null/unknown)
- *   name            — AI-emitted display name (e.g. "Wieża Maga")
+ *   slotType           — what AI emitted (may be null/unknown)
+ *   name               — AI-emitted display name (e.g. "Wieża Maga")
  *
  * Returns admission + slotType + slotKind (same meaning as schema).
  *
  * Reject reasons:
  *   'missing_name'          — empty name
  *   'generic_name'          — name failed narrative-distinctiveness check
- *   'hard_cap_exceeded'     — maxSubLocations reached
- *   'optional_cap_exceeded' — too many optional slots filled
  *   'duplicate_slot'        — required/optional slot already occupied
+ *
+ * `childrenBySlot` and the cap parameters (`maxSubLocations`, `customCap`)
+ * are accepted for backwards compatibility but ignored — kept for tests
+ * and call sites that haven't been re-flowed.
  */
 export function decideSublocationAdmission({
   parentLocationType,
-  childrenBySlot = { required: [], optional: [], custom: [] },
-  maxSubLocations = 5,
+  childrenBySlot: _childrenBySlot = { required: [], optional: [], custom: [] },
+  maxSubLocations: _maxSubLocations = 5,
   slotType,
   name,
-  customCap = null,
+  customCap: _customCap = null,
 }) {
   const classified = classifySublocation({ slotType, name, parentLocationType });
 
   if (classified.kind === 'reject') {
     return { admission: 'reject', reason: classified.reason };
   }
-
-  const totalFilled =
-    (childrenBySlot.required?.length || 0) +
-    (childrenBySlot.optional?.length || 0) +
-    (childrenBySlot.custom?.length || 0);
-
-  if (totalFilled >= maxSubLocations) {
-    return { admission: 'reject', reason: 'hard_cap_exceeded' };
-  }
-
-  const template = getTemplate(parentLocationType);
 
   if (classified.kind === 'required') {
     return {
@@ -84,9 +81,6 @@ export function decideSublocationAdmission({
   }
 
   if (classified.kind === 'optional') {
-    if ((childrenBySlot.optional?.length || 0) >= (template.optionalCap || 0)) {
-      return { admission: 'reject', reason: 'optional_cap_exceeded' };
-    }
     return {
       admission: 'optional',
       slotType: classified.slotType,
@@ -95,13 +89,6 @@ export function decideSublocationAdmission({
     };
   }
 
-  // custom — Phase E: bounded by effectiveCustomCap (template.customCap scaled
-  // by campaign difficultyTier). Caller passes the pre-computed cap; falls
-  // back to template.customCap when omitted.
-  const effectiveCap = typeof customCap === 'number' ? customCap : (template.customCap || 0);
-  if ((childrenBySlot.custom?.length || 0) >= effectiveCap) {
-    return { admission: 'reject', reason: 'custom_cap_exceeded' };
-  }
   return {
     admission: 'custom',
     slotType: classified.slotType || null,
@@ -111,19 +98,22 @@ export function decideSublocationAdmission({
 }
 
 /**
- * Summarize the remaining-slot budget of a parent for prompt injection.
+ * Summarize sublocations of a parent for prompt injection.
  * Returns a small object the prompt-builder can stringify:
  *   {
  *     filled: { required: [...], optional: [...], custom: [...] },
- *     openOptional: [list of slotTypes still free],
- *     capacityRemaining: N,
+ *     openOptional: [list of slotTypes still free, narrative hint only],
  *   }
+ *
+ * Capacity numbers (`capacityRemaining`, `optionalBudgetRemaining`,
+ * `customBudgetRemaining`) intentionally dropped — sublocations are
+ * per-campaign sandbox and unbounded. `openOptional` survives as a
+ * narrative hint ("nie ma jeszcze tawerny tutaj — pasowałaby") without
+ * any budget framing.
  */
 export function computeSubLocationBudget({
   parentLocationType,
   childrenBySlot = { required: [], optional: [], custom: [] },
-  maxSubLocations = 5,
-  customCap = null,
 }) {
   const template = getTemplate(parentLocationType);
   const filledRequired = childrenBySlot.required || [];
@@ -133,11 +123,6 @@ export function computeSubLocationBudget({
   const filledOptionalSlots = new Set(filledOptional.map((sub) => sub.slotType).filter(Boolean));
   const openOptional = (template.optional || []).filter((s) => !filledOptionalSlots.has(s));
 
-  const totalFilled = filledRequired.length + filledOptional.length + filledCustom.length;
-  const capacityRemaining = Math.max(0, maxSubLocations - totalFilled);
-
-  const effectiveCustom = typeof customCap === 'number' ? customCap : (template.customCap || 0);
-
   return {
     filled: {
       required: filledRequired,
@@ -145,8 +130,5 @@ export function computeSubLocationBudget({
       custom: filledCustom,
     },
     openOptional,
-    capacityRemaining,
-    optionalBudgetRemaining: Math.max(0, (template.optionalCap || 0) - filledOptional.length),
-    customBudgetRemaining: Math.max(0, effectiveCustom - filledCustom.length),
   };
 }

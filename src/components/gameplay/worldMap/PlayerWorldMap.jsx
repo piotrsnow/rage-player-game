@@ -244,8 +244,9 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     const sy = e.clientY - rect.top - view.panY;
     const world = screenToWorld(sx, sy, cell, size.w, size.h);
     const picked = pickLocationAt(world.x, world.y, topLevelLocations, fogVisited, fogHeard);
-    // Heard-about tiles are not clickable per spec; skip hover highlight too.
-    const hoverable = picked && fogVisited.has(picked.id) ? picked : null;
+    // Heard-about and visited tiles are both hoverable (both are clickable
+    // for travel). Unknown tiles never resolve via pickLocationAt anyway.
+    const hoverable = picked && (fogVisited.has(picked.id) || fogHeard.has(picked.id)) ? picked : null;
     setHoveredId(hoverable?.id || null);
   }, [data, size, cell, view.panX, view.panY, topLevelLocations, fogVisited, fogHeard, clampPan]);
 
@@ -262,7 +263,10 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     const sy = e.clientY - rect.top - view.panY;
     const world = screenToWorld(sx, sy, cell, size.w, size.h);
     const picked = pickLocationAt(world.x, world.y, topLevelLocations, fogVisited, fogHeard);
-    if (!picked || !fogVisited.has(picked.id)) {
+    // Heard-about and visited are both clickable; only unknown tiles are
+    // ignored. Sublocation drill-down is gated to visited (heard-about
+    // doesn't yet expose sub list — peek-blocked per fog policy).
+    if (!picked || !(fogVisited.has(picked.id) || fogHeard.has(picked.id))) {
       setPopover(null);
       return;
     }
@@ -300,10 +304,15 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     if (onEnterSub && name) onEnterSub(name);
   }, [onEnterSub]);
 
+  // Sublocation peek is gated to visited tiles only — heard-about reveals
+  // the parent's existence on the map, not its interior. Travel button stays
+  // available regardless so the player can use a hearsay rumour to issue a
+  // travel action without first knowing what's inside.
   const popoverHasSubs = useMemo(() => {
     if (!popover) return false;
+    if (!fogVisited.has(popover.location.id)) return false;
     return (childrenByParent.get(popover.location.id) || []).length > 0;
-  }, [popover, childrenByParent]);
+  }, [popover, childrenByParent, fogVisited]);
 
   if (error) {
     return (

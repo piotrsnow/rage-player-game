@@ -224,10 +224,9 @@ Capital note: Yeralden is shared across campaigns, but each campaign's tier gove
 
 ## Phase F — travel montage + bounds enforcement
 
-Two independent additions:
-
-1. **Travel montage** — when `buildTravelBlock` resolves a known-graph path (direct or sensible detour) with `totalDistance > 5 km`, the block sets `montage: true`. `contextSection.js` injects `TRAVEL MONTAGE MODE` instructions telling premium to compress the journey into one 1-2-paragraph scene with at most one minor incident, skipping per-waypoint narration.
-2. **Bounds enforcement** — `processLocationChanges` fetches `campaign.worldBounds` once per batch and `processTopLevelEntry` rejects any new top-level WorldLocation whose computed `regionX/regionY` falls outside those bounds. Silent reject — premium's narration still lands, BE just doesn't materialize the row. (Note: this is an AI-placement guardrail; it does not affect what the player sees on the map — the player map always renders the full canonical `-10..10` grid regardless.)
+1. **Travel** — match-or-drop. Intent classifier extracts `_travelTarget`; [`buildTravelBlock`](../../backend/src/services/aiContextTools/contextBuilders/travel.js) resolves the name against canonical + sandbox locations, returns `{startName, targetName, targetInFog}`. `contextSection.js` renders a `## TRAVEL` block: in-fog target → premium does a 1-2 zdania montage + arrival narration + emits `stateChanges.currentLocation: targetName`. Out-of-fog target → premium narrates dezorientację and does NOT emit currentLocation. `processCurrentLocationChange` does a final match-or-drop on the emitted name (canonical OR sandbox) and writes the polymorphic FK trio on Campaign. AI never creates locations mid-play, so unrecognized names are dropped.
+2. **Bounds enforcement** — top-level location creation is fully blocked mid-play (`processLocationChanges` rejects every `parentLocationName=null` entry). `worldBounds` survives as a placement guardrail for sublocation positioning (parent coords inheritance).
+3. **Edges = stricte zbudowana droga.** Roads exist only between hand-seeded settlements (currently Yeralden ↔ Świetłogaj NE and Yeralden ↔ Kamionka Stara SW). They do NOT propagate NPC knowledge (`resolveNpcKnownLocations` no longer expands via 1-hop neighbours) and do NOT auto-flip neighbours to heard-about (`markStartLocationVisible` no longer pre-discovers Roads). Wilderness/dungeons/ruins are off-graph — players reach them via fog-visible travel montage, not via Dijkstra.
 
 ## Critical files
 

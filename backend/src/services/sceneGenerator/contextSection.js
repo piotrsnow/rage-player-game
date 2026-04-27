@@ -187,13 +187,14 @@ export function buildContextSection(contextBlocks) {
       }
     }
 
-    // Phase 7 — SUBLOCATIONS AVAILABLE. Shows parent settlement's slot state
-    // so premium knows what already exists, what optional slots are open,
-    // and when the sublocation hard cap is approaching.
+    // SUBLOCATIONS — what's already inside the parent settlement. Caps were
+    // dropped (sublokacje per-kampania mogą rosnąć dowolnie); the block now
+    // just lists what exists + which optional slots are still narratively
+    // unfilled, so premium reuses names instead of inventing duplicates.
     if (lw.settlement) {
       const s = lw.settlement;
       lines.push('');
-      lines.push(`## SUBLOCATIONS IN ${s.parentName} (${s.locationType} — ${s.budget.capacityRemaining}/${s.budget.filled.required.length + s.budget.filled.optional.length + s.budget.filled.custom.length + s.budget.capacityRemaining} slots free)`);
+      lines.push(`## SUBLOCATIONS IN ${s.parentName} (${s.locationType})`);
       const fmt = (c) => `${c.canonicalName}${c.slotType ? ` [${c.slotType}]` : ''}`;
       if (s.budget.filled.required.length) {
         lines.push(`Required (always present): ${s.budget.filled.required.map(fmt).join(', ')}`);
@@ -205,16 +206,7 @@ export function buildContextSection(contextBlocks) {
         lines.push(`Custom (unique narrative): ${s.budget.filled.custom.map(fmt).join(', ')}`);
       }
       if (s.budget.openOptional.length) {
-        lines.push(`Open optional slots: ${s.budget.openOptional.join(', ')} (budget ${s.budget.optionalBudgetRemaining} left)`);
-      } else {
-        lines.push(`Optional slots: FULL — only custom additions allowed`);
-      }
-      // Phase E — custom sublocation budget (scaled by campaign difficultyTier).
-      const customRemaining = s.budget.customBudgetRemaining ?? 0;
-      if (customRemaining > 0) {
-        lines.push(`Custom (narratively-distinctive) additions remaining: ${customRemaining}.`);
-      } else {
-        lines.push(`Custom additions: 0 remaining (campaign tier does not allow more custom buildings here). Fill open optional slots only.`);
+        lines.push(`Open optional slots (narrative hint, not a budget): ${s.budget.openOptional.join(', ')}`);
       }
       lines.push(
         `When introducing a new sublocation: emit slotType matching an open optional slot OR use ` +
@@ -330,63 +322,30 @@ export function buildContextSection(contextBlocks) {
         lines.push('⚠ VENDETTA MODE — frakcje mogą aktywnie tropić/atakować. Nie neutralizuj tego samowolnie: tylko atonement quest lub wygaśnięcie (2 tyg.) kończy stan.');
       }
     }
-    // Phase 7 — TRAVEL CONTEXT. Emitted when the player's action classifies
-    // as a travel intent and we can resolve the path. Tells premium to narrate
-    // the whole trip in ONE scene via existing waypoints; forbids inventing
-    // new locations between them unless the detour is long (Iteracja 2).
+    // TRAVEL — emitted when the intent classifier flagged a travel target.
+    // Edge = stricte zbudowana droga (bezpieczne przejście) i NIE służy ani
+    // jako sygnał wiedzy NPC, ani jako preconditiona podróży — gracz może
+    // iść do dowolnej fog-visible lokacji. Brak ścieżki = po prostu nikt
+    // nie zbudował drogi; AI nadal narratuje montage. AI NIGDY nie tworzy
+    // nowych lokacji (top-level ani dungeonów). Sublokacje wewnątrz
+    // istniejącej osady są dozwolone (osobny tor `newLocations` z
+    // `parentLocationName`).
     if (lw.travel) {
       const t = lw.travel;
       lines.push('');
-      if (t.kind === 'path') {
-        const waypointList = t.waypoints.map((w) => `${w.name} (${w.locationType})`).join(' → ');
-        lines.push(`## TRAVEL CONTEXT`);
-        lines.push(`Player is travelling ${t.startName} → ${t.targetName}.`);
-        lines.push(`Known path (${t.hops} hops, ~${t.totalDistance} km, difficulty: ${t.difficulty}): ${waypointList}`);
-        if (t.terrains?.length) {
-          lines.push(`Terrain: ${t.terrains.join(', ')}`);
-        }
-        if (t.montage) {
-          lines.push(
-            `TRAVEL MONTAGE MODE: Compress the journey into ONE scene. ` +
-            `1-2 atmospheric paragraphs (weather, terrain, mood, at most one minor incident), then arrival. ` +
-            `DO NOT introduce intermediate settlements, encounters, or lengthy deliberation. ` +
-            `Skip per-waypoint narration — mention waypoints only as passing scenery. ` +
-            `End the scene at ${t.targetName}. Set stateChanges.currentLocation = "${t.targetName}".`,
-          );
-        } else if (t.detour === 'direct' || t.detour === 'sensible') {
-          lines.push(
-            `Narrate the entire trip in ONE scene, passing through each waypoint briefly. ` +
-            `DO NOT invent new intermediate locations. End the scene at ${t.targetName}. ` +
-            `Set stateChanges.currentLocation = "${t.targetName}".`,
-          );
-        } else {
-          lines.push(
-            `This is a LONG path (${t.detour}). The player may want a shortcut — ` +
-            `if they have explicitly stated a shortcut intent, you may generate 1-2 new intermediate ` +
-            `locations via newLocations (directionFromCurrent + travelDistance). Otherwise follow the known path.`,
-          );
-        }
-        if (t.candidateEvents?.length) {
-          lines.push('');
-          lines.push('Candidate travel beats (weave 1-2 into the narrative, prefer variety):');
-          for (const cand of t.candidateEvents) {
-            lines.push(`  - [${cand.type}@${cand.at}] ${cand.hook}`);
-          }
-        }
-      } else if (t.kind === 'unknown_target') {
-        lines.push(`## TRAVEL INTENT`);
-        lines.push(`Player wants to travel to "${t.targetName}" but has not yet discovered that location.`);
+      lines.push(`## TRAVEL`);
+      if (t.targetInFog) {
         lines.push(
-          `Narrate the player setting out; either: (a) they realize they don't know the way and ask around, ` +
-          `(b) they travel blindly and after some wandering end up in a new location — emit that new location ` +
-          `in newLocations with directionFromCurrent + travelDistance. Do NOT arrive at "${t.targetName}" directly.`,
+          `Gracz wyrusza ${t.startName} → ${t.targetName}. ` +
+          `TRAVEL MONTAGE: 1-2 zdania o przebiegu drogi (atmosfera, klimat, bez encounterów) + krótka narracja przybycia do ${t.targetName}. ` +
+          `Emit \`stateChanges.currentLocation: "${t.targetName}"\`. ` +
+          `NIE twórz nowych lokacji ani encounterów po drodze.`,
         );
-      } else if (t.kind === 'no_path') {
-        lines.push(`## TRAVEL INTENT`);
-        lines.push(`Player wants to travel to "${t.targetName}" but no known path connects it from ${t.startName}.`);
+      } else {
         lines.push(
-          `Narrate them setting off through unfamiliar terrain — emit 1-2 new intermediate locations ` +
-          `via newLocations (directionFromCurrent + travelDistance), then arrive at ${t.targetName}.`,
+          `Gracz mówi że chce iść do "${t.targetName}", ale ta lokacja nie jest mu znana (nie była odwiedzona ani wspomniana przez NPC). ` +
+          `Narratuj dezorientację — postać nie wie gdzie to jest, błądzi lub pyta o drogę. ` +
+          `NIE emituj \`stateChanges.currentLocation\` (drop). NIE twórz nowej lokacji.`,
         );
       }
     }

@@ -180,16 +180,13 @@ export async function markEdgeDiscoveredByUser({ userId, fromLocationId, toLocat
 
 /**
  * Discovery setup at campaign start. Resolves the top-level settlement (a
- * sublocation start → its parent), marks it visited, and — for canonical
- * starts — pre-discovers outgoing Roads + flips neighbor settlements to
- * `heard_about` so the player sees the local road network from turn 0.
+ * sublocation start → its parent) and marks both visited so the player sees
+ * the starting tile on the map from turn 0.
  *
- * Reason: the player map only renders top-level tiles whose fog state isn't
- * `unknown`, and Roads only render when both endpoints are non-`unknown`.
- * Without this seeding, a player who starts in a non-`knownByDefault` village
- * (or in a CampaignLocation sandbox settlement) sees an empty map. Roads are
- * canonical-only (FK to WorldLocation), so the road branch is a no-op for
- * CampaignLocation starts.
+ * Edges = stricte zbudowana droga (bezpieczne przejście). Edges are NOT a
+ * source of player or NPC knowledge — entering a settlement does not auto-
+ * reveal its road neighbours. Heard-about reveals come from NPC dialog
+ * (`processLocationMentions`) only.
  *
  * Idempotent — silent on failure.
  */
@@ -198,15 +195,13 @@ export async function markStartLocationVisible({ userId, campaignId, locationKin
   try {
     await markLocationDiscovered({ userId, locationKind, locationId, campaignId });
 
-    let topLevelId = locationId;
     if (locationKind === LOCATION_KIND_WORLD) {
       const row = await prisma.worldLocation.findUnique({
         where: { id: locationId },
         select: { parentLocationId: true },
       });
       if (row?.parentLocationId) {
-        topLevelId = row.parentLocationId;
-        await markLocationDiscovered({ userId, locationKind, locationId: topLevelId, campaignId });
+        await markLocationDiscovered({ userId, locationKind, locationId: row.parentLocationId, campaignId });
       }
     } else if (locationKind === LOCATION_KIND_CAMPAIGN) {
       const row = await prisma.campaignLocation.findUnique({
@@ -214,38 +209,9 @@ export async function markStartLocationVisible({ userId, campaignId, locationKin
         select: { parentLocationId: true },
       });
       if (row?.parentLocationId) {
-        topLevelId = row.parentLocationId;
-        await markLocationDiscovered({ userId, locationKind, locationId: topLevelId, campaignId });
+        await markLocationDiscovered({ userId, locationKind, locationId: row.parentLocationId, campaignId });
       }
     }
-
-    if (locationKind !== LOCATION_KIND_WORLD) return;
-    const roads = await prisma.road.findMany({
-      where: {
-        OR: [
-          { fromLocationId: topLevelId },
-          { toLocationId: topLevelId },
-        ],
-      },
-      select: { id: true, fromLocationId: true, toLocationId: true },
-    });
-    if (roads.length === 0) return;
-
-    await ensureUserKnowledgeRow(userId);
-    await prisma.userDiscoveredEdge.createMany({
-      data: roads.map((r) => ({ userId, edgeId: r.id })),
-      skipDuplicates: true,
-    });
-    const neighborIds = new Set();
-    for (const r of roads) {
-      if (r.fromLocationId !== topLevelId) neighborIds.add(r.fromLocationId);
-      if (r.toLocationId !== topLevelId) neighborIds.add(r.toLocationId);
-    }
-    await Promise.all(
-      [...neighborIds].map((id) =>
-        markLocationHeardAbout({ userId, locationKind: LOCATION_KIND_WORLD, locationId: id })
-      )
-    );
   } catch (err) {
     log.warn({ err: err?.message, userId, campaignId, locationKind, locationId }, 'markStartLocationVisible failed');
   }

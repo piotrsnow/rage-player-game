@@ -29,7 +29,6 @@ import { fillEnemiesFromBestiary } from './enemyFill.js';
 import { handleDungeonEntry } from '../livingWorld/dungeonEntry.js';
 import { reconcileCloneBatch } from '../livingWorld/cloneReconciliation.js';
 import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
-import { resolveTravelDestination } from '../livingWorld/travelResolver.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
@@ -125,52 +124,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       return;
     }
 
-    // 2a3. Travel resolver — BE-side arbitration of `currentLocation`. AI no
-    // longer emits `stateChanges.currentLocation`; intent classifier extracts
-    // `_travelTarget`, fog-visible matcher resolves it to canonical/campaign
-    // row, miss in civilization is a no-op (AI subloc creation will handle),
-    // miss in wilderness/null lands a flavor name with no row materialized.
-    // Snapshot pre-resolve currentLocation — postSceneWork compares newLoc
-    // vs prevLoc to fire location-summary nano + edge discovery hooks; we
-    // need the scene-start name regardless of any travel resolution that
-    // mutates `coreState.world.currentLocation` in place below.
+    // Snapshot scene-start currentLocation. postSceneWork compares newLoc vs
+    // prevLoc to fire location-summary nano + edge discovery hooks. The AI's
+    // `stateChanges.currentLocation` (handled by `processCurrentLocationChange`
+    // post-scene) updates the DB row; we read back from `activeCurrentRef`
+    // after persistence to compute `newLoc`.
     const preResolveLocationName = coreState.world?.currentLocation || null;
-    if (livingWorldEnabled && intentResult._intent === 'travel' && userId) {
-      try {
-        const dest = await resolveTravelDestination({
-          campaignId,
-          userId,
-          currentRef: activeCurrentRef,
-          intent: intentResult,
-          playerAction,
-          dbNpcs,
-          recentScenes: prevSceneRow ? [prevSceneRow] : [],
-          gameStateSummary: typeof coreState.gameStateSummary === 'string' ? coreState.gameStateSummary : '',
-        });
-        if (dest) {
-          await prisma.campaign.update({
-            where: { id: campaignId },
-            data: {
-              currentLocationName: dest.name,
-              currentLocationKind: dest.kind,
-              currentLocationId: dest.id,
-            },
-          }).catch((err) => log.warn({ err: err?.message, campaignId }, 'Failed to persist travel destination'));
-          if (!coreState.world) coreState.world = {};
-          coreState.world.currentLocation = dest.name;
-          // `dest.row.locationType` is set on fog hits; wilderness fallback
-          // leaves it null (and `kind/id=null` so conditional rules don't fire
-          // the sublocation slot — exactly what we want in raw terrain).
-          coreState.world.currentLocationType = dest.row?.locationType || null;
-          activeCurrentRef = dest.kind && dest.id ? { kind: dest.kind, id: dest.id, name: dest.name } : null;
-          onEvent({ type: 'travel_resolved', data: {
-            kind: dest.kind, id: dest.id, name: dest.name, source: dest.source,
-          } });
-        }
-      } catch (err) {
-        log.warn({ err: err?.message, campaignId }, 'travel resolver failed (non-fatal)');
-      }
-    }
 
     // 2b. Pre-roll 3 dice sets + resolve nano-detected skill check
     const characterForRoll = { ...coreState.character, momentumBonus: coreState.momentumBonus || 0 };

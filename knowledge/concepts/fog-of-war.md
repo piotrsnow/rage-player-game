@@ -9,7 +9,7 @@ Tracks which locations + edges a player has seen, with a split between
 | State | Canonical source | Non-canonical source | Player UX |
 |---|---|---|---|
 | **Unknown** | no row in `UserDiscoveredLocation` | no row in `CampaignDiscoveredLocation` | invisible on map |
-| **Heard-about** | `UserDiscoveredLocation` row, `state='heard_about'` | `CampaignDiscoveredLocation` row, `state='heard_about'` | visible on map with dashed outline, drill-down locked (Round C) |
+| **Heard-about** | `UserDiscoveredLocation` row, `state='heard_about'` | `CampaignDiscoveredLocation` row, `state='heard_about'` | visible on map with dashed outline, **clickable for travel** (issues "Podróżuję do …" via normal scene gen), sublocation drill-down locked |
 | **Visited** | `UserDiscoveredLocation` row, `state='visited'` | `CampaignDiscoveredLocation` row, `state='visited'` | full colour, clickable, drill-down unlocked |
 
 State promotion `heard_about → visited` is an UPDATE on the existing row
@@ -67,7 +67,7 @@ Edge discovery splits the same way:
   moves the player between two locations. Passes `campaignId` so the
   canonical/non-canonical routing works.
 - **Phase 4b (Round B)** — scene-gen has a `locationMentioned: [{locationName, byNpcId}]` state-change bucket that dispatches to `markLocationHeardAbout`. Handler accepts location *name* (resolved across canonical + sandbox via `resolveLocationByName` with uuid fast-path); canonical hits enforce NPC knowledge scope, sandbox hits skip it.
-- **Campaign-start seeding via `markStartLocationVisible`** ([userDiscoveryService.js](../../backend/src/services/livingWorld/userDiscoveryService.js)) — called once at the end of POST `/campaigns` after seed/startSpawn settled `Campaign.currentLocationKind/Id`. Resolves sublocation → top-level parent (the player map only renders top-level tiles) and marks both visited. For canonical top-level starts ONLY: pre-discovers all outgoing `Road`s into `UserDiscoveredEdge` (`skipDuplicates`) and flips neighbor `WorldLocation` settlements to `heard_about`. Sandbox `CampaignLocation` starts skip the road branch — Roads are canonical-only (FK to `WorldLocation`), CampaignLocations are off-graph by design. Without this seeding, a player starting in a non-`knownByDefault` village (or a CampaignLocation) sees an empty map until they explicitly travel.
+- **Campaign-start seeding via `markStartLocationVisible`** ([userDiscoveryService.js](../../backend/src/services/livingWorld/userDiscoveryService.js)) — called once at the end of POST `/campaigns` after seed/startSpawn settled `Campaign.currentLocationKind/Id`. Resolves sublocation → top-level parent (the player map only renders top-level tiles) and marks both visited. **Edges do NOT propagate fog discovery** — entering a settlement no longer auto-flips Road neighbours to `heard_about`. Edge = stricte zbudowana droga (bezpieczne przejście) i nie jest źródłem wiedzy ani gracza, ani NPC. Heard-about reveals come from NPC dialog (`processLocationMentions`) only.
 
 ## Open edges
 

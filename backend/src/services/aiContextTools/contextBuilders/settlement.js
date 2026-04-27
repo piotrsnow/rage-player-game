@@ -1,5 +1,5 @@
 import { prisma } from '../../../lib/prisma.js';
-import { getTemplate, isGeneratedLocationType, effectiveCustomCap } from '../../livingWorld/settlementTemplates.js';
+import { getTemplate, isGeneratedLocationType } from '../../livingWorld/settlementTemplates.js';
 import { computeSubLocationBudget } from '../../livingWorld/topologyGuard.js';
 
 // Phase 7 — background NPC label per location type (narration hint so premium
@@ -14,11 +14,15 @@ export const BACKGROUND_LABEL = {
 };
 
 /**
- * Build the Phase 7 settlement topology block. Resolves parent → loads
- * children → groups by slotKind → computes budget. Returns null for
- * dungeons (seed generator owns them) or when no parent context makes sense.
+ * Build the settlement topology block. Resolves parent → loads children →
+ * groups by slotKind. Returns null for dungeons (seed generator owns them)
+ * or when no parent context makes sense.
+ *
+ * Sublocation capacity caps were dropped — sublokacje per-kampania mogą
+ * rosnąć dowolnie. `budget` retains slot grouping + open-optional hints
+ * for narration ("brakuje tu jeszcze tawerny") but no numeric remaining.
  */
-export async function buildSettlementBlock(currentLocation, difficultyTier = null) {
+export async function buildSettlementBlock(currentLocation, _difficultyTier = null) {
   if (!currentLocation) return null;
   // If current is a sublocation, walk up to the parent settlement.
   let settlement = currentLocation;
@@ -44,12 +48,9 @@ export async function buildSettlementBlock(currentLocation, difficultyTier = nul
     optional: children.filter((c) => c.slotKind === 'optional'),
     custom:   children.filter((c) => c.slotKind === 'custom'),
   };
-  const customCap = effectiveCustomCap(type, difficultyTier);
   const budget = computeSubLocationBudget({
     parentLocationType: type,
     childrenBySlot,
-    maxSubLocations: settlement.maxSubLocations || template.maxSubLocations || 5,
-    customCap,
   });
 
   return {

@@ -33,7 +33,6 @@ describe('decideSublocationAdmission', () => {
     const r = decideSublocationAdmission({
       parentLocationType: 'village',
       childrenBySlot: emptyChildren,
-      maxSubLocations: 5,
       slotType: 'tavern',
       name: 'Pod Dębem',
     });
@@ -44,7 +43,6 @@ describe('decideSublocationAdmission', () => {
     const r = decideSublocationAdmission({
       parentLocationType: 'village',
       childrenBySlot: emptyChildren,
-      maxSubLocations: 5,
       slotType: 'church',
       name: 'Kaplica Sigmara',
     });
@@ -56,7 +54,6 @@ describe('decideSublocationAdmission', () => {
     const r = decideSublocationAdmission({
       parentLocationType: 'village',
       childrenBySlot: emptyChildren,
-      maxSubLocations: 5,
       slotType: null,
       name: 'Wieża Starego Maga',
     });
@@ -67,31 +64,14 @@ describe('decideSublocationAdmission', () => {
     const r = decideSublocationAdmission({
       parentLocationType: 'village',
       childrenBySlot: emptyChildren,
-      maxSubLocations: 5,
       slotType: null,
       name: 'Dom',
     });
     expect(r).toEqual({ admission: 'reject', reason: 'generic_name' });
   });
 
-  it('rejects when hard cap already reached', () => {
-    const full = {
-      required: [{ name: 'A' }, { name: 'B' }],
-      optional: [{ name: 'C' }, { name: 'D' }, { name: 'E' }],
-      custom: [],
-    };
-    const r = decideSublocationAdmission({
-      parentLocationType: 'village',
-      childrenBySlot: full,
-      maxSubLocations: 5,
-      slotType: 'church',
-      name: 'Kościół',
-    });
-    expect(r).toEqual({ admission: 'reject', reason: 'hard_cap_exceeded' });
-  });
-
-  it('rejects optional when optionalCap already reached', () => {
-    // village optionalCap = 3
+  it('does NOT cap optional emissions — sublocations are per-campaign sandbox', () => {
+    // village template optionalCap was 3; we now ignore the cap.
     const r = decideSublocationAdmission({
       parentLocationType: 'village',
       childrenBySlot: {
@@ -99,23 +79,21 @@ describe('decideSublocationAdmission', () => {
         optional: [{ name: 'Church' }, { name: 'Smithy' }, { name: 'Alch' }],
         custom: [],
       },
-      maxSubLocations: 5,
       slotType: 'mill',
       name: 'Młyn Starego Jana',
     });
-    expect(r).toEqual({ admission: 'reject', reason: 'optional_cap_exceeded' });
+    expect(r.admission).toBe('optional');
   });
 
-  it('custom has no numeric cap (user spec)', () => {
-    // fill 2 customs already, and still under hard cap
+  it('does NOT cap total sublocations — caps were retired (per-campaign sandbox)', () => {
+    // city template hard cap was 18; we now ignore.
     const r = decideSublocationAdmission({
       parentLocationType: 'city',
       childrenBySlot: {
         required: [{ name: 'Tavern' }, { name: 'Market' }, { name: 'Barracks' }],
         optional: [],
-        custom: [{ name: 'Ruiny Świątyni' }, { name: 'Piwnica Alchemika' }],
+        custom: Array.from({ length: 30 }, (_, i) => ({ name: `Custom ${i}` })),
       },
-      maxSubLocations: 18,
       slotType: null,
       name: 'Wieża Maga Pod Chmurą',
     });
@@ -124,7 +102,7 @@ describe('decideSublocationAdmission', () => {
 });
 
 describe('computeSubLocationBudget', () => {
-  it('reports remaining capacity + open optional slots', () => {
+  it('returns filled groups + openOptional narrative hints (no caps)', () => {
     const budget = computeSubLocationBudget({
       parentLocationType: 'village',
       childrenBySlot: {
@@ -135,37 +113,14 @@ describe('computeSubLocationBudget', () => {
         ],
         custom: [],
       },
-      maxSubLocations: 5,
     });
-    expect(budget.capacityRemaining).toBe(2);
-    expect(budget.optionalBudgetRemaining).toBe(1); // 3 cap - 2 used = 1
+    expect(budget.filled.required).toHaveLength(1);
+    expect(budget.filled.optional).toHaveLength(2);
     expect(budget.openOptional).toContain('alchemist');
     expect(budget.openOptional).not.toContain('church');
-  });
-
-  it('reports zero remaining when full', () => {
-    const budget = computeSubLocationBudget({
-      parentLocationType: 'hamlet',
-      childrenBySlot: {
-        required: [],
-        optional: [
-          { name: 'Tavern', slotType: 'tavern' },
-          { name: 'Elder', slotType: 'elder_home' },
-        ],
-        custom: [],
-      },
-      maxSubLocations: 2,
-    });
-    expect(budget.capacityRemaining).toBe(0);
-  });
-
-  it('handles missing optionalCap gracefully', () => {
-    const budget = computeSubLocationBudget({
-      parentLocationType: 'unknown_type',
-      childrenBySlot: { required: [], optional: [], custom: [] },
-      maxSubLocations: 3,
-    });
-    expect(budget.capacityRemaining).toBe(3);
-    expect(budget.optionalBudgetRemaining).toBe(0);
+    // Capacity numbers are intentionally absent.
+    expect(budget).not.toHaveProperty('capacityRemaining');
+    expect(budget).not.toHaveProperty('optionalBudgetRemaining');
+    expect(budget).not.toHaveProperty('customBudgetRemaining');
   });
 });

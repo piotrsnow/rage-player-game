@@ -6,8 +6,8 @@ import { applyDungeonRoomState } from '../../livingWorld/dungeonEntry.js';
 import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
-import { resolveWorldLocation } from '../../livingWorld/worldStateService.js';
-import { walkUpAncestors } from '../../livingWorld/travelResolver.js';
+import { resolveWorldLocation, walkUpAncestors, resolveLocationByName } from '../../livingWorld/worldStateService.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
@@ -28,15 +28,22 @@ export { shouldPromoteToGlobal, generateSceneEmbedding };
 
 const log = childLogger({ module: 'sceneGenerator' });
 
-// Returns true when `currentId` is a dungeon_room AND `targetName` resolves
-// to another dungeon_room. Lets AI navigate between rooms via
-// `stateChanges.currentLocation` while keeping all other emissions ignored.
-async function isDungeonRoomMove(currentId, targetName) {
-  const [current, target] = await Promise.all([
-    prisma.worldLocation.findUnique({ where: { id: currentId }, select: { locationType: true } }),
-    prisma.worldLocation.findUnique({ where: { canonicalName: targetName }, select: { locationType: true } }),
-  ]);
-  return current?.locationType === 'dungeon_room' && target?.locationType === 'dungeon_room';
+// Match-or-drop resolver for AI-emitted `stateChanges.currentLocation`.
+// Returns `{ kind, id, name }` when the target name resolves to an existing
+// canonical WorldLocation OR per-campaign CampaignLocation in this campaign's
+// fog. Returns null on miss — caller drops the emission, player stays put.
+//
+// AI never creates locations mid-play (per `knowledge/concepts/scene-generation.md`
+// and `hearsay-and-ai-locations.md`). The `findOrCreateCampaignLocation` path
+// is reserved for sublocation entries (`stateChanges.newLocations` with
+// `parentLocationName` set) and creation-time `initialLocationsResolver`.
+async function resolveCurrentLocationTarget(campaignId, targetName) {
+  const ref = await resolveLocationByName(targetName, { campaignId }).catch(() => null);
+  if (!ref?.row?.id) return null;
+  const name = ref.kind === LOCATION_KIND_WORLD
+    ? (ref.row.canonicalName || targetName)
+    : (ref.row.name || targetName);
+  return { kind: ref.kind, id: ref.row.id, name };
 }
 
 export async function processStateChanges(campaignId, stateChanges, { prevLoc = null, sceneIndex = null, currentRef = null } = {}) {
@@ -102,41 +109,37 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
   }
 
-  // Post-(round-no-AI-locations): AI no longer emits `stateChanges.currentLocation`
-  // for overworld movement (BE travel resolver owns that field). The single
-  // exception is dungeon-room navigation — when the player is in a dungeon_room
-  // and walks through a labeled exit, AI emits the next room's canonical name
-  // and we honor it because dungeon edges are pre-seeded canonical Roads.
-  // Anything else gets a log warn + ignore.
+  // AI emits `stateChanges.currentLocation` after a travel montage or
+  // sublocation walk-in. We resolve the name against fog-visible locations
+  // (canonical WorldLocation + per-campaign CampaignLocation). Match → write
+  // the polymorphic FK trio on Campaign. Miss → drop with a warning. AI never
+  // creates locations mid-play; an unrecognized name means the AI invented
+  // it, and the player stays put. Sublocation creation (parentLocationName
+  // set in `newLocations`) goes through `processLocationChanges` below; the
+  // auto-promote rule (next block) wires the new sub to currentLocation when
+  // appropriate.
   if (typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()) {
     const targetName = stateChanges.currentLocation.trim();
-    const isDungeonNav = currentRef?.kind === 'world' && currentRef?.id
-      && (await isDungeonRoomMove(currentRef.id, targetName).catch(() => false));
-    if (isDungeonNav) {
-      try {
-        const target = await prisma.worldLocation.findUnique({
-          where: { canonicalName: targetName },
-          select: { id: true, canonicalName: true, locationType: true },
+    try {
+      const resolved = await resolveCurrentLocationTarget(campaignId, targetName);
+      if (resolved) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            currentLocationName: resolved.name,
+            currentLocationKind: resolved.kind,
+            currentLocationId: resolved.id,
+          },
         });
-        if (target?.locationType === 'dungeon_room') {
-          await prisma.campaign.update({
-            where: { id: campaignId },
-            data: {
-              currentLocationName: target.canonicalName,
-              currentLocationKind: 'world',
-              currentLocationId: target.id,
-            },
-          });
-          log.info({ campaignId, room: target.canonicalName }, 'dungeon-room nav: currentLocation updated from AI emission');
-        }
-      } catch (err) {
-        log.warn({ err: err?.message, campaignId, targetName }, 'dungeon-room nav update failed');
+        log.info({ campaignId, name: resolved.name, kind: resolved.kind }, 'currentLocation updated from AI emission');
+      } else {
+        log.warn(
+          { campaignId, ignored: targetName },
+          'AI emitted stateChanges.currentLocation but name did not resolve to any fog-visible location — dropped (no mid-play creation)',
+        );
       }
-    } else {
-      log.warn(
-        { campaignId, ignored: targetName },
-        'AI emitted stateChanges.currentLocation outside dungeon-nav — ignored (BE travel resolver is authoritative)',
-      );
+    } catch (err) {
+      log.warn({ err: err?.message, campaignId, targetName }, 'currentLocation resolve/update failed');
     }
   }
 

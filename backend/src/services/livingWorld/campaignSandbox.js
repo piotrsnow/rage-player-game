@@ -295,10 +295,12 @@ export async function listNpcsAtLocation(locationId, { campaignId = null, aliveO
  *
  * Implicit knowledge:
  *   - the NPC's own location (lastLocationId / canonical currentLocationId)
- *   - every Road neighbour of that location
  *
- * Explicit knowledge (WorldNpcKnownLocation rows) is merged on top so
- * seeded "scout NPCs" reach further than 1 hop.
+ * Explicit knowledge (WorldNpcKnownLocation rows, seed + admin authored)
+ * is merged on top — that is the ONLY way an NPC reaches beyond their
+ * own tile. Edge = stricte zbudowana droga (bezpieczne przejście) i nie
+ * propaguje wiedzy: stojący w stolicy strażnik wie tylko o stolicy +
+ * jawnie nadanych grantach, NIE o wszystkich miastach na końcu Roadów.
  *
  * Returns `Set<locationId>`. Empty if the NPC has no location AND no
  * explicit knowledge entries.
@@ -308,26 +310,7 @@ export async function resolveNpcKnownLocations({ campaignNpc, worldNpc }) {
   const anchorLocationId = campaignNpc?.lastLocationId
     || worldNpc?.currentLocationId
     || null;
-  if (anchorLocationId) {
-    known.add(anchorLocationId);
-    try {
-      const edges = await prisma.road.findMany({
-        where: {
-          OR: [
-            { fromLocationId: anchorLocationId },
-            { toLocationId: anchorLocationId },
-          ],
-        },
-        select: { fromLocationId: true, toLocationId: true },
-      });
-      for (const e of edges) {
-        known.add(e.fromLocationId);
-        known.add(e.toLocationId);
-      }
-    } catch (err) {
-      log.warn({ err: err?.message, anchorLocationId }, 'resolveNpcKnownLocations edges failed');
-    }
-  }
+  if (anchorLocationId) known.add(anchorLocationId);
   // Explicit knowledge from WorldNpcKnownLocation rows (seed + admin authored).
   if (worldNpc?.id) {
     try {

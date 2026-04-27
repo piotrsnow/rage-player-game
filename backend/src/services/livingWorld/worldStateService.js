@@ -425,3 +425,44 @@ export async function listNpcsAtLocation(locationId, { aliveOnly = true } = {}) 
   return prisma.worldNPC.findMany({ where });
 }
 
+/**
+ * Walk up the parent chain of a polymorphic location ref. Returns the set
+ * of `${kind}:${id}` strings encountered (incl. starting ref). Used by the
+ * post-process auto-promote rule in processStateChanges to detect whether
+ * a freshly-emitted sublocation belongs to the player's current ancestry.
+ */
+export async function walkUpAncestors({ kind, id }) {
+  const visited = new Set();
+  if (!kind || !id) return visited;
+  let curKind = kind;
+  let curId = id;
+  for (let i = 0; i < 10 && curId; i += 1) {
+    const refKey = `${curKind}:${curId}`;
+    if (visited.has(refKey)) break;
+    visited.add(refKey);
+    try {
+      if (curKind === LOCATION_KIND_WORLD) {
+        const row = await prisma.worldLocation.findUnique({
+          where: { id: curId },
+          select: { parentLocationId: true },
+        });
+        if (!row?.parentLocationId) break;
+        curId = row.parentLocationId;
+        curKind = LOCATION_KIND_WORLD;
+      } else if (curKind === LOCATION_KIND_CAMPAIGN) {
+        const row = await prisma.campaignLocation.findUnique({
+          where: { id: curId },
+          select: { parentLocationKind: true, parentLocationId: true },
+        });
+        if (!row?.parentLocationKind || !row?.parentLocationId) break;
+        curKind = row.parentLocationKind;
+        curId = row.parentLocationId;
+      } else {
+        break;
+      }
+    } catch {
+      break;
+    }
+  }
+  return visited;
+}

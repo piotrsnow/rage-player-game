@@ -11,9 +11,12 @@ grid as non-canonical rows.
 emits a `hearsayByNpc` array: for each key NPC at the current location, the
 set of locations they are ALLOWED to reveal. Resolved by
 [`resolveNpcKnownLocations`](../../backend/src/services/livingWorld/campaignSandbox.js)
-as `own location ∪ 1-hop canonical Road neighbours ∪ WorldNpcKnownLocation grants`
-(F3 normalized the legacy `WorldNPC.knownLocationIds` JSON array into a join
-table; F5b renamed `WorldLocationEdge` → `Road`). Rendered in the system prompt as:
+as `own location ∪ WorldNpcKnownLocation grants`. Edge = stricte zbudowana
+droga (bezpieczne przejście) — Roads do NOT propagate NPC knowledge, so a
+guard standing in the capital does not automatically know about every
+village a Road links to. Reach beyond the home tile must be authored
+explicitly via `WorldNpcKnownLocation` rows (seed + admin). Rendered in
+the system prompt as:
 
     ## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić
     - Kapitan Gerent wie o:
@@ -46,10 +49,30 @@ doesn't get to smuggle unknown locations past the fog.
 
 ## AI-created campaign locations
 
-Premium is allowed to invent new LOCATIONS mid-play as long as their
-`locationType` isn't a settlement type (same rule as Phase B). Entries
-arrive in `stateChanges.newLocations` and route through
-[`processLocationChanges → processTopLevelEntry`](../../backend/src/services/sceneGenerator/processStateChanges.js).
+**Top-level creation is fully blocked mid-play.** Whatever locationType the
+AI emits in `stateChanges.newLocations` with `parentLocationName=null` is
+silently dropped by
+[`processLocationChanges`](../../backend/src/services/sceneGenerator/processStateChanges/locations.js)
+— the only writers for top-level rows are seed time (`seedWorld.js`,
+`worldSeeder.js`, `initialLocationsResolver.js`) and admin promotion
+(`postCampaignLocationPromotion`). AI dungeons mid-play are also rejected
+(no path exists in `processStateChanges`).
+
+Sublocations (`parentLocationName` set) are still honored: walking into a
+new tavern/forge/wing inside an existing settlement is fine, the AI emits
+the entry and BE materializes it as a `CampaignLocation` (per-campaign
+sandbox, no global cap — `topologyGuard.decideSublocationAdmission` only
+rejects on missing/generic name now). The auto-promote rule in
+`processStateChanges/index.js` then sets the new sub as `currentLocation`
+when it sits in the player's walk-up chain.
+
+Travel mid-play is match-or-drop: AI emits `stateChanges.currentLocation`
+with the EXACT name of an existing fog-visible location (canonical
+WorldLocation or this campaign's CampaignLocation). Unrecognized names
+are dropped — the player stays put. See
+[`processCurrentLocationChange`](../../backend/src/services/sceneGenerator/processStateChanges/index.js)
+for the resolver. Travel intent + montage is driven by `## TRAVEL` in
+[`contextSection.js`](../../backend/src/services/sceneGenerator/contextSection.js).
 
 ### Smart placer
 

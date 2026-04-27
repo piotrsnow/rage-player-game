@@ -44,7 +44,7 @@ function priorityRank(p) {
  *
  * Shape: { locationName, npcs: [{name, role, paused}], recentEvents: [{type, blurb, at}] }
  */
-export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, provider = 'openai', timeoutMs = 5000, playerAction = null } = {}) {
+export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, playerAction = null } = {}) {
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
@@ -141,8 +141,10 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     return null;
   });
 
-  // Phase 7 — travel block. Only built when the classifier flagged a travel
-  // intent AND we can resolve both endpoints. Null if no path or trivial.
+  // Travel block. Only built when the classifier flagged a travel intent.
+  // Returns `{startName, targetName, targetInFog}` — premium uses targetInFog
+  // to decide arrival-vs-disorientation. No path metadata here; edge =
+  // built road only, doesn't gate travel.
   let travel = null;
   if (travelTarget && campaign.userId) {
     travel = await buildTravelBlock({
@@ -150,8 +152,6 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
       userId: campaign.userId,
       startLocation: location,
       targetName: travelTarget,
-      provider,
-      timeoutMs,
     }).catch((err) => {
       log.warn({ err: err?.message, campaignId, travelTarget }, 'travel block build failed');
       return null;

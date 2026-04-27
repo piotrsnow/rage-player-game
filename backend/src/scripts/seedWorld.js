@@ -710,39 +710,6 @@ function buildNearestNeighbourRoads(locations) {
   return roads;
 }
 
-function buildWildRoads(capital, wildNodes) {
-  // Connect every wild tile to the capital so travel graph has at least one
-  // path in. Difficulty reflects the tile's dangerLevel, so the player must
-  // pick when to push outward. Distance is straight-line km.
-  const roads = [];
-  for (const w of wildNodes) {
-    const distance = Number(euclideanKm(capital, w).toFixed(2));
-    const terrain =
-      w.locationType === 'mountain' ? 'mountain'
-      : w.locationType === 'forest' ? 'wilderness'
-      : w.locationType === 'ruin' ? 'path'
-      : w.locationType === 'dungeon' ? 'path'
-      : 'road';
-    roads.push({
-      from: capital.canonicalName,
-      to: w.canonicalName,
-      distance,
-      direction: compassDirection(capital, w),
-      terrainType: terrain,
-      difficulty: w.dangerLevel || 'safe',
-    });
-    roads.push({
-      from: w.canonicalName,
-      to: capital.canonicalName,
-      distance,
-      direction: compassDirection(w, capital),
-      terrainType: terrain,
-      difficulty: w.dangerLevel || 'safe',
-    });
-  }
-  return roads;
-}
-
 // ─────────────────────────────────────────────────────────────
 // Upsert helpers — canonical WorldLocation upserts carry dangerLevel +
 // subGrid coords where applicable. F5b dropped `isCanonical` / `createdByCampaignId`.
@@ -1191,11 +1158,15 @@ export async function seedWorld() {
     // Phase 2b — NPC explicit knowledge (requires all locations to exist).
     const npcKnowledgeUpdated = await seedNpcKnowledge(locationByName);
 
-    // Roads. Settlement-to-settlement nearest-neighbour + capital→wild fan-out.
+    // Roads. Edge = stricte zbudowana droga (bezpieczne przejście). Tylko
+    // settlement-to-settlement nearest-neighbour — kapital i 2 najbliższe
+    // wioski (Świetłogaj NE, Kamionka Stara SW) dostają budowane drogi
+    // dwukierunkowe. Wilderness/ruiny/dungeony NIE są łączone z kapitałem
+    // edge'em — gracz dotrze tam przez fog-visible travel montage, nie
+    // przez Road graph. Edge nie jest źródłem wiedzy NPC ani gracza.
     const settlementRows = [capital, ...VILLAGES.map((v) => locationByName[v.canonicalName])].filter(Boolean);
-    const settlementRoads = buildNearestNeighbourRoads(settlementRows);
-    const wildRoads = buildWildRoads(capital, wildRows);
-    const roads = [...settlementRoads, ...wildRoads];
+    const roads = buildNearestNeighbourRoads(settlementRows);
+    void wildRows; // wildRows still upserted above for location seeding
 
     let roadsUpserted = 0;
     for (const road of roads) {
