@@ -142,7 +142,3 @@ export const SCENE_BULK_SCHEMA = {
   required: ['scenes'],
 };
 
-export const CORE_STATE_PATCH_SCHEMA = {
-  type: 'object',
-  additionalProperties: true,
-};

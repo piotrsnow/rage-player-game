@@ -1,6 +1,8 @@
 # Scaling & debt — outstanding work after Postgres migration
 
-**Status (2026-04-26):** live work queue. Konsoliduje wszystkie outstanding tasks po F1-F5b retrospektywach, plus pre-scale optimizations wykryte w audycie pipeline'u (165 queries/scenę typical) dla skali 1k-180k scen/dzień. Hosting decyzja (CSQL vs Neon) zostaje w [postgres-migration.md F6](postgres-migration.md#f6--production-scale-out-metric-driven).
+**Status (2026-04-28):** live work queue. Konsoliduje wszystkie outstanding tasks po F1-F5b retrospektywach, plus pre-scale optimizations wykryte w audycie pipeline'u (165 queries/scenę typical) dla skali 1k-180k scen/dzień. Hosting decyzja (CSQL vs Neon) zostaje w [postgres-migration.md F6](postgres-migration.md#f6--production-scale-out-metric-driven).
+
+**Sweep 2026-04-28** — verified done & removed: F1 #4 (bestiary RPGon native), compound indexes (`WorldEvent` + `CampaignNPC` already in schema), admin `PUT /lore/:slug` maxLength + idempotency, DOMPurify lore preview (N/A — textarea mirror), F5 #15 `/ai/campaigns/:id/core` PATCH (route deleted, 0 callers), `seedWorld.js` debt (file is canonical data + `SKIP_WORLD_SEED` env guard exists), F1 #1 LocationPromotionCandidate.stats stringify (no fixtures use it), proxy middleware dead-code audit (all 6 routes still in active FE use).
 
 ## Priority tiers
 
@@ -84,10 +86,8 @@
 ## P1 — known debt (cleanup at next file touch)
 
 ### F1 debt
-- **`LocationPromotionCandidate.stats` stringify w test fixtures** — kolumny są `Json` w schemie, prod write paths używają obiektu. Update mocks at next test touch.
-- **`CampaignNPC.smallModelVerdict` = `String?`** (nie `Json`) — verdict stored-as-blob, nikt go nie filtruje SQLem. Trzymać tak chyba że emerge use case.
-- **`locationType` boundary validation** — AI mid-play może emit nieznany `locationType` → throw na enuma. Defensywny coerce-to-`generic` w [processStateChanges/locations.js:158](../backend/src/services/sceneGenerator/processStateChanges/locations.js#L158) (przy `BLOCKED_MIDPLAY_LOCATION_TYPES`) odłożony do "as-needed". Jeśli playtest pokaże throw — dodać.
-- **`bestiary.js` używa WFRP `characteristics` (ws/bs/s/t/...)** — combat-data refactor WFRP→RPGon, osobny task, nie część migracji.
+- **`NPCPromotionCandidate.smallModelVerdict` = `String?`** (nie `Json`) — verdict stored-as-blob, nikt go nie filtruje SQLem. Trzymać tak chyba że emerge use case.
+- **`locationType` boundary validation** — AI mid-play może emit nieznany `locationType` → throw na enuma. Defensywny coerce-to-`generic` w [processStateChanges/locations.js:174](../backend/src/services/sceneGenerator/processStateChanges/locations.js#L174) (przy `BLOCKED_MIDPLAY_LOCATION_TYPES`) odłożony do "as-needed". Jeśli playtest pokaże throw — dodać.
 
 ### F2 debt
 - **`coreState.world.knowledgeBase` w `campaignSerialize`/`campaignSync`** — to in-memory JS shape, NIE pole DB. Zostaje (zniknie gdy F5 monolit decompose).
@@ -106,7 +106,6 @@
 
 ### F5 debt
 - **Brak FK na `currentLocationName`** — pure string, can drift jeśli WorldLocation z tym `displayName` deleted/renamed. Wait for biome-tiles lub similar refactor który da FK target.
-- **`/ai/campaigns/:id/core` PATCH lift w deepMerge** — defensive only, route nie jest wołany z FE today. Drop lub document.
 - **`Campaign.lockedLocation` na Character** — flavor string snapshot "gdzie character był przy bind", nie ruszony. Czystszy fix przyszedłby z CampaignLocation FK.
 
 ### F5b debt
@@ -114,20 +113,15 @@
 - **`maxSubLocations` cap dropped** z creation flow per user spec; column nadal w schemie jako future re-enabling lever.
 
 ### Other code health (CLAUDE.md known gaps)
-- **`src/services/diceRollInference.js` legacy aliases** — fold w `shared/domain/diceRollInference.js` przy najbliższym dotyku.
+- **`src/services/diceRollInference.js` ma FE-only `normalizeSkillName` / `pickBestSkill` + legacy 60-skill fallback** — scope jest legitnie inny niż shared (skill-picker logic), nie warto fold'ować. Trzymać jak jest.
 - **MP guest join nie pisze character campaign lock** — fix w [backend/src/routes/multiplayer/handlers/lobby.js](../backend/src/routes/multiplayer/handlers/lobby.js) jeśli guests reportują losing characters.
 - **`useNarrator.js` ~945L** — biggest remaining monolith hook. Split playtest-driven, nie urgent.
-- **`seedWorld.js` ~1146L** runs on every boot (idempotent upsert). Add seed-completion guard (env flag lub DB marker) to skip no-op I/O na warm starts.
 - **No token budget enforcement w `assembleContext()`** — total prompt zwykle 3.5-7k tokens, ale runaway selection mógłby przekroczyć. Add explicit counting jeśli scenes hit context limits / cost spikes.
-- **Prisma compound indexes brakuje** na Living World models: `WorldEvent` needs `@@index([eventType, visibility, createdAt])` dla admin events feed; `CampaignNPC` needs `@@index([campaignId, canonicalWorldNpcId])` dla shadow lookups. Verify w `schema.prisma` przed next migration.
 
 ### Admin / security hygiene (post-review-cleanup carryover)
 
-- **`PUT /lore/:slug` — add `maxLength: 100000` body schema** (admin może wkleić megabyty lore; admin-controlled blast radius ale higieniczne). 5 min fix w [backend/src/routes/adminLivingWorld.js](../backend/src/routes/adminLivingWorld.js). Test: spróbuj wkleić >100k → spodziewany 400.
-- **`PUT /lore/:slug` — add `config: { idempotency: true }`** (plugin już istnieje, używany w `/ai/campaigns/:id/scenes`). Double-click przy edycji powoduje drugi upsert — brak realnego damage, ale brzydkie. 2 min fix.
-- **DOMPurify w AdminWorldLoreTab markdown preview** — najpierw sprawdź czy preview używa `dangerouslySetInnerHTML` z raw markdown. Jeśli używa react-markdown lub podobnego z domyślnym escape'em → skreśl. Admin-only write + admin-only render = niski priorytet.
 - **CSP enable** — backend [server.js:61](../backend/src/server.js#L61) ma `contentSecurityPolicy: false`. Audit z 2026-04-14 dał ready-to-ship policy (whitelist origins for OpenAI/Anthropic/Stability/ElevenLabs/Meshy + GCS + Google Fonts). **Blocker:** trzeba staging env żeby zweryfikować że Three.js scene rendering, ElevenLabs TTS i image gen nie pękną. Plan: ship as `Content-Security-Policy-Report-Only` first, watch logs week, flip to enforce. **Po no-BYOK cleanup connect-src allowlist można uprościć** — FE rozmawia tylko z własnym BE (zostaje `'self'` + `wss:`).
-- **Proxy route middleware extraction** — `backend/src/routes/proxy/{openai,anthropic,elevenlabs,meshy,stability,gemini}.js` (6 plików) duplikują validation + API key resolution + rate-limit headers + error shape + cache-through-DB. Wymaga dedicated design session — variance między text-gen / image-gen+DB cache / TTS stream / 3D URL-only jest za duża dla shallow refactoru. **Blocker:** najpierw audit po no-BYOK cleanup czy któreś proxy routes nie są już dead code.
+- **Proxy route middleware extraction** — `backend/src/routes/proxy/{openai,anthropic,elevenlabs,meshy,stability,gemini}.js` (6 plików) duplikują validation + API key resolution + rate-limit headers + error shape + cache-through-DB. Wymaga dedicated design session — variance między text-gen / image-gen+DB cache / TTS stream / 3D URL-only jest za duża dla shallow refactoru. Dead-code audit (2026-04-28): wszystkie 6 routes nadal aktywnie wołane przez FE (autoPlayer / imageGen / elevenlabs / meshyClient).
 
 ---
 
@@ -138,10 +132,6 @@ Te items blokują prod deploy, nie skalowanie. Atak: przed pierwszym deployem na
 ### `JWT_SECRET` rotation w production env
 
 Tokeny wydane pod starym secret są ważne do ich TTL (15min access + 30d refresh). Rotacja secret kasuje je wszystkie. **Akcja:** zaktualizować `JWT_SECRET` env var na Cloud Run przy najbliższym deploy — wszyscy active users zostaną wylogowani (jednorazowy koszt, akceptowalny pre-prod). Konfig już ma guard w [backend/src/config.js:5-6](../backend/src/config.js#L5) dla missing/weak default.
-
-### OpenAI model IDs verify
-
-Jedyny model z rodziny gpt-5.4 na default-path to `gpt-5.4-nano` w slocie `nanoReasoning` ([backend/src/config.js](../backend/src/config.js) — używany przez memoryCompressor + location summary). Przed release potwierdzić że to ID wciąż resolvuje u OpenAI. **Akcja:** `curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | grep gpt-5.4-nano`. W razie 404 ustawić `AI_MODEL_NANO_REASONING_OPENAI=gpt-4.1-nano` (fallback na non-reasoning nano — działa, lekko gorszy reasoning quality dla extraction tasks).
 
 ### Cloud Tasks queue setup (prod)
 
