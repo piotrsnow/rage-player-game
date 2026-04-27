@@ -14,7 +14,7 @@ RPGon (in-game: **Nikczemny Krzemuch**) is a browser-based tabletop RPG with an 
 
 - **AI Dungeon Master** — two-stage pipeline: nano model picks what context the scene needs, code assembles it in parallel, premium model writes the scene in one streamed call
 - **RPGon d50 system** — custom rules designed for AI-GM play: 6 attributes (1-25), ~31 skills, 9 spell trees with mana-based magic, d50 resolution with margins, `szczęście` as auto-success chance, titles from achievements (no classes), three-tier Polish currency (Złota/Srebrna/Miedziana Korona)
-- **Multi-provider AI** — OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini, with nano/standard/premium tiering to keep costs bounded
+- **Multi-provider AI** — OpenAI (GPT-4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini, with nano/standard/premium tiering to keep costs bounded
 - **Streaming UX** — scenes stream narrative chunks via SSE directly from the backend route; post-scene async work (embeddings, memory compression, location summary) is dispatched to Cloud Tasks (prod) or runs inline (dev)
 - **Multiplayer** — up to 6 players via WebSocket, host-authoritative state, mid-game join, solo → multiplayer conversion, optional WebRTC voice chat
 - **3D scene rendering** — React Three Fiber with procedural foliage, GLB models, ambient weather/particle effects
@@ -105,7 +105,7 @@ graph TB
     end
 
     subgraph Providers ["Providers"]
-        OPENAI[OpenAI<br/>GPT-5.4/4.1/4o/o3]
+        OPENAI[OpenAI<br/>GPT-4.1/4o/o3]
         ANTHROPIC[Anthropic<br/>Claude Sonnet 4 + Haiku 4.5]
         GEMINI[Google Gemini]
         STABILITY[Stability AI<br/>obrazy scen]
@@ -267,7 +267,7 @@ sequenceDiagram
 
 ### Model tiering
 
-5 tierów. Reasoning na async, non-reasoning na ścieżce krytycznej. Szczegóły w [knowledge/concepts/model-tiering.md](./knowledge/concepts/model-tiering.md).
+4 tiery. Reasoning na async, non-reasoning na ścieżce krytycznej. Szczegóły w [knowledge/concepts/model-tiering.md](./knowledge/concepts/model-tiering.md).
 
 | Tier | OpenAI default | Anthropic default | Używany do |
 |---|---|---|---|
@@ -275,9 +275,8 @@ sequenceDiagram
 | **nanoReasoning** | gpt-5.4-nano | claude-haiku-4-5 | Memory compression, location summary — **async post-scene**, reasoning pomaga |
 | **standard** | gpt-4.1-mini | claude-haiku-4-5 | Combat fast-path narrative, recapy, story prompts, weryfikacja celów |
 | **premium** | gpt-4.1 | claude-sonnet-4 | Generowanie scen, tworzenie kampanii — kreatywne pisanie + streaming JSON |
-| **premiumReasoning** | gpt-5.4 | claude-sonnet-4 | Zarejestrowany pod A/B, domyślnie nieroutowany. Przełącz przez `AI_MODEL_PREMIUM_OPENAI` albo FE picker |
 
-Dlaczego premium to 4.1, nie 5.4: dwuetapowy pipeline offloaduje całe myślenie do nano + deterministycznego kodu. Premium tylko pisze prozę i streamuje JSON — reasoning tokens dokładają latencji i influją dialogi bez zysku narracyjnego.
+Dlaczego premium to non-reasoner (4.1): dwuetapowy pipeline offloaduje całe myślenie do nano + deterministycznego kodu. Premium tylko pisze prozę i streamuje JSON — reasoning tokens dokładają latencji i influują dialogi bez zysku narracyjnego.
 
 ### Typy zapytań AI
 
@@ -445,7 +444,7 @@ Nano klasyfikator intencji przeoczy ~20% akcji wymagających testów umiejętno�
 | **Baza danych** | MongoDB Atlas (replica set + Atlas Vector Search) |
 | **Async post-scene** | Google Cloud Tasks (prod) lub inline fire-and-forget (dev) — brak Redis/BullMQ |
 | **Hosting** | Google Cloud Run (native, scale-to-zero) |
-| **AI** | OpenAI (GPT-5.4 / 4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini |
+| **AI** | OpenAI (GPT-4.1 / 4o / o3 / o4), Anthropic (Claude Sonnet 4, Haiku 4.5), Google Gemini |
 | **Media** | Sharp (image resize), ElevenLabs (TTS), Stability AI (obrazy), Meshy (modele 3D) |
 | **Przechowywanie mediów** | Local filesystem lub Google Cloud Storage |
 | **Auth** | JWT (15min access) + opaque refresh tokens w MongoDB (TTL index), double-submit CSRF |
@@ -609,7 +608,7 @@ HNSW vector indeksy są w init migration (`0000_init_postgres/migration.sql`) �
 | `GCS_BUCKET_NAME`, `GOOGLE_APPLICATION_CREDENTIALS` | Nie | GCP storage gdy `MEDIA_BACKEND=gcp` |
 | `OPENAI_API_KEY` | Nie | Domyślny klucz (użytkownicy mogą podać własne w Settings) |
 | `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `STABILITY_API_KEY`, `MESHY_API_KEY` | Nie | j.w. — fallback dla użytkowników bez własnych kluczy |
-| `AI_MODEL_PREMIUM_OPENAI`, `AI_MODEL_PREMIUM_ANTHROPIC` | Nie | Override premium modelu bez ruszania kodu (np. `gpt-5.4` do A/B) |
+| `AI_MODEL_PREMIUM_OPENAI`, `AI_MODEL_PREMIUM_ANTHROPIC` | Nie | Override premium modelu bez ruszania kodu |
 | `AI_MODEL_STANDARD_*`, `AI_MODEL_NANO_*`, `AI_MODEL_NANO_REASONING_*` | Nie | j.w. dla pozostałych tierów (patrz [config.js](./backend/src/config.js)) |
 | `CLOUD_TASKS_ENABLED` | Nie | `true` w prod → async post-scene przez Cloud Tasks; inaczej inline fire-and-forget |
 | `GCP_PROJECT_ID`, `GCP_REGION` | Tylko prod | Projekt + region Cloud Tasks (region domyślnie `europe-west1`) |

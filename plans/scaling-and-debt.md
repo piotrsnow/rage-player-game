@@ -154,13 +154,15 @@ Tokeny wydane pod starym secret są ważne do ich TTL (15min access + 30d refres
 
 ### OpenAI model IDs verify
 
-Defaults w [backend/src/config.js:99-107](../backend/src/config.js) wskazują na `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`. Przed release potwierdzić że te ID wciąż resolvują u OpenAI. **Akcja:** `curl https://api.openai.com/v1/models` z prod key, grep ID. W razie 404 ustawić `AI_MODEL_*_OPENAI` env var na fallback (`gpt-4o` / `gpt-4o-mini`).
+Jedyny model z rodziny gpt-5.4 na default-path to `gpt-5.4-nano` w slocie `nanoReasoning` ([backend/src/config.js](../backend/src/config.js) — używany przez memoryCompressor + location summary). Przed release potwierdzić że to ID wciąż resolvuje u OpenAI. **Akcja:** `curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY" | grep gpt-5.4-nano`. W razie 404 ustawić `AI_MODEL_NANO_REASONING_OPENAI=gpt-4.1-nano` (fallback na non-reasoning nano — działa, lekko gorszy reasoning quality dla extraction tasks).
 
 ### Cloud Tasks queue setup (prod)
 
-Ze [knowledge/decisions/cloud-run-no-redis.md](../knowledge/decisions/cloud-run-no-redis.md):
-- `gcloud tasks queues create post-scene-work --location=europe-central2`
-- Service account `rage-player-game-runtime` z `roles/cloudtasks.enqueuer`
+Region MUSI matchować Cloud Run service ([cloudbuild.yaml](../cloudbuild.yaml) — `europe-west1`):
+- `gcloud tasks queues create post-scene-work --location=europe-west1`
+- Service account `rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com` istnieje już z deployu Cloud Run. Grant:
+  - `gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com" --role="roles/cloudtasks.enqueuer"`
+  - `gcloud iam service-accounts add-iam-policy-binding rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com --member="serviceAccount:rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator"` (wymagane do mintowania OIDC tokenów dla Cloud Tasks → Cloud Run callback auth)
 - OIDC verify już jest w [oidcVerify.js](../backend/src/services/oidcVerify.js)
 
 ---

@@ -17,7 +17,6 @@ Three tiers. Each tier picks the cheapest model that can do the job. Nothing che
 | nanoReasoning    | `gpt-5.4-nano`    | `claude-haiku-4-5`    | memory compression, location summary — **async post-scene**, reasoning helps judgment |
 | standard         | `gpt-4.1-mini`    | `claude-haiku-4-5`    | combat fast-path narrative (shortcuts.js), recaps (chunked), story prompts, objective verify |
 | premium          | `gpt-4.1`         | `claude-sonnet-4`     | scene generation, campaign creation — creative writing + streaming JSON |
-| premiumReasoning | `gpt-5.4`         | `claude-sonnet-4`     | registered for A/B testing only; not routed by default. Flip via `AI_MODEL_PREMIUM_OPENAI` env or FE picker |
 
 Model IDs live in [backend/src/config.js](../../backend/src/config.js) `aiModels` (canonical) and [src/services/ai/models.js](../../src/services/ai/models.js) (FE mirror). Backend selection: `config.aiModels[tier][provider]`. FE selection via `selectModel(provider, tier, taskType)`.
 
@@ -28,11 +27,11 @@ Model IDs live in [backend/src/config.js](../../backend/src/config.js) `aiModels
 - Streaming creative writing (premium scene gen) — reasoning tokens arrive before stream starts and inflate dialogue length without narrative gain.
 - Fast-path narratives (2-3 sentence combat opener).
 
-**Reasoning** (`gpt-5.4*`, o-series) — spends thinking tokens before output. Right for:
+**Reasoning** (`gpt-5.4-nano`, o-series) — spends thinking tokens before output. Right for:
 - Async "what matters?" judgment (memory compression picks which facts to keep; location summary picks what defines a place) — post-scene path, latency is free.
 - Any task where input volume >> output volume AND selection quality > speed.
 
-**The principle**: reasoning on async paths, non-reasoning on critical paths. Premium scene gen is critical-path creative writing, so it's non-reasoning even though it's the most expensive tier. This is why `premium` is `gpt-4.1`, not `gpt-5.4`.
+**The principle**: reasoning on async paths, non-reasoning on critical paths. Premium scene gen is critical-path creative writing, so it's non-reasoning even though it's the most expensive tier. This is why `premium` is `gpt-4.1`.
 
 ### Gotcha: maxTokens must budget for thinking tokens
 

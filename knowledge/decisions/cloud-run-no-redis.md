@@ -32,6 +32,6 @@ Full delete of Redis, BullMQ, Valkey, and all fallback/dead-code paths. Cloud-Ru
 
 ## Related
 
-- Cloud Tasks queue setup: `gcloud tasks queues create post-scene-work --location=europe-central2`
-- Service account: `rage-player-game-runtime` with `roles/cloudtasks.enqueuer`
+- Cloud Tasks queue setup: `gcloud tasks queues create post-scene-work --location=europe-west1` (must match Cloud Run region in [cloudbuild.yaml](../../cloudbuild.yaml))
+- Service account: `rage-player-game-runtime@$PROJECT_ID.iam.gserviceaccount.com` with `roles/cloudtasks.enqueuer` + `roles/iam.serviceAccountTokenCreator` on itself (latter needed to mint OIDC tokens for Cloud Run callback auth)
 - Full migration plan: `.claude/plans/fizzy-imagining-flute.md`

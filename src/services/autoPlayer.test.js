@@ -10,7 +10,7 @@ vi.mock('./apiClient', () => ({
 }));
 
 vi.mock('./ai', () => ({
-  resolveModel: () => 'gpt-5.4',
+  resolveModel: () => 'gpt-4.1',
 }));
 
 import { decideAction, normalizeAutoPlayerChatMessage } from './autoPlayer.js';

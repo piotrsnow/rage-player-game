@@ -110,7 +110,7 @@ Give claude success criteria instead of step by step instructions.
 - **Frontend**: React 18 + Vite 6, Tailwind CSS, React Three Fiber (3D scenes), i18next, Zod 4
 - **Backend**: Fastify 5, Prisma (Postgres 16 + pgvector), JWT + refresh cookies, WebSocket (multiplayer), Cloud Tasks (post-scene async)
 - **Database**: PostgreSQL 16 + pgvector (JSONB, FK cascade, HNSW vector indexes; Cloud SQL in prod, `pgvector/pgvector:pg16` container in dev)
-- **AI**: OpenAI (GPT-5.4/mini/nano, 4.1/mini/nano, 4o/mini, o3/o4-mini) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini. Nano/standard/premium tiering via `src/services/ai/models.js`.
+- **AI**: OpenAI (GPT-4.1/mini/nano, 4o/mini, o3/o4-mini, gpt-5.4-nano for nanoReasoning) + Anthropic (Claude Sonnet 4, Haiku 4.5) + Google Gemini. Nano/standard/premium tiering via `src/services/ai/models.js`.
 - **3D**: Three.js / React Three Fiber — procedural scene rendering with GLB model support
 - **Media**: Sharp (image resize), ElevenLabs (TTS), Stability AI (scene images), Meshy (3D models), GCP Storage
 - **Testing**: Vitest (unit), Playwright (e2e)

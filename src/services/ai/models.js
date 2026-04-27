@@ -4,8 +4,6 @@
 //   'reasoner' — reasoning-family; use when you want extra planning at cost + latency
 // Untagged models (nano, older mini, o-series mini) don't appear in the scene picker.
 export const AI_MODELS = [
-  { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$2.50 / $15 per 1M tokens', tier: 'premium', sceneBadge: 'reasoner' },
-  { id: 'gpt-5.4-mini',              provider: 'openai',    label: 'GPT-5.4 Mini',         cost: '~$0.75 / $4.50 per 1M tokens', tier: 'standard' },
   { id: 'gpt-5.4-nano',              provider: 'openai',    label: 'GPT-5.4 Nano',         cost: '~$0.20 / $1.25 per 1M tokens', tier: 'standard' },
   { id: 'gpt-4o',                     provider: 'openai',    label: 'GPT-4o',              cost: '~$2.50 / $10 per 1M tokens', tier: 'premium' },
   { id: 'gpt-4o-mini',                provider: 'openai',    label: 'GPT-4o Mini',          cost: '~$0.15 / $0.60 per 1M tokens', tier: 'standard' },
@@ -20,9 +18,8 @@ export const AI_MODELS = [
 ];
 
 // Shown as "Polecany" badge on the recommended model in the scene picker.
-// gpt-4.1 (not gpt-5.4) because our two-stage pipeline offloads reasoning to
-// nano + code; premium's job is creative writing + streaming JSON, where
-// reasoning tokens are wasted latency/cost and inflate dialogue length.
+// Premium's job is creative writing + streaming JSON; reasoning tokens are
+// wasted latency/cost there, so the recommended pick is non-reasoner gpt-4.1.
 export const RECOMMENDED_MODELS = {
   openai: 'gpt-4.1',
   anthropic: 'claude-sonnet-4-20250514',
