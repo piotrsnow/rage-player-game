@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { embedText, buildSceneEmbeddingText } from '../../services/embeddingService.js';
 import { writeEmbedding } from '../../services/embeddingWrite.js';
+import { enqueuePostSceneWork } from '../../services/cloudTasks.js';
 import { SCENE_BODY_SCHEMA, SCENE_BULK_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'ai' });
@@ -109,6 +110,10 @@ export async function sceneRoutes(fastify) {
     });
     const existingByIndex = new Map(existingScenes.map((s) => [s.sceneIndex, s.id]));
 
+    // Track newly-created scenes so we can enqueue post-scene work for the
+    // intro-scene case below. Updates don't need to re-fire nano extraction.
+    const createdSceneIds = [];
+
     const CONCURRENCY = 5;
     const results = [];
     let i = 0;
@@ -144,6 +149,7 @@ export async function sceneRoutes(fastify) {
 
           return dbOp.then((saved) => {
             if (!existingId) {
+              createdSceneIds.push({ sceneId: saved.id, sceneIndex: saved.sceneIndex });
               const embeddingText = buildSceneEmbeddingText(saved);
               if (embeddingText) {
                 embedText(embeddingText)
@@ -166,6 +172,35 @@ export async function sceneRoutes(fastify) {
         );
       }
       i += CONCURRENCY;
+    }
+
+    // Intro-scene nano extraction. The firstScene is authored by
+    // `campaignGenerator` and saved here at sceneIndex=0 right after campaign
+    // creation — it never goes through `generateSceneStream`, so the standard
+    // post-scene pipeline (embedding/processStateChanges/compressSceneToSummary/
+    // location summary) wouldn't otherwise run for it. Without compress, the
+    // next scene's prompt has no `gameStateSummary` facts about the opening
+    // (and `Last Scene` uses the legacy `narrative` field which premium leaves
+    // empty), so the questgiver re-greets the player. Enqueue post-scene work
+    // for the freshly-created sceneIndex=0 so nano extracts journal/dmMemory/
+    // codex/knowledge/needs from the firstScene transcript. Best-effort —
+    // failures don't fail the save.
+    const introScene = createdSceneIds.find((s) => s.sceneIndex === 0);
+    if (introScene) {
+      const campaignRow = await prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { currentLocationName: true },
+      }).catch(() => null);
+      enqueuePostSceneWork({
+        sceneId: introScene.sceneId,
+        campaignId,
+        playerAction: '',
+        provider: 'openai',
+        newLoc: campaignRow?.currentLocationName || null,
+        prevLoc: null,
+        wrapupText: null,
+        llmNanoTimeoutMs: undefined,
+      }).catch((err) => log.error({ err, sceneId: introScene.sceneId }, 'Failed to enqueue post-scene work for firstScene'));
     }
 
     return { saved: results.filter((r) => !r.error).length, total: scenes.length, results };

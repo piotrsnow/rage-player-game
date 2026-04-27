@@ -20,11 +20,11 @@ import {
 } from '../../services/campaignSync.js';
 import { seedInitialWorld } from '../../services/livingWorld/worldSeeder.js';
 import { getOrCloneCampaignNpc } from '../../services/livingWorld/campaignSandbox.js';
-import { markLocationDiscovered } from '../../services/livingWorld/userDiscoveryService.js';
+import { markStartLocationVisible } from '../../services/livingWorld/userDiscoveryService.js';
 import { resolveLocationByName } from '../../services/livingWorld/worldStateService.js';
 import { consumeStartSpawn, peekStartSpawn } from '../../services/livingWorld/startSpawnCache.js';
 import { applyInitialLocations } from '../../services/livingWorld/initialLocationsResolver.js';
-import { LOCATION_KIND_WORLD, unpackWorldBounds } from '../../services/locationRefs.js';
+import { unpackWorldBounds } from '../../services/locationRefs.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -321,18 +321,29 @@ export async function crudCampaignRoutes(app) {
           } else {
             await getOrCloneCampaignNpc(campaign.id, canonical.id);
           }
-          if (canonical.currentLocationId) {
-            await markLocationDiscovered({
-              userId: request.user.id,
-              locationKind: LOCATION_KIND_WORLD,
-              locationId: canonical.currentLocationId,
-              campaignId: campaign.id,
-            });
-          }
         }
       } catch (err) {
         log.warn({ err: err?.message, campaignId: campaign.id }, 'startSpawn post-sync wiring failed');
       }
+    }
+
+    // Reveal the player's starting settlement on the map. The helper resolves
+    // sublocation → top-level parent (the map only renders top-level tiles)
+    // and, for canonical starts, pre-discovers outgoing Roads + flips
+    // neighbors to `heard_about`. Reads back from the DB so we capture
+    // whichever pointer won — seedInitialWorld's CampaignLocation, the
+    // startSpawn override's canonical sublocation, or null (LLM-only path).
+    const finalStart = await prisma.campaign.findUnique({
+      where: { id: campaign.id },
+      select: { currentLocationKind: true, currentLocationId: true },
+    }).catch(() => null);
+    if (finalStart?.currentLocationKind && finalStart?.currentLocationId) {
+      await markStartLocationVisible({
+        userId: request.user.id,
+        campaignId: campaign.id,
+        locationKind: finalStart.currentLocationKind,
+        locationId: finalStart.currentLocationId,
+      });
     }
 
     const fullState = { ...slim };
@@ -389,22 +400,19 @@ export async function crudCampaignRoutes(app) {
 
     if (rawCoreState !== undefined) {
       const parsed = typeof rawCoreState === 'object' ? rawCoreState : JSON.parse(rawCoreState || '{}');
-      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests, currentLocationName } =
+      const { slim, npcs, knowledgeEvents, knowledgeDecisions, quests } =
         stripNormalizedFromCoreState(parsed);
 
       updateData.coreState = slim;
       updateData.totalCost = extractTotalCost(slim);
-      // F5 — currentLocationName lifted to its own column. Always set
-      // (including null) so a save that clears the field reaches the column.
-      updateData.currentLocationName = currentLocationName || null;
-      // F5b — invalidate the polymorphic kind+id pair when the name changes
-      // so a stale ref doesn't outlive its display name. Writers that know
-      // the new ref (seed, startSpawn, AI top-level entry) re-set the pair
-      // explicitly; auto-save just clears + relies on name lookups downstream.
-      if (currentLocationName !== existing.currentLocationName) {
-        updateData.currentLocationKind = null;
-        updateData.currentLocationId = null;
-      }
+      // F5 — `currentLocationName/Kind/Id` are BE-authoritative now (seed +
+      // startSpawn at create, travel resolver + auto-promote sublocation +
+      // dungeon-nav mid-play). FE auto-saves carry a stale snapshot of
+      // `world.currentLocation` — particularly empty at campaign start because
+      // useGameState builds the initial `world` payload without the field —
+      // so honoring it would clobber the authoritative trio with null on the
+      // first auto-save. We drop the FE-driven update entirely; on next GET
+      // `reconstructFromNormalized` re-injects the BE name into coreState.
 
       pendingSync = { campaignId: request.params.id, npcs, knowledgeEvents, knowledgeDecisions, quests };
     }

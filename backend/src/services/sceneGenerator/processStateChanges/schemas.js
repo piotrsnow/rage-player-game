@@ -16,7 +16,7 @@ import { z } from 'zod';
 const MAX_LOCATION_MENTIONS = 20;
 
 const LocationMentionSchema = z.object({
-  locationId: z.string().min(1),
+  locationName: z.string().min(1),
   byNpcId: z.string().min(1).optional(),
   npcId: z.string().min(1).optional(),
   byNpc: z.string().min(1).optional(),

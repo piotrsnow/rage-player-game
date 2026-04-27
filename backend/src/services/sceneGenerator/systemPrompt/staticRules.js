@@ -77,7 +77,7 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
 - npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
 - npcMemoryUpdates: [{npcName, memory, importance?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
-- locationMentioned: [{locationId, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Use the exact \`id\` values from the [NPC_KNOWLEDGE] block — that block lists every location each NPC is allowed to reveal. If the block isn't present or the location isn't in the NPC's list: narrate that the NPC doesn't know / speculates, and DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
+- locationMentioned: [{locationName, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Copy the location name EXACTLY as written in the prompt (Key NPCs block, Active Quests, [NPC_KNOWLEDGE], or the player's current location). \`byNpcId\` is the speaker NPC's name. If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention locations from that list; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
 - skillsUsed: ["SkillName"] — skills the PC used in this action. Max 3.
 - actionDifficulty: "easy"|"medium"|"hard"|"veryHard"|"extreme".
 - dungeonComplete: {name, summary ≤400 chars} when the player has CLEARED the final room of a dungeon (all encounters resolved, boss defeated, exit reached). Promotes to global.
@@ -144,7 +144,7 @@ export function responseFormatBlock(language) {
     "completedQuests": [],
     "npcs": [{"action":"introduce|update","name":"","dispositionChange":0}],
     "npcMemoryUpdates": [{"npcName":"","memory":"","importance":"minor|major"}],
-    "locationMentioned": [{"locationId":"","byNpcId":""}],
+    "locationMentioned": [{"locationName":"","byNpcId":""}],
     "newItems": [],
     "removeItems": [],
     "rewards": [{"type":"","rarity":"","quantity":"","context":""}],

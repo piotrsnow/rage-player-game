@@ -156,6 +156,14 @@ Promotion is admin-triggered via `POST /v1/admin/livingWorld/location-promotion-
 - `CampaignNPC.lastLocationKind` defaults to `'world'` for back-compat (rows pre-F5b have no kind column).
 - Auto-apply paths that write to canonical FKs (`postCampaignWriteback.diffNpcFields`, `postCampaignPromotion.promoteCampaignNpcToCanonical`) MUST filter out `kind='campaign'` location values — those would FK-violate against `WorldLocation`.
 
+**`currentLocation{Name,Kind,Id}` is BE-authoritative.** PUT `/campaigns/:id` does NOT honor the FE-sent value for any of the three columns — `crud.js` strips `currentLocation` out of `slim` (via `stripNormalizedFromCoreState`) but DOES NOT propagate it back into `updateData`. Reasons:
+
+- FE's initial `world` payload at campaign start in [useGameState.js](../../src/hooks/useGameState.js) is built without `currentLocation`, so the first auto-save would land an empty string and clobber the seed/startSpawn-set name.
+- BE writers that DO update the trio: `seedInitialWorld` + startSpawn override at POST, `travelResolver` + auto-promote-sublocation + dungeon-nav mid-play. These are the only legitimate writers.
+- On next GET, `reconstructFromNormalized` re-injects `currentLocationName` into `coreState.world.currentLocation` so FE re-syncs to the authoritative value on reload.
+
+If you add a new mid-play writer that mutates `Campaign.currentLocation*`, do it directly via `prisma.campaign.update` — never round-trip through the FE auto-save path.
+
 **Fog-of-war Set keys stay bare uuid.** UUIDs are globally unique across `WorldLocation` + `CampaignLocation`, so `loadCampaignFog` returns `Set<id>` and the FE renders both kinds without a discriminator. The `kind` discriminator only matters when looking up the source row in `userDiscoveryService.applyCampaignLocationState`.
 
 ## Auto-save queue

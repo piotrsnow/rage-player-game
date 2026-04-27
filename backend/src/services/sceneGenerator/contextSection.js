@@ -107,7 +107,7 @@ export function buildContextSection(contextBlocks) {
       if (Array.isArray(lw.hearsayByNpc) && lw.hearsayByNpc.length > 0) {
         lines.push('');
         lines.push('## [NPC_KNOWLEDGE] — miejsca, o których każdy NPC MOŻE mówić');
-        lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationId, byNpcId}]` — tylko z tej listy.');
+        lines.push('Jeśli gracz pyta o miejsce, NPC może ujawnić TYLKO lokacje z własnej listy. Inne miejsca: NPC mówi "nie wiem" lub spekuluje bez szczegółów. Gdy NPC faktycznie ujawnia lokację, emit `stateChanges.locationMentioned: [{locationName, byNpcId}]` — locationName skopiowane DOKŁADNIE z tej listy.');
         for (const h of lw.hearsayByNpc) {
           lines.push(`- ${h.npcName} wie o:`);
           for (const loc of h.locations) {

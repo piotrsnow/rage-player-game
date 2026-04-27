@@ -9,8 +9,8 @@ import {
 describe('parseLocationMentions', () => {
   it('accepts valid array with byNpcId', () => {
     const result = parseLocationMentions([
-      { locationId: 'loc1', byNpcId: 'npc1' },
-      { locationId: 'loc2', byNpcId: 'npc2' },
+      { locationName: 'loc1', byNpcId: 'npc1' },
+      { locationName: 'loc2', byNpcId: 'npc2' },
     ]);
     expect(result.ok).toBe(true);
     expect(result.data).toHaveLength(2);
@@ -18,28 +18,28 @@ describe('parseLocationMentions', () => {
 
   it('accepts byNpc / npcId aliases', () => {
     const result = parseLocationMentions([
-      { locationId: 'loc1', npcId: 'npc1' },
-      { locationId: 'loc2', byNpc: 'Geralt' },
+      { locationName: 'loc1', npcId: 'npc1' },
+      { locationName: 'loc2', byNpc: 'Geralt' },
     ]);
     expect(result.ok).toBe(true);
   });
 
   it('rejects mentions with no NPC identifier', () => {
-    const result = parseLocationMentions([{ locationId: 'loc1' }]);
+    const result = parseLocationMentions([{ locationName: 'loc1' }]);
     expect(result.ok).toBe(false);
   });
 
   it('rejects arrays over 20 mentions (runaway LLM guard)', () => {
     const oversized = Array.from({ length: 25 }, (_, i) => ({
-      locationId: `loc${i}`,
+      locationName: `loc${i}`,
       byNpcId: `npc${i}`,
     }));
     const result = parseLocationMentions(oversized);
     expect(result.ok).toBe(false);
   });
 
-  it('rejects empty locationId', () => {
-    const result = parseLocationMentions([{ locationId: '', byNpcId: 'n' }]);
+  it('rejects empty locationName', () => {
+    const result = parseLocationMentions([{ locationName: '', byNpcId: 'n' }]);
     expect(result.ok).toBe(false);
   });
 

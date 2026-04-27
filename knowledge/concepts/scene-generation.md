@@ -22,6 +22,8 @@ NPC tick batch) runs **after** the SSE complete event:
   which calls `POST /v1/internal/post-scene-work` (OIDC-authenticated).
 - **Dev**: same `enqueuePostSceneWork` runs the handler inline (fire-and-forget).
 
+**`firstScene` runs through the same post-scene pipeline.** The intro scene authored by `campaignGenerator` never touches `generateSceneStream` — it lands in `CampaignScene` via `POST /v1/ai/campaigns/:id/scenes/bulk` right after campaign creation. The bulk save endpoint in [routes/ai/scenes.js](../../backend/src/routes/ai/scenes.js) detects a freshly-CREATED `sceneIndex=0` (not an update) and fires `enqueuePostSceneWork` for it with `playerAction=''` + `prevLoc=null` + `newLoc=Campaign.currentLocationName`. Without this hook, scene 1's prompt has no compressed facts about the opening (the questgiver re-greets the player from scratch). Detection is gated on "first save of sceneIndex=0" so re-saves / scene edits don't re-fire nano.
+
 See [decisions/cloud-run-no-redis.md](../decisions/cloud-run-no-redis.md) for why there's
 no BullMQ/Redis in this pipeline.
 

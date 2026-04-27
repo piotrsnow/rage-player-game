@@ -351,7 +351,7 @@ const StateChangesSchema = z.object({
   // bound per-scene DB work. Same cap here so FE validator rejects oversized
   // arrays before dispatch.
   locationMentioned: z.array(z.object({
-    locationId: z.string().min(1),
+    locationName: z.string().min(1),
     byNpcId: z.string().min(1).optional(),
     npcId: z.string().min(1).optional(),
     byNpc: z.string().min(1).optional(),

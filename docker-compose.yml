@@ -1,10 +1,12 @@
 services:
-  # Postgres 16 + pgvector. Local container for dev; in prod use Cloud SQL
-  # for Postgres or any managed Postgres with the `vector` extension. The
-  # `pgvector/pgvector:pg16` image bundles pgvector pre-installed; the
-  # CREATE EXTENSION statement runs in the init migration.
+  # Postgres 16 + pgvector. Local container for dev; gated on the `local-db`
+  # compose profile so users on managed Postgres (Neon, Cloud SQL) skip it.
+  # The `pgvector/pgvector:pg16` image bundles pgvector pre-installed; the
+  # CREATE EXTENSION statement runs in the init migration. Toggle via
+  # `COMPOSE_PROFILES=local-db` in `.env` (see `.env.example`).
   db:
     image: pgvector/pgvector:pg16
+    profiles: ["local-db"]
     restart: unless-stopped
     environment:
       POSTGRES_USER: rpgon
@@ -26,6 +28,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+        required: false
     ports:
       - "3001:8080"
     environment:
@@ -35,11 +38,16 @@ services:
       NODE_ENV: "${NODE_ENV:-development}"
       PORT: "8080"
       HOST: "0.0.0.0"
-      # Container always reaches the bundled `db` service via docker network.
-      # `localhost` would mean the container itself. Host-side `prisma migrate`
-      # reads its own DATABASE_URL from backend/.env (localhost:5432) — the two
-      # are intentionally not synced.
-      DATABASE_URL: "postgresql://rpgon:rpgon@db:5432/rpgon"
+      # Local mode (default): leave DATABASE_URL unset in root `.env`; container
+      # reaches the bundled `db` service via the docker network at `db:5432`.
+      # `localhost` from inside the container points at the container itself,
+      # which is why host-side `prisma migrate` (run from `backend/` on the
+      # host) uses its own URL via `backend/.env` (localhost:5432).
+      # Neon mode: set `DATABASE_URL=postgresql://...neon.tech/...?sslmode=require`
+      # in root `.env`; this override lands on the container, and you should
+      # mirror the same URL in `backend/.env` so host-side prisma migrate
+      # targets Neon too.
+      DATABASE_URL: "${DATABASE_URL:-postgresql://rpgon:rpgon@db:5432/rpgon}"
       JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
       API_KEY_ENCRYPTION_SECRET: "${API_KEY_ENCRYPTION_SECRET:?Set API_KEY_ENCRYPTION_SECRET in .env}"
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:3001}"

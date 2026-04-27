@@ -3,7 +3,7 @@ import { childLogger } from '../../../lib/logger.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
-import { LOCATION_KIND_WORLD } from '../../locationRefs.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { runPostCampaignWorldWriteback } from '../../livingWorld/postCampaignWriteback.js';
 import {
@@ -57,18 +57,24 @@ export function shouldPromoteToGlobal(stateChanges, { mainQuestCompleted = false
  * Round B (Phase 4b) — hearsay policy handler.
  *
  * For each `{locationId, byNpcId}` the LLM emitted, resolve the NPC (by
- * CampaignNPC.npcId OR name), ensure the location sits in the NPC's
- * `resolveNpcKnownLocations` set, and only then mark it as heard-about for
- * the player (canonical → UserWorldKnowledge, non-canonical → Campaign).
+ * CampaignNPC.npcId OR name), resolve the location ref (uuid in either
+ * WorldLocation/CampaignLocation, OR fuzzy NAME via resolveLocationByName),
+ * enforce policy for canonical hits (NPC must "know" it via 1-hop Roads +
+ * explicit WorldNpcKnownLocation), and mark heard-about for the player.
  *
- * Violations (LLM made up a location or wrote one outside the NPC's scope)
+ * Why name-based resolution: the AI prompt names locations textually in
+ * `Key NPCs`, `Active Quests`, and `[NPC_KNOWLEDGE]` blocks but only the
+ * latter exposes uuids — and `[NPC_KNOWLEDGE]` only renders when the NPC
+ * has canonical-edge / explicit-grant entries (often empty mid-play). The
+ * AI was reasonably emitting slug-style invented ids for sandbox locations
+ * it had only seen by name. Switching to name-based resolution accepts the
+ * AI's natural reference shape and adds CampaignLocation (sandbox) to the
+ * legal target set. Sandbox hits skip the canonical-knowledge policy check
+ * (no per-NPC sandbox-knowledge schema exists) — they're already scoped to
+ * this campaign so leak risk is bounded.
+ *
+ * Violations (location truly doesn't resolve / NPC outside canonical scope)
  * are skipped with a warning — the mention doesn't propagate to fog state.
- *
- * Batched layout — the previous loop hit Prisma 4× per mention (location
- * findUnique + campaignNPC findFirst + worldNPC findUnique/findFirst +
- * edge findMany inside resolveNpcKnownLocations). With 20 mentions clamped
- * by Zod that was 80 round-trips. We now pre-fetch every location, NPC,
- * and edge in 3 queries total, then walk the mentions in memory.
  */
 export async function processLocationMentions(campaignId, mentions) {
   const parsed = parseLocationMentions(mentions);
@@ -92,21 +98,42 @@ export async function processLocationMentions(campaignId, mentions) {
   // duplicates and the loop below can do constant-time map lookups.
   const normalized = validMentions
     .map((entry) => ({
-      locationId: String(entry.locationId || '').trim(),
+      locationRef: String(entry.locationName || '').trim(),
       byNpcIdent: String(entry.byNpcId || entry.npcId || entry.byNpc || '').trim(),
     }))
-    .filter((m) => m.locationId && m.byNpcIdent);
+    .filter((m) => m.locationRef && m.byNpcIdent);
   if (normalized.length === 0) return;
 
-  const uniqLocationIds = [...new Set(normalized.map((m) => m.locationId))];
+  const uniqLocationRefs = [...new Set(normalized.map((m) => m.locationRef))];
   const uniqIdents = [...new Set(normalized.map((m) => m.byNpcIdent))];
 
-  // 1. All referenced locations in one query.
-  const locationRows = await prisma.worldLocation.findMany({
-    where: { id: { in: uniqLocationIds } },
-    select: { id: true },
-  }).catch(() => []);
-  const existingLocationIds = new Set(locationRows.map((l) => l.id));
+  // 1. Resolve each location ref → `{ kind, id }` or null.
+  // Two-pass batched: first the cheap uuid path against both tables, then
+  // a per-ref `resolveLocationByName` for the unresolved tail (covers the
+  // common case where the LLM emits the human-readable name straight from
+  // Key NPCs / Active Quests prompt blocks).
+  const [wlByUuid, clByUuid] = await Promise.all([
+    prisma.worldLocation.findMany({
+      where: { id: { in: uniqLocationRefs } },
+      select: { id: true },
+    }).catch(() => []),
+    prisma.campaignLocation.findMany({
+      where: { id: { in: uniqLocationRefs }, campaignId },
+      select: { id: true },
+    }).catch(() => []),
+  ]);
+  const resolvedByRef = new Map();
+  for (const r of wlByUuid) resolvedByRef.set(r.id, { kind: LOCATION_KIND_WORLD, id: r.id });
+  for (const r of clByUuid) {
+    if (!resolvedByRef.has(r.id)) {
+      resolvedByRef.set(r.id, { kind: LOCATION_KIND_CAMPAIGN, id: r.id });
+    }
+  }
+  for (const ref of uniqLocationRefs) {
+    if (resolvedByRef.has(ref)) continue;
+    const r = await resolveLocationByName(ref, { campaignId }).catch(() => null);
+    if (r?.row?.id) resolvedByRef.set(ref, { kind: r.kind, id: r.row.id });
+  }
 
   // 2. All candidate CampaignNPCs in one query. `mode: 'insensitive'` isn't
   // available on `in:` with Mongo, so we OR-together per-ident clauses —
@@ -213,11 +240,12 @@ export async function processLocationMentions(campaignId, mentions) {
 
   // Walk the original mentions and fire markLocationHeardAbout only for
   // policy-passing pairs. Duplicates in the input collapse naturally via
-  // the knownByIdent / existingLocationIds sets.
-  for (const { locationId, byNpcIdent } of normalized) {
+  // the resolvedByRef / knownByIdent maps.
+  for (const { locationRef, byNpcIdent } of normalized) {
     try {
-      if (!existingLocationIds.has(locationId)) {
-        log.warn({ campaignId, locationId, byNpcIdent }, 'locationMentioned: location not found — skipping');
+      const resolved = resolvedByRef.get(locationRef);
+      if (!resolved) {
+        log.warn({ campaignId, locationRef, byNpcIdent }, 'locationMentioned: location not found — skipping');
         continue;
       }
       const known = knownByIdent.get(byNpcIdent);
@@ -225,23 +253,24 @@ export async function processLocationMentions(campaignId, mentions) {
         log.warn({ campaignId, byNpcIdent }, 'locationMentioned: NPC not found — skipping');
         continue;
       }
-      if (!known.has(locationId)) {
+      // Canonical hits run the full knowledge-scope policy. Sandbox hits
+      // are scoped to this campaign already (CampaignLocation rows aren't
+      // visible across users) — let them through unconditionally.
+      if (resolved.kind === LOCATION_KIND_WORLD && !known.has(resolved.id)) {
         log.warn(
-          { campaignId, locationId, byNpcIdent, knownCount: known.size },
+          { campaignId, locationRef, byNpcIdent, knownCount: known.size },
           'locationMentioned: location outside NPC knowledge scope — policy violation, skipping',
         );
         continue;
       }
-      // Hearsay is canonical-only — `existingLocationIds` is filtered against
-      // WorldLocation, so kind=world is the right discriminator.
       await markLocationHeardAbout({
         userId: campaign.userId,
-        locationKind: LOCATION_KIND_WORLD,
-        locationId,
+        locationKind: resolved.kind,
+        locationId: resolved.id,
         campaignId,
       });
     } catch (err) {
-      log.warn({ err: err?.message, campaignId, locationId, byNpcIdent }, 'locationMentioned: handler failed');
+      log.warn({ err: err?.message, campaignId, locationRef, byNpcIdent }, 'locationMentioned: handler failed');
     }
   }
 }

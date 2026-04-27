@@ -29,15 +29,17 @@ Przy 50k scen/dzień = **~3M wasted queries/dzień (~10% query budget)**.
 
 ### P0.2 — Connection pool exhaustion (~5k scen/dzień)
 
+**Status (2026-04-27):** częściowo rozwiązane — hosting decision = Neon Launch ([knowledge/decisions/postgres-prod-hosting.md](../knowledge/decisions/postgres-prod-hosting.md)). Neon ships built-in PgBouncer (`-pooler` endpoint, free); użycie tej formy connection stringa kasuje immediate breakpoint. **Pozostała praca = PgBouncer sidecar w Cloud Run** triggered TYLKO gdy zmigrujemy na Cloud SQL (CSQL nie ma wbudowanego poolera).
+
 **Why:** `assembleContext` livingWorld builder fans out **22-27 parallel queries** per scene (worldLore + npc baseline + hearsay + reputation + dmAgent + saturation + ...). Przy 5 concurrent scene gen × 25 parallel = 125 connections demand. Postgres default `max_connections=100` insufficient.
 
 **Fix:**
-- **Cloud SQL:** PgBouncer sidecar w Cloud Run, transaction mode, pool size ~25 per Cloud Run instance.
-- **Neon:** flip DATABASE_URL na `-pooler` host (built-in PgBouncer free).
+- **Neon (current):** confirm DATABASE_URL używa `-pooler` host w prod. ✅ resolved by hosting choice.
+- **Cloud SQL (post-migration):** PgBouncer sidecar w Cloud Run, transaction mode, pool size ~25 per Cloud Run instance. Trigger tej pracy = decyzja użytkownika o migracji Neon → CSQL (patrz playbook w postgres-prod-hosting.md).
 
-**Effort:** 1-2 dni. Connection string change + verify pod load (>100 concurrent).
+**Effort:** Neon path = 0 (już rozwiązane connection-stringiem). CSQL path = 1-2 dni gdy migracja triggered.
 
-**Files:** `cloudbuild.yaml`, `backend/.env.example`, `knowledge/decisions/postgres-prod-hosting.md` (NEW po F6).
+**Files (CSQL path):** `cloudbuild.yaml`, `backend/.env.example`, `knowledge/decisions/postgres-prod-hosting.md`.
 
 ### P0.3 — `processNpcChanges` per-NPC delete+insert relationships
 

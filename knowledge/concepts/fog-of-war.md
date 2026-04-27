@@ -66,9 +66,8 @@ Edge discovery splits the same way:
 - **postSceneWork.js** — walks both location and edge helpers when a scene
   moves the player between two locations. Passes `campaignId` so the
   canonical/non-canonical routing works.
-- **Phase 4b (Round B, not yet shipped)** — scene-gen will add a
-  `locationMentioned: [{locationId, byNpcId}]` state-change bucket that
-  dispatches to `markLocationHeardAbout`.
+- **Phase 4b (Round B)** — scene-gen has a `locationMentioned: [{locationName, byNpcId}]` state-change bucket that dispatches to `markLocationHeardAbout`. Handler accepts location *name* (resolved across canonical + sandbox via `resolveLocationByName` with uuid fast-path); canonical hits enforce NPC knowledge scope, sandbox hits skip it.
+- **Campaign-start seeding via `markStartLocationVisible`** ([userDiscoveryService.js](../../backend/src/services/livingWorld/userDiscoveryService.js)) — called once at the end of POST `/campaigns` after seed/startSpawn settled `Campaign.currentLocationKind/Id`. Resolves sublocation → top-level parent (the player map only renders top-level tiles) and marks both visited. For canonical top-level starts ONLY: pre-discovers all outgoing `Road`s into `UserDiscoveredEdge` (`skipDuplicates`) and flips neighbor `WorldLocation` settlements to `heard_about`. Sandbox `CampaignLocation` starts skip the road branch — Roads are canonical-only (FK to `WorldLocation`), CampaignLocations are off-graph by design. Without this seeding, a player starting in a non-`knownByDefault` village (or a CampaignLocation) sees an empty map until they explicitly travel.
 
 ## Open edges
 

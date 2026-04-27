@@ -25,20 +25,21 @@ table; F5b renamed `WorldLocationEdge` → `Road`). Rendered in the system promp
 
     "stateChanges": {
       "locationMentioned": [
-        { "locationId": "<WorldLocation.id>", "byNpcId": "<NPC name or CampaignNPC.npcId>" }
+        { "locationName": "<exact name from prompt>", "byNpcId": "<NPC name or CampaignNPC.npcId>" }
       ],
       ...
     }
 
-**Policy enforcement** — [`processLocationMentions`](../../backend/src/services/sceneGenerator/processStateChanges.js)
-rejects entries whose location isn't in the NPC's `resolveNpcKnownLocations`
-set; accepted entries call `markLocationHeardAbout` so the player's fog
-flips the location into the dashed-outline "heard-about" state. F3 normalized
-fog: canonical hearsay → `UserHeardAboutLocation` join table (per-user account
-scope); per-campaign hearsay → `CampaignDiscoveredLocation` row with
-`state='heard_about'` (the legacy `Campaign.heardAboutLocationIds`/`UserWorldKnowledge.*Ids`
-JSON arrays were dropped). F5b note: hearsay flow is currently canonical-only —
-`processLocationMentions` does not target `CampaignLocation` rows yet.
+**Policy enforcement** — [`processLocationMentions`](../../backend/src/services/sceneGenerator/processStateChanges/livingWorld.js)
+resolves `locationName` against both canonical `WorldLocation` and per-campaign
+`CampaignLocation` (uuid-fast-path → `resolveLocationByName` fallback). Canonical
+hits run the NPC knowledge-scope check (anchor + 1-hop Roads + explicit
+`WorldNpcKnownLocation`) — entries outside the NPC's allowed set are skipped.
+Sandbox `CampaignLocation` hits skip the canonical knowledge check (no per-NPC
+sandbox-knowledge schema exists; sandbox is already campaign-scoped so leak
+risk is bounded). Accepted entries call `markLocationHeardAbout` which writes:
+canonical → `UserDiscoveredLocation` (account scope), sandbox →
+`CampaignDiscoveredLocation` row with `state='heard_about'`.
 
 Violations are logged as policy warnings — nothing crashes, the AI just
 doesn't get to smuggle unknown locations past the fog.
