@@ -199,7 +199,6 @@ export async function crudCampaignRoutes(app) {
         const campaignLength = typeof parsed?.campaign?.length === 'string' ? parsed.campaign.length : 'Medium';
         const seedResult = await seedInitialWorld(campaign.id, {
           length: campaignLength,
-          difficultyTier: typeof difficultyTier === 'string' ? difficultyTier : 'low',
         });
         seededStartingLocation = seedResult.startingLocationName;
         seededBounds = seedResult.bounds || null;
@@ -232,6 +231,14 @@ export async function crudCampaignRoutes(app) {
           .map((l) => (l && typeof l.canonicalName === 'string' ? l.canonicalName : null))
           .filter(Boolean),
       );
+      // Implicit allowed anchors: questGiver's home settlement + sublocation.
+      // `WorldNpcKnownLocation` only stores explicit seed grants — none of the
+      // canonical NPCs have their OWN settlement explicitly seeded (it's
+      // assumed implicit). Without this, AI-emitted `parentLocationName: "Yeralden"`
+      // for an Arius-type quest-giver in Yeralden gets dropped as
+      // `parent_not_in_npc_known_set` even though it's the most natural anchor.
+      if (peekedSpawn.settlementName) allowedAnchorNames.add(peekedSpawn.settlementName);
+      if (peekedSpawn.sublocationName) allowedAnchorNames.add(peekedSpawn.sublocationName);
       await applyInitialLocations({
         campaignId: campaign.id,
         locations: peekedSpawn.initialLocations.slice(0, 5),

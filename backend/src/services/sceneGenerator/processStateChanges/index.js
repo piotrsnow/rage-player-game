@@ -210,6 +210,10 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
             currentLocationName: created.row.name,
             currentLocationKind: created.kind,
             currentLocationId: created.row.id,
+            // F5d — keep continuous coords in sync with the new anchor so the
+            // player marker on the map jumps with the auto-promoted subloc.
+            currentX: typeof created.row.regionX === 'number' ? created.row.regionX : null,
+            currentY: typeof created.row.regionY === 'number' ? created.row.regionY : null,
           },
         });
         log.info(

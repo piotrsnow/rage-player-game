@@ -988,6 +988,8 @@
     "viewSublocations": "View sublocations",
     "backToMap": "Back to map",
     "noSublocations": "No sublocations here.",
+    "enterSubConfirm": "Enter location?",
+    "enterHere": "Enter",
     "day": "Day",
     "season": "Season",
     "seasons": {

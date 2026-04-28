@@ -9,6 +9,7 @@ import { computeSmartPosition, findMergeCandidate } from '../../livingWorld/posi
 import {
   LOCATION_KIND_WORLD,
   LOCATION_KIND_CAMPAIGN,
+  lookupLocationByKindId,
 } from '../../locationRefs.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
@@ -114,13 +115,64 @@ export async function resolveAnchorToken(token, campaignId, startSpawn = null) {
 
 export { processSublocationEntry, processTopLevelEntry };
 
+// Walk a polymorphic location ref up the parent chain until we hit a row with
+// no parent (= top-level settlement). Bounded to 5 hops as a safety net for
+// pathological cycles. Returns the unchanged ref when already top-level.
+async function walkUpToTopLevel(startRef) {
+  let kind = startRef.kind;
+  let row = startRef.row;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (kind === LOCATION_KIND_WORLD) {
+      if (!row.parentLocationId) return { kind, row };
+      const next = await prisma.worldLocation.findUnique({
+        where: { id: row.parentLocationId },
+      });
+      if (!next) return { kind, row };
+      row = next;
+      // WorldLocation.parentLocationId is FK to WorldLocation — kind stays 'world'.
+    } else {
+      if (!row.parentLocationKind || !row.parentLocationId) return { kind, row };
+      const next = await lookupLocationByKindId({
+        prisma,
+        kind: row.parentLocationKind,
+        id: row.parentLocationId,
+      });
+      if (!next) return { kind, row };
+      kind = row.parentLocationKind;
+      row = next;
+    }
+  }
+  return { kind, row };
+}
+
 async function processSublocationEntry(campaignId, entry, { discoveryState = 'visited' } = {}) {
   const parentRef = await resolveLocationByName(entry.parentLocationName, { campaignId });
   if (!parentRef) {
     log.warn({ campaignId, parent: entry.parentLocationName, child: entry.name }, 'Parent location resolve failed');
     return null;
   }
-  const parent = parentRef.row;
+
+  // F5d — AI sometimes nominates a sublocation as the parent (e.g. "Akademia
+  // Yerieli", which is itself a sublocation of Yeralden). The new row would
+  // land under that sub, but SubLocationGrid only drills one level down — so
+  // sub-of-sub becomes invisible. Walk up to the top-level ancestor instead.
+  let effectiveParent = parentRef;
+  if (parentRef.row.parentLocationId) {
+    const topLevel = await walkUpToTopLevel(parentRef);
+    if (topLevel && topLevel.row.id !== parentRef.row.id) {
+      log.info(
+        {
+          campaignId,
+          aiParent: parentRef.row.canonicalName || parentRef.row.name,
+          reparentedTo: topLevel.row.canonicalName || topLevel.row.name,
+          child: entry.name,
+        },
+        'Sublocation reparented: AI-emitted parent was itself a sublocation, walking up to top-level',
+      );
+      effectiveParent = topLevel;
+    }
+  }
+  const parent = effectiveParent.row;
 
   const created = await findOrCreateCampaignLocation(entry.name, {
     campaignId,
@@ -131,7 +183,7 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     regionX: parent.regionX ?? 0,
     regionY: parent.regionY ?? 0,
     positionConfidence: parent.positionConfidence ?? 0.5,
-    parentLocationKind: parentRef.kind,
+    parentLocationKind: effectiveParent.kind,
     parentLocationId: parent.id,
     slotType: entry.slotType || null,
     slotKind: 'custom',
@@ -143,7 +195,7 @@ async function processSublocationEntry(campaignId, entry, { discoveryState = 'vi
     return null;
   }
   log.info(
-    { campaignId, parent: parent.canonicalName || parent.name, child: entry.name, parentKind: parentRef.kind },
+    { campaignId, parent: parent.canonicalName || parent.name, child: entry.name, parentKind: effectiveParent.kind },
     'CampaignLocation sublocation materialized',
   );
 

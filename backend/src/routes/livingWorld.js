@@ -171,9 +171,17 @@ export async function livingWorldRoutes(fastify) {
       prisma.campaign.findUnique({
         where: { id: campaignId },
         // F5 — currentLocation lifted out of coreState into its own column.
+        // F5b — polymorphic FK trio (kind + id + name) is BE-authoritative.
         // F5d — currentX/Y carry the player's continuous position when they
         // wander off the POI graph (free-vector movement: "1 km na północ").
-        select: { coreState: true, currentLocationName: true, currentX: true, currentY: true },
+        select: {
+          coreState: true,
+          currentLocationName: true,
+          currentLocationKind: true,
+          currentLocationId: true,
+          currentX: true,
+          currentY: true,
+        },
       }),
     ]);
 
@@ -192,18 +200,19 @@ export async function livingWorldRoutes(fastify) {
       },
     });
 
-    let currentLocationId = null;
+    // F5b — polymorphic FK is BE-authoritative; prefer it over the legacy
+    // name-match lookup (which silently misses when displayName or aliases
+    // drift). Name-match remains as a fallback for old rows / flavor names
+    // that didn't resolve at write time.
     const core = full?.coreState || {};
     const currentName = full?.currentLocationName || core?.world?.currentLocation || null;
-    if (currentName) {
-      // F5b — match across the merged canonical + campaign list. `displayName`
-      // is normalized in locationQueries (canonicalName for WorldLocation,
-      // name for CampaignLocation) so a single string compare hits both kinds.
+    let currentLocationId = full?.currentLocationId || null;
+    if (!currentLocationId && currentName) {
       const match = locations.find(
         (l) => l.displayName === currentName || l.canonicalName === currentName
       );
       if (match) currentLocationId = match.id;
-      else log.warn({ campaignId, currentName }, 'currentLocation name has no row match');
+      else log.warn({ campaignId, currentName }, 'currentLocation name has no row match (and no FK)');
     }
 
     // NOTE: we intentionally do NOT return Campaign.worldBounds. The player

@@ -33,7 +33,7 @@ function detectTradeIntent(action) {
 // and continues as long as subsequent words are also capitalized (so
 // "Czarnego Lasu" captures both; "Watonga, bo noc" stops at the comma).
 // This deliberately rejects "idę do domu" / "idę do lasu" — no capital.
-const TRAVEL_VERB_PREP = /\b(?:id[eę]|wyruszam|jad[eę]|kieruj[eę]\s+si[eę]|udaj[eę]\s+si[eę]|podr[oó]żuj[eę]|travel(?:ing)?|go(?:ing)?|head(?:ing)?|leav(?:e|ing))\s+(?:do|to|for|w\s+stron[eę]|ku)\s+/iu;
+const TRAVEL_VERB_PREP = /\b(?:id[eę]|wchodz[eę]|wyruszam|jad[eę]|kieruj[eę]\s+si[eę]|udaj[eę]\s+si[eę]|podr[oó]żuj[eę]|travel(?:ing)?|go(?:ing)?|head(?:ing)?|leav(?:e|ing)|enter(?:ing)?)\s+(?:do|to|into|for|w\s+stron[eę]|ku)\s+/iu;
 const TRAVEL_TARGET = /^([A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*(?:\s+[A-ZŻŹĆĄŚĘŁÓŃ][\wąćęłńóśźż-]*){0,3})/u;
 
 export function detectTravelIntent(action) {

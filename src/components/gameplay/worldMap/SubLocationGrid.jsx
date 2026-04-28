@@ -28,6 +28,10 @@ export default function SubLocationGrid({
   const canvasRef = useRef(null);
   const [size, setSize] = useState({ w: 500, h: 500 });
   const [hoveredId, setHoveredId] = useState(null);
+  // Pending entry — clicking a sub stages it here; the player confirms with
+  // the popover before we fire `onEnter` (which kicks off scene-gen). Avoids
+  // accidental sublocation switches that previously fired on a single click.
+  const [pendingSub, setPendingSub] = useState(null);
 
   const gridSize = subGridSizeFor(parent?.locationType);
 
@@ -104,8 +108,16 @@ export default function SubLocationGrid({
     const pxPerCell = computeSubPxPerCell(size.w, size.h, gridSize);
     const cell = screenToSubCell(sx, sy, pxPerCell, gridSize, size.w, size.h);
     const picked = pickSubAt(cell.x, cell.y, visibleSubs);
-    if (picked && onEnter) onEnter(picked);
-  }, [size, visibleSubs, gridSize, onEnter]);
+    if (picked) setPendingSub(picked);
+  }, [size, visibleSubs, gridSize]);
+
+  const confirmEnter = useCallback(() => {
+    const sub = pendingSub;
+    setPendingSub(null);
+    if (sub && onEnter) onEnter(sub);
+  }, [pendingSub, onEnter]);
+
+  const cancelEnter = useCallback(() => setPendingSub(null), []);
 
   const parentName = parent?.displayName || parent?.canonicalName || '';
 
@@ -134,6 +146,44 @@ export default function SubLocationGrid({
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-[11px] text-on-surface-variant/70 italic">
             {t?.('worldState.noSublocations') || 'No sublocations here.'}
+          </div>
+        </div>
+      )}
+      {pendingSub && (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center bg-surface/60 backdrop-blur-[2px]"
+          onClick={cancelEnter}
+          role="dialog"
+        >
+          <div
+            className="min-w-[220px] max-w-[320px] rounded-sm border border-outline-variant/25 bg-surface-container-highest/95 backdrop-blur-md shadow-xl animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b border-outline-variant/15">
+              <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant">
+                {t?.('worldState.enterSubConfirm') || 'Enter location?'}
+              </div>
+              <div className="text-[12px] font-bold text-on-surface mt-0.5">
+                {pendingSub.displayName || pendingSub.canonicalName || pendingSub.name}
+              </div>
+            </div>
+            <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={confirmEnter}
+                className="text-left px-3 py-2 text-[11px] text-on-surface hover:bg-primary/10 hover:text-primary transition-colors flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">login</span>
+                {t?.('worldState.enterHere') || 'Enter'}
+              </button>
+              <button
+                type="button"
+                onClick={cancelEnter}
+                className="text-left px-3 py-2 text-[10px] text-outline hover:text-on-surface-variant transition-colors border-t border-outline-variant/10"
+              >
+                {t?.('common.cancel') || 'Cancel'}
+              </button>
+            </div>
           </div>
         </div>
       )}
