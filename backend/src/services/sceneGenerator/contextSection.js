@@ -149,6 +149,18 @@ export function buildContextSection(contextBlocks) {
         lines.push(`## [WORLD BOUNDS] — remaining travel room: N ${h.remainingN} km · S ${h.remainingS} km · E ${h.remainingE} km · W ${h.remainingW} km. Beyond that = edge of the known world (new locations past this boundary are rejected by the engine).`);
       }
 
+      // F5d — CURRENT BIOME tells premium the terrain/region under the player's
+      // feet so narration is grounded (don't say "rolling plains" while on a
+      // mountain pass). Sourced from biomeMap.getBiomeForCoords using either
+      // continuous Campaign.currentX/Y (Phase 2 step movement) or the anchored
+      // location's regionX/Y as fallback.
+      if (lw.currentBiome) {
+        const cb = lw.currentBiome;
+        const named = cb.name ? `${cb.name} (${cb.biome})` : cb.biome;
+        lines.push('');
+        lines.push(`## [CURRENT BIOME] — ${named}; baseline danger: ${cb.danger}. Ground narration in this terrain (vegetation, sounds, footing) — don't describe a different biome.`);
+      }
+
       if (lw.backgroundCount > 0 || lw.backgroundLabel) {
         const label = lw.backgroundLabel || 'mieszkaniec';
         const count = lw.backgroundCount > 0 ? `${lw.backgroundCount}+ ` : '';

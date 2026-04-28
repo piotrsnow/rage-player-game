@@ -266,6 +266,14 @@ model Campaign {
   currentLocationKind String?
   currentLocationId   String? @db.Uuid
 
+  // Continuous (km-scale) world position for off-location wandering. When
+  // anchored at a POI, callers derive (x, y) from currentLocation.regionX/Y.
+  // These columns are written only when the player walks off the POI graph
+  // (Phase 2 step movement: "1 km na północ"). Null = at currentLocation.
+  // 1 unit = 1 km (matches WorldLocation.regionX/Y scale).
+  currentX Float?
+  currentY Float?
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 

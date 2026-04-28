@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Campaign" ADD COLUMN     "currentX" DOUBLE PRECISION,
+ADD COLUMN     "currentY" DOUBLE PRECISION;

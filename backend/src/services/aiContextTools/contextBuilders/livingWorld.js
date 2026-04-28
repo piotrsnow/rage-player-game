@@ -19,6 +19,7 @@ import { mapAmbientNpcs, clearSurfacedIntroHints } from './npcGoalMapping.js';
 import { buildHearsayByNpc } from './hearsay.js';
 import { buildNpcMemory } from './npcBaseline.js';
 import { computeWorldBoundsHint } from './worldBoundsHint.js';
+import { computeCurrentBiome } from './currentBiome.js';
 
 const log = childLogger({ module: 'aiContextTools' });
 
@@ -229,6 +230,10 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
   // Round B (Phase 4c) — worldBounds remaining-room hint.
   const worldBoundsHint = computeWorldBoundsHint(campaign, location);
 
+  // F5d biome map — biome at the player's current world position. Resolved
+  // from continuous (currentX/Y) when set, else from the anchored location.
+  const currentBiome = computeCurrentBiome(campaign, location);
+
   return {
     locationName: location.canonicalName,
     locationType: location.locationType || 'generic',
@@ -236,6 +241,7 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     hearsayByNpc,
     memoryByNpc,
     worldBoundsHint,
+    currentBiome,
     backgroundCount,
     backgroundLabel: settlement?.backgroundLabel || null,
     settlement,

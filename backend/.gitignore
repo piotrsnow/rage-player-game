@@ -3,5 +3,4 @@ node_modules/
 media/
 prisma/dev.db
 prisma/dev.db-journal
-prisma/migrations/
 dist/
