@@ -9,6 +9,7 @@
 // All routes require JWT auth + verify the caller owns the referenced
 // campaign before acting on its companions.
 
+import { createHash } from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import {
@@ -170,7 +171,9 @@ export async function livingWorldRoutes(fastify) {
       prisma.campaign.findUnique({
         where: { id: campaignId },
         // F5 — currentLocation lifted out of coreState into its own column.
-        select: { coreState: true, currentLocationName: true },
+        // F5d — currentX/Y carry the player's continuous position when they
+        // wander off the POI graph (free-vector movement: "1 km na północ").
+        select: { coreState: true, currentLocationName: true, currentX: true, currentY: true },
       }),
     ]);
 
@@ -207,7 +210,7 @@ export async function livingWorldRoutes(fastify) {
     // map is a global -10..10 grid (canonical world is the same across all
     // campaigns). `worldBounds` is a per-campaign AI/seeder placement
     // guardrail, not the viewport range. See knowledge/concepts/living-world.md.
-    return reply.send({
+    const payload = {
       locations,
       edges,
       fog: {
@@ -222,7 +225,25 @@ export async function livingWorldRoutes(fastify) {
       // instead of pin. Always include the name so the FE never has to guess
       // which kind of "no pin" state it's in.
       currentLocationName: currentName || null,
-    });
+      // F5d — continuous (km-scale) position. Set when player walks off the
+      // POI graph via free-vector movement; null when anchored at a POI
+      // (caller derives position from currentLocation* in that case).
+      currentX: typeof full?.currentX === 'number' ? full.currentX : null,
+      currentY: typeof full?.currentY === 'number' ? full.currentY : null,
+    };
+
+    // ETag based on the full serialized payload. The map is small (~5 KB for
+    // heartland) so hashing the JSON is cheap and removes the risk of false
+    // hits from a coarser fingerprint (e.g. one that only counted entries).
+    // FE caches by ETag and sends `If-None-Match`; we answer 304 when nothing
+    // material changed between scenes — most idle/talk/combat turns.
+    const body = JSON.stringify(payload);
+    const etag = `"${createHash('sha1').update(body).digest('hex').slice(0, 16)}"`;
+    if (request.headers['if-none-match'] === etag) {
+      return reply.code(304).header('etag', etag).send();
+    }
+    reply.header('etag', etag);
+    return reply.send(payload);
   });
 
   // POST /npc-dialog/:worldNpcId — C2 1-on-1 dialog

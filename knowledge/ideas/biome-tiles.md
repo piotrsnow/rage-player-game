@@ -1,5 +1,16 @@
 # Biome tiles — pre-seeded terrain grid
 
+> **STATUS — SHIPPED in a different shape (2026-04-29).** Polygon-based biome
+> map + step movement replaced this idea. `WorldTile` rows were never adopted
+> because km-scale player position with 250 m precision needs a continuous
+> lookup, not a 21×21 grid. Source of truth is now Bezier path strings in
+> `shared/domain/biomeMap.js`, sampled at module load, with a single
+> `getBiomeForCoords(x, y)` ray-cast. See
+> [knowledge/concepts/biome-and-step-movement.md](../concepts/biome-and-step-movement.md)
+> for the shipped architecture. Notes below are kept as historical context —
+> schema fields, hearsay reframe, and admin-paint-tool ideas all turned moot
+> once tiles became code, not rows.
+
 ## Idea
 
 Replace "AI invents a location with no terrain context" with "world is pre-divided into biome tiles; AI inventions inherit the current tile's terrain." A `WorldTile` row owns a grid cell, a biome (mountains / forest / plains / swamp / wasteland / coast / urban), and a danger baseline. Every WorldLocation and CampaignLocation belongs to a tile via `tileId`. The player map renders a colored biome layer under POIs.

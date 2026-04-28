@@ -254,6 +254,31 @@ export const apiClient = {
     return this.request(path, { method: 'GET' });
   },
 
+  /**
+   * GET with conditional ETag support. Pass the previously-seen ETag string
+   * and the server may answer 304 (no body, callers keep cached data).
+   * Returns `{ status: 200, data, etag }` on fresh data and
+   * `{ status: 304, data: null, etag }` when the resource is unchanged.
+   * Auth refresh on 401 is handled by `fetchAuthed`; other non-2xx (besides
+   * 304) throw the same way `request()` does.
+   */
+  async getWithEtag(path, etag = null) {
+    const headers = etag ? { 'If-None-Match': etag } : undefined;
+    const response = await this.fetchAuthed(`${_baseUrl}${path}`, {
+      method: 'GET',
+      headers,
+    });
+    if (response.status === 304) {
+      return { status: 304, data: null, etag: response.headers.get('etag') };
+    }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || err.message || `API error: ${response.status}`);
+    }
+    const data = await response.json();
+    return { status: 200, data, etag: response.headers.get('etag') };
+  },
+
   post(path, body, options = {}) {
     const idemHeader = buildIdempotencyHeader(options);
     return this.request(path, {

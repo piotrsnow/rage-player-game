@@ -7,6 +7,7 @@ import SubLocationGrid from './SubLocationGrid';
 import {
   computePxPerKm, worldToScreen, screenToWorld,
   drawParchment, drawGridLines, drawEdge, drawTile,
+  drawBiomeLayer, drawPlayerMarker,
   pickLocationAt, tileFogState,
 } from './tileMapRenderer';
 
@@ -155,6 +156,10 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
     ctx.save();
     ctx.translate(view.panX, view.panY);
 
+    // F5d biome map — paint biome polygon underlay before grid lines so the
+    // grid + POI dots ride on top with full readability.
+    drawBiomeLayer(ctx, cell, size.w, size.h);
+
     drawGridLines(ctx, cell, size.w, size.h);
 
     for (const e of data.edges || []) {
@@ -180,6 +185,27 @@ export default function PlayerWorldMap({ campaignId, sceneId, onTravel, onEnterS
         isHovered: loc.id === hoveredId,
         pulse,
       });
+    }
+
+    // F5d Phase 2.5 — player position marker. Continuous Campaign.currentX/Y
+    // wins (free-vector wandering); otherwise we anchor to the current POI's
+    // regionX/Y so the player still sees themselves on top of an anchored
+    // settlement. Skipped entirely when neither is available.
+    let playerX = null;
+    let playerY = null;
+    if (typeof data.currentX === 'number' && typeof data.currentY === 'number') {
+      playerX = data.currentX;
+      playerY = data.currentY;
+    } else if (data.currentLocationId) {
+      const cur = locById.get(data.currentLocationId);
+      const anchor = cur?.parentLocationId ? locById.get(cur.parentLocationId) : cur;
+      if (anchor && typeof anchor.regionX === 'number' && typeof anchor.regionY === 'number') {
+        playerX = anchor.regionX;
+        playerY = anchor.regionY;
+      }
+    }
+    if (playerX !== null && playerY !== null) {
+      drawPlayerMarker(ctx, playerX, playerY, cell, size.w, size.h, pulse);
     }
     ctx.restore();
   }, [data, size, cell, view.panX, view.panY, topLevelLocations, locById, fogVisited, fogHeard, discoveredEdges, hoveredId, currentParentId]);

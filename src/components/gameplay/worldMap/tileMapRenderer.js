@@ -6,10 +6,27 @@
 // not derived from per-campaign `Campaign.worldBounds` — that field exists
 // for ring-spawn / AI-placement guardrails, not for "how big is the map".
 
+import { BIOME_REGIONS } from '../../../../shared/domain/biomeMap.js';
+
 const GRID_MIN = -10;
 const GRID_MAX = 10;
 const GRID_SPAN = GRID_MAX - GRID_MIN;
 const CELL_KM = 1;
+
+// Biome fill palette — muted parchment-friendly tones; the SVG palette would
+// drown out POI dots so we crank alpha down. Layer order matches BIOME_REGIONS
+// (background plains first, overlays on top) so a Wilcze-Pustkowia ellipse
+// inside Czarnobór reads correctly.
+const BIOME_FILL = {
+  plains: 'rgba(170, 142, 60, 0.45)',
+  forest: 'rgba(45, 90, 61, 0.55)',
+  hills: 'rgba(140, 122, 82, 0.45)',
+  mountains: 'rgba(90, 100, 112, 0.6)',
+  swamp: 'rgba(74, 93, 44, 0.55)',
+  wasteland: 'rgba(138, 108, 63, 0.5)',
+  urban: 'rgba(181, 69, 69, 0.5)',
+  coast: 'rgba(75, 167, 199, 0.45)',
+};
 
 const TYPE_COLOR = {
   capital: '#d4a545',
@@ -107,6 +124,84 @@ export function drawGridLines(ctx, pxPerKm, w, h) {
   ctx.beginPath();
   ctx.moveTo(ox, axis.y);
   ctx.lineTo(ox + gridPx, axis.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Paint the biome layer below grid + POIs. Walks BIOME_REGIONS in order so
+ * overlay regions (Wilcze Pustkowia, swamp, etc.) draw on top of the plains
+ * background, matching the SVG layer order. Skips the [0] background entry
+ * — we paint a single `plains` rect first to cover any uncovered area.
+ */
+export function drawBiomeLayer(ctx, pxPerKm, w, h) {
+  const gridPx = GRID_SPAN * pxPerKm;
+  const ox = (w - gridPx) / 2;
+  const oy = (h - gridPx) / 2;
+  ctx.save();
+  // Background plains across the whole grid.
+  ctx.fillStyle = BIOME_FILL.plains;
+  ctx.fillRect(ox, oy, gridPx, gridPx);
+
+  // Overlay polygons (skip [0] which is the bare-plains fallback).
+  for (let i = 1; i < BIOME_REGIONS.length; i++) {
+    const region = BIOME_REGIONS[i];
+    const polygon = region.polygon;
+    if (!polygon || polygon.length === 0) continue;
+    ctx.fillStyle = BIOME_FILL[region.biome] || BIOME_FILL.plains;
+    ctx.beginPath();
+    for (let j = 0; j < polygon.length; j++) {
+      const [wx, wy] = polygon[j];
+      const s = worldToScreen(wx, wy, pxPerKm, w, h);
+      if (j === 0) ctx.moveTo(s.x, s.y);
+      else ctx.lineTo(s.x, s.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * Player marker at continuous (wx, wy). Used both for free-vector wandering
+ * (Campaign.currentX/Y) and as an alternative way to highlight position when
+ * anchored at a POI. Renders as a pulsing crosshair so it's distinguishable
+ * from POI tile pulses.
+ */
+export function drawPlayerMarker(ctx, wx, wy, pxPerKm, w, h, pulse = 0) {
+  const s = worldToScreen(wx, wy, pxPerKm, w, h);
+  const r = Math.max(5, pxPerKm * 0.18);
+  ctx.save();
+  // Outer glow
+  const glowR = r + 6 + pulse * 4;
+  const glow = ctx.createRadialGradient(s.x, s.y, r * 0.4, s.x, s.y, glowR);
+  glow.addColorStop(0, 'rgba(245, 232, 188, 0.7)');
+  glow.addColorStop(1, 'rgba(245, 232, 188, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
+  ctx.fill();
+  // Core dot
+  ctx.fillStyle = '#f5e8bc';
+  ctx.strokeStyle = 'rgba(40,30,20,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, r * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Crosshair ticks
+  ctx.strokeStyle = '#1a140c';
+  ctx.lineWidth = 1.2;
+  const t = r * 0.4;
+  ctx.beginPath();
+  ctx.moveTo(s.x - r, s.y);
+  ctx.lineTo(s.x - t, s.y);
+  ctx.moveTo(s.x + t, s.y);
+  ctx.lineTo(s.x + r, s.y);
+  ctx.moveTo(s.x, s.y - r);
+  ctx.lineTo(s.x, s.y - t);
+  ctx.moveTo(s.x, s.y + t);
+  ctx.lineTo(s.x, s.y + r);
   ctx.stroke();
   ctx.restore();
 }
