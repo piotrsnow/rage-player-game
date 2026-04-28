@@ -45,7 +45,7 @@ function priorityRank(p) {
  *
  * Shape: { locationName, npcs: [{name, role, paused}], recentEvents: [{type, blurb, at}] }
  */
-export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, playerAction = null } = {}) {
+export async function buildLivingWorldContext(campaignId, currentLocation, { travelTarget = null, directionalMove = null, playerAction = null } = {}) {
   // Cheap check — if the flag is off we do nothing.
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
@@ -142,19 +142,21 @@ export async function buildLivingWorldContext(campaignId, currentLocation, { tra
     return null;
   });
 
-  // Travel block. Only built when the classifier flagged a travel intent.
-  // Returns `{startName, targetName, targetInFog}` — premium uses targetInFog
-  // to decide arrival-vs-disorientation. No path metadata here; edge =
-  // built road only, doesn't gate travel.
+  // Travel / movement block. Built when classifier flags travel intent —
+  // either named-target travel ("idę do Kamionki") or free-vector movement
+  // ("1 km na północ"). F5d Phase 2 — runs pathScan to surface POIs within
+  // 250m of the path + biome transitions + barrier-edge detection.
   let travel = null;
-  if (travelTarget && campaign.userId) {
+  if ((travelTarget || directionalMove) && campaign.userId) {
     travel = await buildTravelBlock({
       campaignId,
       userId: campaign.userId,
+      campaign,
       startLocation: location,
       targetName: travelTarget,
+      directionalMove,
     }).catch((err) => {
-      log.warn({ err: err?.message, campaignId, travelTarget }, 'travel block build failed');
+      log.warn({ err: err?.message, campaignId, travelTarget, directionalMove }, 'travel/movement block build failed');
       return null;
     });
   }

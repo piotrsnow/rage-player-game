@@ -146,7 +146,12 @@ export function buildContextSection(contextBlocks) {
       if (lw.worldBoundsHint) {
         const h = lw.worldBoundsHint;
         lines.push('');
-        lines.push(`## [WORLD BOUNDS] — remaining travel room: N ${h.remainingN} km · S ${h.remainingS} km · E ${h.remainingE} km · W ${h.remainingW} km. Beyond that = edge of the known world (new locations past this boundary are rejected by the engine).`);
+        lines.push(`## [WORLD BOUNDS]`);
+        lines.push(`- N: ${h.remainingN} km · za granicą: ${h.barrierN.name} (${h.barrierN.desc})`);
+        lines.push(`- S: ${h.remainingS} km · za granicą: ${h.barrierS.name} (${h.barrierS.desc})`);
+        lines.push(`- E: ${h.remainingE} km · za granicą: ${h.barrierE.name} (${h.barrierE.desc})`);
+        lines.push(`- W: ${h.remainingW} km · za granicą: ${h.barrierW.name} (${h.barrierW.desc})`);
+        lines.push(`Granice są nieprzekraczalne — gdy gracz próbuje przejść, narratuj barierę, nie pozwól mu jej minąć. Nowe lokacje poza granicami są odrzucane przez silnik.`);
       }
 
       // F5d — CURRENT BIOME tells premium the terrain/region under the player's
@@ -306,31 +311,93 @@ export function buildContextSection(contextBlocks) {
         lines.push('⚠ VENDETTA MODE — frakcje mogą aktywnie tropić/atakować. Nie neutralizuj tego samowolnie: tylko atonement quest lub wygaśnięcie (2 tyg.) kończy stan.');
       }
     }
-    // TRAVEL — emitted when the intent classifier flagged a travel target.
-    // Edge = stricte zbudowana droga (bezpieczne przejście) i NIE służy ani
-    // jako sygnał wiedzy NPC, ani jako preconditiona podróży — gracz może
-    // iść do dowolnej fog-visible lokacji. Brak ścieżki = po prostu nikt
-    // nie zbudował drogi; AI nadal narratuje montage. AI NIGDY nie tworzy
-    // nowych lokacji (top-level ani dungeonów). Sublokacje wewnątrz
-    // istniejącej osady są dozwolone (osobny tor `newLocations` z
-    // `parentLocationName`).
+    // F5d Phase 2 — MOVEMENT block. Unified for two modes:
+    //   - kind='travel' + targetName: named-POI travel (e.g. "idę do Kamionki",
+    //     map click). Target resolved to (toX, toY); fog check decides arrival
+    //     vs disorientation.
+    //   - kind='vectorMove': free-vector ("1 km na północ"). Target is a
+    //     coordinate pair; player ends up at (toX, toY) in flavor-only state.
+    //
+    // pathScan output gives the AI a grounded set of POIs encountered en route
+    // (within 250m of the segment) plus POIs at destination + biome transitions.
+    // AI narrates with these facts — never invents top-level locations.
     if (lw.travel) {
       const t = lw.travel;
       lines.push('');
-      lines.push(`## TRAVEL`);
-      if (t.targetInFog) {
-        lines.push(
-          `Gracz wyrusza ${t.startName} → ${t.targetName}. ` +
-          `TRAVEL MONTAGE: 1-2 zdania o przebiegu drogi (atmosfera, klimat, bez encounterów) + krótka narracja przybycia do ${t.targetName}. ` +
-          `Emit \`stateChanges.currentLocation: "${t.targetName}"\`. ` +
-          `NIE twórz nowych lokacji ani encounterów po drodze.`,
-        );
-      } else {
+      lines.push(`## [MOVEMENT]`);
+
+      if (t.unresolved) {
         lines.push(
           `Gracz mówi że chce iść do "${t.targetName}", ale ta lokacja nie jest mu znana (nie była odwiedzona ani wspomniana przez NPC). ` +
           `Narratuj dezorientację — postać nie wie gdzie to jest, błądzi lub pyta o drogę. ` +
           `NIE emituj \`stateChanges.currentLocation\` (drop). NIE twórz nowej lokacji.`,
         );
+      } else if (t.kind === 'travel' && !t.targetInFog) {
+        lines.push(
+          `Gracz mówi że chce iść do "${t.targetName}", ale ta lokacja nie jest mu znana. ` +
+          `Narratuj dezorientację — postać nie wie gdzie to jest. NIE emituj \`stateChanges.currentLocation\`.`,
+        );
+      } else {
+        const km = (t.distanceKm ?? 0).toFixed(2);
+        const fromB = t.fromBiome ? (t.fromBiome.name || t.fromBiome.biome) : '?';
+        const toB = t.toBiome ? (t.toBiome.name || t.toBiome.biome) : '?';
+        if (t.kind === 'travel') {
+          lines.push(`Trasa: ${t.fromName} (${fromB}) → ${t.targetName} (${toB}), ${km} km.`);
+        } else {
+          lines.push(`Trasa: ${t.fromName} (${fromB}) → punkt (${t.toX.toFixed(2)}, ${t.toY.toFixed(2)}) (${toB}), ${km} km.`);
+        }
+
+        if (t.biomeTransitions?.length) {
+          const transitions = t.biomeTransitions
+            .map((tr) => `${(tr.fromBiome.name || tr.fromBiome.biome)} → ${(tr.toBiome.name || tr.toBiome.biome)} po ${tr.atKm.toFixed(2)} km`)
+            .join('; ');
+          lines.push(`Przejścia biomów: ${transitions}.`);
+        } else {
+          lines.push(`Przejść biomów brak — cała droga przez ${fromB}.`);
+        }
+
+        if (t.poisAlongPath?.length) {
+          lines.push(`POI mijane (≤250 m od trasy):`);
+          for (const p of t.poisAlongPath) {
+            const sideLabel = p.side === 'left' ? 'lewo' : 'prawo';
+            lines.push(
+              `  - ${p.location.name} (${p.location.locationType || 'generic'}) — po ${p.alongKm.toFixed(2)} km, ${(p.perpKm * 1000).toFixed(0)} m na ${sideLabel}`,
+            );
+          }
+        } else {
+          lines.push(`POI mijane: brak w 250 m promieniu trasy.`);
+        }
+
+        if (t.poisAtDestination?.length) {
+          const labels = t.poisAtDestination
+            .map((p) => `${p.location.name} (${(p.distKm * 1000).toFixed(0)} m)`)
+            .join(', ');
+          lines.push(`POI na docelowym polu (≤250 m): ${labels}.`);
+        } else {
+          lines.push(`Na docelowym polu nie ma znanego POI — gracz ląduje w pustkowiu/biomie.`);
+        }
+
+        if (t.barrierHit) {
+          lines.push(
+            `⚠ BARIERA: ruch przekraczał granicę świata (${t.barrierHit.direction}). ` +
+            `Za nią: ${t.barrierHit.barrier.name} — ${t.barrierHit.barrier.desc}. ` +
+            `Narratuj barierę i ZATRZYMAJ gracza tuż przed nią. NIE pozwól mu przejść. ` +
+            `Pozycja końcowa = punkt na granicy (clampnięty), nie poza nią.`,
+          );
+        }
+
+        if (t.kind === 'travel') {
+          lines.push(
+            `Narracja: krótki opis przemarszu (1-2 zdania, wzmianka o mijanych POI jeśli były), zakończony przybyciem do ${t.targetName}. ` +
+            `Emit \`stateChanges.currentLocation: "${t.targetName}"\`. NIE twórz nowych lokacji ani encounterów po drodze.`,
+          );
+        } else {
+          lines.push(
+            `Narracja: krótki opis przemarszu w biomie (1-2 zdania, wzmianka o mijanych POI), zakończony zatrzymaniem w terenie. ` +
+            `Emit \`stateChanges.currentX: ${t.toX.toFixed(2)}, stateChanges.currentY: ${t.toY.toFixed(2)}\`. ` +
+            `Możesz wymyślić jednorazowy flavor name dla tego miejsca w \`stateChanges.currentLocation\` (np. „skraj Czarnoboru", „samotny dąb na łące") — to NIE staje się trwałą lokacją w bazie. NIE twórz \`newLocations\`.`,
+          );
+        }
       }
     }
 

@@ -48,6 +48,7 @@ export async function assembleContext(
     fetches.push(
       buildLivingWorldContext(campaignId, currentLocation, {
         travelTarget: selectionResult?._intent === 'travel' ? selectionResult._travelTarget : null,
+        directionalMove: selectionResult?._intent === 'travel' ? (selectionResult._directionalMove || null) : null,
         playerAction,
       })
         .then((data) => ({ type: 'livingWorld', data }))

@@ -6,7 +6,7 @@ import { auditQuestWorldImpact } from '../../livingWorld/questAudit.js';
 import { applyFameFromEvent } from '../../livingWorld/fameService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { resolveWorldLocation, walkUpAncestors, resolveLocationByName } from '../../livingWorld/worldStateService.js';
-import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../../locationRefs.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } from '../../locationRefs.js';
 
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
@@ -108,37 +108,81 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processItemAttributions(campaignId, stateChanges.newItems, ownerUserId, sceneGameTime);
   }
 
-  // AI emits `stateChanges.currentLocation` after a travel montage or
-  // sublocation walk-in. We resolve the name against fog-visible locations
-  // (canonical WorldLocation + per-campaign CampaignLocation). Match → write
-  // the polymorphic FK trio on Campaign. Miss → drop with a warning. AI never
-  // creates locations mid-play; an unrecognized name means the AI invented
-  // it, and the player stays put. Sublocation creation (parentLocationName
-  // set in `newLocations`) goes through `processLocationChanges` below; the
-  // auto-promote rule (next block) wires the new sub to currentLocation when
-  // appropriate.
-  if (typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()) {
-    const targetName = stateChanges.currentLocation.trim();
+  // AI emits `stateChanges.currentLocation` (string) and/or `currentX/currentY`
+  // (numbers) after a travel montage, sublocation walk-in, or free-vector
+  // movement. F5d Phase 2 — three modes:
+  //
+  //   1. Name resolves to fog-visible POI → anchored: write FK trio + sync
+  //      currentX/Y from the POI's regionX/regionY.
+  //   2. Name doesn't resolve, but currentX/Y given → wandering: store the
+  //      flavor name (no FK), set continuous coords. The flavor name does NOT
+  //      create a CampaignLocation row — it's a one-shot label for the patch
+  //      of biome the player is standing on.
+  //   3. Bare currentX/Y, no name → wandering with no flavor (clear name).
+  //
+  // Unresolved name with no coords falls through with a warning (legacy
+  // match-or-drop behaviour preserved).
+  const aiName = typeof stateChanges.currentLocation === 'string' && stateChanges.currentLocation.trim()
+    ? stateChanges.currentLocation.trim()
+    : null;
+  const aiX = typeof stateChanges.currentX === 'number' && Number.isFinite(stateChanges.currentX)
+    ? stateChanges.currentX
+    : null;
+  const aiY = typeof stateChanges.currentY === 'number' && Number.isFinite(stateChanges.currentY)
+    ? stateChanges.currentY
+    : null;
+  const hasCoords = aiX !== null && aiY !== null;
+
+  if (aiName || hasCoords) {
     try {
-      const resolved = await resolveCurrentLocationTarget(campaignId, targetName);
-      if (resolved) {
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: {
+      let updates = null;
+      if (aiName) {
+        const resolved = await resolveCurrentLocationTarget(campaignId, aiName);
+        if (resolved) {
+          const coords = await lookupLocationByKindId({
+            prisma,
+            kind: resolved.kind,
+            id: resolved.id,
+            select: { regionX: true, regionY: true },
+          }).catch(() => null);
+          updates = {
             currentLocationName: resolved.name,
             currentLocationKind: resolved.kind,
             currentLocationId: resolved.id,
-          },
-        });
-        log.info({ campaignId, name: resolved.name, kind: resolved.kind }, 'currentLocation updated from AI emission');
+            currentX: coords?.regionX ?? null,
+            currentY: coords?.regionY ?? null,
+          };
+          log.info({ campaignId, name: resolved.name, kind: resolved.kind, x: updates.currentX, y: updates.currentY }, 'currentLocation updated (anchored at POI)');
+        } else if (hasCoords) {
+          updates = {
+            currentLocationName: aiName,
+            currentLocationKind: null,
+            currentLocationId: null,
+            currentX: aiX,
+            currentY: aiY,
+          };
+          log.info({ campaignId, flavorName: aiName, x: aiX, y: aiY }, 'currentLocation updated (wandering — flavor name + coords, no DB POI row)');
+        } else {
+          log.warn(
+            { campaignId, ignored: aiName },
+            'AI emitted stateChanges.currentLocation but name did not resolve and no currentX/Y given — dropped',
+          );
+        }
       } else {
-        log.warn(
-          { campaignId, ignored: targetName },
-          'AI emitted stateChanges.currentLocation but name did not resolve to any fog-visible location — dropped (no mid-play creation)',
-        );
+        updates = {
+          currentLocationName: null,
+          currentLocationKind: null,
+          currentLocationId: null,
+          currentX: aiX,
+          currentY: aiY,
+        };
+        log.info({ campaignId, x: aiX, y: aiY }, 'currentLocation cleared (wandering — bare coords)');
+      }
+      if (updates) {
+        await prisma.campaign.update({ where: { id: campaignId }, data: updates });
       }
     } catch (err) {
-      log.warn({ err: err?.message, campaignId, targetName }, 'currentLocation resolve/update failed');
+      log.warn({ err: err?.message, campaignId, aiName, aiX, aiY }, 'currentLocation resolve/update failed');
     }
   }
 

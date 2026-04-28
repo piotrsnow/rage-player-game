@@ -8,6 +8,7 @@
 
 import { detectCombatIntent } from '../../../../shared/domain/combatIntent.js';
 import { isHypotheticalOrQuestioning } from '../../../../shared/domain/intentHeuristics.js';
+import { parseMovementIntent } from '../../../../shared/domain/movementIntent.js';
 
 // ── TRADE INTENT REGEX ──
 //
@@ -194,6 +195,20 @@ export function classifyIntentHeuristic(playerAction, { isFirstScene = false } =
       expand_location: true,
       _intent: 'travel',
       _travelTarget: travel.target,
+    };
+  }
+
+  // F5d Phase 2 — free-vector movement. "1 km na północ", "500 m W". Falls
+  // through to scene-gen with `_directionalMove` so buildTravelBlock can
+  // resolve (toX, toY) by applying the vector to the player's current
+  // position and run the same pathScan as named-target travel.
+  const move = parseMovementIntent(playerAction);
+  if (move) {
+    return {
+      ...emptySelection(),
+      expand_location: true,
+      _intent: 'travel',
+      _directionalMove: move,
     };
   }
 
