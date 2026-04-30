@@ -144,7 +144,7 @@
     "campaignSaved": "Zapisano!"
   },
   "keys": {
-    "title": "Klucze API",
+    "title": "Konfiguracja Modeli",
     "subtitle": "Skonfiguruj preferencje modeli. Klucze dostawców AI pochodzą z zmiennych środowiskowych serwera.",
     "apiKeys": "Klucze API",
     "envHint": "Klucze są odczytywane wyłącznie z zmiennych środowiskowych serwera (plik `.env`). Nie można ich ustawić w interfejsie.",
@@ -626,6 +626,12 @@
     "geminiLabel": "Nano Banana 2 (Google) — szybki, tani",
     "geminiApiKey": "Klucz API Google AI",
     "geminiApiKeyDesc": "Zdobądź klucz na aistudio.google.com",
+    "sdWebuiLabel": "Stable Diffusion (lokalny) — Automatic1111, bez limitów",
+    "sdWebuiModel": "Model Stable Diffusion",
+    "sdWebuiModelRefresh": "Odśwież listę",
+    "sdWebuiOffline": "Stable Diffusion WebUI nie odpowiada. Sprawdź SD_WEBUI_URL i uruchom A1111 z flagą --api.",
+    "sdWebuiNoModels": "Brak zainstalowanych modeli (checkpointów) w A1111.",
+    "sdWebuiCurrentlyLoaded": "Obecnie załadowany w A1111: {{title}}",
     "aiProvider": "Dostawca AI",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",

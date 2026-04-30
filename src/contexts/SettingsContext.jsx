@@ -17,6 +17,7 @@ const EMPTY_BACKEND_KEYS = {
   stability: { configured: false },
   gemini: { configured: false },
   meshy: { configured: false },
+  'sd-webui': { configured: false },
 };
 
 const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
@@ -80,6 +81,7 @@ const defaultSettings = {
   aiProvider: 'openai',
   sceneVisualization: 'image',
   imageProvider: 'dalle',
+  sdWebuiModel: '',
   language: 'pl',
   narratorVoiceId: '',
   narratorVoiceName: '',

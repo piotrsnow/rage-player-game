@@ -23,6 +23,7 @@ import { openaiProxyRoutes } from './routes/proxy/openai.js';
 import { anthropicProxyRoutes } from './routes/proxy/anthropic.js';
 import { elevenlabsProxyRoutes } from './routes/proxy/elevenlabs.js';
 import { stabilityProxyRoutes } from './routes/proxy/stability.js';
+import { sdWebuiProxyRoutes } from './routes/proxy/sdWebui.js';
 import { geminiProxyRoutes } from './routes/proxy/gemini.js';
 import { meshyProxyRoutes } from './routes/proxy/meshy.js';
 import { musicRoutes } from './routes/music.js';
@@ -127,6 +128,7 @@ await fastify.register(async function proxyScope(app) {
   app.register(anthropicProxyRoutes, { prefix: '/anthropic' });
   app.register(elevenlabsProxyRoutes, { prefix: '/elevenlabs' });
   app.register(stabilityProxyRoutes, { prefix: '/stability' });
+  app.register(sdWebuiProxyRoutes, { prefix: '/sd-webui' });
   app.register(geminiProxyRoutes, { prefix: '/gemini' });
   app.register(meshyProxyRoutes, { prefix: '/meshy' });
 }, { prefix: '/v1/proxy' });

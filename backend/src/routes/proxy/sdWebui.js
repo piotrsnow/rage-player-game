@@ -1,0 +1,345 @@
+import multipart from '@fastify/multipart';
+import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
+import { generateKey, toUuid } from '../../services/hashService.js';
+import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
+import { createMediaStore } from '../../services/mediaStore.js';
+import { config } from '../../config.js';
+
+const store = createMediaStore(config);
+
+// Loading a checkpoint into VRAM can take 30-60s on a cold switch,
+// so we allow up to 120s before the whole request gives up.
+const ENSURE_MODEL_TIMEOUT_MS = 120_000;
+const GENERATE_TIMEOUT_MS = 180_000;
+
+const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy, cropped, jpeg artifacts';
+
+const GENERATE_BODY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', maxLength: 4000 },
+    negativePrompt: { type: 'string', maxLength: 2000 },
+    model: { type: 'string', maxLength: 256 },
+    width: { type: 'integer', minimum: 256, maximum: 2048 },
+    height: { type: 'integer', minimum: 256, maximum: 2048 },
+    steps: { type: 'integer', minimum: 1, maximum: 150 },
+    cfg: { type: 'number', minimum: 1, maximum: 30 },
+    sampler: { type: 'string', maxLength: 64 },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
+    forceNew: { type: 'boolean' },
+  },
+};
+
+function requireSdUrl(reply) {
+  if (!config.sdWebui.url) {
+    reply.code(503).send({
+      error: 'SD_WEBUI_URL is not configured. Set it in backend/.env (e.g. http://host.docker.internal:7860).',
+      code: 'SD_WEBUI_OFFLINE',
+    });
+    return null;
+  }
+  return config.sdWebui.url.replace(/\/$/, '');
+}
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 30_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureModel(baseUrl, targetTitle) {
+  if (!targetTitle) return;
+  const optionsRes = await fetchWithTimeout(`${baseUrl}/sdapi/v1/options`, { method: 'GET' }, 15_000);
+  if (!optionsRes.ok) throw new Error(`sd-webui GET /options failed: ${optionsRes.status}`);
+  const opts = await optionsRes.json();
+  if (opts.sd_model_checkpoint === targetTitle) return;
+
+  const setRes = await fetchWithTimeout(
+    `${baseUrl}/sdapi/v1/options`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sd_model_checkpoint: targetTitle }),
+    },
+    ENSURE_MODEL_TIMEOUT_MS,
+  );
+  if (!setRes.ok) {
+    const body = await setRes.text().catch(() => '');
+    throw new Error(`sd-webui POST /options failed: ${setRes.status} ${body.slice(0, 200)}`);
+  }
+}
+
+async function persistGeneratedImage({ userId, campaignId, buffer, cacheParams }) {
+  const cacheKey = generateKey('image', cacheParams, campaignId);
+  const storagePath = cacheKey.replace('.png', '.jpg');
+  const storeResult = await store.put(storagePath, buffer, 'image/jpeg');
+
+  await prisma.mediaAsset.upsert({
+    where: { key: cacheKey },
+    create: {
+      userId,
+      campaignId: toUuid(campaignId),
+      key: cacheKey,
+      type: 'image',
+      contentType: 'image/jpeg',
+      size: buffer.length,
+      backend: config.mediaBackend,
+      path: storagePath,
+      metadata: cacheParams,
+    },
+    update: {},
+  });
+
+  return { url: storeResult.url, key: cacheKey };
+}
+
+export async function sdWebuiProxyRoutes(fastify) {
+  await fastify.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
+  fastify.addHook('onRequest', fastify.authenticate);
+
+  // List installed checkpoints. FE calls this to populate the model dropdown.
+  fastify.get('/models', async (_request, reply) => {
+    const baseUrl = requireSdUrl(reply);
+    if (!baseUrl) return;
+
+    try {
+      const res = await fetchWithTimeout(`${baseUrl}/sdapi/v1/sd-models`, { method: 'GET' }, 10_000);
+      if (!res.ok) {
+        return reply.code(502).send({
+          error: `sd-webui returned ${res.status}`,
+          code: 'SD_WEBUI_ERROR',
+        });
+      }
+      const raw = await res.json();
+      const models = Array.isArray(raw)
+        ? raw.map((m) => ({ title: m.title, name: m.model_name, hash: m.hash || null }))
+        : [];
+
+      let current = null;
+      try {
+        const optRes = await fetchWithTimeout(`${baseUrl}/sdapi/v1/options`, { method: 'GET' }, 10_000);
+        if (optRes.ok) {
+          const opt = await optRes.json();
+          current = opt.sd_model_checkpoint || null;
+        }
+      } catch { /* non-fatal */ }
+
+      return { models, current };
+    } catch (err) {
+      return reply.code(503).send({
+        error: `sd-webui unreachable at ${baseUrl}: ${err.message}`,
+        code: 'SD_WEBUI_OFFLINE',
+      });
+    }
+  });
+
+  fastify.post('/generate', { schema: { body: GENERATE_BODY_SCHEMA } }, async (request, reply) => {
+    const baseUrl = requireSdUrl(reply);
+    if (!baseUrl) return;
+
+    const {
+      prompt,
+      negativePrompt = DEFAULT_NEGATIVE_PROMPT,
+      model,
+      width = 1024,
+      height = 1024,
+      steps = config.sdWebui.steps,
+      cfg = config.sdWebui.cfg,
+      sampler = config.sdWebui.sampler,
+      campaignId,
+      forceNew = false,
+    } = request.body;
+
+    const cacheParams = {
+      provider: 'sd-webui',
+      prompt,
+      model: model || null,
+      width,
+      height,
+      resolutionScale: GENERATED_IMAGE_SCALE,
+      ...(forceNew ? { requestTs: Date.now() } : {}),
+    };
+    const cacheKey = generateKey('image', cacheParams, campaignId);
+
+    if (!forceNew) {
+      const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
+      if (existing) {
+        const url = await store.getUrl(existing.path);
+        return { cached: true, url, key: cacheKey };
+      }
+    }
+
+    try {
+      await ensureModel(baseUrl, model);
+    } catch (err) {
+      return reply.code(502).send({ error: `Failed to switch SD model: ${err.message}`, code: 'SD_WEBUI_ERROR' });
+    }
+
+    const payload = {
+      prompt,
+      negative_prompt: negativePrompt,
+      width,
+      height,
+      steps,
+      cfg_scale: cfg,
+      sampler_name: sampler,
+      n_iter: 1,
+      batch_size: 1,
+    };
+
+    let res;
+    try {
+      res = await fetchWithTimeout(
+        `${baseUrl}/sdapi/v1/txt2img`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        GENERATE_TIMEOUT_MS,
+      );
+    } catch (err) {
+      return reply.code(503).send({ error: `sd-webui unreachable: ${err.message}`, code: 'SD_WEBUI_OFFLINE' });
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return reply.code(res.status).send({ error: `sd-webui txt2img failed: ${body.slice(0, 500)}` });
+    }
+
+    const data = await res.json();
+    const b64 = Array.isArray(data.images) ? data.images[0] : null;
+    if (!b64) return reply.code(502).send({ error: 'sd-webui returned no image' });
+
+    const originalBuffer = Buffer.from(b64, 'base64');
+    const buffer = await downscaleGeneratedImage(originalBuffer);
+
+    const result = await persistGeneratedImage({
+      userId: request.user.id,
+      campaignId,
+      buffer,
+      cacheParams,
+    });
+    return { cached: false, ...result };
+  });
+
+  // img2img for portrait-from-photo (field `image`) or a txt2img fallback when
+  // no file is uploaded. Accepts multipart so the FE can POST the user's photo.
+  fastify.post('/portrait', async (request, reply) => {
+    const baseUrl = requireSdUrl(reply);
+    if (!baseUrl) return;
+
+    const parts = request.parts();
+    let imageBuffer = null;
+    let prompt = '';
+    let negativePrompt = DEFAULT_NEGATIVE_PROMPT;
+    let strength = '0.55';
+    let model = '';
+
+    for await (const part of parts) {
+      if (part.type === 'file' && part.fieldname === 'image') {
+        imageBuffer = await part.toBuffer();
+      } else if (part.type === 'field') {
+        if (part.fieldname === 'prompt') prompt = part.value;
+        if (part.fieldname === 'negativePrompt') negativePrompt = part.value;
+        if (part.fieldname === 'strength') strength = part.value;
+        if (part.fieldname === 'model') model = part.value;
+      }
+    }
+
+    if (!prompt) return reply.code(400).send({ error: 'prompt is required' });
+
+    try {
+      await ensureModel(baseUrl, model);
+    } catch (err) {
+      return reply.code(502).send({ error: `Failed to switch SD model: ${err.message}`, code: 'SD_WEBUI_ERROR' });
+    }
+
+    const width = 768;
+    const height = 1024;
+
+    let res;
+    try {
+      if (imageBuffer) {
+        const initImage = imageBuffer.toString('base64');
+        const payload = {
+          init_images: [initImage],
+          prompt,
+          negative_prompt: negativePrompt,
+          denoising_strength: Math.max(0, Math.min(1, parseFloat(strength) || 0.55)),
+          width,
+          height,
+          steps: config.sdWebui.steps,
+          cfg_scale: config.sdWebui.cfg,
+          sampler_name: config.sdWebui.sampler,
+          n_iter: 1,
+          batch_size: 1,
+        };
+        res = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/img2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+      } else {
+        const payload = {
+          prompt,
+          negative_prompt: negativePrompt,
+          width,
+          height,
+          steps: config.sdWebui.steps,
+          cfg_scale: config.sdWebui.cfg,
+          sampler_name: config.sdWebui.sampler,
+          n_iter: 1,
+          batch_size: 1,
+        };
+        res = await fetchWithTimeout(
+          `${baseUrl}/sdapi/v1/txt2img`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+          GENERATE_TIMEOUT_MS,
+        );
+      }
+    } catch (err) {
+      return reply.code(503).send({ error: `sd-webui unreachable: ${err.message}`, code: 'SD_WEBUI_OFFLINE' });
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return reply.code(res.status).send({ error: `sd-webui portrait failed: ${body.slice(0, 500)}` });
+    }
+
+    const data = await res.json();
+    const b64 = Array.isArray(data.images) ? data.images[0] : null;
+    if (!b64) return reply.code(502).send({ error: 'sd-webui returned no image' });
+
+    const resultBuffer = Buffer.from(b64, 'base64');
+    const cacheParams = {
+      provider: 'sd-webui',
+      type: 'portrait',
+      prompt,
+      model: model || null,
+      hasInit: !!imageBuffer,
+    };
+    const result = await persistGeneratedImage({
+      userId: request.user.id,
+      campaignId: null,
+      buffer: resultBuffer,
+      cacheParams,
+    });
+    return result;
+  });
+}

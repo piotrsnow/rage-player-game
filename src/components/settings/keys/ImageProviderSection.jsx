@@ -1,13 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import SdWebuiModelPicker from './SdWebuiModelPicker';
 
 // Which backend env key each image provider option requires. `dalle` and
 // `gpt-image` both run through OpenAI so they share the OPENAI_API_KEY gate.
+// `sd-webui` has no API key — `configured` mirrors whether SD_WEBUI_URL is
+// set on the backend (see GET /v1/auth/api-keys).
 const PROVIDER_REQUIREMENTS = {
   dalle:       { keyId: 'openai',    envVar: 'OPENAI_API_KEY' },
   'gpt-image': { keyId: 'openai',    envVar: 'OPENAI_API_KEY' },
   stability:   { keyId: 'stability', envVar: 'STABILITY_API_KEY' },
   gemini:      { keyId: 'gemini',    envVar: 'GEMINI_API_KEY' },
+  'sd-webui':  { keyId: 'sd-webui',  envVar: 'SD_WEBUI_URL' },
 };
 
 export default function ImageProviderSection({ settings, updateSettings, backendKeys }) {
@@ -18,6 +22,7 @@ export default function ImageProviderSection({ settings, updateSettings, backend
     { id: 'gpt-image', icon: 'brush', label: t('settings.gptImageLabel') },
     { id: 'stability', icon: 'speed', label: t('settings.stabilityLabel') },
     { id: 'gemini', icon: 'stars', label: t('settings.geminiLabel') },
+    { id: 'sd-webui', icon: 'memory', label: t('settings.sdWebuiLabel', 'Stable Diffusion (local)') },
   ];
 
   const isAvailable = (optId) => {
@@ -39,6 +44,62 @@ export default function ImageProviderSection({ settings, updateSettings, backend
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backendKeys, settings.imageProvider]);
+
+  const selectedOption = options.find((o) => o.id === settings.imageProvider) || options[0];
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setIsOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setIsOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen]);
+
+  const renderOptionRow = (opt, { isSelected, asButton, onClick }) => {
+    const req = PROVIDER_REQUIREMENTS[opt.id];
+    const available = isAvailable(opt.id);
+    const disabled = !asButton && !available;
+    return (
+      <button
+        key={asButton ? 'trigger' : opt.id}
+        type="button"
+        disabled={disabled}
+        title={disabled && req ? t('keys.providerUnavailable', { envVar: req.envVar }) : undefined}
+        onClick={onClick}
+        className={`w-full p-4 rounded-sm border text-left flex items-center gap-3 transition-all ${
+          isSelected
+            ? 'bg-surface-tint/10 border-primary/30 text-primary'
+            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+        } ${disabled ? 'opacity-40 cursor-not-allowed hover:border-outline-variant/15' : ''}`}
+      >
+        <span className="material-symbols-outlined">{opt.icon}</span>
+        <span className="font-headline text-sm">{opt.label}</span>
+        {!available && req && (
+          <span className="ml-auto text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border border-error/30 text-error/80 flex items-center gap-1">
+            <span className="material-symbols-outlined text-[12px]">lock</span>
+            {req.envVar}
+          </span>
+        )}
+        {asButton ? (
+          <span className={`material-symbols-outlined text-sm ml-auto transition-transform ${isOpen ? 'rotate-180' : ''} ${isSelected ? 'text-primary' : 'opacity-70'}`}>
+            expand_more
+          </span>
+        ) : (
+          available && isSelected && (
+            <span className="material-symbols-outlined text-primary ml-auto text-sm">check_circle</span>
+          )
+        )}
+      </button>
+    );
+  };
 
   function renderEnvStatus(providerKey, envVar) {
     const entry = backendKeys?.[providerKey];
@@ -64,49 +125,44 @@ export default function ImageProviderSection({ settings, updateSettings, backend
   }
 
   return (
-    <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20">
+    <div className={`relative bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-primary/20 ${isOpen ? 'z-30' : ''}`}>
       <h2 className="font-headline text-xl text-tertiary mb-6 flex items-center gap-2">
         <span className="material-symbols-outlined text-primary-dim">image</span>
         {t('settings.imageProvider')}
       </h2>
 
-      <div className="space-y-3 mb-8">
-        {options.map((opt) => {
-          const available = isAvailable(opt.id);
-          const req = PROVIDER_REQUIREMENTS[opt.id];
-          const selected = settings.imageProvider === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              disabled={!available}
-              title={!available && req ? t('keys.providerUnavailable', { envVar: req.envVar }) : undefined}
-              onClick={() => available && updateSettings({ imageProvider: opt.id })}
-              className={`w-full p-4 rounded-sm border text-left flex items-center gap-3 transition-all ${
-                selected
-                  ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                  : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-              } ${!available ? 'opacity-40 cursor-not-allowed hover:border-outline-variant/15' : ''}`}
-            >
-              <span className="material-symbols-outlined">{opt.icon}</span>
-              <span className="font-headline text-sm">{opt.label}</span>
-              {!available && req && (
-                <span className="ml-auto text-[9px] font-label uppercase tracking-wider px-1.5 py-0.5 rounded-sm border border-error/30 text-error/80 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[12px]">lock</span>
-                  {req.envVar}
-                </span>
-              )}
-              {available && selected && (
-                <span className="material-symbols-outlined text-primary ml-auto text-sm">check_circle</span>
-              )}
-            </button>
-          );
+      <div className="relative mb-8" ref={dropdownRef}>
+        {renderOptionRow(selectedOption, {
+          isSelected: true,
+          asButton: true,
+          onClick: () => setIsOpen((v) => !v),
         })}
+        {isOpen && (
+          <div className="absolute left-0 right-0 top-full mt-2 z-20 bg-surface-container-high/95 backdrop-blur-xl border border-outline-variant/20 rounded-sm shadow-lg p-2 space-y-3 max-h-96 overflow-y-auto">
+            {options.map((opt) => renderOptionRow(opt, {
+              isSelected: settings.imageProvider === opt.id,
+              asButton: false,
+              onClick: () => {
+                if (!isAvailable(opt.id)) return;
+                updateSettings({ imageProvider: opt.id });
+                setIsOpen(false);
+              },
+            }))}
+          </div>
+        )}
       </div>
 
       {(settings.imageProvider === 'dalle' || settings.imageProvider === 'gpt-image') && renderEnvStatus('openai', 'OPENAI_API_KEY')}
       {settings.imageProvider === 'stability' && renderEnvStatus('stability', 'STABILITY_API_KEY')}
       {settings.imageProvider === 'gemini' && renderEnvStatus('gemini', 'GEMINI_API_KEY')}
+      {settings.imageProvider === 'sd-webui' && (
+        <>
+          {renderEnvStatus('sd-webui', 'SD_WEBUI_URL')}
+          {isAvailable('sd-webui') && (
+            <SdWebuiModelPicker settings={settings} updateSettings={updateSettings} />
+          )}
+        </>
+      )}
     </div>
   );
 }

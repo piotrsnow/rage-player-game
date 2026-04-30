@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
 
@@ -11,61 +11,88 @@ const PROVIDERS = [
   { id: 'meshy', labelKey: 'keys.meshyKey', envVar: 'MESHY_API_KEY', testable: false },
 ];
 
-function StatusChip({ configured, masked, t }) {
-  if (configured) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] text-primary font-label uppercase tracking-widest">
-        <span className="material-symbols-outlined text-[14px]">cloud_done</span>
-        {t('keys.statusAvailable', { masked })}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] text-error/80 font-label uppercase tracking-widest">
-      <span className="material-symbols-outlined text-[14px]">cloud_off</span>
-      {t('keys.statusMissing')}
-    </span>
-  );
+function LoadingDots() {
+  const [n, setN] = useState(1);
+  useEffect(() => {
+    const id = setInterval(() => setN((x) => (x % 3) + 1), 350);
+    return () => clearInterval(id);
+  }, []);
+  return <span>{'.'.repeat(n)}</span>;
 }
 
-function TestButton({ providerId, disabled, t }) {
+function ProviderLine({ provider, entry, t }) {
+  const { id, labelKey, envVar, testable } = provider;
+  const configured = !!entry?.configured;
   const [state, setState] = useState({ status: 'idle', result: null });
 
   const run = async () => {
     setState({ status: 'loading', result: null });
     try {
-      const result = await apiClient.post(`/ai/test-key/${providerId}`);
+      const result = await apiClient.post(`/ai/test-key/${id}`);
       setState({ status: 'done', result });
     } catch (err) {
-      setState({
-        status: 'done',
-        result: { ok: false, error: err?.message || String(err) },
-      });
+      setState({ status: 'done', result: { ok: false, error: err?.message || String(err) } });
     }
   };
 
-  const result = state.result;
+  const statusText = configured
+    ? `[OK] ${t('keys.statusAvailable', { masked: entry?.masked })}`
+    : `[--] ${t('keys.statusMissing')}`;
+  const statusColor = configured ? 'text-primary/90' : 'text-error/70';
 
   return (
-    <div className="flex flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={run}
-        disabled={disabled || state.status === 'loading'}
-        className="text-[10px] font-label uppercase tracking-widest px-3 py-1 rounded-sm border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      >
-        {state.status === 'loading' ? t('keys.testing') : t('keys.testConnection')}
-      </button>
-      {result?.ok && (
-        <span className="text-[10px] text-primary/80 font-mono">
-          {t('keys.testOk', { latency: result.latencyMs ?? '?' })}
-        </span>
-      )}
-      {result && result.ok === false && (
-        <span className="text-[10px] text-error/80 font-mono max-w-[240px] text-right truncate" title={result.error}>
-          {t('keys.testFailed')}: {result.error || result.status}
-        </span>
-      )}
+    <div className="font-mono text-[12px] leading-relaxed">
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-on-surface-variant/50">$</span>
+        <span className="text-on-surface">{t(labelKey, { defaultValue: id })}</span>
+        <span className="text-on-surface-variant/40">—</span>
+        <span className="text-tertiary/80">{envVar}</span>
+      </div>
+      <div className="pl-3 flex flex-wrap items-baseline gap-x-3">
+        <span className={statusColor}>{statusText}</span>
+        {testable && configured && state.status === 'idle' && (
+          <button
+            type="button"
+            onClick={run}
+            className="text-primary/80 hover:text-primary underline underline-offset-2 decoration-dotted"
+          >
+            [{t('keys.testConnection').toLowerCase()}]
+          </button>
+        )}
+        {testable && configured && state.status === 'loading' && (
+          <span className="text-tertiary/80">
+            {t('keys.testing').replace(/\.+$/, '')}<LoadingDots />
+          </span>
+        )}
+        {testable && state.status === 'done' && state.result?.ok && (
+          <>
+            <span className="text-primary">
+              &gt; {t('keys.testOk', { latency: state.result.latencyMs ?? '?' })}
+            </span>
+            <button
+              type="button"
+              onClick={run}
+              className="text-on-surface-variant/60 hover:text-primary underline underline-offset-2 decoration-dotted"
+            >
+              [retry]
+            </button>
+          </>
+        )}
+        {testable && state.status === 'done' && state.result && state.result.ok === false && (
+          <>
+            <span className="text-error/80 truncate max-w-full" title={state.result.error}>
+              &gt; {t('keys.testFailed')}: {state.result.error || state.result.status}
+            </span>
+            <button
+              type="button"
+              onClick={run}
+              className="text-on-surface-variant/60 hover:text-primary underline underline-offset-2 decoration-dotted"
+            >
+              [retry]
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -74,36 +101,24 @@ export default function ApiKeysStatusPanel({ backendKeys }) {
   const { t } = useTranslation();
 
   return (
-    <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-primary/20">
-      <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
-        <span className="material-symbols-outlined text-primary-dim">vpn_key</span>
-        {t('keys.apiKeys')}
+    <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm border-l border-primary/20">
+      <h2 className="font-mono text-sm text-tertiary mb-1 flex items-center gap-2">
+        <span className="text-primary-dim">~/</span>
+        {t('keys.apiKeys').toLowerCase()}
       </h2>
-      <p className="text-xs text-on-surface-variant mb-6 leading-relaxed">
-        {t('keys.envHint')}
+      <p className="font-mono text-[11px] text-on-surface-variant/70 mb-5 leading-relaxed">
+        # {t('keys.envHint')}
       </p>
 
-      <div className="space-y-5">
-        {PROVIDERS.map(({ id, labelKey, envVar, testable }) => {
-          const entry = backendKeys?.[id];
-          const configured = !!entry?.configured;
-          return (
-            <div key={id} className="flex items-start justify-between gap-4 border-b border-outline-variant/10 pb-4 last:border-b-0">
-              <div className="min-w-0">
-                <label className="block text-sm text-on-surface font-body">
-                  {t(labelKey, { defaultValue: id })}
-                </label>
-                <p className="text-[10px] text-on-surface-variant/70 font-mono mt-1">{envVar}</p>
-                <div className="mt-2">
-                  <StatusChip configured={configured} masked={entry?.masked} t={t} />
-                </div>
-              </div>
-              {testable && (
-                <TestButton providerId={id} disabled={!configured} t={t} />
-              )}
-            </div>
-          );
-        })}
+      <div className="space-y-3">
+        {PROVIDERS.map((provider) => (
+          <ProviderLine
+            key={provider.id}
+            provider={provider}
+            entry={backendKeys?.[provider.id]}
+            t={t}
+          />
+        ))}
       </div>
     </div>
   );

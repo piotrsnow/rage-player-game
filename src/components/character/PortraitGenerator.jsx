@@ -19,10 +19,17 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const isDalle = provider === 'dalle';
   const isGptImage = provider === 'gpt-image';
   const isGemini = provider === 'gemini';
-  const canUseReferenceImage = isGemini || isGptImage || provider === 'stability';
+  const isSdWebui = provider === 'sd-webui';
+  const canUseReferenceImage = isGemini || isGptImage || isSdWebui || provider === 'stability';
   const requiresReferenceImage = provider === 'stability';
   const apiKey = null;
-  const keyProvider = (isDalle || isGptImage) ? 'openai' : isGemini ? 'gemini' : 'stability';
+  const keyProvider = (isDalle || isGptImage)
+    ? 'openai'
+    : isGemini
+      ? 'gemini'
+      : isSdWebui
+        ? 'sd-webui'
+        : 'stability';
   const hasKey = settings.useBackend && hasApiKey(keyProvider);
 
   const [photoBlob, setPhotoBlob] = useState(null);
@@ -60,6 +67,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         settings.dmSettings?.imageStyle || 'painting',
         settings.dmSettings?.darkPalette || false,
         settings.dmSettings?.narratorSeriousness ?? null,
+        settings.sdWebuiModel || null,
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);
@@ -76,7 +84,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, age, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle, settings.dmSettings?.darkPalette]);
+  }, [photoBlob, species, age, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle, settings.dmSettings?.darkPalette, settings.sdWebuiModel]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);

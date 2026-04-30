@@ -14,13 +14,19 @@ export function useImageGeneration() {
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
 
-  const { sceneVisualization, imageProvider, itemImagesEnabled } = settings;
+  const { sceneVisualization, imageProvider, itemImagesEnabled, sdWebuiModel = '' } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
   const itemImageGenEnabled = itemImagesEnabled !== false;
-  const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
+  const imgKeyProvider = imageProvider === 'stability'
+    ? 'stability'
+    : imageProvider === 'gemini'
+      ? 'gemini'
+      : imageProvider === 'sd-webui'
+        ? 'sd-webui'
+        : 'openai';
   // Image keys are env-only on the backend — FE just passes an empty
   // string (imageService ignores it). `hasApiKey(provider)` below is the
   // real gate for whether generation is allowed.
@@ -50,6 +56,7 @@ export function useImageGeneration() {
           darkPalette,
           seriousness: imageSeriousness,
           campaignId: state.campaign?.backendId,
+          sdModel: sdWebuiModel,
         });
         if (!imageUrl) return null;
 
@@ -84,7 +91,7 @@ export function useImageGeneration() {
         activeLocks.delete(itemId);
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, dispatch, autoSave]
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, dispatch, autoSave]
   );
 
   const ensureMissingInventoryImages = useCallback(
@@ -139,7 +146,7 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew) },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel },
           imageSeriousness,
           state.character?.portraitUrl || null
         );
@@ -159,7 +166,7 @@ export function useImageGeneration() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   return {

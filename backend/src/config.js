@@ -39,6 +39,16 @@ export const config = {
     meshy: process.env.MESHY_API_KEY || '',
   },
 
+  // Stable Diffusion WebUI (Automatic1111) — local REST API. No API key;
+  // availability is derived from `url` being set. Start A1111 with --api.
+  // In Docker dev use http://host.docker.internal:7860; bare-metal use localhost.
+  sdWebui: {
+    url: process.env.SD_WEBUI_URL || '',
+    sampler: process.env.SD_WEBUI_SAMPLER || 'DPM++ 2M Karras',
+    steps: parseInt(process.env.SD_WEBUI_STEPS || '25', 10),
+    cfg: parseFloat(process.env.SD_WEBUI_CFG || '7.0'),
+  },
+
   elevenlabsDefaultVoiceId: "HnELITaEvp7a0HOmfoBo",
 
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET,

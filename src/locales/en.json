@@ -150,7 +150,7 @@
     "campaignSaved": "Saved!"
   },
   "keys": {
-    "title": "API Keys",
+    "title": "Model Configuration",
     "subtitle": "Configure model preferences. AI provider keys are read from the server's environment variables.",
     "apiKeys": "API Keys",
     "envHint": "Keys are read only from the server's environment variables (`.env` file). They cannot be set from the UI.",
@@ -633,6 +633,12 @@
     "geminiLabel": "Nano Banana 2 (Google) — fast, cheap",
     "geminiApiKey": "Google AI API Key",
     "geminiApiKeyDesc": "Get your key at aistudio.google.com",
+    "sdWebuiLabel": "Stable Diffusion (local) — Automatic1111, unmetered",
+    "sdWebuiModel": "Stable Diffusion model",
+    "sdWebuiModelRefresh": "Refresh list",
+    "sdWebuiOffline": "Stable Diffusion WebUI is unreachable. Check SD_WEBUI_URL and make sure A1111 runs with --api.",
+    "sdWebuiNoModels": "No checkpoints installed in A1111.",
+    "sdWebuiCurrentlyLoaded": "Currently loaded in A1111: {{title}}",
     "aiProvider": "AI Provider",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",

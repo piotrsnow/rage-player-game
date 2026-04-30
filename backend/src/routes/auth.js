@@ -245,6 +245,18 @@ export async function authRoutes(fastify) {
         ? { configured: true, masked: '••••' + key.slice(-4) }
         : { configured: false };
     }
+
+    // Stable Diffusion WebUI has no API key — availability is driven by the
+    // SD_WEBUI_URL env var. `masked` shows the host so the user can verify
+    // they're talking to the right A1111 instance.
+    if (config.sdWebui?.url) {
+      let masked = config.sdWebui.url;
+      try { masked = new URL(config.sdWebui.url).host; } catch { /* keep raw */ }
+      resolved['sd-webui'] = { configured: true, masked };
+    } else {
+      resolved['sd-webui'] = { configured: false };
+    }
+
     return resolved;
   });
 }

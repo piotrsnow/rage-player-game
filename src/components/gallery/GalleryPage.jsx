@@ -42,7 +42,13 @@ export default function GalleryPage() {
     if (!selected?.gameState?.campaign || !scene?.narrative) return false;
 
     const provider = settings.imageProvider || 'dalle';
-    const keyProvider = provider === 'stability' ? 'stability' : provider === 'gemini' ? 'gemini' : 'openai';
+    const keyProvider = provider === 'stability'
+      ? 'stability'
+      : provider === 'gemini'
+        ? 'gemini'
+        : provider === 'sd-webui'
+          ? 'sd-webui'
+          : 'openai';
     const imageApiKey = null;
     const hasAccess = apiClient.isConnected() && hasApiKey(keyProvider);
     if (!hasAccess) return false;
@@ -59,7 +65,8 @@ export default function GalleryPage() {
         settings.dmSettings?.imageStyle || 'painting',
         settings.dmSettings?.darkPalette || false,
         selected.gameState.character?.age ?? null,
-        selected.gameState.character?.gender ?? null
+        selected.gameState.character?.gender ?? null,
+        { sdModel: settings.sdWebuiModel || null }
       );
       if (!url) return false;
 
