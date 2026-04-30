@@ -3,6 +3,29 @@ import { apiClient } from '../../../../services/apiClient';
 
 const SLOT_COUNT = 5;
 
+function seriousnessLabelKey(value) {
+  if (!Number.isFinite(value)) return null;
+  if (value < 25) return 'silly';
+  if (value < 50) return 'lighthearted';
+  if (value < 75) return 'serious';
+  return 'grave';
+}
+
+function buildTooltip(entry, t) {
+  const parts = [];
+  if (entry.imageStyle) {
+    const styleLabel = t(`settings.imageStyles.${entry.imageStyle}`, { defaultValue: entry.imageStyle });
+    parts.push(`${t('settings.imageStyle')}: ${styleLabel}`);
+  }
+  const sKey = seriousnessLabelKey(entry.seriousness);
+  if (sKey) {
+    const sLabel = t(`settings.seriousnessLabels.${sKey}`);
+    parts.push(`${t('settings.narratorSeriousness')}: ${entry.seriousness}% — ${sLabel}`);
+  }
+  if (entry.prompt) parts.push(entry.prompt);
+  return parts.join('\n\n');
+}
+
 export default function PlaygroundHistoryGrid({
   items,
   page,
@@ -46,7 +69,7 @@ export default function PlaygroundHistoryGrid({
               <button
                 type="button"
                 onClick={() => onSelect?.(entry)}
-                title={entry.prompt}
+                title={buildTooltip(entry, t)}
                 className="w-full aspect-square rounded-sm overflow-hidden border border-outline-variant/20 hover:border-primary/60 transition-colors bg-surface-container-high/40"
               >
                 {entry.imageUrl ? (

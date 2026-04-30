@@ -20,6 +20,8 @@ const CREATE_BODY_SCHEMA = {
     provider: { type: 'string', enum: PROVIDER_ENUM },
     sdModel: { type: ['string', 'null'], maxLength: 200 },
     sdSeed: { type: ['integer', 'null'] },
+    imageStyle: { type: ['string', 'null'], maxLength: 60 },
+    seriousness: { type: ['integer', 'null'], minimum: 0, maximum: 100 },
   },
 };
 
@@ -46,6 +48,8 @@ function toClientEntry(asset) {
     provider: meta.provider || 'dalle',
     sdModel: meta.sdModel || null,
     sdSeed: Number.isInteger(meta.sdSeed) ? meta.sdSeed : null,
+    imageStyle: meta.imageStyle || null,
+    seriousness: Number.isInteger(meta.seriousness) ? meta.seriousness : null,
   };
 }
 
@@ -61,6 +65,8 @@ export async function playgroundRoutes(fastify) {
       provider,
       sdModel = null,
       sdSeed = null,
+      imageStyle = null,
+      seriousness = null,
     } = request.body;
 
     const key = `playground-history:${request.user.id}:${Date.now()}:${randomUUID().slice(0, 8)}`;
@@ -82,6 +88,8 @@ export async function playgroundRoutes(fastify) {
           provider,
           sdModel,
           sdSeed,
+          imageStyle,
+          seriousness,
           createdAt: new Date().toISOString(),
         },
       },

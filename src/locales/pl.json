@@ -155,6 +155,7 @@
       "promptLabel": "Prompt",
       "promptPlaceholder": "Tu pojawi się pełny prompt — możesz go swobodnie edytować przed wygenerowaniem obrazu.",
       "enhance": "Rozszerz słowa kluczowe",
+      "enhanceAndGenerate": "Rozszerz i od razu wygeneruj obraz",
       "enhancing": "Ulepszanie...",
       "referenceLabel": "Obraz referencyjny (opcjonalny)",
       "upload": "Wgraj obraz",

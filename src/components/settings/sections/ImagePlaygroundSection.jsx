@@ -93,35 +93,39 @@ export default function ImagePlaygroundSection() {
 
   const history = usePlaygroundHistory({ pageSize: 5, enabled: backendConnected });
 
+  const buildPromptFromKeywords = useCallback(async (kw) => {
+    const { description } = await aiService.enhanceImagePrompt({
+      keywords: kw,
+      imageStyle,
+      darkPalette,
+      seriousness,
+      genre,
+      tone,
+      language,
+      provider: aiProvider,
+    });
+    return buildImagePrompt(
+      description || kw,
+      genre,
+      tone,
+      description || kw,
+      imageProvider,
+      imageStyle,
+      darkPalette,
+      null,
+      null,
+      seriousness,
+      false,
+    );
+  }, [aiProvider, darkPalette, genre, imageProvider, imageStyle, language, seriousness, tone]);
+
   const handleEnhance = async () => {
     const kw = keywords.trim();
     if (!kw || enhancing) return;
     setEnhancing(true);
     setError(null);
     try {
-      const { description } = await aiService.enhanceImagePrompt({
-        keywords: kw,
-        imageStyle,
-        darkPalette,
-        seriousness,
-        genre,
-        tone,
-        language,
-        provider: aiProvider,
-      });
-      const wrapped = buildImagePrompt(
-        description || kw,
-        genre,
-        tone,
-        description || kw,
-        imageProvider,
-        imageStyle,
-        darkPalette,
-        null,
-        null,
-        seriousness,
-        false,
-      );
+      const wrapped = await buildPromptFromKeywords(kw);
       setPrompt(wrapped);
     } catch (err) {
       setError(err?.message || String(err));
@@ -140,9 +144,9 @@ export default function ImagePlaygroundSection() {
     setReferenceBlob(null);
   };
 
-  const handleGenerate = async () => {
-    const p = prompt.trim();
-    if (!p || generating) return;
+  const runGenerate = useCallback(async (promptText, keywordsText) => {
+    const p = promptText.trim();
+    if (!p) return;
     setGenerating(true);
     setError(null);
     setPreviewUrl(null);
@@ -172,16 +176,36 @@ export default function ImagePlaygroundSection() {
           imageUrl: canonical,
           referenceImageUrl: referenceImageUrl || null,
           prompt: p,
-          keywords: keywords.trim(),
+          keywords: (keywordsText || '').trim(),
           provider: imageProvider,
           sdModel: sdModel || null,
           sdSeed: Number.isInteger(sdSeed) ? sdSeed : null,
+          imageStyle: imageStyle || null,
+          seriousness: Number.isInteger(seriousness) ? seriousness : null,
         });
       }
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
       setGenerating(false);
+    }
+  }, [history, imageProvider, imageStyle, referenceBlob, sdModel, sdSeed, seriousness, supportsImg2Img]);
+
+  const handleGenerate = () => runGenerate(prompt, keywords);
+
+  const handleEnhanceAndGenerate = async () => {
+    const kw = keywords.trim();
+    if (!kw || enhancing || generating) return;
+    setEnhancing(true);
+    setError(null);
+    try {
+      const wrapped = await buildPromptFromKeywords(kw);
+      setPrompt(wrapped);
+      setEnhancing(false);
+      await runGenerate(wrapped, kw);
+    } catch (err) {
+      setError(err?.message || String(err));
+      setEnhancing(false);
     }
   };
 
@@ -230,13 +254,31 @@ export default function ImagePlaygroundSection() {
           <button
             type="button"
             onClick={handleEnhance}
-            disabled={!hasAiKey || !keywords.trim() || enhancing}
+            disabled={!hasAiKey || !keywords.trim() || enhancing || generating}
             title={!hasAiKey ? t('imageConfig.playground.noAiKey') : t('imageConfig.playground.enhance')}
             aria-label={t('imageConfig.playground.enhance')}
             className="px-3 py-2 rounded-sm border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <span className={`material-symbols-outlined text-[18px] ${enhancing ? 'animate-pulse' : ''}`}>
               {enhancing ? 'hourglass_top' : 'auto_fix_high'}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleEnhanceAndGenerate}
+            disabled={!hasAiKey || !hasImageKey || !keywords.trim() || enhancing || generating}
+            title={
+              !hasAiKey
+                ? t('imageConfig.playground.noAiKey')
+                : !hasImageKey
+                  ? t('imageConfig.playground.noProviderKey')
+                  : t('imageConfig.playground.enhanceAndGenerate')
+            }
+            aria-label={t('imageConfig.playground.enhanceAndGenerate')}
+            className="px-3 py-2 rounded-sm border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+          >
+            <span className={`material-symbols-outlined text-[18px] ${(enhancing || generating) ? 'animate-spin' : ''}`}>
+              {enhancing || generating ? 'progress_activity' : 'bolt'}
             </span>
           </button>
         </div>

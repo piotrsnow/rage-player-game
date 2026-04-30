@@ -161,6 +161,7 @@
       "promptLabel": "Prompt",
       "promptPlaceholder": "The full prompt will appear here — feel free to edit it before generating.",
       "enhance": "Expand keywords",
+      "enhanceAndGenerate": "Expand and generate image now",
       "enhancing": "Enhancing...",
       "referenceLabel": "Reference image (optional)",
       "upload": "Upload image",
