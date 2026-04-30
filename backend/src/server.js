@@ -33,6 +33,7 @@ import { gameDataRoutes } from './routes/gameData.js';
 import { internalRoutes } from './routes/internal.js';
 import { livingWorldRoutes } from './routes/livingWorld.js';
 import { adminLivingWorldRoutes } from './routes/adminLivingWorld.js';
+import { playgroundRoutes } from './routes/playground.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
   startRoomCleanup,
@@ -165,6 +166,14 @@ await fastify.register(async function gameDataScope(app) {
 
 // Cloud Tasks handler (OIDC-auth, no rate limit — dispatch rate controlled by queue config)
 await fastify.register(internalRoutes, { prefix: '/v1/internal' });
+
+// Image playground history — auth-gated, rate-limited like data routes.
+await fastify.register(async function playgroundScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 60, timeWindow: '1 minute' } };
+  });
+  app.register(playgroundRoutes);
+}, { prefix: '/v1/playground' });
 
 // Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
 await fastify.register(async function livingWorldScope(app) {

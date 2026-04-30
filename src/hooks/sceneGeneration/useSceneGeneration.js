@@ -32,7 +32,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '' } = settings;
+  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
 
   const stream = useSceneBackendStream();
 
@@ -78,7 +78,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             earlyImagePromise = imageService.generateSceneImage(
               '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
             ).catch((imgErr) => {
               console.warn('Early image generation failed:', imgErr.message);
@@ -260,7 +260,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
             const imageUrl = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });

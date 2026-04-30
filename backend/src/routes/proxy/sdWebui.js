@@ -28,10 +28,27 @@ const GENERATE_BODY_SCHEMA = {
     steps: { type: 'integer', minimum: 1, maximum: 150 },
     cfg: { type: 'number', minimum: 1, maximum: 30 },
     sampler: { type: 'string', maxLength: 64 },
+    // Seed: 0..2^32-1. Absent/null → backend rolls a random one per request
+    // (each call is unique → cache is effectively bypassed). Explicit value →
+    // deterministic output for the same prompt+model, cache hits are correct.
+    seed: { type: 'integer', minimum: 0, maximum: 4294967295 },
     campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };
+
+function randomSeed() {
+  return Math.floor(Math.random() * 0x1_0000_0000);
+}
+
+function coerceSeed(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const int = Math.floor(n);
+  if (int < 0 || int > 0xFFFF_FFFF) return null;
+  return int;
+}
 
 function requireSdUrl(reply) {
   if (!config.sdWebui.url) {
@@ -153,9 +170,16 @@ export async function sdWebuiProxyRoutes(fastify) {
       steps = config.sdWebui.steps,
       cfg = config.sdWebui.cfg,
       sampler = config.sdWebui.sampler,
+      seed: bodySeed,
       campaignId,
       forceNew = false,
     } = request.body;
+
+    // Fixed seed (from FE) → reproducible & cacheable. No seed → random,
+    // and because the seed is part of cacheParams the cache key is unique
+    // per request, which is exactly what we want for "always fresh".
+    const userSuppliedSeed = Number.isInteger(bodySeed);
+    const seed = userSuppliedSeed ? bodySeed : randomSeed();
 
     const cacheParams = {
       provider: 'sd-webui',
@@ -163,16 +187,17 @@ export async function sdWebuiProxyRoutes(fastify) {
       model: model || null,
       width,
       height,
+      seed,
       resolutionScale: GENERATED_IMAGE_SCALE,
       ...(forceNew ? { requestTs: Date.now() } : {}),
     };
     const cacheKey = generateKey('image', cacheParams, campaignId);
 
-    if (!forceNew) {
+    if (!forceNew && userSuppliedSeed) {
       const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
       if (existing) {
         const url = await store.getUrl(existing.path);
-        return { cached: true, url, key: cacheKey };
+        return { cached: true, url, key: cacheKey, seed };
       }
     }
 
@@ -190,6 +215,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       steps,
       cfg_scale: cfg,
       sampler_name: sampler,
+      seed,
       n_iter: 1,
       batch_size: 1,
     };
@@ -227,7 +253,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       buffer,
       cacheParams,
     });
-    return { cached: false, ...result };
+    return { cached: false, ...result, seed };
   });
 
   // img2img for portrait-from-photo (field `image`) or a txt2img fallback when
@@ -242,6 +268,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     let negativePrompt = DEFAULT_NEGATIVE_PROMPT;
     let strength = '0.55';
     let model = '';
+    let seedRaw = null;
 
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'image') {
@@ -251,6 +278,7 @@ export async function sdWebuiProxyRoutes(fastify) {
         if (part.fieldname === 'negativePrompt') negativePrompt = part.value;
         if (part.fieldname === 'strength') strength = part.value;
         if (part.fieldname === 'model') model = part.value;
+        if (part.fieldname === 'seed') seedRaw = part.value;
       }
     }
 
@@ -261,6 +289,9 @@ export async function sdWebuiProxyRoutes(fastify) {
     } catch (err) {
       return reply.code(502).send({ error: `Failed to switch SD model: ${err.message}`, code: 'SD_WEBUI_ERROR' });
     }
+
+    const coerced = coerceSeed(seedRaw);
+    const seed = coerced === null ? randomSeed() : coerced;
 
     const width = 768;
     const height = 1024;
@@ -279,6 +310,7 @@ export async function sdWebuiProxyRoutes(fastify) {
           steps: config.sdWebui.steps,
           cfg_scale: config.sdWebui.cfg,
           sampler_name: config.sdWebui.sampler,
+          seed,
           n_iter: 1,
           batch_size: 1,
         };
@@ -300,6 +332,7 @@ export async function sdWebuiProxyRoutes(fastify) {
           steps: config.sdWebui.steps,
           cfg_scale: config.sdWebui.cfg,
           sampler_name: config.sdWebui.sampler,
+          seed,
           n_iter: 1,
           batch_size: 1,
         };
@@ -332,6 +365,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       type: 'portrait',
       prompt,
       model: model || null,
+      seed,
       hasInit: !!imageBuffer,
     };
     const result = await persistGeneratedImage({
@@ -340,6 +374,6 @@ export async function sdWebuiProxyRoutes(fastify) {
       buffer: resultBuffer,
       cacheParams,
     });
-    return result;
+    return { ...result, seed };
   });
 }

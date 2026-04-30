@@ -26,7 +26,7 @@ function canonicalUrl(url) {
   return toCanonicalStoragePath(url);
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null } = {}) {
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
@@ -42,6 +42,7 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
   if (provider === 'sd-webui') {
     const payload = { ...body };
     if (sdModel) payload.model = sdModel;
+    if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
   }
@@ -111,12 +112,13 @@ async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
   return canonicalUrl(data.url);
 }
 
-async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel) {
+async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed) {
   const formData = new FormData();
   if (imageBlob) formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
   formData.append('strength', String(strength ?? 0.55));
   if (sdModel) formData.append('model', sdModel);
+  if (Number.isInteger(sdSeed)) formData.append('seed', String(sdSeed));
 
   const data = await apiClient.request('/proxy/sd-webui/portrait', {
     method: 'POST',
@@ -135,8 +137,8 @@ export const imageService = {
     });
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null) {
-    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras);
 
     if (provider === 'dalle') {
       return generatePortraitViaDalleProxy(prompt);
@@ -152,13 +154,13 @@ export const imageService = {
         : generatePortraitViaGeminiProxy(prompt);
     }
     if (provider === 'sd-webui') {
-      return generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel);
+      return generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
     }
     // Default: Stability
     return generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
   },
 
-  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, referenceBlob = null, strength = 0.55 } = {}) {
+  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55 } = {}) {
     const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
     if (!rawPrompt) throw new Error('Prompt is required');
 
@@ -166,7 +168,7 @@ export const imageService = {
       if (provider === 'stability') return generatePortraitViaStabilityProxy(referenceBlob, rawPrompt, strength);
       if (provider === 'gpt-image') return generatePortraitViaGptImageEditsProxy(referenceBlob, rawPrompt);
       if (provider === 'gemini') return generatePortraitViaGeminiImg2ImgProxy(referenceBlob, rawPrompt);
-      if (provider === 'sd-webui') return generatePortraitViaSdWebuiProxy(referenceBlob, rawPrompt, strength, sdModel);
+      if (provider === 'sd-webui') return generatePortraitViaSdWebuiProxy(referenceBlob, rawPrompt, strength, sdModel, sdSeed);
       // `dalle` and unknown providers: fall through to text-only.
     }
 
@@ -181,6 +183,7 @@ export const imageService = {
     if (provider === 'sd-webui') {
       const payload = { prompt: rawPrompt };
       if (sdModel) payload.model = sdModel;
+      if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
       const data = await apiClient.post('/proxy/sd-webui/generate', payload);
       return canonicalUrl(data.url);
     }
@@ -192,7 +195,7 @@ export const imageService = {
     return canonicalUrl(data.url);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null } = {}) {
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null } = {}) {
     const prompt = buildItemImagePrompt(item, {
       genre,
       tone,
@@ -201,6 +204,6 @@ export const imageService = {
       darkPalette,
       seriousness,
     });
-    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel });
+    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed });
   },
 };

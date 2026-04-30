@@ -20,6 +20,32 @@ export const STORY_PROMPT_SCHEMA = {
   },
 };
 
+export const CHARACTER_LEGEND_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    character: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        name: { type: 'string', maxLength: 200 },
+        species: { type: 'string', maxLength: 100 },
+        gender: { type: 'string', maxLength: 40 },
+        characterLevel: { type: ['number', 'null'] },
+        level: { type: ['number', 'null'] },
+        characterXp: { type: ['number', 'null'] },
+        attributes: { type: ['object', 'null'], additionalProperties: true },
+        career: { type: ['object', 'null'], additionalProperties: true },
+        backstory: { type: ['string', 'null'], maxLength: 4000 },
+      },
+    },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+  required: ['character'],
+};
+
 export const ENHANCE_IMAGE_PROMPT_SCHEMA = {
   type: 'object',
   additionalProperties: false,

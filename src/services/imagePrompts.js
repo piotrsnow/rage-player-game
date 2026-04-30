@@ -104,6 +104,42 @@ const SERIOUSNESS_MODIFIERS = {
   grave: 'gravely somber atmosphere, oppressive heavy mood, no levity, dark weighty tension, haunting stillness',
 };
 
+const EMOTION_CUES = {
+  anger: 'anger (furrowed brow, clenched jaw, hard narrowed gaze, tense mouth)',
+  joy: 'joy (genuine smile, bright warm eyes, relaxed cheeks, lively expression)',
+  mockery: 'mockery (curled lip, raised eyebrow, condescending smirk, sideways glance)',
+  sadness: 'sadness (downturned mouth, heavy eyelids, distant melancholic gaze, soft weariness)',
+  nostalgia: 'nostalgia (soft wistful gaze, faint bittersweet smile, distant thoughtful eyes)',
+};
+
+function buildEmotionDirective(emotions) {
+  if (!emotions || typeof emotions !== 'object') return '';
+  const parts = [];
+  for (const [key, cue] of Object.entries(EMOTION_CUES)) {
+    const raw = Number(emotions[key]);
+    if (!Number.isFinite(raw) || raw <= 0) continue;
+    const clamped = Math.max(0, Math.min(100, Math.round(raw)));
+    if (clamped === 0) continue;
+    parts.push(`${clamped}% ${cue}`);
+  }
+  if (parts.length === 0) return '';
+  return ` Emotional expression on the face and in the eyes: ${parts.join(', ')}.`;
+}
+
+function buildLikenessDirective(hasReferenceImage, likeness) {
+  if (!hasReferenceImage) return '';
+  const val = Number.isFinite(Number(likeness)) ? Number(likeness) : 70;
+  const v = Math.max(0, Math.min(100, Math.round(val)));
+  if (v < 20) return '';
+  if (v < 50) {
+    return 'Use the reference image as loose inspiration only; the fantasy reinterpretation takes priority over exact likeness.';
+  }
+  if (v < 80) {
+    return 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.';
+  }
+  return 'Preserve the exact likeness to the reference image: identical face shape, facial proportions, eyes, nose, mouth, and hairstyle — only wardrobe, lighting, and setting change.';
+}
+
 function getSeriousnessDirective(seriousness) {
   const val = seriousness ?? 50;
   if (val < 25) return SERIOUSNESS_MODIFIERS.silly;
@@ -194,7 +230,7 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
   return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null) {
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
   const isGemini = provider === 'gemini';
@@ -212,23 +248,22 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   const parsedAge = Number(age);
   const ageDirective = Number.isFinite(parsedAge) ? `, approximately ${Math.max(1, Math.round(parsedAge))} years old` : '';
   const career = careerName ? `, dressed as a ${careerName} with appropriate gear and attire` : '';
-  const likenessDirective = hasReferenceImage
-    ? 'Preserve a clear likeness to the provided reference image: keep the same face shape, facial proportions, eyes, nose, mouth, hairstyle, and overall identity while reimagining the subject as a fantasy character.'
-    : '';
+  const likenessDirective = buildLikenessDirective(hasReferenceImage, extras.likeness);
+  const emotionDirective = buildEmotionDirective(extras.emotions);
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
 
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {
-    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
+    return `Generate an image in this EXACT art style: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Detailed face with expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} Square 1:1 aspect ratio. No text, no watermarks.`;
   }
 
   if (provider === 'gpt-image') {
-    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin texture and character. Sharp focus on the face, intricate costume details, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
-  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective} No text, no watermarks, no borders.`;
+  return `ART STYLE: ${styleDirective}. Portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. Detailed face, expressive eyes, sharp focus, head and shoulders composition, dark atmospheric background.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks, no borders.`;
 }

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import CharacterPanel from './CharacterPanel';
 import { getGenderLabel } from '../../utils/characterUtils';
+import { apiClient } from '../../services/apiClient';
 
 function BrowsingView({ character, settings, onBack }) {
   const { t } = useTranslation();
@@ -60,8 +61,17 @@ function LibraryCard({ ch, deleteConfirmId, onSelect, onRequestDelete, onConfirm
       onClick={() => onSelect(ch)}
     >
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+        <div className="w-10 h-10 bg-surface-container-lowest rounded-sm flex items-center justify-center shrink-0 overflow-hidden">
+          {ch.portraitUrl ? (
+            <img
+              src={apiClient.resolveMediaUrl(ch.portraitUrl)}
+              alt={ch.name}
+              className="w-full h-full object-cover"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <span className="material-symbols-outlined text-xl text-outline/40">person</span>
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <p className="font-headline text-sm truncate text-tertiary">{ch.name}</p>

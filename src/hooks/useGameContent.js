@@ -44,9 +44,9 @@ export function useGameContent() {
   );
 
   const generateStoryPrompt = useCallback(
-    async ({ genre, tone, style, seedText = '' }) => {
+    async ({ genre, tone, seedText = '' }) => {
       const { result, usage } = await aiService.generateStoryPrompt(
-        { genre, tone, style, seedText },
+        { genre, tone, seedText },
         aiProvider,
         apiKey,
         language,
@@ -57,6 +57,20 @@ export function useGameContent() {
       return result.prompt;
     },
     [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
+  );
+
+  const generateCharacterLegend = useCallback(
+    async (character) => {
+      const { result, usage } = await aiService.generateCharacterLegend(
+        character,
+        aiProvider,
+        language,
+        aiModelTier,
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+      return result?.legend || '';
+    },
+    [aiProvider, language, aiModelTier, dispatch],
   );
 
   const generateRecap = useCallback(
@@ -235,6 +249,7 @@ export function useGameContent() {
   return {
     generateCampaign,
     generateStoryPrompt,
+    generateCharacterLegend,
     generateRecap,
     generateCombatCommentary,
     verifyQuestObjective,

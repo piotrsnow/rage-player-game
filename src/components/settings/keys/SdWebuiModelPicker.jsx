@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../../services/apiClient';
+
+const MAX_SEED = 0xFFFF_FFFF;
 
 export default function SdWebuiModelPicker({ settings, updateSettings }) {
   const { t } = useTranslation();
@@ -8,6 +10,48 @@ export default function SdWebuiModelPicker({ settings, updateSettings }) {
   const [currentLoaded, setCurrentLoaded] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Seed is "inactive" when settings.sdWebuiSeed is null → backend rolls a
+  // random seed per request. Double-click on the field flips between
+  // inactive (random) and active (editable number).
+  const seedActive = settings.sdWebuiSeed !== null && settings.sdWebuiSeed !== undefined;
+  const seedInputRef = useRef(null);
+  const [seedDraft, setSeedDraft] = useState(() => (seedActive ? String(settings.sdWebuiSeed) : ''));
+
+  useEffect(() => {
+    setSeedDraft(seedActive ? String(settings.sdWebuiSeed ?? '') : '');
+  }, [seedActive, settings.sdWebuiSeed]);
+
+  const toggleSeedActive = useCallback(() => {
+    if (seedActive) {
+      updateSettings({ sdWebuiSeed: null });
+    } else {
+      const initial = Math.floor(Math.random() * (MAX_SEED + 1));
+      updateSettings({ sdWebuiSeed: initial });
+      // Focus + select on next tick so typing replaces the seed immediately.
+      setTimeout(() => {
+        seedInputRef.current?.focus();
+        seedInputRef.current?.select();
+      }, 0);
+    }
+  }, [seedActive, updateSettings]);
+
+  const commitSeedDraft = useCallback((raw) => {
+    if (!seedActive) return;
+    if (raw === '' || raw === null || raw === undefined) {
+      updateSettings({ sdWebuiSeed: 0 });
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    const clamped = Math.max(0, Math.min(MAX_SEED, Math.floor(n)));
+    updateSettings({ sdWebuiSeed: clamped });
+  }, [seedActive, updateSettings]);
+
+  const rerollSeed = useCallback(() => {
+    if (!seedActive) return;
+    updateSettings({ sdWebuiSeed: Math.floor(Math.random() * (MAX_SEED + 1)) });
+  }, [seedActive, updateSettings]);
 
   const loadModels = useCallback(async () => {
     setLoading(true);
@@ -93,6 +137,59 @@ export default function SdWebuiModelPicker({ settings, updateSettings }) {
           {t('settings.sdWebuiCurrentlyLoaded', 'Currently loaded in A1111: {{title}}', { title: currentLoaded })}
         </p>
       )}
+
+      <div className="pt-3 mt-2 border-t border-outline-variant/10 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest">
+            {t('settings.sdWebuiSeed', 'Seed')}
+          </label>
+          <span className="text-[10px] font-label text-outline">
+            {seedActive
+              ? t('settings.sdWebuiSeedManual', 'manual')
+              : t('settings.sdWebuiSeedRandom', 'random')}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            ref={seedInputRef}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={MAX_SEED}
+            step={1}
+            value={seedActive ? seedDraft : ''}
+            placeholder={seedActive ? '' : t('settings.sdWebuiSeedPlaceholder', 'Random (double-click to fix)')}
+            onDoubleClick={toggleSeedActive}
+            onChange={(e) => setSeedDraft(e.target.value)}
+            onBlur={(e) => commitSeedDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
+            disabled={!seedActive}
+            className={`flex-1 px-2 py-2 rounded-sm border text-xs font-mono tabular-nums focus:outline-none ${
+              seedActive
+                ? 'bg-surface-container-high/40 border-primary/30 text-on-surface focus:border-primary/60 cursor-text'
+                : 'bg-surface-container-high/20 border-outline-variant/15 text-on-surface-variant/60 cursor-pointer select-none'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={rerollSeed}
+            disabled={!seedActive}
+            title={t('settings.sdWebuiSeedReroll', 'Roll a new seed')}
+            className="px-2 py-2 rounded-sm border border-outline-variant/20 text-on-surface-variant hover:text-primary hover:border-primary/30 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-[14px]">casino</span>
+          </button>
+        </div>
+
+        <p className="text-[10px] text-on-surface-variant leading-snug">
+          {t('settings.sdWebuiSeedHint', 'Double-click the field to toggle between random (new seed each time) and manual (same seed → same image).')}
+        </p>
+      </div>
     </div>
   );
 }

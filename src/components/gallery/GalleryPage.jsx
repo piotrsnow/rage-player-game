@@ -66,7 +66,7 @@ export default function GalleryPage() {
         settings.dmSettings?.darkPalette || false,
         selected.gameState.character?.age ?? null,
         selected.gameState.character?.gender ?? null,
-        { sdModel: settings.sdWebuiModel || null }
+        { sdModel: settings.sdWebuiModel || null, sdSeed: Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null }
       );
       if (!url) return false;
 

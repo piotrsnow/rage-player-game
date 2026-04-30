@@ -65,8 +65,8 @@ export async function enhanceImagePrompt({
     'Turn the following user keywords into a single vivid scene description suitable for an image generator.',
     'Focus on subject(s), setting, composition, lighting and atmosphere.',
     contextBits,
-    `Write in ${language === 'pl' ? 'Polish' : 'English'}.`,
-    `User keywords:\n<user_seed>\n${cleanKeywords}\n</user_seed>`,
+    'Always write the scene description in English, even if the user keywords are in another language — image generators perform best with English prompts.',
+    `User keywords (may be in any language, translate concepts to English):\n<user_seed>\n${cleanKeywords}\n</user_seed>`,
     'Respond with JSON: { "description": "<the scene description>" }',
   ].join('\n');
 

@@ -130,12 +130,13 @@ function LoginForm() {
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && canSubmit) handleLogin();
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (canSubmit) handleLogin();
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto">
+    <form onSubmit={handleSubmit} className="w-full max-w-sm mx-auto" autoComplete="on">
       <div className="text-center mb-6">
         <span className="material-symbols-outlined text-primary/40 text-4xl mb-2 block">
           shield_person
@@ -150,50 +151,36 @@ function LoginForm() {
 
       <OrnamentalDivider />
 
+      <input type="hidden" name="serverUrl" value={serverUrl} readOnly />
+
       <div className="space-y-4">
         <div>
-          <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
-            {t('settings.backendUrl')}
-          </label>
-          <input
-            type="text"
-            name="serverUrl"
-            autoComplete="url"
-            value={serverUrl}
-            onChange={(e) => setServerUrl(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={t('settings.backendUrlPlaceholder')}
-            className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 font-mono text-on-surface-variant"
-          />
-        </div>
-
-        <div>
-          <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
+          <label htmlFor="auth-email" className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
             {t('settings.backendEmail')}
           </label>
           <input
+            id="auth-email"
             type="email"
             name="email"
-            autoComplete="email"
+            autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder="user@example.com"
             className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 font-mono text-on-surface-variant"
           />
         </div>
 
         <div>
-          <label className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
+          <label htmlFor="auth-password" className="block text-[10px] text-on-surface-variant/60 font-label uppercase tracking-widest mb-1.5">
             {t('settings.backendPassword')}
           </label>
           <input
+            id="auth-password"
             type="password"
             name="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={handleKeyDown}
             placeholder="••••••"
             minLength={6}
             className="w-full bg-transparent border-0 border-b border-outline-variant/15 focus:border-primary/40 focus:ring-0 text-sm py-2.5 px-1 placeholder:text-outline/20 text-on-surface-variant"
@@ -203,13 +190,14 @@ function LoginForm() {
 
         <div className="flex gap-3 pt-2">
           <button
-            onClick={handleLogin}
+            type="submit"
             disabled={!canSubmit}
             className="flex-1 py-3 rounded-sm border bg-surface-tint/10 border-primary/25 text-primary text-xs font-headline uppercase tracking-widest hover:bg-surface-tint/20 hover:border-primary/40 transition-all disabled:opacity-30 disabled:hover:bg-surface-tint/10"
           >
             {loading ? t('common.loading') : t('settings.backendLogin')}
           </button>
           <button
+            type="button"
             onClick={handleRegister}
             disabled={!canSubmit}
             className="flex-1 py-3 rounded-sm border border-outline-variant/15 text-on-surface-variant text-xs font-headline uppercase tracking-widest hover:border-primary/25 hover:text-primary transition-all disabled:opacity-30"
@@ -231,7 +219,7 @@ function LoginForm() {
           </div>
         )}
       </div>
-    </div>
+    </form>
   );
 }
 

@@ -300,11 +300,20 @@ export const aiService = {
     return { result, usage: data?.usage || null };
   },
 
-  async generateStoryPrompt({ genre, tone, style, seedText = '' }, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium') {
+  async generateStoryPrompt({ genre, tone, seedText = '' }, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium') {
     const data = await apiClient.post('/ai/generate-story-prompt', {
-      genre, tone, style, seedText, language, provider,
+      genre, tone, seedText, language, provider,
     });
     return { result: { prompt: data.prompt }, usage: null };
+  },
+
+  async generateCharacterLegend(character, provider, language = 'en', _modelTier = 'premium') {
+    const data = await apiClient.post('/ai/generate-character-legend', {
+      character,
+      language,
+      provider,
+    });
+    return { result: { legend: data?.legend || '' }, usage: data?.usage || null };
   },
 
   async enhanceImagePrompt({

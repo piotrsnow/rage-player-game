@@ -40,6 +40,7 @@ export function useAI() {
   const {
     generateCampaign,
     generateStoryPrompt,
+    generateCharacterLegend,
     generateRecap,
     generateCombatCommentary,
     verifyQuestObjective,
@@ -49,6 +50,7 @@ export function useAI() {
     generateScene,
     generateCampaign,
     generateStoryPrompt,
+    generateCharacterLegend,
     generateRecap,
     generateCombatCommentary,
     generateImageForScene,

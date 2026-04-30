@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useGame } from '../../../contexts/GameContext';
 import { aiService } from '../../../services/ai/service';
 import { imageService } from '../../../services/imageGen';
 import { buildImagePrompt } from '../../../services/imagePrompts';
-import { apiClient } from '../../../services/apiClient';
+import { apiClient, toCanonicalStoragePath } from '../../../services/apiClient';
+import usePlaygroundHistory from '../../../hooks/playground/usePlaygroundHistory';
+import PlaygroundHistoryGrid from './playground/PlaygroundHistoryGrid';
 
 const IMG2IMG_PROVIDERS = new Set(['stability', 'gemini', 'gpt-image', 'sd-webui']);
 
@@ -14,6 +16,45 @@ function imageKeyProvider(imageProvider) {
   if (imageProvider === 'gemini') return 'gemini';
   if (imageProvider === 'sd-webui') return 'sd-webui';
   return 'openai';
+}
+
+async function blobToBase64(blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function uploadReferenceBlob(blob) {
+  const contentType = blob.type || 'image/png';
+  const extFromType = contentType.split('/')[1] || 'png';
+  const ext = extFromType.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10) || 'png';
+  const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+  const key = `playground-ref-${Date.now()}-${rand}.${ext}`;
+  const data = await blobToBase64(blob);
+
+  const json = await apiClient.post('/media/store', {
+    key,
+    type: 'playground-ref',
+    contentType,
+    data,
+    metadata: { source: 'playground-reference' },
+  });
+  return toCanonicalStoragePath(json?.url || '');
+}
+
+async function fetchBlobFromCanonical(canonicalUrl) {
+  if (!canonicalUrl) return null;
+  const resolved = apiClient.resolveMediaUrl(canonicalUrl);
+  const res = await fetch(resolved, { credentials: 'include' });
+  if (!res.ok) return null;
+  return res.blob();
 }
 
 export default function ImagePlaygroundSection() {
@@ -26,6 +67,7 @@ export default function ImagePlaygroundSection() {
   const darkPalette = !!settings.dmSettings?.darkPalette;
   const seriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const sdModel = settings.sdWebuiModel || null;
+  const sdSeed = Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null;
   const language = settings.language || 'en';
   const genre = gameState?.campaign?.genre || 'Fantasy';
   const tone = gameState?.campaign?.tone || 'Epic';
@@ -34,6 +76,7 @@ export default function ImagePlaygroundSection() {
   const hasAiKey = hasApiKey(aiProvider);
   const hasImageKey = hasApiKey(imageKeyProvider(imageProvider));
   const supportsImg2Img = IMG2IMG_PROVIDERS.has(imageProvider);
+  const backendConnected = apiClient.isConnected();
 
   const [keywords, setKeywords] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -47,6 +90,8 @@ export default function ImagePlaygroundSection() {
     [referenceBlob],
   );
   const fileInputRef = useRef(null);
+
+  const history = usePlaygroundHistory({ pageSize: 5, enabled: backendConnected });
 
   const handleEnhance = async () => {
     const kw = keywords.trim();
@@ -102,19 +147,56 @@ export default function ImagePlaygroundSection() {
     setError(null);
     setPreviewUrl(null);
     try {
+      let referenceImageUrl = null;
+      const refBlobForRun = supportsImg2Img ? referenceBlob : null;
+      if (refBlobForRun) {
+        try {
+          referenceImageUrl = await uploadReferenceBlob(refBlobForRun);
+        } catch (refErr) {
+          console.warn('Failed to upload reference image to GCP', refErr);
+        }
+      }
+
       const url = await imageService.generatePlaygroundImage({
         prompt: p,
         provider: imageProvider,
         sdModel,
-        referenceBlob: supportsImg2Img ? referenceBlob : null,
+        sdSeed,
+        referenceBlob: refBlobForRun,
       });
       setPreviewUrl(url);
+
+      const canonical = toCanonicalStoragePath(url);
+      if (canonical && canonical.startsWith('/v1/media/file/')) {
+        await history.append({
+          imageUrl: canonical,
+          referenceImageUrl: referenceImageUrl || null,
+          prompt: p,
+          keywords: keywords.trim(),
+          provider: imageProvider,
+          sdModel: sdModel || null,
+          sdSeed: Number.isInteger(sdSeed) ? sdSeed : null,
+        });
+      }
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
       setGenerating(false);
     }
   };
+
+  const handleSelectHistory = useCallback(async (entry) => {
+    setError(null);
+    setKeywords(entry.keywords || '');
+    setPrompt(entry.prompt || '');
+    setPreviewUrl(entry.imageUrl || null);
+    if (entry.referenceImageUrl) {
+      const blob = await fetchBlobFromCanonical(entry.referenceImageUrl);
+      setReferenceBlob(blob);
+    } else {
+      setReferenceBlob(null);
+    }
+  }, []);
 
   return (
     <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-t border-tertiary/20">
@@ -246,6 +328,19 @@ export default function ImagePlaygroundSection() {
             className="w-full rounded-sm border border-outline-variant/20"
           />
         </div>
+      )}
+
+      {backendConnected && (
+        <PlaygroundHistoryGrid
+          items={history.items}
+          page={history.page}
+          totalPages={history.totalPages}
+          loading={history.loading}
+          onSelect={handleSelectHistory}
+          onDelete={(entry) => history.remove(entry.id)}
+          onPrev={history.goPrev}
+          onNext={history.goNext}
+        />
       )}
     </div>
   );

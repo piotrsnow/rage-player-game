@@ -170,7 +170,15 @@
       "generating": "Generating...",
       "error": "Error",
       "noProviderKey": "Selected image provider key is missing.",
-      "noAiKey": "Selected text AI provider key is missing."
+      "noAiKey": "Selected text AI provider key is missing.",
+      "history": {
+        "title": "Recent generations",
+        "empty": "No generations yet.",
+        "prev": "Previous",
+        "next": "Next",
+        "page": "Page {{current}} of {{total}}",
+        "delete": "Remove from history"
+      }
     }
   },
   "keys": {
@@ -239,8 +247,6 @@
     "subtitle": "Define the parameters of your adventure. The AI Dungeon Master will craft a unique world tailored to your vision.",
     "genreLabel": "Genre",
     "toneLabel": "Tone",
-    "playStyleLabel": "Play Style",
-    "difficultyLabel": "Difficulty",
     "campaignLengthLabel": "Campaign Length",
     "speciesLabel": "Species",
     "careerClassLabel": "Career Class (optional)",
@@ -277,22 +283,6 @@
       "Dark": "Grim, morally grey, brutal",
       "Epic": "Grand scale, heroic, dramatic",
       "Humorous": "Witty, lighthearted, absurd"
-    },
-    "styles": {
-      "Narrative": "Narrative",
-      "Hybrid": "Hybrid",
-      "Mechanical": "Mechanical"
-    },
-    "styleDesc": {
-      "Narrative": "Story-driven, AI decides outcomes",
-      "Hybrid": "Story + dice rolls for key moments",
-      "Mechanical": "Stats-heavy, dice determine everything"
-    },
-    "difficulties": {
-      "Easy": "Easy",
-      "Normal": "Normal",
-      "Hard": "Hard",
-      "Expert": "Expert"
     },
     "lengths": {
       "Short": "Short",
@@ -664,6 +654,12 @@
     "sdWebuiOffline": "Stable Diffusion WebUI is unreachable. Check SD_WEBUI_URL and make sure A1111 runs with --api.",
     "sdWebuiNoModels": "No checkpoints installed in A1111.",
     "sdWebuiCurrentlyLoaded": "Currently loaded in A1111: {{title}}",
+    "sdWebuiSeed": "Seed",
+    "sdWebuiSeedRandom": "random",
+    "sdWebuiSeedManual": "manual",
+    "sdWebuiSeedPlaceholder": "Random (double-click to fix)",
+    "sdWebuiSeedReroll": "Roll a new seed",
+    "sdWebuiSeedHint": "Double-click the field to toggle between random (new seed each time) and manual (same seed → same image).",
     "aiProvider": "AI Provider",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",
@@ -1203,6 +1199,14 @@
     "strengthSubtle": "Subtle",
     "strengthBalanced": "Balanced",
     "strengthIntense": "Intense",
+    "likenessToReference": "Likeness to reference",
+    "emotionsTitle": "Emotions",
+    "emotionsTotal": "Total",
+    "emotionAnger": "Anger",
+    "emotionJoy": "Joy",
+    "emotionMockery": "Mockery",
+    "emotionSadness": "Sadness",
+    "emotionNostalgia": "Nostalgia",
     "generatePortrait": "Generate Fantasy Portrait",
     "portraitGenerating": "Generating...",
     "acceptPortrait": "Accept",
@@ -1243,7 +1247,14 @@
     "lockedAtLocation": "currently at: {{loc}}",
     "lockedNoLocation": "no known safe location",
     "lockedFallbackCampaign": "another campaign",
-    "lockedBlockedJoin": "The selected character is locked in another campaign. Pick a different one."
+    "lockedBlockedJoin": "The selected character is locked in another campaign. Pick a different one.",
+    "levelLabel": "Lv",
+    "legendLabel": "Legend",
+    "legendGenerate": "Generate character legend",
+    "legendRegenerate": "Write it again",
+    "legendLoading": "Chronicling the legend...",
+    "legendError": "Could not generate the legend",
+    "legendNoAi": "Configure an AI key to generate a legend"
   },
   "system": {
     "diceRollMessage": "{{skill}} test: d100 roll {{roll}} vs target {{target}} — SL {{sl}} — {{result}}",

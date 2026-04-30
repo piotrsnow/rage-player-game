@@ -7,9 +7,15 @@ export function useDocumentTitle(subtitle) {
   const { t } = useTranslation();
   const appName = t('common.appName', BASE_TITLE);
 
+  const parts = Array.isArray(subtitle)
+    ? subtitle.filter(Boolean)
+    : (subtitle ? [subtitle] : []);
+
+  const key = parts.join('|');
+
   useEffect(() => {
     const prev = document.title;
-    document.title = subtitle ? `${subtitle} — ${appName}` : appName;
+    document.title = parts.length ? `${appName} | ${parts.join(' | ')}` : appName;
     return () => { document.title = prev; };
-  }, [subtitle, appName]);
+  }, [key, appName]);
 }

@@ -164,7 +164,15 @@
       "generating": "Generowanie...",
       "error": "Błąd",
       "noProviderKey": "Brak klucza wybranego dostawcy obrazów.",
-      "noAiKey": "Brak klucza wybranego dostawcy AI tekstowego."
+      "noAiKey": "Brak klucza wybranego dostawcy AI tekstowego.",
+      "history": {
+        "title": "Ostatnie generacje",
+        "empty": "Brak wcześniejszych generacji.",
+        "prev": "Poprzednia",
+        "next": "Następna",
+        "page": "Strona {{current}} z {{total}}",
+        "delete": "Usuń z historii"
+      }
     }
   },
   "keys": {
@@ -233,8 +241,6 @@
     "subtitle": "Zdefiniuj parametry swojej przygody. Mistrz Gry AI stworzy unikalny świat dopasowany do twojej wizji.",
     "genreLabel": "Gatunek",
     "toneLabel": "Tonacja",
-    "playStyleLabel": "Styl Gry",
-    "difficultyLabel": "Trudność",
     "campaignLengthLabel": "Długość Kampanii",
     "speciesLabel": "Rasa",
     "characterNameLabel": "Imię Twojej Postaci",
@@ -269,22 +275,6 @@
       "Dark": "Ponury, moralnie szary, brutalny",
       "Epic": "Wielka skala, heroiczny, dramatyczny",
       "Humorous": "Dowcipny, lekki, absurdalny"
-    },
-    "styles": {
-      "Narrative": "Narracyjny",
-      "Hybrid": "Hybrydowy",
-      "Mechanical": "Mechaniczny"
-    },
-    "styleDesc": {
-      "Narrative": "Fabuła prowadzi, AI decyduje o wynikach",
-      "Hybrid": "Fabuła + rzuty kośćmi w kluczowych momentach",
-      "Mechanical": "Ciężki na statystyki, kości decydują o wszystkim"
-    },
-    "difficulties": {
-      "Easy": "Łatwy",
-      "Normal": "Normalny",
-      "Hard": "Trudny",
-      "Expert": "Ekspert"
     },
     "lengths": {
       "Short": "Krótka",
@@ -657,6 +647,12 @@
     "sdWebuiOffline": "Stable Diffusion WebUI nie odpowiada. Sprawdź SD_WEBUI_URL i uruchom A1111 z flagą --api.",
     "sdWebuiNoModels": "Brak zainstalowanych modeli (checkpointów) w A1111.",
     "sdWebuiCurrentlyLoaded": "Obecnie załadowany w A1111: {{title}}",
+    "sdWebuiSeed": "Seed",
+    "sdWebuiSeedRandom": "losowy",
+    "sdWebuiSeedManual": "ręczny",
+    "sdWebuiSeedPlaceholder": "Losowy (kliknij dwukrotnie aby ustawić)",
+    "sdWebuiSeedReroll": "Wylosuj nowy seed",
+    "sdWebuiSeedHint": "Kliknij dwukrotnie w pole aby przełączyć między losowym (za każdym razem nowy obraz) a ręcznym (ten sam seed → ten sam obraz).",
     "aiProvider": "Dostawca AI",
     "openaiLabel": "OpenAI (GPT-4o)",
     "anthropicLabel": "Anthropic (Claude)",
@@ -1176,6 +1172,14 @@
     "strengthSubtle": "Subtelna",
     "strengthBalanced": "Zbalansowana",
     "strengthIntense": "Intensywna",
+    "likenessToReference": "Podobieństwo do zdjęcia",
+    "emotionsTitle": "Emocje",
+    "emotionsTotal": "Suma",
+    "emotionAnger": "Złość",
+    "emotionJoy": "Radość",
+    "emotionMockery": "Szydera",
+    "emotionSadness": "Smutek",
+    "emotionNostalgia": "Nostalgia",
     "generatePortrait": "Generuj portret fantasy",
     "portraitGenerating": "Generowanie...",
     "acceptPortrait": "Zatwierdź",
@@ -1216,7 +1220,14 @@
     "lockedAtLocation": "obecnie w: {{loc}}",
     "lockedNoLocation": "bez znanej bezpiecznej lokalizacji",
     "lockedFallbackCampaign": "innej kampanii",
-    "lockedBlockedJoin": "Wybrana postać jest zablokowana w innej kampanii. Wybierz inną postać."
+    "lockedBlockedJoin": "Wybrana postać jest zablokowana w innej kampanii. Wybierz inną postać.",
+    "levelLabel": "Poz.",
+    "legendLabel": "Legenda",
+    "legendGenerate": "Wygeneruj legendę postaci",
+    "legendRegenerate": "Napisz na nowo",
+    "legendLoading": "Spisywanie legendy...",
+    "legendError": "Nie udało się wygenerować legendy",
+    "legendNoAi": "Skonfiguruj klucz AI aby wygenerować legendę"
   },
   "system": {
     "diceRollMessage": "Test {{skill}}: k100 wynik {{roll}} vs cel {{target}} — PS {{sl}} — {{result}}",

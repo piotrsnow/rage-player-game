@@ -11,6 +11,77 @@ const STRENGTH_PRESETS = [
   { value: 0.65, labelKey: 'charCreator.strengthIntense' },
 ];
 
+const EMOTION_KEYS = ['anger', 'joy', 'mockery', 'sadness', 'nostalgia'];
+const EMOTION_LABEL_KEYS = {
+  anger: 'charCreator.emotionAnger',
+  joy: 'charCreator.emotionJoy',
+  mockery: 'charCreator.emotionMockery',
+  sadness: 'charCreator.emotionSadness',
+  nostalgia: 'charCreator.emotionNostalgia',
+};
+const EMOTIONS_DEFAULT = Object.freeze(
+  EMOTION_KEYS.reduce((acc, k) => { acc[k] = 0; return acc; }, {}),
+);
+const EMOTIONS_MAX_SUM = 200;
+const LIKENESS_DEFAULT = 70;
+
+// Proportional rebalance: when a single slider is raised past the headroom,
+// shrink every other slider by the same ratio so the combined sum stays <= 200.
+// Zeros stay zero; larger values shrink more (in absolute terms).
+function rebalanceEmotions(current, key, rawNext) {
+  const next = Math.max(0, Math.min(100, Math.round(Number(rawNext) || 0)));
+  const othersKeys = EMOTION_KEYS.filter((k) => k !== key);
+  const othersSum = othersKeys.reduce((acc, k) => acc + (current[k] || 0), 0);
+  const headroom = EMOTIONS_MAX_SUM - next;
+  if (othersSum <= headroom) {
+    return { ...current, [key]: next };
+  }
+  const scale = headroom / othersSum;
+  const result = { ...current, [key]: next };
+  for (const k of othersKeys) {
+    result[k] = Math.max(0, Math.floor((current[k] || 0) * scale));
+  }
+  return result;
+}
+
+function EmotionSliders({ emotions, onChange, t }) {
+  const total = EMOTION_KEYS.reduce((acc, k) => acc + (emotions[k] || 0), 0);
+  return (
+    <div className="w-full space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+          {t('charCreator.emotionsTitle')}
+        </span>
+        <span className={`text-[10px] font-label tabular-nums ${total >= EMOTIONS_MAX_SUM ? 'text-primary' : 'text-outline'}`}>
+          {t('charCreator.emotionsTotal')} {total}/{EMOTIONS_MAX_SUM}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {EMOTION_KEYS.map((k) => (
+          <div key={k}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] font-label text-on-surface-variant">
+                {t(EMOTION_LABEL_KEYS[k])}
+              </span>
+              <span className="text-[10px] font-bold text-primary tabular-nums">
+                {emotions[k] || 0}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={emotions[k] || 0}
+              onChange={(e) => onChange(k, Number(e.target.value))}
+              className="w-full appearance-none mana-slider bg-transparent cursor-pointer"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PortraitGenerator({ species, age, gender, careerName, genre, onPortraitReady, initialPortrait }) {
   const { t } = useTranslation();
   const { settings, hasApiKey } = useSettings();
@@ -34,6 +105,8 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
 
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
+  const [likeness, setLikeness] = useState(LIKENESS_DEFAULT);
+  const [emotions, setEmotions] = useState({ ...EMOTIONS_DEFAULT });
   const [generating, setGenerating] = useState(false);
   // Canonical `/v1/media/file/...` path — this is what we persist via
   // `onPortraitReady`. `resolveMediaUrl` is only applied at render time
@@ -42,6 +115,10 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
   const [captureSession, setCaptureSession] = useState(0);
+
+  const handleEmotionChange = useCallback((key, value) => {
+    setEmotions((current) => rebalanceEmotions(current, key, value));
+  }, []);
 
   const abortRef = useRef(false);
 
@@ -68,6 +145,8 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         settings.dmSettings?.darkPalette || false,
         settings.dmSettings?.narratorSeriousness ?? null,
         settings.sdWebuiModel || null,
+        { likeness, emotions },
+        Number.isInteger(settings.sdWebuiSeed) ? settings.sdWebuiSeed : null,
       );
       if (!abortRef.current) {
         setGeneratedUrl(url);
@@ -84,19 +163,17 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     } finally {
       if (!abortRef.current) setGenerating(false);
     }
-  }, [photoBlob, species, age, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle, settings.dmSettings?.darkPalette, settings.sdWebuiModel]);
+  }, [photoBlob, species, age, gender, careerName, genre, apiKey, strength, provider, requiresReferenceImage, canUseReferenceImage, t, settings.dmSettings?.imageStyle, settings.dmSettings?.darkPalette, settings.dmSettings?.narratorSeriousness, settings.sdWebuiModel, settings.sdWebuiSeed, likeness, emotions]);
 
   const handleAccept = useCallback(() => {
     onPortraitReady(generatedUrl);
   }, [generatedUrl, onPortraitReady]);
 
+  // Pon\u00f3w: re-run generation with the current form state (keep photo +
+  // sliders). Clearing the form is the trash button's job.
   const handleRetry = useCallback(() => {
-    setGeneratedUrl(null);
-    setShowCapture(canUseReferenceImage);
-    setPhotoBlob(null);
-    setCaptureSession((value) => value + 1);
-    setError(null);
-  }, [canUseReferenceImage]);
+    handleGenerate();
+  }, [handleGenerate]);
 
   const handleRemove = useCallback(() => {
     setGeneratedUrl(null);
@@ -104,6 +181,9 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
     setShowCapture(canUseReferenceImage);
     setCaptureSession((value) => value + 1);
     setError(null);
+    setStrength(0.45);
+    setLikeness(LIKENESS_DEFAULT);
+    setEmotions({ ...EMOTIONS_DEFAULT });
     onPortraitReady(null);
   }, [onPortraitReady, canUseReferenceImage]);
 
@@ -144,15 +224,19 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
           <button
             type="button"
             onClick={handleRetry}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10"
+            disabled={generating}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-label text-tertiary hover:text-primary border border-outline-variant/15 hover:border-primary/30 rounded-sm transition-all hover:bg-surface-tint/10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span className="material-symbols-outlined text-sm">restart_alt</span>
+            <span className={`material-symbols-outlined text-sm ${generating ? 'animate-spin' : ''}`}>
+              {generating ? 'progress_activity' : 'restart_alt'}
+            </span>
             {t('charCreator.retryPortrait')}
           </button>
           <button
             type="button"
             onClick={handleRemove}
-            className="px-3 py-2 text-xs font-label text-on-surface-variant hover:text-error transition-colors"
+            disabled={generating}
+            className="px-3 py-2 text-xs font-label text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-sm">delete</span>
           </button>
@@ -167,6 +251,10 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
         <p className="text-[11px] text-on-surface-variant text-center max-w-[280px]">
           {t('charCreator.portraitDescDalle')}
         </p>
+
+        <div className="w-full max-w-[280px]">
+          <EmotionSliders emotions={emotions} onChange={handleEmotionChange} t={t} />
+        </div>
 
         {error && (
           <p className="text-xs text-error text-center">{error}</p>
@@ -268,6 +356,29 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
               </div>
             </div>
           )}
+
+          {canUseReferenceImage && photoBlob && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant">
+                  {t('charCreator.likenessToReference')}
+                </span>
+                <span className="text-xs font-bold text-primary tabular-nums">
+                  {likeness}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={likeness}
+                onChange={(e) => setLikeness(Number(e.target.value))}
+                className="w-full appearance-none mana-slider bg-transparent cursor-pointer"
+              />
+            </div>
+          )}
+
+          <EmotionSliders emotions={emotions} onChange={handleEmotionChange} t={t} />
 
           {(isGemini || isGptImage) && !photoBlob && (
             <p className="text-[11px] text-on-surface-variant text-center">
