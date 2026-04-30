@@ -129,21 +129,23 @@ export default function Inventory({
               tooltipClassName="!max-w-none !p-3"
             >
               <div
-                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} flex flex-col items-center justify-center gap-1 group cursor-pointer relative hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
+                className={`aspect-square bg-surface-container-highest border ${rarity} ${glow} relative group cursor-pointer hover:scale-105 transition-transform ${isSelected ? 'ring-1 ring-primary/50 scale-105' : ''} ${eqSlot ? 'ring-1 ring-primary/40' : ''}`}
                 onClick={() => handleSelect(isSelected ? null : item.id)}
               >
                 <InventoryImage
                   imageUrl={resolvedImageUrl}
                   alt={item.name}
-                  sizeClass="w-8 h-8"
+                  sizeClass="w-full h-full"
                   fallbackIcon={icon}
-                  fallbackIconClass="text-base"
+                  fallbackIconClass="text-3xl"
                   imageClassName="group-hover:scale-110 transition-transform"
                   wrapperClassName="flex items-center justify-center"
                 />
-                <span className="text-[8px] font-label leading-tight max-w-[calc(100%-8px)] truncate opacity-70">
-                  {item.name}
-                </span>
+                <div className="absolute inset-x-0 bottom-0 px-1 pt-3 pb-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none">
+                  <span className="block text-[9px] font-label leading-tight truncate text-on-surface">
+                    {item.name}
+                  </span>
+                </div>
                 {eqSlot && (
                   <div className="absolute -top-1 -left-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center shadow-[0_0_6px_rgba(147,130,220,0.4)]">
                     <span className="material-symbols-outlined text-[10px] text-on-primary" style={{ fontVariationSettings: "'FILL' 1" }}>

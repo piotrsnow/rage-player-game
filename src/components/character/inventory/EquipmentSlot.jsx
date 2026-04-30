@@ -15,7 +15,7 @@ export default function EquipmentSlot({
   disabled,
   disabledReason,
   comingSoon = false,
-  sizeClass = 'w-8 h-8',
+  sizeClass = 'w-full h-full',
   compact = false,
 }) {
   const { t } = useTranslation();
@@ -32,7 +32,7 @@ export default function EquipmentSlot({
           className="w-full aspect-square bg-surface-container-highest/30 border border-dashed border-outline-variant/10 rounded-sm flex flex-col items-center justify-center gap-1 cursor-not-allowed opacity-40"
         >
           <span
-            className="material-symbols-outlined text-lg text-on-surface-variant/40"
+            className="material-symbols-outlined text-2xl text-on-surface-variant/40"
             style={{ fontVariationSettings: "'FILL' 0, 'wght' 200" }}
           >
             {config.icon}
@@ -71,14 +71,14 @@ export default function EquipmentSlot({
   };
 
   return (
-    <div className="relative">
+    <div className="relative group">
       <Tooltip content={disabled ? disabledReason : equippedItem?.name || t(config.label, config.fallback)}>
         <button
           onClick={handleSlotClick}
           disabled={disabled && !equippedItem}
           className={`
-            w-full aspect-square bg-surface-container-highest border rounded-sm flex flex-col items-center justify-center gap-1
-            transition-all cursor-pointer relative
+            w-full aspect-square bg-surface-container-highest border rounded-sm relative
+            transition-all cursor-pointer
             ${equippedItem
               ? 'border-primary/40 ring-1 ring-primary/30 hover:ring-primary/50'
               : disabled
@@ -94,22 +94,24 @@ export default function EquipmentSlot({
                 alt={equippedItem.name}
                 sizeClass={sizeClass}
                 fallbackIcon={typeIcons[equippedItem.type] || config.icon}
-                fallbackIconClass="text-base"
+                fallbackIconClass="text-3xl"
                 wrapperClassName="flex items-center justify-center"
               />
               {!compact && (
-                <span className="text-[7px] font-label leading-tight max-w-[calc(100%-4px)] truncate text-on-surface">
-                  {equippedItem.name}
-                </span>
+                <div className="absolute inset-x-0 bottom-0 px-1 pt-2 pb-0.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none">
+                  <span className="block text-[8px] font-label leading-tight truncate text-on-surface">
+                    {equippedItem.name}
+                  </span>
+                </div>
               )}
               <div className="absolute -top-1 -right-1 w-4 h-4 bg-error/80 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 hover:!opacity-100 transition-opacity">
                 <span className="material-symbols-outlined text-[10px] text-on-error">close</span>
               </div>
             </>
           ) : (
-            <>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
               <span
-                className="material-symbols-outlined text-lg text-on-surface-variant/30"
+                className="material-symbols-outlined text-2xl text-on-surface-variant/30"
                 style={{ fontVariationSettings: "'FILL' 0, 'wght' 200" }}
               >
                 {config.icon}
@@ -119,7 +121,7 @@ export default function EquipmentSlot({
                   {t(config.label, config.fallback)}
                 </span>
               )}
-            </>
+            </div>
           )}
         </button>
       </Tooltip>

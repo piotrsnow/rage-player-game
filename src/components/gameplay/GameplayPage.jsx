@@ -153,7 +153,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     narrator,
     streamingSegments,
     streamingNarrative,
-    chatHistory,
     enabled: settings.narratorEnabled,
     autoPlay: settings.narratorAutoPlay,
     readOnly,

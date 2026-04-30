@@ -755,6 +755,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const pushStreamingSegments = useCallback((segments) => {
     const s = streamingRef.current;
     if (!s) return;
+    // Remember the latest raw parsed stream so finishStreaming can flush the
+    // withheld tail from the SAME list that drove sentCount. The DM segments
+    // that later land in chatHistory go through processSceneDialogue (player
+    // dialogue inserted, narration echo removed, text mutated), so their
+    // indices no longer align with sentCount and can't be used for flushing.
+    s.lastRawSegments = segments;
     // Only push segments we haven't seen yet
     const newSegments = segments.slice(s.sentCount);
     if (newSegments.length === 0) return;
@@ -771,17 +777,17 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, []);
 
-  const finishStreaming = useCallback((finalSegments) => {
+  const finishStreaming = useCallback(() => {
     const s = streamingRef.current;
     if (!s) return;
     s.finished = true;
-    // Push any remaining segments we haven't sent yet
-    if (finalSegments) {
-      const remaining = finalSegments.slice(s.sentCount);
-      if (remaining.length > 0) {
-        s.segments.push(...remaining);
-        s.sentCount += remaining.length;
-      }
+    // Flush the one segment that was withheld during streaming. Use the raw
+    // stream buffer — its indices are positionally consistent with sentCount.
+    const raw = s.lastRawSegments || [];
+    const remaining = raw.slice(s.sentCount);
+    if (remaining.length > 0) {
+      s.segments.push(...remaining);
+      s.sentCount += remaining.length;
     }
   }, []);
 

@@ -16,12 +16,23 @@ const GENERATE_TIMEOUT_MS = 180_000;
 
 const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpeg artifacts, text, watermark, signature, username, deformed, distorted, disfigured, bad anatomy, wrong anatomy, extra limbs, missing limbs, extra fingers, fewer fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed face, bad proportions, out of frame, duplicate, cropped';
 
+// SDXL leans hard on "Renaissance" / "heroic composition" / "sweeping vista"
+// style scaffolding — even when the scene is a tavern or forest, those cues
+// push the model toward castles, cathedrals, and fortress ruins. The style
+// trim helps but isn't enough on its own, so we also guard via negatives.
+// Only injected when the POSITIVE prompt mentions nothing architecture-y:
+// if the user/LLM legitimately asked for a castle/cathedral/gothic scene,
+// CASTLE_FAMILY_RE matches and this block is skipped so the scene renders.
+const ANTI_CASTLE_BLEED_NEGATIVES = 'castle, fortress, citadel, cathedral, stone ruins, ruined wall, ivy-covered walls, gothic arches, keep tower, crenellations, battlements';
+const CASTLE_FAMILY_RE = /\b(castle|fortress|citadel|cathedral|keep|palace|gothic|ruin|ruins|gatehouse|chapel|monastery|abbey|tower|bastion|stronghold)\b/i;
+
 // Merge the caller's negative with the model preset's style-specific negative
 // and the anatomy defaults. Preset value goes last so it can override — most
 // preset negatives intentionally repeat "low quality, blurry" which is cheap.
 // Deduplicate case-insensitive so we don't blow past A1111's prompt buffer.
-function mergeNegatives(userNegative, preset) {
-  const parts = [userNegative || '', preset?.negative || '', DEFAULT_NEGATIVE_PROMPT]
+function mergeNegatives(userNegative, preset, positivePrompt = '') {
+  const antiCastle = CASTLE_FAMILY_RE.test(positivePrompt) ? '' : ANTI_CASTLE_BLEED_NEGATIVES;
+  const parts = [userNegative || '', preset?.negative || '', antiCastle, DEFAULT_NEGATIVE_PROMPT]
     .filter(Boolean)
     .join(', ');
   const seen = new Set();
@@ -205,7 +216,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     const cfg = rawCfg ?? preset?.cfg ?? config.sdWebui.cfg;
     const width = rawWidth ?? preset?.width ?? config.sdWebui.sceneWidth;
     const height = rawHeight ?? preset?.height ?? config.sdWebui.sceneHeight;
-    const negativePrompt = mergeNegatives(rawNegativePrompt, preset);
+    const negativePrompt = mergeNegatives(rawNegativePrompt, preset, prompt);
 
     // Fixed seed (from FE) → reproducible & cacheable. No seed → random,
     // and because the seed is part of cacheParams the cache key is unique
@@ -346,7 +357,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     const sampler = preset?.sampler ?? config.sdWebui.sampler;
     const steps = preset?.steps ?? config.sdWebui.steps;
     const cfg = preset?.cfg ?? config.sdWebui.cfg;
-    const negativePrompt = mergeNegatives(rawNegativePrompt, preset);
+    const negativePrompt = mergeNegatives(rawNegativePrompt, preset, prompt);
 
     let res;
     try {

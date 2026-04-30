@@ -13,7 +13,6 @@ export function useStreamingNarrator({
   narrator,
   streamingSegments,
   streamingNarrative,
-  chatHistory,
   enabled,
   autoPlay,
   readOnly,
@@ -43,10 +42,13 @@ export function useStreamingNarrator({
     if (streamingNarrative !== null) return;
     if (!activeRef.current) return;
     activeRef.current = false;
-    const latestDm = [...chatHistory].reverse().find((m) => m.role === 'dm');
-    narrator.finishStreaming(latestDm?.dialogueSegments || null);
+    // Flush the tail from the raw streamed buffer inside useNarrator — the
+    // post-processed DM segments in chatHistory would be positionally
+    // misaligned (processSceneDialogue can insert player dialogue or remove
+    // echo narration), causing either early cutoff or replayed tail.
+    narrator.finishStreaming();
     msgIdRef.current = null;
-  }, [streamingNarrative, chatHistory, narrator]);
+  }, [streamingNarrative, narrator]);
 
   return { streamingNarrationActiveRef: activeRef };
 }

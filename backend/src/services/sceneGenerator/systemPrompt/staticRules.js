@@ -138,7 +138,7 @@ export function responseFormatBlock(language) {
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). Format: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Concrete nouns/adjectives only, no articles or filler. Example: 'dwarf warrior in heavy plate, kneeling by broken sword, ancient stone ruins, ivy-covered walls, dusk, volumetric golden light shafts, dust particles, cinematic wide shot, low angle, fog, melancholy'",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],

@@ -144,7 +144,7 @@ const IMAGE_STYLE_PROMPTS = {
     negative: 'photorealistic, photograph, 3d render, western cartoon',
   },
   painting: {
-    prompt: 'classical oil painting, rich impasto brushstrokes, Renaissance chiaroscuro, deep warm palette, museum-quality fine art, canvas texture visible',
+    prompt: 'classical oil painting, rich impasto brushstrokes, chiaroscuro, deep warm palette, canvas texture visible',
     portrait: 'oil painting portrait, rich brushwork, warm candlelight, Renaissance master style, deep colors, visible canvas texture',
     negative: 'photograph, digital art, cartoon, anime, sketch, flat colors',
   },
@@ -197,7 +197,7 @@ const IMAGE_STYLE_PROMPTS = {
 
 const TONE_MODIFIERS = {
   Dark: 'moody, desaturated colors, deep shadows, somber ominous atmosphere',
-  Epic: 'grand scale, dramatic golden-hour lighting, heroic composition, sweeping vista',
+  Epic: 'dramatic golden-hour lighting, cinematic framing',
   Humorous: 'warm vibrant colors, whimsical playful details, lighthearted cheerful mood',
 };
 
