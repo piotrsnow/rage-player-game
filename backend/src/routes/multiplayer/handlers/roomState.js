@@ -81,13 +81,13 @@ export async function handleUpdateSceneImage(ctx, session, msg) {
   if (!session.roomCode || !session.odId) throw new Error('Not in a room');
   const room = getRoom(session.roomCode);
   if (!room) throw new Error('Room not found');
-  const { sceneId, image } = msg;
+  const { sceneId, image, fullImagePrompt = null } = msg;
   if (!sceneId) return;
 
   if (room.gameState?.scenes) {
     const idx = room.gameState.scenes.findIndex((s) => s.id === sceneId);
     if (idx >= 0) {
-      room.gameState.scenes[idx] = { ...room.gameState.scenes[idx], image };
+      room.gameState.scenes[idx] = { ...room.gameState.scenes[idx], image, fullImagePrompt };
       setGameState(session.roomCode, room.gameState);
     }
   }
@@ -96,6 +96,7 @@ export async function handleUpdateSceneImage(ctx, session, msg) {
     type: 'SCENE_IMAGE_UPDATE',
     sceneId,
     image,
+    fullImagePrompt,
   }, session.odId);
 }
 

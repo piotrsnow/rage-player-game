@@ -52,7 +52,7 @@ export function useMpWsSubscription({ dispatch, sceneCallbackRef, pendingQuestVe
         sceneCallbackRef.current?.(msg);
       }),
       wsService.on(WS_SERVER_TYPES.SCENE_IMAGE_UPDATE, (msg) => {
-        dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image } });
+        dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: msg.sceneId, image: msg.image, fullImagePrompt: msg.fullImagePrompt ?? null } });
       }),
       wsService.on(WS_SERVER_TYPES.QUEST_OFFER_UPDATE, (msg) => {
         dispatch({ type: 'QUEST_OFFER_UPDATE', payload: msg });

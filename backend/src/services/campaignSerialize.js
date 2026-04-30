@@ -54,7 +54,7 @@ export const SCENE_CLIENT_SELECT = {
   id: true, campaignId: true, sceneIndex: true,
   narrative: true, chosenAction: true,
   suggestedActions: true, dialogueSegments: true,
-  imagePrompt: true, imageUrl: true, soundEffect: true,
+  imagePrompt: true, fullImagePrompt: true, imageUrl: true, soundEffect: true,
   diceRoll: true, stateChanges: true, scenePacing: true,
   createdAt: true,
 };

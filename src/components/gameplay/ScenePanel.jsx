@@ -127,11 +127,12 @@ export default function ScenePanel({
     };
   }, []);
 
+  const displayedImagePrompt = scene?.fullImagePrompt || scene?.imagePrompt || null;
+
   const handleCopyImagePrompt = useCallback(async () => {
-    const prompt = scene?.imagePrompt;
-    if (!prompt) return;
+    if (!displayedImagePrompt) return;
     try {
-      await navigator.clipboard.writeText(prompt);
+      await navigator.clipboard.writeText(displayedImagePrompt);
       setPromptCopied(true);
       if (promptCopyResetRef.current) {
         window.clearTimeout(promptCopyResetRef.current);
@@ -143,7 +144,7 @@ export default function ScenePanel({
     } catch {
       // clipboard API unavailable / denied — silently ignore
     }
-  }, [scene?.imagePrompt]);
+  }, [displayedImagePrompt]);
 
   const handleRegenerateImage = useCallback(async () => {
     if (!onRegenerateImage || !scene?.id || isGeneratingImage) return;
@@ -432,7 +433,7 @@ export default function ScenePanel({
       {isGeneratingImage && (
         <div
           className={`absolute left-4 bg-surface-container-highest/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary/20 flex items-center gap-2 ${
-            scene?.imagePrompt && (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc)
+            displayedImagePrompt && (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc)
               ? 'top-14'
               : 'top-4'
           }`}
@@ -464,7 +465,7 @@ export default function ScenePanel({
       )}
 
       {/* Image prompt — feather tooltip (top-left, image mode only) */}
-      {scene?.imagePrompt
+      {displayedImagePrompt
         && (settings.sceneVisualization || 'image') === 'image'
         && (displayedSrc || incomingSrc) && (
         <div className="absolute top-3 left-3 group" style={{ zIndex: 5 }}>
@@ -488,7 +489,7 @@ export default function ScenePanel({
               </span>
             </p>
             <p className="text-xs text-on-surface leading-relaxed max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words">
-              {scene.imagePrompt}
+              {displayedImagePrompt}
             </p>
           </div>
         </div>

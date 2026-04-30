@@ -140,7 +140,7 @@ export function useImageGeneration() {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
         const genre = campaignOverride?.genre ?? state.campaign?.genre;
         const tone = campaignOverride?.tone ?? state.campaign?.tone;
-        const imageUrl = await imageService.generateSceneImage(
+        const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
           narrative,
           genre,
           tone,
@@ -159,12 +159,12 @@ export function useImageGeneration() {
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
           type: 'UPDATE_SCENE_IMAGE',
-          payload: { sceneId, image: imageUrl },
+          payload: { sceneId, image: imageUrl, fullImagePrompt },
         });
         if (!options.skipAutoSave) {
           autoSave();
         }
-        return imageUrl;
+        return { url: imageUrl, fullImagePrompt };
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);
         return null;

@@ -54,7 +54,7 @@ export default function GalleryPage() {
     if (!hasAccess) return false;
 
     try {
-      const url = await imageService.generateSceneImage(
+      const { url } = await imageService.generateSceneImage(
         scene.narrative,
         selected.genre,
         selected.tone,

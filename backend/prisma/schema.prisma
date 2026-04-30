@@ -328,6 +328,7 @@ model CampaignScene {
   suggestedActions Json                         @default("[]")
   dialogueSegments Json                         @default("[]")
   imagePrompt      String?
+  fullImagePrompt  String?
   imageUrl         String?
   soundEffect      String?
   diceRoll         Json?

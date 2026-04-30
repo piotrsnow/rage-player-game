@@ -177,6 +177,53 @@ describe('handleUpdateSceneImage', () => {
     );
   });
 
+  it('stores and broadcasts fullImagePrompt alongside the image', async () => {
+    const room = {
+      roomCode: 'ABCD',
+      gameState: {
+        scenes: [
+          { id: 's1', image: 'old', fullImagePrompt: 'old prompt' },
+        ],
+      },
+    };
+    getRoom.mockReturnValue(room);
+
+    await handleUpdateSceneImage(makeCtx(), makeSession(), {
+      sceneId: 's1',
+      image: 'new',
+      fullImagePrompt: 'ART STYLE: painting. Scene: forest at dusk.',
+    });
+    expect(room.gameState.scenes[0].fullImagePrompt).toBe('ART STYLE: painting. Scene: forest at dusk.');
+    expect(broadcast).toHaveBeenCalledWith(
+      room,
+      expect.objectContaining({
+        type: 'SCENE_IMAGE_UPDATE',
+        sceneId: 's1',
+        image: 'new',
+        fullImagePrompt: 'ART STYLE: painting. Scene: forest at dusk.',
+      }),
+      'od_me',
+    );
+  });
+
+  it('defaults fullImagePrompt to null when not provided', async () => {
+    const room = {
+      roomCode: 'ABCD',
+      gameState: {
+        scenes: [{ id: 's1', image: 'old', fullImagePrompt: 'stale' }],
+      },
+    };
+    getRoom.mockReturnValue(room);
+
+    await handleUpdateSceneImage(makeCtx(), makeSession(), { sceneId: 's1', image: null });
+    expect(room.gameState.scenes[0].fullImagePrompt).toBeNull();
+    expect(broadcast).toHaveBeenCalledWith(
+      room,
+      expect.objectContaining({ fullImagePrompt: null }),
+      'od_me',
+    );
+  });
+
   it('returns early without sceneId', async () => {
     getRoom.mockReturnValue({ roomCode: 'ABCD' });
     await handleUpdateSceneImage(makeCtx(), makeSession(), { image: 'x' });

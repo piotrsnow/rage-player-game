@@ -5,7 +5,9 @@ export const sceneHandlers = {
 
   UPDATE_SCENE_IMAGE: (draft, action) => {
     const scene = draft.scenes.find((s) => s.id === action.payload.sceneId);
-    if (scene) scene.image = action.payload.image;
+    if (!scene) return;
+    scene.image = action.payload.image;
+    scene.fullImagePrompt = action.payload.fullImagePrompt ?? null;
   },
 
   UPDATE_SCENE_COMMAND: (draft, action) => {

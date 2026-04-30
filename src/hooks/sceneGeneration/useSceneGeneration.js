@@ -80,10 +80,11 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
               state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
-            ).catch((imgErr) => {
-              console.warn('Early image generation failed:', imgErr.message);
-              return null;
-            });
+            ).then((result) => result?.url || null)
+              .catch((imgErr) => {
+                console.warn('Early image generation failed:', imgErr.message);
+                return null;
+              });
           }
         }
 
@@ -212,6 +213,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           id: sceneId, narrative: result.narrative, scenePacing: result.scenePacing || 'exploration',
           dialogueSegments: finalSegments, soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null, imagePrompt: result.imagePrompt || null,
+          fullImagePrompt: null,
           sceneGrid: result.sceneGrid || null, musicUrl: null, image: null,
           actions: result.suggestedActions || [], questOffers, chosenAction: playerAction,
           diceRoll: result.diceRoll || null, diceRolls: result.diceRolls || undefined, timestamp: Date.now(),
@@ -265,14 +267,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         if (!earlyImagePromise && imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
-            const imageUrl = await imageService.generateSceneImage(
+            const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
               state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
-            dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl } });
+            dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);

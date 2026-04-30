@@ -171,6 +171,7 @@ export const SCENE_BODY_SCHEMA = {
     actions: { type: 'array', maxItems: 20 },
     dialogueSegments: { type: 'array', maxItems: 200 },
     imagePrompt: { type: ['string', 'null'], maxLength: 4000 },
+    fullImagePrompt: { type: ['string', 'null'], maxLength: 8000 },
     imageUrl: { type: ['string', 'null'], maxLength: 4000 },
     image: { type: ['string', 'null'], maxLength: 4000 },
     soundEffect: { type: ['string', 'null'], maxLength: 200 },

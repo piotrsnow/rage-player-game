@@ -90,21 +90,21 @@ export function useImageRepairQueue({
       imageRepairInFlightRef.current.add(sceneId);
 
       try {
-        const imageUrl = await generateImageForScene(
+        const result = await generateImageForScene(
           sceneId,
           targetScene.narrative,
           targetScene.imagePrompt,
           isMultiplayer ? { genre: campaign?.genre, tone: campaign?.tone } : undefined,
           { skipAutoSave: readOnly || skipAutoSave, forceNew }
         );
-        if (!imageUrl) return false;
+        if (!result?.url) return false;
 
         imageRepairsCountRef.current += 1;
         if (markAttempted) {
           imageAttemptedRef.current.add(sceneId);
         }
         if (isMultiplayer) {
-          updateSceneImage?.(sceneId, imageUrl);
+          updateSceneImage?.(sceneId, result.url, result.fullImagePrompt);
         }
         return true;
       } finally {
