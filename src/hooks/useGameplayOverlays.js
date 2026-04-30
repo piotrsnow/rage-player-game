@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const DICE_AFTER_TYPEWRITER_DELAY_MS = 500;
-const OVERLAY_LEAD_TIME_SECONDS = 12;
 
 /**
- * Owns the scene-change overlay state: typewriter preview, queued/active
+ * Owns the scene-change overlay state: typewriter preview, active
  * player-action overlay, and the dice-reveal timing flag. `autoPlayer` is
  * NOT a dep — the page composes autoPlayer's overlay contribution on top
  * of this hook's output so we don't create a hook cycle (autoPlayer needs
@@ -20,14 +19,13 @@ export function useGameplayOverlays({
   displayedSceneIndex,
   earlyDiceRoll,
   clearEarlyDiceRoll,
-  settings,
   getSceneActionText,
   onSceneNavigate,
   setViewingSceneIndex,
 }) {
   const [typewriterAction, setTypewriterAction] = useState(null);
   const [playerActionOverlayText, setPlayerActionOverlayText] = useState(null);
-  const [pendingOverlayText, setPendingOverlayText] = useState(null);
+  const [playerOverlayTypingDone, setPlayerOverlayTypingDone] = useState(false);
   const [diceAfterTypewriter, setDiceAfterTypewriter] = useState(false);
 
   const typewriterNextIndexRef = useRef(null);
@@ -87,6 +85,7 @@ export function useGameplayOverlays({
   const handlePlayerActionOverlayComplete = useCallback(() => {
     clearEarlyDiceRoll();
     setPlayerActionOverlayText(null);
+    setPlayerOverlayTypingDone(false);
     // Auto-narration is fully owned by useChatAutoNarration. As soon as
     // playerActionOverlayText flips to null, the autoPlay flag passed to
     // ChatPanel becomes true and the hook narrates the latest unhandled DM
@@ -94,28 +93,23 @@ export function useGameplayOverlays({
     // don't double-read scenes that were already streamed live.
   }, [clearEarlyDiceRoll]);
 
-  // pendingOverlayText → playerActionOverlayText once narrator is idle or
-  // nearly finished; avoids fading the action in on top of live narration.
-  useEffect(() => {
-    if (!pendingOverlayText) return;
-    const narratorIdle = narrator.playbackState === 'idle';
-    const nearEnd = narrator.narrationSecondsRemaining <= OVERLAY_LEAD_TIME_SECONDS;
-    if (narratorIdle || nearEnd) {
-      setPlayerActionOverlayText(pendingOverlayText);
-      setPendingOverlayText(null);
-    }
-  }, [pendingOverlayText, narrator.playbackState, narrator.narrationSecondsRemaining]);
+  const markPlayerOverlayTypingDone = useCallback(() => {
+    setPlayerOverlayTypingDone(true);
+  }, []);
 
-  // Dice reveal — fires a short beat after dice become available; the
-  // overlay's holdOpen (computed in the page) keeps the animation alive
-  // until scene generation lifts all active overlays.
+  // Dice reveal — waits for the player-action typewriter to finish typing
+  // before showing dice (otherwise dice would paint over an in-progress
+  // typewriter). The overlay's holdOpen (computed in the page) keeps the
+  // animation alive until scene generation lifts all active overlays.
   useEffect(() => {
     if (diceTypewriterTimerRef.current) {
       clearTimeout(diceTypewriterTimerRef.current);
       diceTypewriterTimerRef.current = null;
     }
 
-    if (earlyDiceRoll) {
+    const playerOverlayBlocking = !!playerActionOverlayText && !playerOverlayTypingDone;
+
+    if (earlyDiceRoll && !playerOverlayBlocking) {
       diceTypewriterTimerRef.current = setTimeout(
         () => setDiceAfterTypewriter(true),
         DICE_AFTER_TYPEWRITER_DELAY_MS,
@@ -130,19 +124,16 @@ export function useGameplayOverlays({
 
     setDiceAfterTypewriter(false);
     return undefined;
-  }, [earlyDiceRoll]);
+  }, [earlyDiceRoll, playerActionOverlayText, playerOverlayTypingDone]);
 
-  // External API for the action handler — queue behind narrator or show
-  // immediately, based on narrator state + settings.
+  // External API for the action handler — show the typewriter immediately.
+  // The narrator-stop effect in GameplayPage hushes any active TTS the moment
+  // playerActionOverlayText flips truthy, so we don't need to queue here.
   const showPlayerActionOverlay = useCallback((action) => {
     if (!action) return;
-    const narratorIsActive = narrator.playbackState === 'playing' || narrator.playbackState === 'loading';
-    if (narratorIsActive && settings.narratorEnabled && settings.narratorAutoPlay) {
-      setPendingOverlayText(action);
-    } else {
-      setPlayerActionOverlayText(action);
-    }
-  }, [narrator.playbackState, settings.narratorEnabled, settings.narratorAutoPlay]);
+    setPlayerOverlayTypingDone(false);
+    setPlayerActionOverlayText(action);
+  }, []);
 
   return {
     // Raw overlay state (for page-level composition with autoPlayer)
@@ -155,5 +146,6 @@ export function useGameplayOverlays({
     // Navigation + external API
     navigateWithTypewriter,
     showPlayerActionOverlay,
+    markPlayerOverlayTypingDone,
   };
 }

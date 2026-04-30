@@ -12,6 +12,7 @@ function pickRandomTypingSfx() {
 export default function TypewriterActionOverlay({
   text,
   onComplete,
+  onTypingComplete,
   typingSpeedMultiplier = 1,
   holdOpen = false,
   holdingDurationMs = 1500,
@@ -24,8 +25,17 @@ export default function TypewriterActionOverlay({
   const [phase, setPhase] = useState('typing');
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  const onTypingCompleteRef = useRef(onTypingComplete);
+  onTypingCompleteRef.current = onTypingComplete;
+  const typingCompleteFiredRef = useRef(false);
   const audioRef = useRef(null);
   const charIntervalMs = Math.max(1, CHAR_INTERVAL_MS * typingSpeedMultiplier);
+
+  const fireTypingComplete = () => {
+    if (typingCompleteFiredRef.current) return;
+    typingCompleteFiredRef.current = true;
+    onTypingCompleteRef.current?.();
+  };
 
   // fastFinish (set when scene streaming starts): snap text, kill audio, skip
   // hold, fade out fast. Reduces total dismiss time from ~2100ms to ~250ms.
@@ -36,6 +46,7 @@ export default function TypewriterActionOverlay({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    fireTypingComplete();
     setPhase('fading');
   }, [fastFinish, text.length]);
   const charHighlightKinds = useMemo(() => {
@@ -105,6 +116,7 @@ export default function TypewriterActionOverlay({
   useEffect(() => {
     if (phase !== 'typing') return;
     if (displayedChars >= text.length) {
+      fireTypingComplete();
       setPhase('holding');
       return;
     }
