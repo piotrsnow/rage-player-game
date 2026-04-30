@@ -87,20 +87,34 @@ describe('applyCharacterStateChanges', () => {
     });
 
     it('levels up and grants an attribute point when crossing threshold', () => {
+      // characterXp is a monotonic lifetime total — crossing the cumulative
+      // threshold for level 2 (20) promotes level but leaves XP untouched.
       const c = baseCharacter({ characterXp: 0, characterLevel: 1, attributePoints: 0 });
       const result = applyCharacterStateChanges(c, { xp: 25 });
       expect(result.characterLevel).toBe(2);
-      expect(result.characterXp).toBe(5); // 25 - 20
+      expect(result.characterXp).toBe(25);
       expect(result.attributePoints).toBe(1);
     });
 
     it('cascades multiple level-ups in one delta', () => {
-      // costs: L2=20, L3=45, L4=80 — total 145 → should reach L4 with 0 leftover
+      // cumulative thresholds: L2=20, L3=65, L4=145 — 145 XP lifts the
+      // character to L4 and the xp stays at the lifetime total (145).
       const c = baseCharacter({ characterXp: 0, characterLevel: 1 });
       const result = applyCharacterStateChanges(c, { xp: 145 });
       expect(result.characterLevel).toBe(4);
-      expect(result.characterXp).toBe(0);
+      expect(result.characterXp).toBe(145);
       expect(result.attributePoints).toBe(3);
+    });
+
+    it('never decrements characterXp when levelling up from existing total', () => {
+      // Starting with characterXp=145 at L4 (the exact cumulative threshold)
+      // and feeding another +100 lifts them past L5's cumulative (270) to L5
+      // with xp preserved at 245 — never rewound.
+      const c = baseCharacter({ characterXp: 145, characterLevel: 4, attributePoints: 0 });
+      const result = applyCharacterStateChanges(c, { xp: 100 });
+      expect(result.characterLevel).toBe(4);
+      expect(result.characterXp).toBe(245);
+      expect(result.attributePoints).toBe(0);
     });
 
     it('accepts xpDelta alias', () => {

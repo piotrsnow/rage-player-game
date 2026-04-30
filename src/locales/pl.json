@@ -1256,6 +1256,7 @@
     "damageTaken": "{{name}} otrzymał/a {{amount}} obrażeń",
     "healed": "{{name}} wyleczył/a {{amount}} ran",
     "xpGained": "{{name}} zdobył/a {{amount}} PD",
+    "charXpGained": "+{{amount}} XP postaci",
     "questNew": "Nowe zadanie: {{quest}}",
     "questCompleted": "Zadanie ukończone: {{quest}}",
     "questReward": "Nagroda za zadanie: {{reward}}",

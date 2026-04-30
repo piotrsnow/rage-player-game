@@ -1283,6 +1283,7 @@
     "damageTaken": "{{name}} took {{amount}} damage",
     "healed": "{{name}} healed {{amount}} wounds",
     "xpGained": "{{name}} gained {{amount}} XP",
+    "charXpGained": "+{{amount}} character XP",
     "questNew": "New quest: {{quest}}",
     "questCompleted": "Quest completed: {{quest}}",
     "questReward": "Quest reward: {{reward}}",

@@ -226,6 +226,20 @@ export function charLevelCost(targetLevel) {
   return 5 * targetLevel * targetLevel;
 }
 
+/**
+ * Cumulative character XP threshold to reach a given level.
+ * Sum of charLevelCost(k) for k=2..targetLevel. `characterXp` is treated
+ * as a monotonic lifetime total (never decremented on level-up), so the
+ * progress bar and level-up cascade compare against these cumulative
+ * thresholds instead of the per-level delta.
+ */
+export function cumulativeCharXpThreshold(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= targetLevel; k++) sum += charLevelCost(k);
+  return sum;
+}
+
 // ── TEST RESOLUTION CONSTANTS ──
 
 export const MOMENTUM_RANGE = { min: -10, max: 10 };

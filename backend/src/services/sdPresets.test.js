@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { getModelPreset, SD_MODEL_PRESETS } from './sdPresets.js';
 
 describe('getModelPreset', () => {
-  it('exposes presets for the three tracked SDXL checkpoints', () => {
+  it('exposes presets for each tracked SDXL checkpoint', () => {
     expect(Object.keys(SD_MODEL_PRESETS)).toEqual(
       expect.arrayContaining([
         'asgardSDXLHybrid_v12FP32MainModel',
         'starlightXLAnimated_v3',
         'paintersCheckpointOilPaint_v11',
+        'illustriousXL_v01',
+        'bigaspV25_v25',
       ]),
     );
   });
@@ -40,7 +42,7 @@ describe('getModelPreset', () => {
     const preset = getModelPreset('starlightXLAnimated_v3');
     expect(preset.cfg).toBeCloseTo(3.6);
     expect(preset.sampler).toBe('DPM++ 3M SDE Karras');
-    expect(preset.steps).toBe(40);
+    expect(preset.steps).toBe(45);
   });
 
   it('uses SDXL-native portrait bucket (832x1216) for every preset', () => {

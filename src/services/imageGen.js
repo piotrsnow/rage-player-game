@@ -50,37 +50,53 @@ function applyPresetToPayload(payload, sdModel, kind = 'scene') {
   }
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null } = {}) {
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene' } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
 
+  // `shape: 'square'` is used for inventory item artwork — we want a clean
+  // centered icon-style render, not a 16:9 scene. Each provider exposes the
+  // aspect differently (size string vs aspectRatio vs explicit w/h), so the
+  // mapping happens per branch below.
+  const isSquare = shape === 'square';
+
   if (provider === 'stability') {
-    const data = await apiClient.post('/proxy/stability/generate', body);
+    const payload = isSquare ? { ...body, aspectRatio: '1:1' } : body;
+    const data = await apiClient.post('/proxy/stability/generate', payload);
     return canonicalUrl(data.url);
   }
   if (provider === 'gemini') {
-    const data = await apiClient.post('/proxy/gemini/generate', body);
+    const payload = isSquare ? { ...body, aspectRatio: '1:1' } : body;
+    const data = await apiClient.post('/proxy/gemini/generate', payload);
     return canonicalUrl(data.url);
   }
   if (provider === 'sd-webui') {
     const payload = { ...body };
     if (sdModel) payload.model = sdModel;
     if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
+    if (isSquare) {
+      // Set w/h before applyPresetToPayload so the preset's scene-bucket
+      // dims don't overwrite them (applyPreset only fills when null).
+      payload.width = 1024;
+      payload.height = 1024;
+    }
     applyPresetToPayload(payload, sdModel, 'scene');
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
   }
   if (provider === 'gpt-image') {
+    const squareSize = isSquare ? { size: '1024x1024' } : {};
     if (portraitUrl) {
-      const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5' });
+      const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5', ...squareSize });
       return canonicalUrl(data.url);
     }
-    const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5' });
+    const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5', ...squareSize });
     return canonicalUrl(data.url);
   }
   // Default: DALL-E
-  const data = await apiClient.post('/proxy/openai/images', body);
+  const squareSize = isSquare ? { size: '1024x1024' } : {};
+  const data = await apiClient.post('/proxy/openai/images', { ...body, ...squareSize });
   return canonicalUrl(data.url);
 }
 
@@ -256,6 +272,6 @@ export const imageService = {
       seriousness,
       sdModel,
     });
-    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew });
+    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square' });
   },
 };

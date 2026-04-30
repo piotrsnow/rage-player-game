@@ -16,6 +16,21 @@ import { prisma } from '../lib/prisma.js';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
 import { toCanonicalStoragePath } from './urlCanonical.js';
 
+// Mirror of cumulativeCharXpThreshold from src/data/rpgSystem.js — needed for
+// the one-shot backfill below. Kept local to avoid pulling the FE rpgSystem
+// module into the backend (see characterMutations.js for the same pattern).
+function charLevelCostLocal(level) {
+  if (level <= 1) return 0;
+  return 5 * level * level;
+}
+
+function cumulativeCharXpThresholdLocal(level) {
+  if (level <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= level; k++) sum += charLevelCostLocal(k);
+  return sum;
+}
+
 const CHARACTER_INCLUDE = {
   characterSkills: true,
   inventoryItems: { orderBy: { addedAt: 'asc' } },
@@ -54,6 +69,21 @@ export function reconstructCharacterSnapshot(row) {
   // FE canonical paths so `apiClient.resolveMediaUrl` can freshly hydrate.
   if (snapshot.portraitUrl) {
     snapshot.portraitUrl = toCanonicalStoragePath(snapshot.portraitUrl);
+  }
+
+  // Lazy backfill: historically `characterXp` stored "XP since last level-up"
+  // (consumed on level-up). The new contract is a monotonic lifetime total,
+  // so pre-migration rows are below the cumulative threshold for their level
+  // and need to be lifted once. Idempotent — after the first read the value
+  // is already ≥ threshold, so the branch is skipped. The bumped value will
+  // be persisted on the next `persistCharacterSnapshot`.
+  const charLevel = snapshot.characterLevel || 1;
+  if (charLevel > 1) {
+    const cumulative = cumulativeCharXpThresholdLocal(charLevel);
+    const currentXp = snapshot.characterXp || 0;
+    if (currentXp < cumulative) {
+      snapshot.characterXp = currentXp + cumulative;
+    }
   }
 
   snapshot.skills = {};

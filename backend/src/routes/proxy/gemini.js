@@ -16,6 +16,9 @@ const GENERATE_BODY_SCHEMA = {
   required: ['prompt'],
   properties: {
     prompt: { type: 'string', maxLength: 4000 },
+    // Imagen supports '1:1', '3:4', '4:3', '9:16', '16:9'. Default stays
+    // '16:9' for scene calls; inventory items pass '1:1'.
+    aspectRatio: { type: 'string', enum: ['1:1', '3:4', '4:3', '9:16', '16:9'] },
     campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
@@ -41,12 +44,14 @@ export async function geminiProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'gemini');
     if (!apiKey) return reply.code(400).send({ error: 'Google AI API key not configured' });
 
-    const { prompt, campaignId, forceNew = false } = request.body;
+    const { prompt, campaignId, forceNew = false, aspectRatio } = request.body;
 
+    const resolvedAspectRatio = aspectRatio || '16:9';
     const resolutionScale = getGeneratedImageScale('gemini');
     const cacheParams = {
       provider: 'gemini',
       prompt,
+      aspectRatio: resolvedAspectRatio,
       resolutionScale,
       ...(forceNew ? { requestTs: Date.now() } : {}),
     };
@@ -67,7 +72,7 @@ export async function geminiProxyRoutes(fastify) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseModalities: ['TEXT', 'IMAGE'],
-          imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+          imageConfig: { aspectRatio: resolvedAspectRatio, imageSize: '2K' },
         },
       }),
     });

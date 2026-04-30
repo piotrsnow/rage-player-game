@@ -5,7 +5,7 @@ import { prefixedId } from './ids.js';
 // ── State change limits ──
 
 export const STATE_CHANGE_LIMITS = {
-  maxXpPerScene: 50,
+  maxXpPerScene: 500,
   maxItemsPerScene: 3,
   maxWoundsDelta: 20,
   needsDeltaMin: -30,

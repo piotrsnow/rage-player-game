@@ -191,7 +191,7 @@ export default function ItemDetailBox({
           <InventoryImage
             imageUrl={resolvedImageUrl}
             alt={item.name}
-            sizeClass="w-full h-40"
+            sizeClass="w-full aspect-square"
             fallbackIcon={icon}
             wrapperClassName="border border-outline-variant/20 flex items-center justify-center overflow-hidden"
           />
