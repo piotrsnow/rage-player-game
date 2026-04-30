@@ -13,7 +13,7 @@ const store = createMediaStore(config);
 const ENSURE_MODEL_TIMEOUT_MS = 120_000;
 const GENERATE_TIMEOUT_MS = 180_000;
 
-const DEFAULT_NEGATIVE_PROMPT = 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy, cropped, jpeg artifacts';
+const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpeg artifacts, text, watermark, signature, username, deformed, distorted, disfigured, bad anatomy, wrong anatomy, extra limbs, missing limbs, extra fingers, fewer fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed face, bad proportions, out of frame, duplicate, cropped';
 
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
@@ -165,8 +165,8 @@ export async function sdWebuiProxyRoutes(fastify) {
       prompt,
       negativePrompt = DEFAULT_NEGATIVE_PROMPT,
       model,
-      width = 1024,
-      height = 1024,
+      width = config.sdWebui.sceneWidth,
+      height = config.sdWebui.sceneHeight,
       steps = config.sdWebui.steps,
       cfg = config.sdWebui.cfg,
       sampler = config.sdWebui.sampler,
@@ -219,6 +219,17 @@ export async function sdWebuiProxyRoutes(fastify) {
       n_iter: 1,
       batch_size: 1,
     };
+
+    // Opt-in hires fix (SD_WEBUI_HIRES_FIX=1) — ~2x generation time but
+    // fixes blurry faces in wide scene framing. Skip for /portrait (768x1024
+    // already gives faces ~1/3 of the frame, hires pass adds little there).
+    if (config.sdWebui.hiresFix) {
+      payload.enable_hr = true;
+      payload.hr_scale = 1.5;
+      payload.hr_upscaler = 'R-ESRGAN 4x+';
+      payload.hr_second_pass_steps = Math.max(4, Math.round(steps * 0.7));
+      payload.denoising_strength = 0.3;
+    }
 
     let res;
     try {

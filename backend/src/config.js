@@ -42,11 +42,27 @@ export const config = {
   // Stable Diffusion WebUI (Automatic1111) — local REST API. No API key;
   // availability is derived from `url` being set. Start A1111 with --api.
   // In Docker dev use http://host.docker.internal:7860; bare-metal use localhost.
+  //
+  // Defaults are tuned for DreamShaperXL Turbo v2 (and other SDXL-Turbo/LCM
+  // checkpoints): low CFG (~2), low step count (~6), SDE Karras sampler.
+  // For vanilla SDXL checkpoints override via ENV: SD_WEBUI_STEPS=25,
+  // SD_WEBUI_CFG=7, SD_WEBUI_SAMPLER="DPM++ 2M Karras". Using the Turbo
+  // defaults on a non-Turbo model will produce undercooked noisy output.
+  //
+  // Scene dimensions default to 1344x768 — an SDXL-native 16:9 bucket that
+  // matches the cinematic composition hint in buildImagePrompt. 1024x1024
+  // squashes scene framing and loses the widescreen feel.
+  //
+  // Hires fix is opt-in (SD_WEBUI_HIRES_FIX=1). It roughly doubles scene
+  // generation time but fixes blurry faces at standard resolutions.
   sdWebui: {
     url: process.env.SD_WEBUI_URL || '',
-    sampler: process.env.SD_WEBUI_SAMPLER || 'DPM++ 2M Karras',
-    steps: parseInt(process.env.SD_WEBUI_STEPS || '25', 10),
-    cfg: parseFloat(process.env.SD_WEBUI_CFG || '7.0'),
+    sampler: process.env.SD_WEBUI_SAMPLER || 'DPM++ SDE Karras',
+    steps: parseInt(process.env.SD_WEBUI_STEPS || '6', 10),
+    cfg: parseFloat(process.env.SD_WEBUI_CFG || '2.0'),
+    sceneWidth: parseInt(process.env.SD_WEBUI_SCENE_WIDTH || '1344', 10),
+    sceneHeight: parseInt(process.env.SD_WEBUI_SCENE_HEIGHT || '768', 10),
+    hiresFix: process.env.SD_WEBUI_HIRES_FIX === '1',
   },
 
   elevenlabsDefaultVoiceId: "HnELITaEvp7a0HOmfoBo",

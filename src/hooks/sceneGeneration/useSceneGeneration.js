@@ -73,7 +73,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         if (imageGenEnabled && hasImageKey && !isFirstScene) {
           const previousScene = state.scenes?.[state.scenes.length - 1];
           if (previousScene?.narrative) {
-            const speculativeDesc = buildSpeculativeImageDescription(previousScene.narrative, playerAction, resolved.diceRoll);
+            const speculativeDesc = buildSpeculativeImageDescription(previousScene.narrative, playerAction, resolved.diceRoll, imageProvider);
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
             earlyImagePromise = imageService.generateSceneImage(
               '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,

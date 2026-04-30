@@ -138,7 +138,7 @@ export function responseFormatBlock(language) {
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). Format: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Concrete nouns/adjectives only, no articles or filler. Example: 'dwarf warrior in heavy plate, kneeling by broken sword, ancient stone ruins, ivy-covered walls, dusk, volumetric golden light shafts, dust particles, cinematic wide shot, low angle, fog, melancholy'",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],

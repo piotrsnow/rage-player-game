@@ -1,4 +1,8 @@
-const SANITIZE_PATTERNS = [
+// Cloud providers (DALL-E, Gemini, Stability, gpt-image) have content policies
+// that reject or silently desaturate prompts containing gore / drugs / explicit
+// violence, so we strip those defensively — losing a grim-dark adjective is
+// cheaper than a rejected request.
+const SANITIZE_PATTERNS_CLOUD = [
   /\b(blood|bloody|bleeding|bloodied|bloodstain(ed)?)\b/gi,
   /\b(gore|gory|guts|entrails|viscera|dismember(ed|ment)?)\b/gi,
   /\b(corpse|dead\s+bod(y|ies)|severed|decapitat(ed|ion)|mutilat(ed|ion))\b/gi,
@@ -10,13 +14,28 @@ const SANITIZE_PATTERNS = [
   /\b(drug|narcotic|opium|warpstone)\b/gi,
 ];
 
-function sanitizeForImageGen(text) {
+// Local A1111 has no policy layer — we want dark-fantasy atmosphere to reach
+// the model. Keep only the patterns we genuinely don't want in generated
+// images regardless of provider (sexual content, assault, self-harm).
+const SANITIZE_PATTERNS_LOCAL = [
+  /\b(naked|nude|undress(ed)?)\b/gi,
+  /\b(rape|assault(ed|ing)?)\b/gi,
+  /\b(suicide|self-harm)\b/gi,
+];
+
+function sanitizeForImageGen(text, provider = 'dalle') {
+  const patterns = provider === 'sd-webui' ? SANITIZE_PATTERNS_LOCAL : SANITIZE_PATTERNS_CLOUD;
   let sanitized = text;
-  for (const pattern of SANITIZE_PATTERNS) {
+  for (const pattern of patterns) {
     sanitized = sanitized.replace(pattern, '');
   }
   return sanitized.replace(/\s{2,}/g, ' ').trim();
 }
+
+// DreamShaperXL / SDXL checkpoints respond strongly to trailing quality tags.
+// DALL-E/Gemini ignore or downweight these, so we only append for sd-webui.
+let SD_QUALITY_TAGS = 'masterpiece, best quality, highly detailed, intricate details, cinematic composition, dramatic lighting, volumetric light, sharp focus, 8k';
+SD_QUALITY_TAGS = '';
 
 const IMAGE_STYLE_PROMPTS = {
   illustration: {
@@ -160,6 +179,7 @@ export function getImageStyleNegative(imageStyle) {
 
 export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false) {
   const isGemini = provider === 'gemini';
+  const isSdWebui = provider === 'sd-webui';
 
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
@@ -170,7 +190,7 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
     : '';
 
   const rawDesc = imagePrompt || narrative.substring(0, 300);
-  const sceneDesc = sanitizeForImageGen(rawDesc);
+  const sceneDesc = sanitizeForImageGen(rawDesc, provider);
   const parsedAge = Number(characterAge);
   const ageDirective = Number.isFinite(parsedAge) ? ` Featured character age: ${Math.max(1, Math.round(parsedAge))}.` : '';
   const genderDirective = characterGender === 'female' || characterGender === 'male'
@@ -181,19 +201,20 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
     return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  const qualityTail = isSdWebui ? `, ${SD_QUALITY_TAGS}` : '';
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting${qualityTail}.`;
 }
 
-export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome) {
+export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome, provider = 'dalle') {
   const parts = [];
 
   if (previousNarrative) {
-    parts.push(`Previous scene: ${sanitizeForImageGen(previousNarrative.substring(0, 200))}`);
+    parts.push(`Previous scene: ${sanitizeForImageGen(previousNarrative.substring(0, 200), provider)}`);
   }
 
   const skip = !playerAction || playerAction === '[CONTINUE]' || playerAction === '[WAIT]' || playerAction.startsWith('[IDLE_WORLD_EVENT');
   if (!skip) {
-    parts.push(`The character now: ${sanitizeForImageGen(playerAction.substring(0, 150))}`);
+    parts.push(`The character now: ${sanitizeForImageGen(playerAction.substring(0, 150), provider)}`);
   }
 
   if (diceOutcome) {
@@ -213,21 +234,23 @@ export function buildSpeculativeImageDescription(previousNarrative, playerAction
 
 export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
   const isGemini = provider === 'gemini';
+  const isSdWebui = provider === 'sd-webui';
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
   const mood = TONE_MODIFIERS[tone] || TONE_MODIFIERS.Epic;
   const darkDirective = darkPalette ? ' Use a dark, moody color palette with deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` Mood/tone: ${getSeriousnessDirective(seriousness)}.` : '';
-  const itemName = sanitizeForImageGen(item?.name || 'Unknown item');
-  const itemType = sanitizeForImageGen(item?.type || 'misc');
-  const itemRarity = sanitizeForImageGen(item?.rarity || 'common');
-  const itemDescription = sanitizeForImageGen(item?.description || `${itemName}, ${itemType}`);
-  const worldContext = sanitizeForImageGen(genre || 'Fantasy');
+  const itemName = sanitizeForImageGen(item?.name || 'Unknown item', provider);
+  const itemType = sanitizeForImageGen(item?.type || 'misc', provider);
+  const itemRarity = sanitizeForImageGen(item?.rarity || 'common', provider);
+  const itemDescription = sanitizeForImageGen(item?.description || `${itemName}, ${itemType}`, provider);
+  const worldContext = sanitizeForImageGen(genre || 'Fantasy', provider);
 
   if (isGemini) {
     return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
   }
 
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+  const qualityTail = isSdWebui ? `, ${SD_QUALITY_TAGS}` : '';
+  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail${qualityTail}.`;
 }
 
 export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}) {

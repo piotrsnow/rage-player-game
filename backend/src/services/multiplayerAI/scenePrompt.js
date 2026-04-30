@@ -22,7 +22,7 @@ Respond with ONLY valid JSON:
   ],
   "soundEffect": "ambient sound or null",
   "musicPrompt": "background music description or null",
-  "imagePrompt": "ENGLISH visual scene description (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). Format: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Concrete nouns/adjectives only, no articles or filler. Example: 'dwarf warrior in heavy plate, kneeling by broken sword, ancient stone ruins, ivy-covered walls, dusk, volumetric golden light shafts, dust particles, cinematic wide shot, low angle, fog, melancholy'",
   "atmosphere": {
     "weather": "clear",
     "particles": "none",
@@ -157,7 +157,7 @@ Respond with ONLY valid JSON:
   ],
   "soundEffect": "sound description or null",
   "musicPrompt": "music description or null",
-  "imagePrompt": "ENGLISH visual scene description (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). Format: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Concrete nouns/adjectives only, no articles or filler. Example: 'dwarf warrior in heavy plate, kneeling by broken sword, ancient stone ruins, ivy-covered walls, dusk, volumetric golden light shafts, dust particles, cinematic wide shot, low angle, fog, melancholy'",
   "atmosphere": {
     "weather": "clear",
     "particles": "none",
