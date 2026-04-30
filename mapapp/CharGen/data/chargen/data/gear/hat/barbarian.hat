@@ -1,0 +1,43 @@
+{
+    "id": "barbarian",
+    "name": "Barbarian",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotsalt" : [ "hair" ],
+    "slotshidden" : [ "ears" ],
+    "tags": [ "hat", "armor", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/barbarian/barbarian_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/barbarian/barbarian_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/barbarian/barbarian_m.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_copper",
+        "metal_bronze",
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel",
+        "metal_brushed",
+        "metal_gold"
+    ],
+    "secondarycolors": [
+        "cloth_brown1"
+    ],
+    "fixedcolors": [
+        "misc_horns"
+    ]
+}

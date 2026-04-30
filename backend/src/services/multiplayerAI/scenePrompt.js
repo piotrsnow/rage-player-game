@@ -58,7 +58,7 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 
 For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
 
-For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on margin — NOT flat +5/-5:
 - Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
 - Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
@@ -198,7 +198,7 @@ QUEST DISCOVERY: When any player explicitly asks about available work, tasks, qu
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
-For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on margin — NOT a flat +5/-5:
 - Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
 - Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8

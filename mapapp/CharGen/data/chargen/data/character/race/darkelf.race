@@ -1,0 +1,114 @@
+{
+    "id": "03darkelf",
+    "name": "Dark Elf",
+    "tags": [ "race", "darkelf" ],
+    "configs": [
+        {
+            "id": "m1",
+            "name": "Regular",
+
+            "gender": "male",
+            "body-type": "hm1",
+            "head-type": "hm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "bangslong1", "bangslong2", "braid", "hawklong", "hawkmo", "hawkshort", "knotlong1",
+                      "knotlong2", "knotshort", "long2", "loose", "ponytail1", "ponytail2", "shoulderl", "shoulderr",
+                      "swoop" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven", "long" ],
+            "nose": [ "base", "straight" ],
+            "facial": [ "none", "beard" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ],
+            "add2": [ "none", "bloodyarm", "bloodyribs", "bloodytorso" ]
+        },
+        {
+            "id": "m2",
+            "name": "Muscular",
+
+            "gender": "male",
+            "body-type": "hm2",
+            "head-type": "hm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "bangslong1", "bangslong2", "braid", "hawklong", "hawkmo", "hawkshort", "knotlong1",
+                      "knotlong2", "knotshort", "long2", "loose", "ponytail1", "ponytail2", "shoulderl", "shoulderr",
+                      "swoop" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven", "long" ],
+            "nose": [ "base", "straight" ],
+            "facial": [ "none", "beard" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ]
+        },
+        {
+            "id": "m3",
+            "name": "Child",
+
+            "gender": "male",
+            "body-type": "hc1",
+            "head-type": "hc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "braid", "messyhalf" ],
+            "eyes": [ "darkelf" ]
+        },
+        {
+            "id": "f1",
+            "name": "Regular",
+
+            "gender": "female",
+            "body-type": "hf1",
+            "head-type": "hf1",
+
+            "shadow": [ "size1" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "bangslong1", "bangslong2", "braid", "hawklong", "hawkmo", "hawkshort", "knotlong1",
+                      "knotlong2", "knotshort", "long2", "loose", "ponytail1", "ponytail2", "princess", "shoulderl",
+                      "shoulderr", "swoop" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven", "long" ],
+            "nose": [ "base", "straight" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ]
+        },
+        {
+            "id": "f2",
+            "name": "Pregnant",
+
+            "gender": "female",
+            "body-type": "hf2",
+            "head-type": "hf1",
+
+            "shadow": [ "size1" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "bangslong1", "bangslong2", "braid", "hawklong", "hawkmo", "hawkshort", "knotlong1",
+                      "knotlong2", "knotshort", "long2", "loose", "ponytail1", "ponytail2", "princess", "shoulderl",
+                      "shoulderr", "swoop" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven", "long" ],
+            "nose": [ "base", "straight" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ]
+        },
+        {
+            "id": "f3",
+            "name": "Child",
+
+            "gender": "female",
+            "body-type": "hc1",
+            "head-type": "hc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "darkelf" ],
+            "head": [ "darkelf" ],
+            "hair": [ "none", "braid", "messyhalf" ],
+            "eyes": [ "darkelf" ]
+        }
+    ]
+}

@@ -1,0 +1,19 @@
+{
+    "id": "straight",
+    "name": "Straight",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "nose", "human", "darkelf", "zombie" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/nose/human/straight_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/nose/human/straight_f.png"
+        }
+    ]
+}

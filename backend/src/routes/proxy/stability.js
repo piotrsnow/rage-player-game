@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
@@ -7,8 +8,6 @@ import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
 const store = createMediaStore(config);
-
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
 
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
@@ -19,7 +18,7 @@ const GENERATE_BODY_SCHEMA = {
     negativePrompt: { type: 'string', maxLength: 2000 },
     model: { type: 'string', maxLength: 64 },
     aspectRatio: { type: 'string', maxLength: 16 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };

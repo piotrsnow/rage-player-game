@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
@@ -8,8 +9,6 @@ const MESHY_API_BASE = 'https://api.meshy.ai/openapi/v2';
 const store = createMediaStore(config);
 const TARGET_FORMATS = ['glb'];
 
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
-
 const TEXT_TO_3D_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -17,7 +16,7 @@ const TEXT_TO_3D_BODY_SCHEMA = {
   properties: {
     prompt: { type: 'string', maxLength: 2000 },
     assetKey: { type: 'string', maxLength: 256 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     cacheVersion: { type: 'string', maxLength: 64 },
   },
 };
@@ -39,7 +38,7 @@ const STORE_BODY_SCHEMA = {
     glbUrl: { type: 'string', maxLength: 2048 },
     cacheKey: { type: 'string', maxLength: 512 },
     assetKey: { type: 'string', maxLength: 256 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     prompt: { type: 'string', maxLength: 2000 },
     cacheVersion: { type: 'string', maxLength: 64 },
   },
@@ -51,7 +50,7 @@ const CHECK_BODY_SCHEMA = {
   properties: {
     prompt: { type: 'string', maxLength: 2000 },
     assetKey: { type: 'string', maxLength: 256 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     cacheVersion: { type: 'string', maxLength: 64 },
   },
 };

@@ -1,0 +1,53 @@
+{
+    "id": "glasses1",
+    "name": "Formal Glasses",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "tags": [ "glasses", "generic" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_f.png"
+        },
+        {
+            "head": "dm1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_m.png"
+        },
+        {
+            "head": "df1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_f.png"
+        },
+        {
+            "head": "lm1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_m.png"
+        },
+        {
+            "head": "lf1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/glasses/glasses_m.png"
+        }
+    ],
+    "primarycolors": [
+        "cloth_black1",
+        "cloth_brown2"
+    ],
+    "fixedcolors": [
+        "misc_glass_light"
+    ]
+}

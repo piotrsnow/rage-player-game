@@ -1,4 +1,5 @@
 import CustomSelect from '../../ui/CustomSelect';
+import { GenderIcon } from '../../../utils/genderIcon';
 import { CrossLinkChip, EmptyState, findQuestsForNpc } from './shared';
 
 export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, femaleVoices, dispatch, autoSave, navigateTo, t }) {
@@ -11,6 +12,9 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
     ...((femaleVoices || []).map((v) => ({ ...v, gender: 'female' }))),
   ];
   const hasVoicePool = taggedVoices.length > 0;
+  const hasMaleVoices = (maleVoices || []).length > 0;
+  const hasFemaleVoices = (femaleVoices || []).length > 0;
+  const showVoicePoolHint = !hasMaleVoices || !hasFemaleVoices;
 
   const handleVoiceChange = (npcName, npcGender, voiceId) => {
     dispatch({
@@ -22,6 +26,12 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
 
   return (
     <div className="grid gap-3">
+      {showVoicePoolHint && (
+        <div className="flex items-start gap-2 p-2 rounded-sm border border-warning/30 bg-warning-container/15 text-[11px] text-warning">
+          <span className="material-symbols-outlined text-sm leading-none mt-0.5">info</span>
+          <span>{t('worldState.voicePoolMissing')}</span>
+        </div>
+      )}
       {npcs.map((npc) => {
         const mapping = characterVoiceMap?.[npc.name];
         const currentVoiceId = mapping?.voiceId;
@@ -33,7 +43,7 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-sm text-primary">person</span>
                 <span className="text-sm font-bold text-on-surface">{npc.name}</span>
-                {npc.gender && <span className="text-[10px] text-outline">({npc.gender})</span>}
+                <GenderIcon gender={npc.gender} className="text-xs text-outline/80" />
                 {npc.alive === false && <span className="text-[10px] text-error font-bold uppercase">{t('worldState.dead')}</span>}
               </div>
               <div className="flex items-center gap-1.5">

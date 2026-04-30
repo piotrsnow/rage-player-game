@@ -56,6 +56,37 @@ export const DungeonRoomFlagsSchema = z.object({
   lootTaken: z.boolean().optional(),
 }).passthrough();
 
+// stateChanges.npcs bucket — introduces or updates. Only `action` + `name`
+// are mandatory; everything else is optional. We enforce `gender` to be
+// "male" / "female" when present so voice assignment has a reliable pool,
+// but leave it optional — missing gender is coerced deterministically in
+// `processNpcChanges` via `coerceGender`. `.passthrough()` keeps any extra
+// LLM-authored fields (e.g. `notes`, `speechStyle`) flowing through to
+// downstream persistence.
+const NpcChangeSchema = z.object({
+  action: z.enum(['introduce', 'update']).optional().default('introduce'),
+  name: z.string().trim().min(1).max(120),
+  gender: z.enum(['male', 'female']).optional(),
+  role: z.string().max(200).optional().nullable(),
+  personality: z.string().max(400).optional().nullable(),
+  attitude: z.string().max(40).optional().nullable(),
+  disposition: z.number().optional().nullable(),
+  dispositionChange: z.number().optional().nullable(),
+  alive: z.boolean().optional().nullable(),
+  lastLocation: z.string().max(200).optional().nullable(),
+  location: z.string().max(200).optional().nullable(),
+  acknowledgedFame: z.boolean().optional(),
+  factionId: z.string().nullable().optional(),
+  relatedQuestIds: z.array(z.string()).optional(),
+  relationships: z.array(z.object({
+    npcName: z.string().min(1).max(120),
+    type: z.string().max(60).optional(),
+    strength: z.number().optional(),
+  }).passthrough()).optional(),
+}).passthrough();
+
+export const NpcChangesSchema = z.array(NpcChangeSchema).max(30);
+
 // Stage 2 — NPC memory updates. Array of `{npcName, memory, importance?}`.
 // Append-only into CampaignNPC.experienceLog. Caps: 20 updates per scene
 // (prevents an overzealous LLM from stuffing every incidental interaction
@@ -89,3 +120,4 @@ export const parseDungeonComplete = (input) => safeParse(DungeonCompleteSchema, 
 export const parseWorldImpactFlags = (input) => safeParse(WorldImpactFlagsSchema, input);
 export const parseDungeonRoomFlags = (input) => safeParse(DungeonRoomFlagsSchema, input);
 export const parseNpcMemoryUpdates = (input) => safeParse(NpcMemoryUpdatesSchema, input);
+export const parseNpcChanges = (input) => safeParse(NpcChangesSchema, input);

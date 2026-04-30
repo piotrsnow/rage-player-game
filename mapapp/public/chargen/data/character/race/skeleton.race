@@ -1,0 +1,20 @@
+{
+    "id": "16skeleton",
+    "name": "Skeleton",
+    "tags": [ "race", "skeleton" ],
+    "configs": [
+        {
+            "id": "m1",
+            "name": "Regular",
+
+            "gender": "male",
+            "body-type": "hm1",
+            "head-type": "sm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "skeleton" ],
+            "head": [ "skeleton" ],
+            "eyes": [ "none", "skeleton" ]
+        }
+    ]
+}

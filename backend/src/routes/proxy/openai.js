@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { requireServerApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
@@ -8,8 +9,6 @@ import { config } from '../../config.js';
 import { AIServiceError, parseProviderError, toClientAiError } from '../../services/aiErrors.js';
 
 const store = createMediaStore(config);
-
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
 
 const CHAT_BODY_SCHEMA = {
   type: 'object',
@@ -44,7 +43,7 @@ const IMAGES_BODY_SCHEMA = {
     size: { type: 'string', maxLength: 32 },
     quality: { type: 'string', maxLength: 32 },
     model: { type: 'string', maxLength: 64 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };
@@ -59,7 +58,7 @@ const IMAGES_EDITS_BODY_SCHEMA = {
     size: { type: 'string', maxLength: 32 },
     quality: { type: 'string', maxLength: 32 },
     inputFidelity: { type: 'string', enum: ['low', 'high'] },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };

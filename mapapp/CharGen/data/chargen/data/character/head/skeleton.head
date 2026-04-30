@@ -1,0 +1,17 @@
+{
+    "id": "skeleton",
+    "name": "Skeleton",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "skeleton" ],
+    "textures": [
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/character/head/skeleton_m.png"
+        }
+    ]
+}

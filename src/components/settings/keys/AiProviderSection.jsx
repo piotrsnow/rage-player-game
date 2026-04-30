@@ -7,9 +7,10 @@ const PROVIDER_OPTIONS = [
 ];
 
 const BADGE_META = {
-  budget:   { icon: 'bolt',        colors: 'bg-primary/10 text-primary-dim border-primary/20' },
-  balanced: { icon: 'diamond',     colors: 'bg-tertiary/10 text-tertiary border-tertiary/30' },
-  reasoner: { icon: 'psychology',  colors: 'bg-secondary/10 text-secondary border-secondary/25' },
+  budget:   { icon: 'bolt',           colors: 'bg-primary/10 text-primary-dim border-primary/20' },
+  balanced: { icon: 'diamond',        colors: 'bg-tertiary/10 text-tertiary border-tertiary/30' },
+  premium:  { icon: 'workspace_premium', colors: 'bg-amber-400/10 text-amber-300 border-amber-400/30' },
+  reasoner: { icon: 'psychology',     colors: 'bg-secondary/10 text-secondary border-secondary/25' },
 };
 
 export default function AiProviderSection({ settings, updateSettings }) {

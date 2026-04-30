@@ -1,0 +1,22 @@
+{
+    "id": "bloodyface",
+    "name": "Bloody Face",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "add1", "human" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/add1/bloody/bloodyface_m1.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/add1/bloody/bloodyface_f1.png"
+        }
+    ],
+    "primarycolors": [
+        "misc_wounds"
+    ]
+}

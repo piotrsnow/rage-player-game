@@ -1,0 +1,22 @@
+{
+    "id": "bloodymouth",
+    "name": "Bloody Mouth",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "add1", "human" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/add1/bloody/bloodymouth_m1.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/add1/bloody/bloodymouth_f1.png"
+        }
+    ],
+    "primarycolors": [
+        "misc_wounds"
+    ]
+}

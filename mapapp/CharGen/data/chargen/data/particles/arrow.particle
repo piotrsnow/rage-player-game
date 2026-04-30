@@ -1,0 +1,6 @@
+{
+    "id": "arrow",
+    "texture": "textures/projectiles/arrow.png",
+    "spritesheet": "arrow",
+    "speed": 390
+}

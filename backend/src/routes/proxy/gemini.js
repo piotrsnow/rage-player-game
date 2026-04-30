@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, getGeneratedImageScale } from '../../services/imageResize.js';
@@ -9,15 +10,13 @@ import { config } from '../../config.js';
 const store = createMediaStore(config);
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent';
 
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
-
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['prompt'],
   properties: {
     prompt: { type: 'string', maxLength: 4000 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };

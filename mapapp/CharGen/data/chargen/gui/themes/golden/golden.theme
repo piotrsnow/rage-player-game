@@ -1,0 +1,619 @@
+[
+    {
+        "name": "mouse",
+        "texture-id": "gui/themes/golden/golden.png",
+        "ready-outter": [ 113, 221, 12, 17 ],
+        "disabled-outter": [ 113, 238, 12, 17 ],
+        "hover-outter": [ 0, 0, 12, 17 ]
+    },
+    {
+        "name": "label",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503
+    },
+    {
+        "name": "panel",
+        "texture-id": "gui/themes/golden/golden.png",
+        "ready-outter": [ 1, 153, 42, 22 ],
+        "ready-inner": [ 20, 11, 1, 1 ]
+    },
+    {
+        "name": "panel-trans30",
+        "texture-id": "gui/themes/golden/golden.png",
+        "ready-outter": [ 1, 175, 42, 22 ],
+        "ready-inner": [ 20, 11, 1, 1 ]
+    },
+    {
+        "name": "tooltip",
+        "texture-id": "gui/themes/golden/golden.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "ready-outter": [ 1, 153, 42, 22 ],
+        "ready-inner": [ 20, 11, 1, 1 ]
+    },
+    {
+        "name": "button",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "24",
+        "ready-outter": [ 1, 1, 49, 24 ],
+        "ready-inner": [ 24, 0, 1, 24 ],
+        "pressed-outter": [ 1, 25, 49, 24 ],
+        "pressed-inner": [ 24, 0, 1, 24 ]
+    },
+    {
+        "name": "checkbutton-small",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "12",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 29, 49, 14, 12 ],
+                "ready-inner": [ 1, 0, 1, 12 ],
+                "pressed-outter": [ 29, 61, 14, 12 ],
+                "pressed-inner": [ 1, 0, 1, 12 ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 31, 49, 14, 12 ],
+                "ready-inner": [ 12, 0, 1, 12 ],
+                "pressed-outter": [ 31, 61, 14, 12 ],
+                "pressed-inner": [ 12, 0, 1, 12 ]
+            }
+        ]
+    },
+    {
+        "name": "checkbutton",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "24",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 1, 49, 26, 24 ],
+                "ready-inner": [ 1, 0, 1, 24 ],
+                "pressed-outter": [ 1, 73, 26, 24 ],
+                "pressed-inner": [ 1, 0, 1, 24 ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 3, 49, 26, 24 ],
+                "ready-inner": [ 24, 0, 1, 24 ],
+                "pressed-outter": [ 3, 73, 26, 24 ],
+                "pressed-inner": [ 24, 0, 1, 24 ]
+            }
+        ]
+    },
+    {
+        "name": "spinner",
+        "texture-id": "gui/themes/golden/golden.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "24",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 1, 105, 48, 24 ],
+                "ready-inner": [ 1, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "roundbutton-blue",
+                        "position": [ "parentWidth - 41", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-left",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "roundbutton-blue",
+                        "position": [ "parentWidth - 19", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-right",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "text-center",
+                "ready-outter": [ 1, 129, 49, 24 ],
+                "ready-inner": [ 24, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "roundbutton-blue",
+                        "position": [ "5", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-left",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "roundbutton-blue",
+                        "position": [ "parentWidth - 19", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-right",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 3, 105, 48, 24 ],
+                "ready-inner": [ 46, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "roundbutton-blue",
+                        "position": [ "5", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-left",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "roundbutton-blue",
+                        "position": [ "27", "5" ],
+                        "children": [
+                            {
+                                "name": "glyph",
+                                "base": "glyph-right",
+                                "position": [ "0", "0" ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+        ]
+    },
+
+
+
+
+    {
+        "name": "combobox",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "24",
+        "ready-outter": [ 51, 122, 72, 24 ],
+        "ready-inner": [ 24, 0, 1, 24 ],
+        "pressed-outter": [ 51, 146, 72, 24 ],
+        "pressed-inner": [ 24, 0, 1, 24 ],
+        "content": [ 11, 7, 28, 10 ],
+        "children": [
+            {
+                "name": "button-down",
+                "base": "roundbutton-blue",
+                "position": [ "parentWidth - 19", "5" ],
+                "children": [
+                    {
+                        "name": "glyph",
+                        "base": "glyph-down",
+                        "position": [ "0", "0" ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "combolist",
+        "texture-id": "gui/themes/golden/golden.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "children": [
+            {
+                "name": "lv_item_v1",
+                "ready-outter": [ 51, 170, 72, 12 ],
+                "ready-inner": [ 24, 6, 1, 1 ],
+                "content": [ 9, 2, 54, 8 ]
+            },
+            {
+                "name": "lv_item_v2",
+                "ready-outter": [ 51, 170, 72, 12 ],
+                "ready-inner": [ 24, 6, 1, 1 ],
+                "content": [ 9, 2, 54, 8 ]
+            },
+            {
+                "name": "lv_item_v3",
+                "ready-outter": [ 51, 182, 72, 21 ],
+                "ready-inner": [ 34, 5, 1, 1 ],
+                "content": [ 9, 2, 54, 12 ]
+            }
+        ]
+    },
+    {
+        "name": "comboitem",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click2.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4227595263,
+        "font-hover-color": 3654932991,
+        "font-pressed-color": 3654932991,
+        "font-disabled-color": 2290649343,
+
+        "ready-outter": [ 51, 105, 8, 8 ],
+        "ready-inner": [ 0, 0, 8, 8 ]
+    },
+
+
+
+    {
+        "name": "toolpicker",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "ready-outter": [ 126, 1, 28, 28 ],
+        "ready-inner": [ 13, 13, 1, 1 ],
+        "hover-outter": [ 59, 105, 17, 17 ],
+        "hover-inner": [ 8, 8, 1, 1 ],
+        "pressed-outter": [ 76, 105, 17, 17 ],
+        "pressed-inner": [ 8, 8, 1, 1 ],
+        "disabled-outter": [ 51, 114, 8, 8 ],
+        "disabled-inner": [ 0, 0, 8, 8 ],
+        "content": [ 4, 4, 20, 20 ]
+    },
+    {
+        "name": "toolbar",
+        "texture-id": "gui/themes/golden/golden.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "children": [
+            {
+                "name": "lv_item_h1",
+                "ready-outter": [ 50, 1, 26, 28 ],
+                "ready-inner": [ 13, 13, 1, 1 ],
+                "content": [ 4, 4, 20, 20 ]
+            },
+            {
+                "name": "lv_item_h2",
+                "ready-outter": [ 76, 1, 24, 28 ],
+                "ready-inner": [ 11, 13, 1, 1 ],
+                "content": [ 2, 4, 20, 20 ]
+            },
+            {
+                "name": "lv_item_h3",
+                "ready-outter": [ 100, 1, 26, 28 ],
+                "ready-inner": [ 11, 13, 1, 1 ],
+                "content": [ 2, 4, 20, 20 ]
+            },
+
+
+            {
+                "name": "lv_item_v1",
+                "ready-outter": [ 126, 29, 28, 26 ],
+                "ready-inner": [ 13, 13, 1, 1 ],
+                "content": [ 4, 4, 20, 20 ]
+            },
+            {
+                "name": "lv_item_v2",
+                "ready-outter": [ 126, 55, 28, 24 ],
+                "ready-inner": [ 13, 11, 1, 1 ],
+                "content": [ 4, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_v3",
+                "ready-outter": [ 126, 79, 28, 26 ],
+                "ready-inner": [ 13, 11, 1, 1 ],
+                "content": [ 4, 2, 20, 20 ]
+            },
+
+
+            {
+                "name": "lv_item_1",
+                "ready-outter": [ 50, 79, 26, 26 ],
+                "ready-inner": [ 13, 11, 1, 1 ],
+                "content": [ 4, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_2",
+                "ready-outter": [ 76, 79, 24, 26 ],
+                "ready-inner": [ 11, 11, 1, 1 ],
+                "content": [ 2, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_3",
+                "ready-outter": [ 100, 79, 26, 26 ],
+                "ready-inner": [ 11, 11, 1, 1 ],
+                "content": [ 2, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_4",
+                "ready-outter": [ 50, 55, 26, 24 ],
+                "ready-inner": [ 13, 11, 1, 1 ],
+                "content": [ 4, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_5",
+                "ready-outter": [ 76, 55, 24, 24 ],
+                "ready-inner": [ 11, 11, 1, 1 ],
+                "content": [ 2, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_6",
+                "ready-outter": [ 100, 55, 26, 24 ],
+                "ready-inner": [ 11, 11, 1, 1 ],
+                "content": [ 2, 2, 20, 20 ]
+            },
+            {
+                "name": "lv_item_7",
+                "ready-outter": [ 50, 29, 26, 26 ],
+                "ready-inner": [ 13, 13, 1, 1 ],
+                "content": [ 4, 4, 20, 20 ]
+            },
+            {
+                "name": "lv_item_8",
+                "ready-outter": [ 76, 29, 24, 26 ],
+                "ready-inner": [ 11, 13, 1, 1 ],
+                "content": [ 2, 4, 20, 20 ]
+            },
+            {
+                "name": "lv_item_9",
+                "ready-outter": [ 100, 29, 26, 26 ],
+                "ready-inner": [ 11, 13, 1, 1 ],
+                "content": [ 2, 4, 20, 20 ]
+            }
+        ]
+    },
+    {
+        "name": "toolbutton",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click2.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4227595263,
+        "font-disabled-color": 2290649343,
+
+        "ready-outter": [ 51, 105, 8, 8 ],
+        "ready-inner": [ 0, 0, 8, 8 ],
+        "hover-outter": [ 59, 105, 17, 17 ],
+        "hover-inner": [ 8, 8, 1, 1 ],
+        "pressed-outter": [ 76, 105, 17, 17 ],
+        "pressed-inner": [ 8, 8, 1, 1 ],
+        "disabled-outter": [ 51, 114, 8, 8 ],
+        "disabled-inner": [ 0, 0, 8, 8 ]
+    },
+
+
+
+
+
+    {
+        "name": "facebutton",
+        "texture-id": "gui/themes/golden/golden.png",
+        "ready-outter": [ 29, 73, 16, 16 ],
+        "content": [ 0, 0, 16, 16 ],
+        "size": [ "24", "24" ]
+    },
+    {
+        "name": "facebutton-info",
+        "texture-id": "gui/icons24.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "base": "facebutton",
+        "children": [
+            {
+                "name": "glyph",
+                "ready-outter": [ 0, 0, 24, 24 ],
+                "position": [ "0", "0" ]
+            }
+        ]
+    },
+    {
+        "name": "facecheckbutton-music",
+        "texture-id": "gui/icons24.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "base": "facebutton",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 24, 0, 24, 24 ],
+                "pressed-outter": [ 48, 0, 24, 24 ],
+                "position": [ "0", "0" ],
+                "size": [ "24", "24" ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 24, 0, 24, 24 ],
+                "pressed-outter": [ 48, 0, 24, 24 ],
+                "position": [ "0", "0" ],
+                "size": [ "24", "24" ]
+            }
+        ]
+    },
+    {
+        "name": "button-close",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 1, 129, 24, 24 ],
+        "children": [
+            {
+                "name": "face",
+                "base": "roundbutton-red",
+                "position": [ "5", "5" ],
+                "children": [
+                    {
+                        "name": "glyph",
+                        "base": "glyph-close",
+                        "position": [ "0", "0" ]
+                    }
+                ]
+            }
+        ]
+    },
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    {
+        "name": "roundbutton-green",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 1, 213, 14, 14 ],
+        "ready-inner": [ 0, 0, 14, 14 ],
+        "pressed-outter": [ 1, 227, 14, 14 ],
+        "pressed-inner": [ 0, 0, 14, 14 ],
+        "disabled-outter": [ 1, 241, 14, 14 ],
+        "disabled-inner": [ 0, 0, 14, 14 ]
+    },
+    {
+        "name": "roundbutton-blue",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 15, 213, 14, 14 ],
+        "ready-inner": [ 0, 0, 14, 14 ],
+        "pressed-outter": [ 15, 227, 14, 14 ],
+        "pressed-inner": [ 0, 0, 14, 14 ],
+        "disabled-outter": [ 15, 241, 14, 14 ],
+        "disabled-inner": [ 0, 0, 14, 14 ]
+    },
+    {
+        "name": "roundbutton-red",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 29, 213, 14, 14 ],
+        "ready-inner": [ 0, 0, 14, 14 ],
+        "pressed-outter": [ 29, 227, 14, 14 ],
+        "pressed-inner": [ 0, 0, 14, 14 ],
+        "disabled-outter": [ 29, 241, 14, 14 ],
+        "disabled-inner": [ 0, 0, 14, 14 ]
+    },
+    {
+        "name": "roundbutton-gray",
+        "texture-id": "gui/themes/golden/golden.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 43, 213, 14, 14 ],
+        "ready-inner": [ 0, 0, 14, 14 ],
+        "pressed-outter": [ 43, 227, 14, 14 ],
+        "pressed-inner": [ 0, 0, 14, 14 ],
+        "disabled-outter": [ 43, 241, 14, 14 ],
+        "disabled-inner": [ 0, 0, 14, 14 ]
+    },
+    {
+        "name": "glyph-note",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 57, 213, 14, 14 ]
+    },
+    {
+        "name": "glyph-inspect",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 71, 213, 14, 14 ]
+    },
+    {
+        "name": "glyph-dialog",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 85, 213, 14, 14 ]
+    },
+    {
+        "name": "glyph-plus",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 57, 227, 14, 14 ]
+    },
+    {
+        "name": "glyph-minus",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 71, 227, 14, 14 ]
+    },
+    {
+        "name": "glyph-left",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 85, 227, 14, 14 ]
+    },
+    {
+        "name": "glyph-right",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 99, 227, 14, 14 ]
+    },
+    {
+        "name": "glyph-ok",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 57, 241, 14, 14 ]
+    },
+    {
+        "name": "glyph-close",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 71, 241, 14, 14 ]
+    },
+    {
+        "name": "glyph-up",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 85, 241, 14, 14 ]
+    },
+    {
+        "name": "glyph-down",
+        "texture-id": "gui/themes/golden/golden.png",
+        "size": [ "14", "14" ],
+        "ready-outter": [ 99, 241, 14, 14 ]
+    }
+]

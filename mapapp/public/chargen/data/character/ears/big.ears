@@ -1,0 +1,19 @@
+{
+    "id": "big",
+    "name": "Big",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "ears", "human" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/ears/human/big_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/ears/human/big_f.png"
+        }
+    ]
+}

@@ -1,7 +1,30 @@
 import { useTranslation } from 'react-i18next';
 import { splitTextForHighlight } from '../../../services/elevenlabs';
 import { filterDuplicateDialogueSegments, getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
+import { useGameSlice } from '../../../stores/gameSelectors';
+import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
+
+/**
+ * Resolve the best-known gender for a dialogue speaker. Priority order:
+ *  1. The segment itself — what the LLM labelled this line with.
+ *  2. The campaign NPC list — authoritative per-campaign record.
+ *  3. Persisted voice mapping — fallback from an earlier scene.
+ * Returns null when nothing known, which makes GenderIcon render nothing.
+ */
+function resolveSegmentGender(segment, worldNpcs, characterVoiceMap) {
+  const direct = segment?.gender;
+  if (direct === 'male' || direct === 'female') return direct;
+  const rawName = typeof segment?.character === 'string' ? segment.character : segment?.speaker;
+  const name = typeof rawName === 'string' ? rawName.trim() : '';
+  if (!name) return null;
+  const key = name.toLowerCase();
+  const npc = (worldNpcs || []).find((n) => typeof n?.name === 'string' && n.name.trim().toLowerCase() === key);
+  if (npc?.gender === 'male' || npc?.gender === 'female') return npc.gender;
+  const mapped = characterVoiceMap?.[name]?.gender;
+  if (mapped === 'male' || mapped === 'female') return mapped;
+  return null;
+}
 
 export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, className }) {
   const hi = highlightInfo;
@@ -41,6 +64,8 @@ export function HighlightedText({ text, highlightInfo, segmentIndex, messageId, 
 
 export function DialogueSegments({ segments, narrator, messageId }) {
   const { t } = useTranslation();
+  const worldNpcs = useGameSlice((s) => s.world?.npcs);
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   if (!segments || segments.length === 0) return null;
 
   const isSegmentActive = (index) => {
@@ -53,12 +78,14 @@ export function DialogueSegments({ segments, narrator, messageId }) {
       {segments.map((seg, i) => {
         const active = isSegmentActive(i);
         if (seg.type === 'dialogue') {
+          const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
           return (
             <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
                   {getDialogueSpeakerLabel(seg, t('common.npc'))}
                 </span>
+                <GenderIcon gender={speakerGender} className="text-[11px] text-tertiary/70 leading-none" />
                 {active && (
                   <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
                     graphic_eq
@@ -206,6 +233,8 @@ export function NarratorHeaderButtons({ message, narrator, activeAccentClass, id
  */
 export function StreamingContent({ narrative, segments }) {
   const { t } = useTranslation();
+  const worldNpcs = useGameSlice((s) => s.world?.npcs);
+  const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const hasSegments = Array.isArray(segments) && segments.length > 0;
 
   if (hasSegments) {
@@ -215,12 +244,14 @@ export function StreamingContent({ narrative, segments }) {
           const isLast = i === segments.length - 1;
           if (seg.type === 'dialogue') {
             const speaker = getDialogueSpeakerLabel(seg, t('common.npc'));
+            const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
             return (
               <div key={i} className="pl-3 border-l-2 border-tertiary-dim/40">
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
                     {speaker}
                   </span>
+                  <GenderIcon gender={speakerGender} className="text-[11px] text-tertiary/70 leading-none" />
                 </div>
                 <p className="text-xs text-on-surface leading-snug">
                   &ldquo;{seg.text}{isLast && <span className="inline-block w-1 h-3 bg-primary/70 animate-pulse ml-0.5 align-text-bottom" />}&rdquo;

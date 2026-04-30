@@ -1,0 +1,17 @@
+{
+    "id": "minotaur",
+    "name": "Monotaur",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "minotaur" ],
+    "textures": [
+        {
+            "head": "mm1",
+            "back": "none",
+            "front": "textures/character/head/minotaur_m.png"
+        }
+    ]
+}

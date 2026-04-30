@@ -4,6 +4,7 @@ import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
+import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -88,6 +89,16 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
+        // Backfill gender on existing NPCs: either the LLM just sent a valid
+        // value (upgrade path) or the row was persisted earlier with
+        // "unknown" and now we can coerce it deterministically so voice
+        // resolution has something to work with.
+        const incomingGender = normalizeGender(npcChange.gender);
+        if (incomingGender && incomingGender !== existing.gender) {
+          contentUpdate.gender = incomingGender;
+        } else if (!incomingGender && !normalizeGender(existing.gender)) {
+          contentUpdate.gender = coerceGender(null, npcChange.name);
+        }
 
         const hasContentUpdate = Object.keys(contentUpdate).length > 0 || Array.isArray(npcChange.relationships);
         const statsDelta = computeInteractionDelta(existing, sceneIndex);
@@ -113,7 +124,7 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               campaignId,
               npcId,
               name: npcChange.name,
-              gender: npcChange.gender || 'unknown',
+              gender: coerceGender(npcChange.gender, npcChange.name),
               role: npcChange.role || null,
               personality: npcChange.personality || null,
               attitude: npcChange.attitude || 'neutral',

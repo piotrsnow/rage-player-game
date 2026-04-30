@@ -1,0 +1,495 @@
+[
+    {
+        "name": "mouse",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "ready-outter": [ 97, 233, 13, 22 ],
+        "hover-outter": [ 0, 0, 13, 22 ]
+    },
+    {
+        "name": "label",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 572662527,
+        "font-disabled-color": 1145333503
+    },
+    {
+        "name": "panel",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "ready-outter": [ 1, 1, 68, 26 ],
+        "ready-inner": [ 34, 13, 1, 1 ]
+    },
+    {
+        "name": "panel-trans30",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "ready-outter": [ 69, 71, 68, 26 ],
+        "ready-inner": [ 34, 13, 1, 1 ]
+    },
+    {
+        "name": "tooltip",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "ready-outter": [ 1, 1, 68, 26 ],
+        "ready-inner": [ 34, 13, 1, 1 ]
+    },
+    {
+        "name": "button",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "ready-outter": [ 1, 1, 68, 26 ],
+        "ready-inner": [ 34, 13, 1, 1 ],
+        "pressed-outter": [ 1, 27, 68, 26 ],
+        "pressed-inner": [ 34, 13, 1, 1 ],
+        "hover-outter": [ 1, 53, 68, 26 ],
+        "hover-inner": [ 34, 13, 1, 1 ],
+        "disabled-outter": [ 1, 79, 68, 26 ],
+        "disabled-inner": [ 34, 13, 1, 1 ]
+    },
+    {
+        "name": "checkbutton-small",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "16",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 26, 105, 18, 16 ],
+                "ready-inner": [ 1, 0, 1, 16 ],
+                "pressed-outter": [ 26, 121, 18, 16 ],
+                "pressed-inner": [ 1, 0, 1, 16 ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 28, 105, 18, 16 ],
+                "ready-inner": [ 16, 0, 1, 16 ],
+                "pressed-outter": [ 28, 121, 18, 16 ],
+                "pressed-inner": [ 16, 0, 1, 16 ]
+            }
+        ]
+    },
+    {
+        "name": "checkbutton",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "22",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 1, 105, 23, 22 ],
+                "ready-inner": [ 1, 0, 1, 22 ],
+                "pressed-outter": [ 1, 127, 23, 22 ],
+                "pressed-inner": [ 1, 0, 1, 22 ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 3, 105, 23, 22 ],
+                "ready-inner": [ 21, 0, 1, 22 ],
+                "pressed-outter": [ 3, 127, 23, 22 ],
+                "pressed-inner": [ 21, 0, 1, 22 ]
+            }
+        ]
+    },
+    {
+        "name": "spinner",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "height": "24",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 47, 135, 50, 24 ],
+                "ready-inner": [ 1, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "button-left",
+                        "position": [ "parentWidth - 49", "0" ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "button-right",
+                        "position": [ "parentWidth - 24", "0" ]
+                    }
+                ]
+            },
+            {
+                "name": "text-center",
+                "ready-outter": [ 47, 135, 50, 24 ],
+                "ready-inner": [ 26, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "button-left",
+                        "position": [ "0", "0" ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "button-right",
+                        "position": [ "parentWidth - 24", "0" ]
+                    }
+                ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 47, 135, 50, 24 ],
+                "ready-inner": [ 48, 0, 1, 24 ],
+                "children": [
+                    {
+                        "name": "button-prev",
+                        "base": "button-left",
+                        "position": [ "0", "0" ]
+                    },
+                    {
+                        "name": "button-next",
+                        "base": "button-right",
+                        "position": [ "25", "0" ]
+                    }
+                ]
+            }
+            
+        ]
+    },
+
+
+
+
+    {
+        "name": "combobox",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "ready-outter": [ 139, 1, 94, 28 ],
+        "ready-inner": [ 34, 0, 1, 28 ],
+        "pressed-outter": [ 139, 29, 94, 27 ],
+        "pressed-inner": [ 34, 0, 1, 27 ],
+        "hover-outter": [ 139, 88, 94, 28 ],
+        "hover-inner": [ 34, 0, 1, 28 ],
+        "disabled-outter": [ 139, 116, 94, 28 ],
+        "disabled-inner": [ 34, 0, 1, 28 ],
+        "content": [ 8, 9, 53, 10 ]
+    },
+    {
+        "name": "combolist",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "children": [
+            {
+                "name": "lv_item_v1",
+                "ready-outter": [ 139, 56, 94, 12 ],
+                "ready-inner": [ 34, 5, 1, 1 ],
+                "content": [ 8, 4, 79, 4 ]
+            },
+            {
+                "name": "lv_item_v2",
+                "ready-outter": [ 139, 56, 94, 12 ],
+                "ready-inner": [ 34, 5, 1, 1 ],
+                "content": [ 8, 4, 79, 4 ]
+            },
+            {
+                "name": "lv_item_v3",
+                "ready-outter": [ 139, 68, 94, 20 ],
+                "ready-inner": [ 34, 5, 1, 1 ],
+                "content": [ 8, 4, 79, 4 ]
+            }
+        ]
+    },
+    {
+        "name": "comboitem",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click2.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4227595263,
+        "font-hover-color": 3654932991,
+        "font-pressed-color": 3654932991,
+        "font-disabled-color": 2290649343,
+
+        "ready-outter": [ 55, 118, 8, 8 ],
+        "ready-inner": [ 0, 0, 8, 8 ]
+    },
+
+
+
+
+
+
+
+
+    {
+        "name": "toolpicker",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "ready-outter": [ 120, 1, 19, 19 ],
+        "ready-inner": [ 9, 9, 1, 1 ],
+        "hover-outter": [ 63, 118, 17, 17 ],
+        "hover-inner": [ 8, 8, 1, 1 ],
+        "pressed-outter": [ 80, 118, 17, 17 ],
+        "pressed-inner": [ 8, 8, 1, 1 ],
+        "disabled-outter": [ 55, 127, 8, 8 ],
+        "disabled-inner": [ 0, 0, 8, 8 ],
+        "content": [ 3, 3, 13, 13 ]
+    },
+    {
+        "name": "toolbar",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4294967295,
+        "font-disabled-color": 1145333503,
+        "children": [
+            {
+                "name": "lv_item_h1",
+                "ready-outter": [ 69, 1, 18, 19 ],
+                "ready-inner": [ 9, 9, 1, 1 ],
+                "content": [ 3, 3, 13, 13 ]
+            },
+            {
+                "name": "lv_item_h2",
+                "ready-outter": [ 87, 1, 15, 19 ],
+                "ready-inner": [ 7, 9, 1, 1 ],
+                "content": [ 1, 3, 13, 13 ]
+            },
+            {
+                "name": "lv_item_h3",
+                "ready-outter": [ 102, 1, 18, 19 ],
+                "ready-inner": [ 8, 9, 1, 1 ],
+                "content": [ 2, 3, 13, 13 ]
+            },
+
+
+            {
+                "name": "lv_item_v1",
+                "ready-outter": [ 120, 20, 19, 18 ],
+                "ready-inner": [ 9, 9, 1, 1 ],
+                "content": [ 3, 3, 13, 13 ]
+            },
+            {
+                "name": "lv_item_v2",
+                "ready-outter": [ 120, 38, 19, 15 ],
+                "ready-inner": [ 9, 7, 1, 1 ],
+                "content": [ 3, 1, 13, 13 ]
+            },
+            {
+                "name": "lv_item_v3",
+                "ready-outter": [ 120, 53, 19, 18 ],
+                "ready-inner": [ 9, 8, 1, 1 ],
+                "content": [ 3, 2, 13, 13 ]
+            },
+
+
+            {
+                "name": "lv_item_1",
+                "ready-outter": [ 69, 53, 18, 18 ],
+                "ready-inner": [ 9, 8, 1, 1 ],
+                "content": [ 3, 2, 13, 13 ]
+            },
+            {
+                "name": "lv_item_2",
+                "ready-outter": [ 87, 53, 15, 18 ],
+                "ready-inner": [ 7, 8, 1, 1 ],
+                "content": [ 1, 2, 13, 13 ]
+            },
+            {
+                "name": "lv_item_3",
+                "ready-outter": [ 102, 53, 18, 18 ],
+                "ready-inner": [ 8, 8, 1, 1 ],
+                "content": [ 2, 2, 13, 13 ]
+            },
+            {
+                "name": "lv_item_4",
+                "ready-outter": [ 69, 38, 18, 15 ],
+                "ready-inner": [ 9, 7, 1, 1 ],
+                "content": [ 3, 1, 13, 13 ]
+            },
+            {
+                "name": "lv_item_5",
+                "ready-outter": [ 87, 38, 15, 15 ],
+                "ready-inner": [ 7, 7, 1, 1 ],
+                "content": [ 1, 1, 13, 13 ]
+            },
+            {
+                "name": "lv_item_6",
+                "ready-outter": [ 102, 38, 18, 15 ],
+                "ready-inner": [ 8, 7, 1, 1 ],
+                "content": [ 2, 1, 13, 13 ]
+            },
+            {
+                "name": "lv_item_7",
+                "ready-outter": [ 69, 20, 18, 18 ],
+                "ready-inner": [ 9, 9, 1, 1 ],
+                "content": [ 3, 3, 13, 13 ]
+            },
+            {
+                "name": "lv_item_8",
+                "ready-outter": [ 87, 20, 15, 18 ],
+                "ready-inner": [ 7, 9, 1, 1 ],
+                "content": [ 1, 3, 13, 13 ]
+            },
+            {
+                "name": "lv_item_9",
+                "ready-outter": [ 102, 20, 18, 18 ],
+                "ready-inner": [ 8, 9, 1, 1 ],
+                "content": [ 2, 3, 13, 13 ]
+            }
+        ]
+    },
+    {
+        "name": "toolbutton",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click2.ogg",
+        "font-id": "fonts/righteous.ttf",
+        "font-size": 12,
+        "font-ready-color": 4227595263,
+        "font-disabled-color": 2290649343,
+
+        "ready-outter": [ 55, 118, 8, 8 ],
+        "ready-inner": [ 0, 0, 8, 8 ],
+        "hover-outter": [ 63, 118, 17, 17 ],
+        "hover-inner": [ 8, 8, 1, 1 ],
+        "pressed-outter": [ 80, 118, 17, 17 ],
+        "pressed-inner": [ 8, 8, 1, 1 ],
+        "disabled-outter": [ 55, 127, 8, 8 ],
+        "disabled-inner": [ 0, 0, 8, 8 ]
+    },
+
+
+
+
+
+
+    {
+        "name": "facebutton",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "ready-outter": [ 49, 135, 24, 24 ],
+        "content": [ 0, 0, 24, 24 ],
+        "size": [ "24", "24" ]
+    },
+    {
+        "name": "facebutton-info",
+        "texture-id": "gui/icons24.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "base": "facebutton",
+        "children": [
+            {
+                "name": "glyph",
+                "ready-outter": [ 0, 0, 24, 24 ],
+                "position": [ "0", "0" ]
+            }
+        ]
+    },
+    {
+        "name": "facecheckbutton-music",
+        "texture-id": "gui/icons24.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "base": "facebutton",
+        "children": [
+            {
+                "name": "text-left",
+                "ready-outter": [ 24, 0, 24, 24 ],
+                "pressed-outter": [ 48, 0, 24, 24 ],
+                "position": [ "0", "0" ],
+                "size": [ "24", "24" ]
+            },
+            {
+                "name": "text-right",
+                "ready-outter": [ 24, 0, 24, 24 ],
+                "pressed-outter": [ 48, 0, 24, 24 ],
+                "position": [ "0", "0" ],
+                "size": [ "24", "24" ]
+            }
+        ]
+    },
+    {
+        "name": "button-close",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 97, 97, 24, 24 ],
+        "pressed-outter": [ 97, 97, 24, 24 ],
+        "hover-outter": [ 97, 121, 24, 24 ],
+        "disabled-outter": [ 97, 145, 24, 24 ]
+    },
+
+
+
+
+
+    {
+        "name": "button-up",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 1, 159, 24, 24 ],
+        "ready-inner": [ 0, 0, 24, 24 ],
+        "pressed-outter": [ 1, 183, 24, 24 ],
+        "pressed-inner": [ 0, 0, 24, 24 ],
+        "hover-outter": [ 1, 207, 24, 24 ],
+        "hover-inner": [ 0, 0, 24, 24 ],
+        "disabled-outter": [ 1, 231, 24, 24 ],
+        "disabled-inner": [ 0, 0, 24, 24 ]
+    },
+    {
+        "name": "button-right",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 25, 159, 24, 24 ],
+        "ready-inner": [ 0, 0, 24, 24 ],
+        "pressed-outter": [ 25, 183, 24, 24 ],
+        "pressed-inner": [ 0, 0, 24, 24 ],
+        "hover-outter": [ 25, 207, 24, 24 ],
+        "hover-inner": [ 0, 0, 24, 24 ],
+        "disabled-outter": [ 25, 231, 24, 24 ],
+        "disabled-inner": [ 0, 0, 24, 24 ]
+    },
+    {
+        "name": "button-left",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 49, 159, 24, 24 ],
+        "ready-inner": [ 0, 0, 24, 24 ],
+        "pressed-outter": [ 49, 183, 24, 24 ],
+        "pressed-inner": [ 0, 0, 24, 24 ],
+        "hover-outter": [ 49, 207, 24, 24 ],
+        "hover-inner": [ 0, 0, 24, 24 ],
+        "disabled-outter": [ 49, 231, 24, 24 ],
+        "disabled-inner": [ 0, 0, 24, 24 ]
+    },
+    {
+        "name": "button-down",
+        "texture-id": "gui/themes/pennomi/pennomi.png",
+        "sound-id": "gui/sounds/click1.ogg",
+        "size": [ "24", "24" ],
+        "ready-outter": [ 73, 159, 24, 24 ],
+        "ready-inner": [ 0, 0, 24, 24 ],
+        "pressed-outter": [ 73, 183, 24, 24 ],
+        "pressed-inner": [ 0, 0, 24, 24 ],
+        "hover-outter": [ 73, 207, 24, 24 ],
+        "hover-inner": [ 0, 0, 24, 24 ],
+        "disabled-outter": [ 73, 231, 24, 24 ],
+        "disabled-inner": [ 0, 0, 24, 24 ]
+    }
+]

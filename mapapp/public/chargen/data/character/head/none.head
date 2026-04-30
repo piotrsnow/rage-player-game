@@ -1,0 +1,16 @@
+{
+    "id": "none",
+    "name": "None",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "base" ],
+    "textures": [
+        {
+            "back": "none",
+            "front": "none"
+        }
+    ]
+}

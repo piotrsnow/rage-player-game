@@ -1,0 +1,27 @@
+{
+    "id": "minotaur",
+    "name": "Minotaur",
+    "chargen": true,
+    "default": false,
+    "lootable": false,
+    "tags": [ "body", "minotaur" ],
+    "textures": [
+        {
+            "body": "hm2",
+            "back": "none",
+            "front": "textures/character/body/humanoid_m2.png"
+        }
+    ],
+    "primarycolors": [
+        "beast_fur_black",
+        "beast_fur_brown",
+        "beast_fur_chestnut",
+        "beast_fur_cream",
+        "beast_fur_gold",
+        "beast_fur_gray",
+        "beast_fur_white"
+    ],
+    "fixedcolors": [
+        "minotaur_horns"
+    ]
+}

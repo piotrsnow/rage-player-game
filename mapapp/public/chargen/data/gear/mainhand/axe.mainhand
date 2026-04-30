@@ -1,0 +1,42 @@
+{
+    "id": "axe",
+    "name": "Axe",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "actions": [ "slash", "islash" ],
+    "speed": 1.0,
+    "tags": [ "mainhand", "weapon", "axe" ],
+    "sounds" : [
+        "sounds/swosh-03.ogg",
+        "sounds/swosh-08.ogg",
+        "sounds/swosh-10.ogg",
+        "sounds/swosh-42.ogg"
+    ],
+    "textures": [
+        {
+            "body": "hm1",
+            "back": "textures/gear/mainhand/axe/axe_mb.png",
+            "front": "textures/gear/mainhand/axe/axe_mf.png"
+        },
+        {
+            "body": "hm2",
+            "back": "textures/gear/mainhand/axe/axe_mb.png",
+            "front": "textures/gear/mainhand/axe/axe_mf.png"
+        },
+        {
+            "body": "hf1",
+            "back": "textures/gear/mainhand/axe/axe_fb.png",
+            "front": "textures/gear/mainhand/axe/axe_ff.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel"
+    ],
+    "fixedcolors": [
+        "cloth_brown3"
+    ]
+}

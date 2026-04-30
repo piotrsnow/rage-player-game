@@ -1,0 +1,37 @@
+{
+    "id": "08boar",
+    "name": "Boarman",
+    "tags": [ "race", "boar" ],
+    "configs": [
+        {
+            "id": "m1",
+            "name": "Regular",
+
+            "gender": "male",
+            "body-type": "hm1",
+            "head-type": "bm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "boar" ],
+            "head": [ "boar" ],
+            "eyes": [ "boar" ],
+            "ears": [ "base" ],
+            "nose": [ "base" ]
+        },
+        {
+            "id": "m2",
+            "name": "Muscular",
+
+            "gender": "male",
+            "body-type": "hm2",
+            "head-type": "bm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "boar" ],
+            "head": [ "boar" ],
+            "eyes": [ "boar" ],
+            "ears": [ "base" ],
+            "nose": [ "base" ]
+        }
+    ]
+}

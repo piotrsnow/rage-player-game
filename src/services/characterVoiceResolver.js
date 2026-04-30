@@ -1,3 +1,19 @@
+// Guard rail: warn ONCE per gender key per session so we surface
+// configuration problems ("no male/female voices tagged in DM settings")
+// without spamming the console every scene.
+const warnedEmptyPools = new Set();
+function warnEmptyPool(gender, maleCount, femaleCount) {
+  const key = gender || 'any';
+  if (warnedEmptyPools.has(key)) return;
+  warnedEmptyPools.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[voice] No voices available for gender="${gender || 'unknown'}" `
+    + `(maleVoices=${maleCount}, femaleVoices=${femaleCount}). `
+    + 'Tag at least one ElevenLabs voice as male AND one as female in DM Settings → Narrator Voices.'
+  );
+}
+
 /**
  * Resolves a voice for an NPC/character by name.
  *
@@ -24,7 +40,10 @@ export function resolveVoiceForCharacter(
     ? maleVoices
     : [...maleVoices, ...femaleVoices];
 
-  if (!pool.length) return narratorVoiceId || null;
+  if (!pool.length) {
+    warnEmptyPool(gender, maleVoices.length, femaleVoices.length);
+    return narratorVoiceId || null;
+  }
 
   const used = new Set(Object.values(characterVoiceMap).map((e) => e.voiceId).filter(Boolean));
   const unused = pool.filter((v) => !used.has(v.voiceId));
@@ -48,6 +67,9 @@ export function pickRandomVoiceForGender(gender, { maleVoices = [], femaleVoices
     : gender === 'male'
     ? maleVoices
     : [...maleVoices, ...femaleVoices];
-  if (!pool.length) return null;
+  if (!pool.length) {
+    warnEmptyPool(gender, maleVoices.length, femaleVoices.length);
+    return null;
+  }
   return pool[Math.floor(Math.random() * pool.length)]?.voiceId || null;
 }

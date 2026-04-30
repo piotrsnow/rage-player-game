@@ -1,0 +1,110 @@
+{
+    "id": "default",
+    "name": "Default",
+    "items": [
+        {
+            "filename": "lace_blue",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_bronze",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_gold",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_red",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_silver",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_teal",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "lace_yellow",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        },
+        {
+            "filename": "jewel_rose",
+            "authors": [
+                "bluecarrot16"
+            ],
+            "licenses": [
+                "OGA-BY 3.0"
+            ],
+            "urls": [
+                "https://opengameart.org/content/lpc-pirates"
+            ],
+            "status": "OK"
+        }
+    ]
+}

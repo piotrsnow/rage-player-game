@@ -1,0 +1,24 @@
+{
+    "id": "09minotaur",
+    "name": "Minotaur",
+    "tags": [ "race", "minotaur" ],
+    "configs": [
+        {
+            "id": "m2",
+            "name": "Muscular",
+
+            "gender": "male",
+            "body-type": "hm2",
+            "head-type": "mm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "minotaur" ],
+            "head": [ "minotaur" ],
+            "hair": [ "none" ],
+            "eyes": [ "minotaur" ],
+            "ears": [ "base" ],
+            "nose": [ "base" ],
+            "add3": [ "hooves" ]
+        }
+    ]
+}

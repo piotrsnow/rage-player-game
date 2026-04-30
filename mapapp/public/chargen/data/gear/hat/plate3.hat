@@ -1,0 +1,37 @@
+{
+    "id": "plate03",
+    "name": "Barbuta",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotsalt" : [ "hair" ],
+    "slotshidden" : [ "ears" ],
+    "tags": [ "hat", "armor", "plate", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/plate/barbuta_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/plate/barbuta_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/plate/barbuta_m.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_copper",
+        "metal_bronze",
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel",
+        "metal_brushed",
+        "metal_gold"
+    ]
+}

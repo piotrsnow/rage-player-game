@@ -1,0 +1,30 @@
+{
+    "id": "zombie",
+    "name": "Zombie",
+    "chargen": true,
+    "default": false,
+    "lootable": false,
+    "tags": [ "eyes", "zombie" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/eyes/human_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/eyes/human_f.png"
+        },
+        {
+            "head": "hc1",
+            "back": "none",
+            "front": "textures/character/eyes/human_c.png"
+        }
+    ],
+    "primarycolors": [
+        "human_eyes_gray",
+        "human_eyes_red",
+        "human_eyes_yellow"
+    ]
+}

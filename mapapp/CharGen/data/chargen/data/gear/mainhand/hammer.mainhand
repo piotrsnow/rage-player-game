@@ -1,0 +1,41 @@
+{
+    "id": "hammer",
+    "name": "Warhammer",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "actions": [ "slash", "islash" ],
+    "tags": [ "mainhand", "weapon", "hammer" ],
+    "sounds" : [
+        "sounds/swosh-12.ogg",
+        "sounds/swosh-20.ogg",
+        "sounds/swosh-36.ogg",
+        "sounds/swosh-39.ogg"
+    ],
+    "textures": [
+        {
+            "body": "hm1",
+            "back": "textures/gear/mainhand/hammer/hammer_mb.png",
+            "front": "textures/gear/mainhand/hammer/hammer_mf.png"
+        },
+        {
+            "body": "hm2",
+            "back": "textures/gear/mainhand/hammer/hammer_mb.png",
+            "front": "textures/gear/mainhand/hammer/hammer_mf.png"
+        },
+        {
+            "body": "hf1",
+            "back": "textures/gear/mainhand/hammer/hammer_fb.png",
+            "front": "textures/gear/mainhand/hammer/hammer_ff.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel"
+    ],
+    "fixedcolors": [
+        "cloth_brown3"
+    ]
+}
