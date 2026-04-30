@@ -5,6 +5,7 @@ import { useGame } from '../../../contexts/GameContext';
 import { aiService } from '../../../services/ai/service';
 import { imageService } from '../../../services/imageGen';
 import { buildImagePrompt } from '../../../services/imagePrompts';
+import { ensureEnglish } from '../../../services/translateImagePrompt';
 import { apiClient, toCanonicalStoragePath } from '../../../services/apiClient';
 import usePlaygroundHistory from '../../../hooks/playground/usePlaygroundHistory';
 import PlaygroundHistoryGrid from './playground/PlaygroundHistoryGrid';
@@ -94,8 +95,12 @@ export default function ImagePlaygroundSection() {
   const history = usePlaygroundHistory({ pageSize: 5, enabled: backendConnected });
 
   const buildPromptFromKeywords = useCallback(async (kw) => {
+    // `enhanceImagePrompt` already coerces its output to English, but its
+    // fallback in buildImagePrompt is `kw` — translate that upfront so we
+    // don't leak the raw Polish keywords when enhance degrades.
+    const enKw = await ensureEnglish(kw);
     const { description } = await aiService.enhanceImagePrompt({
-      keywords: kw,
+      keywords: enKw,
       imageStyle,
       darkPalette,
       seriousness,
@@ -105,10 +110,10 @@ export default function ImagePlaygroundSection() {
       provider: aiProvider,
     });
     return buildImagePrompt(
-      description || kw,
+      description || enKw,
       genre,
       tone,
-      description || kw,
+      description || enKw,
       imageProvider,
       imageStyle,
       darkPalette,

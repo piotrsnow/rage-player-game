@@ -13,8 +13,6 @@ import OverlayDiceCard from './scene/OverlayDiceCard';
 import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNarrative';
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
-const NEW_IMAGE_DELAY_MS = 1000;
-const CROSSFADE_DURATION_MS = 500;
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
@@ -86,13 +84,10 @@ export default function ScenePanel({
   );
 
   const [displayedSrc, setDisplayedSrc] = useState(imageSrc);
-  const [incomingSrc, setIncomingSrc] = useState(null);
-  const [isCrossfading, setIsCrossfading] = useState(false);
   const [regenerateState, setRegenerateState] = useState('idle');
   const [promptCopied, setPromptCopied] = useState(false);
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [overlaySlotCount, setOverlaySlotCount] = useState(() => Math.max(1, currentOverlayRolls.length));
-  const revealTimeoutRef = useRef(null);
-  const crossfadeTimeoutRef = useRef(null);
   const regenerateResetTimeoutRef = useRef(null);
   const promptCopyResetRef = useRef(null);
   const overlaySlots = useMemo(
@@ -111,15 +106,13 @@ export default function ScenePanel({
       promptCopyResetRef.current = null;
     }
     setPromptCopied(false);
+    setIsPromptExpanded(false);
   }, [scene?.id]);
 
   useEffect(() => {
     return () => {
       if (regenerateResetTimeoutRef.current) {
         window.clearTimeout(regenerateResetTimeoutRef.current);
-      }
-      if (crossfadeTimeoutRef.current) {
-        window.clearTimeout(crossfadeTimeoutRef.current);
       }
       if (promptCopyResetRef.current) {
         window.clearTimeout(promptCopyResetRef.current);
@@ -145,6 +138,19 @@ export default function ScenePanel({
       // clipboard API unavailable / denied — silently ignore
     }
   }, [displayedImagePrompt]);
+
+  const handleTogglePromptOverlay = useCallback(() => {
+    setIsPromptExpanded((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    if (!isPromptExpanded) return undefined;
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setIsPromptExpanded(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [isPromptExpanded]);
 
   const handleRegenerateImage = useCallback(async () => {
     if (!onRegenerateImage || !scene?.id || isGeneratingImage) return;
@@ -179,70 +185,32 @@ export default function ScenePanel({
     }
   }, [currentOverlayRolls.length]);
 
+  // Image swap policy: the old image disappears immediately when `imageSrc`
+  // goes away (scene transition, regenerate, img onError → null), leaving
+  // the placeholder/spinner visible. The new image preloads in the
+  // background and fades in once it's ready — no crossfade from the stale
+  // frame, no lingering preview from the previous scene.
   useEffect(() => {
     if (!imageSrc) {
-      if (!isGeneratingImage) {
-        if (revealTimeoutRef.current) {
-          window.clearTimeout(revealTimeoutRef.current);
-          revealTimeoutRef.current = null;
-        }
-        setDisplayedSrc(null);
-        setIncomingSrc(null);
-        setIsCrossfading(false);
-      }
+      setDisplayedSrc(null);
       return;
     }
 
-    if (imageSrc === displayedSrc || imageSrc === incomingSrc) return;
+    if (imageSrc === displayedSrc) return;
 
     let cancelled = false;
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      if (revealTimeoutRef.current) {
-        window.clearTimeout(revealTimeoutRef.current);
-      }
-      revealTimeoutRef.current = window.setTimeout(() => {
-        if (cancelled) return;
-
-        if (!displayedSrc) {
-          setDisplayedSrc(imageSrc);
-          setIncomingSrc(null);
-          setIsCrossfading(false);
-          return;
-        }
-
-        setIncomingSrc(imageSrc);
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          setIsCrossfading(true);
-          // Promote incoming to displayed once the CSS fade finishes so the
-          // next image swap can crossfade from a clean baseline (and the old
-          // <img> element is unmounted).
-          if (crossfadeTimeoutRef.current) {
-            window.clearTimeout(crossfadeTimeoutRef.current);
-          }
-          crossfadeTimeoutRef.current = window.setTimeout(() => {
-            if (cancelled) return;
-            setDisplayedSrc(imageSrc);
-            setIncomingSrc(null);
-            setIsCrossfading(false);
-            crossfadeTimeoutRef.current = null;
-          }, CROSSFADE_DURATION_MS);
-        });
-      }, NEW_IMAGE_DELAY_MS);
+      setDisplayedSrc(imageSrc);
     };
     img.onerror = () => {};
     img.src = imageSrc;
 
     return () => {
       cancelled = true;
-      if (revealTimeoutRef.current) {
-        window.clearTimeout(revealTimeoutRef.current);
-        revealTimeoutRef.current = null;
-      }
     };
-  }, [imageSrc, displayedSrc, incomingSrc, isGeneratingImage]);
+  }, [imageSrc, displayedSrc]);
 
   const handleImageError = useCallback(() => {
     if (!scene?.id || !scene?.image) return;
@@ -358,29 +326,14 @@ export default function ScenePanel({
             </div>
           )}
         </div>
-      ) : (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc) ? (
-        <>
-          {displayedSrc && (
-            <img
-              src={displayedSrc}
-              alt="Scene"
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out ${
-                isCrossfading ? 'opacity-0' : 'opacity-100'
-              }`}
-              onError={handleImageError}
-            />
-          )}
-          {incomingSrc && (
-            <img
-              src={incomingSrc}
-              alt="Scene"
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out ${
-                isCrossfading ? 'opacity-100' : 'opacity-0'
-              }`}
-              onError={handleImageError}
-            />
-          )}
-        </>
+      ) : (settings.sceneVisualization || 'image') === 'image' && displayedSrc ? (
+        <img
+          key={displayedSrc}
+          src={displayedSrc}
+          alt="Scene"
+          className="absolute inset-0 w-full h-full object-cover animate-fade-in"
+          onError={handleImageError}
+        />
       ) : (
         <div className="w-full h-full bg-gradient-to-br from-surface-container-high to-surface-container-lowest flex items-center justify-center">
           {isGeneratingImage && (settings.sceneVisualization || 'image') === 'image' ? (
@@ -433,7 +386,7 @@ export default function ScenePanel({
       {isGeneratingImage && (
         <div
           className={`absolute left-4 bg-surface-container-highest/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary/20 flex items-center gap-2 ${
-            displayedImagePrompt && (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc)
+            displayedImagePrompt && (settings.sceneVisualization || 'image') === 'image' && displayedSrc
               ? 'top-14'
               : 'top-4'
           }`}
@@ -464,35 +417,80 @@ export default function ScenePanel({
         </div>
       )}
 
-      {/* Image prompt — feather tooltip (top-left, image mode only) */}
+      {/* Image prompt — feather button expands into a semi-transparent overlay */}
       {displayedImagePrompt
         && (settings.sceneVisualization || 'image') === 'image'
-        && (displayedSrc || incomingSrc) && (
-        <div className="absolute top-3 left-3 group" style={{ zIndex: 5 }}>
-          <button
-            type="button"
-            onClick={handleCopyImagePrompt}
-            aria-label={t('gameplay.copyImagePrompt', 'Skopiuj prompt obrazka')}
-            className="flex items-center justify-center w-8 h-8 rounded-sm bg-surface-container-highest/60 backdrop-blur-md border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/80 hover:border-primary/40 transition-all"
-          >
-            <span className="material-symbols-outlined text-[18px]">history_edu</span>
-          </button>
-          <div className="pointer-events-none absolute top-full left-0 mt-2 w-[min(22rem,60vw)] opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 bg-surface-container-highest/95 backdrop-blur-md border border-outline-variant/30 rounded-sm p-3 shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
-            <p className="text-[10px] font-label uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-              <span className={`material-symbols-outlined text-[14px] ${promptCopied ? 'text-success' : 'text-on-surface-variant'}`}>
-                {promptCopied ? 'check' : 'content_copy'}
-              </span>
-              <span className={promptCopied ? 'text-success' : 'text-on-surface-variant'}>
-                {promptCopied
-                  ? t('gameplay.imagePromptCopied', 'Skopiowano!')
-                  : t('gameplay.imagePromptTooltip', 'Prompt obrazka — kliknij, aby skopiować')}
-              </span>
-            </p>
-            <p className="text-xs text-on-surface leading-relaxed max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words">
-              {displayedImagePrompt}
-            </p>
-          </div>
-        </div>
+        && displayedSrc && (
+        <>
+          {!isPromptExpanded && (
+            <div className="absolute top-3 left-3" style={{ zIndex: 5 }}>
+              <button
+                type="button"
+                onClick={handleTogglePromptOverlay}
+                aria-label={t('gameplay.imagePromptTooltip', 'Prompt obrazka — kliknij, aby skopiować')}
+                aria-expanded={false}
+                className="flex items-center justify-center w-8 h-8 rounded-sm bg-surface-container-highest/60 backdrop-blur-md border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/80 hover:border-primary/40 transition-all"
+              >
+                <span className="material-symbols-outlined text-[18px]">history_edu</span>
+              </button>
+            </div>
+          )}
+
+          {isPromptExpanded && (
+            <div
+              className="absolute top-3 left-3 right-3 bottom-3 flex animate-fade-in"
+              style={{ zIndex: 6 }}
+            >
+              <div
+                className="pointer-events-auto flex flex-col w-full max-w-[min(34rem,calc(100%-0.5rem))] rounded-sm bg-surface-container-highest/70 backdrop-blur-md border border-outline-variant/25 shadow-[0_4px_24px_rgba(0,0,0,0.6)]"
+              >
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-outline-variant/15">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[16px] text-on-surface-variant">history_edu</span>
+                    <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant truncate">
+                      {t('gameplay.imagePromptTooltip', 'Prompt obrazka — kliknij, aby skopiować')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyImagePrompt}
+                      aria-label={t('gameplay.copyImagePrompt', 'Skopiuj prompt obrazka')}
+                      className={`flex items-center gap-1 px-2 h-7 rounded-sm border transition-all ${
+                        promptCopied
+                          ? 'bg-success/15 border-success/40 text-success'
+                          : 'bg-surface-container-highest/60 border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {promptCopied ? 'check' : 'content_copy'}
+                      </span>
+                      <span className="text-[10px] font-label uppercase tracking-widest">
+                        {promptCopied
+                          ? t('gameplay.imagePromptCopied', 'Skopiowano!')
+                          : t('gameplay.copyImagePrompt', 'Skopiuj prompt obrazka')}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleTogglePromptOverlay}
+                      aria-label={t('common.close', 'Zamknij')}
+                      aria-expanded={true}
+                      className="flex items-center justify-center w-7 h-7 rounded-sm bg-surface-container-highest/60 border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:border-primary/40 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3">
+                  <p className="text-xs text-on-surface leading-relaxed whitespace-pre-wrap break-words">
+                    {displayedImagePrompt}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Dice Roll Overlay — top-right */}

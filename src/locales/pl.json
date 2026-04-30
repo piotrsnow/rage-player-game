@@ -1203,6 +1203,7 @@
     "portraitGenerating": "Generowanie...",
     "acceptPortrait": "Zatwierdź",
     "retryPortrait": "Ponów",
+    "zoomInPortrait": "Powiększ portret",
     "portraitNeedsKey": "Generowanie portretu wymaga klucza API Stability AI. Skonfiguruj go w Ustawieniach.",
     "portraitNeedsKeyDalle": "Generowanie portretu wymaga klucza API OpenAI. Skonfiguruj go w Ustawieniach.",
     "portraitNeedsKeyGemini": "Generowanie portretu wymaga klucza API Google AI. Skonfiguruj go w Ustawieniach.",

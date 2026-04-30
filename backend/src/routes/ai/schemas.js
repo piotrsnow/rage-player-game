@@ -63,6 +63,15 @@ export const ENHANCE_IMAGE_PROMPT_SCHEMA = {
   required: ['keywords'],
 };
 
+export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    text: { type: 'string', maxLength: 1000 },
+  },
+  required: ['text'],
+};
+
 export const GENERATE_CAMPAIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,

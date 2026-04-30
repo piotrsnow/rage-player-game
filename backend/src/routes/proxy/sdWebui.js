@@ -261,6 +261,7 @@ export async function sdWebuiProxyRoutes(fastify) {
       seed,
       n_iter: 1,
       batch_size: 1,
+      save_images: true,
     };
 
     // Opt-in hires fix (SD_WEBUI_HIRES_FIX=1) — ~2x generation time but
@@ -376,6 +377,7 @@ export async function sdWebuiProxyRoutes(fastify) {
           seed,
           n_iter: 1,
           batch_size: 1,
+          save_images: true,
         };
         res = await fetchWithTimeout(
           `${baseUrl}/sdapi/v1/img2img`,
@@ -398,6 +400,7 @@ export async function sdWebuiProxyRoutes(fastify) {
           seed,
           n_iter: 1,
           batch_size: 1,
+          save_images: true,
         };
         res = await fetchWithTimeout(
           `${baseUrl}/sdapi/v1/txt2img`,

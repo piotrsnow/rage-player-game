@@ -8,6 +8,7 @@ import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
 import { calculateCost } from '../../services/costTracker';
 import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
+import { ensureEnglish } from '../../services/translateImagePrompt';
 import { resolveMechanics } from '../../services/mechanics/index';
 import { calculateNextMomentum } from '../../services/mechanics/momentumTracker';
 import { loadSceneGenDurationHistory, appendSceneGenDuration, historyToSceneGenEstimateMs, persistSceneGenDurationHistory } from '../../services/performanceTracker';
@@ -15,6 +16,13 @@ import { useEvent } from '../useEvent';
 import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
+
+// Master kill-switch for the speculative "early image" path below. When false,
+// we skip guessing the image from previous-scene + player-action and instead
+// wait for the AI's own narrative + imagePrompt to drive image generation
+// (deferred path). Flip to true to re-enable the overlapped path if we ever
+// want the latency win back.
+const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 
 export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
@@ -68,19 +76,29 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           skipDiceRoll: true,
         });
 
-        // Early image generation (speculative, before AI call)
+        // Early image generation (speculative, before AI call).
+        // `previousScene.narrative` and `playerAction` are in the campaign
+        // language (PL when language='pl') — translate both before feeding
+        // them into the English template. The two translations run in
+        // parallel and overlap with the premium scene call, so this path
+        // stays off the critical latency budget.
         const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
-        if (imageGenEnabled && hasImageKey && !isFirstScene) {
+        if (SPECULATIVE_EARLY_IMAGE_ENABLED && imageGenEnabled && hasImageKey && !isFirstScene) {
           const previousScene = state.scenes?.[state.scenes.length - 1];
           if (previousScene?.narrative) {
-            const speculativeDesc = buildSpeculativeImageDescription(previousScene.narrative, playerAction, resolved.diceRoll, imageProvider);
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
-            earlyImagePromise = imageService.generateSceneImage(
-              '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
-              speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
-              state.character?.portraitUrl || null
-            ).then((result) => result?.url || null)
+            earlyImagePromise = Promise.all([
+              ensureEnglish(previousScene.narrative.substring(0, 200)),
+              ensureEnglish(playerAction),
+            ]).then(([enPrevNarrative, enPlayerAction]) => {
+              const speculativeDesc = buildSpeculativeImageDescription(enPrevNarrative, enPlayerAction, resolved.diceRoll, imageProvider);
+              return imageService.generateSceneImage(
+                '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
+                speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
+                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
+                state.character?.portraitUrl || null
+              );
+            }).then((result) => result?.url || null)
               .catch((imgErr) => {
                 console.warn('Early image generation failed:', imgErr.message);
                 return null;

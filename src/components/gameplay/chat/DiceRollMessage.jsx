@@ -175,6 +175,23 @@ export default function DiceRollMessage({ message }) {
   const rollTarget = d.threshold ?? d.target ?? d.dc ?? '?';
   const rollMargin = d.margin ?? d.sl ?? 0;
 
+  const rawRoll = Number(d.roll) || 0;
+  const targetNum = Number.isFinite(Number(rollTarget)) ? Number(rollTarget) : null;
+  const fallbackModsSum =
+    (Number(d.characteristicValue) || 0)
+    + (Number(d.skillAdvances) || 0)
+    + (Number(d.creativityBonus) || 0)
+    + (Number(d.difficultyModifier) || 0)
+    + (Number(d.momentumBonus) || 0)
+    + (Number(d.dispositionBonus) || 0);
+  const totalValue = Number.isFinite(Number(d.total))
+    ? Number(d.total)
+    : rawRoll + fallbackModsSum;
+  const modsSum = totalValue - rawRoll;
+  const formulaCmp = targetNum == null
+    ? null
+    : totalValue > targetNum ? '>' : totalValue < targetNum ? '<' : '=';
+
   if (!expanded) {
     return (
       <div className="animate-fade-in my-1.5 flex justify-center">
@@ -188,7 +205,7 @@ export default function DiceRollMessage({ message }) {
         >
           <span className={`material-symbols-outlined text-lg ${accentColor}`}>casino</span>
           <span className="font-mono text-xs font-bold text-on-surface">
-            {d.roll} {t('common.vs')} {rollTarget}
+            {totalValue} {t('common.vs')} {rollTarget}
           </span>
         </button>
       </div>
@@ -216,14 +233,32 @@ export default function DiceRollMessage({ message }) {
           <div className={`flex items-center justify-center w-10 h-10 rounded-lg bg-surface-container-high/60 ${accentColor}`}>
             <span className="material-symbols-outlined text-xl">casino</span>
           </div>
-          <div className="flex items-baseline justify-center gap-2 flex-wrap">
-            <span className="font-mono text-2xl font-bold text-on-surface leading-none">
-              {d.roll}
+          <div className="flex items-baseline justify-center gap-1.5 flex-wrap font-mono leading-none">
+            <span className="text-2xl font-bold text-on-surface">
+              {rawRoll}
             </span>
-            <span className="text-on-surface-variant text-xs uppercase tracking-wide">{t('common.vs')}</span>
-            <span className="font-mono text-2xl font-bold text-on-surface leading-none">
-              {rollTarget}
-            </span>
+            {modsSum !== 0 && (
+              <>
+                <span className={`text-lg ${modsSum > 0 ? 'text-emerald-300/90' : 'text-rose-300/90'}`}>
+                  {modsSum > 0 ? '+' : '−'}
+                </span>
+                <span className={`text-2xl font-bold ${modsSum > 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {Math.abs(modsSum)}
+                </span>
+                <span className="text-lg text-on-surface-variant/80">=</span>
+                <span className="text-2xl font-bold text-on-surface">
+                  {totalValue}
+                </span>
+              </>
+            )}
+            {formulaCmp && (
+              <>
+                <span className={`text-lg ${accentColor}`}>{formulaCmp}</span>
+                <span className="text-2xl font-bold text-on-surface">
+                  {rollTarget}
+                </span>
+              </>
+            )}
           </div>
           <RollEdgeBadge value={rollMargin} t={t} />
           <div className={`text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border ${

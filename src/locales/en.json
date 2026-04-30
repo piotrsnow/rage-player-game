@@ -1230,6 +1230,7 @@
     "portraitGenerating": "Generating...",
     "acceptPortrait": "Accept",
     "retryPortrait": "Retry",
+    "zoomInPortrait": "Zoom in portrait",
     "portraitNeedsKey": "Portrait generation requires a Stability AI API key. Configure it in Settings.",
     "portraitNeedsKeyDalle": "Portrait generation requires an OpenAI API key. Configure it in Settings.",
     "portraitNeedsKeyGemini": "Portrait generation requires a Google AI API key. Configure it in Settings.",

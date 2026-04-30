@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { apiClient, toCanonicalStoragePath } from '../../services/apiClient';
@@ -24,11 +25,15 @@ const EMOTION_LABEL_KEYS = {
   sadness: 'charCreator.emotionSadness',
   nostalgia: 'charCreator.emotionNostalgia',
 };
-const EMOTIONS_DEFAULT = Object.freeze(
-  EMOTION_KEYS.reduce((acc, k) => { acc[k] = 0; return acc; }, {}),
-);
+const EMOTIONS_DEFAULT = Object.freeze({
+  anger: 11,
+  joy: 68,
+  mockery: 96,
+  sadness: 0,
+  nostalgia: 23,
+});
 const EMOTIONS_MAX_SUM = 200;
-const LIKENESS_DEFAULT = 70;
+const LIKENESS_DEFAULT = 25;
 
 // Proportional rebalance: when a single slider is raised past the headroom,
 // shrink every other slider by the same ratio so the combined sum stays <= 200.
@@ -120,6 +125,14 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
   const [captureSession, setCaptureSession] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!lightboxOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setLightboxOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxOpen]);
 
   const handleEmotionChange = useCallback((key, value) => {
     setEmotions((current) => rebalanceEmotions(current, key, value));
@@ -204,19 +217,53 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   }
 
   if (generatedUrl && !showCapture) {
+    const resolvedSrc = apiClient.resolveMediaUrl(generatedUrl);
     return (
       <div className="flex flex-col items-center gap-3">
-        <div className="relative w-full max-w-[220px] aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)]">
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          aria-label={t('charCreator.zoomInPortrait', 'Powiększ portret')}
+          className="group relative w-full max-w-[220px] aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)] cursor-zoom-in focus:outline-none focus:ring-2 focus:ring-primary/50"
+        >
           <img
-            src={apiClient.resolveMediaUrl(generatedUrl)}
+            src={resolvedSrc}
             alt="Fantasy portrait"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
             onError={() => { setGeneratedUrl(null); setShowCapture(canUseReferenceImage); }}
           />
           <div className="absolute top-1.5 right-1.5">
             <span className="material-symbols-outlined text-sm text-primary drop-shadow-lg">auto_awesome</span>
           </div>
-        </div>
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <span className="material-symbols-outlined text-3xl text-white drop-shadow-lg">zoom_in</span>
+          </div>
+        </button>
+        {lightboxOpen && createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('charCreator.zoomInPortrait', 'Powiększ portret')}
+            onClick={() => setLightboxOpen(false)}
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-fade-in cursor-zoom-out p-6"
+          >
+            <img
+              src={resolvedSrc}
+              alt="Fantasy portrait"
+              onClick={(e) => e.stopPropagation()}
+              className="max-w-[min(92vw,900px)] max-h-[92vh] object-contain rounded-sm border border-primary/30 shadow-[0_0_40px_rgba(197,154,255,0.25)] animate-scale-in cursor-default"
+            />
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              aria-label={t('common.close', 'Zamknij')}
+              className="absolute top-4 right-4 flex items-center justify-center w-10 h-10 rounded-sm bg-surface-container/80 border border-outline-variant/30 text-on-surface hover:text-primary hover:border-primary/40 transition-colors"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>,
+          document.body,
+        )}
         <div className="flex gap-2">
           <button
             type="button"

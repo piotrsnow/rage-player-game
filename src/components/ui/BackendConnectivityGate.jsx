@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import LoadingSpinner from './LoadingSpinner';
+import SpinningDice from './SpinningDice';
 
 const RETRY_DELAY_MS = 5000;
 
@@ -37,6 +37,14 @@ export default function BackendConnectivityGate({ children }) {
           credentials: 'omit',
         });
         if (res.ok) {
+          // Backend came back after being unreachable: hard-reload so anything
+          // that errored out during startup (auth refresh, settings fetch,
+          // lazy routes) re-initializes cleanly. The overlay stays visible
+          // until the new page replaces us.
+          if (hasFailedOnceRef.current) {
+            window.location.reload();
+            return;
+          }
           setStatus('ready');
           return;
         }
@@ -67,7 +75,12 @@ export default function BackendConnectivityGate({ children }) {
       aria-live="polite"
       aria-busy="true"
     >
-      <LoadingSpinner size="lg" text={spinnerLabel} />
+      <div className="flex flex-col items-center gap-3">
+        <SpinningDice />
+        <p className="text-on-surface-variant text-xs uppercase tracking-widest font-label animate-shimmer">
+          {spinnerLabel}
+        </p>
+      </div>
     </div>
   );
 }
