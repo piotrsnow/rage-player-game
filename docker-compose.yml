@@ -63,6 +63,15 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
       STABILITY_API_KEY: "${STABILITY_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      MESHY_API_KEY: "${MESHY_API_KEY:-}"
+      # Stable Diffusion WebUI (Automatic1111) — local REST. From inside the
+      # container, `localhost` is the container itself; to reach A1111 running
+      # on the Windows/macOS host use `http://host.docker.internal:7860`.
+      SD_WEBUI_URL: "${SD_WEBUI_URL:-}"
+      SD_WEBUI_SAMPLER: "${SD_WEBUI_SAMPLER:-}"
+      SD_WEBUI_STEPS: "${SD_WEBUI_STEPS:-}"
+      SD_WEBUI_CFG: "${SD_WEBUI_CFG:-}"
     volumes:
       - media-data:/data/media
     # Docker Compose Watch: `npm run dev:watch` syncs local source into the

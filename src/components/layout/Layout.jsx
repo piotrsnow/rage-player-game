@@ -19,6 +19,7 @@ import VersionBadge from '../ui/VersionBadge';
 import CharacterSheet from '../character/CharacterSheet';
 import DMSettingsPage from '../settings/DMSettingsPage';
 import KeysModal from '../settings/KeysModal';
+import ImageConfigModal from '../settings/ImageConfigModal';
 import WorldStateModal from '../gameplay/WorldStateModal';
 import TasksInfoModal from '../gameplay/TasksInfoModal';
 
@@ -34,6 +35,8 @@ function ModalLayer() {
     closeSettings,
     keysOpen,
     closeKeys,
+    imageConfigOpen,
+    closeImageConfig,
   } = useModals();
   const soloWorld = useGameWorld();
   const soloQuests = useGameQuests();
@@ -71,6 +74,7 @@ function ModalLayer() {
       )}
       {settingsOpen && <DMSettingsPage onClose={closeSettings} />}
       {keysOpen && <KeysModal onClose={closeKeys} />}
+      {imageConfigOpen && <ImageConfigModal onClose={closeImageConfig} />}
     </>
   );
 }

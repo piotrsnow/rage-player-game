@@ -4,7 +4,6 @@ import { apiClient } from '../../services/apiClient';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import { AI_MODELS } from '../../services/ai';
 import AiProviderSection from './keys/AiProviderSection';
-import ImageProviderSection from './keys/ImageProviderSection';
 import LocalLLMSection from './keys/LocalLLMSection';
 import ApiKeysStatusPanel from './keys/ApiKeysStatusPanel';
 
@@ -46,13 +45,6 @@ export default function KeysModal({ onClose }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <section className="space-y-6 animate-fade-in">
                 <AiProviderSection settings={settings} updateSettings={updateSettings} backendKeys={backendKeys} />
-                {(settings.sceneVisualization || 'image') === 'image' && (
-                  <ImageProviderSection
-                    settings={settings}
-                    updateSettings={updateSettings}
-                    backendKeys={backendKeys}
-                  />
-                )}
                 <LocalLLMSection settings={settings} updateSettings={updateSettings} />
               </section>
 

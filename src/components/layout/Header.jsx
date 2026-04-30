@@ -14,7 +14,7 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig } = useModals();
   const campaign = useGameCampaign();
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -189,6 +189,14 @@ export default function Header() {
               auto_awesome
             </Link>
           )}
+          <button
+            type="button"
+            onClick={openImageConfig}
+            aria-label={t('nav.imageConfig')}
+            className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+          >
+            brush
+          </button>
           <button
             type="button"
             onClick={openKeys}

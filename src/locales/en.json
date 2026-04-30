@@ -145,9 +145,14 @@
     "character": "Character",
     "gallery": "Gallery",
     "keys": "Keys",
+    "imageConfig": "Images",
     "saveCampaign": "Save Campaign",
     "saving": "Saving...",
     "campaignSaved": "Saved!"
+  },
+  "imageConfig": {
+    "title": "Image Configuration",
+    "subtitle": "Configure how scenes are displayed, the art style and the image generation provider."
   },
   "keys": {
     "title": "Model Configuration",

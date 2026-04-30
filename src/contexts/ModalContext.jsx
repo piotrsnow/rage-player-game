@@ -9,6 +9,7 @@ export function ModalProvider({ children }) {
   const [tasksInfoOpen, setTasksInfoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [imageConfigOpen, setImageConfigOpen] = useState(false);
   // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
@@ -24,6 +25,8 @@ export function ModalProvider({ children }) {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const openKeys = useCallback(() => setKeysOpen(true), []);
   const closeKeys = useCallback(() => setKeysOpen(false), []);
+  const openImageConfig = useCallback(() => setImageConfigOpen(true), []);
+  const closeImageConfig = useCallback(() => setImageConfigOpen(false), []);
   const openNpcSheet = useCallback((name) => setNpcSheetName(name || null), []);
   const closeNpcSheet = useCallback(() => setNpcSheetName(null), []);
 
@@ -35,6 +38,7 @@ export function ModalProvider({ children }) {
         tasksInfoOpen,
         settingsOpen,
         keysOpen,
+        imageConfigOpen,
         npcSheetName,
         openCharacterSheet,
         closeCharacterSheet,
@@ -46,6 +50,8 @@ export function ModalProvider({ children }) {
         closeSettings,
         openKeys,
         closeKeys,
+        openImageConfig,
+        closeImageConfig,
         openNpcSheet,
         closeNpcSheet,
       }}

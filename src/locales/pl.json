@@ -139,9 +139,14 @@
     "character": "Postać",
     "gallery": "Galeria",
     "keys": "Klucze",
+    "imageConfig": "Obrazy",
     "saveCampaign": "Zapisz Kampanię",
     "saving": "Zapisywanie...",
     "campaignSaved": "Zapisano!"
+  },
+  "imageConfig": {
+    "title": "Konfiguracja Obrazów",
+    "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów."
   },
   "keys": {
     "title": "Konfiguracja Modeli",
