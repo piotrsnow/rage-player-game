@@ -335,7 +335,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     displayedSceneIndex,
     earlyDiceRoll,
     clearEarlyDiceRoll,
-    settings,
     getSceneActionText,
     onSceneNavigate: (idx) => handleSceneNavRef.current?.(idx),
     setViewingSceneIndex,
@@ -604,6 +603,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <TypewriterActionOverlay
               text={overlayText}
               onComplete={overlayOnComplete}
+              onTypingComplete={isPlayerActionOverlayActive ? overlays.markPlayerOverlayTypingDone : undefined}
               typingSpeedMultiplier={overlayTypingSpeedMultiplier}
               holdOpen={overlayHoldOpen}
               holdingDurationMs={overlayHoldingDurationMs}
