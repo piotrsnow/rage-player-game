@@ -35,7 +35,7 @@ Respond with ONLY valid JSON:
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Starting Location",
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
-    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "dispositionChange": 5}],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "race": "Human", "level": 3, "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "dispositionChange": 5}],
     "worldFacts": [],
     "journalEntries": ["Opening scene summary"],
     "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal", "objectives": [{"id": "obj_1", "description": "First milestone"}]}],
@@ -63,6 +63,7 @@ NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, inc
 - Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
 - Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships".
+NPC CHARACTER CARD: Every mortal NPC MUST have "race" set to one of "Human"|"Dwarf"|"Halfling"|"Orc" on "introduce". For story creatures (zjawy, sfinksy, demony, potwory, duchy) use "creatureKind" (free-text) INSTEAD of race — never both. Optional "level": 1-30 based on importance (commoner 1-3, notable 4-6, key NPC 7-10, boss 10+); backend derives a default from category if omitted. Optional "statsOverride" only for exceptional NPCs (arcymag, legendary master, boss), shape: {attributes?, skills?, weapons?, traits?, armourDR?, maxWounds?, mana?}. Backend generates the full stat sheet deterministically from race + role + level — do NOT emit a full sheet, only deltas via statsOverride when strictly needed.
 
 COMBAT ENCOUNTERS (MULTIPLAYER):
 When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges.

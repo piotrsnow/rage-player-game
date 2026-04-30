@@ -5,6 +5,8 @@ import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
+import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
+import { generateNpcSheet, mergeSheetOverride } from '../../npcs/npcCharacterSheet.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -100,6 +102,42 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           contentUpdate.gender = coerceGender(null, npcChange.name);
         }
 
+        // Character sheet — race / creatureKind / level may be set on the
+        // first post-introduction update if the LLM decides the NPC's race
+        // now. statsOverride lets the LLM nudge specific attributes/skills
+        // on an existing sheet. Lazy backfill: when `stats` is empty (legacy
+        // rows created before this migration) we regenerate a baseline
+        // sheet so the FE/combat can rely on the shape.
+        const hasValidRace = typeof npcChange.race === 'string' && NPC_RACES.includes(npcChange.race);
+        if (hasValidRace && existing.race !== npcChange.race) contentUpdate.race = npcChange.race;
+        if (typeof npcChange.creatureKind === 'string' && existing.creatureKind !== npcChange.creatureKind) {
+          contentUpdate.creatureKind = npcChange.creatureKind;
+        }
+        if (typeof npcChange.level === 'number' && npcChange.level >= 1 && npcChange.level <= 30 && existing.level !== npcChange.level) {
+          contentUpdate.level = Math.floor(npcChange.level);
+        }
+
+        const existingStats = existing.stats && typeof existing.stats === 'object' && Object.keys(existing.stats).length > 0
+          ? existing.stats
+          : null;
+        const needsBaseline = !existingStats;
+        if (needsBaseline || npcChange.statsOverride) {
+          const baseline = existingStats || generateNpcSheet({
+            name: npcChange.name,
+            race: contentUpdate.race ?? existing.race ?? (hasValidRace ? npcChange.race : null),
+            creatureKind: contentUpdate.creatureKind ?? existing.creatureKind ?? npcChange.creatureKind ?? null,
+            role: npcChange.role ?? existing.role ?? '',
+            category: existing.category,
+            personality: npcChange.personality ?? existing.personality ?? '',
+            level: contentUpdate.level ?? existing.level ?? null,
+          });
+          const merged = npcChange.statsOverride ? mergeSheetOverride(baseline, npcChange.statsOverride) : baseline;
+          contentUpdate.stats = merged;
+          if (typeof merged.level === 'number' && merged.level !== existing.level) contentUpdate.level = merged.level;
+          if (merged.race && merged.race !== existing.race) contentUpdate.race = merged.race;
+          if (merged.creatureKind && merged.creatureKind !== existing.creatureKind) contentUpdate.creatureKind = merged.creatureKind;
+        }
+
         const hasContentUpdate = Object.keys(contentUpdate).length > 0 || Array.isArray(npcChange.relationships);
         const statsDelta = computeInteractionDelta(existing, sceneIndex);
         const updated = await prisma.campaignNPC.update({
@@ -118,6 +156,27 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
           affectedNpcIds.push(updated.id);
         }
       } else {
+        // Build the character sheet deterministically — backend picks race
+        // (if LLM didn't), derives stats from role + category + level.
+        // LLM can override specific fields via `statsOverride`.
+        const rawRace = typeof npcChange.race === 'string' && NPC_RACES.includes(npcChange.race) ? npcChange.race : null;
+        const rawCreatureKind = typeof npcChange.creatureKind === 'string' && npcChange.creatureKind.trim()
+          ? npcChange.creatureKind.trim()
+          : null;
+        // If neither race nor creatureKind set, fall back to Human so every
+        // NPC has *some* card. LLM can update later.
+        const resolvedRace = rawRace || (rawCreatureKind ? null : 'Human');
+        const baseline = generateNpcSheet({
+          name: npcChange.name,
+          race: resolvedRace,
+          creatureKind: rawCreatureKind,
+          role: npcChange.role || '',
+          category: 'commoner',
+          personality: npcChange.personality || '',
+          level: typeof npcChange.level === 'number' ? npcChange.level : null,
+        });
+        const stats = npcChange.statsOverride ? mergeSheetOverride(baseline, npcChange.statsOverride) : baseline;
+
         try {
           const created = await prisma.campaignNPC.create({
             data: {
@@ -129,6 +188,10 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               personality: npcChange.personality || null,
               attitude: npcChange.attitude || 'neutral',
               disposition: npcChange.disposition ?? 0,
+              race: stats.race,
+              creatureKind: stats.creatureKind,
+              level: stats.level,
+              stats,
               ...initialInteractionFields(sceneIndex),
             },
           });

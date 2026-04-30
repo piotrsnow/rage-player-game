@@ -5,6 +5,36 @@ import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 import { gameData } from '../../services/gameDataService';
 import { shortId } from '../../utils/ids';
 
+/**
+ * Build a combat-enemy payload from a full NPC sheet (shape from
+ * backend/src/services/npcs/npcCharacterSheet.js — race/creatureKind/level
+ * /attributes/skills/weapons/armourDR/traits/maxWounds). Returns `null` when
+ * the NPC doesn't have a populated sheet so the caller can fall back to the
+ * bestiary.
+ */
+function enemyFromNpcSheet(npc) {
+  const stats = npc?.stats;
+  if (!stats || typeof stats !== 'object') return null;
+  if (!stats.attributes || typeof stats.attributes !== 'object') return null;
+  const maxWounds = typeof stats.maxWounds === 'number' && stats.maxWounds > 0 ? stats.maxWounds : 10;
+  return {
+    name: npc.name,
+    attributes: { ...stats.attributes },
+    wounds: maxWounds,
+    maxWounds,
+    skills: stats.skills && typeof stats.skills === 'object' ? { ...stats.skills } : {},
+    traits: Array.isArray(stats.traits) ? [...stats.traits] : [],
+    weapons: Array.isArray(stats.weapons) && stats.weapons.length > 0 ? [...stats.weapons] : ['Hand Weapon'],
+    armourDR: typeof stats.armourDR === 'number' ? stats.armourDR : 0,
+  };
+}
+
+function findNpcByName(npcs, name) {
+  if (!name) return null;
+  const q = String(name).trim().toLowerCase();
+  return (npcs || []).find((n) => typeof n?.name === 'string' && n.name.trim().toLowerCase() === q) || null;
+}
+
 export function injectCombatFallback(result, state, playerAction, isFirstScene, isPassiveSceneAction, t) {
   if (isFirstScene || isPassiveSceneAction || !detectCombatIntent(playerAction)) return;
   const hasCombatUpdate = result.stateChanges?.combatUpdate?.active === true;
@@ -16,35 +46,59 @@ export function injectCombatFallback(result, state, playerAction, isFirstScene, 
     if (!currentLocation) return true;
     return String(npc.lastLocation || '').trim().toLowerCase() === String(currentLocation).trim().toLowerCase();
   });
-  const fallbackEnemyName = fallbackNpc?.name || t('gameplay.combatFallbackEnemyName', 'Hostile Foe');
-  const bestiaryMatch = gameData.findClosestBestiaryEntry(fallbackEnemyName);
-  const fallbackStats = bestiaryMatch || {
-    characteristics: { ws: 30, bs: 30, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 20 },
-    maxWounds: 10, skills: { 'Melee (Basic)': 5 }, traits: [], armour: { body: 1 }, weapons: ['Hand Weapon'],
-  };
+
+  // NPC-first: when the fallback opponent has a generated character sheet,
+  // use it verbatim so combat respects the NPC's actual stats / level.
+  const fromSheet = fallbackNpc ? enemyFromNpcSheet(fallbackNpc) : null;
+
+  let enemy;
+  if (fromSheet) {
+    enemy = fromSheet;
+  } else {
+    const fallbackEnemyName = fallbackNpc?.name || t('gameplay.combatFallbackEnemyName', 'Hostile Foe');
+    const bestiaryMatch = gameData.findClosestBestiaryEntry(fallbackEnemyName);
+    const fallbackStats = bestiaryMatch || {
+      characteristics: { ws: 30, bs: 30, s: 30, t: 30, i: 30, ag: 30, dex: 25, int: 20, wp: 25, fel: 20 },
+      maxWounds: 10, skills: { 'Melee (Basic)': 5 }, traits: [], armour: { body: 1 }, weapons: ['Hand Weapon'],
+    };
+    enemy = {
+      name: fallbackEnemyName,
+      characteristics: fallbackStats.characteristics,
+      wounds: fallbackStats.maxWounds,
+      maxWounds: fallbackStats.maxWounds,
+      skills: fallbackStats.skills,
+      traits: fallbackStats.traits || [],
+      armour: fallbackStats.armour || { body: 0 },
+      weapons: fallbackStats.weapons || ['Hand Weapon'],
+    };
+  }
+
   result.stateChanges = {
     ...(result.stateChanges || {}),
     combatUpdate: {
       active: true,
-      enemies: [{
-        name: fallbackEnemyName,
-        characteristics: fallbackStats.characteristics,
-        wounds: fallbackStats.maxWounds,
-        maxWounds: fallbackStats.maxWounds,
-        skills: fallbackStats.skills,
-        traits: fallbackStats.traits || [],
-        armour: fallbackStats.armour || { body: 0 },
-        weapons: fallbackStats.weapons || ['Hand Weapon'],
-      }],
+      enemies: [enemy],
       reason: 'Combat intent fallback (AI omitted combatUpdate)',
     },
   };
   console.warn('[useAI] Injected fallback combatUpdate — AI omitted it despite combat intent');
 }
 
-export function fillBestiaryStats(result) {
-  if (!result.stateChanges?.combatUpdate?.enemies?.length || !gameData.isLoaded) return;
+export function fillBestiaryStats(result, state) {
+  if (!result.stateChanges?.combatUpdate?.enemies?.length) return;
+  const worldNpcs = state?.world?.npcs || [];
+
   result.stateChanges.combatUpdate.enemies = result.stateChanges.combatUpdate.enemies.map((enemy) => {
+    // If the enemy already carries full stats from the LLM, keep them.
+    if (enemy.attributes && typeof enemy.attributes === 'object') return enemy;
+
+    // NPC-first: a named enemy that matches a world NPC should fight with
+    // that NPC's character sheet, not a generic bestiary entry.
+    const matchedNpc = findNpcByName(worldNpcs, enemy.name);
+    const fromSheet = matchedNpc ? enemyFromNpcSheet(matchedNpc) : null;
+    if (fromSheet) return fromSheet;
+
+    if (!gameData.isLoaded) return enemy;
     const match = gameData.findClosestBestiaryEntry(enemy.name);
     if (!match) return enemy;
     return {

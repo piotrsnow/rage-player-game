@@ -106,6 +106,10 @@ export async function loadCampaignState(campaignId) {
       personality: n.personality, attitude: n.attitude, disposition: n.disposition,
       alive: n.alive, lastLocation: n.lastLocation,
       notes: n.notes,
+      race: n.race,
+      creatureKind: n.creatureKind,
+      level: n.level,
+      stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,

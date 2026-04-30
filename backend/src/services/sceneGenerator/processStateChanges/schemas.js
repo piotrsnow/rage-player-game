@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
 
 /**
  * Zod schemas for Living World `stateChanges` buckets on the BACKEND path.
@@ -83,6 +84,27 @@ const NpcChangeSchema = z.object({
     type: z.string().max(60).optional(),
     strength: z.number().optional(),
   }).passthrough()).optional(),
+  // NPC character card — regular NPCs get one of NPC_RACES, story creatures
+  // (zjawy, sfinksy, demony, ...) use a free-text creatureKind tag instead.
+  // level defaults from category; statsOverride lets the LLM nudge specific
+  // fields on exceptional NPCs (arcymag, boss). Full sheet is generated
+  // deterministically on the backend when absent.
+  race: z.enum(NPC_RACES).nullable().optional(),
+  creatureKind: z.string().trim().max(60).nullable().optional(),
+  level: z.number().int().min(1).max(30).optional(),
+  keyNpc: z.boolean().optional(),
+  statsOverride: z.object({
+    attributes: z.record(z.number()).optional(),
+    skills: z.record(z.number()).optional(),
+    weapons: z.array(z.string().max(60)).max(4).optional(),
+    traits: z.array(z.string().max(60)).max(8).optional(),
+    armourDR: z.number().int().min(0).max(10).optional(),
+    maxWounds: z.number().int().min(1).max(500).optional(),
+    mana: z.object({
+      current: z.number().int().min(0).max(500).optional(),
+      max: z.number().int().min(0).max(500).optional(),
+    }).partial().optional(),
+  }).partial().optional(),
 }).passthrough();
 
 export const NpcChangesSchema = z.array(NpcChangeSchema).max(30);

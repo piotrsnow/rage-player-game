@@ -394,6 +394,15 @@ model CampaignNPC {
   lastInteractionAt         DateTime? @db.Timestamptz
   lastInteractionSceneIndex Int?
 
+  // NPC character card — race is one of NPC_RACES (Human/Dwarf/Halfling/Orc)
+  // or null for story creatures (zjawy, sfinksy, demony, ...) which instead
+  // carry a free-text creatureKind tag. `stats` holds the full stat sheet
+  // emitted by npcCharacterSheet.generateNpcSheet.
+  race         String?
+  creatureKind String?
+  level        Int     @default(1)
+  stats        Json    @default("{}")
+
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
 
@@ -732,6 +741,12 @@ model WorldNPC {
   lastLocationPingAt DateTime? @db.Timestamptz
   category           String    @default("commoner")
   keyNpc             Boolean   @default(true)
+
+  // NPC character card — see CampaignNPC.race/creatureKind/stats.
+  race         String?
+  creatureKind String?
+  level        Int     @default(1)
+  stats        Json    @default("{}")
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?

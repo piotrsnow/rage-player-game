@@ -271,10 +271,26 @@ export const SPECIES = {
     movement: 5,
     skills: ['Spostrzegawczosc', 'Strzelectwo', 'Wiedza o naturze', 'Wystepy'],
     description: 'Zwinni i inteligentni, z naturalna predyspozycja do magii.',
+    // Elf playable disabled for now — still kept in SPECIES because NPC sheet
+    // generation and any legacy elf PCs need to resolve racial modifiers.
+    playable: false,
+  },
+  Orc: {
+    name: 'Ork',
+    nameEN: 'Orc',
+    attributes: { sila: 3, inteligencja: -1, charyzma: -1, zrecznosc: 0, wytrzymalosc: 2, szczescie: 0 },
+    startingMana: 0,
+    movement: 4,
+    skills: ['Zastraszanie', 'Walka wrecz', 'Odpornosc', 'Przetrwanie'],
+    description: 'Silni i wytrzymali wojownicy. Niska inteligencja i charyzma, za to potezna sila i twardosc.',
   },
 };
 
 export const SPECIES_LIST = Object.keys(SPECIES);
+
+// PC-playable species only — hides Elf from character creation while keeping
+// SPECIES.Elf resolvable for existing elf characters and NPC stats.
+export const PLAYABLE_SPECIES_LIST = SPECIES_LIST.filter((key) => SPECIES[key].playable !== false);
 
 // ── SKILL CATEGORIES (UI grouping) ──
 

@@ -33,6 +33,14 @@ export function applyNpcs(draft, changes) {
         relatedQuestIds: incoming.relatedQuestIds || [],
         relationships: incoming.relationships || [],
         canTrain: Array.isArray(incoming.canTrain) ? incoming.canTrain : [],
+        // Character card — race/creatureKind/level/stats are authoritative
+        // from backend on the next full-state load, but we seed optimistic
+        // values here so the chat hover card and combat fallback have
+        // something to read right away.
+        race: typeof incoming.race === 'string' ? incoming.race : null,
+        creatureKind: typeof incoming.creatureKind === 'string' ? incoming.creatureKind : null,
+        level: typeof incoming.level === 'number' ? incoming.level : 1,
+        stats: incoming.stats && typeof incoming.stats === 'object' ? incoming.stats : {},
       });
       continue;
     }
@@ -45,6 +53,10 @@ export function applyNpcs(draft, changes) {
     if (incoming.attitude) npc.attitude = incoming.attitude;
     if (incoming.location) npc.lastLocation = incoming.location;
     if (incoming.notes) npc.notes = incoming.notes;
+    if (typeof incoming.race === 'string') npc.race = incoming.race;
+    if (typeof incoming.creatureKind === 'string') npc.creatureKind = incoming.creatureKind;
+    if (typeof incoming.level === 'number') npc.level = incoming.level;
+    if (incoming.stats && typeof incoming.stats === 'object') npc.stats = incoming.stats;
     if (Array.isArray(incoming.canTrain)) {
       const existing = Array.isArray(npc.canTrain) ? npc.canTrain : [];
       npc.canTrain = [...new Set([...existing, ...incoming.canTrain])];

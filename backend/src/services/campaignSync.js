@@ -405,6 +405,10 @@ export async function reconstructFromNormalized(campaignId, coreState, { current
       lastLocation: n.lastLocation,
       factionId: n.factionId,
       notes: n.notes,
+      race: n.race,
+      creatureKind: n.creatureKind,
+      level: n.level,
+      stats: n.stats && typeof n.stats === 'object' ? n.stats : {},
       relationships: (n.relationships || []).map((r) => ({
         npcName: r.targetRef,
         type: r.relation,

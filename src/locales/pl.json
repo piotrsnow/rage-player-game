@@ -404,7 +404,8 @@
     "rawAiSpeechTitle": "Surowa odpowiedź AI",
     "sessionTime": "Sesja",
     "totalPlayTime": "Łącznie",
-    "narrationTime": "Narracja"
+    "narrationTime": "Narracja",
+    "openNpcSheet": "Otwórz kartę postaci: {{name}}"
   },
   "character": {
     "bonus": "B",
@@ -1002,6 +1003,27 @@
     },
     "voice": "Głos",
     "noVoice": "Brak przypisanego głosu",
+    "race": "Rasa",
+    "creatureKind": "Typ istoty",
+    "level": "Poziom",
+    "lvl": "Poz.",
+    "characterCard": "Karta postaci",
+    "showCharacterCard": "Pokaż kartę postaci",
+    "hideCharacterCard": "Ukryj kartę postaci",
+    "attributes": "Atrybuty",
+    "skills": "Umiejętności",
+    "weapons": "Broń",
+    "armour": "Pancerz (AP)",
+    "traits": "Cechy",
+    "wounds": "Rany",
+    "mana": "Mana",
+    "races": {
+      "Human": "Człowiek",
+      "Dwarf": "Krasnolud",
+      "Halfling": "Niziołek",
+      "Orc": "Ork",
+      "none": "Istota"
+    },
     "voicePoolMissing": "W ustawieniach DM brakuje głosów oznaczonych jako męskie lub żeńskie — głosy nie będą losowane dla nowych BN-ów.",
     "disposition": "Przychylność",
     "archivedHistory": "Zarchiwizowana Historia",

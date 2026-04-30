@@ -4,6 +4,20 @@ import { filterDuplicateDialogueSegments, getDialogueSpeakerLabel } from '../../
 import { useGameSlice } from '../../../stores/gameSelectors';
 import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
+import NpcSpeakerChip from './NpcSpeakerChip';
+
+/**
+ * Look up the full NPC row for a dialogue speaker. Case-insensitive match
+ * against `world.npcs` by name. Returns null for the narrator / player /
+ * unknown speakers so the caller can skip the hover-card affordance.
+ */
+function resolveSegmentNpc(segment, worldNpcs) {
+  const rawName = typeof segment?.character === 'string' ? segment.character : segment?.speaker;
+  const name = typeof rawName === 'string' ? rawName.trim() : '';
+  if (!name) return null;
+  const key = name.toLowerCase();
+  return (worldNpcs || []).find((n) => typeof n?.name === 'string' && n.name.trim().toLowerCase() === key) || null;
+}
 
 /**
  * Resolve the best-known gender for a dialogue speaker. Priority order:
@@ -15,13 +29,11 @@ import Tooltip from '../../ui/Tooltip';
 function resolveSegmentGender(segment, worldNpcs, characterVoiceMap) {
   const direct = segment?.gender;
   if (direct === 'male' || direct === 'female') return direct;
+  const npc = resolveSegmentNpc(segment, worldNpcs);
+  if (npc?.gender === 'male' || npc?.gender === 'female') return npc.gender;
   const rawName = typeof segment?.character === 'string' ? segment.character : segment?.speaker;
   const name = typeof rawName === 'string' ? rawName.trim() : '';
-  if (!name) return null;
-  const key = name.toLowerCase();
-  const npc = (worldNpcs || []).find((n) => typeof n?.name === 'string' && n.name.trim().toLowerCase() === key);
-  if (npc?.gender === 'male' || npc?.gender === 'female') return npc.gender;
-  const mapped = characterVoiceMap?.[name]?.gender;
+  const mapped = name ? characterVoiceMap?.[name]?.gender : null;
   if (mapped === 'male' || mapped === 'female') return mapped;
   return null;
 }
@@ -79,12 +91,16 @@ export function DialogueSegments({ segments, narrator, messageId }) {
         const active = isSegmentActive(i);
         if (seg.type === 'dialogue') {
           const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
+          const speakerLabel = getDialogueSpeakerLabel(seg, t('common.npc'));
+          const speakerNpc = resolveSegmentNpc(seg, worldNpcs);
           return (
             <div key={i} className={`pl-3 border-l-2 border-tertiary-dim/40 transition-colors ${active ? 'border-tertiary bg-surface-tint/5' : ''}`}>
               <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                  {getDialogueSpeakerLabel(seg, t('common.npc'))}
-                </span>
+                <NpcSpeakerChip
+                  npc={speakerNpc}
+                  label={speakerLabel}
+                  className="text-[10px] font-bold text-tertiary uppercase tracking-wider"
+                />
                 <GenderIcon gender={speakerGender} className="text-[11px] text-tertiary/70 leading-none" />
                 {active && (
                   <span className="material-symbols-outlined text-tertiary text-xs animate-pulse">
@@ -245,12 +261,15 @@ export function StreamingContent({ narrative, segments }) {
           if (seg.type === 'dialogue') {
             const speaker = getDialogueSpeakerLabel(seg, t('common.npc'));
             const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
+            const speakerNpc = resolveSegmentNpc(seg, worldNpcs);
             return (
               <div key={i} className="pl-3 border-l-2 border-tertiary-dim/40">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[10px] font-bold text-tertiary uppercase tracking-wider">
-                    {speaker}
-                  </span>
+                  <NpcSpeakerChip
+                    npc={speakerNpc}
+                    label={speaker}
+                    className="text-[10px] font-bold text-tertiary uppercase tracking-wider"
+                  />
                   <GenderIcon gender={speakerGender} className="text-[11px] text-tertiary/70 leading-none" />
                 </div>
                 <p className="text-xs text-on-surface leading-snug">

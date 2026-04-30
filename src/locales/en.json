@@ -411,7 +411,8 @@
     "rawAiSpeechTitle": "Raw AI response",
     "sessionTime": "Session",
     "totalPlayTime": "Total",
-    "narrationTime": "Narration"
+    "narrationTime": "Narration",
+    "openNpcSheet": "Open character sheet: {{name}}"
   },
   "character": {
     "bonus": "B",
@@ -1010,6 +1011,27 @@
     "voice": "Voice",
     "noVoice": "No voice assigned",
     "voicePoolMissing": "DM Settings is missing voices tagged male or female — voices won't be auto-assigned to new NPCs.",
+    "race": "Race",
+    "creatureKind": "Creature type",
+    "level": "Level",
+    "lvl": "Lvl",
+    "characterCard": "Character sheet",
+    "showCharacterCard": "Show character sheet",
+    "hideCharacterCard": "Hide character sheet",
+    "attributes": "Attributes",
+    "skills": "Skills",
+    "weapons": "Weapons",
+    "armour": "Armour (AP)",
+    "traits": "Traits",
+    "wounds": "Wounds",
+    "mana": "Mana",
+    "races": {
+      "Human": "Human",
+      "Dwarf": "Dwarf",
+      "Halfling": "Halfling",
+      "Orc": "Orc",
+      "none": "Creature"
+    },
     "disposition": "Disposition",
     "archivedHistory": "Archived History",
     "eventLog": "Event Log",

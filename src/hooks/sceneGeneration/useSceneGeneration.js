@@ -171,7 +171,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         // Combat fallback + bestiary stats
         injectCombatFallback(result, state, playerAction, isFirstScene, isPassiveSceneAction, t);
-        fillBestiaryStats(result);
+        fillBestiaryStats(result, state);
 
         // Dice rolls
         const rawAiSpeech = {
