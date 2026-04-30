@@ -32,10 +32,95 @@ function sanitizeForImageGen(text, provider = 'dalle') {
   return sanitized.replace(/\s{2,}/g, ' ').trim();
 }
 
-// DreamShaperXL / SDXL checkpoints respond strongly to trailing quality tags.
-// DALL-E/Gemini ignore or downweight these, so we only append for sd-webui.
-let SD_QUALITY_TAGS = 'masterpiece, best quality, highly detailed, intricate details, cinematic composition, dramatic lighting, volumetric light, sharp focus, 8k';
-SD_QUALITY_TAGS = '';
+// Per-model SDXL presets — research-backed recommendations from each model's
+// Civitai card plus community consensus. Keys match the `model_name` field
+// (no file extension or hash) returned by A1111's /sd-models endpoint.
+// Backend mirror lives in backend/src/services/sdPresets.js — keep both in
+// sync when tuning.
+//
+//   asgardSDXLHybrid_v12FP32MainModel — https://civitai.com/models/273751
+//     "Hybrid" (Turbo-ish but not full Turbo). Author recommends the
+//     "Sleipnir workflow"; community sweet spot is DPM++ 2M Karras at 24–28
+//     steps with CFG 5–7. Most versatile of the trio — default scene model.
+//
+//   starlightXLAnimated_v3 — https://civitai.com/models/143043
+//     2.5D anime. Author is explicit: DPM++ 3M SDE Karras, CFG 3–5 (sweet
+//     spot ~3.6), 25–40 steps. HIGH CFG ruins this model (artifacts,
+//     overcooked colors). Accepts Danbooru-style quality tags at the start
+//     followed by natural-language description.
+//
+//   paintersCheckpointOilPaint_v11 — https://civitai.com/models/240154
+//     Alla prima oil painting look. v1.1 has SAI's Offset LoRA built in —
+//     do NOT stack an external Offset LoRA. DPM++ 2M Karras at 25–35 steps,
+//     CFG 5–6. Reacts strongly to "oil painting / alla prima / impasto /
+//     painterly / chiaroscuro" keywords in the tail.
+export const SD_MODEL_PRESETS = {
+  asgardSDXLHybrid_v12FP32MainModel: {
+    sampler: 'DPM++ 2M Karras',
+    steps: 26,
+    cfg: 6,
+    width: 1216,
+    height: 832,
+    portraitWidth: 832,
+    portraitHeight: 1216,
+    qualityTail: 'masterpiece, best quality, highly detailed, intricate details, cinematic composition, dramatic lighting, volumetric light, sharp focus, 8k',
+    negative: 'low quality, blurry, pixelated, distorted, extra limbs, watermark, text, deformed hands, illustration, cartoon, anime, sketch',
+  },
+  starlightXLAnimated_v3: {
+    sampler: 'DPM++ 3M SDE Karras',
+    steps: 40,
+    cfg: 3.6,
+    width: 1216,
+    height: 832,
+    portraitWidth: 832,
+    portraitHeight: 1216,
+    qualityHead: 'masterpiece, best quality, highly detailed, sharp focus',
+    qualityTail: 'vivid colors, dynamic lighting, 2.5D anime illustration, cel-shaded highlights',
+    negative: 'low quality, worst quality, blurry, bad anatomy, extra limbs, deformed hands, watermark, text, photorealistic, 3d render, realistic photo, overexposed, noisy, oversaturated',
+  },
+  paintersCheckpointOilPaint_v11: {
+    sampler: 'DPM++ 2M Karras',
+    steps: 30,
+    cfg: 5.5,
+    width: 1216,
+    height: 832,
+    portraitWidth: 832,
+    portraitHeight: 1216,
+    qualityTail: 'oil painting, alla prima, visible brushstrokes, impasto texture, painterly, atmospheric lighting, chiaroscuro, rich color palette, canvas texture',
+    negative: 'low quality, blurry, pixelated, distorted, extra limbs, watermark, text, deformed hands, photograph, photorealistic, 3d render, cartoon, anime, flat colors, digital art, smooth plastic shading',
+  },
+};
+
+// A1111 titles look like "asgardSDXLHybrid_v12FP32MainModel.safetensors [a1b2c3d4]".
+// Strip extension + trailing hash, then exact-match; if that fails, do a
+// substring containment check so forks/renames still resolve to the closest
+// preset.
+function normalizeModelKey(title) {
+  if (!title || typeof title !== 'string') return '';
+  return title
+    .replace(/\s*\[[0-9a-f]{4,}\]\s*$/i, '')
+    .replace(/\.(safetensors|ckpt|pt|bin)$/i, '')
+    .trim();
+}
+
+export function getModelPreset(modelTitle) {
+  const normalized = normalizeModelKey(modelTitle);
+  if (!normalized) return null;
+  if (SD_MODEL_PRESETS[normalized]) return SD_MODEL_PRESETS[normalized];
+  const lower = normalized.toLowerCase();
+  for (const key of Object.keys(SD_MODEL_PRESETS)) {
+    if (lower.includes(key.toLowerCase())) return SD_MODEL_PRESETS[key];
+  }
+  return null;
+}
+
+function applyModelStyling(prompt, sdModel) {
+  const preset = getModelPreset(sdModel);
+  if (!preset) return prompt;
+  const head = preset.qualityHead ? `${preset.qualityHead}, ` : '';
+  const tail = preset.qualityTail ? `, ${preset.qualityTail}` : '';
+  return `${head}${prompt}${tail}`;
+}
 
 const IMAGE_STYLE_PROMPTS = {
   illustration: {
@@ -177,7 +262,13 @@ export function getImageStyleNegative(imageStyle) {
   return entry.negative || '';
 }
 
-export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false) {
+// Extra negatives to append when the portrait is generated from a real
+// reference photo via plain img2img. Without ControlNet / IP-Adapter the init
+// image drags in the whole modern-photo aesthetic (casual clothes, indoor
+// room, phone lighting) — these push it back toward fantasy.
+export const REFERENCE_PHOTO_NEGATIVE = 'modern clothes, contemporary clothing, t-shirt, hoodie, jeans, sportswear, business suit, necktie, eyeglasses frame, selfie, phone photo, webcam photo, snapshot, casual photo, indoor room, plain wall background, office background, modern background, modern furniture, smartphone, headphones, earbuds';
+
+export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider = 'dalle', imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, seriousness = null, hasPortraitRef = false, sdModel = null) {
   const isGemini = provider === 'gemini';
   const isSdWebui = provider === 'sd-webui';
 
@@ -201,8 +292,8 @@ export function buildImagePrompt(narrative, genre, tone, imagePrompt, provider =
     return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting, 16:9 widescreen composition.`;
   }
 
-  const qualityTail = isSdWebui ? `, ${SD_QUALITY_TAGS}` : '';
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting${qualityTail}.`;
+  const base = `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective}${ageDirective}${genderDirective}${portraitRefDirective} Scene: ${sceneDesc}. No text, no UI elements, no watermarks. High quality, detailed environment, atmospheric lighting.`;
+  return isSdWebui ? applyModelStyling(base, sdModel) : base;
 }
 
 export function buildSpeculativeImageDescription(previousNarrative, playerAction, diceOutcome, provider = 'dalle') {
@@ -232,7 +323,7 @@ export function buildSpeculativeImageDescription(previousNarrative, playerAction
   return parts.join(' ');
 }
 
-export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null } = {}) {
+export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null } = {}) {
   const isGemini = provider === 'gemini';
   const isSdWebui = provider === 'sd-webui';
   const styleDirective = getImageStyleDirective(imageStyle, 'prompt');
@@ -249,13 +340,14 @@ export function buildItemImagePrompt(item, { genre = 'Fantasy', tone = 'Epic', p
     return `Generate an image in this EXACT art style: ${styleDirective}. Mood: ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory icon-style artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) in a ${worldContext} world. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
   }
 
-  const qualityTail = isSdWebui ? `, ${SD_QUALITY_TAGS}` : '';
-  return `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail${qualityTail}.`;
+  const base = `ART STYLE: ${styleDirective}. ${mood}.${darkDirective}${seriousnessDirective} Subject: a fantasy inventory artwork of "${itemName}" (${itemType}, rarity: ${itemRarity}) from a ${worldContext} setting. Visual details: ${itemDescription}. Single item in focus, centered composition, clean readable silhouette, no characters, no text, no UI elements, no watermark, high detail.`;
+  return isSdWebui ? applyModelStyling(base, sdModel) : base;
 }
 
-export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}) {
+export function buildPortraitPrompt(species, gender, age, careerName, genre = 'Fantasy', provider = 'stability', imageStyle = 'painting', hasReferenceImage = false, darkPalette = false, seriousness = null, extras = {}, sdModel = null) {
   const genderLabel = gender === 'female' ? 'female' : 'male';
   const isSD = provider === 'stability';
+  const isSdWebui = provider === 'sd-webui';
   const isGemini = provider === 'gemini';
 
   const speciesTraits = {
@@ -276,8 +368,22 @@ export function buildPortraitPrompt(species, gender, age, careerName, genre = 'F
   const darkDirective = darkPalette ? ' Dark moody color palette, deep shadows, low-key lighting, muted desaturated tones.' : '';
   const seriousnessDirective = seriousness != null ? ` ${getSeriousnessDirective(seriousness)}.` : '';
 
+  // When we have a reference photo going into plain img2img (A1111 / Stability
+  // without IP-Adapter), the init image pulls the result toward the uploaded
+  // photo's styling — modern clothes, phone-photo lighting, indoor background.
+  // Prepend weighted fantasy anchors (A1111 weighting syntax works on both
+  // sd-webui and Stability SDXL) to keep the final image squarely in genre.
+  const fantasyAnchor = hasReferenceImage
+    ? `(fantasy character portrait:1.4), (epic fantasy illustration:1.3), (fantasy ${careerName || 'adventurer'} in character:1.2), (fantasy armor and costume:1.2), `
+    : '';
+
+  if (isSdWebui) {
+    const base = `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return applyModelStyling(base, sdModel);
+  }
+
   if (isSD) {
-    return `ART STYLE: ${styleDirective}. Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
+    return `ART STYLE: ${styleDirective}. ${fantasyAnchor}Close-up portrait of a ${genderLabel} ${speciesDesc}${ageDirective}${career}. ${likenessDirective} Highly detailed facial features: expressive eyes with visible iris detail, defined nose and lips, skin imperfections, scars and character lines. Sharp focus on the face, intricate costume, moody atmospheric background, head and shoulders composition.${darkDirective}${seriousnessDirective}${emotionDirective} No text, no watermarks.`;
   }
 
   if (isGemini) {

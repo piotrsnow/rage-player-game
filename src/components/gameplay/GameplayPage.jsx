@@ -666,7 +666,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <div className="grid grid-cols-2 gap-4">
               <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
               {displayCharacter.mana && (
-                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="tertiary" />
+                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="blue" />
               )}
             </div>
           </div>

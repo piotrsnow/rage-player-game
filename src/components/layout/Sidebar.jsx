@@ -148,7 +148,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
           <div className="space-y-3">
             <StatusBar label={t('common.wounds')} current={character.wounds} max={character.maxWounds} color="error" />
             {mana.max > 0 && (
-              <StatusBar label="Mana" current={mana.current} max={mana.max} color="tertiary" />
+              <StatusBar label="Mana" current={mana.current} max={mana.max} color="blue" />
             )}
           </div>
           <div className="mt-4">

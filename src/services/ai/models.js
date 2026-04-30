@@ -6,8 +6,8 @@
 // Untagged models don't appear in the scene picker.
 export const AI_MODELS = [
   // OpenAI — 6 scene picker entries (flagship small + large)
-  { id: 'gpt-5',                      provider: 'openai',    label: 'GPT-5',                cost: '~$1.25 / $10 per 1M tokens',   tier: 'premium',  sceneBadge: 'premium' },
-  { id: 'gpt-5-mini',                 provider: 'openai',    label: 'GPT-5 Mini',           cost: '~$0.25 / $2.00 per 1M tokens', tier: 'standard', sceneBadge: 'balanced' },
+  { id: 'gpt-5.4',                    provider: 'openai',    label: 'GPT-5.4',              cost: '~$1.25 / $10 per 1M tokens',   tier: 'premium',  sceneBadge: 'premium' },
+  { id: 'gpt-5.4-mini',               provider: 'openai',    label: 'GPT-5.4 Mini',         cost: '~$0.25 / $2.00 per 1M tokens', tier: 'standard', sceneBadge: 'balanced' },
   { id: 'gpt-4.1',                    provider: 'openai',    label: 'GPT-4.1',              cost: '~$2.00 / $8.00 per 1M tokens', tier: 'premium',  sceneBadge: 'balanced' },
   { id: 'gpt-4.1-mini',               provider: 'openai',    label: 'GPT-4.1 Mini',         cost: '~$0.40 / $1.60 per 1M tokens', tier: 'standard', sceneBadge: 'budget' },
   { id: 'gpt-4o-mini',                provider: 'openai',    label: 'GPT-4o Mini',          cost: '~$0.15 / $0.60 per 1M tokens', tier: 'standard', sceneBadge: 'budget' },

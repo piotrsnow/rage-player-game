@@ -116,8 +116,9 @@ export default function ImagePlaygroundSection() {
       null,
       seriousness,
       false,
+      imageProvider === 'sd-webui' ? sdModel : null,
     );
-  }, [aiProvider, darkPalette, genre, imageProvider, imageStyle, language, seriousness, tone]);
+  }, [aiProvider, darkPalette, genre, imageProvider, imageStyle, language, sdModel, seriousness, tone]);
 
   const handleEnhance = async () => {
     const kw = keywords.trim();

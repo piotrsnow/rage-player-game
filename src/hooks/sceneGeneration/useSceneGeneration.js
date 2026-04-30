@@ -108,10 +108,18 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               name: state.campaign?.name || '', genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '', coreState,
               characterIds: characterBackendId ? [characterBackendId] : [],
-            }, { idempotent: true });
+            }, { idempotencyKey: `campaign-create:${state.campaign?.id}` });
             backendCampaignId = created.id;
-            state.campaign.backendId = created.id;
-            if (Array.isArray(created.characterIds)) state.campaign.characterIds = created.characterIds;
+            // Push backendId through the store — direct mutation of
+            // state.campaign is a no-op on Immer-frozen state and used to
+            // leak duplicate POSTs on every subsequent scene.
+            dispatch({
+              type: 'SET_CAMPAIGN_BACKEND_ID',
+              payload: {
+                backendId: created.id,
+                characterIds: Array.isArray(created.characterIds) ? created.characterIds : undefined,
+              },
+            });
             console.log('[useAI] Auto-synced campaign to backend:', created.id);
           } catch (syncErr) {
             console.warn('[useAI] Failed to auto-sync campaign:', syncErr.message);

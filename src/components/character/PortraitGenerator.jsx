@@ -5,10 +5,15 @@ import { apiClient, toCanonicalStoragePath } from '../../services/apiClient';
 import { imageService } from '../../services/imageGen';
 import WebcamCapture from '../ui/WebcamCapture';
 
+// Raised across the board: with plain img2img (no ControlNet/IP-Adapter) the
+// reference photo dominates at low denoise — you get "me in a filter" instead
+// of a fantasy portrait. Sweet spot for "fantasy character with my face" on
+// SDXL img2img is 0.7–0.85; below 0.5 the original photo bleeds through too
+// much (modern clothes, indoor bg, phone-photo lighting).
 const STRENGTH_PRESETS = [
-  { value: 0.3, labelKey: 'charCreator.strengthSubtle' },
-  { value: 0.45, labelKey: 'charCreator.strengthBalanced' },
-  { value: 0.65, labelKey: 'charCreator.strengthIntense' },
+  { value: 0.55, labelKey: 'charCreator.strengthSubtle' },
+  { value: 0.7, labelKey: 'charCreator.strengthBalanced' },
+  { value: 0.85, labelKey: 'charCreator.strengthIntense' },
 ];
 
 const EMOTION_KEYS = ['anger', 'joy', 'mockery', 'sadness', 'nostalgia'];
@@ -104,7 +109,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const hasKey = settings.useBackend && hasApiKey(keyProvider);
 
   const [photoBlob, setPhotoBlob] = useState(null);
-  const [strength, setStrength] = useState(0.45);
+  const [strength, setStrength] = useState(0.7);
   const [likeness, setLikeness] = useState(LIKENESS_DEFAULT);
   const [emotions, setEmotions] = useState({ ...EMOTIONS_DEFAULT });
   const [generating, setGenerating] = useState(false);
@@ -332,8 +337,8 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
               </div>
               <input
                 type="range"
-                min={20}
-                max={70}
+                min={40}
+                max={95}
                 value={Math.round(strength * 100)}
                 onChange={(e) => setStrength(Number(e.target.value) / 100)}
                 className="w-full appearance-none mana-slider bg-transparent cursor-pointer"

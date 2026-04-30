@@ -4,6 +4,7 @@ import { UUID_PATTERN } from '../../lib/validators.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
 import { createMediaStore } from '../../services/mediaStore.js';
+import { getModelPreset } from '../../services/sdPresets.js';
 import { config } from '../../config.js';
 
 const store = createMediaStore(config);
@@ -14,6 +15,25 @@ const ENSURE_MODEL_TIMEOUT_MS = 120_000;
 const GENERATE_TIMEOUT_MS = 180_000;
 
 const DEFAULT_NEGATIVE_PROMPT = 'blurry, lowres, worst quality, low quality, jpeg artifacts, text, watermark, signature, username, deformed, distorted, disfigured, bad anatomy, wrong anatomy, extra limbs, missing limbs, extra fingers, fewer fingers, mutated hands, poorly drawn hands, poorly drawn face, deformed face, bad proportions, out of frame, duplicate, cropped';
+
+// Merge the caller's negative with the model preset's style-specific negative
+// and the anatomy defaults. Preset value goes last so it can override — most
+// preset negatives intentionally repeat "low quality, blurry" which is cheap.
+// Deduplicate case-insensitive so we don't blow past A1111's prompt buffer.
+function mergeNegatives(userNegative, preset) {
+  const parts = [userNegative || '', preset?.negative || '', DEFAULT_NEGATIVE_PROMPT]
+    .filter(Boolean)
+    .join(', ');
+  const seen = new Set();
+  const out = [];
+  for (const token of parts.split(',').map((t) => t.trim()).filter(Boolean)) {
+    const key = token.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(token);
+  }
+  return out.join(', ');
+}
 
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
@@ -163,17 +183,29 @@ export async function sdWebuiProxyRoutes(fastify) {
 
     const {
       prompt,
-      negativePrompt = DEFAULT_NEGATIVE_PROMPT,
+      negativePrompt: rawNegativePrompt,
       model,
-      width = config.sdWebui.sceneWidth,
-      height = config.sdWebui.sceneHeight,
-      steps = config.sdWebui.steps,
-      cfg = config.sdWebui.cfg,
-      sampler = config.sdWebui.sampler,
+      width: rawWidth,
+      height: rawHeight,
+      steps: rawSteps,
+      cfg: rawCfg,
+      sampler: rawSampler,
       seed: bodySeed,
       campaignId,
       forceNew = false,
     } = request.body;
+
+    // Parameter resolution chain: explicit body value > per-model preset >
+    // backend config default. The preset values are tuned for each checkpoint
+    // (see sdPresets.js); config defaults stay as the fallback for models
+    // we don't have a preset for (e.g. DreamShaperXL Turbo defaults).
+    const preset = getModelPreset(model);
+    const sampler = rawSampler ?? preset?.sampler ?? config.sdWebui.sampler;
+    const steps = rawSteps ?? preset?.steps ?? config.sdWebui.steps;
+    const cfg = rawCfg ?? preset?.cfg ?? config.sdWebui.cfg;
+    const width = rawWidth ?? preset?.width ?? config.sdWebui.sceneWidth;
+    const height = rawHeight ?? preset?.height ?? config.sdWebui.sceneHeight;
+    const negativePrompt = mergeNegatives(rawNegativePrompt, preset);
 
     // Fixed seed (from FE) → reproducible & cacheable. No seed → random,
     // and because the seed is part of cacheParams the cache key is unique
@@ -276,7 +308,7 @@ export async function sdWebuiProxyRoutes(fastify) {
     const parts = request.parts();
     let imageBuffer = null;
     let prompt = '';
-    let negativePrompt = DEFAULT_NEGATIVE_PROMPT;
+    let rawNegativePrompt = null;
     let strength = '0.55';
     let model = '';
     let seedRaw = null;
@@ -286,7 +318,7 @@ export async function sdWebuiProxyRoutes(fastify) {
         imageBuffer = await part.toBuffer();
       } else if (part.type === 'field') {
         if (part.fieldname === 'prompt') prompt = part.value;
-        if (part.fieldname === 'negativePrompt') negativePrompt = part.value;
+        if (part.fieldname === 'negativePrompt') rawNegativePrompt = part.value;
         if (part.fieldname === 'strength') strength = part.value;
         if (part.fieldname === 'model') model = part.value;
         if (part.fieldname === 'seed') seedRaw = part.value;
@@ -304,8 +336,17 @@ export async function sdWebuiProxyRoutes(fastify) {
     const coerced = coerceSeed(seedRaw);
     const seed = coerced === null ? randomSeed() : coerced;
 
-    const width = 768;
-    const height = 1024;
+    // Portrait dims come from the per-model preset (832x1216 = SDXL-native
+    // 2:3 portrait bucket) instead of the legacy 768x1024 which sits
+    // off-bucket and hurts Starlight/Painter's quality. For unknown models we
+    // keep the old 768x1024 — safe across non-SDXL checkpoints too.
+    const preset = getModelPreset(model);
+    const width = preset?.portraitWidth ?? 768;
+    const height = preset?.portraitHeight ?? 1024;
+    const sampler = preset?.sampler ?? config.sdWebui.sampler;
+    const steps = preset?.steps ?? config.sdWebui.steps;
+    const cfg = preset?.cfg ?? config.sdWebui.cfg;
+    const negativePrompt = mergeNegatives(rawNegativePrompt, preset);
 
     let res;
     try {
@@ -318,9 +359,9 @@ export async function sdWebuiProxyRoutes(fastify) {
           denoising_strength: Math.max(0, Math.min(1, parseFloat(strength) || 0.55)),
           width,
           height,
-          steps: config.sdWebui.steps,
-          cfg_scale: config.sdWebui.cfg,
-          sampler_name: config.sdWebui.sampler,
+          steps,
+          cfg_scale: cfg,
+          sampler_name: sampler,
           seed,
           n_iter: 1,
           batch_size: 1,
@@ -340,9 +381,9 @@ export async function sdWebuiProxyRoutes(fastify) {
           negative_prompt: negativePrompt,
           width,
           height,
-          steps: config.sdWebui.steps,
-          cfg_scale: config.sdWebui.cfg,
-          sampler_name: config.sdWebui.sampler,
+          steps,
+          cfg_scale: cfg,
+          sampler_name: sampler,
           seed,
           n_iter: 1,
           batch_size: 1,

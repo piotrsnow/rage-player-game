@@ -1,4 +1,4 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt } from './imagePrompts';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
 import { apiClient, toCanonicalStoragePath } from './apiClient';
 
 // Image generation — FE-side direct provider calls were removed with the
@@ -26,6 +26,29 @@ function canonicalUrl(url) {
   return toCanonicalStoragePath(url);
 }
 
+// Attach SDXL preset hints (sampler/steps/cfg/width/height/negative) to the
+// /proxy/sd-webui/generate body so each checkpoint runs at its sweet spot.
+// Backend does the same lookup as a safety net — we send from FE so the UI
+// can override individual fields later without backend changes. `kind` picks
+// portrait vs scene bucket dimensions; omit width/height if the caller
+// already set them explicitly.
+function applyPresetToPayload(payload, sdModel, kind = 'scene') {
+  const preset = getModelPreset(sdModel);
+  if (!preset) return;
+  if (payload.sampler == null) payload.sampler = preset.sampler;
+  if (payload.steps == null) payload.steps = preset.steps;
+  if (payload.cfg == null) payload.cfg = preset.cfg;
+  if (payload.width == null) {
+    payload.width = kind === 'portrait' ? preset.portraitWidth : preset.width;
+  }
+  if (payload.height == null) {
+    payload.height = kind === 'portrait' ? preset.portraitHeight : preset.height;
+  }
+  if (payload.negativePrompt == null && preset.negative) {
+    payload.negativePrompt = preset.negative;
+  }
+}
+
 async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
@@ -43,6 +66,7 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
     const payload = { ...body };
     if (sdModel) payload.model = sdModel;
     if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
+    applyPresetToPayload(payload, sdModel, 'scene');
     const data = await apiClient.post('/proxy/sd-webui/generate', payload);
     return canonicalUrl(data.url);
   }
@@ -64,6 +88,7 @@ async function generatePortraitViaStabilityProxy(imageBlob, prompt, strength) {
   formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
   formData.append('strength', String(strength));
+  formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
 
   const data = await apiClient.request('/proxy/stability/portrait', {
     method: 'POST',
@@ -119,6 +144,9 @@ async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdMo
   formData.append('strength', String(strength ?? 0.55));
   if (sdModel) formData.append('model', sdModel);
   if (Number.isInteger(sdSeed)) formData.append('seed', String(sdSeed));
+  // Extra negative only makes sense when a real photo is the init image —
+  // suppresses modern-photo bleed-through (clothes, indoor bg, phone grain).
+  if (imageBlob) formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
 
   const data = await apiClient.request('/proxy/sd-webui/portrait', {
     method: 'POST',
@@ -130,7 +158,8 @@ async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdMo
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
     const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait);
+    const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
+    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
     return generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
       portraitUrl: hasPortrait ? portraitUrl : null,
@@ -138,7 +167,7 @@ export const imageService = {
   },
 
   async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
-    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras);
+    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
 
     if (provider === 'dalle') {
       return generatePortraitViaDalleProxy(prompt);
@@ -184,6 +213,7 @@ export const imageService = {
       const payload = { prompt: rawPrompt };
       if (sdModel) payload.model = sdModel;
       if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
+      applyPresetToPayload(payload, sdModel, 'scene');
       const data = await apiClient.post('/proxy/sd-webui/generate', payload);
       return canonicalUrl(data.url);
     }
@@ -203,6 +233,7 @@ export const imageService = {
       imageStyle,
       darkPalette,
       seriousness,
+      sdModel,
     });
     return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed });
   },
