@@ -19,9 +19,13 @@ function Scene3DContent({ sceneCmd, onCharacterClick }) {
 
   const meshySettings = useMemo(() => ({
     meshyEnabled: settings.meshyEnabled || false,
-    meshyApiKey: settings.meshyApiKey || '',
+    // Meshy key is server-only (env var MESHY_API_KEY). assetManager's
+    // legacy gate requires a truthy `meshyApiKey`; pass a sentinel when
+    // the user has meshy enabled — the real key is attached by the backend
+    // proxy (backend/src/routes/proxy/meshy.js).
+    meshyApiKey: settings.meshyEnabled ? '__server_managed__' : '',
     campaignId,
-  }), [settings.meshyEnabled, settings.meshyApiKey, campaignId]);
+  }), [settings.meshyEnabled, campaignId]);
 
   const characterPositions = useMemo(() => {
     const positions = {};

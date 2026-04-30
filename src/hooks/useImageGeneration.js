@@ -14,14 +14,17 @@ export function useImageGeneration() {
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
 
-  const { sceneVisualization, imageProvider, stabilityApiKey, openaiApiKey, geminiApiKey, itemImagesEnabled } = settings;
+  const { sceneVisualization, imageProvider, itemImagesEnabled } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
   const itemImageGenEnabled = itemImagesEnabled !== false;
   const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
-  const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
+  // Image keys are env-only on the backend — FE just passes an empty
+  // string (imageService ignores it). `hasApiKey(provider)` below is the
+  // real gate for whether generation is allowed.
+  const imageApiKey = '';
 
   const generateItemImageForInventoryItem = useCallback(
     async (item, options = {}) => {

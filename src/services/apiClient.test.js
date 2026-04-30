@@ -264,3 +264,73 @@ describe('apiClient cookie-based auth', () => {
     expect(observed).toContain('t');
   });
 });
+
+describe('toCanonicalStoragePath', () => {
+  let toCanonicalStoragePath;
+  beforeAll(async () => {
+    ({ toCanonicalStoragePath } = await import('./apiClient.js'));
+  });
+
+  it('returns falsy/data/blob inputs unchanged', () => {
+    expect(toCanonicalStoragePath('')).toBe('');
+    expect(toCanonicalStoragePath(null)).toBe(null);
+    expect(toCanonicalStoragePath('data:image/png;base64,abc')).toBe('data:image/png;base64,abc');
+    expect(toCanonicalStoragePath('blob:http://x/abc')).toBe('blob:http://x/abc');
+  });
+
+  it('strips host and ?token= from hydrated media URLs', () => {
+    expect(
+      toCanonicalStoragePath('http://backend:3001/v1/media/file/images/abc.jpg?token=XYZ'),
+    ).toBe('/v1/media/file/images/abc.jpg');
+  });
+
+  it('preserves canonical paths unchanged (idempotent)', () => {
+    const canonical = '/v1/media/file/images/abc.jpg';
+    expect(toCanonicalStoragePath(canonical)).toBe(canonical);
+    expect(toCanonicalStoragePath(toCanonicalStoragePath(canonical))).toBe(canonical);
+  });
+
+  it('hoists legacy pre-versioned paths onto /v1', () => {
+    expect(toCanonicalStoragePath('/media/file/x.jpg')).toBe('/v1/media/file/x.jpg');
+    expect(toCanonicalStoragePath('/proxy/openai/images')).toBe('/v1/proxy/openai/images');
+  });
+
+  it('converts legacy GCS signed URLs to canonical paths', () => {
+    expect(
+      toCanonicalStoragePath(
+        'https://storage.googleapis.com/my-bucket/images/abc.jpg?Expires=123&Signature=xyz',
+      ),
+    ).toBe('/v1/media/file/images/abc.jpg');
+  });
+
+  it('returns non-media absolute URLs unchanged', () => {
+    expect(toCanonicalStoragePath('https://example.com/foo.png')).toBe('https://example.com/foo.png');
+  });
+});
+
+describe('apiClient.resolveMediaUrl (render-time)', () => {
+  it('attaches origin + ?token on canonical paths', () => {
+    apiClient.configure({ baseUrl: 'http://test', token: 'tok-1' });
+    const resolved = apiClient.resolveMediaUrl('/v1/media/file/images/abc.jpg');
+    expect(resolved).toBe('http://test/v1/media/file/images/abc.jpg?token=tok-1');
+  });
+
+  it('re-hydrates hydrated URLs with a fresh token', () => {
+    apiClient.configure({ baseUrl: 'http://test', token: 'new-token' });
+    const resolved = apiClient.resolveMediaUrl(
+      'http://old-host:3001/v1/media/file/images/abc.jpg?token=STALE',
+    );
+    expect(resolved).toBe('http://test/v1/media/file/images/abc.jpg?token=new-token');
+  });
+
+  it('passes through data: and blob: URIs', () => {
+    expect(apiClient.resolveMediaUrl('data:image/png;base64,xyz')).toBe('data:image/png;base64,xyz');
+    expect(apiClient.resolveMediaUrl('blob:http://host/abc')).toBe('blob:http://host/abc');
+  });
+
+  it('leaves remote (non-media) URLs unchanged', () => {
+    expect(apiClient.resolveMediaUrl('https://cdn.example.com/foo.png')).toBe(
+      'https://cdn.example.com/foo.png',
+    );
+  });
+});

@@ -49,7 +49,7 @@ export async function getSettingsFromAccount() {
 export async function saveSettingsToAccount(settings) {
   if (!apiClient.isConnected()) return false;
   try {
-    const uiSettings = { ...settings };
+    const uiSettings = sanitizeSettings({ ...settings });
     for (const key of LOCAL_ONLY_SETTINGS_KEYS) {
       delete uiSettings[key];
     }

@@ -14,6 +14,7 @@
 
 import { prisma } from '../lib/prisma.js';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { toCanonicalStoragePath } from './urlCanonical.js';
 
 const CHARACTER_INCLUDE = {
   characterSkills: true,
@@ -49,6 +50,12 @@ export function reconstructCharacterSnapshot(row) {
   if (!row) return null;
   const snapshot = { ...row };
 
+  // Legacy records may hold host-prefixed / token-suffixed URLs; hand the
+  // FE canonical paths so `apiClient.resolveMediaUrl` can freshly hydrate.
+  if (snapshot.portraitUrl) {
+    snapshot.portraitUrl = toCanonicalStoragePath(snapshot.portraitUrl);
+  }
+
   snapshot.skills = {};
   for (const s of row.characterSkills || []) {
     snapshot.skills[s.skillName] = { level: s.level, xp: s.xp, cap: s.cap };
@@ -63,7 +70,7 @@ export function reconstructCharacterSnapshot(row) {
       baseType: item.baseType ?? undefined,
       quantity: item.quantity,
       props,
-      imageUrl: item.imageUrl ?? undefined,
+      imageUrl: item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : undefined,
       addedAt: item.addedAt,
     };
   });
@@ -108,6 +115,11 @@ export function splitCharacterSnapshot(snapshot) {
   for (const key of JSON_FIELDS) {
     if (snapshot[key] !== undefined) scalars[key] = snapshot[key];
   }
+  // Never persist hydrated URLs (origin + `?token=<JWT>`); older FE clients
+  // may still send these on save. Keep canonical `/v1/media/file/...` only.
+  if (typeof scalars.portraitUrl === 'string' && scalars.portraitUrl) {
+    scalars.portraitUrl = toCanonicalStoragePath(scalars.portraitUrl);
+  }
   const equipped = snapshot.equipped || {};
   if (equipped.mainHand !== undefined) scalars.equippedMainHand = equipped.mainHand || null;
   if (equipped.offHand !== undefined) scalars.equippedOffHand = equipped.offHand || null;
@@ -147,10 +159,11 @@ function stackInventoryRows(items) {
     }
     const props = { ...(item.props || {}), ...inlineProps };
     const existing = byKey.get(itemKey);
+    const normalizedImageUrl = item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : null;
     if (existing) {
       existing.quantity += item.quantity || 1;
       existing.props = { ...existing.props, ...props };
-      if (item.imageUrl) existing.imageUrl = item.imageUrl;
+      if (normalizedImageUrl) existing.imageUrl = normalizedImageUrl;
       if (item.baseType) existing.baseType = item.baseType;
     } else {
       byKey.set(itemKey, {
@@ -159,7 +172,7 @@ function stackInventoryRows(items) {
         baseType: item.baseType ?? null,
         quantity: item.quantity || 1,
         props,
-        imageUrl: item.imageUrl ?? null,
+        imageUrl: normalizedImageUrl,
       });
     }
   }

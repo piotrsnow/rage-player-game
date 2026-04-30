@@ -11,9 +11,12 @@ export function useGameContent() {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
-  const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
-  const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
+  const { aiProvider, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
+  // API keys resolve server-side from env; these positional args exist only
+  // for backward-compat with aiService and are ignored (see `_apiKeyIgnored`
+  // params in src/services/ai/service.js).
+  const apiKey = '';
+  const alternateApiKey = '';
 
   const generateCampaign = useCallback(
     async (campaignSettings) => {

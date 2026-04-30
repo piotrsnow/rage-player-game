@@ -5,6 +5,7 @@ import {
   persistCharacterSnapshot,
   createCharacterWithRelations,
 } from '../services/characterRelations.js';
+import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -157,6 +158,9 @@ export async function characterRoutes(fastify) {
     });
     return characters.map((c) => ({
       ...c,
+      // Legacy records may hold hydrated URLs (host + `?token=`); strip back
+      // to canonical so the FE card picker renders with a fresh token.
+      portraitUrl: c.portraitUrl ? toCanonicalStoragePath(c.portraitUrl) : c.portraitUrl,
       // Stub the FE-shape collections so list cards that read e.g.
       // `char.equipped.mainHand` don't trip on undefined.
       skills: {},

@@ -15,7 +15,9 @@
     "import:prefabs": "node scripts/importPrefabsFromModels3d.js",
     "import:prefabs:dry": "node scripts/importPrefabsFromModels3d.js --dry-run",
     "import:prefabs:scan-gcp": "node scripts/importPrefabsFromModels3d.js --scan-gcp",
-    "import:prefabs:scan-gcp:dry": "node scripts/importPrefabsFromModels3d.js --scan-gcp --dry-run"
+    "import:prefabs:scan-gcp:dry": "node scripts/importPrefabsFromModels3d.js --scan-gcp --dry-run",
+    "normalize:asset-urls": "node scripts/normalizeAssetUrls.js",
+    "normalize:asset-urls:apply": "node scripts/normalizeAssetUrls.js --apply"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

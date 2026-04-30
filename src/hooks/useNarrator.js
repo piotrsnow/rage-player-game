@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useGame } from '../contexts/GameContext';
 import { elevenlabsService } from '../services/elevenlabs';
+import { apiClient } from '../services/apiClient';
 import { calculateCost } from '../services/costTracker';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
@@ -299,7 +300,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (!viewerMode) {
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
       }
-      objectUrlsRef.current.push(result.audioUrl);
+      const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
+      objectUrlsRef.current.push(playableAudioUrl);
       if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
@@ -310,7 +312,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           });
       }
 
-      const audio = new Audio(result.audioUrl);
+      const audio = new Audio(playableAudioUrl);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
       const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -549,8 +551,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             if (!viewerMode) {
               dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: text.length }) });
             }
-            objectUrlsRef.current.push(prefetched.audioUrl);
-            const audio = new Audio(prefetched.audioUrl);
+            const playableAudioUrl = apiClient.resolveMediaUrl(prefetched.audioUrl);
+            objectUrlsRef.current.push(playableAudioUrl);
+            const audio = new Audio(playableAudioUrl);
             const baseRate = (dialogueSpeed || 100) / 100;
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
             const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -823,8 +826,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         if (!viewerMode) {
           dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
         }
-        objectUrlsRef.current.push(result.audioUrl);
-        const audio = new Audio(result.audioUrl);
+        const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
+        objectUrlsRef.current.push(playableAudioUrl);
+        const audio = new Audio(playableAudioUrl);
         const baseRate = (dialogueSpeed || 100) / 100;
         const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
         const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);

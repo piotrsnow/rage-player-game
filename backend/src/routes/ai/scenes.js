@@ -3,6 +3,7 @@ import { childLogger } from '../../lib/logger.js';
 import { embedText, buildSceneEmbeddingText } from '../../services/embeddingService.js';
 import { writeEmbedding } from '../../services/embeddingWrite.js';
 import { enqueuePostSceneWork } from '../../services/cloudTasks.js';
+import { toCanonicalStoragePath } from '../../services/urlCanonical.js';
 import { SCENE_BODY_SCHEMA, SCENE_BULK_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'ai' });
@@ -35,7 +36,8 @@ export async function sceneRoutes(fastify) {
     const normalizedSuggestedActions = Array.isArray(scene.suggestedActions)
       ? scene.suggestedActions
       : (Array.isArray(scene.actions) ? scene.actions : []);
-    const normalizedImageUrl = scene.imageUrl || scene.image || null;
+    const rawImageUrl = scene.imageUrl || scene.image || null;
+    const normalizedImageUrl = rawImageUrl ? toCanonicalStoragePath(rawImageUrl) : null;
 
     const existingScene = await prisma.campaignScene.findFirst({
       where: { campaignId, sceneIndex },
@@ -127,6 +129,7 @@ export async function sceneRoutes(fastify) {
             ? scene.suggestedActions
             : (Array.isArray(scene.actions) ? scene.actions : []);
 
+          const rawBulkImageUrl = scene.imageUrl || scene.image || null;
           const payload = {
             campaignId,
             sceneIndex,
@@ -135,7 +138,7 @@ export async function sceneRoutes(fastify) {
             suggestedActions: normalizedSuggestedActions,
             dialogueSegments: scene.dialogueSegments || [],
             imagePrompt: scene.imagePrompt || null,
-            imageUrl: scene.imageUrl || scene.image || null,
+            imageUrl: rawBulkImageUrl ? toCanonicalStoragePath(rawBulkImageUrl) : null,
             soundEffect: scene.soundEffect || null,
             diceRoll: scene.diceRoll ?? null,
             stateChanges: scene.stateChanges ?? null,

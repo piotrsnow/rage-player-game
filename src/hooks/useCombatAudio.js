@@ -8,6 +8,7 @@ import {
   useGameDispatch,
 } from '../stores/gameSelectors';
 import { elevenlabsService } from '../services/elevenlabs';
+import { apiClient } from '../services/apiClient';
 import { calculateCost } from '../services/costTracker';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 import {
@@ -230,7 +231,7 @@ export function useCombatAudio(combat) {
 
     try {
       const url = typeof resolvedUrl === 'string' ? resolvedUrl : await resolvedUrl;
-      playUrl(url);
+      playUrl(apiClient.resolveMediaUrl(url));
     } catch (err) {
       console.warn('[CombatAudio] Battle cry failed:', err?.message || err);
     }

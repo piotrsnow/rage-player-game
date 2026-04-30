@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import { prisma } from '../lib/prisma.js';
-import { resolveApiKey } from '../services/apiKeyService.js';
+import { config } from '../config.js';
 import {
   issueRefreshToken,
   verifyRefreshToken,
@@ -18,8 +18,8 @@ import { generateCsrfToken, CSRF_COOKIE } from '../plugins/csrf.js';
 //   - POST /logout            → CSRF-protected, revokes the refresh token row
 //     from Redis and clears both cookies
 //   - GET  /me                → bearer-auth, returns the authed user
-//   - PUT  /settings          → bearer-auth, patches user settings + API keys
-//   - GET  /api-keys          → bearer-auth, returns masked key previews
+//   - PUT  /settings          → bearer-auth, patches user settings
+//   - GET  /api-keys          → bearer-auth, returns env-key availability
 //
 // Refresh tokens are stored in Postgres; expired rows swept periodically by
 // `startPeriodicCleanup` in refreshTokenService (no Redis dependency).
@@ -213,12 +213,11 @@ export async function authRoutes(fastify) {
         additionalProperties: false,
         properties: {
           settings: { type: 'object' },
-          apiKeys: { type: 'object' },
         },
       },
     },
   }, async (request, reply) => {
-    const { settings, apiKeys } = request.body;
+    const { settings } = request.body;
     const data = {};
 
     if (settings !== undefined) {
@@ -229,27 +228,22 @@ export async function authRoutes(fastify) {
       data.settings = settings;
     }
 
-    if (apiKeys !== undefined) {
-      const { encrypt } = await import('../services/apiKeyService.js');
-      data.apiKeys = encrypt(JSON.stringify(apiKeys));
-    }
-
     const user = await updateUserSettingsDocument(request.user.id, data);
 
     return user;
   });
 
-  fastify.get('/api-keys', { onRequest: [fastify.authenticate] }, async (request) => {
-    const user = await prisma.user.findUnique({
-      where: { id: request.user.id },
-      select: { apiKeys: true },
-    });
-
+  // Read-only availability view for the Keys modal. Keys are server-only (env
+  // vars); this endpoint never touches the DB and never leaks secrets — only
+  // a masked preview of the configured value's last 4 chars.
+  fastify.get('/api-keys', { onRequest: [fastify.authenticate] }, async () => {
     const resolved = {};
-    const keyNames = ['openai', 'anthropic', 'elevenlabs', 'stability', 'gemini'];
+    const keyNames = ['openai', 'anthropic', 'elevenlabs', 'stability', 'gemini', 'meshy'];
     for (const name of keyNames) {
-      const key = resolveApiKey(user?.apiKeys || '{}', name);
-      resolved[name] = key ? '••••' + key.slice(-4) : '';
+      const key = config.apiKeys[name] || '';
+      resolved[name] = key
+        ? { configured: true, masked: '••••' + key.slice(-4) }
+        : { configured: false };
     }
     return resolved;
   });

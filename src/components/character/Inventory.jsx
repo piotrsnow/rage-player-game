@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import MaterialBagPanel from './MaterialBagPanel';
 import InventoryImage from './inventory/InventoryImage';
-import EquipmentSlotsBar from './inventory/EquipmentSlotsBar';
+import EquipmentPaperDoll from './inventory/EquipmentPaperDoll';
 import ItemTooltip from './inventory/ItemTooltip';
 import Tooltip from '../ui/Tooltip';
 import Button from '../ui/Button';
@@ -96,7 +96,7 @@ export default function Inventory({
         </div>
       </div>
 
-      <EquipmentSlotsBar
+      <EquipmentPaperDoll
         equipped={equipped}
         items={items}
         onEquipItem={onEquipItem}

@@ -1,5 +1,5 @@
 import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt } from './imagePrompts';
-import { apiClient } from './apiClient';
+import { apiClient, toCanonicalStoragePath } from './apiClient';
 
 // Image generation — FE-side direct provider calls were removed with the
 // no-BYOK cleanup. Every request now goes through the backend proxy
@@ -17,9 +17,13 @@ export function getGeneratedImageScale(provider = 'dalle') {
   return GENERATED_IMAGE_SCALE;
 }
 
-function resolveMediaUrl(url) {
+// Keep asset URLs canonical (`/v1/media/file/...`) when they flow out of the
+// services layer — they get persisted to DB (character.portraitUrl, scene.image,
+// item.imageUrl). `apiClient.resolveMediaUrl` (which appends origin + `?token`)
+// must only run at render time.
+function canonicalUrl(url) {
   if (!url) return null;
-  return apiClient.resolveMediaUrl(url);
+  return toCanonicalStoragePath(url);
 }
 
 async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null } = {}) {
@@ -29,23 +33,23 @@ async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = 
 
   if (provider === 'stability') {
     const data = await apiClient.post('/proxy/stability/generate', body);
-    return resolveMediaUrl(data.url);
+    return canonicalUrl(data.url);
   }
   if (provider === 'gemini') {
     const data = await apiClient.post('/proxy/gemini/generate', body);
-    return resolveMediaUrl(data.url);
+    return canonicalUrl(data.url);
   }
   if (provider === 'gpt-image') {
     if (portraitUrl) {
       const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5' });
-      return resolveMediaUrl(data.url);
+      return canonicalUrl(data.url);
     }
     const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5' });
-    return resolveMediaUrl(data.url);
+    return canonicalUrl(data.url);
   }
   // Default: DALL-E
   const data = await apiClient.post('/proxy/openai/images', body);
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaStabilityProxy(imageBlob, prompt, strength) {
@@ -58,7 +62,7 @@ async function generatePortraitViaStabilityProxy(imageBlob, prompt, strength) {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGptImageEditsProxy(imageBlob, prompt) {
@@ -73,7 +77,7 @@ async function generatePortraitViaGptImageEditsProxy(imageBlob, prompt) {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaDalleProxy(prompt) {
@@ -81,12 +85,12 @@ async function generatePortraitViaDalleProxy(prompt) {
     prompt,
     size: '1024x1024',
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGeminiProxy(prompt) {
   const data = await apiClient.post('/proxy/gemini/portrait', { prompt });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
@@ -98,7 +102,7 @@ async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 export const imageService = {
@@ -120,7 +124,7 @@ export const imageService = {
     if (provider === 'gpt-image') {
       if (imageBlob) return generatePortraitViaGptImageEditsProxy(imageBlob, prompt);
       const data = await apiClient.post('/proxy/openai/images', { prompt, model: 'gpt-image-1.5', size: '1024x1024' });
-      return resolveMediaUrl(data.url);
+      return canonicalUrl(data.url);
     }
     if (provider === 'gemini') {
       return imageBlob

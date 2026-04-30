@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { apiClient } from '../../services/apiClient';
+import { apiClient, toCanonicalStoragePath } from '../../services/apiClient';
 import { imageService } from '../../services/imageGen';
 import WebcamCapture from '../ui/WebcamCapture';
 
@@ -28,7 +28,10 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const [photoBlob, setPhotoBlob] = useState(null);
   const [strength, setStrength] = useState(0.45);
   const [generating, setGenerating] = useState(false);
-  const [generatedUrl, setGeneratedUrl] = useState(() => apiClient.resolveMediaUrl(initialPortrait) || null);
+  // Canonical `/v1/media/file/...` path — this is what we persist via
+  // `onPortraitReady`. `resolveMediaUrl` is only applied at render time
+  // for the <img> src below.
+  const [generatedUrl, setGeneratedUrl] = useState(() => toCanonicalStoragePath(initialPortrait) || null);
   const [error, setError] = useState(null);
   const [showCapture, setShowCapture] = useState(!initialPortrait);
   const [captureSession, setCaptureSession] = useState(0);
@@ -112,7 +115,7 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
       <div className="flex flex-col items-center gap-3">
         <div className="relative w-full max-w-[220px] aspect-[3/4] rounded-sm overflow-hidden border border-primary/30 shadow-[0_0_20px_rgba(197,154,255,0.15)]">
           <img
-            src={generatedUrl}
+            src={apiClient.resolveMediaUrl(generatedUrl)}
             alt="Fantasy portrait"
             className="w-full h-full object-cover"
             onError={() => { setGeneratedUrl(null); setShowCapture(canUseReferenceImage); }}
