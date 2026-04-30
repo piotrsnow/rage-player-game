@@ -158,6 +158,40 @@ export const imageService = {
     return generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
   },
 
+  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, referenceBlob = null, strength = 0.55 } = {}) {
+    const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+    if (!rawPrompt) throw new Error('Prompt is required');
+
+    if (referenceBlob) {
+      if (provider === 'stability') return generatePortraitViaStabilityProxy(referenceBlob, rawPrompt, strength);
+      if (provider === 'gpt-image') return generatePortraitViaGptImageEditsProxy(referenceBlob, rawPrompt);
+      if (provider === 'gemini') return generatePortraitViaGeminiImg2ImgProxy(referenceBlob, rawPrompt);
+      if (provider === 'sd-webui') return generatePortraitViaSdWebuiProxy(referenceBlob, rawPrompt, strength, sdModel);
+      // `dalle` and unknown providers: fall through to text-only.
+    }
+
+    if (provider === 'stability') {
+      const data = await apiClient.post('/proxy/stability/generate', { prompt: rawPrompt });
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'gemini') {
+      const data = await apiClient.post('/proxy/gemini/generate', { prompt: rawPrompt });
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'sd-webui') {
+      const payload = { prompt: rawPrompt };
+      if (sdModel) payload.model = sdModel;
+      const data = await apiClient.post('/proxy/sd-webui/generate', payload);
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'gpt-image') {
+      const data = await apiClient.post('/proxy/openai/images', { prompt: rawPrompt, model: 'gpt-image-1.5' });
+      return canonicalUrl(data.url);
+    }
+    const data = await apiClient.post('/proxy/openai/images', { prompt: rawPrompt });
+    return canonicalUrl(data.url);
+  },
+
   async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null } = {}) {
     const prompt = buildItemImagePrompt(item, {
       genre,

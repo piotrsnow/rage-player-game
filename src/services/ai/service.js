@@ -307,6 +307,31 @@ export const aiService = {
     return { result: { prompt: data.prompt }, usage: null };
   },
 
+  async enhanceImagePrompt({
+    keywords,
+    imageStyle = 'painting',
+    darkPalette = false,
+    seriousness = null,
+    genre = 'Fantasy',
+    tone = 'Epic',
+    language = 'en',
+    provider = 'openai',
+    model = null,
+  } = {}) {
+    const data = await apiClient.post('/ai/enhance-image-prompt', {
+      keywords,
+      imageStyle,
+      darkPalette,
+      seriousness,
+      genre,
+      tone,
+      language,
+      provider,
+      model,
+    });
+    return { description: data?.description || '' };
+  },
+
   async generateCombatCommentary(gameState, combatSnapshot, provider, _apiKeyIgnored, language = 'en', modelTier = 'premium', { explicitModel = null } = {}) {
     const data = await apiClient.post('/ai/combat-commentary', {
       gameState,

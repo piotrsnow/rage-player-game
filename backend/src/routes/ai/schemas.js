@@ -20,6 +20,23 @@ export const STORY_PROMPT_SCHEMA = {
   },
 };
 
+export const ENHANCE_IMAGE_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    keywords: { type: 'string', maxLength: 1000 },
+    imageStyle: { type: 'string', maxLength: 50 },
+    darkPalette: { type: 'boolean' },
+    seriousness: { type: ['number', 'null'] },
+    genre: { type: 'string', maxLength: 100 },
+    tone: { type: 'string', maxLength: 100 },
+    language: LANGUAGE_SCHEMA,
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+  required: ['keywords'],
+};
+
 export const GENERATE_CAMPAIGN_SCHEMA = {
   type: 'object',
   additionalProperties: false,

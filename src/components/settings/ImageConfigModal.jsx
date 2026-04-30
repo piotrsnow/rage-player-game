@@ -3,6 +3,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import ImageProviderSection from './keys/ImageProviderSection';
 import SceneVisualizationSection from './sections/SceneVisualizationSection';
+import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
 
 export default function ImageConfigModal({ onClose }) {
   const { t } = useTranslation();
@@ -61,6 +62,8 @@ export default function ImageConfigModal({ onClose }) {
                   backendKeys={backendKeys}
                 />
               )}
+
+              {showImageProvider && <ImagePlaygroundSection />}
             </div>
           </div>
         </div>

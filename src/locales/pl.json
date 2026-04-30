@@ -146,7 +146,26 @@
   },
   "imageConfig": {
     "title": "Konfiguracja Obrazów",
-    "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów."
+    "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów.",
+    "playground": {
+      "title": "Playground",
+      "subtitle": "Testuj generowanie obrazów: wpisz słowa kluczowe i użyj różdżki, aby AI zbudowało pełny prompt z Twoich ustawień, albo wpisz prompt ręcznie.",
+      "keywordsLabel": "Słowa kluczowe",
+      "keywordsPlaceholder": "np. krasnolud kowal, nocna kuźnia, płomienie",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "Tu pojawi się pełny prompt — możesz go swobodnie edytować przed wygenerowaniem obrazu.",
+      "enhance": "Rozszerz słowa kluczowe",
+      "enhancing": "Ulepszanie...",
+      "referenceLabel": "Obraz referencyjny (opcjonalny)",
+      "upload": "Wgraj obraz",
+      "removeImage": "Usuń obraz",
+      "imageUnsupported": "Wybrany dostawca nie obsługuje obrazu referencyjnego.",
+      "generate": "Generuj podgląd",
+      "generating": "Generowanie...",
+      "error": "Błąd",
+      "noProviderKey": "Brak klucza wybranego dostawcy obrazów.",
+      "noAiKey": "Brak klucza wybranego dostawcy AI tekstowego."
+    }
   },
   "keys": {
     "title": "Konfiguracja Modeli",

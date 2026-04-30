@@ -1,11 +1,13 @@
 import { prisma } from '../../lib/prisma.js';
 import { loadUserApiKeys } from '../../services/apiKeyService.js';
 import { generateStoryPrompt } from '../../services/storyPromptGenerator.js';
+import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
 import { generateRecap } from '../../services/recapGenerator.js';
 import {
   STORY_PROMPT_SCHEMA,
+  ENHANCE_IMAGE_PROMPT_SCHEMA,
   COMBAT_COMMENTARY_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
   RECAP_SCHEMA,
@@ -24,6 +26,42 @@ export async function singleShotRoutes(fastify) {
     const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
     try {
       return await generateStoryPrompt({ genre, tone, style, seedText, language, provider, model, userApiKeys });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/enhance-image-prompt — expand user keywords into a vivid
+   * scene description for image generation. Returns { description }.
+   */
+  fastify.post('/enhance-image-prompt', { schema: { body: ENHANCE_IMAGE_PROMPT_SCHEMA } }, async (request, reply) => {
+    const {
+      keywords,
+      imageStyle,
+      darkPalette,
+      seriousness,
+      genre,
+      tone,
+      language,
+      provider,
+      model,
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await enhanceImagePrompt({
+        keywords,
+        imageStyle,
+        darkPalette,
+        seriousness,
+        genre,
+        tone,
+        language,
+        provider,
+        model,
+        userApiKeys,
+      });
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

@@ -152,7 +152,26 @@
   },
   "imageConfig": {
     "title": "Image Configuration",
-    "subtitle": "Configure how scenes are displayed, the art style and the image generation provider."
+    "subtitle": "Configure how scenes are displayed, the art style and the image generation provider.",
+    "playground": {
+      "title": "Playground",
+      "subtitle": "Test image generation: type keywords and use the wand to let AI build a full prompt from your settings, or write the prompt manually.",
+      "keywordsLabel": "Keywords",
+      "keywordsPlaceholder": "e.g. dwarven blacksmith, night forge, embers",
+      "promptLabel": "Prompt",
+      "promptPlaceholder": "The full prompt will appear here — feel free to edit it before generating.",
+      "enhance": "Expand keywords",
+      "enhancing": "Enhancing...",
+      "referenceLabel": "Reference image (optional)",
+      "upload": "Upload image",
+      "removeImage": "Remove image",
+      "imageUnsupported": "The selected provider does not support a reference image.",
+      "generate": "Generate preview",
+      "generating": "Generating...",
+      "error": "Error",
+      "noProviderKey": "Selected image provider key is missing.",
+      "noAiKey": "Selected text AI provider key is missing."
+    }
   },
   "keys": {
     "title": "Model Configuration",
