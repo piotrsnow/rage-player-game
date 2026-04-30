@@ -9,6 +9,7 @@ const PROVIDERS = [
   { id: 'stability', labelKey: 'settings.stabilityApiKey', envVar: 'STABILITY_API_KEY', testable: false },
   { id: 'elevenlabs', labelKey: 'keys.elevenlabsKey', envVar: 'ELEVENLABS_API_KEY', testable: false },
   { id: 'meshy', labelKey: 'keys.meshyKey', envVar: 'MESHY_API_KEY', testable: false },
+  { id: 'sd-webui', labelKey: 'settings.sdWebuiKey', envVar: 'SD_WEBUI_URL', testable: false },
 ];
 
 function LoadingDots() {

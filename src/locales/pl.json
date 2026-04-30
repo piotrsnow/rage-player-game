@@ -632,6 +632,7 @@
     "geminiApiKey": "Klucz API Google AI",
     "geminiApiKeyDesc": "Zdobądź klucz na aistudio.google.com",
     "sdWebuiLabel": "Stable Diffusion (lokalny) — Automatic1111, bez limitów",
+    "sdWebuiKey": "Stable Diffusion WebUI",
     "sdWebuiModel": "Model Stable Diffusion",
     "sdWebuiModelRefresh": "Odśwież listę",
     "sdWebuiOffline": "Stable Diffusion WebUI nie odpowiada. Sprawdź SD_WEBUI_URL i uruchom A1111 z flagą --api.",
