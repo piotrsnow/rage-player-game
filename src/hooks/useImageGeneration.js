@@ -37,12 +37,16 @@ export function useImageGeneration() {
       if (!item || typeof item !== 'object') return null;
       if (!itemImageGenEnabled) return null;
       const itemId = typeof item.id === 'string' ? item.id : '';
-      if (!itemId || item.imageUrl) return item.imageUrl || null;
+      if (!itemId) return null;
+      const forceNew = options.forceNew === true;
+      if (!forceNew && item.imageUrl) return item.imageUrl;
 
       const activeLocks = itemImageGenerationLocksRef.current;
-      const failedAt = itemImageFailureTimestampsRef.current.get(itemId);
-      if (failedAt && (Date.now() - failedAt) < ITEM_IMAGE_RETRY_COOLDOWN_MS) {
-        return null;
+      if (!forceNew) {
+        const failedAt = itemImageFailureTimestampsRef.current.get(itemId);
+        if (failedAt && (Date.now() - failedAt) < ITEM_IMAGE_RETRY_COOLDOWN_MS) {
+          return null;
+        }
       }
       if (activeLocks.has(itemId)) return null;
       activeLocks.add(itemId);
@@ -58,6 +62,7 @@ export function useImageGeneration() {
           campaignId: state.campaign?.backendId,
           sdModel: sdWebuiModel,
           sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          forceNew,
         });
         if (!imageUrl) return null;
 

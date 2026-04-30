@@ -32,6 +32,7 @@ import {
   loadCharacter,
   patchCharacterStateChanges,
   findMatchingLibraryCharacter,
+  libraryCharacterDiffers,
 } from './characters.js';
 import {
   migrateLocalCampaignsToBackend,
@@ -69,6 +70,7 @@ export const storage = {
   loadCharacter,
   patchCharacterStateChanges,
   findMatchingLibraryCharacter,
+  libraryCharacterDiffers,
   // Migrations
   migrateLocalCampaignsToBackend,
   migrateLocalDataToAccount,

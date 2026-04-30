@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import QuickActionButton from './QuickActionButton';
+import ForceRollButton from './ForceRollButton';
 import { getSkillLevel } from '../../../data/rpgSystem.js';
 import { useGameSlice } from '../../../stores/gameSelectors';
 
@@ -15,6 +16,10 @@ export default function QuickActionsBar({
   onToggleCombatPicker,
   onToggleTradePicker,
   onToggleTrainerPicker,
+  forceRollState = null,
+  onForceRollLeft,
+  onForceRollDouble,
+  onForceRollRight,
 }) {
   const { t } = useTranslation();
   const tradeActive = useGameSlice((s) => s.trade?.active);
@@ -24,6 +29,15 @@ export default function QuickActionsBar({
 
   return (
     <div className="flex items-center gap-1.5 shrink-0">
+      {forceRollState && (
+        <ForceRollButton
+          state={forceRollState}
+          onLeftClick={onForceRollLeft}
+          onDoubleClick={onForceRollDouble}
+          onRightClick={onForceRollRight}
+          disabled={disabled || hasPendingAction}
+        />
+      )}
       <QuickActionButton
         icon="skip_next"
         label={t('gameplay.continueButton')}

@@ -34,9 +34,12 @@ export class LobbyPage {
   get apiKeyWarning() { return this.page.locator('[data-testid="api-key-warning"]'); }
 
   // Character choice modal
+  // The modal only appears when the library version meaningfully differs from
+  // the campaign-embedded character. Otherwise the campaign version loads
+  // directly without a prompt.
   get characterChoiceModal() { return this.page.locator('[data-testid="character-choice-modal"]'); }
-  get useCampaignCharButton() { return this.page.getByRole('button', { name: /campaign version|wersja kampanii/i }); }
-  get useLibraryCharButton() { return this.page.getByRole('button', { name: /library version|wersja biblioteki/i }); }
+  get useCampaignCharButton() { return this.page.getByRole('button', { name: /use campaign version|użyj z kampanii/i }); }
+  get useLibraryCharButton() { return this.page.locator('[data-testid="character-choice-switch-library"]'); }
 
   // Logged-in banner
   get loggedInBanner() { return this.page.locator('[data-testid="logged-in-banner"]'); }

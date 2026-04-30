@@ -159,6 +159,8 @@ export default function ItemDetailBox({
   onEquipItem,
   onUnequipItem,
   onUseManaCrystal,
+  onRegenerateImage,
+  isRegenerating = false,
 }) {
   const { t } = useTranslation();
 
@@ -185,7 +187,7 @@ export default function ItemDetailBox({
   return (
     <div className={`mt-3 bg-surface-container border ${rarityColor} rounded-sm p-4 animate-in fade-in slide-in-from-top-2 duration-150`}>
       {resolvedImageUrl && (
-        <div className="mb-3">
+        <div className="mb-3 relative">
           <InventoryImage
             imageUrl={resolvedImageUrl}
             alt={item.name}
@@ -193,6 +195,35 @@ export default function ItemDetailBox({
             fallbackIcon={icon}
             wrapperClassName="border border-outline-variant/20 flex items-center justify-center overflow-hidden"
           />
+          {onRegenerateImage && (
+            <button
+              type="button"
+              onClick={() => onRegenerateImage(item.id)}
+              disabled={isRegenerating}
+              aria-label={t('inventory.regenerateImage', 'Wygeneruj ponownie')}
+              title={t('inventory.regenerateImage', 'Wygeneruj ponownie')}
+              className="absolute top-2 right-2 flex items-center justify-center w-8 h-8 rounded-sm bg-surface-container-highest/80 backdrop-blur-sm text-on-surface-variant hover:text-primary border border-outline-variant/20 hover:border-primary/40 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-md"
+            >
+              <span className={`material-symbols-outlined text-base ${isRegenerating ? 'animate-spin' : ''}`}>
+                {isRegenerating ? 'progress_activity' : 'refresh'}
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+      {!resolvedImageUrl && onRegenerateImage && (
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => onRegenerateImage(item.id)}
+            disabled={isRegenerating}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-label uppercase tracking-wider text-on-surface-variant hover:text-primary border border-outline-variant/20 hover:border-primary/30 rounded-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <span className={`material-symbols-outlined text-sm ${isRegenerating ? 'animate-spin' : ''}`}>
+              {isRegenerating ? 'progress_activity' : 'auto_fix_high'}
+            </span>
+            {t('inventory.regenerateImage', 'Wygeneruj ponownie')}
+          </button>
         </div>
       )}
       <div className="flex items-center gap-3">

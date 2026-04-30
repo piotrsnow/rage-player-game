@@ -6,6 +6,7 @@ import { GameProvider } from './contexts/GameContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { MultiplayerProvider } from './contexts/MultiplayerContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import BackendConnectivityGate from './components/ui/BackendConnectivityGate';
 import './i18n';
 import './index.css';
 
@@ -14,11 +15,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <BrowserRouter>
         <SettingsProvider>
-          <MultiplayerProvider>
-            <GameProvider>
-              <App />
-            </GameProvider>
-          </MultiplayerProvider>
+          <BackendConnectivityGate>
+            <MultiplayerProvider>
+              <GameProvider>
+                <App />
+              </GameProvider>
+            </MultiplayerProvider>
+          </BackendConnectivityGate>
         </SettingsProvider>
       </BrowserRouter>
     </ErrorBoundary>

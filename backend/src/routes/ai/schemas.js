@@ -147,6 +147,14 @@ export const GENERATE_SCENE_SCHEMA = {
     isCustomAction: { type: 'boolean' },
     fromAutoPlayer: { type: 'boolean' },
     combatResult: { type: ['object', 'null'] },
+    forceRoll: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        enabled: { type: 'boolean' },
+        modifier: { type: 'integer', enum: [-30, 0, 30] },
+      },
+    },
     achievementState: { type: ['object', 'null'] },
   },
 };

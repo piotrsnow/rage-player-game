@@ -170,6 +170,7 @@ export const aiService = {
     fromAutoPlayer = false,
     gameState = null,
     combatResult = null,
+    forceRoll = null,
     achievementState = null,
     onEvent = null,
   } = {}) {
@@ -192,6 +193,7 @@ export const aiService = {
         isCustomAction,
         fromAutoPlayer,
         combatResult,
+        forceRoll,
         achievementState,
       }),
     });

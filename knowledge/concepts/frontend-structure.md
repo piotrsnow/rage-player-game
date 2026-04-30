@@ -21,7 +21,7 @@ Entry-point hooks (things pages/components actually reach for):
 - **Game content** — `useGameContent.js` (quest/NPC updates)
 - **Combat** — `useCombatResolution.js`, `useEnemyTurnResolver.js`, `useCombatResultSync.js`, `useCombatHostResolve.js`, `useMultiplayerCombatSceneDetect.js`, `useCombatAudio.js`, `useCombatCommentary.js`
 - **Image gen** — `useImageGeneration.js`, `useImageRepairQueue.js`
-- **Narration** — `useNarrator.js` (TTS + word highlight + queue, ~945L — biggest remaining monolith), `useStreamingNarrator.js`, `useChatAutoNarration.js`
+- **Narration** — `useNarrator.js` (TTS + word highlight + queue, ~945L — biggest remaining monolith), `useChatAutoNarration.js`
 - **Viewer mode** — `useViewerMode.js` (read-only shared campaign mode)
 - **Summary modal** — `useSummary.js` (recap state machine + narration + cache)
 - **Multiplayer glue** — `useMultiplayerVoiceSync.js`, `useMultiplayerSceneGenTimer.js`, `useWebRTC.js`

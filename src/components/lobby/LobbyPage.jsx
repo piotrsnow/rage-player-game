@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { storage } from '../../services/storage';
@@ -41,14 +41,43 @@ function CharacterSummary({ char, label, icon, accent, disabled }) {
   );
 }
 
-function CharacterChoiceModal({ campaign, libraryCharacter, libraryLoading, onChooseCampaign, onChooseLibrary, onCancel, t }) {
+function CharacterChoiceModal({ campaign, libraryCharacter, onChooseCampaign, onChooseLibrary, onCancel, t, locale }) {
   const campaignChar = campaign.character;
-  const hasLibrary = libraryCharacter != null && libraryCharacter !== undefined;
-  const libraryDisabled = !hasLibrary || libraryLoading;
+  const hasLibrary = libraryCharacter != null;
+
+  const libraryHint = useMemo(() => {
+    if (!hasLibrary) return null;
+    const level = libraryCharacter.characterLevel || 1;
+    const ts = libraryCharacter.updatedAt
+      ? (typeof libraryCharacter.updatedAt === 'number'
+        ? libraryCharacter.updatedAt
+        : new Date(libraryCharacter.updatedAt).getTime())
+      : null;
+    const date = ts
+      ? new Date(ts).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+      : null;
+    if (date) {
+      return t('lobby.libraryNewerHint', 'Newer library version available (Level {{level}}, updated {{date}})', { level, date });
+    }
+    return t('lobby.libraryNewerHintNoDate', 'Newer library version available (Level {{level}})', { level });
+  }, [hasLibrary, libraryCharacter, locale, t]);
 
   return (
-    <div data-testid="character-choice-modal" className="bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-lg mx-4 animate-slide-up">
-      <div className="p-6 border-b border-outline-variant/10">
+    <div data-testid="character-choice-modal" className="relative bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-md mx-4 animate-slide-up">
+      {hasLibrary && (
+        <button
+          type="button"
+          data-testid="character-choice-switch-library"
+          onClick={onChooseLibrary}
+          title={t('lobby.useLibraryChar', 'Use Library Version')}
+          className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-sm text-[10px] uppercase tracking-wider text-outline hover:text-primary hover:bg-primary/5 transition-colors z-10"
+        >
+          <span className="material-symbols-outlined text-xs">swap_horiz</span>
+          {t('lobby.switchToLibrary', 'Use current')}
+        </button>
+      )}
+
+      <div className="p-6 pr-28 border-b border-outline-variant/10">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-primary">person</span>
           <div>
@@ -64,38 +93,24 @@ function CharacterChoiceModal({ campaign, libraryCharacter, libraryLoading, onCh
         )}
       </div>
 
-      <div className="p-6 flex gap-4">
+      <div className="p-6">
         <CharacterSummary
           char={campaignChar}
           label={t('lobby.campaignCharacter', 'Campaign Character')}
           icon="save"
           accent="tertiary"
         />
-        {libraryLoading ? (
-          <div className="flex-1 min-w-0 p-4 rounded-sm border border-outline-variant/20 bg-surface-container-low/30 flex items-center justify-center">
-            <span className="material-symbols-outlined text-sm text-outline animate-spin">sync</span>
-          </div>
-        ) : hasLibrary ? (
-          <CharacterSummary
-            char={libraryCharacter}
-            label={t('lobby.libraryCharacter', 'Current Character (Library)')}
-            icon="person"
-            accent="primary"
-          />
-        ) : (
-          <div className="flex-1 min-w-0 p-4 rounded-sm border border-outline-variant/20 bg-surface-container-low/30 flex flex-col items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-lg text-outline/40">person_off</span>
-            <p className="text-outline text-[10px] text-center">{t('lobby.libraryCharacterNotFound', 'Character not found in library')}</p>
-          </div>
+        {libraryHint && (
+          <p className="mt-3 flex items-center gap-1.5 text-[11px] text-outline">
+            <span className="material-symbols-outlined text-xs text-outline">schedule</span>
+            {libraryHint}
+          </p>
         )}
       </div>
 
-      <div className="px-6 pb-6 flex gap-3">
-        <Button className="flex-1" variant="secondary" onClick={onChooseCampaign}>
+      <div className="px-6 pb-6">
+        <Button className="w-full" onClick={onChooseCampaign}>
           {t('lobby.useCampaignChar', 'Use Campaign Version')}
-        </Button>
-        <Button className="flex-1" onClick={onChooseLibrary} disabled={libraryDisabled}>
-          {t('lobby.useLibraryChar', 'Use Library Version')}
         </Button>
       </div>
 
@@ -111,7 +126,7 @@ function CharacterChoiceModal({ campaign, libraryCharacter, libraryLoading, onCh
 export default function LobbyPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { dispatch } = useGame();
   const { openSettings } = useModals();
   useDocumentTitle(t('common.tagline'));
@@ -124,7 +139,6 @@ export default function LobbyPage() {
   const [rejoining, setRejoining] = useState(false);
   const [pendingCampaign, setPendingCampaign] = useState(null);
   const [libraryCharacter, setLibraryCharacter] = useState(undefined);
-  const [libraryLoading, setLibraryLoading] = useState(false);
   const [campaignNotFound, setCampaignNotFound] = useState(false);
   const [loadingCampaignId, setLoadingCampaignId] = useState(null);
 
@@ -173,22 +187,30 @@ export default function LobbyPage() {
     };
   }, [backendUser]);
 
-  const openCharacterChoice = async (campaignData) => {
-    setPendingCampaign(campaignData);
+  const loadCampaignDirectly = (payload) => {
+    dispatch({ type: 'LOAD_CAMPAIGN', payload });
+    storage.saveLocalSnapshot(payload);
+    setPendingCampaign(null);
     setLibraryCharacter(undefined);
+    navigate(`/play/${payload.campaign.backendId || payload.campaign.id}`);
+  };
+
+  const openCharacterChoice = async (campaignData) => {
     if (!campaignData.character) {
-      setLibraryLoading(false);
+      loadCampaignDirectly(campaignData);
       return;
     }
-    setLibraryLoading(true);
     try {
       const chars = await storage.getCharactersAsync();
       const match = storage.findMatchingLibraryCharacter(campaignData.character, chars);
+      if (!match || !storage.libraryCharacterDiffers(campaignData.character, match)) {
+        loadCampaignDirectly(campaignData);
+        return;
+      }
       setLibraryCharacter(match);
+      setPendingCampaign(campaignData);
     } catch {
-      setLibraryCharacter(null);
-    } finally {
-      setLibraryLoading(false);
+      loadCampaignDirectly(campaignData);
     }
   };
 
@@ -205,11 +227,7 @@ export default function LobbyPage() {
         },
       };
     }
-    dispatch({ type: 'LOAD_CAMPAIGN', payload });
-    storage.saveLocalSnapshot(payload);
-    setPendingCampaign(null);
-    setLibraryCharacter(undefined);
-    navigate(`/play/${payload.campaign.backendId || payload.campaign.id}`);
+    loadCampaignDirectly(payload);
   };
 
   const handleLoad = async (campaign) => {
@@ -223,16 +241,18 @@ export default function LobbyPage() {
         campaignPromise,
         storage.getCharactersAsync().catch(() => []),
       ]);
-      if (data) {
-        setPendingCampaign(data);
-        if (data.character) {
-          const match = storage.findMatchingLibraryCharacter(data.character, chars);
-          setLibraryCharacter(match ?? null);
-        } else {
-          setLibraryCharacter(undefined);
-        }
-        setLibraryLoading(false);
+      if (!data) return;
+      if (!data.character) {
+        loadCampaignDirectly(data);
+        return;
       }
+      const match = storage.findMatchingLibraryCharacter(data.character, chars);
+      if (!match || !storage.libraryCharacterDiffers(data.character, match)) {
+        loadCampaignDirectly(data);
+        return;
+      }
+      setLibraryCharacter(match);
+      setPendingCampaign(data);
     } catch (err) {
       console.warn('[LobbyPage] Failed to load campaign:', err.message);
     } finally {
@@ -486,11 +506,11 @@ export default function LobbyPage() {
           <CharacterChoiceModal
             campaign={pendingCampaign}
             libraryCharacter={libraryCharacter}
-            libraryLoading={libraryLoading}
             onChooseCampaign={() => confirmLoad(false)}
             onChooseLibrary={() => confirmLoad(true)}
             onCancel={() => { setPendingCampaign(null); setLibraryCharacter(undefined); }}
             t={t}
+            locale={i18n.language === 'pl' ? 'pl-PL' : undefined}
           />
         </div>
       )}

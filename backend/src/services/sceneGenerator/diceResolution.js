@@ -79,6 +79,27 @@ export function applyCreativityToRoll(roll, bonus) {
 }
 
 /**
+ * Apply a "force roll" modifier (±30) to a dice roll in-place. Mirrors
+ * applyCreativityToRoll but is additive — stored on its own field so
+ * creativity + force stack without overwriting each other. The modifier
+ * comes from the player clicking the ForceRollButton and is a one-shot
+ * per-scene choice (not clamped by the creativity cap).
+ */
+export function applyForceRollModifier(roll, modifier) {
+  if (!roll || typeof roll !== 'object') return;
+  const normalized = Math.trunc(Number(modifier) || 0);
+  if (normalized === 0 && (roll.forceRollModifier || 0) === 0) return;
+
+  const previous = roll.forceRollModifier || 0;
+  roll.forceRollModifier = normalized;
+  roll.total = (roll.total || 0) - previous + normalized;
+  if (typeof roll.threshold === 'number') {
+    roll.margin = roll.total - roll.threshold;
+    roll.success = roll.luckySuccess === true || roll.margin >= 0;
+  }
+}
+
+/**
  * Decide whether the player qualifies for a creativity bonus at all.
  * Bonus is only awarded for freshly-typed actions — never for clicked
  * suggestedActions or auto modes ([CONTINUE], [WAIT], etc).

@@ -160,10 +160,11 @@ export const imageService = {
     const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
     const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
     const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
-    return generateSceneViaProxy(prompt, provider, campaignId, {
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
       portraitUrl: hasPortrait ? portraitUrl : null,
     });
+    return { url, prompt };
   },
 
   async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
@@ -225,7 +226,7 @@ export const imageService = {
     return canonicalUrl(data.url);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null } = {}) {
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false } = {}) {
     const prompt = buildItemImagePrompt(item, {
       genre,
       tone,
@@ -235,6 +236,6 @@ export const imageService = {
       seriousness,
       sdModel,
     });
-    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed });
+    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew });
   },
 };

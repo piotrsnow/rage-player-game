@@ -239,6 +239,9 @@
     "libraryCharacterNotFound": "Character not found in library",
     "useCampaignChar": "Use Campaign Version",
     "useLibraryChar": "Use Library Version",
+    "switchToLibrary": "Use current",
+    "libraryNewerHint": "Newer library version available (Level {{level}}, {{date}})",
+    "libraryNewerHintNoDate": "Newer library version available (Level {{level}})",
     "loadingWorld": "Loading world...",
     "loadingWorldHint": "Preparing your adventure, please wait",
     "campaignNotFound": "Campaign not found. It may have been deleted."
@@ -304,6 +307,9 @@
     "conjuringVision": "Conjuring vision...",
     "generatingImage": "Generating Image",
     "regenerateImage": "Regenerate image",
+    "copyImagePrompt": "Copy image prompt",
+    "imagePromptTooltip": "Image prompt — click to copy",
+    "imagePromptCopied": "Copied!",
     "customActionPlaceholder": "Or describe your own action...",
     "customActionPlaceholderVoice": "Describe your action or click the mic...",
     "dialogueTag": "Dialogue",
@@ -324,6 +330,13 @@
     "musicSkip": "Next track",
     "searchForQuests": "Search for quests",
     "searchForQuestsAction": "I look around for available work, quests, or tasks — I ask locals, check notice boards, and listen for rumors",
+    "forceRoll": {
+      "button": "Force roll",
+      "descriptionOff": "Force a dice roll on this action. Left click: enable. Double click: favorable (+30). Right click: unfavorable (−30).",
+      "descriptionOn": "Roll will be forced. Double click: favorable circumstances (+30). Right click: unfavorable (−30). Left click: disable.",
+      "descriptionBonus": "Forced roll with +30 (favorable circumstances). Left click: clear bonus. Right click: switch to −30.",
+      "descriptionMalus": "Forced roll with −30 (unfavorable circumstances). Left click: clear penalty. Double click: switch to +30."
+    },
     "restButton": "Rest",
     "continueButton": "Continue",
     "continueAction": "[CONTINUE]",
@@ -557,6 +570,7 @@
       "misc": "Miscellaneous"
     },
     "useCrystal": "Use crystal",
+    "regenerateImage": "Regenerate image",
     "crystalModalTitle": "Mana Crystal",
     "crystalModalDesc": "Choose what to improve. The effect is permanent and consumes the crystal.",
     "equipment": "Equipment",
@@ -882,6 +896,10 @@
     "somethingWentWrong": "Something Went Wrong",
     "unexpectedError": "An unexpected error occurred.",
     "returnToLobby": "Return to Lobby"
+  },
+  "connectivity": {
+    "connecting": "Connecting to server...",
+    "retrying": "Server unreachable. Retrying..."
   },
   "gmModal": {
     "title": "Game Master",

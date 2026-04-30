@@ -233,6 +233,9 @@
     "libraryCharacterNotFound": "Nie znaleziono postaci w bibliotece",
     "useCampaignChar": "Użyj z kampanii",
     "useLibraryChar": "Użyj aktualnej",
+    "switchToLibrary": "Użyj aktualnej",
+    "libraryNewerHint": "W bibliotece jest nowsza wersja (Poziom {{level}}, {{date}})",
+    "libraryNewerHintNoDate": "W bibliotece jest nowsza wersja (Poziom {{level}})",
     "loadingWorld": "Wczytywanie świata...",
     "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
     "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
@@ -296,6 +299,9 @@
     "conjuringVision": "Przywoływanie wizji...",
     "generatingImage": "Generowanie Obrazu",
     "regenerateImage": "Wygeneruj ponownie",
+    "copyImagePrompt": "Skopiuj prompt obrazka",
+    "imagePromptTooltip": "Prompt obrazka — kliknij, aby skopiować",
+    "imagePromptCopied": "Skopiowano!",
     "customActionPlaceholder": "Lub opisz własną akcję...",
     "customActionPlaceholderVoice": "Opisz własną akcję lub kliknij mikrofon...",
     "dialogueTag": "Dialog",
@@ -317,6 +323,13 @@
     "musicSkip": "Następny utwór",
     "searchForQuests": "Szukaj zadań",
     "searchForQuestsAction": "Rozglądam się za dostępnymi zleceniami, zadaniami lub pracą — pytam okolicznych mieszkańców, sprawdzam tablice ogłoszeń i nasłuchuję plotek",
+    "forceRoll": {
+      "button": "Wymuś rzut",
+      "descriptionOff": "Wymusza rzut na tej akcji. Lewy klik: włącz. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30).",
+      "descriptionOn": "Rzut będzie wymuszony. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30). Lewy klik: wyłącz.",
+      "descriptionBonus": "Wymuszony rzut z premią +30 (sprzyjające okoliczności). Lewy klik: zdejmij premię. Prawy klik: zmień na −30.",
+      "descriptionMalus": "Wymuszony rzut z karą −30 (niesprzyjające okoliczności). Lewy klik: zdejmij karę. Dwuklik: zmień na +30."
+    },
     "restButton": "Odpoczynek",
     "continueButton": "Dalej",
     "continueAction": "[CONTINUE]",
@@ -550,6 +563,7 @@
       "misc": "Różne"
     },
     "useCrystal": "Użyj kryształu",
+    "regenerateImage": "Wygeneruj ponownie",
     "crystalModalTitle": "Kryształ Many",
     "crystalModalDesc": "Wybierz co ulepszyć. Efekt jest trwały i zużywa kryształ.",
     "equipment": "Ekwipunek",
@@ -875,6 +889,10 @@
     "somethingWentWrong": "Coś Poszło Nie Tak",
     "unexpectedError": "Wystąpił nieoczekiwany błąd.",
     "returnToLobby": "Wróć do Lobby"
+  },
+  "connectivity": {
+    "connecting": "Łączenie z serwerem...",
+    "retrying": "Brak połączenia z serwerem. Ponawiam..."
   },
   "gmModal": {
     "title": "Mistrz Gry",

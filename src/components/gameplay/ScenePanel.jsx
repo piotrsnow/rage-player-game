@@ -14,6 +14,7 @@ import HighlightedNarrative, { splitIntoSentences } from './scene/HighlightedNar
 
 const Scene3DPanel = lazy(() => import('./Scene3D/Scene3DPanel'));
 const NEW_IMAGE_DELAY_MS = 1000;
+const CROSSFADE_DURATION_MS = 500;
 
 const INTENSITY_MAP = { low: 0.35, medium: 0.65, high: 1 };
 
@@ -88,9 +89,12 @@ export default function ScenePanel({
   const [incomingSrc, setIncomingSrc] = useState(null);
   const [isCrossfading, setIsCrossfading] = useState(false);
   const [regenerateState, setRegenerateState] = useState('idle');
+  const [promptCopied, setPromptCopied] = useState(false);
   const [overlaySlotCount, setOverlaySlotCount] = useState(() => Math.max(1, currentOverlayRolls.length));
   const revealTimeoutRef = useRef(null);
+  const crossfadeTimeoutRef = useRef(null);
   const regenerateResetTimeoutRef = useRef(null);
+  const promptCopyResetRef = useRef(null);
   const overlaySlots = useMemo(
     () => Array.from({ length: overlaySlotCount }, (_, idx) => currentOverlayRolls[idx] ?? null),
     [overlaySlotCount, currentOverlayRolls]
@@ -102,6 +106,11 @@ export default function ScenePanel({
       regenerateResetTimeoutRef.current = null;
     }
     setRegenerateState('idle');
+    if (promptCopyResetRef.current) {
+      window.clearTimeout(promptCopyResetRef.current);
+      promptCopyResetRef.current = null;
+    }
+    setPromptCopied(false);
   }, [scene?.id]);
 
   useEffect(() => {
@@ -109,8 +118,32 @@ export default function ScenePanel({
       if (regenerateResetTimeoutRef.current) {
         window.clearTimeout(regenerateResetTimeoutRef.current);
       }
+      if (crossfadeTimeoutRef.current) {
+        window.clearTimeout(crossfadeTimeoutRef.current);
+      }
+      if (promptCopyResetRef.current) {
+        window.clearTimeout(promptCopyResetRef.current);
+      }
     };
   }, []);
+
+  const handleCopyImagePrompt = useCallback(async () => {
+    const prompt = scene?.imagePrompt;
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setPromptCopied(true);
+      if (promptCopyResetRef.current) {
+        window.clearTimeout(promptCopyResetRef.current);
+      }
+      promptCopyResetRef.current = window.setTimeout(() => {
+        setPromptCopied(false);
+        promptCopyResetRef.current = null;
+      }, 1800);
+    } catch {
+      // clipboard API unavailable / denied — silently ignore
+    }
+  }, [scene?.imagePrompt]);
 
   const handleRegenerateImage = useCallback(async () => {
     if (!onRegenerateImage || !scene?.id || isGeneratingImage) return;
@@ -134,16 +167,6 @@ export default function ScenePanel({
       }, 3000);
     }
   }, [onRegenerateImage, scene?.id, isGeneratingImage]);
-
-  useEffect(() => {
-    if (revealTimeoutRef.current) {
-      window.clearTimeout(revealTimeoutRef.current);
-      revealTimeoutRef.current = null;
-    }
-    setDisplayedSrc(null);
-    setIncomingSrc(null);
-    setIsCrossfading(false);
-  }, [scene?.id]);
 
   useEffect(() => {
     setOverlaySlotCount(1);
@@ -190,9 +213,21 @@ export default function ScenePanel({
 
         setIncomingSrc(imageSrc);
         requestAnimationFrame(() => {
-          if (!cancelled) {
-            setIsCrossfading(true);
+          if (cancelled) return;
+          setIsCrossfading(true);
+          // Promote incoming to displayed once the CSS fade finishes so the
+          // next image swap can crossfade from a clean baseline (and the old
+          // <img> element is unmounted).
+          if (crossfadeTimeoutRef.current) {
+            window.clearTimeout(crossfadeTimeoutRef.current);
           }
+          crossfadeTimeoutRef.current = window.setTimeout(() => {
+            if (cancelled) return;
+            setDisplayedSrc(imageSrc);
+            setIncomingSrc(null);
+            setIsCrossfading(false);
+            crossfadeTimeoutRef.current = null;
+          }, CROSSFADE_DURATION_MS);
         });
       }, NEW_IMAGE_DELAY_MS);
     };
@@ -393,9 +428,16 @@ export default function ScenePanel({
       {/* Gradient overlay */}
       <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-surface-dim via-surface-dim/30 via-[40%] to-transparent" style={{ zIndex: 2 }} />
 
-      {/* Live indicator */}
+      {/* Live indicator — shifts below the feather button when it's visible */}
       {isGeneratingImage && (
-        <div className="absolute top-4 left-4 bg-surface-container-highest/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary/20 flex items-center gap-2" style={{ zIndex: 3 }}>
+        <div
+          className={`absolute left-4 bg-surface-container-highest/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-primary/20 flex items-center gap-2 ${
+            scene?.imagePrompt && (settings.sceneVisualization || 'image') === 'image' && (displayedSrc || incomingSrc)
+              ? 'top-14'
+              : 'top-4'
+          }`}
+          style={{ zIndex: 3 }}
+        >
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_rgba(197,154,255,1)]" />
           <span className="text-[10px] font-bold tracking-[0.2em] text-on-surface uppercase">
             {t('gameplay.generatingImage')}
@@ -418,6 +460,37 @@ export default function ScenePanel({
               } : null}
             />
           </p>
+        </div>
+      )}
+
+      {/* Image prompt — feather tooltip (top-left, image mode only) */}
+      {scene?.imagePrompt
+        && (settings.sceneVisualization || 'image') === 'image'
+        && (displayedSrc || incomingSrc) && (
+        <div className="absolute top-3 left-3 group" style={{ zIndex: 5 }}>
+          <button
+            type="button"
+            onClick={handleCopyImagePrompt}
+            aria-label={t('gameplay.copyImagePrompt', 'Skopiuj prompt obrazka')}
+            className="flex items-center justify-center w-8 h-8 rounded-sm bg-surface-container-highest/60 backdrop-blur-md border border-outline-variant/25 text-on-surface-variant hover:text-primary hover:bg-surface-container-highest/80 hover:border-primary/40 transition-all"
+          >
+            <span className="material-symbols-outlined text-[18px]">history_edu</span>
+          </button>
+          <div className="pointer-events-none absolute top-full left-0 mt-2 w-[min(22rem,60vw)] opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-150 bg-surface-container-highest/95 backdrop-blur-md border border-outline-variant/30 rounded-sm p-3 shadow-[0_4px_20px_rgba(0,0,0,0.6)]">
+            <p className="text-[10px] font-label uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
+              <span className={`material-symbols-outlined text-[14px] ${promptCopied ? 'text-success' : 'text-on-surface-variant'}`}>
+                {promptCopied ? 'check' : 'content_copy'}
+              </span>
+              <span className={promptCopied ? 'text-success' : 'text-on-surface-variant'}>
+                {promptCopied
+                  ? t('gameplay.imagePromptCopied', 'Skopiowano!')
+                  : t('gameplay.imagePromptTooltip', 'Prompt obrazka — kliknij, aby skopiować')}
+              </span>
+            </p>
+            <p className="text-xs text-on-surface leading-relaxed max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words">
+              {scene.imagePrompt}
+            </p>
+          </div>
         </div>
       )}
 

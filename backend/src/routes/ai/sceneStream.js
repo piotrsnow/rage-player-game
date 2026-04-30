@@ -27,6 +27,7 @@ export async function sceneStreamRoutes(fastify) {
       isCustomAction = false,
       fromAutoPlayer = false,
       combatResult = null,
+      forceRoll = null,
       achievementState = null,
     } = request.body;
 
@@ -54,7 +55,8 @@ export async function sceneStreamRoutes(fastify) {
     const opts = {
       provider, model, language, dmSettings, resolvedMechanics,
       needsSystemEnabled, characterNeeds, isFirstScene, sceneCount,
-      isCustomAction, fromAutoPlayer, userApiKeys, combatResult, achievementState,
+      isCustomAction, fromAutoPlayer, userApiKeys, combatResult, forceRoll,
+      achievementState,
       userId: request.user.id,
     };
 

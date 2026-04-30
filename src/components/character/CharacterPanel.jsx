@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../services/apiClient';
+import { useAI } from '../../hooks/useAI';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import ItemDetailBox from './inventory/ItemDetailBox';
@@ -52,7 +53,11 @@ export default function CharacterPanel({
   const equipped = character.equipped || {};
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [crystalItemId, setCrystalItemId] = useState(null);
+  const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
+
+  const { generateItemImageForInventoryItem } = useAI();
+  const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
 
   useEffect(() => {
     if (selectedItemId && !inventoryItems.some((i) => i.id === selectedItemId)) {
@@ -71,6 +76,16 @@ export default function CharacterPanel({
   const handleUseManaCrystal = (itemId, choice) => {
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
+  };
+  const handleRegenerateItemImage = async (itemId) => {
+    const target = inventoryItems.find((i) => i.id === itemId);
+    if (!target || regeneratingItemId) return;
+    setRegeneratingItemId(itemId);
+    try {
+      await generateItemImageForInventoryItem(target, { forceNew: true });
+    } finally {
+      setRegeneratingItemId(null);
+    }
   };
 
   return (
@@ -280,6 +295,8 @@ export default function CharacterPanel({
                 onEquipItem={handleEquipItem}
                 onUnequipItem={handleUnequipItem}
                 onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+                onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
+                isRegenerating={regeneratingItemId === selectedItem.id}
               />
             </div>
           )}

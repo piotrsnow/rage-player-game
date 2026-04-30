@@ -50,7 +50,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
   const generateScene = useEvent(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false, sceneOptions = {}) => {
-      const { combatResult = null } = sceneOptions || {};
+      const { combatResult = null, forceRoll = null } = sceneOptions || {};
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       stream.resetStreamState();
@@ -132,7 +132,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         // Stream scene from backend
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
-          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult,
+          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll,
         });
         const result = backendResult.result;
         const usage = backendResult.usage;

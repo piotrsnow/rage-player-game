@@ -21,6 +21,7 @@ import { buildUserPrompt } from './userPrompt.js';
 import { runTwoStagePipelineStreaming } from './streamingClient.js';
 import {
   applyCreativityToRoll,
+  applyForceRollModifier,
   isCreativityEligible,
   resolveModelDiceRolls,
   calculateFreeformSkillXP,
@@ -32,6 +33,11 @@ import { pickQuestGiver } from '../livingWorld/questGoalAssigner.js';
 import { enqueuePostSceneWork } from '../cloudTasks.js';
 import { processStateChanges as processAchievementEvents } from '../../../../shared/domain/achievementTracker.js';
 import { computeCombatCharXp } from '../../../../shared/domain/combatXp.js';
+import {
+  mentionsYassato,
+  isYassatoCameoOnCooldown,
+  generateYassatoCameoScene,
+} from './yassatoCameo.js';
 
 const log = childLogger({ module: 'sceneGenerator' });
 
@@ -55,6 +61,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     fromAutoPlayer = false,
     userApiKeys = null,
     combatResult = null,
+    forceRoll = null,
     achievementState = null,
     userId = null,
   } = options;
@@ -82,6 +89,25 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       currentRef,
     } = await loadCampaignState(campaignId);
     let activeCurrentRef = currentRef;
+
+    // 1b. Yassato cameo short-circuit. If the player mentions "Yassato" and
+    // the 5-scene cooldown has elapsed, replace the whole pipeline with a
+    // nano-generated absurd cameo scene that hands over +1 XP and a snarky
+    // line. Never runs on the synthetic [FIRST_SCENE] action (regex misses).
+    if (mentionsYassato(playerAction) && !(await isYassatoCameoOnCooldown(campaignId))) {
+      await runYassatoCameoPath({
+        campaignId,
+        playerAction,
+        activeCharacter,
+        activeCharacterId,
+        achievementState,
+        provider,
+        userApiKeys,
+        llmNanoTimeoutMs,
+        onEvent,
+      });
+      return;
+    }
 
     // 2. Intent classification. Fetch the most recent scene (narrative +
     // chosenAction + index) so the classifier sees continuity. Fast query —
@@ -137,8 +163,12 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     let serverDiceRoll = null;
 
     if (!resolvedMechanics?.diceRoll && intentResult.roll_skill && !isFirstScene) {
+      // ForceRoll bypasses the testsFrequency RNG gate — the player
+      // explicitly asked for a roll this turn, so fire every time nano
+      // picked a skill.
       const testsFrequency = dmSettings?.testsFrequency ?? 50;
-      if (Math.random() * 100 < testsFrequency) {
+      const forceRollActive = forceRoll?.enabled === true;
+      if (forceRollActive || Math.random() * 100 < testsFrequency) {
         serverDiceRoll = resolveBackendDiceRollWithPreRoll(
           characterForRoll,
           intentResult.roll_skill,
@@ -150,6 +180,13 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           resolvedMechanics = { diceRoll: serverDiceRoll };
         }
       }
+    }
+
+    // 2b2. Apply force-roll modifier to the nano-resolved roll BEFORE
+    // emitting dice_early so the FE animation shows the final number the
+    // player will see in the log.
+    if (forceRoll?.enabled && forceRoll.modifier && resolvedMechanics?.diceRoll) {
+      applyForceRollModifier(resolvedMechanics.diceRoll, forceRoll.modifier);
     }
 
     // 2c. Emit nano-resolved dice roll EARLY so the frontend can start the
@@ -229,6 +266,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       sceneCount,
       preRolls,
       creativityEligible,
+      forceRoll,
     });
 
     // 5. Streaming AI call
@@ -277,6 +315,15 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       resolvedMechanics?.diceRoll ? preRolls.slice(1) : preRolls,
       effectiveCreativity,
     );
+
+    // 6a2. Apply force-roll modifier to any model-produced rolls too. The nano
+    // roll was bumped earlier (pre dice_early); model rolls fire post-hoc so
+    // their totals get updated here.
+    if (forceRoll?.enabled && forceRoll.modifier && Array.isArray(sceneResult.diceRolls)) {
+      for (const roll of sceneResult.diceRolls) {
+        applyForceRollModifier(roll, forceRoll.modifier);
+      }
+    }
 
     // 6b. Unify dice rolls: nano roll + model rolls → single diceRolls array.
     // Dedupe by skill name: if nano already resolved a skill, drop any model
@@ -376,6 +423,18 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
           damageTaken: combatResult.combatStats?.damageTaken || 0,
           flawless: combatResult.flawless === true,
         };
+      }
+    }
+
+    // 6e2. "Kalejdoskop" cheat — if the player's action contains the stem
+    // "kalejdoskop" (case-insensitive, any inflection), award +50 XP for each
+    // "!" in the action. Purely additive on top of whatever XP the scene
+    // already granted. No narrative — the standard "+X PD" toast surfaces it.
+    if (typeof playerAction === 'string' && /kalejdoskop/i.test(playerAction)) {
+      const exclamations = (playerAction.match(/!/g) || []).length;
+      if (exclamations > 0) {
+        sceneResult.stateChanges = sceneResult.stateChanges || {};
+        sceneResult.stateChanges.xp = (sceneResult.stateChanges.xp || 0) + 50 * exclamations;
       }
     }
 
@@ -598,3 +657,89 @@ async function ensureQuestWrapup(sceneResult, { coreState, dbQuests, dbNpcs, lan
   }
 }
 
+/**
+ * Yassato cameo short-circuit handler. Generates an absurd cameo scene via
+ * nano (with deterministic fallback), applies +1 character XP, persists the
+ * scene + character, and emits the standard SSE event flow. Skips
+ * classifyIntent, context assembly, premium model, achievement processing,
+ * and postSceneWork — cameo is pure flavor, not a tracked event.
+ */
+async function runYassatoCameoPath({
+  campaignId,
+  playerAction,
+  activeCharacter,
+  activeCharacterId,
+  achievementState,
+  provider,
+  userApiKeys,
+  llmNanoTimeoutMs,
+  onEvent,
+}) {
+  onEvent({ type: 'intent', data: { intent: 'yassato_cameo' } });
+  onEvent({ type: 'context_ready' });
+
+  const sceneResult = await generateYassatoCameoScene({
+    playerAction,
+    currentCharacterXp: activeCharacter?.characterXp || 0,
+    provider,
+    userApiKeys,
+    llmNanoTimeoutMs,
+  });
+
+  // Emit the full scene as one JSON chunk so the FE's partial-JSON parser
+  // can populate the typewriter / streaming segments briefly before 'complete'
+  // lands. Cameo is ~1s total so streaming isn't a UX win, but this keeps
+  // the flow uniform with the normal pipeline.
+  onEvent({ type: 'chunk', text: JSON.stringify(sceneResult) });
+
+  const lastScene = await prisma.campaignScene.findFirst({
+    where: { campaignId },
+    orderBy: { sceneIndex: 'desc' },
+    select: { sceneIndex: true },
+  });
+  const newSceneIndex = lastScene ? lastScene.sceneIndex + 1 : 0;
+
+  let updatedCharacter = activeCharacter;
+  if (activeCharacterId && activeCharacter) {
+    try {
+      updatedCharacter = applyCharacterStateChanges(activeCharacter, sceneResult.stateChanges);
+    } catch (err) {
+      log.error({ err, characterId: activeCharacterId }, 'yassato cameo: failed to apply state changes');
+    }
+  }
+
+  const sceneCreateData = {
+    campaignId,
+    sceneIndex: newSceneIndex,
+    narrative: sceneResult.narrative || '',
+    chosenAction: playerAction,
+    suggestedActions: sceneResult.suggestedActions || [],
+    dialogueSegments: sceneResult.dialogueSegments || [],
+    imagePrompt: sceneResult.imagePrompt || null,
+    soundEffect: sceneResult.soundEffect || null,
+    diceRoll: null,
+    stateChanges: sceneResult.stateChanges ?? null,
+    scenePacing: sceneResult.scenePacing || 'cutscene',
+  };
+
+  const persistChar = activeCharacterId && updatedCharacter && updatedCharacter !== activeCharacter;
+  const savedScene = await prisma.$transaction(async (tx) => {
+    const scene = await tx.campaignScene.create({ data: sceneCreateData });
+    if (persistChar) {
+      await persistCharacterSnapshot(activeCharacterId, updatedCharacter, tx);
+    }
+    return scene;
+  });
+
+  onEvent({
+    type: 'complete',
+    data: {
+      scene: sceneResult,
+      sceneIndex: newSceneIndex,
+      sceneId: savedScene.id,
+      character: updatedCharacter,
+      newlyUnlockedAchievements: [],
+      updatedAchievementState: achievementState,
+    },
+  });
+}
