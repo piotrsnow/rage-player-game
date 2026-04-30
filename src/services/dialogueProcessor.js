@@ -134,7 +134,22 @@ export function enrichDialogueSpeakers({
       }
     }
 
-    if (!voiceId) return segment;
+    if (!voiceId) {
+      // We tried persisted map, gender pool, combined pool, narrator. Still
+      // nothing — most likely the DM hasn't tagged any ElevenLabs voices
+      // as male/female in settings. resolveVoiceForCharacter /
+      // pickRandomVoiceForGender already emit a deduped console warning,
+      // but record the speaker-level context here for triage.
+      // eslint-disable-next-line no-console
+      console.warn('[voice] Failed to assign voice for speaker', {
+        speaker: speakerName,
+        gender: speakerGender || 'unknown',
+        knownNpc: hasKnownNpc,
+        maleVoices: maleVoices.length,
+        femaleVoices: femaleVoices.length,
+      });
+      return segment;
+    }
     return {
       ...segment,
       voiceId,

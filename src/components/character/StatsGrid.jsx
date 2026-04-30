@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ATTRIBUTE_KEYS, charLevelCost } from '../../data/rpgSystem';
+import { ATTRIBUTE_KEYS, cumulativeCharXpThreshold } from '../../data/rpgSystem';
 import Tooltip from '../ui/Tooltip';
 
 const ATTR_ICONS = {
@@ -18,8 +18,11 @@ export default function StatsGrid({ attributes, mana, characterLevel, characterX
 
   const charLevel = characterLevel || 1;
   const charXp = characterXp || 0;
-  const nextCost = charLevelCost(charLevel + 1);
-  const charPct = nextCost > 0 ? Math.min(100, (charXp / nextCost) * 100) : 0;
+  const prevThreshold = cumulativeCharXpThreshold(charLevel);
+  const nextThreshold = cumulativeCharXpThreshold(charLevel + 1);
+  const charPct = nextThreshold > prevThreshold
+    ? Math.min(100, ((charXp - prevThreshold) / (nextThreshold - prevThreshold)) * 100)
+    : 0;
 
   return (
     <div className="space-y-3">
@@ -32,7 +35,7 @@ export default function StatsGrid({ attributes, mana, characterLevel, characterX
         <div className="flex-1 h-2 bg-surface-container-high/60 rounded-full overflow-hidden">
           <div className="h-full bg-tertiary rounded-full transition-all duration-300" style={{ width: `${charPct}%` }} />
         </div>
-        <span className="text-sm font-headline text-tertiary tabular-nums">{charXp}/{nextCost}</span>
+        <span className="text-sm font-headline text-tertiary tabular-nums">{charXp}/{nextThreshold}</span>
         {(attributePoints || 0) > 0 && (
           <span className="px-2 py-0.5 text-[10px] font-bold rounded-sm bg-primary/20 text-primary animate-pulse">
             +{attributePoints}

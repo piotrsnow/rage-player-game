@@ -1,0 +1,19 @@
+{
+    "id": "big",
+    "name": "Big",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "nose", "human", "darkelf", "zombie" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/nose/human/big_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/nose/human/big_f.png"
+        }
+    ]
+}

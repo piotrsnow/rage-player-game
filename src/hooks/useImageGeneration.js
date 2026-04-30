@@ -14,26 +14,39 @@ export function useImageGeneration() {
   const itemImageGenerationLocksRef = useRef(new Set());
   const itemImageFailureTimestampsRef = useRef(new Map());
 
-  const { sceneVisualization, imageProvider, stabilityApiKey, openaiApiKey, geminiApiKey, itemImagesEnabled } = settings;
+  const { sceneVisualization, imageProvider, itemImagesEnabled, sdWebuiModel = '', sdWebuiSeed = null } = settings;
   const imageStyle = settings.dmSettings?.imageStyle || 'painting';
   const darkPalette = settings.dmSettings?.darkPalette || false;
   const imageSeriousness = settings.dmSettings?.narratorSeriousness ?? null;
   const imageGenEnabled = sceneVisualization === 'image';
   const itemImageGenEnabled = itemImagesEnabled !== false;
-  const imgKeyProvider = imageProvider === 'stability' ? 'stability' : imageProvider === 'gemini' ? 'gemini' : 'openai';
-  const imageApiKey = imageProvider === 'stability' ? stabilityApiKey : imageProvider === 'gemini' ? geminiApiKey : openaiApiKey;
+  const imgKeyProvider = imageProvider === 'stability'
+    ? 'stability'
+    : imageProvider === 'gemini'
+      ? 'gemini'
+      : imageProvider === 'sd-webui'
+        ? 'sd-webui'
+        : 'openai';
+  // Image keys are env-only on the backend — FE just passes an empty
+  // string (imageService ignores it). `hasApiKey(provider)` below is the
+  // real gate for whether generation is allowed.
+  const imageApiKey = '';
 
   const generateItemImageForInventoryItem = useCallback(
     async (item, options = {}) => {
       if (!item || typeof item !== 'object') return null;
       if (!itemImageGenEnabled) return null;
       const itemId = typeof item.id === 'string' ? item.id : '';
-      if (!itemId || item.imageUrl) return item.imageUrl || null;
+      if (!itemId) return null;
+      const forceNew = options.forceNew === true;
+      if (!forceNew && item.imageUrl) return item.imageUrl;
 
       const activeLocks = itemImageGenerationLocksRef.current;
-      const failedAt = itemImageFailureTimestampsRef.current.get(itemId);
-      if (failedAt && (Date.now() - failedAt) < ITEM_IMAGE_RETRY_COOLDOWN_MS) {
-        return null;
+      if (!forceNew) {
+        const failedAt = itemImageFailureTimestampsRef.current.get(itemId);
+        if (failedAt && (Date.now() - failedAt) < ITEM_IMAGE_RETRY_COOLDOWN_MS) {
+          return null;
+        }
       }
       if (activeLocks.has(itemId)) return null;
       activeLocks.add(itemId);
@@ -47,6 +60,9 @@ export function useImageGeneration() {
           darkPalette,
           seriousness: imageSeriousness,
           campaignId: state.campaign?.backendId,
+          sdModel: sdWebuiModel,
+          sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          forceNew,
         });
         if (!imageUrl) return null;
 
@@ -81,7 +97,7 @@ export function useImageGeneration() {
         activeLocks.delete(itemId);
       }
     },
-    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, dispatch, autoSave]
+    [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, dispatch, autoSave]
   );
 
   const ensureMissingInventoryImages = useCallback(
@@ -124,7 +140,7 @@ export function useImageGeneration() {
         const sceneImagePrompt = imagePrompt || state.scenes?.find((s) => s.id === sceneId)?.imagePrompt;
         const genre = campaignOverride?.genre ?? state.campaign?.genre;
         const tone = campaignOverride?.tone ?? state.campaign?.tone;
-        const imageUrl = await imageService.generateSceneImage(
+        const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
           narrative,
           genre,
           tone,
@@ -136,19 +152,19 @@ export function useImageGeneration() {
           darkPalette,
           state.character?.age,
           state.character?.gender,
-          { forceNew: Boolean(options.forceNew) },
+          { forceNew: Boolean(options.forceNew), sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null },
           imageSeriousness,
           state.character?.portraitUrl || null
         );
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
         dispatch({
           type: 'UPDATE_SCENE_IMAGE',
-          payload: { sceneId, image: imageUrl },
+          payload: { sceneId, image: imageUrl, fullImagePrompt },
         });
         if (!options.skipAutoSave) {
           autoSave();
         }
-        return imageUrl;
+        return { url: imageUrl, fullImagePrompt };
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);
         return null;
@@ -156,7 +172,7 @@ export function useImageGeneration() {
         dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
       }
     },
-    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, hasApiKey, imgKeyProvider, dispatch, autoSave]
+    [state.scenes, state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, state.character?.age, state.character?.gender, state.character?.portraitUrl, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, dispatch, autoSave]
   );
 
   return {

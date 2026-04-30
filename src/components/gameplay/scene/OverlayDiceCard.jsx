@@ -78,7 +78,7 @@ function OverlayModifierList({ dr, t, outcomeTint = false }) {
         <span
           key={modifier.key}
           aria-hidden={modifier.isPlaceholder ? 'true' : undefined}
-          className={`w-[158px] text-right text-[10px] font-bold px-2 py-1 rounded-full border ${modifier.className}`}
+          className={`w-[148px] text-right text-[10px] font-bold px-2 py-1 rounded-full border ${modifier.className}`}
         >
           {modifier.label}
         </span>
@@ -119,6 +119,23 @@ export default function OverlayDiceCard({ dr, t, showCharacter = false, isVisibl
   const tensLabel = String(Math.floor(safeRoll / 10) * 10).padStart(2, '0');
   const unitsLabel = String(safeRoll % 10);
 
+  const targetValue = target != null
+    ? Math.max(0, Math.min(99, Number(target) || 0))
+    : null;
+  const targetTensLabel = targetValue != null
+    ? String(Math.floor(targetValue / 10) * 10).padStart(2, '0')
+    : null;
+  const targetUnitsLabel = targetValue != null
+    ? String(targetValue % 10)
+    : null;
+  const cmpSymbol = targetValue == null
+    ? null
+    : safeRoll > targetValue
+      ? '>'
+      : safeRoll < targetValue
+        ? '<'
+        : '=';
+
   return (
     <div className={`glass-panel-dice-roll-overlay relative w-max max-w-[min(92vw,24rem)] overflow-hidden rounded-2xl border px-5 py-4 flex flex-col gap-3 transition-all duration-300 ${
       outcomeClasses || 'border-outline-variant/20'
@@ -145,7 +162,7 @@ export default function OverlayDiceCard({ dr, t, showCharacter = false, isVisibl
         </span>
       )}
 
-      <div className="relative z-10 flex items-center gap-4">
+      <div className="relative z-10 flex items-center gap-3">
         {dr ? (
           <div className="flex items-center gap-1.5 shrink-0">
             {[tensLabel, unitsLabel].map((val, i) => (
@@ -166,6 +183,46 @@ export default function OverlayDiceCard({ dr, t, showCharacter = false, isVisibl
                 </span>
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {dr && targetValue != null ? (
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <div
+              className={`relative w-11 h-12 rounded-lg border ${glow.border} flex items-center justify-center overflow-hidden`}
+              style={{
+                background: 'linear-gradient(160deg, rgba(30, 25, 42, 0.78), rgba(12, 10, 18, 0.9))',
+                boxShadow: `0 0 10px ${glow.color.replace(/[\d.]+\)$/, '0.1)')}, inset 0 1px 0 rgba(255, 255, 255, 0.05)`,
+              }}
+            >
+              <span className={`relative font-mono text-[1.15rem] font-bold leading-none ${glow.text} opacity-80`}>
+                {targetTensLabel}
+              </span>
+            </div>
+
+            <div
+              className={`relative w-7 h-7 rounded-md border ${glow.border} flex items-center justify-center overflow-hidden`}
+              style={{
+                background: 'linear-gradient(160deg, rgba(30, 25, 42, 0.92), rgba(12, 10, 18, 0.96))',
+                boxShadow: `0 0 12px ${glow.color.replace(/[\d.]+\)$/, '0.22)')}, 0 2px 6px rgba(0, 0, 0, 0.4)`,
+              }}
+            >
+              <span className={`relative font-mono text-sm font-black leading-none ${glow.text}`}>
+                {cmpSymbol}
+              </span>
+            </div>
+
+            <div
+              className={`relative w-11 h-12 rounded-lg border ${glow.border} flex items-center justify-center overflow-hidden`}
+              style={{
+                background: 'linear-gradient(160deg, rgba(30, 25, 42, 0.78), rgba(12, 10, 18, 0.9))',
+                boxShadow: `0 0 10px ${glow.color.replace(/[\d.]+\)$/, '0.1)')}, inset 0 1px 0 rgba(255, 255, 255, 0.05)`,
+              }}
+            >
+              <span className={`relative font-mono text-[1.15rem] font-bold leading-none ${glow.text} opacity-80`}>
+                {targetUnitsLabel}
+              </span>
+            </div>
           </div>
         ) : null}
 

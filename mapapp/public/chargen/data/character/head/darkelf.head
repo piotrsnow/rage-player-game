@@ -1,0 +1,27 @@
+{
+    "id": "darkelf",
+    "name": "Dark Elf",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "darkelf" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/head/human_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/head/human_f.png"
+        },
+        {
+            "head": "hc1",
+            "back": "none",
+            "front": "textures/character/head/human_c.png"
+        }
+    ]
+}

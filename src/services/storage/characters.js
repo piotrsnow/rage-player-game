@@ -74,6 +74,42 @@ export function findMatchingLibraryCharacter(campaignChar, libraryChars) {
   return null;
 }
 
+/**
+ * Decide whether the library character is meaningfully different from the
+ * campaign-embedded snapshot. Used to skip the "Which version?" modal when
+ * both copies are effectively the same.
+ */
+export function libraryCharacterDiffers(campaignChar, libraryChar) {
+  if (!campaignChar || !libraryChar) return false;
+
+  const toMs = (v) => {
+    if (!v) return 0;
+    const n = typeof v === 'number' ? v : new Date(v).getTime();
+    return Number.isFinite(n) ? n : 0;
+  };
+  const campaignTs = toMs(campaignChar.updatedAt);
+  const libraryTs = toMs(libraryChar.updatedAt);
+  if (campaignTs && libraryTs && campaignTs !== libraryTs) return true;
+
+  const campaignLevel = campaignChar.characterLevel || 1;
+  const libraryLevel = libraryChar.characterLevel || 1;
+  if (campaignLevel !== libraryLevel) return true;
+
+  const campaignXp = campaignChar.characterXp || 0;
+  const libraryXp = libraryChar.characterXp || 0;
+  if (campaignXp !== libraryXp) return true;
+
+  const campaignWounds = campaignChar.wounds ?? 0;
+  const libraryWounds = libraryChar.wounds ?? 0;
+  if (campaignWounds !== libraryWounds) return true;
+
+  const campaignMaxWounds = campaignChar.maxWounds ?? 0;
+  const libraryMaxWounds = libraryChar.maxWounds ?? 0;
+  if (campaignMaxWounds !== libraryMaxWounds) return true;
+
+  return false;
+}
+
 export async function getCharactersAsync() {
   let chars;
   if (apiClient.isConnected()) {

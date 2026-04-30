@@ -95,9 +95,9 @@ export function useMpActions({ dispatch, pendingQuestVerifyRef }) {
     wsService.send(WS_CLIENT_TYPES.KICK_PLAYER, { targetOdId });
   }, []);
 
-  const updateSceneImage = useCallback((sceneId, image) => {
-    dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image } });
-    wsService.send(WS_CLIENT_TYPES.UPDATE_SCENE_IMAGE, { sceneId, image });
+  const updateSceneImage = useCallback((sceneId, image, fullImagePrompt = null) => {
+    dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image, fullImagePrompt } });
+    wsService.send(WS_CLIENT_TYPES.UPDATE_SCENE_IMAGE, { sceneId, image, fullImagePrompt });
   }, [dispatch]);
 
   const acceptMpQuestOffer = useCallback((sceneId, questOffer) => {

@@ -11,6 +11,7 @@ import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN, lookupLocationByKindId } f
 import { generateSceneEmbedding } from './sceneEmbedding.js';
 import { processNpcChanges, processItemAttributions } from './npcs.js';
 import { processNpcMemoryUpdates } from './npcMemoryUpdates.js';
+import { parseNpcChanges } from './schemas.js';
 import { processKnowledgeUpdates, processCodexUpdates } from './knowledgeCodex.js';
 import { processQuestObjectiveUpdates, processQuestStatusChange } from './quests.js';
 import { processLocationChanges } from './locations.js';
@@ -74,7 +75,15 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
   const sceneGameTime = new Date();
 
   if (stateChanges.npcs?.length) {
-    await processNpcChanges(campaignId, stateChanges.npcs, { livingWorldEnabled, sceneIndex });
+    const parsed = parseNpcChanges(stateChanges.npcs);
+    if (parsed.ok) {
+      await processNpcChanges(campaignId, parsed.data, { livingWorldEnabled, sceneIndex });
+    } else {
+      // Schema violation on the npcs bucket is non-fatal — log and skip so
+      // one malformed entry doesn't kill the rest of the scene's side
+      // effects. `processNpcChanges` already logs per-NPC errors of its own.
+      log.warn({ campaignId, issues: parsed.error?.issues?.slice(0, 5) }, 'stateChanges.npcs failed schema validation — skipped');
+    }
   }
 
   // Stage 2 — NPC memory accumulation (shadow only). Runs AFTER processNpcChanges

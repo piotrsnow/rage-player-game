@@ -1,0 +1,13 @@
+{
+    "id": "base",
+    "name": "Base",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "ears", "base" ],
+    "textures": [
+        {
+            "back": "none",
+            "front": "none"
+        }
+    ]
+}

@@ -1,0 +1,6 @@
+{
+    "id": "bolt",
+    "texture": "textures/projectiles/bolt.png",
+    "spritesheet": "bolt",
+    "speed": 440
+}

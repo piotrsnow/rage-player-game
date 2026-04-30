@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, GENERATED_IMAGE_SCALE } from '../../services/imageResize.js';
@@ -7,8 +8,6 @@ import { createMediaStore } from '../../services/mediaStore.js';
 import { config } from '../../config.js';
 
 const store = createMediaStore(config);
-
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
 
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
@@ -19,7 +18,7 @@ const GENERATE_BODY_SCHEMA = {
     negativePrompt: { type: 'string', maxLength: 2000 },
     model: { type: 'string', maxLength: 64 },
     aspectRatio: { type: 'string', maxLength: 16 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };
@@ -115,6 +114,7 @@ export async function stabilityProxyRoutes(fastify) {
     let imageBuffer = null;
     let prompt = '';
     let strength = '0.45';
+    let extraNegative = '';
 
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'image') {
@@ -122,6 +122,7 @@ export async function stabilityProxyRoutes(fastify) {
       } else if (part.type === 'field') {
         if (part.fieldname === 'prompt') prompt = part.value;
         if (part.fieldname === 'strength') strength = part.value;
+        if (part.fieldname === 'negativePrompt') extraNegative = part.value || '';
       }
     }
 
@@ -129,10 +130,13 @@ export async function stabilityProxyRoutes(fastify) {
       return reply.code(400).send({ error: 'Image file and prompt are required' });
     }
 
+    const baseNegative = 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy';
+    const negativePrompt = extraNegative ? `${extraNegative}, ${baseNegative}` : baseNegative;
+
     const formData = new FormData();
     formData.append('image', new Blob([imageBuffer], { type: 'image/jpeg' }), 'photo.jpg');
     formData.append('prompt', prompt);
-    formData.append('negative_prompt', 'blurry, low quality, text, watermark, signature, deformed face, extra limbs, bad anatomy');
+    formData.append('negative_prompt', negativePrompt);
     formData.append('strength', strength);
     formData.append('mode', 'image-to-image');
     formData.append('model', 'sd3.5-large-turbo');

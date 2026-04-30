@@ -1,5 +1,5 @@
 import {
-  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS, CREATION_LIMITS, SKILL_CAPS,
+  SPECIES, PLAYABLE_SPECIES_LIST, ATTRIBUTE_KEYS, CREATION_LIMITS, SKILL_CAPS,
   createStartingSkills, calculateMaxWounds as calcMaxWounds,
 } from '../data/rpgSystem';
 import { DEFAULT_CHARACTER_AGE } from './characterAge';
@@ -32,7 +32,7 @@ export function pickRandomName(genre, currentName) {
 }
 
 export function randomizeSpecies() {
-  return SPECIES_LIST[Math.floor(Math.random() * SPECIES_LIST.length)];
+  return PLAYABLE_SPECIES_LIST[Math.floor(Math.random() * PLAYABLE_SPECIES_LIST.length)];
 }
 
 /**

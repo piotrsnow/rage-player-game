@@ -1,0 +1,36 @@
+{
+    "id": "legion1",
+    "name": "Legion 1",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotsalt" : [ "hair" ],
+    "tags": [ "hat", "armor", "plate", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/legion/legion1_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/legion/legion1_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/legion/legion1_m.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_copper",
+        "metal_bronze",
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel",
+        "metal_brushed",
+        "metal_gold"
+    ]
+}

@@ -1,0 +1,65 @@
+{
+    "id": "chain",
+    "name": "Chain",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotsalt": [ "hair" ],
+    "slotshidden" : [ "ears" ],
+    "tags": [ "hat", "armor", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_f.png"
+        },
+        {
+            "head": "of1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_f.png"
+        },
+        {
+            "head": "dm1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_m.png"
+        },
+        {
+            "head": "df1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_f.png"
+        },
+                {
+            "head": "lm1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_m.png"
+        },
+        {
+            "head": "lf1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/chain/chain_m.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_copper",
+        "metal_bronze",
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel",
+        "metal_brushed",
+        "metal_gold"
+    ],
+    "secondarycolors": [
+        "cloth_brown3"
+    ]
+}

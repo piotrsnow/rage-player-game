@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '../../services/apiClient';
+import { useAI } from '../../hooks/useAI';
 import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import ItemDetailBox from './inventory/ItemDetailBox';
@@ -17,11 +18,11 @@ function getTooltipKey(name) {
 }
 
 const NEEDS_META = [
-  { key: 'hunger', icon: 'restaurant', color: 'tertiary' },
-  { key: 'thirst', icon: 'water_drop', color: 'primary' },
-  { key: 'bladder', icon: 'wc', color: 'tertiary' },
-  { key: 'hygiene', icon: 'shower', color: 'primary' },
-  { key: 'rest', icon: 'bedtime', color: 'tertiary' },
+  { key: 'hunger', icon: 'restaurant' },
+  { key: 'thirst', icon: 'water_drop' },
+  { key: 'bladder', icon: 'wc' },
+  { key: 'hygiene', icon: 'shower' },
+  { key: 'rest', icon: 'bedtime' },
 ];
 
 export default function CharacterPanel({
@@ -52,7 +53,11 @@ export default function CharacterPanel({
   const equipped = character.equipped || {};
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [crystalItemId, setCrystalItemId] = useState(null);
+  const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
+
+  const { generateItemImageForInventoryItem } = useAI();
+  const canRegenerateItemImage = !isMultiplayer && settings.itemImagesEnabled !== false;
 
   useEffect(() => {
     if (selectedItemId && !inventoryItems.some((i) => i.id === selectedItemId)) {
@@ -71,6 +76,16 @@ export default function CharacterPanel({
   const handleUseManaCrystal = (itemId, choice) => {
     dispatch({ type: 'USE_MANA_CRYSTAL', payload: { itemId, choice } });
     if (autoSave) autoSave();
+  };
+  const handleRegenerateItemImage = async (itemId) => {
+    const target = inventoryItems.find((i) => i.id === itemId);
+    if (!target || regeneratingItemId) return;
+    setRegeneratingItemId(itemId);
+    try {
+      await generateItemImageForInventoryItem(target, { forceNew: true });
+    } finally {
+      setRegeneratingItemId(null);
+    }
   };
 
   return (
@@ -102,20 +117,15 @@ export default function CharacterPanel({
                   </span>
                 </button>
               )}
-              <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
-                <div className="flex justify-between items-end">
-                  <div>
-                    <p className="text-tertiary font-headline text-lg">{character.portraitUrl ? character.name : t('character.inspiration')}</p>
-                    <div className="flex gap-1 mt-1">
-                      <span className="w-4 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
-                      <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
-                    </div>
+              {!character.portraitUrl && (
+                <div className="absolute bottom-0 left-0 w-full p-4 bg-gradient-to-t from-surface-dim to-transparent">
+                  <p className="text-tertiary font-headline text-lg">{t('character.inspiration')}</p>
+                  <div className="flex gap-1 mt-1">
+                    <span className="w-4 h-4 bg-primary rounded-full shadow-[0_0_6px_rgba(197,154,255,0.6)]" />
+                    <span className="w-4 h-4 bg-surface-container rounded-full border border-outline-variant/30" />
                   </div>
-                  {character.mana && (
-                    <p className="text-primary font-headline text-lg">Mana {character.mana.current}/{character.mana.max}</p>
-                  )}
                 </div>
-              </div>
+              )}
             </div>
             {canEditPortrait && !editingPortrait && (
               <button
@@ -178,7 +188,7 @@ export default function CharacterPanel({
                 </div>
               )}
               {character.mana && (
-                <StatusBar label="Mana" current={character.mana.current} max={character.mana.max} color="tertiary" />
+                <StatusBar label="Mana" current={character.mana.current} max={character.mana.max} color="blue" />
               )}
             </div>
           </div>
@@ -190,13 +200,13 @@ export default function CharacterPanel({
                 {t('needs.title')}
               </h3>
               <div className="space-y-4">
-                {NEEDS_META.map(({ key, color }) => (
+                {NEEDS_META.map(({ key }) => (
                   <StatusBar
                     key={key}
                     label={t(`needs.${key}`)}
                     current={Math.round(character.needs[key] ?? 100)}
                     max={100}
-                    color={color}
+                    color="dynamic"
                   />
                 ))}
               </div>
@@ -285,6 +295,8 @@ export default function CharacterPanel({
                 onEquipItem={handleEquipItem}
                 onUnequipItem={handleUnequipItem}
                 onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+                onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
+                isRegenerating={regeneratingItemId === selectedItem.id}
               />
             </div>
           )}

@@ -62,6 +62,7 @@ export function useSceneBackendStream() {
     isCustomAction,
     fromAutoPlayer,
     combatResult = null,
+    forceRoll = null,
   }) => {
     let rawAccumulated = '';
 
@@ -79,6 +80,7 @@ export function useSceneBackendStream() {
       sceneCount: state.scenes?.length || 0,
       gameState: state,
       combatResult,
+      forceRoll,
       achievementState: state.achievements || null,
       onEvent: (event) => {
         if (event.type === 'intent') {

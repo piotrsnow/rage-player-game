@@ -16,12 +16,8 @@ import CharacterCreationModal from '../character/CharacterCreationModal';
 import { useModals } from '../../contexts/ModalContext';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import {
-  genreIds,
-  genreIcons,
   toneIds,
   toneIcons,
-  styleIds,
-  difficultyIds,
   lengthIds,
 } from './creatorConstants';
 import ChipGroup from './ChipGroup';
@@ -48,8 +44,6 @@ export default function CampaignCreatorPage() {
   const [form, setForm] = useState({
     genre: 'Fantasy',
     tone: 'Epic',
-    style: 'Hybrid',
-    difficulty: 'Normal',
     length: 'Medium',
     storyPrompt: '',
     livingWorldEnabled: false,
@@ -90,31 +84,13 @@ export default function CampaignCreatorPage() {
   const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isBackendConnected = apiClient.isConnected();
 
-  useEffect(() => {
-    const root = document.documentElement;
-    const genreFilters = {
-      'Sci-Fi': 'hue-rotate(-45deg) saturate(1.35) brightness(1.05)',
-      Horror: 'hue-rotate(160deg) saturate(0.7) brightness(0.92)',
-    };
-    const filter = genreFilters[form.genre] || '';
-    root.style.transition = 'filter 0.8s cubic-bezier(.4,0,.2,1)';
-    root.style.filter = filter;
-    return () => {
-      root.style.filter = '';
-      root.style.transition = '';
-    };
-  }, [form.genre]);
-
   // Guest: sync local form from host's room settings
   const roomSettings = mp.state.roomSettings;
   useEffect(() => {
     if (!isGuest || !roomSettings) return;
     setForm((prev) => ({
       ...prev,
-      genre: roomSettings.genre ?? prev.genre,
       tone: roomSettings.tone ?? prev.tone,
-      style: roomSettings.style ?? prev.style,
-      difficulty: roomSettings.difficulty ?? prev.difficulty,
       length: roomSettings.length ?? prev.length,
       storyPrompt: roomSettings.storyPrompt ?? prev.storyPrompt,
     }));
@@ -130,8 +106,6 @@ export default function CampaignCreatorPage() {
         mp.updateSettings({
           genre: updated.genre,
           tone: updated.tone,
-          style: updated.style,
-          difficulty: updated.difficulty,
           length: updated.length,
           storyPrompt: updated.storyPrompt,
           needsSystemEnabled: settings.needsSystemEnabled ?? false,
@@ -172,7 +146,6 @@ export default function CampaignCreatorPage() {
       const prompt = await generateStoryPrompt({
         genre: form.genre,
         tone: form.tone,
-        style: form.style,
       });
       updateForm((p) => ({ ...p, storyPrompt: prompt }));
     } catch {
@@ -191,7 +164,6 @@ export default function CampaignCreatorPage() {
       const prompt = await generateStoryPrompt({
         genre: form.genre,
         tone: form.tone,
-        style: form.style,
         seedText,
       });
       updateForm((p) => ({ ...p, storyPrompt: prompt }));
@@ -217,8 +189,6 @@ export default function CampaignCreatorPage() {
     mp.updateSettings({
       genre: form.genre,
       tone: form.tone,
-      style: form.style,
-      difficulty: form.difficulty,
       length: form.length,
       storyPrompt: form.storyPrompt,
       needsSystemEnabled: settings.needsSystemEnabled ?? false,
@@ -301,7 +271,7 @@ export default function CampaignCreatorPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-12">
+    <div className="max-w-5xl mx-auto px-6 py-12">
       {(state.isLoading || mp.state.isGenerating || isSubmitting) ? (
         <div className="flex flex-col items-center justify-center py-32 animate-fade-in">
           <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
@@ -310,8 +280,8 @@ export default function CampaignCreatorPage() {
           </p>
         </div>
       ) : (
-        <div className="space-y-12 animate-fade-in">
-          <div className="mb-12">
+        <div className="space-y-8 animate-fade-in">
+          <div className="mb-8">
             <h1 className="font-headline text-4xl md:text-5xl text-tertiary mb-2 tracking-tight">
               {t('creator.title')}
             </h1>
@@ -360,23 +330,6 @@ export default function CampaignCreatorPage() {
 
           <section>
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-              {t('creator.genreLabel')}
-            </label>
-            <ChipGroup
-              name="genre"
-              options={genreIds}
-              value={form.genre}
-              onChange={(v) => updateForm((p) => ({ ...p, genre: v }))}
-              showIcons
-              icons={genreIcons}
-              labels={Object.fromEntries(genreIds.map((id) => [id, t(`creator.genres.${id}`)]))}
-              descriptions={Object.fromEntries(genreIds.map((id) => [id, t(`creator.genreDesc.${id}`)]))}
-              disabled={isGuest}
-            />
-          </section>
-
-          <section>
-            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
               {t('creator.toneLabel')}
             </label>
             <ChipGroup
@@ -406,49 +359,58 @@ export default function CampaignCreatorPage() {
             genre={form.genre}
           />
 
-          <section>
-            <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-              {t('creator.playStyleLabel')}
-            </label>
-            <ChipGroup
-              name="style"
-              options={styleIds}
-              value={form.style}
-              onChange={(v) => updateForm((p) => ({ ...p, style: v }))}
-              labels={Object.fromEntries(styleIds.map((id) => [id, t(`creator.styles.${id}`)]))}
-              descriptions={Object.fromEntries(styleIds.map((id) => [id, t(`creator.styleDesc.${id}`)]))}
-              disabled={isGuest}
-            />
-          </section>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                {t('creator.difficultyLabel')}
-              </label>
-              <ChipGroup
-                name="difficulty"
-                options={difficultyIds}
-                value={form.difficulty}
-                onChange={(v) => updateForm((p) => ({ ...p, difficulty: v }))}
-                labels={Object.fromEntries(difficultyIds.map((id) => [id, t(`creator.difficulties.${id}`)]))}
-                disabled={isGuest}
-              />
-            </section>
-            <section>
-              <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
-                {t('creator.campaignLengthLabel')}
-              </label>
-              <ChipGroup
-                name="length"
-                options={lengthIds}
-                value={form.length}
-                onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
-                labels={Object.fromEntries(lengthIds.map((id) => [id, t(`creator.lengths.${id}`)]))}
-                disabled={isGuest}
-              />
-            </section>
-          </div>
+          {(() => {
+            const activeChar = charMode === 'new' ? createdCharacter : selectedCharacter;
+            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
+            const tiers = charLevel <= 5
+              ? ['low']
+              : charLevel <= 10
+                ? ['low', 'medium', 'high']
+                : ['low', 'medium', 'high', 'deadly'];
+            const tierLabels = { low: 'Low', medium: 'Medium', high: 'High', deadly: 'Deadly' };
+            // Clamp the stored value if the active character no longer permits it.
+            if (!tiers.includes(form.difficultyTier)) {
+              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
+            }
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <section>
+                  <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-4">
+                    {t('creator.campaignLengthLabel')}
+                  </label>
+                  <ChipGroup
+                    name="length"
+                    options={lengthIds}
+                    value={form.length}
+                    onChange={(v) => updateForm((p) => ({ ...p, length: v }))}
+                    labels={Object.fromEntries(lengthIds.map((id) => [id, t(`creator.lengths.${id}`)]))}
+                    disabled={isGuest}
+                  />
+                </section>
+                <section className="border border-outline-variant/15 rounded-sm p-4 bg-surface-container-high/20">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="font-label text-sm text-on-surface">Trudność kampanii</span>
+                    <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-outline-variant/30 text-on-surface-variant">
+                      Nowe
+                    </span>
+                  </div>
+                  <select
+                    className="w-full bg-surface-container border border-outline-variant/30 rounded-sm px-3 py-2 text-sm text-on-surface"
+                    value={form.difficultyTier}
+                    onChange={(e) => updateForm((p) => ({ ...p, difficultyTier: e.target.value }))}
+                    title="Górna granica wrogów w scenach. lv 1-5 → tylko Low; lv 6-10 → Low/Medium/High; lv 11+ → wszystko."
+                  >
+                    {tiers.map((tier) => (
+                      <option key={tier} value={tier}>{tierLabels[tier]}</option>
+                    ))}
+                  </select>
+                  <p className="text-on-surface-variant text-[11px] mt-2 opacity-70">
+                    Poziom postaci: <strong>{charLevel}</strong> · Dozwolone: {tiers.join(', ')}
+                  </p>
+                </section>
+              </div>
+            );
+          })()}
 
           <StoryPromptSection
             storyPrompt={form.storyPrompt}
@@ -461,47 +423,7 @@ export default function CampaignCreatorPage() {
             onGenerateFromInput={handleGenerateFromInput}
           />
 
-          {(() => {
-            const activeChar = charMode === 'new' ? createdCharacter : selectedCharacter;
-            const charLevel = Number(activeChar?.characterLevel || activeChar?.level || 1);
-            const tiers = charLevel <= 5
-              ? ['low']
-              : charLevel <= 10
-                ? ['low', 'medium', 'high']
-                : ['low', 'medium', 'high', 'deadly'];
-            const tierLabels = { low: 'Low (niska)', medium: 'Medium (średnia)', high: 'High (wysoka)', deadly: 'Deadly (śmiertelna)' };
-            // Clamp the stored value if the active character no longer permits it.
-            if (!tiers.includes(form.difficultyTier)) {
-              setTimeout(() => updateForm((p) => ({ ...p, difficultyTier: 'low' })), 0);
-            }
-            return (
-              <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-label text-sm text-on-surface">Trudność kampanii</span>
-                  <span className="text-[9px] uppercase tracking-widest px-1.5 py-0.5 rounded-sm bg-outline-variant/30 text-on-surface-variant">
-                    Nowe
-                  </span>
-                </div>
-                <p className="text-on-surface-variant text-xs leading-relaxed mb-3">
-                  Górna granica wrogów w scenach. lv 1-5 → tylko Low; lv 6-10 → Low/Medium/High; lv 11+ → wszystko. Chroni przed walką ze smokiem na niskim poziomie.
-                </p>
-                <select
-                  className="w-full bg-surface-container border border-outline-variant/30 rounded-sm px-3 py-2 text-sm text-on-surface"
-                  value={form.difficultyTier}
-                  onChange={(e) => updateForm((p) => ({ ...p, difficultyTier: e.target.value }))}
-                >
-                  {tiers.map((t) => (
-                    <option key={t} value={t}>{tierLabels[t]}</option>
-                  ))}
-                </select>
-                <p className="text-on-surface-variant text-[11px] mt-2 opacity-70">
-                  Poziom postaci: <strong>{charLevel}</strong>. Dozwolone: {tiers.join(', ')}.
-                </p>
-              </section>
-            );
-          })()}
-
-          <section className="border border-outline-variant/15 rounded-sm p-5 bg-surface-container-high/20">
+          <section className="border border-outline-variant/15 rounded-sm p-4 bg-surface-container-high/20">
             <label className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -524,28 +446,30 @@ export default function CampaignCreatorPage() {
             </label>
 
             {form.livingWorldEnabled && !isGuest && (
-              <div className="mt-6 pt-6 border-t border-outline-variant/15">
+              <div className="mt-4 pt-4 border-t border-outline-variant/15">
                 <p className="text-on-surface-variant text-xs mb-4">
                   Tempo upływu czasu w świecie gry względem realnego + maksymalna "dziura" gdy wracasz po przerwie.
                 </p>
-                <Slider
-                  label="Tempo czasu"
-                  description="1h realnego = N godzin w grze (domyślnie 24 → 1h real = 1 dzień gry)"
-                  min={1}
-                  max={72}
-                  value={form.worldTimeRatio}
-                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
-                  displayValue={`${form.worldTimeRatio}×`}
-                />
-                <Slider
-                  label="Maks. offline gap"
-                  description="Ile dni gry maksymalnie upływa gdy wracasz po długiej przerwie"
-                  min={1}
-                  max={30}
-                  value={form.worldTimeMaxGapDays}
-                  onChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
-                  displayValue={`${form.worldTimeMaxGapDays} dni`}
-                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Slider
+                    label="Tempo czasu"
+                    description="1h realnego = N godzin w grze (domyślnie 24 → 1h real = 1 dzień gry)"
+                    min={1}
+                    max={72}
+                    value={form.worldTimeRatio}
+                    onChange={(v) => updateForm((p) => ({ ...p, worldTimeRatio: v }))}
+                    displayValue={`${form.worldTimeRatio}×`}
+                  />
+                  <Slider
+                    label="Maks. offline gap"
+                    description="Ile dni gry maksymalnie upływa gdy wracasz po długiej przerwie"
+                    min={1}
+                    max={30}
+                    value={form.worldTimeMaxGapDays}
+                    onChange={(v) => updateForm((p) => ({ ...p, worldTimeMaxGapDays: v }))}
+                    displayValue={`${form.worldTimeMaxGapDays} dni`}
+                  />
+                </div>
               </div>
             )}
           </section>

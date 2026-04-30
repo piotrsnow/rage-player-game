@@ -25,6 +25,7 @@ export function buildUserPrompt(playerAction, {
   preRolls = null,
   sceneCount = 0,
   creativityEligible = false,
+  forceRoll = null,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -119,9 +120,12 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
       : creativityEligible
         ? ` creativityBonus (0-10, this scene) will be ADDED post-hoc: final_total = ${baseTotal} + creativityBonus, final_margin = ${baseMargin} + creativityBonus. If that flips the result (e.g. margin crosses 0), narrate the FINAL result — not the pre-creativity one shown here.`
         : '';
+    const forceNote = forceRoll?.enabled && forceRoll.modifier
+      ? ` FORCE ROLL modifier ${forceRoll.modifier > 0 ? '+' : ''}${forceRoll.modifier} will be ADDED post-hoc to total and margin — the player deliberately invoked ${forceRoll.modifier > 0 ? 'favorable' : 'unfavorable'} circumstances. Narrate the FINAL outcome (after modifier), and weave the circumstance into the scene (e.g. a lucky break, a sudden distraction, terrain helping/hindering).`
+      : '';
     parts.push(`SKILL CHECK (engine-resolved, DO NOT recalculate the base numbers):
-Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} = ${baseTotal} vs ${threshold} | Margin: ${baseMargin} | Pre-creativity result: ${outcomeLabel}.${creativityNote}
-Scale intensity with the final margin (after creativityBonus).`);
+Skill: ${r.skill || '?'} (${r.attribute || '?'}) | d50=${r.roll} + attr=${r.attributeValue || 0} + skill=${r.skillLevel || 0} + momentum=${r.momentumBonus || 0} = ${baseTotal} vs ${threshold} | Margin: ${baseMargin} | Pre-creativity result: ${outcomeLabel}.${creativityNote}${forceNote}
+Scale intensity with the final margin (after creativityBonus${forceRoll?.enabled && forceRoll.modifier ? ' and forceRoll modifier' : ''}).`);
 
     // Remaining pre-rolls for additional sub-actions
     if (preRolls && preRolls.length > 1) {
@@ -141,10 +145,19 @@ ${buildPreRollInstructions()}`);
         if (pr.luckySuccess) return `  Roll ${i + 1}: LUCKY SUCCESS — auto-success, narrate fortunate twist. No calculation needed.`;
         return `  Roll ${i + 1}: base=${pr.base} (d50=${pr.d50}+momentum=${pr.momentum}). Add attribute + skill_level, compare vs threshold.`;
       });
-      parts.push(`No skill check was pre-resolved.
+      if (forceRoll?.enabled) {
+        const modNote = forceRoll.modifier
+          ? ` A ${forceRoll.modifier > 0 ? '+' : ''}${forceRoll.modifier} circumstance modifier will be added to the roll post-hoc — narrate accordingly (${forceRoll.modifier > 0 ? 'favorable circumstance helping the character' : 'unfavorable circumstance hindering the character'}).`
+          : '';
+        parts.push(`PLAYER DEMANDED A ROLL — you MUST include exactly one entry in the top-level diceRolls field this scene, picking the skill that best fits the action. Trivial or absurd actions (e.g. "I try to levitate", "I flirt with a rock") ARE acceptable to roll for — the player wants to see the mechanical outcome anyway. Use Roll 1 from the pre-rolls below.${modNote}
+${rollLines.join('\n')}
+${buildPreRollInstructions()}`);
+      } else {
+        parts.push(`No skill check was pre-resolved.
 If you determine this action requires skill checks (genuine risk/uncertainty), use IN ORDER:
 ${rollLines.join('\n')}
 ${buildPreRollInstructions()}`);
+      }
     } else {
       parts.push('No skill check for this action.');
     }

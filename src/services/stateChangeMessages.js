@@ -1,4 +1,4 @@
-import { xpForSkillLevel, charXpFromSkillLevelUp, charLevelCost } from '../data/rpgSystem';
+import { xpForSkillLevel, charXpFromSkillLevelUp, cumulativeCharXpThreshold } from '../data/rpgSystem';
 
 function formatMoneyDelta(mc) {
   const parts = [];
@@ -106,13 +106,22 @@ export function generateStateChangeMessages(stateChanges, state, t) {
       }
     }
 
-    // Character level-up notification
+    // Character XP gain notification — previously silent (only the bar moved).
     if (totalCharXpGained > 0) {
-      let charXp = (character?.characterXp || 0) + totalCharXpGained;
+      msgs.push({
+        id: mkId(),
+        role: 'system',
+        subtype: 'char_xp',
+        content: t('system.charXpGained', { amount: totalCharXpGained, defaultValue: `+${totalCharXpGained} XP postaci` }),
+        timestamp: ts,
+      });
+
+      // Character level-up cascade — cumulative threshold, xp is a lifetime
+      // total so it is never decremented here.
+      const charXp = (character?.characterXp || 0) + totalCharXpGained;
       let charLevel = character?.characterLevel || 1;
       const oldLevel = charLevel;
-      while (charXp >= charLevelCost(charLevel + 1)) {
-        charXp -= charLevelCost(charLevel + 1);
+      while (charXp >= cumulativeCharXpThreshold(charLevel + 1)) {
         charLevel++;
       }
       if (charLevel > oldLevel) {

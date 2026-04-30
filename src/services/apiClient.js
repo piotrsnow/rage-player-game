@@ -361,49 +361,73 @@ export const apiClient = {
   },
 
   resolveMediaUrl(url) {
-    if (!url || url.startsWith('data:')) return url;
+    if (!url || typeof url !== 'string') return url;
+    if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+    const canonical = toCanonicalStoragePath(url);
+
+    if (!canonical.startsWith(`${API_VERSION}/media/`) && !canonical.startsWith(`${API_VERSION}/proxy/`)) {
+      return canonical;
+    }
 
     const base = this.getBaseUrl() || getSettingsBackendUrl();
     const token = this.getToken();
+    const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
+    if (!origin) return canonical;
 
-    // Convert legacy GCS signed URLs to stable /v1/media/file/ paths.
-    // Signed URLs expire after 24h; the /v1/media/file/* route proxies from GCS indefinitely.
-    const gcsMatch = url.match(/^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+?)(?:\?|$)/);
-    if (gcsMatch) {
-      url = `${API_VERSION}/media/file/${gcsMatch[1]}`;
-    } else if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
-      // Legacy DB records may hold pre-versioned paths. Hoist them onto /v1.
-      url = `${API_VERSION}${url}`;
+    try {
+      const resolved = new URL(canonical, origin);
+      resolved.searchParams.delete('token');
+      if (token) resolved.searchParams.set('token', token);
+      return resolved.toString();
+    } catch {
+      return canonical;
     }
-
-    if (url.startsWith(`${API_VERSION}/media/`) || url.startsWith(`${API_VERSION}/proxy/`)) {
-      const origin = base || (typeof window !== 'undefined' ? window.location.origin : '');
-      if (!origin) return url;
-
-      try {
-        const resolved = new URL(url, origin);
-        resolved.searchParams.delete('token');
-        if (token) resolved.searchParams.set('token', token);
-        return resolved.toString();
-      } catch {
-        return url;
-      }
-    }
-
-    if (base && url.startsWith(base)) {
-      try {
-        const u = new URL(url);
-        if (u.pathname.startsWith('/media/') || u.pathname.startsWith('/proxy/')) {
-          u.pathname = API_VERSION + u.pathname;
-        }
-        u.searchParams.delete('token');
-        if (token) u.searchParams.set('token', token);
-        return u.toString();
-      } catch {
-        return url;
-      }
-    }
-
-    return url;
   },
 };
+
+/**
+ * Normalize any asset URL to a canonical storage path
+ * (`/v1/media/file/...` or `/v1/proxy/...`) without origin or query string.
+ *
+ * Idempotent — safe to apply to values that are already canonical, legacy
+ * records stored with a host prefix and `?token=<JWT>`, or one-shot GCS
+ * signed URLs that expire after 24h.
+ *
+ * This is what the services layer (imageGen, elevenlabs, …) should return
+ * and what we persist to DB. `resolveMediaUrl` attaches origin + token on
+ * render.
+ */
+export function toCanonicalStoragePath(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+
+  // Legacy GCS signed URLs → stable /v1/media/file/<path>.
+  // Signed URLs expire after 24h; the /v1/media/file/* route proxies from GCS indefinitely.
+  const gcsMatch = url.match(/^https:\/\/storage\.googleapis\.com\/[^/]+\/(.+?)(?:\?|$)/);
+  if (gcsMatch) {
+    return `${API_VERSION}/media/file/${gcsMatch[1]}`;
+  }
+
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const u = new URL(url);
+      let pathname = u.pathname;
+      if (pathname.startsWith('/media/') || pathname.startsWith('/proxy/')) {
+        pathname = `${API_VERSION}${pathname}`;
+      }
+      if (pathname.startsWith(`${API_VERSION}/media/`) || pathname.startsWith(`${API_VERSION}/proxy/`)) {
+        return pathname;
+      }
+      return url;
+    } catch {
+      return url;
+    }
+  }
+
+  if (url.startsWith('/media/') || url.startsWith('/proxy/')) {
+    return `${API_VERSION}${url}`;
+  }
+
+  return url;
+}

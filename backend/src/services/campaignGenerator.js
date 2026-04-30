@@ -463,6 +463,7 @@ IMPORTANT for initialQuest and initialNPCs:
 - Each objective referencing an item MUST correspond to an entry in questItems. Use the item's actual name in the objective description.
 - Objectives should follow a logical narrative order: early objectives involve gathering information and allies, middle objectives involve acquiring items and overcoming obstacles, late objectives involve confrontation and resolution.
 - initialNPCs must contain ${lp.npcs} unique NPCs with distinct names, roles, personalities, and locations. Spread them across different locations in the starting area.
+- Every NPC MUST have \`gender\` set to "male" or "female" — NEVER "unknown", NEVER omitted. Pick one that fits the name/role and stay consistent.
 - Each NPC's relatedObjectiveIds must list the objective IDs they are involved in.
 - questItems must contain ${lp.questItems} items that are central to the quest. Each item must have a relatedObjectiveId linking it to the objective where it's obtained or used.
 - questItems represent things to find/acquire during the quest — they are NOT in the player's inventory at the start.

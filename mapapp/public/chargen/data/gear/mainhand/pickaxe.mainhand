@@ -1,0 +1,40 @@
+{
+    "id": "pickaxe",
+    "name": "Pickaxe",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "actions": [ "slash", "islash" ],
+    "tags": [ "mainhand", "weapon", "pickaxe" ],
+    "sounds" : [
+        "sounds/swosh-12.ogg",
+        "sounds/swosh-20.ogg",
+        "sounds/swosh-39.ogg"
+    ],
+    "textures": [
+        {
+            "body": "hm1",
+            "back": "textures/gear/mainhand/pickaxe/pickaxe_mb.png",
+            "front": "textures/gear/mainhand/pickaxe/pickaxe_mf.png"
+        },
+        {
+            "body": "hm2",
+            "back": "textures/gear/mainhand/pickaxe/pickaxe_mb.png",
+            "front": "textures/gear/mainhand/pickaxe/pickaxe_mf.png"
+        },
+        {
+            "body": "hf1",
+            "back": "textures/gear/mainhand/pickaxe/pickaxe_fb.png",
+            "front": "textures/gear/mainhand/pickaxe/pickaxe_ff.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel"
+    ],
+    "fixedcolors": [
+        "cloth_brown3"
+    ]
+}

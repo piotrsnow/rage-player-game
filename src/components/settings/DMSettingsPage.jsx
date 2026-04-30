@@ -10,7 +10,6 @@ import BackendServerSection from './sections/BackendServerSection';
 import ConfigBackupSection from './sections/ConfigBackupSection';
 import NarrativeAnchorsSection from './sections/NarrativeAnchorsSection';
 import NarratorStyleSection from './sections/NarratorStyleSection';
-import SceneVisualizationSection from './sections/SceneVisualizationSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
 import LLMTimeoutSection from './sections/LLMTimeoutSection';
 import NarratorVoicesSection from './sections/NarratorVoicesSection';
@@ -136,12 +135,6 @@ export default function DMSettingsPage({ onClose }) {
 
                 <NarratorStyleSection
                   dmSettings={settings.dmSettings}
-                  updateDMSettings={updateDMSettings}
-                />
-
-                <SceneVisualizationSection
-                  settings={settings}
-                  updateSettings={updateSettings}
                   updateDMSettings={updateDMSettings}
                 />
 

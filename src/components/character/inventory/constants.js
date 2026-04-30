@@ -43,6 +43,23 @@ export const SLOT_CONFIG = {
   armour: { icon: 'shield', label: 'inventory.slotArmour', fallback: 'Armour' },
 };
 
+export const DECORATIVE_SLOT_CONFIG = {
+  head: { icon: 'military_tech', label: 'inventory.slotHead', fallback: 'Head' },
+  neck: { icon: 'emoji_events', label: 'inventory.slotNeck', fallback: 'Neck' },
+  shoulders: { icon: 'accessibility', label: 'inventory.slotShoulders', fallback: 'Shoulders' },
+  cloak: { icon: 'dry_cleaning', label: 'inventory.slotCloak', fallback: 'Cloak' },
+  amulet: { icon: 'auto_awesome', label: 'inventory.slotAmulet', fallback: 'Amulet' },
+  gloves: { icon: 'sports_mma', label: 'inventory.slotGloves', fallback: 'Gloves' },
+  belt: { icon: 'drag_handle', label: 'inventory.slotBelt', fallback: 'Belt' },
+  legs: { icon: 'airline_seat_legroom_normal', label: 'inventory.slotLegs', fallback: 'Legs' },
+  boots: { icon: 'hiking', label: 'inventory.slotBoots', fallback: 'Boots' },
+  ring1: { icon: 'diamond', label: 'inventory.slotRing', fallback: 'Ring' },
+  ring2: { icon: 'diamond', label: 'inventory.slotRing', fallback: 'Ring' },
+  quiver: { icon: 'inventory_2', label: 'inventory.slotQuiver', fallback: 'Quiver' },
+  talisman1: { icon: 'stars', label: 'inventory.slotTalisman', fallback: 'Talisman' },
+  talisman2: { icon: 'stars', label: 'inventory.slotTalisman', fallback: 'Talisman' },
+};
+
 export const rarityLabels = {
   common: 'inventory.rarityCommon',
   uncommon: 'inventory.rarityUncommon',

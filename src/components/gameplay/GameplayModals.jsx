@@ -6,12 +6,14 @@ import AchievementsPanel from '../character/AchievementsPanel';
 import AutoPlayerPanel from './AutoPlayerPanel';
 import SummaryModal from './SummaryModal';
 import FloatingVideoPanel from '../multiplayer/FloatingVideoPanel';
+import NpcSheetModal from './chat/NpcSheetModal';
 import {
   useGameWorld,
   useGameQuests,
   useGameAchievements,
   useGameSlice,
 } from '../../stores/gameSelectors';
+import { useModals } from '../../contexts/ModalContext';
 
 export default function GameplayModals({
   readOnly,
@@ -58,8 +60,16 @@ export default function GameplayModals({
   const soloQuests = useGameQuests();
   const soloAchievements = useGameAchievements();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
+  const { npcSheetName, closeNpcSheet } = useModals();
 
   if (readOnly) return null;
+
+  // NPC sheet modal reads the NPC fresh from whichever world slice is active
+  // (MP uses the host-owned state, solo uses the Zustand store).
+  const npcsSource = (isMultiplayer ? mpGameState?.world?.npcs : soloWorld?.npcs) || [];
+  const npcSheetTarget = npcSheetName
+    ? npcsSource.find((n) => typeof n?.name === 'string' && n.name === npcSheetName) || null
+    : null;
 
   return (
     <>
@@ -139,6 +149,10 @@ export default function GameplayModals({
           visible={videoPanelOpen}
           onClose={onVideoPanelClose}
         />
+      )}
+
+      {npcSheetTarget && (
+        <NpcSheetModal npc={npcSheetTarget} onClose={closeNpcSheet} />
       )}
     </>
   );

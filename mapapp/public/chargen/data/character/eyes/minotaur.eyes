@@ -1,0 +1,22 @@
+{
+    "id": "minotaur",
+    "name": "Minotaur",
+    "chargen": true,
+    "default": false,
+    "lootable": false,
+    "tags": [ "eyes", "minotaur" ],
+    "textures": [
+        {
+            "head": "mm1",
+            "back": "none",
+            "front": "textures/character/eyes/minotaur_m.png"
+        }
+    ],
+    "primarycolors": [
+        "beast_eyes_blue",
+        "beast_eyes_green",
+        "beast_eyes_orange",
+        "beast_eyes_red",
+        "beast_eyes_yellow"
+    ]
+}

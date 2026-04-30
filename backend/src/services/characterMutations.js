@@ -36,6 +36,13 @@ function charLevelCost(targetLevel) {
   return 5 * targetLevel * targetLevel;
 }
 
+function cumulativeCharXpThreshold(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= targetLevel; k++) sum += charLevelCost(k);
+  return sum;
+}
+
 function calculateMaxWounds(wytrzymalosc) {
   return wytrzymalosc * 2 + 10;
 }
@@ -138,13 +145,14 @@ export function applyCharacterStateChanges(character, changes) {
 
   // ── Character XP / level (raw xp delta) ──
   // Frontend uses changes.xp; sceneGenerator reward branch uses xpDelta as alias.
+  // characterXp is a monotonic lifetime total — level-up does not consume it,
+  // the cascade compares against cumulativeCharXpThreshold of the next level.
   const xpDelta = changes.xpDelta ?? changes.xp;
   if (xpDelta !== undefined && xpDelta > 0) {
     let charXp = (next.characterXp || 0) + xpDelta;
     let charLevel = next.characterLevel || 1;
     let attrPoints = next.attributePoints || 0;
-    while (charXp >= charLevelCost(charLevel + 1)) {
-      charXp -= charLevelCost(charLevel + 1);
+    while (charXp >= cumulativeCharXpThreshold(charLevel + 1)) {
       charLevel++;
       attrPoints++;
     }
@@ -205,8 +213,7 @@ export function applyCharacterStateChanges(character, changes) {
       let charXp = (next.characterXp || 0) + charXpGained;
       let charLevel = next.characterLevel || 1;
       let attrPoints = next.attributePoints || 0;
-      while (charXp >= charLevelCost(charLevel + 1)) {
-        charXp -= charLevelCost(charLevel + 1);
+      while (charXp >= cumulativeCharXpThreshold(charLevel + 1)) {
         charLevel++;
         attrPoints++;
       }

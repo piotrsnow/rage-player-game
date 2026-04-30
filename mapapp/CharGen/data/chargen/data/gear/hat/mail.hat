@@ -1,0 +1,36 @@
+{
+    "id": "mail",
+    "name": "Mail",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotshidden" : [ "hair" ],
+    "tags": [ "hat", "armor", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/mail/mail_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/mail/mail_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/mail/mail_m.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_copper",
+        "metal_bronze",
+        "metal_iron",
+        "metal_steel",
+        "metal_bluesteel",
+        "metal_brushed",
+        "metal_gold"
+    ]
+}

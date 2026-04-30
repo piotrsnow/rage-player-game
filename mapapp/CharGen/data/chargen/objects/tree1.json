@@ -1,0 +1,17 @@
+{
+    "id": "tree1",
+    "name": "Tree",
+    "tileset": "outside",
+    "size": [ 3, 4 ],
+    "tiles": [
+        12, 13, 14,
+        32, 33, 34,
+        52, 53, 54,
+        72, 73, 74
+    ],
+    "body": {
+        "type": "eclipse",
+        "bounds": [ 32, 112, 32, 16 ]
+    },
+    "origin":  [ 48, 120 ]
+}

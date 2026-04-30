@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { UUID_PATTERN } from '../lib/validators.js';
 import { createMediaStore } from '../services/mediaStore.js';
 import { generateKey, toUuid } from '../services/hashService.js';
 import { config } from '../config.js';
@@ -10,8 +11,6 @@ const EXT_CONTENT_TYPES = {
   glb: 'model/gltf-binary',
 };
 
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
-
 const CHECK_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -19,7 +18,7 @@ const CHECK_BODY_SCHEMA = {
   properties: {
     type: { type: 'string', maxLength: 64 },
     params: { type: 'object', additionalProperties: true },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
   },
 };
 
@@ -33,7 +32,7 @@ const STORE_BODY_SCHEMA = {
     contentType: { type: 'string', maxLength: 128 },
     metadata: { type: 'object', additionalProperties: true },
     data: { type: 'string' },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
   },
 };
 

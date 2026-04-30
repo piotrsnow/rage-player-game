@@ -5,6 +5,7 @@ import {
   persistCharacterSnapshot,
   createCharacterWithRelations,
 } from '../services/characterRelations.js';
+import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -144,6 +145,47 @@ const STATE_CHANGES_SCHEMA = {
   },
 };
 
+/**
+ * Clear `lockedCampaignId`/`lockedCampaignName`/`lockedLocation` on any
+ * character whose lock points at a campaign that no longer exists.
+ *
+ * `DELETE /v1/campaigns/:id` already unlocks in the same tx, but legacy
+ * rows (pre-fix) or any non-route deletion path (Prisma Studio, manual
+ * SQL, future MP lobby bugs) can strand a character with a dead lock —
+ * the FE picker then grays it out forever. Scrubbing on read is cheap
+ * and idempotent: one extra `findMany` per GET, and only writes when
+ * there's actually something to fix.
+ *
+ * Mutates `characters` in place so callers don't have to re-query.
+ */
+async function scrubOrphanedLocks(userId, characters) {
+  const lockedIds = new Set();
+  for (const c of characters) {
+    if (c.lockedCampaignId) lockedIds.add(c.lockedCampaignId);
+  }
+  if (lockedIds.size === 0) return;
+
+  const liveCampaigns = await prisma.campaign.findMany({
+    where: { id: { in: Array.from(lockedIds) } },
+    select: { id: true },
+  });
+  const liveIds = new Set(liveCampaigns.map((c) => c.id));
+  const orphanedIds = Array.from(lockedIds).filter((id) => !liveIds.has(id));
+  if (orphanedIds.length === 0) return;
+
+  await prisma.character.updateMany({
+    where: { userId, lockedCampaignId: { in: orphanedIds } },
+    data: { lockedCampaignId: null, lockedCampaignName: null, lockedLocation: null },
+  });
+  for (const c of characters) {
+    if (c.lockedCampaignId && orphanedIds.includes(c.lockedCampaignId)) {
+      c.lockedCampaignId = null;
+      c.lockedCampaignName = null;
+      c.lockedLocation = null;
+    }
+  }
+}
+
 export async function characterRoutes(fastify) {
   fastify.addHook('onRequest', fastify.authenticate);
 
@@ -155,8 +197,12 @@ export async function characterRoutes(fastify) {
       where: { userId: request.user.id },
       orderBy: { updatedAt: 'desc' },
     });
+    await scrubOrphanedLocks(request.user.id, characters);
     return characters.map((c) => ({
       ...c,
+      // Legacy records may hold hydrated URLs (host + `?token=`); strip back
+      // to canonical so the FE card picker renders with a fresh token.
+      portraitUrl: c.portraitUrl ? toCanonicalStoragePath(c.portraitUrl) : c.portraitUrl,
       // Stub the FE-shape collections so list cards that read e.g.
       // `char.equipped.mainHand` don't trip on undefined.
       skills: {},
@@ -173,6 +219,7 @@ export async function characterRoutes(fastify) {
   fastify.get('/:id', async (request, reply) => {
     const snapshot = await loadCharacterSnapshot({ id: request.params.id, userId: request.user.id });
     if (!snapshot) return reply.code(404).send({ error: 'Character not found' });
+    await scrubOrphanedLocks(request.user.id, [snapshot]);
     return snapshot;
   });
 

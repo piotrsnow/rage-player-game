@@ -47,7 +47,7 @@ export function narrativeRulesBlock() {
 export function dialogueFormatBlock() {
   return `DIALOGUE FORMAT:
 dialogueSegments: [{type:"narration",text:""}, {type:"dialogue",character:"NPC Name",gender:"male"|"female",text:""}]
-dialogueSegments is the SOLE source of scene prose. Narration segments hold all descriptive text; dialogue segments hold spoken lines. Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment needs "gender" field. Use consistent NPC names.`;
+dialogueSegments is the SOLE source of scene prose. Narration segments hold all descriptive text; dialogue segments hold spoken lines. Never embed quoted speech in narration — always split into dialogue segments. Every dialogue segment MUST include a "gender" field — ONLY "male" or "female". NEVER "unknown", NEVER omitted. If the speaker's gender is ambiguous in the fiction, pick one and stay consistent. Use consistent NPC names.`;
 }
 
 export function suggestedActionsBlock(language) {
@@ -75,7 +75,12 @@ Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the
 - newItems: ONLY unique quest/story items (MacGuffins, keys, letters, artifacts). {id, name, type, description}. Standard loot → use rewards.
 - removeItems: only items in character's inventory.
 - moneyChange: {gold,silver,copper} NEGATIVE deltas for purchases only. For income/loot use rewards with type:'money'.
-- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}]}. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
+- npcs: {action:"introduce"|"update", name, gender, role, personality, attitude, location, dispositionChange, relationships:[{npcName,type}], race?, creatureKind?, level?, statsOverride?}. gender MUST be "male" or "female" — never "unknown", never omitted. dispositionChange scales with margin: lucky/great success +3-5, success +1-2, failure -1-2, hard failure -3-5.
+  * race: "Human"|"Dwarf"|"Halfling"|"Orc" — REQUIRED for regular mortal NPCs on "introduce". Elfy są zablokowane — nie emituj elfów.
+  * creatureKind: wolny tekst dla istot fabularnych (zjawa, sfinks, demon, potwór, duch) ZAMIAST race. Emituj creatureKind TYLKO gdy fabuła wymaga nietypowej istoty; reguła: każdy NPC ma albo race albo creatureKind, nigdy oba.
+  * level: 1-30 — opcjonalne. Zwykli mieszkańcy 1-3, weterani/rzemieślnicy 4-6, postacie kluczowe 7-10, bossowie 10+. Jeśli pominiesz, backend dobierze poziom z category. Ważni NPC mogą dodać keyNpc:true.
+  * statsOverride: OPCJONALNY, tylko dla wyjątkowych postaci (arcymag, boss, legendarny mistrz). Kształt: {attributes?:{sila,inteligencja,charyzma,zrecznosc,wytrzymalosc,szczescie}, skills?:{"Nazwa":level}, weapons?:["..."], traits?:["..."], armourDR?, maxWounds?, mana?:{current,max}}. Podawaj tylko pola które realnie chcesz podnieść/zmienić — backend dopełni resztę deterministycznie.
+  * Nie wymagaj podawania statów — backend generuje pełną kartę postaci z rasy+roli+poziomu. Emituj race/creatureKind/level a ewentualny statsOverride tylko gdy postać jest naprawdę wyróżniająca się.
 - npcMemoryUpdates: [{npcName, memory, importance?}] — emit ONLY gdy coś narracyjnie znaczącego dzieje się z/dla NPC, co by zapamiętał (obietnica, sekret, cud, groźba, zdrada, uratowanie bliskiego). 1 zdanie z perspektywy NPC. importance: 'major' = trwała zmiana relacji, 'minor' = drobne wrażenie (default: minor). SKIP dla small talk / routine. Max ~3 per scene.
 - locationMentioned: [{locationName, byNpcId}] — emit whenever a scene NPC NAMES OR DESCRIBES a location to the player (gives directions, recalls a rumour, mentions a place by name). Copy the location name EXACTLY as written in the prompt (Key NPCs block, Active Quests, [NPC_KNOWLEDGE], or the player's current location). \`byNpcId\` is the speaker NPC's name. If a [NPC_KNOWLEDGE] block lists allowed locations for the speaker, only mention locations from that list; otherwise the NPC narrates "doesn't know / speculates" and you DO NOT emit. Moves the location into the player's "heard-about" fog state so it appears on the map.
 - currentLocation: emit ONLY when the player ARRIVES at a different location THIS scene (travel montage to a known place, walking into a sublocation you just created, dungeon-room nav). Value is the EXACT canonical name from the [TRAVEL] block / sublocation entry / [DUNGEON ROOM] exits. NEVER invent a name — unrecognized locations are dropped silently and the player stays put. Do NOT emit when the scene happens entirely at the current location.
@@ -128,12 +133,12 @@ export function responseFormatBlock(language) {
 {
   "creativityBonus": 0,
   "diceRolls": [{"skill":"","difficulty":"","success":true}],
-  "npcsIntroduced": [{"name":"","gender":"male|female|unknown","speechStyle":"1-sentence description of how this NPC talks"}],
+  "npcsIntroduced": [{"name":"","gender":"male|female","speechStyle":"1-sentence description of how this NPC talks"}],
   "dialogueSegments": [{"type":"narration|dialogue","text":"","character":"","gender":"male|female"}],
   "scenePacing": "exploration|combat|chase|stealth|dialogue|travel_montage|celebration|rest|dramatic|dream|cutscene",
   "suggestedActions": ["exactly 3 actions"],
   "atmosphere": {"weather":"clear|rain|snow|storm|fog|fire","particles":"none|magic_dust|sparks|embers|arcane","mood":"peaceful|tense|dark|mystical|chaotic","lighting":"natural|night|dawn|bright|rays|candlelight|moonlight","transition":"dissolve|fade|arcane_wipe"},
-  "imagePrompt": "short ENGLISH scene description for image gen (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
   "soundEffect": "short English sound description or null",
   "musicPrompt": "instruments, tempo, mood (max 200 chars) or null",
   "questOffers": [],

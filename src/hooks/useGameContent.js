@@ -11,9 +11,12 @@ export function useGameContent() {
   const { state, dispatch, autoSave } = useGame();
   const { settings } = useSettings();
 
-  const { aiProvider, openaiApiKey, anthropicApiKey, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
-  const apiKey = aiProvider === 'openai' ? openaiApiKey : anthropicApiKey;
-  const alternateApiKey = aiProvider === 'openai' ? anthropicApiKey : openaiApiKey;
+  const { aiProvider, language, aiModelTier = 'premium', aiModel = '', sceneVisualization = 'image' } = settings;
+  // API keys resolve server-side from env; these positional args exist only
+  // for backward-compat with aiService and are ignored (see `_apiKeyIgnored`
+  // params in src/services/ai/service.js).
+  const apiKey = '';
+  const alternateApiKey = '';
 
   const generateCampaign = useCallback(
     async (campaignSettings) => {
@@ -41,9 +44,9 @@ export function useGameContent() {
   );
 
   const generateStoryPrompt = useCallback(
-    async ({ genre, tone, style, seedText = '' }) => {
+    async ({ genre, tone, seedText = '' }) => {
       const { result, usage } = await aiService.generateStoryPrompt(
-        { genre, tone, style, seedText },
+        { genre, tone, seedText },
         aiProvider,
         apiKey,
         language,
@@ -54,6 +57,20 @@ export function useGameContent() {
       return result.prompt;
     },
     [aiProvider, apiKey, alternateApiKey, language, aiModelTier, dispatch]
+  );
+
+  const generateCharacterLegend = useCallback(
+    async (character) => {
+      const { result, usage } = await aiService.generateCharacterLegend(
+        character,
+        aiProvider,
+        language,
+        aiModelTier,
+      );
+      if (usage) dispatch({ type: 'ADD_AI_COST', payload: calculateCost('ai', usage) });
+      return result?.legend || '';
+    },
+    [aiProvider, language, aiModelTier, dispatch],
   );
 
   const generateRecap = useCallback(
@@ -232,6 +249,7 @@ export function useGameContent() {
   return {
     generateCampaign,
     generateStoryPrompt,
+    generateCharacterLegend,
     generateRecap,
     generateCombatCommentary,
     verifyQuestObjective,

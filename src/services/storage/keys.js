@@ -12,17 +12,17 @@ export const CHARACTERS_KEY = 'nikczemny_krzemuch_characters';
 export const MIGRATION_PREFIX = 'nikczemny_krzemuch_migrated_';
 export const SCENE_INDEX_CACHE_KEY = 'nikczemny_krzemuch_scene_idx';
 
-// User-provided API keys + backend URL never sync to the account profile —
-// they're per-device bearer credentials. Strip them before POST /auth/settings
-// so we don't round-trip secret material to the account document.
+// Per-device local-only settings that never sync to the account profile.
+// Kept because `backendUrl`/`useBackend` are literally the account
+// coordinates — syncing them via /auth/settings would create a loop.
 export const LOCAL_ONLY_SETTINGS_KEYS = [
   'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey',
 ];
 
 /**
- * Strip keys that must never leave the device from a settings snapshot.
- * Non-objects pass through unchanged so callers don't need to type-check.
+ * Strip legacy per-user API key fields from a settings snapshot before
+ * sending it to the server or reading it back. API keys are now env-only
+ * on the backend, so these entries must never leave (or reach) the FE state.
  */
 export function sanitizeSettings(settings) {
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
@@ -30,5 +30,10 @@ export function sanitizeSettings(settings) {
   }
   const next = { ...settings };
   delete next.elevenlabsApiKey;
+  delete next.openaiApiKey;
+  delete next.anthropicApiKey;
+  delete next.stabilityApiKey;
+  delete next.geminiApiKey;
+  delete next.meshyApiKey;
   return next;
 }

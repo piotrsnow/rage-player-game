@@ -7,12 +7,20 @@ import { gameData } from '../services/gameDataService';
 const SettingsContext = (import.meta.hot?.data?.SettingsContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.SettingsContext = SettingsContext;
 
-const EMPTY_BACKEND_KEYS = { openai: '', anthropic: '', elevenlabs: '', stability: '', gemini: '' };
+// `backendKeys[provider]` is an availability descriptor coming from
+// GET /v1/auth/api-keys. Keys are env-only on the server now — the FE
+// never stores or sends secrets; it just renders status.
+const EMPTY_BACKEND_KEYS = {
+  openai: { configured: false },
+  anthropic: { configured: false },
+  elevenlabs: { configured: false },
+  stability: { configured: false },
+  gemini: { configured: false },
+  meshy: { configured: false },
+  'sd-webui': { configured: false },
+};
 
-const LOCAL_ONLY_KEYS = [
-  'backendUrl', 'useBackend',
-  'openaiApiKey', 'anthropicApiKey', 'stabilityApiKey', 'geminiApiKey', 'meshyApiKey',
-];
+const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
 
 function clampCombatCommentaryFrequency(value) {
   const numeric = Number(value);
@@ -50,7 +58,15 @@ function mergeSettingsWithDefaults(source) {
     merged.sceneVisualization = source.imageGenEnabled ? 'image' : 'none';
   }
 
+  // Legacy per-user API key fields are no longer supported — keys come
+  // from server env only. Strip anything that might still live in old
+  // saved-settings blobs so it doesn't leak into the FE state.
   delete merged.elevenlabsApiKey;
+  delete merged.openaiApiKey;
+  delete merged.anthropicApiKey;
+  delete merged.stabilityApiKey;
+  delete merged.geminiApiKey;
+  delete merged.meshyApiKey;
   delete merged.imageGenEnabled;
   return merged;
 }
@@ -63,12 +79,12 @@ function shouldCheckBackendSession(settings) {
 
 const defaultSettings = {
   aiProvider: 'openai',
-  openaiApiKey: '',
-  anthropicApiKey: '',
   sceneVisualization: 'image',
   imageProvider: 'dalle',
-  stabilityApiKey: '',
-  geminiApiKey: '',
+  sdWebuiModel: '',
+  // null = random seed per request; number = fixed (reproducible, cacheable).
+  // Toggled from SdWebuiModelPicker via double-click on the seed field.
+  sdWebuiSeed: null,
   language: 'pl',
   narratorVoiceId: '',
   narratorVoiceName: '',
@@ -93,7 +109,6 @@ const defaultSettings = {
   localLLMReducedPrompt: true,
   aiModelTier: 'premium',
   aiModel: '',
-  meshyApiKey: '',
   meshyEnabled: false,
   autoPlayer: {
     enabled: false,
@@ -209,7 +224,16 @@ export function SettingsProvider({ children }) {
     }
     try {
       const keys = await apiClient.get('/auth/api-keys');
-      setBackendKeys({ ...EMPTY_BACKEND_KEYS, ...keys });
+      // Backend returns `{ provider: { configured, masked? } }`. Merge with
+      // defaults so callers can safely read `backendKeys.foo.configured`
+      // for any known provider without null-guarding.
+      const normalized = { ...EMPTY_BACKEND_KEYS };
+      for (const [provider, value] of Object.entries(keys || {})) {
+        if (value && typeof value === 'object') {
+          normalized[provider] = { configured: !!value.configured, masked: value.masked };
+        }
+      }
+      setBackendKeys(normalized);
     } catch {
       setBackendKeys(EMPTY_BACKEND_KEYS);
     }
@@ -301,11 +325,11 @@ export function SettingsProvider({ children }) {
   const getApiKey = useCallback(() => {
     if (!apiClient.isConnected()) return '';
     const provider = settings.aiProvider === 'openai' ? 'openai' : 'anthropic';
-    return backendKeys[provider] ? '__server_managed__' : '';
+    return backendKeys[provider]?.configured ? '__server_managed__' : '';
   }, [settings.aiProvider, backendKeys]);
 
   const hasApiKey = useCallback((provider) => {
-    return apiClient.isConnected() && !!backendKeys[provider];
+    return apiClient.isConnected() && !!backendKeys[provider]?.configured;
   }, [backendKeys]);
 
   const backendLogin = useCallback(async (url, email, password) => {

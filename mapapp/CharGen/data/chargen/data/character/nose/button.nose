@@ -1,0 +1,19 @@
+{
+    "id": "button",
+    "name": "Button",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "nose", "human", "darkelf", "zombie" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/nose/human/button_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/nose/human/button_f.png"
+        }
+    ]
+}

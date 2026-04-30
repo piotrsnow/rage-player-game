@@ -226,6 +226,20 @@ export function charLevelCost(targetLevel) {
   return 5 * targetLevel * targetLevel;
 }
 
+/**
+ * Cumulative character XP threshold to reach a given level.
+ * Sum of charLevelCost(k) for k=2..targetLevel. `characterXp` is treated
+ * as a monotonic lifetime total (never decremented on level-up), so the
+ * progress bar and level-up cascade compare against these cumulative
+ * thresholds instead of the per-level delta.
+ */
+export function cumulativeCharXpThreshold(targetLevel) {
+  if (targetLevel <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= targetLevel; k++) sum += charLevelCost(k);
+  return sum;
+}
+
 // ── TEST RESOLUTION CONSTANTS ──
 
 export const MOMENTUM_RANGE = { min: -10, max: 10 };
@@ -271,10 +285,26 @@ export const SPECIES = {
     movement: 5,
     skills: ['Spostrzegawczosc', 'Strzelectwo', 'Wiedza o naturze', 'Wystepy'],
     description: 'Zwinni i inteligentni, z naturalna predyspozycja do magii.',
+    // Elf playable disabled for now — still kept in SPECIES because NPC sheet
+    // generation and any legacy elf PCs need to resolve racial modifiers.
+    playable: false,
+  },
+  Orc: {
+    name: 'Ork',
+    nameEN: 'Orc',
+    attributes: { sila: 3, inteligencja: -1, charyzma: -1, zrecznosc: 0, wytrzymalosc: 2, szczescie: 0 },
+    startingMana: 0,
+    movement: 4,
+    skills: ['Zastraszanie', 'Walka wrecz', 'Odpornosc', 'Przetrwanie'],
+    description: 'Silni i wytrzymali wojownicy. Niska inteligencja i charyzma, za to potezna sila i twardosc.',
   },
 };
 
 export const SPECIES_LIST = Object.keys(SPECIES);
+
+// PC-playable species only — hides Elf from character creation while keeping
+// SPECIES.Elf resolvable for existing elf characters and NPC stats.
+export const PLAYABLE_SPECIES_LIST = SPECIES_LIST.filter((key) => SPECIES[key].playable !== false);
 
 // ── SKILL CATEGORIES (UI grouping) ──
 

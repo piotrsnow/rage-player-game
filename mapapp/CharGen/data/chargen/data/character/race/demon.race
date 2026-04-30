@@ -1,0 +1,129 @@
+{
+    "id": "20demon",
+    "name": "Demon",
+    "tags": [ "race", "demon" ],
+    "configs": [
+        {
+            "id": "m1",
+            "name": "Regular",
+
+            "gender": "male",
+            "body-type": "hm1",
+            "head-type": "hm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "wings": [ "none", "demonwings" ],
+            "hair": [ "none", "bangs", "bangslong1", "bangslong2", "bangsshort", "bedhead", "braid", "bunches",
+                      "curly", "hawklong", "hawkmo", "hawkshort", "idol", "jewfro", "knotlong1", "knotlong2", "knotshort",
+                      "long1", "long2", "long3", "long4", "loose", "messy1", "messy2", "messyhalf", "page", "parted",
+                      "pixie", "plain", "ponytail1", "ponytail2", "princess", "shoulderl", "shoulderr", "single",
+                      "swoop", "unkempt" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven" ],
+            "nose": [ "base", "big", "button", "straight" ],
+            "facial": [ "none", "beard", "mustache", "bigstache" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ],
+            "add2": [ "none", "bloodyarm", "bloodyribs", "bloodytorso" ],
+            "add3": [ "hooves" ]
+        },
+        {
+            "id": "m2",
+            "name": "Muscular",
+
+            "gender": "male",
+            "body-type": "hm2",
+            "head-type": "hm1",
+
+            "shadow": [ "size1" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "wings": [ "none", "demonwings" ],
+            "hair": [ "none", "bangs", "bangslong1", "bangslong2", "bangsshort", "bedhead", "braid", "bunches",
+                      "curly", "hawklong", "hawkmo", "hawkshort", "idol", "jewfro", "knotlong1", "knotlong2", "knotshort",
+                      "long1", "long2", "long3", "long4", "loose", "messy1", "messy2", "messyhalf", "page", "parted",
+                      "pixie", "plain", "ponytail1", "ponytail2", "princess", "shoulderl", "shoulderr", "single",
+                      "swoop", "unkempt" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven" ],
+            "nose": [ "base", "big", "button", "straight" ],
+            "facial": [ "none", "beard", "mustache", "bigstache" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ],
+            "add2": [ "none", "bloodyarm", "bloodyribs", "bloodytorso" ],
+            "add3": [ "hooves" ]
+        },
+        {
+            "id": "m3",
+            "name": "Child",
+
+            "gender": "male",
+            "body-type": "hc1",
+            "head-type": "hc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "hair": [ "none", "braid", "messyhalf" ],
+            "eyes": [ "darkelf" ]
+        },
+        {
+            "id": "f1",
+            "name": "Regular",
+
+            "gender": "female",
+            "body-type": "hf1",
+            "head-type": "hf1",
+
+            "shadow": [ "size1" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "wings": [ "none", "demonwings" ],
+            "hair": [ "none", "bangs", "bangslong1", "bangslong2", "bangsshort", "bedhead", "braid", "bunches",
+                      "curly", "hawklong", "hawkmo", "hawkshort", "jewfro", "knotlong1", "knotlong2", "knotshort",
+                      "long1", "long2", "loose", "messy1", "messy2", "page", "parted", "pixie", "plain",
+                      "ponytail1", "ponytail2", "princess", "sara", "shoulderl", "shoulderr", "single", "swoop", "unkempt" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven" ],
+            "nose": [ "base", "big", "button", "straight" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ],
+            "add3": [ "hooves" ]
+        },
+        {
+            "id": "f2",
+            "name": "Pregnant",
+
+            "gender": "female",
+            "body-type": "hf2",
+            "head-type": "hf1",
+
+            "shadow": [ "size1" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "wings": [ "none", "demonwings" ],
+            "hair": [ "none", "bangs", "bangslong1", "bangslong2", "bangsshort", "bedhead", "braid", "bunches",
+                      "curly", "hawklong", "hawkmo", "hawkshort", "jewfro", "knotlong1", "knotlong2", "knotshort",
+                      "long1", "long2", "loose", "messy1", "messy2", "page", "parted", "pixie", "plain",
+                      "ponytail1", "ponytail2", "princess", "sara", "shoulderl", "shoulderr", "single", "swoop", "unkempt" ],
+            "eyes": [ "darkelf" ],
+            "ears": [ "elven" ],
+            "nose": [ "base", "big", "button", "straight" ],
+            "add1": [ "none", "bloodymouth", "bloodyeye", "bloodyface" ],
+            "add3": [ "hooves" ]
+        },
+        {
+            "id": "f3",
+            "name": "Child",
+
+            "gender": "female",
+            "body-type": "hc1",
+            "head-type": "hc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "demon" ],
+            "head": [ "demon" ],
+            "hair": [ "none", "braid", "messyhalf" ],
+            "eyes": [ "darkelf" ]
+        }
+    ]
+}

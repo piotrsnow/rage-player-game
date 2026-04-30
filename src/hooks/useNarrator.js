@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useGame } from '../contexts/GameContext';
 import { elevenlabsService } from '../services/elevenlabs';
+import { apiClient } from '../services/apiClient';
 import { calculateCost } from '../services/costTracker';
 import { resolveVoiceForCharacter } from '../services/characterVoiceResolver';
 import { hasNamedSpeaker } from '../services/dialogueSegments';
@@ -47,6 +48,59 @@ const STREAMING_POLL_MS = 120;
 
 function clampRate(value, min = 0.5, max = 2) {
   return Math.max(min, Math.min(max, value));
+}
+
+// Starts playback only once the browser has buffered enough to play through,
+// which eliminates the first-chunk stutter caused by calling .play()
+// immediately after assigning src. Falls back to `canplay` + small delay if
+// `canplaythrough` never fires (short clips over fast connections).
+function playAudioWithBuffer(audio) {
+  return new Promise((resolve) => {
+    let started = false;
+    let resolved = false;
+
+    const cleanup = () => {
+      audio.removeEventListener('canplaythrough', onCanPlayThrough);
+      audio.removeEventListener('canplay', onCanPlay);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
+    };
+
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve();
+    };
+
+    const start = () => {
+      if (started || resolved) return;
+      started = true;
+      audio.play().catch(finish);
+    };
+
+    function onCanPlayThrough() { start(); }
+    function onCanPlay() {
+      // Short MP3s often don't emit canplaythrough; give the decoder a brief
+      // head start, then begin playback.
+      setTimeout(start, 60);
+    }
+    function onEnded() { finish(); }
+    function onError() { finish(); }
+
+    audio.addEventListener('canplaythrough', onCanPlayThrough, { once: true });
+    audio.addEventListener('canplay', onCanPlay, { once: true });
+    audio.addEventListener('ended', onEnded, { once: true });
+    audio.addEventListener('error', onError, { once: true });
+
+    audio.preload = 'auto';
+    audio.load();
+
+    // Hard fallback: if neither canplay nor canplaythrough fires within 2s
+    // (e.g. browser already cached the clip and fired events before we
+    // attached listeners), try to play anyway.
+    setTimeout(start, 2000);
+  });
 }
 
 function splitTextIntoUtterances(text, maxChars = MAX_UTTERANCE_CHARS) {
@@ -191,6 +245,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const startHighlightLoop = useCallback((audio, words, logicalSegmentIndex, messageId, wordOffset, segmentWordOffset, fullText, sentence) => {
     stopHighlightLoop();
     let lastActiveIdx = -1;
+    let lastEmittedIdx = -2;
     let lastRemainingUpdate = 0;
     const tick = () => {
       if (!audio || audio.paused || audio.ended) {
@@ -217,17 +272,20 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (activeIdx >= 0) {
         lastActiveIdx = activeIdx;
       }
-      const globalIdx = activeIdx >= 0 ? activeIdx + wordOffset : -1;
-      const segmentIdx = activeIdx >= 0 ? activeIdx + segmentWordOffset : -1;
-      setHighlightInfo({
-        messageId,
-        segmentIndex: logicalSegmentIndex,
-        logicalSegmentIndex,
-        wordIndex: globalIdx,
-        segmentWordIndex: segmentIdx,
-        fullText,
-        sentenceWordIndex: activeIdx,
-      });
+      if (activeIdx !== lastEmittedIdx) {
+        lastEmittedIdx = activeIdx;
+        const globalIdx = activeIdx >= 0 ? activeIdx + wordOffset : -1;
+        const segmentIdx = activeIdx >= 0 ? activeIdx + segmentWordOffset : -1;
+        setHighlightInfo({
+          messageId,
+          segmentIndex: logicalSegmentIndex,
+          logicalSegmentIndex,
+          wordIndex: globalIdx,
+          segmentWordIndex: segmentIdx,
+          fullText,
+          sentenceWordIndex: activeIdx,
+        });
+      }
       const now = performance.now();
       if (now - lastRemainingUpdate > 1000) {
         lastRemainingUpdate = now;
@@ -299,7 +357,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (!viewerMode) {
         dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
       }
-      objectUrlsRef.current.push(result.audioUrl);
+      const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
+      objectUrlsRef.current.push(playableAudioUrl);
       if (abortRef.current || skipSegmentRef.current || generationRef.current !== generation) break;
 
       if (s + 1 < chunks.length && chunks[s + 1]?.trim()) {
@@ -310,7 +369,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           });
       }
 
-      const audio = new Audio(result.audioUrl);
+      const audio = new Audio(playableAudioUrl);
       const baseRate = (dialogueSpeed || 100) / 100;
       const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
       const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -323,11 +382,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       startHighlightLoop(audio, result.words, logicalSegmentIndex, messageId, wordOffset, segmentWordOffset, fullText, chunk);
 
       const playStart = performance.now();
-      await new Promise((resolve) => {
-        audio.onended = resolve;
-        audio.onerror = resolve;
-        audio.play().catch(resolve);
-      });
+      await playAudioWithBuffer(audio);
       if (generationRef.current !== generation || skipSegmentRef.current) break;
 
       const wallSeconds = (performance.now() - playStart) / 1000;
@@ -549,8 +604,9 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             if (!viewerMode) {
               dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: text.length }) });
             }
-            objectUrlsRef.current.push(prefetched.audioUrl);
-            const audio = new Audio(prefetched.audioUrl);
+            const playableAudioUrl = apiClient.resolveMediaUrl(prefetched.audioUrl);
+            objectUrlsRef.current.push(playableAudioUrl);
+            const audio = new Audio(playableAudioUrl);
             const baseRate = (dialogueSpeed || 100) / 100;
             const pacingMul = PACING_SPEED_MULTIPLIERS[scenePacing] || 1.0;
             const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -563,11 +619,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
             startHighlightLoop(audio, prefetched.words || [], logicalSegmentIndex, messageId, globalWordOffset, segmentWordOffset, text, text);
 
             const playStart = performance.now();
-            await new Promise((resolve) => {
-              audio.onended = resolve;
-              audio.onerror = resolve;
-              audio.play().catch(resolve);
-            });
+            await playAudioWithBuffer(audio);
             if (generationRef.current !== myGeneration || skipSegmentRef.current) break;
 
             const wallSeconds = (performance.now() - playStart) / 1000;
@@ -703,6 +755,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
   const pushStreamingSegments = useCallback((segments) => {
     const s = streamingRef.current;
     if (!s) return;
+    // Remember the latest raw parsed stream so finishStreaming can flush the
+    // withheld tail from the SAME list that drove sentCount. The DM segments
+    // that later land in chatHistory go through processSceneDialogue (player
+    // dialogue inserted, narration echo removed, text mutated), so their
+    // indices no longer align with sentCount and can't be used for flushing.
+    s.lastRawSegments = segments;
     // Only push segments we haven't seen yet
     const newSegments = segments.slice(s.sentCount);
     if (newSegments.length === 0) return;
@@ -719,17 +777,17 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     }
   }, []);
 
-  const finishStreaming = useCallback((finalSegments) => {
+  const finishStreaming = useCallback(() => {
     const s = streamingRef.current;
     if (!s) return;
     s.finished = true;
-    // Push any remaining segments we haven't sent yet
-    if (finalSegments) {
-      const remaining = finalSegments.slice(s.sentCount);
-      if (remaining.length > 0) {
-        s.segments.push(...remaining);
-        s.sentCount += remaining.length;
-      }
+    // Flush the one segment that was withheld during streaming. Use the raw
+    // stream buffer — its indices are positionally consistent with sentCount.
+    const raw = s.lastRawSegments || [];
+    const remaining = raw.slice(s.sentCount);
+    if (remaining.length > 0) {
+      s.segments.push(...remaining);
+      s.sentCount += remaining.length;
     }
   }, []);
 
@@ -806,25 +864,37 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       const voiceId = resolveSegVoice(seg);
       const utterances = splitTextIntoUtterances(text);
 
+      let prefetchPromise = null;
       for (let u = 0; u < utterances.length; u++) {
         if (abortRef.current || generationRef.current !== myGeneration) break;
 
         const chunk = utterances[u];
-        // Prefetch next utterance
-        let nextPrefetch = null;
+
+        // Consume prefetched result if available; otherwise fetch now.
+        // Previously we both prefetched AND re-fetched every utterance,
+        // doubling the number of /tts requests.
+        let result;
+        if (prefetchPromise) {
+          result = await prefetchPromise;
+          prefetchPromise = null;
+        }
+        if (!result) {
+          result = await fetchTts(voiceId, chunk, campaignId, s.scenePacing);
+        }
+        if (!result || abortRef.current || generationRef.current !== myGeneration) break;
+
+        // Kick off prefetch for the next utterance while this one plays.
         const nextChunk = utterances[u + 1];
         if (nextChunk) {
-          nextPrefetch = fetchTts(voiceId, nextChunk, campaignId, s.scenePacing).catch(() => null);
+          prefetchPromise = fetchTts(voiceId, nextChunk, campaignId, s.scenePacing).catch(() => null);
         }
-
-        const result = await fetchTts(voiceId, chunk, campaignId, s.scenePacing);
-        if (!result || abortRef.current || generationRef.current !== myGeneration) break;
 
         if (!viewerMode) {
           dispatch({ type: 'ADD_AI_COST', payload: calculateCost('tts', { charCount: chunk.length }) });
         }
-        objectUrlsRef.current.push(result.audioUrl);
-        const audio = new Audio(result.audioUrl);
+        const playableAudioUrl = apiClient.resolveMediaUrl(result.audioUrl);
+        objectUrlsRef.current.push(playableAudioUrl);
+        const audio = new Audio(playableAudioUrl);
         const baseRate = (dialogueSpeed || 100) / 100;
         const pacingMul = PACING_SPEED_MULTIPLIERS[s.scenePacing] || 1.0;
         const natural = clampRate(baseRate * pacingMul, 0.5, MAX_NATURAL_PLAYBACK_RATE);
@@ -837,11 +907,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         startHighlightLoop(audio, result.words || [], seg.logicalSegmentIndex ?? 0, s.messageId, globalWordOffset, 0, text, chunk);
 
         const playStart = performance.now();
-        await new Promise((resolve) => {
-          audio.onended = resolve;
-          audio.onerror = resolve;
-          audio.play().catch(resolve);
-        });
+        await playAudioWithBuffer(audio);
         if (abortRef.current || generationRef.current !== myGeneration) break;
 
         const wallSeconds = (performance.now() - playStart) / 1000;

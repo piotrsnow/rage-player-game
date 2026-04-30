@@ -14,6 +14,22 @@
 
 import { prisma } from '../lib/prisma.js';
 import { slugifyItemName } from '../../../shared/domain/itemKeys.js';
+import { toCanonicalStoragePath } from './urlCanonical.js';
+
+// Mirror of cumulativeCharXpThreshold from src/data/rpgSystem.js — needed for
+// the one-shot backfill below. Kept local to avoid pulling the FE rpgSystem
+// module into the backend (see characterMutations.js for the same pattern).
+function charLevelCostLocal(level) {
+  if (level <= 1) return 0;
+  return 5 * level * level;
+}
+
+function cumulativeCharXpThresholdLocal(level) {
+  if (level <= 1) return 0;
+  let sum = 0;
+  for (let k = 2; k <= level; k++) sum += charLevelCostLocal(k);
+  return sum;
+}
 
 const CHARACTER_INCLUDE = {
   characterSkills: true,
@@ -49,6 +65,27 @@ export function reconstructCharacterSnapshot(row) {
   if (!row) return null;
   const snapshot = { ...row };
 
+  // Legacy records may hold host-prefixed / token-suffixed URLs; hand the
+  // FE canonical paths so `apiClient.resolveMediaUrl` can freshly hydrate.
+  if (snapshot.portraitUrl) {
+    snapshot.portraitUrl = toCanonicalStoragePath(snapshot.portraitUrl);
+  }
+
+  // Lazy backfill: historically `characterXp` stored "XP since last level-up"
+  // (consumed on level-up). The new contract is a monotonic lifetime total,
+  // so pre-migration rows are below the cumulative threshold for their level
+  // and need to be lifted once. Idempotent — after the first read the value
+  // is already ≥ threshold, so the branch is skipped. The bumped value will
+  // be persisted on the next `persistCharacterSnapshot`.
+  const charLevel = snapshot.characterLevel || 1;
+  if (charLevel > 1) {
+    const cumulative = cumulativeCharXpThresholdLocal(charLevel);
+    const currentXp = snapshot.characterXp || 0;
+    if (currentXp < cumulative) {
+      snapshot.characterXp = currentXp + cumulative;
+    }
+  }
+
   snapshot.skills = {};
   for (const s of row.characterSkills || []) {
     snapshot.skills[s.skillName] = { level: s.level, xp: s.xp, cap: s.cap };
@@ -63,7 +100,7 @@ export function reconstructCharacterSnapshot(row) {
       baseType: item.baseType ?? undefined,
       quantity: item.quantity,
       props,
-      imageUrl: item.imageUrl ?? undefined,
+      imageUrl: item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : undefined,
       addedAt: item.addedAt,
     };
   });
@@ -108,6 +145,11 @@ export function splitCharacterSnapshot(snapshot) {
   for (const key of JSON_FIELDS) {
     if (snapshot[key] !== undefined) scalars[key] = snapshot[key];
   }
+  // Never persist hydrated URLs (origin + `?token=<JWT>`); older FE clients
+  // may still send these on save. Keep canonical `/v1/media/file/...` only.
+  if (typeof scalars.portraitUrl === 'string' && scalars.portraitUrl) {
+    scalars.portraitUrl = toCanonicalStoragePath(scalars.portraitUrl);
+  }
   const equipped = snapshot.equipped || {};
   if (equipped.mainHand !== undefined) scalars.equippedMainHand = equipped.mainHand || null;
   if (equipped.offHand !== undefined) scalars.equippedOffHand = equipped.offHand || null;
@@ -147,10 +189,11 @@ function stackInventoryRows(items) {
     }
     const props = { ...(item.props || {}), ...inlineProps };
     const existing = byKey.get(itemKey);
+    const normalizedImageUrl = item.imageUrl ? toCanonicalStoragePath(item.imageUrl) : null;
     if (existing) {
       existing.quantity += item.quantity || 1;
       existing.props = { ...existing.props, ...props };
-      if (item.imageUrl) existing.imageUrl = item.imageUrl;
+      if (normalizedImageUrl) existing.imageUrl = normalizedImageUrl;
       if (item.baseType) existing.baseType = item.baseType;
     } else {
       byKey.set(itemKey, {
@@ -159,7 +202,7 @@ function stackInventoryRows(items) {
         baseType: item.baseType ?? null,
         quantity: item.quantity || 1,
         props,
-        imageUrl: item.imageUrl ?? null,
+        imageUrl: normalizedImageUrl,
       });
     }
   }

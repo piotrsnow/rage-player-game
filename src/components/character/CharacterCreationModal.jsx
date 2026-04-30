@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
 import {
-  SPECIES, SPECIES_LIST, ATTRIBUTE_KEYS,
+  SPECIES, PLAYABLE_SPECIES_LIST, ATTRIBUTE_KEYS,
   CREATION_LIMITS, SKILL_CAPS, createStartingSkills, calculateMaxWounds,
 } from '../../data/rpgSystem';
 import {
@@ -330,7 +330,7 @@ export default function CharacterCreationModal({ onConfirm, onClose, genre = 'Fa
           <section>
             <SectionHeader icon="groups" label={t('charCreator.speciesLabel')} onRandomize={handleRandomizeSpecies} />
             <div className="flex flex-wrap gap-2">
-              {SPECIES_LIST.map((sp) => (
+              {PLAYABLE_SPECIES_LIST.map((sp) => (
                 <button
                   key={sp}
                   type="button"

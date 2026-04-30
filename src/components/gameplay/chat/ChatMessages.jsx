@@ -186,21 +186,116 @@ const SUBTYPE_STYLES = {
   combat_defeat:    { icon: 'skull',        color: 'text-red-500',     line: 'to-red-500/30' },
   combat_fled:      { icon: 'directions_run', color: 'text-yellow-400', line: 'to-yellow-400/30' },
   combat_end:       { icon: 'flag',         color: 'text-primary',     line: 'to-primary/30' },
+  skill_xp:         { icon: 'trending_up',   color: 'text-cyan-400',    line: 'to-cyan-400/35' },
+  skill_levelup:    { icon: 'workspace_premium', color: 'text-violet-300', line: 'to-violet-400/40' },
+  char_xp:          { icon: 'auto_awesome', color: 'text-sky-400',     line: 'to-sky-400/35' },
+  character_levelup: { icon: 'stars',      color: 'text-amber-300',   line: 'to-amber-400/45' },
 };
+
+/** Rich inline colors for skill / character XP system lines (matches `stateChangeMessages` shapes). */
+function styledSystemLineContent(subtype, content) {
+  if (typeof content !== 'string') return null;
+
+  if (subtype === 'skill_levelup') {
+    const m = content.match(/^(.+?) \+(\d+) XP — Level Up! \((\d+) → (\d+)\)$/);
+    if (m) {
+      const [, skill, xp, from, to] = m;
+      return (
+        <>
+          <span className="text-sky-300">{skill}</span>
+          <span className="text-amber-300 font-black"> +{xp} XP</span>
+          <span className="text-fuchsia-300"> — Level Up!</span>
+          <span className="text-slate-300/90"> ({from} → </span>
+          <span className="text-emerald-300 font-black">{to}</span>
+          <span className="text-slate-300/90">)</span>
+        </>
+      );
+    }
+  }
+
+  if (subtype === 'skill_xp') {
+    const m = content.match(/^(.+?) \+(\d+) XP$/);
+    if (m) {
+      const [, skill, xp] = m;
+      return (
+        <>
+          <span className="text-sky-300">{skill}</span>
+          <span className="text-amber-300 font-black"> +{xp} XP</span>
+        </>
+      );
+    }
+  }
+
+  if (subtype === 'char_xp') {
+    const m = content.match(/^\+(\d+)\s*(.*)$/);
+    if (m) {
+      const [, n, rest] = m;
+      return (
+        <>
+          <span className="text-amber-300 font-black">+{n}</span>
+          <span className="text-sky-200/95">{rest ? ` ${rest}` : ''}</span>
+        </>
+      );
+    }
+  }
+
+  if (subtype === 'character_levelup') {
+    const m = content.match(/^(.+?\D)(\d+)\s*→\s*(\d+)([\s\S]*)$/);
+    if (m) {
+      const [, before, oldL, newL, after] = m;
+      const bonus = after.match(/^(!\s*)(\+)(\d+)(\s*)([\s\S]*)$/);
+      if (bonus) {
+        const [, bang, plus, pts, sp, tail] = bonus;
+        return (
+          <>
+            <span className="text-amber-200/95">{before}</span>
+            <span className="text-amber-300 font-black">{oldL}</span>
+            <span className="text-slate-300"> → </span>
+            <span className="text-emerald-300 font-black">{newL}</span>
+            <span className="text-amber-200/95">{bang}</span>
+            <span className="text-yellow-300 font-black">{plus}{pts}</span>
+            <span className="text-amber-200/95">{sp}{tail}</span>
+          </>
+        );
+      }
+      return (
+        <>
+          <span className="text-amber-200/95">{before}</span>
+          <span className="text-amber-300 font-black">{oldL}</span>
+          <span className="text-slate-300"> → </span>
+          <span className="text-emerald-300 font-black">{newL}</span>
+          <span className="text-amber-200/95">{after}</span>
+        </>
+      );
+    }
+  }
+
+  return null;
+}
 
 export const SystemMessage = memo(function SystemMessage({ message }) {
   const style = SUBTYPE_STYLES[message.subtype];
 
   if (style) {
-    const isLevelUp = message.subtype === 'level_up';
+    const isLevelUp = message.subtype === 'level_up'
+      || message.subtype === 'skill_levelup'
+      || message.subtype === 'character_levelup';
     const hasCombatBadge = Boolean(message.combatBadgeText);
+    const richLine = styledSystemLineContent(message.subtype, message.content);
+    const useRichLine = Boolean(richLine);
     return (
       <div className={`flex items-center gap-3 py-2 animate-fade-in ${isLevelUp ? 'opacity-100' : 'opacity-90'}`}>
         <div className={`h-px flex-1 bg-gradient-to-r from-transparent ${style.line}`} />
         <div className="flex items-center gap-2 flex-wrap justify-center">
           <span className={`material-symbols-outlined text-sm ${style.color} ${isLevelUp ? 'animate-float' : ''}`}>{style.icon}</span>
-          <div className={`text-[10px] uppercase font-bold tracking-widest ${style.color} ${isLevelUp ? 'text-xs' : ''}`}>
-            {message.content}
+          <div
+            className={`text-[10px] font-bold tracking-widest ${
+              useRichLine
+                ? 'normal-case tracking-wide text-[11px] leading-snug text-on-surface'
+                : `uppercase ${style.color} ${message.subtype === 'level_up' ? 'text-xs' : ''}`
+            }`}
+          >
+            {richLine || message.content}
           </div>
           {hasCombatBadge && (
             <span className={`px-2.5 py-1 rounded-md text-sm font-black tracking-wider ${

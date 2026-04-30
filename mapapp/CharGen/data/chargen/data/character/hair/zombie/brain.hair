@@ -1,0 +1,22 @@
+{
+    "id": "brain",
+    "name": "Brain",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "hair", "zombie" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/hair/zombie/brain_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/hair/zombie/brain_f.png"
+        }
+    ],
+    "primarycolors": [
+        "misc_wounds"
+    ]
+}

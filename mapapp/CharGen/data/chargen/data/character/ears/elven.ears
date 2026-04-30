@@ -1,0 +1,19 @@
+{
+    "id": "elven",
+    "name": "Elven",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "ears", "darkelf" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/ears/human/elven_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/ears/human/elven_f.png"
+        }
+    ]
+}

@@ -1,0 +1,17 @@
+{
+    "id": "boar",
+    "name": "Boar",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "boar" ],
+    "textures": [
+        {
+            "head": "bm1",
+            "back": "none",
+            "front": "textures/character/head/boar_m.png"
+        }
+    ]
+}

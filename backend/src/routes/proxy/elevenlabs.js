@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { createMediaStore } from '../../services/mediaStore.js';
@@ -22,7 +23,6 @@ const PACING_STABILITY = {
 };
 const DEFAULT_STABILITY = 0.5;
 
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
 const PACING_VALUES = Object.keys(PACING_STABILITY);
 
 const TTS_BODY_SCHEMA = {
@@ -33,7 +33,7 @@ const TTS_BODY_SCHEMA = {
     voiceId: { type: 'string', maxLength: 128 },
     text: { type: 'string', maxLength: 8000 },
     modelId: { type: 'string', maxLength: 64 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     pacing: { type: 'string', enum: PACING_VALUES },
   },
 };
@@ -45,7 +45,7 @@ const SFX_BODY_SCHEMA = {
   properties: {
     text: { type: 'string', maxLength: 2000 },
     durationSeconds: { type: 'number', minimum: 0.5, maximum: 22 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
   },
 };
 

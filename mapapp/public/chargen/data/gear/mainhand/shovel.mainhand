@@ -1,0 +1,41 @@
+{
+    "id": "shovel",
+    "name": "Shovel",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "slotsset" : [ "offhand" ],
+    "actions": [ "thrust" ],
+    "tags": [ "mainhand", "weapon", "shovel" ],
+    "sounds" : [
+        "sounds/swosh-05.ogg",
+        "sounds/swosh-07.ogg",
+        "sounds/swosh-14.ogg",
+        "sounds/swosh-17.ogg",
+        "sounds/swosh-22.ogg"
+    ],
+    "textures": [
+        {
+            "body": "hm1",
+            "back": "textures/gear/mainhand/shovel/shovel_mb.png",
+            "front": "textures/gear/mainhand/shovel/shovel_mf.png"
+        },
+        {
+            "body": "hm2",
+            "back": "textures/gear/mainhand/shovel/shovel_mb.png",
+            "front": "textures/gear/mainhand/shovel/shovel_mf.png"
+        },
+        {
+            "body": "hf1",
+            "back": "textures/gear/mainhand/shovel/shovel_fb.png",
+            "front": "textures/gear/mainhand/shovel/shovel_ff.png"
+        }
+    ],
+    "primarycolors": [
+        "metal_iron"
+    ],
+    "fixedcolors": [
+        "cloth_brown4"
+    ]
+}

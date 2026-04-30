@@ -53,7 +53,6 @@ import IdleTimer from './IdleTimer';
 import CutscenePanel from './CutscenePanel';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { usePlayTimeTracker } from '../../hooks/usePlayTimeTracker';
-import { useStreamingNarrator } from '../../hooks/useStreamingNarrator';
 import { useMultiplayerSceneGenTimer } from '../../hooks/useMultiplayerSceneGenTimer';
 import { useSceneScrollSync } from '../../hooks/useSceneScrollSync';
 import { useImageRepairQueue } from '../../hooks/useImageRepairQueue';
@@ -148,16 +147,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   useEffect(() => {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
-
-  useStreamingNarrator({
-    narrator,
-    streamingSegments,
-    streamingNarrative,
-    chatHistory,
-    enabled: settings.narratorEnabled,
-    autoPlay: settings.narratorAutoPlay,
-    readOnly,
-  });
 
   const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
@@ -346,7 +335,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   // and into idleTimer, which is defined below. The `handleActionRef`
   // trampoline lets `useAutoPlayer` take a stable identity while the real
   // handler still reads the latest overlay/idle references.
-  const handleAction = async (action, isCustomAction = false, fromAutoPlayer = false) => {
+  const handleAction = async (action, isCustomAction = false, fromAutoPlayer = false, opts = {}) => {
     consecutiveIdleEventsRef.current = 0;
     idleTimer.resetTimer();
     sceneGenSucceededRef.current = false;
@@ -354,7 +343,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
       overlays.showPlayerActionOverlay(action);
     }
     try {
-      await generateScene(action, false, isCustomAction, fromAutoPlayer);
+      await generateScene(action, false, isCustomAction, fromAutoPlayer, {
+        forceRoll: opts?.forceRoll || null,
+      });
       sceneGenSucceededRef.current = true;
     } catch {
       // Error displayed in UI via context
@@ -666,7 +657,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
             <div className="grid grid-cols-2 gap-4">
               <StatusBar label={t('common.wounds')} current={displayCharacter.wounds} max={displayCharacter.maxWounds} color="error" />
               {displayCharacter.mana && (
-                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="tertiary" />
+                <StatusBar label="Mana" current={displayCharacter.mana.current} max={displayCharacter.mana.max} color="blue" />
               )}
             </div>
           </div>
@@ -882,7 +873,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           streamingNarrative={streamingNarrative}
           streamingSegments={streamingSegments}
           narrator={settings.narratorEnabled ? narrator : null}
-          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !overlays.overlayText}
+          autoPlay={!readOnly && settings.narratorEnabled && settings.narratorAutoPlay && !overlayText}
           myOdId={isMultiplayer ? mp.state.myOdId : null}
           momentumBonus={isMultiplayer
             ? (mpGameState?.characterMomentum?.[character?.name] || 0)

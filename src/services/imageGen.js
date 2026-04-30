@@ -1,5 +1,6 @@
-import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt } from './imagePrompts';
-import { apiClient } from './apiClient';
+import { buildImagePrompt, buildItemImagePrompt, buildPortraitPrompt, getModelPreset, REFERENCE_PHOTO_NEGATIVE } from './imagePrompts';
+import { apiClient, toCanonicalStoragePath } from './apiClient';
+import { ensureEnglish } from './translateImagePrompt';
 
 // Image generation — FE-side direct provider calls were removed with the
 // no-BYOK cleanup. Every request now goes through the backend proxy
@@ -17,35 +18,86 @@ export function getGeneratedImageScale(provider = 'dalle') {
   return GENERATED_IMAGE_SCALE;
 }
 
-function resolveMediaUrl(url) {
+// Keep asset URLs canonical (`/v1/media/file/...`) when they flow out of the
+// services layer — they get persisted to DB (character.portraitUrl, scene.image,
+// item.imageUrl). `apiClient.resolveMediaUrl` (which appends origin + `?token`)
+// must only run at render time.
+function canonicalUrl(url) {
   if (!url) return null;
-  return apiClient.resolveMediaUrl(url);
+  return toCanonicalStoragePath(url);
 }
 
-async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null } = {}) {
+// Attach SDXL preset hints (sampler/steps/cfg/width/height/negative) to the
+// /proxy/sd-webui/generate body so each checkpoint runs at its sweet spot.
+// Backend does the same lookup as a safety net — we send from FE so the UI
+// can override individual fields later without backend changes. `kind` picks
+// portrait vs scene bucket dimensions; omit width/height if the caller
+// already set them explicitly.
+function applyPresetToPayload(payload, sdModel, kind = 'scene') {
+  const preset = getModelPreset(sdModel);
+  if (!preset) return;
+  if (payload.sampler == null) payload.sampler = preset.sampler;
+  if (payload.steps == null) payload.steps = preset.steps;
+  if (payload.cfg == null) payload.cfg = preset.cfg;
+  if (payload.width == null) {
+    payload.width = kind === 'portrait' ? preset.portraitWidth : preset.width;
+  }
+  if (payload.height == null) {
+    payload.height = kind === 'portrait' ? preset.portraitHeight : preset.height;
+  }
+  if (payload.negativePrompt == null && preset.negative) {
+    payload.negativePrompt = preset.negative;
+  }
+}
+
+async function generateSceneViaProxy(prompt, provider, campaignId, { forceNew = false, portraitUrl = null, sdModel = null, sdSeed = null, shape = 'scene' } = {}) {
   const body = { prompt };
   if (campaignId) body.campaignId = campaignId;
   if (forceNew) body.forceNew = true;
 
+  // `shape: 'square'` is used for inventory item artwork — we want a clean
+  // centered icon-style render, not a 16:9 scene. Each provider exposes the
+  // aspect differently (size string vs aspectRatio vs explicit w/h), so the
+  // mapping happens per branch below.
+  const isSquare = shape === 'square';
+
   if (provider === 'stability') {
-    const data = await apiClient.post('/proxy/stability/generate', body);
-    return resolveMediaUrl(data.url);
+    const payload = isSquare ? { ...body, aspectRatio: '1:1' } : body;
+    const data = await apiClient.post('/proxy/stability/generate', payload);
+    return canonicalUrl(data.url);
   }
   if (provider === 'gemini') {
-    const data = await apiClient.post('/proxy/gemini/generate', body);
-    return resolveMediaUrl(data.url);
+    const payload = isSquare ? { ...body, aspectRatio: '1:1' } : body;
+    const data = await apiClient.post('/proxy/gemini/generate', payload);
+    return canonicalUrl(data.url);
+  }
+  if (provider === 'sd-webui') {
+    const payload = { ...body };
+    if (sdModel) payload.model = sdModel;
+    if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
+    if (isSquare) {
+      // Set w/h before applyPresetToPayload so the preset's scene-bucket
+      // dims don't overwrite them (applyPreset only fills when null).
+      payload.width = 1024;
+      payload.height = 1024;
+    }
+    applyPresetToPayload(payload, sdModel, 'scene');
+    const data = await apiClient.post('/proxy/sd-webui/generate', payload);
+    return canonicalUrl(data.url);
   }
   if (provider === 'gpt-image') {
+    const squareSize = isSquare ? { size: '1024x1024' } : {};
     if (portraitUrl) {
-      const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5' });
-      return resolveMediaUrl(data.url);
+      const data = await apiClient.post('/proxy/openai/images/edits', { ...body, portraitUrl, model: 'gpt-image-1.5', ...squareSize });
+      return canonicalUrl(data.url);
     }
-    const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5' });
-    return resolveMediaUrl(data.url);
+    const data = await apiClient.post('/proxy/openai/images', { ...body, model: 'gpt-image-1.5', ...squareSize });
+    return canonicalUrl(data.url);
   }
   // Default: DALL-E
-  const data = await apiClient.post('/proxy/openai/images', body);
-  return resolveMediaUrl(data.url);
+  const squareSize = isSquare ? { size: '1024x1024' } : {};
+  const data = await apiClient.post('/proxy/openai/images', { ...body, ...squareSize });
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaStabilityProxy(imageBlob, prompt, strength) {
@@ -53,12 +105,13 @@ async function generatePortraitViaStabilityProxy(imageBlob, prompt, strength) {
   formData.append('image', imageBlob, 'photo.jpg');
   formData.append('prompt', prompt);
   formData.append('strength', String(strength));
+  formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
 
   const data = await apiClient.request('/proxy/stability/portrait', {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGptImageEditsProxy(imageBlob, prompt) {
@@ -73,7 +126,7 @@ async function generatePortraitViaGptImageEditsProxy(imageBlob, prompt) {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaDalleProxy(prompt) {
@@ -81,12 +134,12 @@ async function generatePortraitViaDalleProxy(prompt) {
     prompt,
     size: '1024x1024',
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGeminiProxy(prompt) {
   const data = await apiClient.post('/proxy/gemini/portrait', { prompt });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
 }
 
 async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
@@ -98,21 +151,52 @@ async function generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt) {
     method: 'POST',
     body: formData,
   });
-  return resolveMediaUrl(data.url);
+  return canonicalUrl(data.url);
+}
+
+async function generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed) {
+  const formData = new FormData();
+  if (imageBlob) formData.append('image', imageBlob, 'photo.jpg');
+  formData.append('prompt', prompt);
+  formData.append('strength', String(strength ?? 0.55));
+  if (sdModel) formData.append('model', sdModel);
+  if (Number.isInteger(sdSeed)) formData.append('seed', String(sdSeed));
+  // Extra negative only makes sense when a real photo is the init image —
+  // suppresses modern-photo bleed-through (clothes, indoor bg, phone grain).
+  if (imageBlob) formData.append('negativePrompt', REFERENCE_PHOTO_NEGATIVE);
+
+  const data = await apiClient.request('/proxy/sd-webui/portrait', {
+    method: 'POST',
+    body: formData,
+  });
+  return canonicalUrl(data.url);
 }
 
 export const imageService = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
     const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
-    const prompt = buildImagePrompt(narrative, genre, tone, imagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait);
-    return generateSceneViaProxy(prompt, provider, campaignId, {
+    const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
+    // Translate the user-content fragments to English before they get
+    // embedded into the English template. Image models perform best on
+    // English prompts; PL characters bleed in from LLM slip-ups and from
+    // the narrative fallback when the model omitted `imagePrompt`.
+    const [enImagePrompt, enNarrative] = await Promise.all([
+      ensureEnglish(imagePrompt),
+      imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
+    ]);
+    const prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
+    const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
       portraitUrl: hasPortrait ? portraitUrl : null,
     });
+    return { url, prompt };
   },
 
-  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null) {
-    const prompt = buildPortraitPrompt(species, gender, age, careerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness);
+  async generatePortrait(imageBlob, { species, age, gender, careerName, genre } = {}, _apiKeyIgnored, strength = 0.45, provider = 'stability', imageStyle = 'painting', darkPalette = false, seriousness = null, sdModel = null, extras = {}, sdSeed = null) {
+    // `careerName` is the only free-form user-content field here — species/gender
+    // are enums and genre comes from a fixed picker list. Translate if PL.
+    const enCareerName = await ensureEnglish(careerName);
+    const prompt = buildPortraitPrompt(species, gender, age, enCareerName, genre, provider, imageStyle, Boolean(imageBlob), darkPalette, seriousness, extras, sdModel);
 
     if (provider === 'dalle') {
       return generatePortraitViaDalleProxy(prompt);
@@ -120,26 +204,74 @@ export const imageService = {
     if (provider === 'gpt-image') {
       if (imageBlob) return generatePortraitViaGptImageEditsProxy(imageBlob, prompt);
       const data = await apiClient.post('/proxy/openai/images', { prompt, model: 'gpt-image-1.5', size: '1024x1024' });
-      return resolveMediaUrl(data.url);
+      return canonicalUrl(data.url);
     }
     if (provider === 'gemini') {
       return imageBlob
         ? generatePortraitViaGeminiImg2ImgProxy(imageBlob, prompt)
         : generatePortraitViaGeminiProxy(prompt);
     }
+    if (provider === 'sd-webui') {
+      return generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
+    }
     // Default: Stability
     return generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
   },
 
-  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null } = {}) {
-    const prompt = buildItemImagePrompt(item, {
+  async generatePlaygroundImage({ prompt, provider = 'dalle', sdModel = null, sdSeed = null, referenceBlob = null, strength = 0.55 } = {}) {
+    const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+    if (!rawPrompt) throw new Error('Prompt is required');
+
+    if (referenceBlob) {
+      if (provider === 'stability') return generatePortraitViaStabilityProxy(referenceBlob, rawPrompt, strength);
+      if (provider === 'gpt-image') return generatePortraitViaGptImageEditsProxy(referenceBlob, rawPrompt);
+      if (provider === 'gemini') return generatePortraitViaGeminiImg2ImgProxy(referenceBlob, rawPrompt);
+      if (provider === 'sd-webui') return generatePortraitViaSdWebuiProxy(referenceBlob, rawPrompt, strength, sdModel, sdSeed);
+      // `dalle` and unknown providers: fall through to text-only.
+    }
+
+    if (provider === 'stability') {
+      const data = await apiClient.post('/proxy/stability/generate', { prompt: rawPrompt });
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'gemini') {
+      const data = await apiClient.post('/proxy/gemini/generate', { prompt: rawPrompt });
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'sd-webui') {
+      const payload = { prompt: rawPrompt };
+      if (sdModel) payload.model = sdModel;
+      if (Number.isInteger(sdSeed)) payload.seed = sdSeed;
+      applyPresetToPayload(payload, sdModel, 'scene');
+      const data = await apiClient.post('/proxy/sd-webui/generate', payload);
+      return canonicalUrl(data.url);
+    }
+    if (provider === 'gpt-image') {
+      const data = await apiClient.post('/proxy/openai/images', { prompt: rawPrompt, model: 'gpt-image-1.5' });
+      return canonicalUrl(data.url);
+    }
+    const data = await apiClient.post('/proxy/openai/images', { prompt: rawPrompt });
+    return canonicalUrl(data.url);
+  },
+
+  async generateItemImage(item, { genre, tone, provider = 'dalle', imageStyle = 'painting', darkPalette = false, seriousness = null, campaignId = null, sdModel = null, sdSeed = null, forceNew = false } = {}) {
+    // Item name/description are generated by the LLM in the campaign language
+    // (PL for Polish campaigns). Translate both before embedding. type/rarity
+    // come from an English enum in the system prompt.
+    const [enName, enDescription] = await Promise.all([
+      ensureEnglish(item?.name),
+      ensureEnglish(item?.description),
+    ]);
+    const translatedItem = item ? { ...item, name: enName, description: enDescription } : item;
+    const prompt = buildItemImagePrompt(translatedItem, {
       genre,
       tone,
       provider,
       imageStyle,
       darkPalette,
       seriousness,
+      sdModel,
     });
-    return generateSceneViaProxy(prompt, provider, campaignId);
+    return generateSceneViaProxy(prompt, provider, campaignId, { sdModel, sdSeed, forceNew, shape: 'square' });
   },
 };

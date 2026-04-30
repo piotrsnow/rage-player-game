@@ -1,3 +1,5 @@
+import { toCanonicalStoragePath } from './urlCanonical.js';
+
 export function extractTotalCost(coreState) {
   if (!coreState) return 0;
   // Prisma returns Json columns as native objects; strings only happen when
@@ -52,7 +54,7 @@ export const SCENE_CLIENT_SELECT = {
   id: true, campaignId: true, sceneIndex: true,
   narrative: true, chosenAction: true,
   suggestedActions: true, dialogueSegments: true,
-  imagePrompt: true, imageUrl: true, soundEffect: true,
+  imagePrompt: true, fullImagePrompt: true, imageUrl: true, soundEffect: true,
   diceRoll: true, stateChanges: true, scenePacing: true,
   createdAt: true,
 };
@@ -79,5 +81,21 @@ export function dedupeScenesByIndexAsc(rows) {
       byIndex.set(scene.sceneIndex, scene);
     }
   }
-  return Array.from(byIndex.values()).sort((a, b) => a.sceneIndex - b.sceneIndex);
+  return Array.from(byIndex.values())
+    .sort((a, b) => a.sceneIndex - b.sceneIndex)
+    .map(normalizeSceneAssetUrls);
+}
+
+/**
+ * Rewrite any hydrated asset URLs (host + `?token=`) on a scene row to their
+ * canonical `/v1/media/file/...` form. Safe to call on rows that already use
+ * the canonical path. Applied on read so the FE never sees a stale token.
+ */
+export function normalizeSceneAssetUrls(scene) {
+  if (!scene || typeof scene !== 'object') return scene;
+  if (typeof scene.imageUrl === 'string' && scene.imageUrl) {
+    const canonical = toCanonicalStoragePath(scene.imageUrl);
+    if (canonical !== scene.imageUrl) return { ...scene, imageUrl: canonical };
+  }
+  return scene;
 }

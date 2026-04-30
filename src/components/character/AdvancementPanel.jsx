@@ -5,7 +5,7 @@ import { useModalA11y } from '../../hooks/useModalA11y';
 import {
   ATTRIBUTE_KEYS, SKILL_CAPS, ATTRIBUTE_SCALE,
   getSkillAttribute,
-  xpForSkillLevel, charLevelCost, CREATION_LIMITS,
+  xpForSkillLevel, cumulativeCharXpThreshold, CREATION_LIMITS,
 } from '../../data/rpgSystem';
 import { SPELL_TREES } from '../../data/rpgMagic';
 import { getSpellProgressionStatus } from '../../services/magicEngine';
@@ -304,8 +304,11 @@ export default function AdvancementPanel({ onClose }) {
 
   const charLevel = character.characterLevel || 1;
   const charXp = character.characterXp || 0;
-  const nextLevelCost = charLevelCost(charLevel + 1);
-  const charXpPct = nextLevelCost > 0 ? Math.min(100, (charXp / nextLevelCost) * 100) : 0;
+  const prevCharXpThreshold = cumulativeCharXpThreshold(charLevel);
+  const nextCharXpThreshold = cumulativeCharXpThreshold(charLevel + 1);
+  const charXpPct = nextCharXpThreshold > prevCharXpThreshold
+    ? Math.min(100, ((charXp - prevCharXpThreshold) / (nextCharXpThreshold - prevCharXpThreshold)) * 100)
+    : 0;
 
   const tabLabels = {
     attributes: t('advancement.characteristics', 'Atrybuty'),
@@ -335,7 +338,7 @@ export default function AdvancementPanel({ onClose }) {
               <div className="w-32 h-1.5 bg-surface-container-high/60 rounded-full overflow-hidden">
                 <div className="h-full bg-tertiary rounded-full transition-all" style={{ width: `${charXpPct}%` }} />
               </div>
-              <span className="text-[10px] text-outline tabular-nums">{charXp}/{nextLevelCost}</span>
+              <span className="text-[10px] text-outline tabular-nums">{charXp}/{nextCharXpThreshold}</span>
             </div>
           </div>
           <button

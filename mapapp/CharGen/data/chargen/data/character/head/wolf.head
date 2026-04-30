@@ -1,0 +1,22 @@
+{
+    "id": "wolf",
+    "name": "Wolf",
+    "chargen": false,
+    "default": false,
+    "lootable": false,
+    "fixed": false,
+    "gear": false,
+    "tags": [ "head", "wolf" ],
+    "textures": [
+        {
+            "head": "wm1",
+            "back": "none",
+            "front": "textures/character/head/wolf_m.png"
+        },
+        {
+            "head": "wf1",
+            "back": "none",
+            "front": "textures/character/head/wolf_f.png"
+        }
+    ]
+}

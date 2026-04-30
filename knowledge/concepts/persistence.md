@@ -205,6 +205,7 @@ Lifecycle:
 
 - **`POST /v1/campaigns`** locks all `characterIds` to the new campaign
 - **`DELETE /v1/campaigns/:id`** releases all locked characters
+- **`GET /v1/characters` + `GET /v1/characters/:id`** scrub orphaned locks on read — if `lockedCampaignId` points at a campaign that no longer exists (legacy rows, non-route deletion paths), the lock fields are cleared in one `updateMany`. Safety net for the known MP-guest-lobby gap and any manual DB surgery.
 - **`PUT /v1/campaigns/:id` rename** syncs `lockedCampaignName` on every linked character
 - **Scene generation** updates `lockedLocation` whenever `stateChanges.currentLocation` is set (in `applyCharacterStateChanges`)
 

@@ -22,7 +22,7 @@ Respond with ONLY valid JSON:
   ],
   "soundEffect": "ambient sound or null",
   "musicPrompt": "background music description or null",
-  "imagePrompt": "ENGLISH visual scene description (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
   "atmosphere": {
     "weather": "clear",
     "particles": "none",
@@ -35,7 +35,7 @@ Respond with ONLY valid JSON:
     "timeAdvance": {"hoursElapsed": 0.5},
     "currentLocation": "Starting Location",
     "mapChanges": [{"location": "Location Name", "modification": "Description of change", "type": "discovery"}],
-    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "dispositionChange": 5}],
+    "npcs": [{"action": "introduce", "name": "NPC Name", "gender": "male", "race": "Human", "level": 3, "role": "innkeeper", "personality": "jovial, loud", "attitude": "friendly", "location": "The Rusty Anchor", "notes": "", "dispositionChange": 5}],
     "worldFacts": [],
     "journalEntries": ["Opening scene summary"],
     "newQuests": [{"id": "quest_unique_id", "name": "Quest Name", "description": "Quest description", "completionCondition": "Main goal", "objectives": [{"id": "obj_1", "description": "First milestone"}]}],
@@ -58,11 +58,12 @@ For perCharacter newItems: each item MUST be an object with {id, name, type, des
 
 For stateChanges.mapChanges: use when a location is modified (trap set, destruction, discovery, obstacle). Each entry: {"location": "Place", "modification": "what changed", "type": "trap|destruction|discovery|obstacle|other"}. Use empty array [] if no map changes.
 
-For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include a variable "dispositionChange" based on margin — NOT flat +5/-5:
 - Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
 - Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8
 NPC RELATIONSHIP TRACKING: Include optional fields: "factionId", "relatedQuestIds", "relationships".
+NPC CHARACTER CARD: Every mortal NPC MUST have "race" set to one of "Human"|"Dwarf"|"Halfling"|"Orc" on "introduce". For story creatures (zjawy, sfinksy, demony, potwory, duchy) use "creatureKind" (free-text) INSTEAD of race — never both. Optional "level": 1-30 based on importance (commoner 1-3, notable 4-6, key NPC 7-10, boss 10+); backend derives a default from category if omitted. Optional "statsOverride" only for exceptional NPCs (arcymag, legendary master, boss), shape: {attributes?, skills?, weapons?, traits?, armourDR?, maxWounds?, mana?}. Backend generates the full stat sheet deterministically from race + role + level — do NOT emit a full sheet, only deltas via statsOverride when strictly needed.
 
 COMBAT ENCOUNTERS (MULTIPLAYER):
 When the narrative describes the beginning of a hostile combat encounter, include "combatUpdate" in stateChanges.
@@ -156,7 +157,7 @@ Respond with ONLY valid JSON:
   ],
   "soundEffect": "sound description or null",
   "musicPrompt": "music description or null",
-  "imagePrompt": "ENGLISH visual scene description (max 200 chars)",
+  "imagePrompt": "comma-separated ENGLISH tags for SDXL image gen (max 400 chars). 8-14 tags, concrete nouns/adjectives only, no articles or filler. Order: subject, action, setting, time of day, lighting, weather, mood, camera angle, key props. Derive every tag from THIS scene's narrative — do NOT import unrelated locations, ruins, castles, or architecture that the scene does not actually contain. Template (do not copy literally, substitute from the scene): '<subject with attire>, <what they are doing>, <where — be specific to THIS scene>, <time>, <lighting>, <weather>, <mood>, <shot type>, <1-3 key props>'",
   "atmosphere": {
     "weather": "clear",
     "particles": "none",
@@ -198,7 +199,7 @@ QUEST DISCOVERY: When any player explicitly asks about available work, tasks, qu
 
 For stateChanges.activeEffects: manage traps, spells, ongoing environmental effects. Use "add" to place new effects, "remove" to clear them (by id), "trigger" to fire and deactivate them (by id). Use empty array [] if no effect changes.
 
-For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. Provide personality, role, attitude toward player, and current location.
+For stateChanges.npcs: use "introduce" for new NPCs and "update" for existing ones. Always include name and gender. \`gender\` MUST be "male" or "female" — NEVER "unknown", NEVER omitted. Provide personality, role, attitude toward player, and current location.
 NPC DISPOSITION TRACKING: When a dice roll involves interaction with an NPC, include that NPC in stateChanges.npcs with a variable "dispositionChange" based on margin — NOT a flat +5/-5:
 - Critical success (roll 1): +3 to +5, Strong success (margin 10+): +2 to +3, Moderate success (margin 5-9): +1 to +2, Marginal success (margin 0-4): +1
 - Marginal failure (margin -1 to -5): -1 to -2, Hard failure (margin -6 or worse): -3 to -5, Critical failure (roll 50): -5 to -8

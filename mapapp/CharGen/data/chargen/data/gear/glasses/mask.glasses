@@ -1,0 +1,30 @@
+{
+    "id": "mask",
+    "name": "Mask",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "tags": [ "glasses", "generic", "victorian" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/glasses/mask_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/glasses/mask_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/glasses/mask_m.png"
+        }
+    ],
+    "primarycolors": [
+        "mask_light",
+        "mask_dark"
+    ]
+}

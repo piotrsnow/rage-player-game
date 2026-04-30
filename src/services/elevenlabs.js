@@ -1,4 +1,4 @@
-import { apiClient } from './apiClient';
+import { apiClient, toCanonicalStoragePath } from './apiClient';
 
 function isWhitespaceChar(ch) {
   return ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r';
@@ -40,12 +40,13 @@ export function countHighlightWords(text) {
   return count;
 }
 
-function resolveMediaUrl(url) {
+// Audio URLs returned from the services layer are canonical
+// (`/v1/media/file/...`). Playback-side code (useNarrator) must run them
+// through `apiClient.resolveMediaUrl` to attach origin + auth token for
+// `new Audio(src)`.
+function canonicalAudioUrl(url) {
   if (!url) return null;
-  if (url.startsWith('http') || url.startsWith('blob:')) return url;
-  const base = `${apiClient.getBaseUrl()}${url}`;
-  const token = apiClient.getToken();
-  return token ? `${base}${base.includes('?') ? '&' : '?'}token=${token}` : base;
+  return toCanonicalStoragePath(url);
 }
 
 function parseAlignmentWords(alignment) {
@@ -100,7 +101,7 @@ export const elevenlabsService = {
       const body = { text, durationSeconds };
       if (campaignId) body.campaignId = campaignId;
       const data = await apiClient.post('/proxy/elevenlabs/sfx', body);
-      return resolveMediaUrl(data.url);
+      return canonicalAudioUrl(data.url);
     }
     throw new Error('ElevenLabs requires backend connection');
   },
@@ -110,7 +111,7 @@ export const elevenlabsService = {
       const body = { voiceId, text, modelId };
       if (campaignId) body.campaignId = campaignId;
       const data = await apiClient.post('/proxy/elevenlabs/tts-stream', body);
-      return resolveMediaUrl(data.url);
+      return canonicalAudioUrl(data.url);
     }
     throw new Error('ElevenLabs requires backend connection');
   },
@@ -121,7 +122,7 @@ export const elevenlabsService = {
       if (campaignId) body.campaignId = campaignId;
       if (pacing) body.pacing = pacing;
       const data = await apiClient.post('/proxy/elevenlabs/tts', body);
-      const audioUrl = resolveMediaUrl(data.url);
+      const audioUrl = canonicalAudioUrl(data.url);
       const words = data.alignment ? parseAlignmentWords(data.alignment) : [];
       return { audioUrl, words };
     }

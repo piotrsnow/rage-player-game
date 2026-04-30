@@ -88,19 +88,35 @@ async function doSave(gameState) {
     await apiClient.put(`/campaigns/${backendId}`, payload);
     await saveNewScenes(backendId, scenes);
   } else {
-    const created = await apiClient.post('/campaigns', payload, { idempotent: true });
-    if (gameState.campaign) {
-      gameState.campaign.backendId = created.id;
-      if (Array.isArray(created.characterIds)) {
-        gameState.campaign.characterIds = created.characterIds;
-      }
-    }
+    // Stable idempotency key derived from the local campaign id so any
+    // concurrent POST (e.g. useSceneGeneration's auto-sync racing with this
+    // one) replays the cached response instead of creating a second row.
+    // See: https://github.com/... idempotency plugin (5-min TTL, in-memory).
+    const created = await apiClient.post('/campaigns', payload, {
+      idempotencyKey: `campaign-create:${gameState.campaign.id}`,
+    });
+    // Push backendId into the Zustand store — mutating `gameState.campaign`
+    // directly is a no-op when called from autoSave (Immer freezes produced
+    // state), which used to leave the store without a backendId and make
+    // every subsequent save POST a fresh duplicate row. Dynamic import
+    // avoids a static cycle (storage ↔ gameStore) — by the time doSave
+    // runs, both modules are fully initialized.
+    const { gameDispatch } = await import('../../stores/gameStore');
+    gameDispatch({
+      type: 'SET_CAMPAIGN_BACKEND_ID',
+      payload: {
+        backendId: created.id,
+        characterIds: Array.isArray(created.characterIds) ? created.characterIds : undefined,
+      },
+    });
     if (scenes?.length) {
       await saveNewScenes(created.id, scenes, true);
     }
+    setActiveCampaignId(created.id);
+    return;
   }
 
-  setActiveCampaignId(gameState.campaign.backendId || gameState.campaign.id);
+  setActiveCampaignId(backendId || gameState.campaign.id);
 }
 
 async function saveNewScenes(backendId, scenes, forceAll = false) {

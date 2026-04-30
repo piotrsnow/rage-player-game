@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGame } from '../contexts/GameContext';
 import { createDefaultNeeds } from '../stores/gameReducer';
+import { useGameStore } from '../stores/gameStore';
 import { storage } from '../services/storage';
 import { createCampaignId, createSceneId, createQuestId, generateAttributes, calculateMaxWounds, generateStartingMoney, createStarterInventory } from '../services/gameState';
 import { normalizeCharacterAge } from '../services/characterAge';
@@ -246,16 +247,10 @@ export function useGameState() {
       };
       await storage.saveCampaign(fullState);
 
-      // After save, campaign.backendId is set by _doSave mutation.
-      // Sync it back to the store so autoSave won't POST a duplicate.
-      if (campaign.backendId) {
-        dispatch({
-          type: 'SET_CAMPAIGN_BACKEND_ID',
-          payload: { backendId: campaign.backendId, characterIds: campaign.characterIds },
-        });
-      }
-
-      return campaign.backendId || campaignId;
+      // saveCampaign now dispatches SET_CAMPAIGN_BACKEND_ID internally, so
+      // we read it back from the store to return the right id to the caller.
+      const persistedBackendId = useGameStore.getState().state.campaign?.backendId;
+      return persistedBackendId || campaignId;
     },
     [dispatch, t]
   );

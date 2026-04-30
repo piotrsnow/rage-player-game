@@ -1,0 +1,19 @@
+{
+    "id": "long",
+    "name": "Long",
+    "chargen": true,
+    "lootable": false,
+    "tags": [ "ears", "darkelf" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/character/ears/human/long_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/character/ears/human/long_f.png"
+        }
+    ]
+}

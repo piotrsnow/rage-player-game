@@ -367,4 +367,58 @@ describe('/v1/auth routes', () => {
     expect(JSON.parse(res.body).error).toMatch(/too large/i);
     await app.close();
   });
+
+  it('PUT /v1/auth/settings silently drops `apiKeys` (env-only policy; additionalProperties strips)', async () => {
+    const app = await buildApp();
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: { email: 'henry@example.com', password: 'longpass' },
+    });
+    const { accessToken } = JSON.parse(reg.body);
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/auth/settings',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { apiKeys: { openai: 'sk-leak' } },
+    });
+    // Fastify with additionalProperties:false strips unknown fields before
+    // our handler runs. The handler then sees an empty body, writes
+    // nothing, and returns the user unchanged. Crucially — the stored
+    // user row must not have `apiKeys` overwritten by the client.
+    expect(res.statusCode).toBe(200);
+    const stored = userStore.get('henry@example.com');
+    expect(stored.apiKeys).toBe('{}');
+    await app.close();
+  });
+
+  it('GET /v1/auth/api-keys reports env availability, never the raw key', async () => {
+    const app = await buildApp();
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/register',
+      payload: { email: 'ivy@example.com', password: 'longpass' },
+    });
+    const { accessToken } = JSON.parse(reg.body);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/auth/api-keys',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.openai).toEqual({ configured: true, masked: '••••rver' });
+    expect(body.anthropic).toEqual({ configured: true, masked: '••••rver' });
+    // Keys not present in the mocked config fall back to `{ configured: false }`.
+    expect(body.stability).toEqual({ configured: false });
+    expect(body.elevenlabs).toEqual({ configured: false });
+    expect(body.gemini).toEqual({ configured: false });
+    expect(body.meshy).toEqual({ configured: false });
+    // Crucially — no raw secret anywhere in the response.
+    expect(JSON.stringify(body)).not.toContain('sk-server');
+    expect(JSON.stringify(body)).not.toContain('ck-server');
+    await app.close();
+  });
 });

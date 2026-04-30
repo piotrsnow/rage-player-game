@@ -15,6 +15,24 @@ import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
 
+const FORCE_ROLL_INITIAL = { enabled: false, modifier: 0 };
+
+// Pure reducers — `ActionPanel` re-mounts per-scene via key={currentScene.id}
+// so we don't need to reset manually; just express each interaction as a
+// transition from the current state.
+function forceRollLeftClick(prev) {
+  // ON → OFF (toggle); BONUS/MALUS → ON (reset modifier, keep enabled).
+  if (prev.enabled && prev.modifier === 0) return FORCE_ROLL_INITIAL;
+  if (prev.enabled) return { enabled: true, modifier: 0 };
+  return { enabled: true, modifier: 0 };
+}
+function forceRollDoubleClick() {
+  return { enabled: true, modifier: 30 };
+}
+function forceRollRightClick() {
+  return { enabled: true, modifier: -30 };
+}
+
 const normalizeQuotes = (text) =>
   text.replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2018\u2019\u201A\u201B\u2039\u203A\uFF02`\u0060\u00B4]/g, '"');
 
@@ -35,6 +53,7 @@ export default function ActionPanel({
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
+  const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -70,6 +89,8 @@ export default function ActionPanel({
     return () => clearTimeout(longPressTimerRef.current);
   }, []);
 
+  const soloForceRollOpts = () => (forceRoll.enabled ? { forceRoll } : undefined);
+
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     const action = normalizeQuotes(customAction.trim());
@@ -80,7 +101,7 @@ export default function ActionPanel({
       if (isMultiplayer) {
         mp.submitAction(action, true);
       } else {
-        onAction(action, true);
+        onAction(action, true, false, soloForceRollOpts());
       }
       setCustomAction('');
     }
@@ -91,9 +112,13 @@ export default function ActionPanel({
     if (isMultiplayer) {
       mp.submitAction(action, false);
     } else {
-      onAction(action, false);
+      onAction(action, false, false, soloForceRollOpts());
     }
   };
+
+  const handleForceRollLeft = useCallback(() => setForceRoll((prev) => forceRollLeftClick(prev)), []);
+  const handleForceRollDouble = useCallback(() => setForceRoll(() => forceRollDoubleClick()), []);
+  const handleForceRollRight = useCallback(() => setForceRoll(() => forceRollRightClick()), []);
 
   const handleLongPressDown = useCallback((index, action) => {
     longPressFiredRef.current = false;
@@ -352,6 +377,10 @@ export default function ActionPanel({
             onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
+            forceRollState={isMultiplayer ? null : forceRoll}
+            onForceRollLeft={handleForceRollLeft}
+            onForceRollDouble={handleForceRollDouble}
+            onForceRollRight={handleForceRollRight}
           />
           <CustomActionForm
             textareaRef={textareaRef}

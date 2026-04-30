@@ -1,0 +1,92 @@
+{
+    "id": "04orc",
+    "name": "Orc",
+    "tags": [ "race", "orc" ],
+    "configs": [
+        {
+            "id": "m1",
+            "name": "Regular",
+
+            "gender": "male",
+            "body-type": "hm1",
+            "head-type": "om1",
+
+            "shadow": [ "size1" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none" ],
+            "eyes": [ "orc" ],
+            "add2": [ "none", "bloodyarm", "bloodyribs", "bloodytorso" ]
+        },
+        {
+            "id": "m2",
+            "name": "Muscular",
+
+            "gender": "male",
+            "body-type": "hm2",
+            "head-type": "om1",
+
+            "shadow": [ "size1" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none" ],
+            "eyes": [ "orc" ]
+        },
+        {
+            "id": "m3",
+            "name": "Child",
+
+            "gender": "male",
+            "body-type": "hc1",
+            "head-type": "oc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none" ],
+            "eyes": [ "orc" ]
+        },
+        {
+            "id": "f1",
+            "name": "Regular",
+
+            "gender": "female",
+            "body-type": "hf1",
+            "head-type": "of1",
+
+            "shadow": [ "size1" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none", "hawklong", "hawkmo", "hawkshort" ],
+            "eyes": [ "orc" ]
+        },
+        {
+            "id": "f2",
+            "name": "Pregnant",
+
+            "gender": "female",
+            "body-type": "hf2",
+            "head-type": "of1",
+
+            "shadow": [ "size1" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none", "hawklong", "hawkmo", "hawkshort" ],
+            "eyes": [ "orc" ]
+        },
+        {
+            "id": "f3",
+            "name": "Child",
+
+            "gender": "female",
+            "body-type": "hc1",
+            "head-type": "oc1",
+
+            "shadow": [ "size3" ],
+            "body": [ "orc" ],
+            "head": [ "orc" ],
+            "hair": [ "none" ],
+            "eyes": [ "orc" ]
+        }
+    ]
+}

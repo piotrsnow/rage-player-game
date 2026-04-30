@@ -1,0 +1,25 @@
+{
+    "id": "bandages",
+    "name": "Bandages",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "tags": [ "mask", "generic" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/mask/bandages/bandages_m1.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/mask/bandages/bandages_f1.png"
+        }
+    ],
+    "primarycolors": [
+        "cloth_white1",
+        "cloth_white2"
+    ]
+}

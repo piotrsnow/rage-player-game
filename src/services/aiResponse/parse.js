@@ -2,6 +2,7 @@ import { hasNamedSpeaker } from '../dialogueSegments.js';
 import { SceneResponseSchema, CampaignResponseSchema } from './schemas.js';
 import { shortId } from '../../utils/ids';
 import { safeParseJSON } from '../../../shared/domain/aiResponseParser.js';
+import { coerceGender, isValidGender } from '../../../shared/domain/npcGender.js';
 
 export { safeParseJSON };
 
@@ -185,6 +186,25 @@ function normalizeSceneResponseCandidate(rawData, explicitLanguage) {
     }
   }
 
+  // Coerce gender on every NPC change so downstream voice assignment and
+  // UI never see "unknown" for a fresh introduce. Update actions only get
+  // coerced when the model explicitly sent garbage — if the field is
+  // omitted on an update, we leave it unset and the backend keeps the
+  // existing DB value.
+  if (Array.isArray(data.stateChanges.npcs)) {
+    data.stateChanges.npcs = data.stateChanges.npcs.map((npc) => {
+      if (!npc || typeof npc.name !== 'string') return npc;
+      const action = npc.action === 'update' ? 'update' : 'introduce';
+      if (isValidGender(npc.gender)) return { ...npc, action };
+      if (action === 'introduce') {
+        const coerced = coerceGender(npc.gender, npc.name);
+        return { ...npc, action, gender: coerced };
+      }
+      const { gender: _drop, ...rest } = npc;
+      return { ...rest, action };
+    });
+  }
+
   const rawTimeAdvance = data.stateChanges?.timeAdvance;
   if (typeof rawTimeAdvance === 'number' && Number.isFinite(rawTimeAdvance)) {
     data.stateChanges.timeAdvance = { hoursElapsed: rawTimeAdvance, newDay: false };
@@ -286,9 +306,16 @@ function normalizeCampaignResponseCandidate(rawData) {
   }
 
   if (Array.isArray(data.initialNPCs)) {
-    data.initialNPCs = data.initialNPCs.filter(
-      (npc) => npc && typeof npc === 'object' && typeof npc.name === 'string',
-    );
+    data.initialNPCs = data.initialNPCs
+      .filter((npc) => npc && typeof npc === 'object' && typeof npc.name === 'string')
+      .map((npc) => {
+        if (isValidGender(npc.gender)) return npc;
+        const coerced = coerceGender(npc.gender, npc.name);
+        // Surface how often the model skips gender so we can tune the prompt.
+        // eslint-disable-next-line no-console
+        console.warn('[aiResponse/parse] initialNPC missing gender, coercing', { name: npc.name, given: npc.gender, coerced });
+        return { ...npc, gender: coerced };
+      });
   }
 
   return data;

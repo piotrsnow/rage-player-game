@@ -1,5 +1,6 @@
 import multipart from '@fastify/multipart';
 import { prisma } from '../../lib/prisma.js';
+import { UUID_PATTERN } from '../../lib/validators.js';
 import { resolveApiKey } from '../../services/apiKeyService.js';
 import { generateKey, toUuid } from '../../services/hashService.js';
 import { downscaleGeneratedImage, getGeneratedImageScale } from '../../services/imageResize.js';
@@ -9,15 +10,16 @@ import { config } from '../../config.js';
 const store = createMediaStore(config);
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent';
 
-const OBJECT_ID_PATTERN = '^[a-f0-9]{24}$';
-
 const GENERATE_BODY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['prompt'],
   properties: {
     prompt: { type: 'string', maxLength: 4000 },
-    campaignId: { type: 'string', pattern: OBJECT_ID_PATTERN },
+    // Imagen supports '1:1', '3:4', '4:3', '9:16', '16:9'. Default stays
+    // '16:9' for scene calls; inventory items pass '1:1'.
+    aspectRatio: { type: 'string', enum: ['1:1', '3:4', '4:3', '9:16', '16:9'] },
+    campaignId: { type: 'string', pattern: UUID_PATTERN },
     forceNew: { type: 'boolean' },
   },
 };
@@ -42,12 +44,14 @@ export async function geminiProxyRoutes(fastify) {
     const apiKey = resolveApiKey(user?.apiKeys || '{}', 'gemini');
     if (!apiKey) return reply.code(400).send({ error: 'Google AI API key not configured' });
 
-    const { prompt, campaignId, forceNew = false } = request.body;
+    const { prompt, campaignId, forceNew = false, aspectRatio } = request.body;
 
+    const resolvedAspectRatio = aspectRatio || '16:9';
     const resolutionScale = getGeneratedImageScale('gemini');
     const cacheParams = {
       provider: 'gemini',
       prompt,
+      aspectRatio: resolvedAspectRatio,
       resolutionScale,
       ...(forceNew ? { requestTs: Date.now() } : {}),
     };
@@ -68,7 +72,7 @@ export async function geminiProxyRoutes(fastify) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseModalities: ['TEXT', 'IMAGE'],
-          imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
+          imageConfig: { aspectRatio: resolvedAspectRatio, imageSize: '2K' },
         },
       }),
     });

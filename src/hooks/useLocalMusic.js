@@ -16,7 +16,8 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
 
   const activeAudioRef = useRef(null);
   const fadingAudioRef = useRef(null);
-  const fadeIntervalRef = useRef(null);
+  const fadeOutRafRef = useRef(null);
+  const fadeInRafRef = useRef(null);
   const targetVolumeRef = useRef((settings.musicVolume ?? 40) / 100);
   const isDuckedRef = useRef(false);
   const trackIndexRef = useRef(-1);
@@ -90,9 +91,13 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
 
     // Campaign switch: clear current queue so the next fetch starts the right playlist.
     wantPlayingRef.current = false;
-    if (fadeIntervalRef.current) {
-      clearInterval(fadeIntervalRef.current);
-      fadeIntervalRef.current = null;
+    if (fadeOutRafRef.current) {
+      cancelAnimationFrame(fadeOutRafRef.current);
+      fadeOutRafRef.current = null;
+    }
+    if (fadeInRafRef.current) {
+      cancelAnimationFrame(fadeInRafRef.current);
+      fadeInRafRef.current = null;
     }
     if (fadingAudioRef.current) {
       fadingAudioRef.current.pause();
@@ -113,9 +118,13 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
   }, [folder]);
 
   const stopFade = useCallback(() => {
-    if (fadeIntervalRef.current) {
-      clearInterval(fadeIntervalRef.current);
-      fadeIntervalRef.current = null;
+    if (fadeOutRafRef.current) {
+      cancelAnimationFrame(fadeOutRafRef.current);
+      fadeOutRafRef.current = null;
+    }
+    if (fadeInRafRef.current) {
+      cancelAnimationFrame(fadeInRafRef.current);
+      fadeInRafRef.current = null;
     }
     if (fadingAudioRef.current) {
       fadingAudioRef.current.pause();
@@ -135,20 +144,21 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
       fadingAudioRef.current = activeAudioRef.current;
       const oldAudio = fadingAudioRef.current;
       const startVol = oldAudio.volume;
-      const steps = CROSSFADE_MS / 50;
-      let step = 0;
+      const fadeStart = performance.now();
 
-      const fadeOut = setInterval(() => {
-        step++;
-        oldAudio.volume = Math.max(0, startVol * (1 - step / steps));
-        if (step >= steps) {
-          clearInterval(fadeOut);
+      const fadeOutTick = () => {
+        const t = Math.min(1, (performance.now() - fadeStart) / CROSSFADE_MS);
+        oldAudio.volume = Math.max(0, startVol * (1 - t));
+        if (t < 1) {
+          fadeOutRafRef.current = requestAnimationFrame(fadeOutTick);
+        } else {
+          fadeOutRafRef.current = null;
           oldAudio.pause();
           oldAudio.removeAttribute('src');
           if (fadingAudioRef.current === oldAudio) fadingAudioRef.current = null;
         }
-      }, 50);
-      fadeIntervalRef.current = fadeOut;
+      };
+      fadeOutRafRef.current = requestAnimationFrame(fadeOutTick);
     }
 
     const url = resolveTrackUrl(track);
@@ -162,13 +172,17 @@ export function useLocalMusic(narratorPlaybackState, { folder, active = true } =
       setIsPlaying(true);
       wantPlayingRef.current = true;
 
-      let fadeStep = 0;
-      const fadeSteps = CROSSFADE_MS / 50;
-      const fadeIn = setInterval(() => {
-        fadeStep++;
-        newAudio.volume = Math.min(effectiveMax, effectiveMax * (fadeStep / fadeSteps));
-        if (fadeStep >= fadeSteps) clearInterval(fadeIn);
-      }, 50);
+      const fadeInStart = performance.now();
+      const fadeInTick = () => {
+        const t = Math.min(1, (performance.now() - fadeInStart) / CROSSFADE_MS);
+        newAudio.volume = Math.min(effectiveMax, effectiveMax * t);
+        if (t < 1) {
+          fadeInRafRef.current = requestAnimationFrame(fadeInTick);
+        } else {
+          fadeInRafRef.current = null;
+        }
+      };
+      fadeInRafRef.current = requestAnimationFrame(fadeInTick);
     }, { once: true });
 
     newAudio.addEventListener('ended', () => {

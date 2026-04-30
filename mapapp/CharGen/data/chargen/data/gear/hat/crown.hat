@@ -1,0 +1,37 @@
+{
+    "id": "crown",
+    "name": "Crown",
+    "chargen": true,
+    "default": false,
+    "lootable": true,
+    "gear": true,
+    "tags": [ "hat", "medieval" ],
+    "textures": [
+        {
+            "head": "hm1",
+            "back": "none",
+            "front": "textures/gear/hat/crown/crown_m.png"
+        },
+        {
+            "head": "hf1",
+            "back": "none",
+            "front": "textures/gear/hat/crown/crown_f.png"
+        },
+        {
+            "head": "of1",
+            "back": "none",
+            "front": "textures/gear/hat/crown/crown_f.png"
+        },
+        {
+            "head": "sm1",
+            "back": "none",
+            "front": "textures/gear/hat/crown/crown_m.png"
+        }
+    ],
+    "primarycolors": [
+        "crown_gold",
+        "crown_red",
+        "crown_iron",
+        "crown_blue"
+    ]
+}

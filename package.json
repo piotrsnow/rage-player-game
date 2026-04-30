@@ -6,7 +6,9 @@
   "scripts": {
     "setup": "npm install && npm run setup --prefix backend",
     "dev": "concurrently -k -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:no-watch": "concurrently -k -n backend,frontend -c blue,green \"npm:dev:backend:no-watch\" \"npm:dev:frontend\"",
     "dev:backend": "docker compose up --build --watch",
+    "dev:backend:no-watch": "docker compose up --build",
     "dev:down": "docker compose down",
     "dev:logs": "docker compose logs -f backend",
     "db:up": "docker compose up -d db",

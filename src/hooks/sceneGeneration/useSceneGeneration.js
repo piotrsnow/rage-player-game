@@ -8,6 +8,7 @@ import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
 import { calculateCost } from '../../services/costTracker';
 import { buildSpeculativeImageDescription } from '../../services/imagePrompts';
+import { ensureEnglish } from '../../services/translateImagePrompt';
 import { resolveMechanics } from '../../services/mechanics/index';
 import { calculateNextMomentum } from '../../services/mechanics/momentumTracker';
 import { loadSceneGenDurationHistory, appendSceneGenDuration, historyToSceneGenEstimateMs, persistSceneGenDurationHistory } from '../../services/performanceTracker';
@@ -15,6 +16,13 @@ import { useEvent } from '../useEvent';
 import { useSceneBackendStream } from './useSceneBackendStream';
 import { processSceneDialogue } from './processSceneDialogue';
 import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneStateChanges } from './applySceneStateChanges';
+
+// Master kill-switch for the speculative "early image" path below. When false,
+// we skip guessing the image from previous-scene + player-action and instead
+// wait for the AI's own narrative + imagePrompt to drive image generation
+// (deferred path). Flip to true to re-enable the overlapped path if we ever
+// want the latency win back.
+const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 
 export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
@@ -32,7 +40,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
   });
   const [sceneGenStartTime, setSceneGenStartTime] = useState(null);
 
-  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium' } = settings;
+  const { aiProvider, language, needsSystemEnabled, aiModelTier = 'premium', sdWebuiModel = '', sdWebuiSeed = null } = settings;
 
   const stream = useSceneBackendStream();
 
@@ -50,7 +58,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
   const generateScene = useEvent(
     async (playerAction, isFirstScene = false, isCustomAction = false, fromAutoPlayer = false, sceneOptions = {}) => {
-      const { combatResult = null } = sceneOptions || {};
+      const { combatResult = null, forceRoll = null } = sceneOptions || {};
       dispatch({ type: 'SET_GENERATING_SCENE', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null });
       stream.resetStreamState();
@@ -68,22 +76,33 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           skipDiceRoll: true,
         });
 
-        // Early image generation (speculative, before AI call)
+        // Early image generation (speculative, before AI call).
+        // `previousScene.narrative` and `playerAction` are in the campaign
+        // language (PL when language='pl') — translate both before feeding
+        // them into the English template. The two translations run in
+        // parallel and overlap with the premium scene call, so this path
+        // stays off the critical latency budget.
         const hasImageKey = imageApiKey || hasApiKey(imgKeyProvider);
-        if (imageGenEnabled && hasImageKey && !isFirstScene) {
+        if (SPECULATIVE_EARLY_IMAGE_ENABLED && imageGenEnabled && hasImageKey && !isFirstScene) {
           const previousScene = state.scenes?.[state.scenes.length - 1];
           if (previousScene?.narrative) {
-            const speculativeDesc = buildSpeculativeImageDescription(previousScene.narrative, playerAction, resolved.diceRoll);
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
-            earlyImagePromise = imageService.generateSceneImage(
-              '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
-              speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, {}, imageSeriousness,
-              state.character?.portraitUrl || null
-            ).catch((imgErr) => {
-              console.warn('Early image generation failed:', imgErr.message);
-              return null;
-            });
+            earlyImagePromise = Promise.all([
+              ensureEnglish(previousScene.narrative.substring(0, 200)),
+              ensureEnglish(playerAction),
+            ]).then(([enPrevNarrative, enPlayerAction]) => {
+              const speculativeDesc = buildSpeculativeImageDescription(enPrevNarrative, enPlayerAction, resolved.diceRoll, imageProvider);
+              return imageService.generateSceneImage(
+                '', state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
+                speculativeDesc, state.campaign?.backendId, imageStyle, darkPalette,
+                state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
+                state.character?.portraitUrl || null
+              );
+            }).then((result) => result?.url || null)
+              .catch((imgErr) => {
+                console.warn('Early image generation failed:', imgErr.message);
+                return null;
+              });
           }
         }
 
@@ -108,10 +127,18 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
               name: state.campaign?.name || '', genre: state.campaign?.genre || '',
               tone: state.campaign?.tone || '', coreState,
               characterIds: characterBackendId ? [characterBackendId] : [],
-            }, { idempotent: true });
+            }, { idempotencyKey: `campaign-create:${state.campaign?.id}` });
             backendCampaignId = created.id;
-            state.campaign.backendId = created.id;
-            if (Array.isArray(created.characterIds)) state.campaign.characterIds = created.characterIds;
+            // Push backendId through the store — direct mutation of
+            // state.campaign is a no-op on Immer-frozen state and used to
+            // leak duplicate POSTs on every subsequent scene.
+            dispatch({
+              type: 'SET_CAMPAIGN_BACKEND_ID',
+              payload: {
+                backendId: created.id,
+                characterIds: Array.isArray(created.characterIds) ? created.characterIds : undefined,
+              },
+            });
             console.log('[useAI] Auto-synced campaign to backend:', created.id);
           } catch (syncErr) {
             console.warn('[useAI] Failed to auto-sync campaign:', syncErr.message);
@@ -124,7 +151,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         // Stream scene from backend
         const backendResult = await stream.callStream(backendCampaignId, playerAction, {
-          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult,
+          resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll,
         });
         const result = backendResult.result;
         const usage = backendResult.usage;
@@ -171,7 +198,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
 
         // Combat fallback + bestiary stats
         injectCombatFallback(result, state, playerAction, isFirstScene, isPassiveSceneAction, t);
-        fillBestiaryStats(result);
+        fillBestiaryStats(result, state);
 
         // Dice rolls
         const rawAiSpeech = {
@@ -204,6 +231,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
           id: sceneId, narrative: result.narrative, scenePacing: result.scenePacing || 'exploration',
           dialogueSegments: finalSegments, soundEffect: result.soundEffect || null,
           musicPrompt: result.musicPrompt || null, imagePrompt: result.imagePrompt || null,
+          fullImagePrompt: null,
           sceneGrid: result.sceneGrid || null, musicUrl: null, image: null,
           actions: result.suggestedActions || [], questOffers, chosenAction: playerAction,
           diceRoll: result.diceRoll || null, diceRolls: result.diceRolls || undefined, timestamp: Date.now(),
@@ -257,14 +285,14 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         if (!earlyImagePromise && imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
-            const imageUrl = await imageService.generateSceneImage(
+            const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, {}, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
-            dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl } });
+            dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);

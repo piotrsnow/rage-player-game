@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { elevenlabsService } from '../services/elevenlabs';
+import { apiClient } from '../services/apiClient';
 
 /**
  * Owns the ElevenLabs voice catalog + test playback UI state for the
@@ -35,13 +36,14 @@ export function useElevenlabsVoices({ language }) {
     if (!voiceId) return;
     setTesting(true);
     try {
-      const audioUrl = await elevenlabsService.textToSpeechStream(
+      const canonicalAudio = await elevenlabsService.textToSpeechStream(
         undefined,
         voiceId,
         language === 'pl'
           ? 'Witaj, poszukiwaczu przygód. Jestem twoim Mistrzem Gry.'
           : 'Greetings, adventurer. I am your Dungeon Master.',
       );
+      const audioUrl = apiClient.resolveMediaUrl(canonicalAudio);
       const audio = new Audio(audioUrl);
       const cleanup = () => {
         URL.revokeObjectURL(audioUrl);
