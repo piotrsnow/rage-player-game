@@ -1126,6 +1126,9 @@
     "sfx": "Efekty dźwiękowe",
     "music": "Muzyka"
   },
+  "locationChip": {
+    "wandering": "W drodze"
+  },
   "species": {
     "Human": "Człowiek",
     "Halfling": "Niziołek",
