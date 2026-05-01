@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   useGameCampaign,
   useGameCharacter,
+  useGameParty,
   useGameSlice,
   useGameIsGeneratingScene,
   useGameDispatch,
@@ -16,6 +17,7 @@ import { apiClient } from '../../services/apiClient';
 import { storage } from '../../services/storage';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
+import SidebarPartyList from './SidebarPartyList';
 import { translateAttribute } from '../../utils/rpgTranslate';
 
 export default function Sidebar() {
@@ -23,6 +25,8 @@ export default function Sidebar() {
   const { t } = useTranslation();
   const campaign = useGameCampaign();
   const soloCharacter = useGameCharacter();
+  const soloParty = useGameParty();
+  const soloActiveId = useGameSlice((s) => s.activeCharacterId);
   const timeStateSolo = useGameSlice((s) => s.world?.timeState);
   const isGeneratingScene = useGameIsGeneratingScene();
   const dispatch = useGameDispatch();
@@ -38,6 +42,12 @@ export default function Sidebar() {
   const character = isMultiplayer
     ? (mp.state.gameState?.characters?.find((c) => c.odId === mp.state.myOdId) || mp.state.gameState?.characters?.[0])
     : soloCharacter;
+  const party = isMultiplayer
+    ? (mp.state.gameState?.party || [])
+    : (soloParty || []);
+  const activeId = isMultiplayer
+    ? mp.state.gameState?.activeCharacterId
+    : soloActiveId;
   const mana = character?.mana || { current: 0, max: 0 };
   const timeState = isMultiplayer
     ? mp.state.gameState?.world?.timeState
@@ -151,6 +161,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
               <StatusBar label="Mana" current={mana.current} max={mana.max} color="blue" />
             )}
           </div>
+          <SidebarPartyList party={party} activeCharacterId={activeId} />
           <div className="mt-4">
             <NeedsPanel
               needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }}
