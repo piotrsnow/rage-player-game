@@ -3,6 +3,20 @@ import { parsePartialJson } from '../partialJsonParser';
 import { repairDialogueSegments } from '../aiResponse';
 import { postProcessSuggestedActions, buildFallbackActions, buildFallbackNarrative } from '../../../shared/domain/fallbackActions.js';
 
+const RECAP_BATCH_SIZE = 20;
+
+function mergeRecapUsage(a, b) {
+  if (!a) return b ? { ...b } : null;
+  if (!b) return { ...a };
+  const out = { ...a };
+  for (const key of Object.keys(b)) {
+    if (typeof b[key] === 'number') {
+      out[key] = (typeof a[key] === 'number' ? a[key] : 0) + b[key];
+    }
+  }
+  return out;
+}
+
 // Frontend AI service — every method proxies to the backend. No BYOK: users
 // store their keys server-side via /v1/auth/settings, and the backend
 // resolves per-user keys (falling back to env) when making provider calls.
@@ -279,12 +293,16 @@ export const aiService = {
     } = {}
   ) {
     const scenes = Array.isArray(gameState?.scenes) ? gameState.scenes : [];
-    if (typeof onProgress === 'function') {
-      onProgress({ phase: 'chunking', currentBatch: 1, totalBatches: 1, recapMode: summaryStyle?.mode || 'story' });
-    }
+    const recapMode = summaryStyle?.mode || 'story';
+    const emitProgress = (payload) => {
+      if (typeof onProgress === 'function') onProgress(payload);
+    };
+    const emitPartial = (payload) => {
+      if (typeof onPartial === 'function') onPartial(payload);
+    };
 
-    const data = await apiClient.post('/ai/generate-recap', {
-      scenes,
+    const callRecapEndpoint = (sceneBatch) => apiClient.post('/ai/generate-recap', {
+      scenes: sceneBatch,
       language,
       provider,
       modelTier,
@@ -292,14 +310,50 @@ export const aiService = {
       summaryStyle,
     });
 
-    const result = data?.result || { recap: '' };
-    if (typeof onPartial === 'function') {
-      onPartial({ text: result.recap || '', currentBatch: 1, totalBatches: 1, recapMode: summaryStyle?.mode || 'story' });
+    if (scenes.length === 0) {
+      emitProgress({ phase: 'chunking', currentBatch: 1, totalBatches: 1, recapMode });
+      const data = await callRecapEndpoint([]);
+      const result = data?.result || { recap: '' };
+      emitPartial({ text: result.recap || '', currentBatch: 1, totalBatches: 1, recapMode });
+      emitProgress({ phase: 'done', currentBatch: 1, totalBatches: 1, recapMode });
+      return { result, usage: data?.usage || null };
     }
-    if (typeof onProgress === 'function') {
-      onProgress({ phase: 'done', currentBatch: 1, totalBatches: 1, recapMode: summaryStyle?.mode || 'story' });
+
+    const batches = [];
+    for (let i = 0; i < scenes.length; i += RECAP_BATCH_SIZE) {
+      batches.push(scenes.slice(i, i + RECAP_BATCH_SIZE));
     }
-    return { result, usage: data?.usage || null };
+    const totalBatches = batches.length;
+
+    const partialRecaps = [];
+    let combinedUsage = null;
+    let degradedMeta = null;
+
+    for (let i = 0; i < batches.length; i += 1) {
+      const currentBatch = i + 1;
+      emitProgress({ phase: 'chunking', currentBatch, totalBatches, recapMode });
+
+      const data = await callRecapEndpoint(batches[i]);
+      const partRecap = typeof data?.result?.recap === 'string' ? data.result.recap : '';
+      const partMeta = data?.result?.meta && typeof data.result.meta === 'object' ? data.result.meta : null;
+      combinedUsage = mergeRecapUsage(combinedUsage, data?.usage || null);
+      if (partMeta?.degraded && !degradedMeta) degradedMeta = partMeta;
+
+      partialRecaps.push(partRecap);
+      emitPartial({
+        text: partialRecaps.filter(Boolean).join('\n\n'),
+        currentBatch,
+        totalBatches,
+        recapMode,
+      });
+    }
+
+    const combined = partialRecaps.filter(Boolean).join('\n\n');
+    emitProgress({ phase: 'done', currentBatch: totalBatches, totalBatches, recapMode });
+    return {
+      result: degradedMeta ? { recap: combined, meta: degradedMeta } : { recap: combined },
+      usage: combinedUsage,
+    };
   },
 
   async generateStoryPrompt({ genre, tone, seedText = '' }, provider, _apiKeyIgnored, language = 'en', _modelTier = 'premium') {
