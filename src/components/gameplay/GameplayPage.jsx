@@ -685,7 +685,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         />
 
         {/* Party Panel */}
-        {hasParty && !isMultiplayer && !isReviewingPastScene && !readOnly && (
+        {character && !isMultiplayer && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <PartyPanel
               party={[{ ...character, type: 'player', id: character?.name }, ...party]}
