@@ -102,6 +102,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sIsGeneratingImage = useGameIsGeneratingImage();
   const sError = useGameError();
   const sActiveCharacterId = useGameSlice((s) => s.activeCharacterId);
+  const sLocalDiceRoll = useGameSlice((s) => s.localDiceRoll);
   const sCharacterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const sMainQuestJustCompleted = useGameSlice((s) => s.mainQuestJustCompleted);
   const sTrade = useGameSlice((s) => s.trade);
@@ -609,6 +610,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               diceRoll={earlyDiceRoll}
               onDismiss={clearEarlyDiceRoll}
               holdOpen={!!overlayText}
+            />
+          )}
+          {sLocalDiceRoll && (
+            <DiceRollAnimationOverlay
+              diceRoll={sLocalDiceRoll}
+              onDismiss={() => dispatch({ type: 'CLEAR_LOCAL_DICE_ROLL' })}
             />
           )}
         </div>

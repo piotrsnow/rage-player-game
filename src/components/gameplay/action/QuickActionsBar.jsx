@@ -16,6 +16,9 @@ export default function QuickActionsBar({
   onToggleCombatPicker,
   onToggleTradePicker,
   onToggleTrainerPicker,
+  onToggleRecruitPicker,
+  recruitableCount = 0,
+  partyHasSlot = true,
   forceRollState = null,
   onForceRollLeft,
   onForceRollDouble,
@@ -88,6 +91,16 @@ export default function QuickActionsBar({
           label={t('training.trainButton', 'Trening')}
           description={t('training.trainWith', 'Trenuj z...')}
           onClick={onToggleTrainerPicker}
+          disabled={disabled || hasPendingAction}
+          tone="primary"
+        />
+      )}
+      {recruitableCount > 0 && partyHasSlot && dispatch && onToggleRecruitPicker && (
+        <QuickActionButton
+          icon="group_add"
+          label={t('party.recruit', 'Rekrutuj')}
+          description={t('party.recruitDescription', 'Poproś NPC z ostatnich scen o dołączenie do drużyny')}
+          onClick={onToggleRecruitPicker}
           disabled={disabled || hasPendingAction}
           tone="primary"
         />
