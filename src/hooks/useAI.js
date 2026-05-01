@@ -7,6 +7,7 @@ export function useAI() {
     generateImageForScene,
     generateItemImageForInventoryItem,
     ensureMissingInventoryImages,
+    ensureMissingNpcPortraits,
     imageGenEnabled,
     imageApiKey,
     imageProvider,
@@ -28,6 +29,7 @@ export function useAI() {
     streamingSegments,
   } = useSceneGeneration({
     ensureMissingInventoryImages,
+    ensureMissingNpcPortraits,
     imageGenEnabled,
     imageApiKey,
     imageProvider,

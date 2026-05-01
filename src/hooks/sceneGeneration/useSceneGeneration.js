@@ -24,7 +24,7 @@ import { injectCombatFallback, fillBestiaryStats, applyNeedsAndRest, applySceneS
 // want the latency win back.
 const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 
-export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
+export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
   const { settings, hasApiKey } = useSettings();
@@ -269,7 +269,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, imageGenEnabl
         applyNeedsAndRest(result, resolved, needsSystemEnabled);
         applySceneStateChanges({
           result, state, dispatch,
-          authoritativeCharacterSnapshot, ensureMissingInventoryImages, t,
+          authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
           newlyUnlockedAchievements, updatedAchievementState,
         });
 
