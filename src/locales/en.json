@@ -1890,11 +1890,6 @@
   },
   "party": {
     "title": "Party",
-    "addCompanion": "Add",
-    "newCompanion": "New companion",
-    "name": "Name",
-    "species": "Species",
-    "create": "Create",
     "empty": "No party members",
     "active": "Active",
     "activeDetail": "Selected",
@@ -1911,7 +1906,15 @@
     "combatStance": "In combat",
     "stance.attack": "Attack",
     "stance.defend": "Defend",
-    "stance.support": "Support"
+    "stance.support": "Support",
+    "recruit": "Recruit",
+    "recruitDescription": "Ask an NPC from recent scenes to join the party",
+    "recruitTitle": "Who do you want to invite?",
+    "recruitChance": "Chance: {{chance}}%",
+    "noRecruitableNpcs": "No NPCs you're close enough with.",
+    "partyFull": "Party full ({{current}}/{{max}})",
+    "dismiss": "Dismiss",
+    "dismissConfirm": "Really part ways with {{name}}?"
   },
   "webcam": {
     "videoChat": "Video Chat",

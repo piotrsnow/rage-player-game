@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { translateSkill } from '../../utils/rpgTranslate';
 import { ATTRIBUTE_KEYS } from '../../data/rpgSystem';
-import { shortId } from '../../utils/ids';
 
 const BEHAVIORS = ['aggressive', 'defensive', 'supportive', 'passive'];
 const STANCES = ['attack', 'defend', 'support'];
@@ -39,38 +38,6 @@ function WoundsBar({ current, max, memberType }) {
   );
 }
 
-function buildDefaultCompanion({ name, species, sila, zrecznosc, wytrzymalosc }) {
-  const id = `companion_${Date.now()}_${shortId()}`;
-  return {
-    id,
-    type: 'companion',
-    name: name?.trim() || 'Companion',
-    species: species?.trim() || 'Human',
-    characterLevel: 1,
-    characterXp: 0,
-    attributePoints: 0,
-    attributes: {
-      sila: Number(sila) || 10,
-      inteligencja: 10,
-      charyzma: 8,
-      zrecznosc: Number(zrecznosc) || 10,
-      wytrzymalosc: Number(wytrzymalosc) || 10,
-      szczescie: 5,
-    },
-    wounds: 10,
-    maxWounds: 10,
-    movement: 4,
-    mana: { current: 0, max: 0 },
-    skills: { 'Walka bronia jednoręczna': { level: 5, progress: 0, cap: 10 }, 'Atletyka': { level: 3, progress: 0, cap: 10 } },
-    spells: { known: [], usageCounts: {}, scrolls: [] },
-    inventory: [],
-    statuses: [],
-    backstory: '',
-    companionBehavior: 'defensive',
-    combatStance: 'attack',
-  };
-}
-
 export default function PartyPanel({
   party = [],
   activeCharacterId,
@@ -79,8 +46,6 @@ export default function PartyPanel({
   dispatch,
 }) {
   const { t } = useTranslation();
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', species: 'Human', sila: 10, zrecznosc: 10, wytrzymalosc: 10 });
 
   const list = Array.isArray(party) ? party : [];
   const active = useMemo(() => {
@@ -107,14 +72,14 @@ export default function PartyPanel({
     return slice.map((i) => (typeof i === 'string' ? i : i.name)).filter(Boolean).join(', ');
   }, [active, t]);
 
-  const handleAddSubmit = (e) => {
-    e.preventDefault();
-    const companion = buildDefaultCompanion(form);
-    if (typeof dispatch === 'function') {
-      dispatch({ type: 'ADD_PARTY_COMPANION', payload: companion });
-    }
-    setForm({ name: '', species: 'Human', sila: 10, zrecznosc: 10, wytrzymalosc: 10 });
-    setAddOpen(false);
+  const handleDismiss = () => {
+    if (!active || active.type !== 'companion' || typeof dispatch !== 'function') return;
+    const id = memberId(active);
+    const confirmed = window.confirm(
+      t('party.dismissConfirm', 'Czy na pewno chcesz pożegnać {{name}}?', { name: active.name }),
+    );
+    if (!confirmed) return;
+    dispatch({ type: 'DISMISS_PARTY_COMPANION', payload: { id } });
   };
 
   const setCompanionField = (field, value) => {
@@ -127,75 +92,12 @@ export default function PartyPanel({
 
   return (
     <div className="space-y-3 p-3 bg-surface-container/25 backdrop-blur-md border border-outline-variant/15 rounded-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="material-symbols-outlined text-primary text-lg shrink-0">groups</span>
-          <h3 className="text-sm font-bold text-primary uppercase tracking-widest truncate">
-            {t('party.title', 'Party')}
-          </h3>
-        </div>
-        <button
-          type="button"
-          onClick={() => setAddOpen((o) => !o)}
-          className="flex items-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-widest bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors shrink-0"
-        >
-          <span className="material-symbols-outlined text-sm">person_add</span>
-          {t('party.addCompanion', 'Add')}
-        </button>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="material-symbols-outlined text-primary text-lg shrink-0">groups</span>
+        <h3 className="text-sm font-bold text-primary uppercase tracking-widest truncate">
+          {t('party.title', 'Party')}
+        </h3>
       </div>
-
-      {addOpen && (
-        <form
-          onSubmit={handleAddSubmit}
-          className="p-2 rounded-sm bg-surface-container/40 border border-outline-variant/10 space-y-2"
-        >
-          <div className="text-[9px] font-label uppercase tracking-widest text-on-surface-variant">
-            {t('party.newCompanion', 'New companion')}
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <input
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder={t('party.name', 'Name')}
-              className="px-2 py-1 text-[10px] bg-surface-container border border-outline-variant/20 rounded-sm text-on-surface placeholder:text-outline"
-            />
-            <input
-              value={form.species}
-              onChange={(e) => setForm((f) => ({ ...f, species: e.target.value }))}
-              placeholder={t('party.species', 'Species')}
-              className="px-2 py-1 text-[10px] bg-surface-container border border-outline-variant/20 rounded-sm text-on-surface placeholder:text-outline"
-            />
-            {['sila', 'zrecznosc', 'wytrzymalosc'].map((k) => (
-              <label key={k} className="flex items-center gap-1 text-[9px] text-on-surface-variant">
-                <span className="uppercase w-8">{t(`rpgAttributeShort.${k}`)}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={25}
-                  value={form[k]}
-                  onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
-                  className="flex-1 px-1 py-0.5 text-[10px] bg-surface-container border border-outline-variant/20 rounded-sm text-on-surface"
-                />
-              </label>
-            ))}
-          </div>
-          <div className="flex gap-1.5 justify-end">
-            <button
-              type="button"
-              onClick={() => setAddOpen(false)}
-              className="px-2 py-1 text-[9px] uppercase tracking-widest text-on-surface-variant border border-outline-variant/20 rounded-sm"
-            >
-              {t('common.cancel', 'Cancel')}
-            </button>
-            <button
-              type="submit"
-              className="px-2 py-1 text-[9px] font-bold uppercase tracking-widest bg-tertiary/20 text-tertiary border border-tertiary/25 rounded-sm"
-            >
-              {t('party.create', 'Create')}
-            </button>
-          </div>
-        </form>
-      )}
 
       {/* Party strip */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5 px-0.5 custom-scrollbar">
@@ -352,6 +254,14 @@ export default function PartyPanel({
                   ))}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={handleDismiss}
+                className="w-full mt-1 flex items-center justify-center gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-error border border-error/30 hover:bg-error/10 rounded-sm transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">person_remove</span>
+                {t('party.dismiss', 'Pożegnaj')}
+              </button>
             </div>
           )}
         </div>

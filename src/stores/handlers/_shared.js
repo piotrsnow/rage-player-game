@@ -184,6 +184,7 @@ export const initialState = {
   momentumBonus: 0,
   isGeneratingScene: false,
   isGeneratingImage: false,
+  localDiceRoll: null,
   combat: null,
   trade: null,
   crafting: null,

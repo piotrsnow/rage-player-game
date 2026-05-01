@@ -1538,11 +1538,6 @@
   },
   "party": {
     "title": "Drużyna",
-    "addCompanion": "Dodaj",
-    "newCompanion": "Nowy towarzysz",
-    "name": "Imię",
-    "species": "Rasa",
-    "create": "Stwórz",
     "empty": "Brak członków drużyny",
     "active": "Aktywny",
     "activeDetail": "Wybrany",
@@ -1559,7 +1554,15 @@
     "combatStance": "W walce",
     "stance.attack": "Atak",
     "stance.defend": "Obrona",
-    "stance.support": "Wsparcie"
+    "stance.support": "Wsparcie",
+    "recruit": "Rekrutuj",
+    "recruitDescription": "Poproś NPC z ostatnich scen o dołączenie do drużyny",
+    "recruitTitle": "Kogo chcesz zaprosić?",
+    "recruitChance": "Szansa: {{chance}}%",
+    "noRecruitableNpcs": "Brak NPC, z którymi masz wystarczająco dobre relacje.",
+    "partyFull": "Drużyna pełna ({{current}}/{{max}})",
+    "dismiss": "Pożegnaj",
+    "dismissConfirm": "Czy na pewno chcesz pożegnać {{name}}?"
   },
   "webcam": {
     "videoChat": "Wideorozmowa",
