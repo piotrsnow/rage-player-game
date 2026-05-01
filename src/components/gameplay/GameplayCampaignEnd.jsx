@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { getGameState } from '../../stores/gameStore';
-import { exportAsMarkdown } from '../../services/exportLog';
+import { exportAsJson, exportAsMarkdown } from '../../services/exportLog';
 import { canLeaveCampaign, getLeaveBlockedMessage } from '../../services/campaignGuard';
 
 /**
@@ -39,6 +39,14 @@ export default function GameplayCampaignEnd({
     }
   };
 
+  const onExportJson = () => {
+    if (isMultiplayer && mpGameState) {
+      exportAsJson({ ...mpGameState, character });
+    } else {
+      exportAsJson(getGameState());
+    }
+  };
+
   const onNewCampaign = () => {
     const guard = canLeaveCampaign(getGameState());
     if (!guard.allowed) {
@@ -64,6 +72,13 @@ export default function GameplayCampaignEnd({
           >
             <span className="material-symbols-outlined text-sm">download</span>
             {t('gameplay.exportLog')}
+          </button>
+          <button
+            onClick={onExportJson}
+            className="flex items-center gap-2 px-4 py-2 bg-surface-container-high/40 border border-outline-variant/15 rounded-sm text-xs font-label uppercase tracking-widest text-on-surface-variant hover:text-primary transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">data_object</span>
+            {t('gameplay.exportCampaignJson')}
           </button>
           <button
             onClick={onNewCampaign}

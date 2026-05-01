@@ -7,7 +7,7 @@ import {
   DialogueSegments,
   NarratorHeaderButtons,
 } from './ChatMessageParts';
-import { filterDuplicateDialogueSegments } from '../../../services/dialogueSegments';
+import { filterDuplicateDialogueSegmentsWithIndex } from '../../../services/dialogueSegments';
 
 export function DmMessage({ message, narrator }) {
   const { t } = useTranslation();
@@ -15,7 +15,7 @@ export function DmMessage({ message, narrator }) {
 
   const narrativeText = typeof message.content === 'string' ? message.content : '';
   const sourceSegments = Array.isArray(message.dialogueSegments) ? message.dialogueSegments : [];
-  const visibleSegments = filterDuplicateDialogueSegments(sourceSegments, narrativeText);
+  const visibleSegments = filterDuplicateDialogueSegmentsWithIndex(sourceSegments, narrativeText);
   const hasVisibleDialogue = visibleSegments.some((segment) => segment?.type === 'dialogue');
   const shouldRenderSegments = visibleSegments.length > 0 && hasVisibleDialogue;
   const rawAiSpeech = message.rawAiSpeech && typeof message.rawAiSpeech === 'object'

@@ -325,6 +325,7 @@
     "dispositionBonus": "Disposition {{bonus}}",
     "momentumActive": "Momentum {{bonus}} on next roll",
     "exportLog": "Download Game Log",
+    "exportCampaignJson": "Download Campaign (JSON)",
     "generatingMusic": "Generating music...",
     "musicPlaying": "Now playing",
     "musicSkip": "Next track",

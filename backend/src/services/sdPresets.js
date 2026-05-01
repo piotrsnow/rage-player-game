@@ -20,7 +20,7 @@
 //
 //   asgardSDXLHybrid_v12FP32MainModel — https://civitai.com/models/273751
 //     Turbo-ish "Hybrid"; DPM++ 2M Karras @ ~28–32 steps, CFG 5–7. Most
-//     versatile of the trio — safe default for scenes.
+ //     versatile of the trio — safe default for scenes.
 //
 //   starlightXLAnimated_v3 — https://civitai.com/models/143043
 //     2.5D anime. DPM++ 3M SDE Karras, CFG 3–5 (sweet spot ~3.6), ~40–50

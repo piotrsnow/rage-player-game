@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { splitTextForHighlight } from '../../../services/elevenlabs';
-import { filterDuplicateDialogueSegments, getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
+import { getDialogueSpeakerLabel } from '../../../services/dialogueSegments';
 import { useGameSlice } from '../../../stores/gameSelectors';
 import { GenderIcon } from '../../../utils/genderIcon';
 import Tooltip from '../../ui/Tooltip';
@@ -88,7 +88,11 @@ export function DialogueSegments({ segments, narrator, messageId }) {
   return (
     <div className="space-y-2">
       {segments.map((seg, i) => {
-        const active = isSegmentActive(i);
+        // Segments filtered via `filterDuplicateDialogueSegmentsWithIndex`
+        // carry their original position so narrator highlights (which are
+        // keyed by the pre-filter index) still line up after removals.
+        const logicalIndex = Number.isInteger(seg?._logicalSegmentIndex) ? seg._logicalSegmentIndex : i;
+        const active = isSegmentActive(logicalIndex);
         if (seg.type === 'dialogue') {
           const speakerGender = resolveSegmentGender(seg, worldNpcs, characterVoiceMap);
           const speakerLabel = getDialogueSpeakerLabel(seg, t('common.npc'));
@@ -109,7 +113,7 @@ export function DialogueSegments({ segments, narrator, messageId }) {
                 )}
               </div>
               <p className="text-xs text-on-surface leading-snug">
-                &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />&rdquo;
+                &ldquo;<HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />&rdquo;
               </p>
             </div>
           );
@@ -117,7 +121,7 @@ export function DialogueSegments({ segments, narrator, messageId }) {
         return (
           <div key={i} className={`transition-colors ${active ? 'bg-surface-tint/5 rounded-sm' : ''}`}>
             <p className="text-xs text-on-surface-variant leading-snug italic">
-              <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={i} messageId={messageId} />
+              <HighlightedText text={seg.text} highlightInfo={narrator?.highlightInfo} segmentIndex={logicalIndex} messageId={messageId} />
               {active && (
                 <span className="material-symbols-outlined text-primary text-xs ml-1 align-middle animate-pulse">
                   graphic_eq

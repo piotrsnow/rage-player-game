@@ -430,7 +430,7 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     // "kalejdoskop" (case-insensitive, any inflection), award +50 XP for each
     // "!" in the action. Purely additive on top of whatever XP the scene
     // already granted. No narrative — the standard "+X PD" toast surfaces it.
-    if (typeof playerAction === 'string' && /kalejdoskop/i.test(playerAction)) {
+    if (typeof playerAction === 'string' && /bosko/i.test(playerAction)) {
       const exclamations = (playerAction.match(/!/g) || []).length;
       if (exclamations > 0) {
         sceneResult.stateChanges = sceneResult.stateChanges || {};

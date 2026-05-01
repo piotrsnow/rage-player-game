@@ -36,12 +36,30 @@ function isDialogueDuplicateOfNarration(dialogueText, narrativeText) {
   return (samePositionCount / maxLength) >= 0.9;
 }
 
+function shouldKeepSegment(segment, narrativeText) {
+  if (segment?.type !== 'dialogue') return true;
+  return !isDialogueDuplicateOfNarration(segment?.text, narrativeText);
+}
+
 export function filterDuplicateDialogueSegments(segments, narrativeText) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
-  return segments.filter((segment) => {
-    if (segment?.type !== 'dialogue') return true;
-    return !isDialogueDuplicateOfNarration(segment?.text, narrativeText);
-  });
+  return segments.filter((segment) => shouldKeepSegment(segment, narrativeText));
+}
+
+// Like `filterDuplicateDialogueSegments`, but tags each surviving segment with
+// `_logicalSegmentIndex` — its position in the original (pre-filter) array.
+// The narrator reports `highlightInfo.logicalSegmentIndex` against that
+// original ordering, so UI components need it to match highlights back to the
+// segments they render.
+export function filterDuplicateDialogueSegmentsWithIndex(segments, narrativeText) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+  const result = [];
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i];
+    if (!shouldKeepSegment(segment, narrativeText)) continue;
+    result.push({ ...segment, _logicalSegmentIndex: i });
+  }
+  return result;
 }
 
 export function getDialogueSpeakerLabel(segment, fallbackLabel = 'NPC') {

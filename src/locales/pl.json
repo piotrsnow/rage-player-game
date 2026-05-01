@@ -318,6 +318,7 @@
     "skillBonus": "{{skill}} {{bonus}}",
     "momentumActive": "Momentum {{bonus}} w następnym rzucie",
     "exportLog": "Pobierz Log Rozgrywki",
+    "exportCampaignJson": "Pobierz Kampanię (JSON)",
     "generatingMusic": "Generowanie muzyki...",
     "musicPlaying": "Odtwarzanie",
     "musicSkip": "Następny utwór",

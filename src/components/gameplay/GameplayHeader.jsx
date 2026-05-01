@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { apiClient } from '../../services/apiClient';
-import { exportAsMarkdown } from '../../services/exportLog';
+import { exportAsJson, exportAsMarkdown } from '../../services/exportLog';
 import { getGameState } from '../../stores/gameStore';
 import CostBadge from '../ui/CostBadge';
 
@@ -364,6 +364,20 @@ export default function GameplayHeader({
               className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
             >
               download
+            </button>
+            <button
+              onClick={() => {
+                if (isMultiplayer && mpGameState) {
+                  exportAsJson({ ...mpGameState, character });
+                } else {
+                  exportAsJson(getGameState());
+                }
+              }}
+              title={t('gameplay.exportCampaignJson')}
+              aria-label={t('gameplay.exportCampaignJson')}
+              className="material-symbols-outlined text-sm text-outline hover:text-primary transition-colors"
+            >
+              data_object
             </button>
           </>
         )}
