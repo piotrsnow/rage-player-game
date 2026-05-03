@@ -532,6 +532,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         && playerCharNames.includes(seg.character.toLowerCase())
       );
 
+      // Local copy of the voice map so we can update it synchronously within
+      // this run of processQueue. Without it, multiple dialogue segments from
+      // the same new NPC each see an empty Redux closure and pick different
+      // random voices before any dispatch lands.
+      const localVoiceMap = { ...(state.characterVoiceMap || {}) };
+
       const resolveSegmentVoice = (seg) => {
         let voiceId = defaultVoiceId;
         if (seg?.voiceId) {
@@ -539,18 +545,21 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         }
 
         if (seg?.type === 'dialogue' && hasNamedSpeaker(seg.character)) {
-          const existingMapping = state.characterVoiceMap?.[seg.character];
+          const existingMapping = localVoiceMap[seg.character];
           if (existingMapping?.voiceId) {
             voiceId = existingMapping.voiceId;
           } else if (!viewerMode) {
             const mapped = resolveVoiceForCharacter(
               seg.character,
               seg.gender,
-              state.characterVoiceMap,
+              localVoiceMap,
               { maleVoices, femaleVoices, narratorVoiceId },
               dispatch
             );
-            if (mapped) voiceId = mapped;
+            if (mapped) {
+              voiceId = mapped;
+              localVoiceMap[seg.character] = { voiceId: mapped, gender: seg.gender || null };
+            }
           }
         }
 
@@ -820,17 +829,25 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       && playerCharNames.includes(seg.character.toLowerCase())
     );
 
+    // See processQueue: shared closure of state.characterVoiceMap is stale
+    // within one streaming run, so consecutive segments from the same NPC
+    // would each pick a different random voice. Mirror the local-map fix.
+    const localVoiceMap = { ...(state.characterVoiceMap || {}) };
+
     const resolveSegVoice = (seg) => {
       if (seg?.voiceId) return seg.voiceId;
       if (seg?.type === 'dialogue' && hasNamedSpeaker(seg.character)) {
-        const existing = state.characterVoiceMap?.[seg.character];
+        const existing = localVoiceMap[seg.character];
         if (existing?.voiceId) return existing.voiceId;
         if (!viewerMode) {
           const mapped = resolveVoiceForCharacter(
-            seg.character, seg.gender, state.characterVoiceMap,
+            seg.character, seg.gender, localVoiceMap,
             { maleVoices, femaleVoices, narratorVoiceId }, dispatch
           );
-          if (mapped) return mapped;
+          if (mapped) {
+            localVoiceMap[seg.character] = { voiceId: mapped, gender: seg.gender || null };
+            return mapped;
+          }
         }
       }
       return defaultVoiceId;
