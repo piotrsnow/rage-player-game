@@ -646,6 +646,51 @@ describe('ensurePlayerDialogue', () => {
     expect(dialogues.find(d => d.text === 'Natychmiast!')?.character).toBe('Barnaba');
   });
 
+  it('re-attributes partial-name dialogue (token of player name) and avoids duplicate', () => {
+    const segments = [
+      { type: 'narration', text: 'Barnaba podchodzi teatralnie do Elei.' },
+      { type: 'dialogue', character: 'Barnaba', text: 'Chodź wezmę Cię na barana!', gender: 'male' },
+      { type: 'narration', text: 'Eleya unosi brwi.' },
+      { type: 'dialogue', character: 'Eleya Tropicielka', text: 'Ruszaj, zanim zmienię zdanie!', gender: 'female' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      '"Chodź wezmę Cię na barana!"',
+      'Mścichuj Barnaba',
+      'male'
+    );
+
+    const matching = result.filter(
+      (s) => s.type === 'dialogue' && (s.text || '').trim() === 'Chodź wezmę Cię na barana!'
+    );
+    expect(matching).toHaveLength(1);
+    expect(matching[0].character).toBe('Mścichuj Barnaba');
+    expect(matching[0].gender).toBe('male');
+    expect(result.some((s) => s.type === 'dialogue' && s.character === 'Barnaba')).toBe(false);
+    // Other characters remain untouched
+    expect(result.find((s) => s.type === 'dialogue' && s.character === 'Eleya Tropicielka')?.text)
+      .toBe('Ruszaj, zanim zmienię zdanie!');
+  });
+
+  it('does not reattribute partial-name speaker when text does not match a player quote', () => {
+    const segments = [
+      { type: 'dialogue', character: 'Barnaba', text: 'Coś zupełnie innego.', gender: 'male' },
+    ];
+    const result = ensurePlayerDialogue(
+      segments,
+      '„Hej!"',
+      'Mścichuj Barnaba',
+      'male'
+    );
+
+    const barnabaSeg = result.find((s) => s.type === 'dialogue' && s.character === 'Barnaba');
+    expect(barnabaSeg).toBeDefined();
+    expect(barnabaSeg.text).toBe('Coś zupełnie innego.');
+    const playerSeg = result.find((s) => s.type === 'dialogue' && s.character === 'Mścichuj Barnaba');
+    expect(playerSeg).toBeDefined();
+    expect(playerSeg.text).toBe('Hej!');
+  });
+
   it('re-attributes unnamed generic dialogue to player character', () => {
     const segments = [
       { type: 'narration', text: 'Barnaba zatrzymuje się przy drzwiach.' },

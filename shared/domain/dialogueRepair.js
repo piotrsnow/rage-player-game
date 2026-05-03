@@ -32,6 +32,13 @@ function fuzzyMatchPolishName(candidate, reference) {
   return false;
 }
 
+function speakerMatchesPlayerName(speakerName, playerName) {
+  if (!speakerName || !playerName) return false;
+  if (fuzzyMatchPolishName(speakerName, playerName)) return true;
+  const parts = playerName.split(/\s+/).filter((p) => p.length >= 3);
+  return parts.some((p) => fuzzyMatchPolishName(speakerName, p));
+}
+
 function isExcludedName(raw, excludeNames) {
   return excludeNames.some((name) =>
     name.toLowerCase().split(/\s+/).some((p) =>
@@ -519,13 +526,32 @@ export function ensurePlayerDialogue(segments, playerAction, characterName, char
   if (playerQuotes.length === 0) return segments;
 
   const charLower = characterName.toLowerCase();
-  const hasPlayerDialogue = (segments || []).some(
+  const quoteLookup = new Set(playerQuotes.map((q) => q.toLowerCase()));
+
+  // Pre-pass: when the AI returns a player quote attributed to a partial
+  // version of the player's name (e.g. "Barnaba" instead of "Mścichuj
+  // Barnaba"), rewrite `character` to the full player name. Gated on a
+  // matching player quote so unrelated NPCs sharing a name token are safe.
+  const normalized = (segments || []).map((s) => {
+    if (s?.type !== 'dialogue' || !hasNamedSpeaker(s.character)) return s;
+    const sLower = s.character.toLowerCase().trim();
+    if (sLower === charLower) return s;
+    const segText = (s.text || '').trim().toLowerCase();
+    if (!quoteLookup.has(segText)) return s;
+    if (!speakerMatchesPlayerName(s.character, characterName)) return s;
+    return {
+      ...s,
+      character: characterName,
+      ...(characterGender ? { gender: characterGender } : {}),
+    };
+  });
+
+  const hasPlayerDialogue = normalized.some(
     (s) => s.type === 'dialogue' && hasNamedSpeaker(s.character) && s.character.toLowerCase() === charLower,
   );
-  if (hasPlayerDialogue) return segments;
+  if (hasPlayerDialogue) return normalized;
 
-  const result = [...(segments || [])];
-  const quoteLookup = new Set(playerQuotes.map((q) => q.toLowerCase()));
+  const result = [...normalized];
   const reattributed = new Set();
 
   for (let i = 0; i < result.length; i++) {
