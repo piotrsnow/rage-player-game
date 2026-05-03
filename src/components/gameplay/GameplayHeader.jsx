@@ -62,6 +62,10 @@ export default function GameplayHeader({
   const currentAct = campaign?.structure?.currentAct || 1;
   const actName = campaign?.structure?.acts?.find((a) => a.number === currentAct)?.name;
 
+  // Derive a location snapshot for a single scene. Order of preference:
+  //   1. `_locationSnapshot` written by postSceneWork (fully canonical)
+  //   2. `stateChanges.currentLocation` raw string emitted by the LLM
+  // Returns null when neither is present (LLM didn't emit + snapshot pending).
   const deriveLocSnapshot = (scene) => {
     if (!scene) return null;
     const snap = scene.stateChanges?._locationSnapshot;
@@ -69,9 +73,31 @@ export default function GameplayHeader({
     const raw = scene.stateChanges?.currentLocation;
     return raw ? { name: raw, kind: 'wandering', id: null } : null;
   };
-  const currentLocSnapshot = deriveLocSnapshot(viewedScene || currentScene);
-  const prevSceneIdx = (displayedSceneIndex ?? 0) - 1;
-  const previousLocSnapshot = prevSceneIdx >= 0 ? deriveLocSnapshot(scenes?.[prevSceneIdx]) : null;
+  // Walk scenes backward from `fromIdx` until we find one that knows its
+  // location. Needed because (a) LLM only emits currentLocation on changes,
+  // (b) postSceneWork writes _locationSnapshot async — the just-completed
+  // scene won't have it yet on the 'complete' event. Falling back to the
+  // most recent KNOWN scene gives the chip something stable to render.
+  const findLastKnownLocation = (fromIdx) => {
+    if (!Array.isArray(scenes) || scenes.length === 0) return null;
+    const start = Math.min(fromIdx ?? scenes.length - 1, scenes.length - 1);
+    for (let i = start; i >= 0; i--) {
+      const snap = deriveLocSnapshot(scenes[i]);
+      if (snap) return snap;
+    }
+    return null;
+  };
+  const idx = displayedSceneIndex ?? (scenes.length - 1);
+  const isViewingLatest = idx === scenes.length - 1;
+  let currentLocSnapshot = findLastKnownLocation(idx);
+  // Final fallback for the latest scene only — gameStore.world.currentLocation
+  // is hydrated from campaign load + applyStateChangesHandler, so it carries
+  // the live truth even if no scene's stateChanges held the location.
+  if (!currentLocSnapshot && isViewingLatest) {
+    const worldLoc = getGameState()?.world?.currentLocation;
+    if (worldLoc) currentLocSnapshot = { name: worldLoc, kind: 'wandering', id: null };
+  }
+  const previousLocSnapshot = idx > 0 ? findLastKnownLocation(idx - 1) : null;
 
   return (
     <div className="flex items-center justify-between px-2">
