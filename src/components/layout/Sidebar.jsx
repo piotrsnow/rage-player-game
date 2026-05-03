@@ -161,7 +161,6 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
               <StatusBar label="Mana" current={mana.current} max={mana.max} color="blue" />
             )}
           </div>
-          <SidebarPartyList party={party} activeCharacterId={activeId} />
           <div className="mt-4">
             <NeedsPanel
               needs={character.needs || { hunger: 100, thirst: 100, bladder: 100, hygiene: 100, rest: 100 }}
@@ -171,6 +170,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
               activeNeedKey={activeNeedKey}
             />
           </div>
+          <SidebarPartyList party={party} activeCharacterId={activeId} isMultiplayer={isMultiplayer} />
         </div>
       )}
 

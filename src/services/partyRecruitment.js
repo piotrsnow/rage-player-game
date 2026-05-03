@@ -148,6 +148,7 @@ export function npcToCompanion(npc) {
     recruitedFromNpcId: npc.id,
     name: npc.name,
     species: npc.race || npc.creatureKind || 'Human',
+    portraitUrl: typeof npc.portraitUrl === 'string' ? npc.portraitUrl : null,
     characterLevel: typeof stats?.level === 'number' ? stats.level : (npc.level ?? 1),
     characterXp: 0,
     attributePoints: 0,
