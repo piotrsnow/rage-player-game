@@ -1,82 +1,98 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-function speciesIcon(species) {
-  const s = (species || '').toLowerCase();
-  if (s.includes('elf')) return 'forest';
-  if (s.includes('dwarf')) return 'engineering';
-  if (s.includes('halfling') || s.includes('hobbit')) return 'restaurant';
-  if (s.includes('skaven')) return 'pest_control';
-  if (s.includes('orc') || s.includes('goblin')) return 'sports_martial_arts';
-  if (s.includes('human')) return 'person';
-  return 'person_outline';
-}
+import PartyMemberPortrait from '../party/PartyMemberPortrait';
+import PartyMemberModal from '../party/PartyMemberModal';
+import RecruitModal from '../party/RecruitModal';
+import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
+import {
+  useGameDispatch,
+  useGameCharacter,
+  useGameSlice,
+} from '../../stores/gameSelectors';
 
 function memberId(m) {
   if (!m) return '';
   return m.id ?? m.odId ?? m.name ?? '';
 }
 
-function MiniWoundsBar({ current, max }) {
-  const safeMax = max > 0 ? max : 1;
-  const pct = (Math.min(current ?? 0, safeMax) / safeMax) * 100;
-  return (
-    <div className="flex items-center gap-1.5 min-w-0">
-      <div className="flex-1 h-1 bg-surface-container rounded-full overflow-hidden">
-        <div
-          className="h-full bg-tertiary transition-all duration-300"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-[8px] text-on-surface-variant tabular-nums shrink-0">
-        {current ?? 0}/{max ?? 0}
-      </span>
-    </div>
-  );
-}
-
-export default function SidebarPartyList({ party = [], activeCharacterId }) {
+export default function SidebarPartyList({ party = [], activeCharacterId, isMultiplayer = false }) {
   const { t } = useTranslation();
+  const dispatch = useGameDispatch();
+  const character = useGameCharacter();
+  const scenes = useGameSlice((s) => s.scenes);
+  const world = useGameSlice((s) => s.world);
+  const storeParty = useGameSlice((s) => s.party);
+  const [openMemberId, setOpenMemberId] = useState(null);
+  const [recruitOpen, setRecruitOpen] = useState(false);
+
   const list = Array.isArray(party) ? party : [];
-  if (list.length === 0) return null;
+  // Player is rendered first, then companions. The player object comes from
+  // `character` so the existing portrait/wounds always reflect the live state.
+  const playerTile = character
+    ? { ...character, type: 'player', id: character.name }
+    : null;
+  const tiles = playerTile ? [playerTile, ...list.filter((m) => m.type === 'companion')] : list;
+
+  const companionCount = list.filter((m) => m.type === 'companion').length;
+  const canRecruit = !isMultiplayer && companionCount < MAX_COMPANIONS;
+
+  const openMember = tiles.find((m) => memberId(m) === openMemberId) || null;
 
   return (
     <div className="mt-3">
       <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
         <span className="material-symbols-outlined text-primary text-sm">groups</span>
         <span className="text-[10px] font-label uppercase tracking-widest text-primary truncate">
-          {t('party.title', 'Party')}
+          {t('party.title', 'Drużyna')}
         </span>
-        <span className="text-[10px] text-on-surface-variant tabular-nums">({list.length})</span>
+        <span className="text-[10px] text-on-surface-variant tabular-nums">
+          ({companionCount + (playerTile ? 1 : 0)}/{MAX_COMPANIONS + 1})
+        </span>
       </div>
-      <div className="space-y-1.5">
-        {list.map((m) => {
+      <div className="grid grid-cols-4 gap-1.5">
+        {tiles.map((m) => {
           const id = memberId(m);
           const selected = id && id === activeCharacterId;
           return (
-            <div
+            <PartyMemberPortrait
               key={id || m.name}
-              className={`flex items-center gap-2 p-1.5 rounded-sm bg-surface-container/40 border ${
-                selected
-                  ? 'border-primary/35 ring-1 ring-primary/20'
-                  : 'border-outline-variant/10'
-              }`}
-            >
-              <div className="w-7 h-7 rounded-sm flex items-center justify-center shrink-0 bg-tertiary/10 border border-tertiary/25 text-tertiary">
-                <span className="material-symbols-outlined text-base">{speciesIcon(m.species)}</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-bold text-on-surface truncate">{m.name}</div>
-                <div className="text-[9px] text-on-surface-variant truncate">
-                  {t(`species.${m.species}`, { defaultValue: m.species })}
-                </div>
-                <div className="mt-0.5">
-                  <MiniWoundsBar current={m.wounds} max={m.maxWounds} />
-                </div>
-              </div>
-            </div>
+              member={m}
+              selected={selected}
+              onClick={() => setOpenMemberId(id)}
+            />
           );
         })}
+        {canRecruit && (
+          <button
+            type="button"
+            onClick={() => setRecruitOpen(true)}
+            title={t('party.recruitTitle', 'Werbunek towarzysza')}
+            aria-label={t('party.recruitTitle', 'Werbunek towarzysza')}
+            className="aspect-square w-full rounded-sm border border-dashed border-outline-variant/30 bg-surface-container/30 text-on-surface-variant hover:border-tertiary/50 hover:text-tertiary hover:bg-tertiary/5 transition-colors flex items-center justify-center"
+          >
+            <span className="material-symbols-outlined text-2xl">add</span>
+          </button>
+        )}
       </div>
+
+      {openMember && (
+        <PartyMemberModal
+          member={openMember}
+          onClose={() => setOpenMemberId(null)}
+          onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
+          dispatch={dispatch}
+        />
+      )}
+
+      {recruitOpen && (
+        <RecruitModal
+          scenes={scenes}
+          world={world}
+          party={storeParty}
+          dispatch={dispatch}
+          onClose={() => setRecruitOpen(false)}
+        />
+      )}
     </div>
   );
 }
