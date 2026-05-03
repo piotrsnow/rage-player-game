@@ -141,6 +141,30 @@ export function buildActiveQuestsBlock(quests) {
 }
 
 /**
+ * Recent location trail — gives the LLM its own scene-by-scene path through
+ * the world. Without this, the model only sees the CURRENT location and may
+ * "remember" an earlier location from compressed facts and unmotivatedly
+ * teleport back. Source: each scene's `_locationSnapshot` written by
+ * postSceneWork after stateChanges settle.
+ *
+ * Returns null when there are no historical entries (first scene); else a
+ * short bullet list ending with the current location for orientation.
+ */
+export function buildRecentLocationTrailBlock(recentScenes, currentLocation) {
+  if (!Array.isArray(recentScenes) || recentScenes.length === 0) return null;
+  const trail = recentScenes
+    .map((s) => ({
+      idx: s.sceneIndex,
+      loc: s.stateChanges?._locationSnapshot?.name || null,
+    }))
+    .filter((s) => s.loc);
+  if (trail.length < 1) return null;
+  const lines = trail.map((t) => `- Scene ${t.idx}: ${t.loc}`);
+  if (currentLocation) lines.push(`- Current: ${currentLocation}`);
+  return `Recent location trail (use to keep continuity — DO NOT teleport the party back to an earlier location unless the player explicitly moves):\n${lines.join('\n')}`;
+}
+
+/**
  * Two layers of recent context:
  *   - earlier scenes are compressed into 15 facts (gameStateSummary);
  *   - the immediate previous scene is attached in full so tone/dialog continuity

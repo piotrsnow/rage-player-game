@@ -19,6 +19,7 @@ import { getInlineEntityKeys } from './inlineKeys.js';
 import { buildLeanSystemPrompt } from './systemPrompt.js';
 import { buildUserPrompt } from './userPrompt.js';
 import { runTwoStagePipelineStreaming } from './streamingClient.js';
+import { detectSuspiciousLocationChange } from './locationSanityCheck.js';
 import {
   applyCreativityToRoll,
   applyForceRollModifier,
@@ -235,15 +236,15 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
     }
 
     // 4. Build prompts
-    // Only the immediate previous scene goes into the prompt in full. Earlier
-    // scenes are represented by compressed gameStateSummary facts. Fetching 1
-    // scene (not 5) because we also use lastScene.sceneIndex to compute the
-    // next scene index below — the full narrative + action are injected by
-    // buildLeanSystemPrompt and nothing else reads this list.
+    // Fetch 5 most recent scenes (chronological after reverse). Only the
+    // immediate previous scene goes into the prompt in full; earlier scenes
+    // are represented by compressed gameStateSummary facts and by their
+    // `_locationSnapshot` markers (recent-location trail in worldBlock).
+    // lastScene.sceneIndex is also used to compute the next scene index.
     const recentScenes = await prisma.campaignScene.findMany({
       where: { campaignId },
       orderBy: { sceneIndex: 'desc' },
-      take: 1,
+      take: 5,
     });
     recentScenes.reverse();
 
@@ -287,6 +288,67 @@ export async function generateSceneStream(campaignId, playerAction, options = {}
       );
     } finally {
       clearTimeout(premiumTimeoutHandle);
+    }
+
+    // 5a2. Location sanity check — detect suspicious teleports (LLM emits a
+    // currentLocation change without the player actually moving, or A→B→A
+    // flip) and retry once with an explicit corrective hint. Caps at 1 retry
+    // to bound cost; if the retry is still suspicious we strip the change so
+    // the party stays put rather than keep drifting.
+    const trail = recentScenes.map((s) => ({
+      idx: s.sceneIndex,
+      loc: s.stateChanges?._locationSnapshot?.name || null,
+    }));
+    const sanity = detectSuspiciousLocationChange({
+      playerAction,
+      sceneResult,
+      prevLocName: preResolveLocationName,
+      recentTrail: trail,
+      intentResult,
+    });
+    if (sanity.score >= 3) {
+      log.warn(
+        { campaignId, score: sanity.score, signals: sanity.signals, from: sanity.suspect.from, to: sanity.suspect.to },
+        'Location change suspected — retrying scene',
+      );
+      onEvent({ type: 'retry', reason: 'location_sanity' });
+      const retryUserPrompt = userPrompt
+        + `\n\n[SYSTEM CHECK] Your previous response wanted to change currentLocation to "${sanity.suspect.to}". `
+        + `The player action does NOT contain explicit movement vocabulary, OR this would create an A→B→A flip with the recent trail. `
+        + `If the player did NOT clearly move, KEEP currentLocation = "${sanity.suspect.from}" (or simply omit the field). `
+        + `If they did move, narrate the movement explicitly in the narrative.`;
+      const retryController = new AbortController();
+      const retryTimeoutHandle = setTimeout(() => retryController.abort(), llmPremiumTimeoutMs);
+      retryTimeoutHandle.unref?.();
+      try {
+        sceneResult = await runTwoStagePipelineStreaming(
+          systemPromptParts, retryUserPrompt, contextBlocks,
+          { provider, model, apiKey: providerApiKey, signal: retryController.signal },
+          null, // silent retry — FE clears its buffer on the 'retry' event above
+        );
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'Location sanity retry failed — keeping first response');
+      } finally {
+        clearTimeout(retryTimeoutHandle);
+      }
+      const retrySanity = detectSuspiciousLocationChange({
+        playerAction,
+        sceneResult,
+        prevLocName: preResolveLocationName,
+        recentTrail: trail,
+        intentResult,
+      });
+      if (retrySanity.score >= 3 && sceneResult?.stateChanges) {
+        log.warn({ campaignId, signals: retrySanity.signals }, 'Retry still suspicious — stripping currentLocation');
+        delete sceneResult.stateChanges.currentLocation;
+        delete sceneResult.stateChanges.currentX;
+        delete sceneResult.stateChanges.currentY;
+      }
+    } else if (sanity.score >= 2) {
+      log.warn(
+        { campaignId, score: sanity.score, signals: sanity.signals, from: sanity.suspect.from, to: sanity.suspect.to },
+        'Location change weakly suspicious — passing through',
+      );
     }
 
     // 5b. Validate creativity bonus awarded by the model.

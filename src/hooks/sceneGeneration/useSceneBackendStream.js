@@ -85,6 +85,18 @@ export function useSceneBackendStream() {
       onEvent: (event) => {
         if (event.type === 'intent') {
           console.log('[useAI] Stream intent:', event.data?.intent);
+        } else if (event.type === 'retry') {
+          // Backend caught a suspicious location change and is regenerating
+          // the scene silently (no new chunk events will arrive). Drop the
+          // partial buffer + UI typewriter so the user doesn't see leftover
+          // text from the discarded first attempt; the final scene lands via
+          // the 'complete' event below.
+          console.log('[useAI] Stream retry:', event.reason);
+          rawAccumulated = '';
+          streamedDiceRollCountRef.current = 0;
+          streamedNpcsIntroducedCountRef.current = 0;
+          setStreamingNarrative(null);
+          setStreamingSegments(null);
         } else if (event.type === 'dice_early' && event.data?.diceRoll) {
           const roll = event.data.diceRoll;
           setEarlyDiceRoll(roll);
