@@ -87,6 +87,11 @@ export function enrichDialogueSpeakers({
       .map((name) => (typeof name === 'string' ? name.trim().toLowerCase() : ''))
       .filter(Boolean)
   );
+  // Local mutable copy: dispatched MAP_CHARACTER_VOICE updates the Redux store
+  // but does not mutate the characterVoiceMap argument, so without this each
+  // iteration would re-pick a random voice for the same NPC saying multiple
+  // consecutive lines (the opening-scene "different voice per line" bug).
+  const localVoiceMap = { ...(characterVoiceMap || {}) };
   const nextSegments = source.map((segment) => {
     if (!segment || segment.type !== 'dialogue') return segment;
     if (!hasNamedSpeaker(segment.character)) return segment;
@@ -106,31 +111,36 @@ export function enrichDialogueSpeakers({
     const speakerGender = trustedGender;
     const hasKnownNpc = knownNpcNames.has(speakerKey) || existingNpcChangeNames.has(speakerKey);
 
-    let voiceId = characterVoiceMap?.[speakerName]?.voiceId || null;
-    if (hasKnownNpc) {
-      voiceId = resolveVoiceForCharacter(
-        speakerName,
-        speakerGender,
-        characterVoiceMap,
-        { maleVoices, femaleVoices, narratorVoiceId },
-        dispatch
-      ) || voiceId;
-    } else {
-      voiceId = pickRandomVoiceForGender(speakerGender, { maleVoices, femaleVoices }) || voiceId;
-      if (voiceId) {
-        dispatch?.({
-          type: 'MAP_CHARACTER_VOICE',
-          payload: { characterName: speakerName, voiceId, gender: speakerGender },
-        });
+    let voiceId = localVoiceMap[speakerName]?.voiceId || null;
+    if (!voiceId) {
+      if (hasKnownNpc) {
+        voiceId = resolveVoiceForCharacter(
+          speakerName,
+          speakerGender,
+          localVoiceMap,
+          { maleVoices, femaleVoices, narratorVoiceId },
+          dispatch
+        ) || voiceId;
+      } else {
+        voiceId = pickRandomVoiceForGender(speakerGender, { maleVoices, femaleVoices }) || voiceId;
+        if (voiceId) {
+          dispatch?.({
+            type: 'MAP_CHARACTER_VOICE',
+            payload: { characterName: speakerName, voiceId, gender: speakerGender },
+          });
+        }
+        if (!existingNpcChangeNames.has(speakerKey)) {
+          npcChanges.push({
+            action: 'introduce',
+            name: speakerName,
+            ...(speakerGender ? { gender: speakerGender } : {}),
+            ...(currentLocation ? { location: currentLocation } : {}),
+          });
+          existingNpcChangeNames.add(speakerKey);
+        }
       }
-      if (!existingNpcChangeNames.has(speakerKey)) {
-        npcChanges.push({
-          action: 'introduce',
-          name: speakerName,
-          ...(speakerGender ? { gender: speakerGender } : {}),
-          ...(currentLocation ? { location: currentLocation } : {}),
-        });
-        existingNpcChangeNames.add(speakerKey);
+      if (voiceId) {
+        localVoiceMap[speakerName] = { voiceId, gender: speakerGender || null };
       }
     }
 
