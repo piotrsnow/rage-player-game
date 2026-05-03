@@ -203,6 +203,33 @@ export async function handlePostSceneWork({
 
   const results = await Promise.allSettled(phase1Tasks);
 
+  // Snapshot the post-Phase-1 location into the scene's stateChanges. Phase 1
+  // ran `processStateChanges` (if any) so `Campaign.currentLocation*` now
+  // reflects where the scene actually settled. Persist a `_locationSnapshot`
+  // marker (underscore = backend-only, not consumed by LLM) so each scene
+  // remembers its own location even after the Campaign row mutates onward.
+  // Idempotent: re-running on the same sceneId writes the same value.
+  try {
+    const updatedCampaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { currentLocationName: true, currentLocationKind: true, currentLocationId: true },
+    });
+    const snapName = updatedCampaign?.currentLocationName ?? null;
+    const snapshot = {
+      name: snapName,
+      kind: updatedCampaign?.currentLocationKind ?? (snapName ? 'wandering' : null),
+      id: updatedCampaign?.currentLocationId ?? null,
+      sceneIndex: scene.sceneIndex,
+    };
+    const merged = { ...(scene.stateChanges || {}), _locationSnapshot: snapshot };
+    await prisma.campaignScene.update({
+      where: { id: sceneId },
+      data: { stateChanges: merged },
+    });
+  } catch (err) {
+    log.warn({ err: err?.message, sceneId }, '_locationSnapshot write failed (non-fatal)');
+  }
+
   // Living World Phase 3 — reputation hook. Runs after Phase 1 so CampaignNPC
   // promotion + worldNpcId linkage is in place. Best-effort — never blocks.
   // `judgeKill` reads scene text to decide whether the kill was justified;

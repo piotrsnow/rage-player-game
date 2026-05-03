@@ -3,6 +3,7 @@ import { apiClient } from '../../services/apiClient';
 import { exportAsJson, exportAsMarkdown } from '../../services/exportLog';
 import { getGameState } from '../../stores/gameStore';
 import CostBadge from '../ui/CostBadge';
+import LocationChip from '../ui/LocationChip';
 
 export default function GameplayHeader({
   readOnly,
@@ -62,6 +63,17 @@ export default function GameplayHeader({
   const contextDepth = settings.dmSettings?.contextDepth ?? 100;
   const currentAct = campaign?.structure?.currentAct || 1;
   const actName = campaign?.structure?.acts?.find((a) => a.number === currentAct)?.name;
+
+  const deriveLocSnapshot = (scene) => {
+    if (!scene) return null;
+    const snap = scene.stateChanges?._locationSnapshot;
+    if (snap) return snap;
+    const raw = scene.stateChanges?.currentLocation;
+    return raw ? { name: raw, kind: 'wandering', id: null } : null;
+  };
+  const currentLocSnapshot = deriveLocSnapshot(viewedScene || currentScene);
+  const prevSceneIdx = (displayedSceneIndex ?? 0) - 1;
+  const previousLocSnapshot = prevSceneIdx >= 0 ? deriveLocSnapshot(scenes?.[prevSceneIdx]) : null;
 
   return (
     <div className="flex items-center justify-between px-2">
@@ -207,6 +219,7 @@ export default function GameplayHeader({
       </div>
       <div className="flex items-center gap-4">
         {!readOnly && aiCosts?.total > 0 && <CostBadge costs={aiCosts} />}
+        <LocationChip current={currentLocSnapshot} previous={previousLocSnapshot} />
         {!readOnly && attrPoints > 0 && (
           <button
             onClick={onOpenAdvancement}

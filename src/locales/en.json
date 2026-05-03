@@ -1139,6 +1139,9 @@
     "sfx": "Sound effects",
     "music": "Music"
   },
+  "locationChip": {
+    "wandering": "On the road"
+  },
   "species": {
     "Human": "Human",
     "Halfling": "Halfling",

@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useGame } from '../contexts/GameContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { imageService } from '../services/imageGen';
+import { generateNpcPortrait } from '../services/npcPortraitGen';
 import { calculateCost } from '../services/costTracker';
 import { shortId } from '../utils/ids';
 
@@ -100,6 +101,54 @@ export function useImageGeneration() {
     [state.campaign?.genre, state.campaign?.tone, state.campaign?.backendId, imageProvider, imageStyle, darkPalette, imageSeriousness, itemImageGenEnabled, sdWebuiModel, sdWebuiSeed, dispatch, autoSave]
   );
 
+  const npcPortraitGenerationLocksRef = useRef(new Set());
+
+  const ensureMissingNpcPortraits = useCallback(
+    async (npcs = []) => {
+      const hasImgKey = imageApiKey || hasApiKey(imgKeyProvider);
+      if (!hasImgKey) return { generated: 0, failed: 0 };
+      const candidates = (Array.isArray(npcs) ? npcs : []).filter(
+        (npc) => npc && typeof npc === 'object' && typeof npc.id === 'string' && !npc.portraitUrl,
+      );
+      if (candidates.length === 0) return { generated: 0, failed: 0 };
+
+      const locks = npcPortraitGenerationLocksRef.current;
+      let generated = 0;
+      let failed = 0;
+      for (const npc of candidates) {
+        if (locks.has(npc.id)) continue;
+        locks.add(npc.id);
+        try {
+          const portraitUrl = await generateNpcPortrait(npc, {
+            genre: state.campaign?.genre,
+            provider: imageProvider,
+            imageStyle,
+            darkPalette,
+            seriousness: imageSeriousness,
+            sdModel: sdWebuiModel,
+            sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null,
+          });
+          if (portraitUrl) {
+            dispatch({ type: 'UPDATE_NPC_PORTRAIT', payload: { npcId: npc.id, portraitUrl } });
+            dispatch({ type: 'ADD_AI_COST', payload: calculateCost('image', { provider: imageProvider }) });
+            generated += 1;
+          } else {
+            failed += 1;
+          }
+        } catch (err) {
+          console.warn('NPC portrait generation failed:', err?.message || err);
+          failed += 1;
+        } finally {
+          locks.delete(npc.id);
+        }
+      }
+
+      if (generated > 0) autoSave();
+      return { generated, failed };
+    },
+    [state.campaign?.genre, imageProvider, imageStyle, darkPalette, imageSeriousness, sdWebuiModel, sdWebuiSeed, hasApiKey, imgKeyProvider, imageApiKey, dispatch, autoSave],
+  );
+
   const ensureMissingInventoryImages = useCallback(
     async (items = [], options = {}) => {
       const candidates = (Array.isArray(items) ? items : []).filter((item) =>
@@ -179,6 +228,7 @@ export function useImageGeneration() {
     generateImageForScene,
     generateItemImageForInventoryItem,
     ensureMissingInventoryImages,
+    ensureMissingNpcPortraits,
     imageGenEnabled,
     imageApiKey,
     imageProvider,

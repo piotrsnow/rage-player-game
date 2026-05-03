@@ -49,6 +49,17 @@ export const partyHandlers = {
     npc.recruitCooldownUntilSceneIndex = sceneIndex + cooldown;
   },
 
+  UPDATE_NPC_PORTRAIT: (draft, action) => {
+    const { npcId, portraitUrl } = action.payload || {};
+    if (!npcId || typeof portraitUrl !== 'string') return;
+    const npc = (draft.world?.npcs || []).find((n) => n?.id === npcId);
+    if (npc) npc.portraitUrl = portraitUrl;
+    if (Array.isArray(draft.party)) {
+      const member = draft.party.find((m) => (m.recruitedFromNpcId || m.id) === npcId);
+      if (member) member.portraitUrl = portraitUrl;
+    }
+  },
+
   DISMISS_PARTY_COMPANION: (draft, action) => {
     const { id } = action.payload || {};
     if (!id || !Array.isArray(draft.party)) return;

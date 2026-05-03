@@ -3,6 +3,7 @@ import { generateStateChangeMessages } from '../../services/stateChangeMessages'
 import { checkWorldConsistency, applyConsistencyPatches } from '../../services/worldConsistency';
 import { detectCombatIntent } from '../../../shared/domain/combatIntent.js';
 import { gameData } from '../../services/gameDataService';
+import { getGameState } from '../../stores/gameStore';
 import { shortId } from '../../utils/ids';
 
 /**
@@ -152,10 +153,22 @@ export function applyNeedsAndRest(result, resolved, needsSystemEnabled) {
 
 export function applySceneStateChanges({
   result, state, dispatch,
-  authoritativeCharacterSnapshot, ensureMissingInventoryImages, t,
+  authoritativeCharacterSnapshot, ensureMissingInventoryImages, ensureMissingNpcPortraits, t,
   newlyUnlockedAchievements = [], updatedAchievementState = null,
 }) {
   if (!result.stateChanges || Object.keys(result.stateChanges).length === 0) return;
+
+  const introducedNpcNames = new Set(
+    (Array.isArray(result.stateChanges.npcs) ? result.stateChanges.npcs : [])
+      .filter((n) => n?.action === 'introduce' && typeof n?.name === 'string')
+      .map((n) => n.name.toLowerCase()),
+  );
+  const existingNpcNames = new Set(
+    (state.world?.npcs || [])
+      .map((n) => (typeof n?.name === 'string' ? n.name.toLowerCase() : null))
+      .filter(Boolean),
+  );
+  const newlyIntroducedNames = [...introducedNpcNames].filter((name) => !existingNpcNames.has(name));
 
   const { validated, warnings, corrections } = validateStateChanges(result.stateChanges, state);
   result.stateChanges = validated;
@@ -169,6 +182,14 @@ export function applySceneStateChanges({
   }
   if (Array.isArray(validated.newItems) && validated.newItems.length > 0) {
     void ensureMissingInventoryImages(validated.newItems, { emitWarning: false });
+  }
+  if (newlyIntroducedNames.length > 0 && typeof ensureMissingNpcPortraits === 'function') {
+    setTimeout(() => {
+      const nameSet = new Set(newlyIntroducedNames);
+      const fresh = (getGameState()?.world?.npcs || [])
+        .filter((n) => n?.name && nameSet.has(n.name.toLowerCase()) && !n.portraitUrl);
+      if (fresh.length > 0) void ensureMissingNpcPortraits(fresh);
+    }, 0);
   }
 
   const postState = {

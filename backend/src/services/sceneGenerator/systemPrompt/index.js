@@ -30,6 +30,7 @@ import {
   buildNeedsCrisisBlock,
   buildActiveQuestsBlock,
   buildRecentContextBlock,
+  buildRecentLocationTrailBlock,
   deriveScenePhase,
 } from './worldBlock.js';
 
@@ -121,6 +122,9 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
 
   const worldState = buildWorldStateBlock(world, { sceneCount, expectedScenes });
   if (worldState) dynamicSections.push(worldState);
+
+  const trailBlock = buildRecentLocationTrailBlock(recentScenes, world.currentLocation);
+  if (trailBlock) dynamicSections.push(trailBlock);
 
   const keyNpcs = buildKeyNpcsBlock(world);
   if (keyNpcs) dynamicSections.push(keyNpcs);
