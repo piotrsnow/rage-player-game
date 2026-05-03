@@ -13,6 +13,7 @@ export default function CustomActionForm({
   supported,
   interim,
   onToggleVoice,
+  dictation,
   isMultiplayer,
   soloAvailable,
   soloCooldownTime,
@@ -57,22 +58,63 @@ export default function CustomActionForm({
         </span>
       </div>
       <div className="flex items-center gap-1.5">
-        {supported && !isAutoTyping && (
-          <button
-            type="button"
-            onClick={onToggleVoice}
-            disabled={disabled}
-            title={listening ? t('gameplay.voiceStop') : t('gameplay.voiceStart')}
-            className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full transition-all duration-300 disabled:opacity-30 ${
-              listening
-                ? 'text-error-light bg-error/15 mic-pulse'
-                : 'text-primary/70 hover:text-primary hover:bg-primary/10'
-            }`}
-          >
-            <span className="material-symbols-outlined text-base">
-              {listening ? 'mic' : 'mic_none'}
-            </span>
-          </button>
+        {dictation?.enabled && supported && !isAutoTyping && (
+          <div className="shrink-0 flex items-center rounded-full overflow-hidden border border-outline-variant/30 bg-surface-container-high/30">
+            <button
+              type="button"
+              onClick={() => {
+                if (dictation.mode === 'action') {
+                  dictation.toggleListening();
+                } else {
+                  dictation.setMode('action');
+                  if (!listening) dictation.start?.();
+                }
+              }}
+              disabled={disabled}
+              title={t('gameplay.dictationModeActionTooltip')}
+              aria-label={t('gameplay.dictationModeAction')}
+              aria-pressed={dictation.mode === 'action'}
+              className={`flex items-center gap-1 px-2 h-7 transition-all duration-200 disabled:opacity-30 ${
+                dictation.mode === 'action'
+                  ? listening
+                    ? 'text-error-light bg-error/20 mic-pulse'
+                    : 'text-primary bg-primary/15'
+                  : 'text-on-surface-variant/70 hover:text-primary hover:bg-primary/10'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">mic</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">
+                {t('gameplay.dictationModeAction')}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (dictation.mode === 'dialogue') {
+                  dictation.toggleListening();
+                } else {
+                  dictation.setMode('dialogue');
+                  if (!listening) dictation.start?.();
+                }
+              }}
+              disabled={disabled}
+              title={t('gameplay.dictationModeDialogueTooltip')}
+              aria-label={t('gameplay.dictationModeDialogue')}
+              aria-pressed={dictation.mode === 'dialogue'}
+              className={`flex items-center gap-1 px-2 h-7 border-l border-outline-variant/30 transition-all duration-200 disabled:opacity-30 ${
+                dictation.mode === 'dialogue'
+                  ? listening
+                    ? 'text-amber-200 bg-amber-400/25 mic-pulse'
+                    : 'text-amber-300 bg-amber-400/15'
+                  : 'text-on-surface-variant/70 hover:text-amber-300 hover:bg-amber-400/10'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">format_quote</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">
+                {t('gameplay.dictationModeDialogue')}
+              </span>
+            </button>
+          </div>
         )}
         {isAutoTyping && (
           <span className="shrink-0 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-primary animate-pulse">

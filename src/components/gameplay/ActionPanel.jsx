@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSoloActionCooldown } from '../../hooks/useSoloActionCooldown';
 import { useActionTyping } from '../../hooks/useActionTyping';
@@ -58,6 +57,7 @@ export default function ActionPanel({
   multiplayerPlayers = [],
   typingPlayers = {},
   dispatch = null,
+  dictation = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
@@ -95,10 +95,16 @@ export default function ActionPanel({
     });
   }, []);
 
-  const { listening, interim, supported, toggle } = useSpeechRecognition({
-    lang: settings.language || 'pl',
-    onResult: onVoiceResult,
-  });
+  useEffect(() => {
+    if (!dictation) return undefined;
+    dictation.setOnResult(onVoiceResult);
+    return () => dictation.setOnResult(null);
+  }, [dictation, onVoiceResult]);
+
+  const listening = dictation?.listening ?? false;
+  const interim = dictation?.interim ?? '';
+  const supported = dictation?.supported ?? false;
+  const toggle = dictation?.toggleListening ?? (() => {});
 
   const { handleTypingChange, emitTypingStop, cancelPendingBroadcasts, isTypingRef } = useActionTyping({
     mp,
@@ -470,6 +476,7 @@ export default function ActionPanel({
             supported={supported}
             interim={interim}
             onToggleVoice={toggle}
+            dictation={dictation}
             isMultiplayer={isMultiplayer}
             soloAvailable={soloAvailable}
             soloCooldownTime={soloCooldownTime}

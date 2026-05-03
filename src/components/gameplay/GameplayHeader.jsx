@@ -52,6 +52,8 @@ export default function GameplayHeader({
   // video
   videoPanelOpen,
   setVideoPanelOpen,
+  // dictation
+  dictation,
 }) {
   const { t } = useTranslation();
 
@@ -227,6 +229,18 @@ export default function GameplayHeader({
             {isViewingCompanion && <span className="text-tertiary font-bold">(Companion)</span>}
           </div>
         ) : null}
+        {!readOnly && dictation?.supported && (
+          <button
+            onClick={dictation.toggleEnabled}
+            title={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
+            aria-label={t(dictation.enabled ? 'gameplay.dictationDisable' : 'gameplay.dictationEnable')}
+            className={`material-symbols-outlined text-sm transition-colors ${
+              dictation.enabled ? 'text-primary hover:text-tertiary' : 'text-outline hover:text-primary'
+            }`}
+          >
+            {dictation.enabled ? 'mic' : 'mic_off'}
+          </button>
+        )}
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}

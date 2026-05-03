@@ -21,6 +21,7 @@ import {
 import { useSettings } from '../../contexts/SettingsContext';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useAI } from '../../hooks/useAI';
+import { useDictation } from '../../hooks/useDictation';
 import { useNarrator } from '../../hooks/useNarrator';
 import { useGlobalMusic } from '../../contexts/MusicContext';
 import { apiClient } from '../../services/apiClient';
@@ -111,6 +112,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
   const sNarrationTime = useGameSlice((s) => s.narrationTime);
   const { settings, updateSettings, updateDMSettings } = useSettings();
+  const dictation = useDictation({ lang: settings.language || 'pl' });
   const { openSettings } = useModals();
   const mp = useMultiplayer();
   const {
@@ -553,6 +555,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onOpenGmModal={() => setGmModalOpen(true)}
           videoPanelOpen={videoPanelOpen}
           setVideoPanelOpen={setVideoPanelOpen}
+          dictation={dictation}
         />
 
         {!readOnly && (
@@ -823,6 +826,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               multiplayerPlayers={isMultiplayer ? (mp.state.players || []) : []}
               typingPlayers={isMultiplayer ? (mp.state.typingPlayers || {}) : {}}
               dispatch={dispatch}
+              dictation={dictation}
             />
           </div>
         )}
