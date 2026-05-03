@@ -29,6 +29,7 @@ export function applyNpcs(draft, changes) {
         alive: true,
         notes: incoming.notes || '',
         disposition: 0,
+        portraitUrl: null,
         factionId: incoming.factionId || null,
         relatedQuestIds: incoming.relatedQuestIds || [],
         relationships: incoming.relationships || [],

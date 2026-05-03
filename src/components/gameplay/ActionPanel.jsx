@@ -10,10 +10,20 @@ import { TYPING_DRAFT_MAX_LENGTH } from '../../../shared/contracts/multiplayer.j
 import CombatTargetPicker from './action/CombatTargetPicker';
 import TradeNpcPicker from './action/TradeNpcPicker';
 import TrainerNpcPicker from './action/TrainerNpcPicker';
+import RecruitNpcPicker from './action/RecruitNpcPicker';
 import DilemmaPanel from './action/DilemmaPanel';
 import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
+import { useGameSlice } from '../../stores/gameSelectors';
+import {
+  getRecentNpcsForRecruitment,
+  calculateRecruitChance,
+  rollD100,
+} from '../../services/partyRecruitment';
+import { MAX_COMPANIONS } from '../../stores/handlers/partyHandlers';
+
+const DICE_ANIMATION_MS = 4800;
 
 const FORCE_ROLL_INITIAL = { enabled: false, modifier: 0 };
 
@@ -53,7 +63,18 @@ export default function ActionPanel({
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
+  const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
   const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
+
+  const scenes = useGameSlice((s) => s.scenes);
+  const world = useGameSlice((s) => s.world);
+  const party = useGameSlice((s) => s.party);
+  const recruitableNpcs = useMemo(
+    () => getRecentNpcsForRecruitment(scenes, world, party),
+    [scenes, world, party],
+  );
+  const partySize = Array.isArray(party) ? party.length : 0;
+  const partyHasSlot = partySize < MAX_COMPANIONS;
   const [longPressActiveIndex, setLongPressActiveIndex] = useState(null);
   const longPressTimerRef = useRef(null);
   const longPressFiredRef = useRef(false);
@@ -184,6 +205,49 @@ export default function ActionPanel({
       onAction(`[ATTACK: ${npcName}]`, true);
     }
   };
+
+  const handleRecruitAttempt = useCallback((npc) => {
+    if (!dispatch || !npc) return;
+    setRecruitPickerOpen(false);
+
+    const chance = calculateRecruitChance(npc.disposition);
+    const roll = rollD100();
+    const success = roll <= chance;
+    const criticalSuccess = success && roll <= 5;
+    const criticalFailure = !success && roll >= 96;
+
+    dispatch({
+      type: 'SET_LOCAL_DICE_ROLL',
+      payload: {
+        skill: 'Perswazja',
+        attribute: 'charyzma',
+        threshold: chance,
+        rolledValue: roll,
+        success,
+        criticalSuccess,
+        criticalFailure,
+      },
+    });
+
+    setTimeout(() => {
+      dispatch({
+        type: success ? 'RECRUIT_NPC_SUCCESS' : 'RECRUIT_NPC_FAILURE',
+        payload: {
+          npcId: npc.id,
+          npcName: npc.name,
+          criticalSuccess,
+          criticalFailure,
+        },
+      });
+      const result = success ? 'accepted' : 'declined';
+      const actionText = `[REQUEST_PARTY_JOIN: ${npc.name}][RESULT: ${result}][ROLL: ${roll}/${chance}]`;
+      if (isMultiplayer) {
+        mp.soloAction(actionText, true, settings.language || 'en', settings.dmSettings);
+      } else {
+        onAction(actionText, true);
+      }
+    }, DICE_ANIMATION_MS);
+  }, [dispatch, isMultiplayer, mp, onAction, settings]);
 
   const teamPlayers = useMemo(
     () => (multiplayerPlayers?.length ? multiplayerPlayers : (mp.state.players || [])),
@@ -323,6 +387,15 @@ export default function ActionPanel({
               onCancel={() => setTrainerPickerOpen(false)}
             />
           )}
+
+          {recruitPickerOpen && dispatch && (
+            <RecruitNpcPicker
+              npcs={recruitableNpcs}
+              partySize={partySize}
+              onAttempt={handleRecruitAttempt}
+              onCancel={() => setRecruitPickerOpen(false)}
+            />
+          )}
         </div>
       )}
 
@@ -377,6 +450,9 @@ export default function ActionPanel({
             onToggleCombatPicker={() => setCombatPickerOpen((v) => !v)}
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
+            onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}
+            recruitableCount={recruitableNpcs.length}
+            partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}
             onForceRollLeft={handleForceRollLeft}
             onForceRollDouble={handleForceRollDouble}

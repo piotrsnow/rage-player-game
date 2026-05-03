@@ -35,7 +35,6 @@ import MagicPanel from './MagicPanel';
 import TradePanel from './TradePanel';
 import CraftingPanel from './CraftingPanel';
 import AlchemyPanel from './AlchemyPanel';
-import PartyPanel from './PartyPanel';
 import LivingWorldCompanionsSection from './LivingWorldCompanionsSection';
 import QuestOffersPanel from './QuestOffersPanel';
 import GameplayModals from './GameplayModals';
@@ -102,6 +101,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sIsGeneratingImage = useGameIsGeneratingImage();
   const sError = useGameError();
   const sActiveCharacterId = useGameSlice((s) => s.activeCharacterId);
+  const sLocalDiceRoll = useGameSlice((s) => s.localDiceRoll);
   const sCharacterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
   const sMainQuestJustCompleted = useGameSlice((s) => s.mainQuestJustCompleted);
   const sTrade = useGameSlice((s) => s.trade);
@@ -611,6 +611,12 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
               holdOpen={!!overlayText}
             />
           )}
+          {sLocalDiceRoll && (
+            <DiceRollAnimationOverlay
+              diceRoll={sLocalDiceRoll}
+              onDismiss={() => dispatch({ type: 'CLEAR_LOCAL_DICE_ROLL' })}
+            />
+          )}
         </div>
 
         {viewedScene?.cutscene && <CutscenePanel cutscene={viewedScene.cutscene} />}
@@ -684,20 +690,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onOpenSettings={openSettings}
         />
 
-        {/* Party Panel */}
-        {character && !isMultiplayer && !isReviewingPastScene && !readOnly && (
-          <div className="px-2 animate-fade-in">
-            <PartyPanel
-              party={[{ ...character, type: 'player', id: character?.name }, ...party]}
-              activeCharacterId={sActiveCharacterId || character?.name}
-              onSwitchCharacter={(id) => dispatch({ type: 'SET_ACTIVE_CHARACTER', payload: id })}
-              onManageCompanion={(id, updates) => dispatch({ type: 'UPDATE_PARTY_MEMBER', payload: { id, updates } })}
-              dispatch={dispatch}
-            />
-          </div>
-        )}
-
-        {/* Living World companions (Phase 2) — separate from local PartyPanel companions. */}
+        {/* Living World companions (Phase 2) — local party lives in the sidebar grid. */}
         {!isMultiplayer && !isReviewingPastScene && !readOnly && (
           <div className="px-2 animate-fade-in">
             <LivingWorldCompanionsSection
