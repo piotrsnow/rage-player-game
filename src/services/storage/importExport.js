@@ -1,6 +1,5 @@
 import { apiClient } from '../apiClient';
-import { SETTINGS_KEY, sanitizeSettings } from './keys.js';
-import { getSettings } from './settings.js';
+import { sanitizeSettings } from './keys.js';
 import { getActiveCampaignId } from './activeCampaign.js';
 import { parseBackendCampaign } from './campaignParse.js';
 import { saveCampaign } from './campaignSave.js';
@@ -10,8 +9,11 @@ import { saveCampaign } from './campaignSave.js';
  * parseBackendCampaign) as a JSON file the user can re-import. Offline mode
  * downgrades to settings-only — campaigns are skipped rather than exporting
  * a broken local snapshot that may be missing scenes.
+ *
+ * Settings come from the live React state (passed in by the caller) since
+ * they no longer round-trip through localStorage.
  */
-export async function exportConfig() {
+export async function exportConfig({ settings } = {}) {
   let campaigns = [];
   try {
     const list = await apiClient.get('/campaigns');
@@ -27,7 +29,7 @@ export async function exportConfig() {
       version: 2,
       exportedAt: new Date().toISOString(),
     },
-    settings: sanitizeSettings(getSettings()),
+    settings: sanitizeSettings(settings || null),
     campaigns,
     activeCampaignId: getActiveCampaignId(),
   };
@@ -50,9 +52,9 @@ export async function importConfig(file) {
     throw new Error('Invalid config file');
   }
 
-  if (data.settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(sanitizeSettings(data.settings)));
-  }
+  // The caller (useConfigImportExport) feeds the returned settings into
+  // SettingsContext via `importSettings`, which mutates state and triggers
+  // the existing server-sync effect. No localStorage write here anymore.
 
   if (data.campaigns && Array.isArray(data.campaigns)) {
     for (const entry of data.campaigns) {

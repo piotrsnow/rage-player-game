@@ -4,6 +4,7 @@ import { useModalA11y } from '../../hooks/useModalA11y';
 import ImageProviderSection from './keys/ImageProviderSection';
 import SceneVisualizationSection from './sections/SceneVisualizationSection';
 import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
+import EffectIntensitySection from './sections/EffectIntensitySection';
 
 export default function ImageConfigModal({ onClose }) {
   const { t } = useTranslation();
@@ -64,6 +65,8 @@ export default function ImageConfigModal({ onClose }) {
               )}
 
               {showImageProvider && <ImagePlaygroundSection />}
+
+              <EffectIntensitySection settings={settings} updateSettings={updateSettings} />
             </div>
           </div>
         </div>

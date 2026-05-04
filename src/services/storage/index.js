@@ -19,6 +19,9 @@ import { getActiveCampaignId, setActiveCampaignId } from './activeCampaign.js';
 import {
   getSettings,
   saveSettings,
+  clearLegacySettings,
+  readLocalOnlySettings,
+  writeLocalOnlySettings,
   getLastCharacterName,
   saveLastCharacterName,
   getSettingsFromAccount,
@@ -58,6 +61,9 @@ export const storage = {
   // Settings
   getSettings,
   saveSettings,
+  clearLegacySettings,
+  readLocalOnlySettings,
+  writeLocalOnlySettings,
   getLastCharacterName,
   saveLastCharacterName,
   getSettingsFromAccount,

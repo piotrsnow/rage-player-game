@@ -6,11 +6,12 @@ import { AI_MODELS } from '../../services/ai';
 import AiProviderSection from './keys/AiProviderSection';
 import LocalLLMSection from './keys/LocalLLMSection';
 import ApiKeysStatusPanel from './keys/ApiKeysStatusPanel';
+import LLMTimeoutSection from './sections/LLMTimeoutSection';
 
 export default function KeysModal({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, hasApiKey, backendKeys } = useSettings();
+  const { settings, updateSettings, updateDMSettings, hasApiKey, backendKeys } = useSettings();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={t('keys.title')} onClick={onClose}>
@@ -46,6 +47,7 @@ export default function KeysModal({ onClose }) {
               <section className="space-y-6 animate-fade-in">
                 <AiProviderSection settings={settings} updateSettings={updateSettings} backendKeys={backendKeys} />
                 <LocalLLMSection settings={settings} updateSettings={updateSettings} />
+                <LLMTimeoutSection dmSettings={settings.dmSettings} updateDMSettings={updateDMSettings} />
               </section>
 
               <section className="space-y-6 animate-fade-in">

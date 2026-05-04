@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { storage } from '../services/storage';
+import { useSettings } from '../contexts/SettingsContext';
 
 /**
  * Config export (download) + import (file upload) with a transient status
@@ -9,9 +10,10 @@ import { storage } from '../services/storage';
 export function useConfigImportExport({ importSettings }) {
   const fileInputRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null);
+  const { settings } = useSettings();
 
   const exportConfig = async () => {
-    await storage.exportConfig();
+    await storage.exportConfig({ settings });
   };
 
   const importConfig = async (event) => {
