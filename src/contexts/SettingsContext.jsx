@@ -146,8 +146,11 @@ const defaultSettings = {
 export function SettingsProvider({ children }) {
   const { i18n } = useTranslation();
   const [settings, setSettings] = useState(() => {
-    const saved = storage.getSettings();
-    return mergeSettingsWithDefaults(saved);
+    // Settings now live on the user account. The only thing we still read
+    // from localStorage at boot is the tiny `backendUrl`/`useBackend` pair —
+    // without them we wouldn't know where to ask for the rest.
+    const localOnly = storage.readLocalOnlySettings();
+    return mergeSettingsWithDefaults(localOnly);
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
@@ -155,14 +158,24 @@ export function SettingsProvider({ children }) {
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
   const saveTimerRef = useRef(null);
+  // `loadFromAccount` is defined further down (depends on `fetchBackendKeys`).
+  // The effect that wants to invoke it on `backendUser` change runs earlier in
+  // the file, so we forward through a ref to dodge the temporal-dead-zone.
+  const loadFromAccountRef = useRef(null);
 
+  // Mirror only the server-coordinates locally so a refresh remembers which
+  // backend to talk to. Everything else is account-scoped.
   useEffect(() => {
-    storage.saveSettings(settings);
-  }, [settings]);
+    storage.writeLocalOnlySettings({
+      backendUrl: settings.backendUrl,
+      useBackend: settings.useBackend,
+    });
+  }, [settings.backendUrl, settings.useBackend]);
 
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     if (syncingFromBackendRef.current) return;
+    if (backendAuthChecking) return;
     if (!apiClient.isConnected()) return;
 
     saveTimerRef.current = setTimeout(() => {
@@ -172,7 +185,7 @@ export function SettingsProvider({ children }) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [settings]);
+  }, [settings, backendAuthChecking]);
 
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend) {
@@ -242,6 +255,11 @@ export function SettingsProvider({ children }) {
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && backendUser) {
       fetchBackendKeys();
+      // Hydrate account settings whenever a user lands on this provider — on
+      // cookie-bootstrap, login, and register. backendLogin/Register also
+      // call this directly (after legacy migration); the duplicate is cheap
+      // and idempotent thanks to `syncingFromBackendRef`.
+      loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
   }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys]);
@@ -295,6 +313,10 @@ export function SettingsProvider({ children }) {
       console.warn('[SettingsContext] Campaign migration failed:', err.message);
     });
   }, [fetchBackendKeys]);
+
+  useEffect(() => {
+    loadFromAccountRef.current = loadFromAccount;
+  }, [loadFromAccount]);
 
   const updateSettings = useCallback((updates) => {
     setSettings((prev) => ({ ...prev, ...updates }));

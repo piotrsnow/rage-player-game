@@ -6,7 +6,7 @@ import {
   MIGRATION_PREFIX,
 } from './keys.js';
 import { getCharacters } from './characters.js';
-import { getSettings } from './settings.js';
+import { clearLegacySettings, getSettings } from './settings.js';
 
 /**
  * One-way upload of pre-account local content to the signed-in user's
@@ -130,6 +130,11 @@ export async function migrateLocalDataToAccount(userId) {
         }
         await apiClient.put('/auth/settings', { settings: uiSettings });
       }
+      // From here on, settings live on the account exclusively. The legacy
+      // full-blob in localStorage is no longer the source of truth and would
+      // only mislead future code reading it — drop it whether we just
+      // uploaded or the account already had its own.
+      clearLegacySettings();
     }
 
     localStorage.setItem(markerKey, Date.now().toString());

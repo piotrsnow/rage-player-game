@@ -5,7 +5,13 @@
 
 export const CAMPAIGNS_KEY = 'nikczemny_krzemuch_campaigns';
 export const CURRENT_CAMPAIGN_KEY = 'nikczemny_krzemuch_current_campaign';
+// Legacy full-settings blob — only read during one-shot account migration
+// (see migrations.js) and during legacy config-import; never written anymore.
 export const SETTINGS_KEY = 'nikczemny_krzemuch_settings';
+// Tiny on-device blob holding ONLY the server-coordinates the FE needs to
+// even start: where to talk to the backend and whether to talk at all.
+// Everything else lives on the user account (PUT /auth/settings).
+export const LOCAL_ONLY_KEY = 'nikczemny_krzemuch_local_only';
 export const ACTIVE_CAMPAIGN_KEY = 'nikczemny_krzemuch_active';
 export const LAST_CHARACTER_NAME_KEY = 'nikczemny_krzemuch_last_character_name';
 export const CHARACTERS_KEY = 'nikczemny_krzemuch_characters';
