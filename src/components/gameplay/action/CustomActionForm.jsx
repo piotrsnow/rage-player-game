@@ -58,7 +58,51 @@ export default function CustomActionForm({
         </span>
       </div>
       <div className="flex items-center gap-1.5">
-        {dictation?.enabled && supported && !isAutoTyping && (
+        {dictation?.enabled && supported && !isAutoTyping && dictation.autoMode && (
+          <div className="shrink-0 flex items-center rounded-full overflow-hidden border border-outline-variant/30 bg-surface-container-high/30">
+            <button
+              type="button"
+              onClick={() => dictation.toggleListening?.()}
+              disabled={disabled}
+              title={dictation.pausedByTTS
+                ? t('gameplay.dictationMutedByNarrator', { defaultValue: 'Narrator is speaking — mic muted' })
+                : t('gameplay.dictationAutoTooltip', { defaultValue: 'Auto-detect mode (click to toggle mic)' })}
+              aria-label="AUTO"
+              aria-pressed={listening}
+              className={`flex items-center gap-1 px-2 h-7 transition-all duration-200 disabled:opacity-30 ${
+                dictation.pausedByTTS
+                  ? 'text-sky-300 bg-sky-400/15'
+                  : listening
+                    ? (dictation.detectedMode === 'dialogue'
+                        ? 'text-amber-200 bg-amber-400/25 mic-pulse'
+                        : 'text-error-light bg-error/20 mic-pulse')
+                    : 'text-primary bg-primary/10'
+              }`}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {dictation.pausedByTTS
+                  ? 'graphic_eq'
+                  : dictation.detectedMode === 'dialogue'
+                    ? 'format_quote'
+                    : 'mic'}
+              </span>
+              <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">
+                AUTO
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => dictation.setAutoMode?.(false)}
+              disabled={disabled}
+              title={t('gameplay.dictationDisableAuto', { defaultValue: 'Switch to manual mode toggle' })}
+              aria-label={t('gameplay.dictationDisableAuto', { defaultValue: 'Disable auto mode' })}
+              className="flex items-center px-1.5 h-7 border-l border-outline-variant/30 text-on-surface-variant/50 hover:text-on-surface-variant transition-all duration-200 disabled:opacity-30"
+            >
+              <span className="material-symbols-outlined text-[14px]">tune</span>
+            </button>
+          </div>
+        )}
+        {dictation?.enabled && supported && !isAutoTyping && !dictation.autoMode && (
           <div className="shrink-0 flex items-center rounded-full overflow-hidden border border-outline-variant/30 bg-surface-container-high/30">
             <button
               type="button"
@@ -113,6 +157,16 @@ export default function CustomActionForm({
               <span className="text-[10px] font-bold uppercase tracking-widest hidden sm:inline">
                 {t('gameplay.dictationModeDialogue')}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => dictation.setAutoMode?.(true)}
+              disabled={disabled}
+              title={t('gameplay.dictationEnableAuto', { defaultValue: 'Re-enable auto mode' })}
+              aria-label={t('gameplay.dictationEnableAuto', { defaultValue: 'Enable auto mode' })}
+              className="flex items-center px-1.5 h-7 border-l border-outline-variant/30 text-on-surface-variant/50 hover:text-primary transition-all duration-200 disabled:opacity-30"
+            >
+              <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
             </button>
           </div>
         )}
@@ -192,9 +246,21 @@ export default function CustomActionForm({
           <span className="material-symbols-outlined text-lg">send</span>
         </button>
       </div>
-      {listening && (
+      {dictation?.pausedByTTS && (
+        <span className="text-[10px] font-bold uppercase tracking-widest text-sky-300/70 mt-1 block">
+          {t('gameplay.dictationMutedByNarrator', { defaultValue: 'Narrator speaking — mic muted' })}
+        </span>
+      )}
+      {listening && !dictation?.pausedByTTS && (
         <span className="text-[10px] font-bold uppercase tracking-widest text-primary/70 animate-pulse mt-1 block">
           {t('gameplay.voiceListening')}
+          {dictation?.autoMode && dictation?.detectedMode && (
+            <span className="ml-1.5 text-on-surface-variant/60">
+              · {dictation.detectedMode === 'dialogue'
+                ? t('gameplay.dictationModeDialogue')
+                : t('gameplay.dictationModeAction')}
+            </span>
+          )}
         </span>
       )}
     </form>

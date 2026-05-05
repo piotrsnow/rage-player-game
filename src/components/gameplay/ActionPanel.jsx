@@ -101,6 +101,8 @@ export default function ActionPanel({
     return () => dictation.setOnResult(null);
   }, [dictation, onVoiceResult]);
 
+  const isAutoTyping = !!autoPlayerTypingText;
+
   const listening = dictation?.listening ?? false;
   const interim = dictation?.interim ?? '';
   const supported = dictation?.supported ?? false;
@@ -122,7 +124,9 @@ export default function ActionPanel({
     e.preventDefault();
     const action = normalizeQuotes(customAction.trim());
     if (action && !disabled) {
-      if (listening) toggle();
+      // Hands-free wants the mic to stay open across submits so the user can
+      // keep dictating without re-clicking. Manual click/Enter still toggles.
+      if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
       emitTypingStop(false);
       if (isMultiplayer) {
@@ -133,6 +137,28 @@ export default function ActionPanel({
       setCustomAction('');
     }
   };
+
+  // Hands-free auto-submit fires after a quiet pause; never toggles the mic
+  // and is suppressed while another writer (auto-player typewriter) is active.
+  const handleAutoSubmit = useCallback(() => {
+    if (disabled || isAutoTyping) return;
+    const action = normalizeQuotes(customAction.trim());
+    if (!action) return;
+    cancelPendingBroadcasts();
+    emitTypingStop(false);
+    if (isMultiplayer) {
+      mp.submitAction(action, true);
+    } else {
+      onAction(action, true, false, forceRoll.enabled ? { forceRoll } : undefined);
+    }
+    setCustomAction('');
+  }, [disabled, isAutoTyping, customAction, isMultiplayer, mp, onAction, forceRoll, cancelPendingBroadcasts, emitTypingStop]);
+
+  useEffect(() => {
+    if (!dictation) return undefined;
+    dictation.setOnAutoSubmit(handleAutoSubmit);
+    return () => dictation.setOnAutoSubmit(null);
+  }, [dictation, handleAutoSubmit]);
 
   const handleSuggestedAction = (action) => {
     if (longPressFiredRef.current) return;
@@ -180,7 +206,7 @@ export default function ActionPanel({
   const handleSoloCustomSubmit = () => {
     const action = normalizeQuotes(customAction.trim());
     if (action) {
-      if (listening) toggle();
+      if (listening && !dictation?.handsFree) toggle();
       cancelPendingBroadcasts();
       emitTypingStop(false);
       mp.soloAction(action, true, settings.language || 'en', settings.dmSettings);

@@ -111,7 +111,19 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
   const sNarrationTime = useGameSlice((s) => s.narrationTime);
   const { settings, updateSettings, updateDMSettings } = useSettings();
-  const dictation = useDictation({ lang: settings.language || 'pl' });
+  const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
+  // useNarrator is declared above useDictation so the dictation hook can react
+  // to TTS playback state (auto-mute mic while the narrator speaks).
+  const narrator = useNarrator(
+    readOnly && shareToken
+      ? { viewerMode: true, shareToken, backendUrl: viewerBackendUrl }
+      : undefined,
+  );
+  const dictation = useDictation({
+    lang: settings.language || 'pl',
+    narratorState: narrator.playbackState,
+    narratorPause: narrator.pause,
+  });
   const { openSettings } = useModals();
   const mp = useMultiplayer();
   const {
@@ -122,12 +134,6 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     streamingNarrative, streamingSegments,
   } = useAI();
 
-  const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
-  const narrator = useNarrator(
-    readOnly && shareToken
-      ? { viewerMode: true, shareToken, backendUrl: viewerBackendUrl }
-      : undefined,
-  );
   const { setNarratorState } = useGlobalMusic();
 
   // Resolve "which source of truth" for every slice — single branch point
@@ -149,6 +155,15 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   useEffect(() => {
     setNarratorState(narrator.playbackState);
   }, [narrator.playbackState, setNarratorState]);
+
+  // Feed the dictation classifier with live game state so the auto-mode can
+  // bias toward action during combat and dialogue when an NPC is mid-scene.
+  useEffect(() => {
+    dictation.setGameContext({
+      combatActive: !!combat,
+      activeDialogueNpc: currentScene?.npcSpeakers?.[0] || null,
+    });
+  }, [dictation.setGameContext, combat, currentScene]);
 
   const { sessionStartTime, sessionSeconds, totalPlayTime } = usePlayTimeTracker();
 
