@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
+import { apiClient } from '../../services/apiClient';
 import GlassCard from '../ui/GlassCard';
 
 function OrnamentalDivider() {
@@ -16,47 +17,82 @@ function OrnamentalDivider() {
 
 function LoggedInBanner({ user, onLogout }) {
   const { t } = useTranslation();
-  const [characterName, setCharacterName] = useState(null);
+  const [topChar, setTopChar] = useState(null);
 
   useEffect(() => {
     const chars = storage.getCharacters();
     if (chars.length > 0) {
-      const sorted = [...chars].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      setCharacterName(sorted[0].name);
+      const sorted = [...chars].sort(
+        (a, b) => (b.characterLevel || 1) - (a.characterLevel || 1),
+      );
+      setTopChar(sorted[0]);
     }
   }, []);
 
-  const displayName = characterName || t('lobby.adventurer');
+  const displayName = topChar?.name || t('lobby.adventurer');
+  const level = topChar?.characterLevel || topChar?.level || 1;
+  const species = topChar?.species;
+  const portraitSrc = topChar?.portraitUrl
+    ? apiClient.resolveMediaUrl(topChar.portraitUrl)
+    : null;
 
   return (
-    <div className="text-center" data-testid="logged-in-banner">
-      <div className="inline-flex items-center gap-2 mb-3">
-        <span className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(197,154,255,0.9)] animate-pulse" />
-        <span className="text-[10px] text-primary font-label uppercase tracking-[0.2em]">
-          {t('lobby.connectedAs')}
-        </span>
+    <div data-testid="logged-in-banner" className="holo-card p-4">
+      <div className="flex gap-4 items-stretch">
+        {/* Portrait */}
+        <div className="w-24 shrink-0 rounded-lg overflow-hidden bg-surface-container-lowest/60 border border-outline-variant/10 flex items-center justify-center aspect-[3/4]">
+          {portraitSrc ? (
+            <img
+              src={portraitSrc}
+              alt={displayName}
+              className="w-full h-full object-cover"
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <span className="material-symbols-outlined text-4xl text-primary/40">person</span>
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="flex flex-col justify-between py-0.5 min-w-0">
+          <div>
+            <div className="inline-flex items-center gap-1.5 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.9)] animate-pulse" />
+              <span className="text-[9px] text-primary font-label uppercase tracking-[0.2em]">
+                {t('lobby.connectedAs')}
+              </span>
+            </div>
+
+            <h2 className="font-headline text-xl md:text-2xl text-tertiary tracking-wide truncate leading-tight">
+              {t('lobby.welcomeBack', { name: displayName })}
+            </h2>
+
+            <div className="flex items-center gap-2 mt-1.5">
+              {topChar && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-label uppercase tracking-wider">
+                  <span className="material-symbols-outlined text-xs">star</span>
+                  Lvl {level}
+                </span>
+              )}
+              {species && (
+                <span className="text-on-surface-variant/50 text-xs">{species}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 mt-2">
+            {user?.email && (
+              <span className="text-outline/40 text-[10px] font-mono truncate">{user.email}</span>
+            )}
+            <button
+              onClick={onLogout}
+              className="shrink-0 text-[10px] text-outline/50 hover:text-error/70 font-label uppercase tracking-widest transition-colors"
+            >
+              {t('settings.backendLogout')}
+            </button>
+          </div>
+        </div>
       </div>
-
-      <h2 className="font-headline text-2xl md:text-3xl text-tertiary mb-2 tracking-wide">
-        {t('lobby.welcomeBack', { name: displayName })}
-      </h2>
-
-      <p className="text-on-surface-variant/60 text-sm font-body mb-1">
-        {t('lobby.adventurerGreeting')}
-      </p>
-
-      {user?.email && (
-        <p className="text-outline/40 text-[10px] font-mono mb-4">
-          {user.email}
-        </p>
-      )}
-
-      <button
-        onClick={onLogout}
-        className="text-[10px] text-outline/50 hover:text-error/70 font-label uppercase tracking-widest transition-colors"
-      >
-        {t('settings.backendLogout')}
-      </button>
     </div>
   );
 }
@@ -226,13 +262,19 @@ function LoginForm() {
 export default function AuthPanel() {
   const { backendUser, backendLogout, backendAuthChecking } = useSettings();
 
+  if (!backendAuthChecking && backendUser) {
+    return (
+      <div className="w-full max-w-md animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
+        <LoggedInBanner user={backendUser} onLogout={backendLogout} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-full max-w-md animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
       <GlassCard elevated className="p-8 md:p-10">
         {backendAuthChecking ? (
           <SessionCheckBanner />
-        ) : backendUser ? (
-          <LoggedInBanner user={backendUser} onLogout={backendLogout} />
         ) : (
           <LoginForm />
         )}

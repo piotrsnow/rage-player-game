@@ -37,6 +37,7 @@ export function parseBackendCampaign(full) {
       const diceRoll = Array.isArray(parsedDice) ? (parsedDice[0] || null) : parsedDice;
       return {
         ...s,
+        image: s.imageUrl || s.image || null,
         suggestedActions: typeof s.suggestedActions === 'string'
           ? JSON.parse(s.suggestedActions) : s.suggestedActions || [],
         dialogueSegments: typeof s.dialogueSegments === 'string'
