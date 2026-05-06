@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
+import { elevenlabsService } from '../../services/elevenlabs';
+import { SKILLS } from '../../data/rpgSystem';
 import GlassCard from '../ui/GlassCard';
-import CampaignCard from './CampaignCard';
 
 function OrnamentalDivider() {
   return (
@@ -19,12 +20,22 @@ function OrnamentalDivider() {
 const BADGE_SESSION_KEY = 'rpgon_badge_fetched';
 
 const ATTR_LABELS = {
-  sila: { icon: 'fitness_center', short: 'STR' },
-  inteligencja: { icon: 'psychology', short: 'INT' },
-  charyzma: { icon: 'record_voice_over', short: 'CHA' },
-  zrecznosc: { icon: 'directions_run', short: 'DEX' },
-  wytrzymalosc: { icon: 'shield', short: 'CON' },
-  szczescie: { icon: 'casino', short: 'LCK' },
+  sila: { icon: 'fitness_center', short: 'STR', label: 'Siła' },
+  inteligencja: { icon: 'psychology', short: 'INT', label: 'Inteligencja' },
+  charyzma: { icon: 'record_voice_over', short: 'CHA', label: 'Charyzma' },
+  zrecznosc: { icon: 'directions_run', short: 'DEX', label: 'Zręczność' },
+  wytrzymalosc: { icon: 'shield', short: 'CON', label: 'Wytrzymałość' },
+  szczescie: { icon: 'casino', short: 'LCK', label: 'Szczęście' },
+};
+
+/** Material Symbols icon per skill attribute pillar — reused for all skills tied to that attribute. */
+const SKILL_ATTR_ICON = {
+  sila: 'swords',
+  zrecznosc: 'sprint',
+  inteligencja: 'menu_book',
+  charyzma: 'groups',
+  wytrzymalosc: 'security',
+  szczescie: 'diamond',
 };
 
 const MAX_TILT = 18;
@@ -33,16 +44,16 @@ const TILT_COOLDOWN_MS = 3000;
 const SPRING_RESET_TRANSITION =
   'transform 0.55s cubic-bezier(0.34, 1.45, 0.56, 1)';
 
-function LoggedInBanner({
-  user, campaigns,
-  onLoadCampaign, loadingCampaignId, showDeleteConfirm, onDeleteCampaign, onShowAllCampaigns,
-}) {
+function LoggedInBanner({ user }) {
   const { t, i18n } = useTranslation();
+  const { voicePools, hasApiKey } = useSettings();
   const [topChar, setTopChar] = useState(null);
+  const [fullChar, setFullChar] = useState(null);
   const [flipped, setFlipped] = useState(false);
   const [badgeLegend, setBadgeLegend] = useState('');
-  const [badgeSummary, setBadgeSummary] = useState([]);
+  const [badgeSnark, setBadgeSnark] = useState('');
   const [badgeLoading, setBadgeLoading] = useState(false);
+  const [ttsState, setTtsState] = useState('idle');
 
   const cardRef = useRef(null);
   const tiltRef = useRef({ x: 0, y: 0, holoAngle: 0 });
@@ -52,6 +63,7 @@ function LoggedInBanner({
   const primaryHeldFromCardRef = useRef(false);
   const draggedWhilePrimaryRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     const chars = storage.getCharacters();
@@ -72,10 +84,7 @@ function LoggedInBanner({
         language: i18n.language || 'pl',
       });
       if (res?.legend) setBadgeLegend(res.legend);
-      if (res?.summary) {
-        const arr = typeof res.summary === 'string' ? JSON.parse(res.summary) : res.summary;
-        if (Array.isArray(arr)) setBadgeSummary(arr);
-      }
+      if (res?.snark) setBadgeSnark(res.snark);
       sessionStorage.setItem(BADGE_SESSION_KEY, '1');
     } catch {}
     setBadgeLoading(false);
@@ -88,11 +97,83 @@ function LoggedInBanner({
     fetchBadge(charId, !alreadyFetched);
   }, [topChar, fetchBadge]);
 
+  // Pull the full character snapshot (skills, etc.) — list endpoint stubs
+  // skills:{} for performance, so we need this extra hop to render the
+  // skills grid alongside attributes.
+  useEffect(() => {
+    if (!topChar || !apiClient.isConnected()) return;
+    const charId = topChar.backendId || topChar.id;
+    if (!charId) return;
+    let cancelled = false;
+    apiClient.get(`/characters/${charId}`)
+      .then((data) => { if (!cancelled && data) setFullChar(data); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [topChar]);
+
   const handleRefresh = (e) => {
     e.stopPropagation();
     if (!topChar || badgeLoading) return;
     fetchBadge(topChar.backendId || topChar.id, true);
   };
+
+  const stopSnarkAudio = useCallback(() => {
+    const a = audioRef.current;
+    if (a) {
+      try { a.pause(); } catch {}
+      try { a.removeAttribute('src'); a.load(); } catch {}
+      audioRef.current = null;
+    }
+    setTtsState('idle');
+  }, []);
+
+  const handlePlaySnark = useCallback(async (e) => {
+    e.stopPropagation();
+    if (ttsState === 'playing' || ttsState === 'loading') {
+      stopSnarkAudio();
+      return;
+    }
+    const text = (badgeSnark || '').trim();
+    if (!text) return;
+    const voiceId = voicePools?.narratorVoiceId;
+    const provider = 'elevenlabs';
+    if (!voiceId || !hasApiKey(provider)) {
+      setTtsState('error');
+      setTimeout(() => setTtsState('idle'), 2000);
+      return;
+    }
+    setTtsState('loading');
+    try {
+      const { audioUrl } = await elevenlabsService.textToSpeechWithTimestamps(
+        undefined, voiceId, text, undefined, null, null,
+      );
+      if (!audioUrl) throw new Error('no audio url');
+      const resolved = apiClient.resolveMediaUrl(audioUrl);
+      const audio = new Audio(resolved);
+      audioRef.current = audio;
+      audio.addEventListener('ended', () => {
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+          setTtsState('idle');
+        }
+      });
+      audio.addEventListener('error', () => {
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+          setTtsState('error');
+          setTimeout(() => setTtsState('idle'), 2000);
+        }
+      });
+      await audio.play();
+      setTtsState('playing');
+    } catch {
+      audioRef.current = null;
+      setTtsState('error');
+      setTimeout(() => setTtsState('idle'), 2000);
+    }
+  }, [badgeSnark, ttsState, stopSnarkAudio, voicePools, hasApiKey]);
+
+  useEffect(() => () => stopSnarkAudio(), [stopSnarkAudio]);
 
   const applyTilt = useCallback(() => {
     const el = cardRef.current;
@@ -223,9 +304,43 @@ function LoggedInBanner({
   const portraitSrc = topChar?.portraitUrl
     ? apiClient.resolveMediaUrl(topChar.portraitUrl)
     : null;
-  const attrs = topChar?.attributes;
+  const attrs = (fullChar?.attributes || topChar?.attributes) || null;
 
-  const recentCampaigns = (campaigns || []).slice(0, 4);
+  /**
+   * Build a unified list of "stat boxes": attributes always render (even at
+   * baseline 1), skills only when level > 0. They share the same
+   * holographic chip styling and hover-expand affordance.
+   */
+  const skillsObj = fullChar?.skills && typeof fullChar.skills === 'object' ? fullChar.skills : {};
+  const attrChips = attrs && typeof attrs === 'object'
+    ? Object.entries(ATTR_LABELS).flatMap(([key, meta]) => {
+        const val = attrs[key];
+        if (val == null) return [];
+        return [{
+          kind: 'attr',
+          key: `attr-${key}`,
+          icon: meta.icon,
+          label: meta.label,
+          value: val,
+        }];
+      })
+    : [];
+  const skillChips = SKILLS.flatMap((s) => {
+    const entry = skillsObj[s.name];
+    const lvl = typeof entry === 'number' ? entry : Number(entry?.level || 0);
+    if (!lvl || lvl <= 0) return [];
+    return [{
+      kind: 'skill',
+      key: `skill-${s.name}`,
+      icon: SKILL_ATTR_ICON[s.attribute] || 'auto_awesome',
+      label: s.name,
+      value: lvl,
+    }];
+  });
+  const statChips = [...attrChips, ...skillChips];
+
+  const ttsAvailable = !!(voicePools?.narratorVoiceId && hasApiKey('elevenlabs'));
+  const ttsBusy = ttsState === 'loading' || ttsState === 'playing';
 
   return (
     <div
@@ -263,61 +378,61 @@ function LoggedInBanner({
                   {t('lobby.connectedAs')}
                 </span>
               </div>
-              <h2 className="font-headline text-3xl text-tertiary tracking-wide truncate leading-tight">
+              <h2 className="font-headline text-4xl text-tertiary tracking-wide truncate leading-tight">
                 {displayName}
               </h2>
               <div className="flex items-center gap-3 mt-3">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-label uppercase tracking-wider">
-                  <span className="material-symbols-outlined text-base">star</span>
+                <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/25 text-primary text-base font-headline uppercase tracking-wider">
+                  <span className="material-symbols-outlined text-xl">star</span>
                   Lvl {level}
                 </span>
                 {species && (
-                  <span className="text-on-surface-variant/50 text-base">{species}</span>
+                  <span className="text-on-surface-variant/60 text-base">{species}</span>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Legend (AI-generated) */}
+          {/* Legend (AI-generated) — single epic line, max 15 words */}
           {badgeLegend && (
             <p className="text-on-surface-variant/80 text-base leading-relaxed mb-5 italic">
               &ldquo;{badgeLegend}&rdquo;
             </p>
           )}
 
-          {/* Attributes grid */}
-          {attrs && typeof attrs === 'object' && (
-            <div className="grid grid-cols-3 gap-2.5 mb-5">
-              {Object.entries(ATTR_LABELS).map(([key, meta]) => {
-                const val = attrs[key];
-                if (val == null) return null;
-                return (
-                  <div key={key} className="flex items-center gap-2 px-3 py-2.5 rounded-md bg-surface-container-lowest/40 border border-outline-variant/5">
-                    <span className="material-symbols-outlined text-base text-primary/60">{meta.icon}</span>
-                    <span className="text-xs text-outline/60 font-label uppercase">{meta.short}</span>
-                    <span className="ml-auto text-base text-on-surface font-headline">{val}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* AI scene summaries */}
-          {badgeSummary.length > 0 && (
-            <div className="flex-1 min-h-0 mb-4">
-              <p className="text-xs text-outline/40 font-label uppercase tracking-wider mb-2.5">
-                {t('lobby.recentScenes', 'Last scenes')}
-              </p>
-              <div className="space-y-2">
-                {badgeSummary.map((text, i) => (
-                  <div key={i} className="flex gap-2.5 items-start">
-                    <span className="shrink-0 w-6 h-6 rounded-full bg-primary/8 border border-primary/15 flex items-center justify-center text-[10px] text-primary/50 font-label mt-0.5">
-                      {i + 1}
+          {/* Stats grid: attributes + skills as siblings, holographic chips,
+              hover-expand to reveal full label */}
+          {statChips.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-5">
+              {statChips.map((chip) => (
+                <div
+                  key={chip.key}
+                  title={chip.label}
+                  className={[
+                    'group relative flex items-center h-14 rounded-md overflow-hidden',
+                    'border border-primary/20',
+                    'bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10',
+                    'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
+                    'transition-[max-width,background,border-color] duration-200 ease-out',
+                    'max-w-[3.5rem] hover:max-w-[16rem] hover:border-primary/45',
+                    'hover:bg-gradient-to-br hover:from-primary/20 hover:via-tertiary/10 hover:to-primary/20',
+                  ].join(' ')}
+                >
+                  <span className="shrink-0 w-14 h-14 flex items-center justify-center">
+                    <span className={`material-symbols-outlined text-2xl ${chip.kind === 'attr' ? 'text-primary' : 'text-tertiary/80'}`}>
+                      {chip.icon}
                     </span>
-                    <p className="text-sm text-on-surface-variant/70 leading-snug">{text}</p>
-                  </div>
-                ))}
-              </div>
+                  </span>
+                  <span className="pr-3 flex items-center gap-2 whitespace-nowrap min-w-0">
+                    <span className="text-xs text-on-surface-variant/80 font-label uppercase tracking-wider truncate">
+                      {chip.label}
+                    </span>
+                    <span className="text-base text-on-surface font-headline shrink-0">
+                      {chip.value}
+                    </span>
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
@@ -351,48 +466,54 @@ function LoggedInBanner({
           </div>
         </div>
 
-        {/* ===== BACK — campaign list ===== */}
+        {/* ===== BACK — snarky exploits + narrator ===== */}
         <div className="flip-card-back holo-card p-8 flex flex-col overflow-hidden">
           <h3 className="font-headline text-tertiary text-xl flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-primary-dim text-2xl">auto_stories</span>
-            {t('lobby.recentCampaigns', 'Ostatnie kampanie')}
-            <span className="ml-auto text-sm text-outline font-label holo-count-badge px-2.5 py-1 rounded-full border border-primary/15">
-              {(campaigns || []).length}
-            </span>
+            <span className="material-symbols-outlined text-primary-dim text-2xl">theater_comedy</span>
+            {t('lobby.snarkTitle', 'Twoje wybryki')}
+            {ttsAvailable && (
+              <button
+                type="button"
+                onClick={handlePlaySnark}
+                disabled={!badgeSnark}
+                title={ttsBusy ? t('lobby.stopSnark', 'Zatrzymaj') : t('lobby.playSnark', 'Posłuchaj')}
+                className={[
+                  'ml-auto inline-flex items-center justify-center w-9 h-9 rounded-full',
+                  'border border-primary/25 bg-primary/8 hover:bg-primary/15 hover:border-primary/45',
+                  'text-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed',
+                ].join(' ')}
+              >
+                <span className={`material-symbols-outlined text-lg ${ttsState === 'loading' ? 'animate-spin' : ''}`}>
+                  {ttsState === 'loading' ? 'sync' : ttsState === 'playing' ? 'stop_circle' : 'volume_up'}
+                </span>
+              </button>
+            )}
           </h3>
 
           <OrnamentalDivider />
 
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-2">
-            {recentCampaigns.map((c, i) => (
-              <div key={c.id || i} className="holo-back-item rounded-sm">
-                <CampaignCard
-                  campaign={c}
-                  loading={loadingCampaignId === c.id}
-                  disabled={!!loadingCampaignId}
-                  onLoad={() => onLoadCampaign?.(c)}
-                  onDelete={() => onDeleteCampaign?.(c.id)}
-                />
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+            {badgeSnark ? (
+              <p className="text-base text-on-surface-variant/85 leading-relaxed italic">
+                {badgeSnark}
+              </p>
+            ) : badgeLoading ? (
+              <div className="flex items-center justify-center gap-2.5 text-outline/30 text-base py-8">
+                <span className="material-symbols-outlined text-lg animate-spin">sync</span>
+                {t('common.loading')}
               </div>
-            ))}
-            {recentCampaigns.length === 0 && (
+            ) : (
               <div className="text-center text-on-surface-variant/40 py-8">
-                <span className="material-symbols-outlined text-4xl text-outline/15 block mb-3">auto_stories</span>
-                <p className="text-base">{t('lobby.noCampaigns')}</p>
+                <span className="material-symbols-outlined text-4xl text-outline/15 block mb-3">sentiment_neutral</span>
+                <p className="text-base">{t('lobby.snarkEmpty', 'Brak materiału do drwin... na razie.')}</p>
               </div>
             )}
+            {ttsState === 'error' && (
+              <p className="mt-3 text-xs text-error/70">
+                {t('lobby.snarkTtsError', 'Nie udało się odtworzyć narracji.')}
+              </p>
+            )}
           </div>
-
-          {(campaigns || []).length > 4 && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onShowAllCampaigns?.(); }}
-              className="mt-4 w-full flex items-center justify-center gap-2 py-3 text-lg text-primary hover:text-tertiary font-label uppercase tracking-wider transition-colors hover:bg-primary/5 rounded-sm"
-            >
-              <span className="material-symbols-outlined text-xl">expand_more</span>
-              {t('lobby.showAllCampaigns', 'Wszystkie kampanie')} ({(campaigns || []).length})
-            </button>
-          )}
 
           {/* Footer */}
           <div className="flex items-center gap-3 mt-auto pt-4 border-t border-outline-variant/8">
@@ -569,24 +690,13 @@ function LoginForm() {
   );
 }
 
-export default function AuthPanel({
-  campaigns, onLoadCampaign, loadingCampaignId,
-  showDeleteConfirm, onDeleteCampaign, onShowAllCampaigns,
-}) {
+export default function AuthPanel() {
   const { backendUser, backendAuthChecking } = useSettings();
 
   if (!backendAuthChecking && backendUser) {
     return (
       <div className="w-full animate-slide-up relative z-10" style={{ animationDelay: '0.1s' }}>
-        <LoggedInBanner
-          user={backendUser}
-          campaigns={campaigns}
-          onLoadCampaign={onLoadCampaign}
-          loadingCampaignId={loadingCampaignId}
-          showDeleteConfirm={showDeleteConfirm}
-          onDeleteCampaign={onDeleteCampaign}
-          onShowAllCampaigns={onShowAllCampaigns}
-        />
+        <LoggedInBanner user={backendUser} />
       </div>
     );
   }

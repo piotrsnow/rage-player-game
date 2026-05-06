@@ -271,6 +271,7 @@ export async function characterRoutes(fastify) {
       return {
         summary: char.badgeSummary,
         legend: char.badgeLegend,
+        snark: char.badgeSnark,
         updatedAt: char.badgeUpdatedAt,
         cached: true,
       };
@@ -312,10 +313,12 @@ export async function characterRoutes(fastify) {
     let userApiKeys = null;
     try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
 
+    const isPolish = language === 'pl';
     const systemPrompt = `You are a fantasy RPG narrator. Generate a player badge card for the character described below.
-Return JSON with exactly two fields:
-- "legend": A short (2-3 sentences) dramatic character description capturing their personality, reputation, and defining traits based on their attributes and recent actions. Written in ${language === 'pl' ? 'Polish' : 'English'}.
-- "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory. Written in ${language === 'pl' ? 'Polish' : 'English'}.`;
+Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'English'}:
+- "legend": ONE epic, reverent, hero-chronicle line. HARD LIMIT: maximum 15 words. No more. Make every word count. Grounded in attributes / level / backstory.
+- "snark": A SHARP, mocking, tongue-in-cheek roast of this character's exploits and choices — Pratchett-style tavern shame. 2 to 4 short sentences. Be cutting but witty. Lean into pathetic attributes, stupid decisions, embarrassing scenes. If the character is heroic, mock their pretensions instead. NEVER kind, NEVER neutral.
+- "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory.`;
 
     const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
 
@@ -326,22 +329,28 @@ Return JSON with exactly two fields:
         taskCategory: 'auxiliary',
         systemPrompt,
         userPrompt,
-        maxTokens: 600,
-        temperature: 0.8,
+        maxTokens: 800,
+        temperature: 0.9,
         userApiKeys,
       });
 
       const parsed = parseJsonOrNull(text);
-      const legend = parsed?.legend || '';
+      const legend = (parsed?.legend || '').trim();
+      const snark = (parsed?.snark || '').trim();
       const summary = JSON.stringify(Array.isArray(parsed?.summary) ? parsed.summary : []);
       const now = new Date();
 
       await prisma.character.update({
         where: { id: char.id },
-        data: { badgeSummary: summary, badgeLegend: legend, badgeUpdatedAt: now },
+        data: {
+          badgeSummary: summary,
+          badgeLegend: legend,
+          badgeSnark: snark,
+          badgeUpdatedAt: now,
+        },
       });
 
-      return { summary, legend, updatedAt: now, cached: false };
+      return { summary, legend, snark, updatedAt: now, cached: false };
     } catch (err) {
       const status = err.statusCode || 502;
       return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });

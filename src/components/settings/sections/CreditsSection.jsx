@@ -15,6 +15,7 @@ export default function CreditsSection() {
   const { backendUser, loadBackendUser } = useSettings();
   const [customAmount, setCustomAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -124,7 +125,30 @@ export default function CreditsSection() {
         <p className="mt-3 text-xs text-primary">{successMsg}</p>
       )}
 
-      <p className="mt-6 text-[10px] text-on-surface-variant/50">
+      <div className="mt-6 pt-5 border-t border-outline-variant/10 flex items-center gap-3">
+        <button
+          onClick={async () => {
+            setPortalLoading(true);
+            setError('');
+            try {
+              const { url } = await apiClient.createBillingPortalSession();
+              if (url) window.location.href = url;
+            } catch (err) {
+              setError(err.message || t('credits.billingPortalFailed'));
+            } finally {
+              setPortalLoading(false);
+            }
+          }}
+          disabled={portalLoading || loading}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-sm border border-outline-variant/15 bg-surface-container-high/40 text-on-surface text-sm hover:border-primary/30 hover:text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span className="material-symbols-outlined text-base">receipt_long</span>
+          {portalLoading ? t('credits.redirecting') : t('credits.billingPortal')}
+        </button>
+        <span className="text-[10px] text-on-surface-variant/50">{t('credits.billingPortalHint')}</span>
+      </div>
+
+      <p className="mt-4 text-[10px] text-on-surface-variant/50">
         {t('credits.footer')}
       </p>
     </div>

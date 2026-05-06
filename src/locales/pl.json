@@ -258,7 +258,12 @@
     "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
     "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta.",
     "recentCampaigns": "Ostatnie kampanie",
-    "showAllCampaigns": "Wszystkie kampanie"
+    "showAllCampaigns": "Wszystkie kampanie",
+    "snarkTitle": "Twoje wybryki",
+    "snarkEmpty": "Brak materiału do drwin... na razie.",
+    "snarkTtsError": "Nie udało się odtworzyć narracji.",
+    "playSnark": "Posłuchaj",
+    "stopSnark": "Zatrzymaj"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -1185,7 +1190,10 @@
     "amountRange": "Kwota musi być między $1 a $100",
     "checkoutFailed": "Płatność nie powiodła się",
     "success": "Doładowanie zakończone pomyślnie!",
-    "footer": "Płatności obsługiwane przez Stripe. Kwoty w USD."
+    "footer": "Płatności obsługiwane przez Stripe. Kwoty w USD.",
+    "billingPortal": "Rachunki i historia płatności",
+    "billingPortalHint": "Otwiera bezpieczną stronę Stripe",
+    "billingPortalFailed": "Nie udało się otworzyć portalu płatności"
   },
   "sceneCost": {
     "title": "Koszt sceny",

@@ -372,6 +372,10 @@ export const apiClient = {
     return this.post('/credits/verify', { sessionId });
   },
 
+  createBillingPortalSession() {
+    return this.post('/credits/billing-portal', {});
+  },
+
   resolveMediaUrl(url) {
     if (!url || typeof url !== 'string') return url;
     if (url.startsWith('data:') || url.startsWith('blob:')) return url;
