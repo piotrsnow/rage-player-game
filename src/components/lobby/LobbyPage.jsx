@@ -452,7 +452,7 @@ export default function LobbyPage() {
               </div>
             )}
 
-            <div className="flex flex-row gap-4 items-center w-full">
+            <div className="flex flex-row gap-4 items-stretch w-full">
               <Button size="lg" className="flex-1" onClick={() => navigate('/create')}>
                 {t('lobby.newCampaign')}
               </Button>

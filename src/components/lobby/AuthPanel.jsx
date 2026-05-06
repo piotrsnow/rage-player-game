@@ -4,7 +4,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { storage } from '../../services/storage';
 import { apiClient } from '../../services/apiClient';
 import { elevenlabsService } from '../../services/elevenlabs';
-import { SKILLS } from '../../data/rpgSystem';
+import { SKILLS, SPECIES } from '../../data/rpgSystem';
 import GlassCard from '../ui/GlassCard';
 
 function OrnamentalDivider() {
@@ -298,19 +298,21 @@ function LoggedInBanner({ user }) {
 
   useEffect(() => () => { if (rafId.current) cancelAnimationFrame(rafId.current); }, []);
 
+  const [recentHovered, setRecentHovered] = useState([]);
+
+  const handleChipHover = useCallback((chip) => {
+    setRecentHovered((prev) => [chip, ...prev.filter((c) => c.key !== chip.key)].slice(0, 3));
+  }, []);
+
   const displayName = topChar?.name || t('lobby.adventurer');
   const level = topChar?.characterLevel || topChar?.level || 1;
   const species = topChar?.species;
+  const speciesLabel = species ? (SPECIES[species]?.name || species) : null;
   const portraitSrc = topChar?.portraitUrl
     ? apiClient.resolveMediaUrl(topChar.portraitUrl)
     : null;
   const attrs = (fullChar?.attributes || topChar?.attributes) || null;
 
-  /**
-   * Build a unified list of "stat boxes": attributes always render (even at
-   * baseline 1), skills only when level > 0. They share the same
-   * holographic chip styling and hover-expand affordance.
-   */
   const skillsObj = fullChar?.skills && typeof fullChar.skills === 'object' ? fullChar.skills : {};
   const attrChips = attrs && typeof attrs === 'object'
     ? Object.entries(ATTR_LABELS).flatMap(([key, meta]) => {
@@ -339,6 +341,8 @@ function LoggedInBanner({ user }) {
   });
   const statChips = [...attrChips, ...skillChips];
 
+  const highlightedKey = recentHovered[0]?.key || null;
+
   const ttsAvailable = !!(voicePools?.narratorVoiceId && hasApiKey('elevenlabs'));
   const ttsBusy = ttsState === 'loading' || ttsState === 'playing';
 
@@ -353,17 +357,17 @@ function LoggedInBanner({ user }) {
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <div className="flip-card-inner" style={{ minHeight: 520 }}>
+      <div className="flip-card-inner" style={{ aspectRatio: '1.586 / 1' }}>
         {/* ===== FRONT ===== */}
-        <div className="flip-card-front holo-card p-8 flex flex-col">
+        <div className="flip-card-front holo-card p-8 flex flex-col overflow-hidden">
           {/* Header: portrait + identity */}
-          <div className="flex gap-5 items-start mb-5">
-            <div className="w-36 shrink-0 rounded-lg overflow-hidden bg-surface-container-lowest/60 border border-outline-variant/10 flex items-center justify-center aspect-[3/4]">
+          <div className="flex gap-5 items-start mb-3">
+            <div className="badge-portrait-frame w-36 shrink-0 rounded-lg overflow-visible bg-surface-container-lowest/60 flex items-center justify-center aspect-[3/4]">
               {portraitSrc ? (
                 <img
                   src={portraitSrc}
                   alt={displayName}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover rounded-lg badge-portrait-hologram"
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
               ) : (
@@ -372,64 +376,59 @@ function LoggedInBanner({ user }) {
             </div>
 
             <div className="min-w-0 flex-1 pt-1">
-              <div className="inline-flex items-center gap-2 mb-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-primary shadow-[0_0_6px_rgba(197,154,255,0.9)] animate-pulse" />
-                <span className="text-xs text-primary font-label uppercase tracking-[0.2em]">
-                  {t('lobby.connectedAs')}
-                </span>
-              </div>
-              <h2 className="font-headline text-4xl text-tertiary tracking-wide truncate leading-tight">
+              <h2 className="font-headline text-4xl text-tertiary tracking-wide truncate leading-tight mb-3">
                 {displayName}
               </h2>
-              <div className="flex items-center gap-3 mt-3">
-                <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/25 text-primary text-base font-headline uppercase tracking-wider">
-                  <span className="material-symbols-outlined text-xl">star</span>
-                  Lvl {level}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
+                  <span className="material-symbols-outlined text-lg text-primary">star</span>
+                  <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">Lvl</span>
+                  <span className="text-on-surface font-headline">{level}</span>
                 </span>
-                {species && (
-                  <span className="text-on-surface-variant/60 text-base">{species}</span>
+                {speciesLabel && (
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/25 text-sm font-headline">
+                    <span className="material-symbols-outlined text-lg text-primary">groups</span>
+                    <span className="text-on-surface-variant/80 text-xs uppercase tracking-wider">{speciesLabel}</span>
+                  </span>
                 )}
               </div>
+
+              {/* Legend (AI-generated) — directly below lvl/species */}
+              {badgeLegend && (
+                <p className="mt-3 text-base leading-relaxed italic animate-text-shimmer">
+                  &ldquo;{badgeLegend}&rdquo;
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Legend (AI-generated) — single epic line, max 15 words */}
-          {badgeLegend && (
-            <p className="text-on-surface-variant/80 text-base leading-relaxed mb-5 italic">
-              &ldquo;{badgeLegend}&rdquo;
-            </p>
-          )}
-
-          {/* Stats grid: attributes + skills as siblings, holographic chips,
-              hover-expand to reveal full label */}
+          {/* Stats grid — full badge width, with tooltip on hover */}
           {statChips.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-5">
+            <div className="flex flex-wrap gap-2 mb-4">
               {statChips.map((chip) => (
                 <div
                   key={chip.key}
-                  title={chip.label}
+                  onPointerEnter={() => handleChipHover(chip)}
                   className={[
-                    'group relative flex items-center h-14 rounded-md overflow-hidden',
-                    'border border-primary/20',
+                    'group relative flex items-center h-11 w-11 rounded-md justify-center',
+                    'border',
                     'bg-gradient-to-br from-primary/10 via-tertiary/5 to-primary/10',
                     'shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
-                    'transition-[max-width,background,border-color] duration-200 ease-out',
-                    'max-w-[3.5rem] hover:max-w-[16rem] hover:border-primary/45',
-                    'hover:bg-gradient-to-br hover:from-primary/20 hover:via-tertiary/10 hover:to-primary/20',
+                    'transition-[border-color,box-shadow] duration-200 ease-out',
+                    highlightedKey === chip.key
+                      ? 'border-primary/60 shadow-[0_0_10px_rgba(197,154,255,0.3)]'
+                      : 'border-primary/20 hover:border-primary/45',
                   ].join(' ')}
                 >
-                  <span className="shrink-0 w-14 h-14 flex items-center justify-center">
-                    <span className={`material-symbols-outlined text-2xl ${chip.kind === 'attr' ? 'text-primary' : 'text-tertiary/80'}`}>
-                      {chip.icon}
-                    </span>
+                  <span className={`material-symbols-outlined text-xl ${chip.kind === 'attr' ? 'text-primary' : 'text-tertiary/80'}`}>
+                    {chip.icon}
                   </span>
-                  <span className="pr-3 flex items-center gap-2 whitespace-nowrap min-w-0">
-                    <span className="text-xs text-on-surface-variant/80 font-label uppercase tracking-wider truncate">
-                      {chip.label}
-                    </span>
-                    <span className="text-base text-on-surface font-headline shrink-0">
-                      {chip.value}
-                    </span>
+                  <span className="absolute -bottom-0.5 -right-0.5 text-[9px] font-headline text-on-surface bg-surface-dim/80 rounded px-0.5 leading-tight">
+                    {chip.value}
+                  </span>
+                  {/* Tooltip */}
+                  <span className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap px-2 py-1 rounded bg-surface-dim/95 border border-primary/25 text-[10px] text-on-surface font-headline shadow-lg z-50">
+                    {chip.label} {chip.value}
                   </span>
                 </div>
               ))}
@@ -467,7 +466,7 @@ function LoggedInBanner({ user }) {
         </div>
 
         {/* ===== BACK — snarky exploits + narrator ===== */}
-        <div className="flip-card-back holo-card p-8 flex flex-col overflow-hidden">
+        <div className="flip-card-back holo-card p-8 flex flex-col justify-center overflow-hidden">
           <h3 className="font-headline text-tertiary text-xl flex items-center gap-2.5">
             <span className="material-symbols-outlined text-primary-dim text-2xl">theater_comedy</span>
             {t('lobby.snarkTitle', 'Twoje wybryki')}
@@ -492,9 +491,16 @@ function LoggedInBanner({ user }) {
 
           <OrnamentalDivider />
 
-          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
+          {/* Legend on back — holo style */}
+          {badgeLegend && (
+            <p className="text-base leading-relaxed italic animate-text-shimmer text-center mb-4">
+              &ldquo;{badgeLegend}&rdquo;
+            </p>
+          )}
+
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex flex-col justify-center">
             {badgeSnark ? (
-              <p className="text-base text-on-surface-variant/85 leading-relaxed italic">
+              <p className="text-base leading-relaxed italic animate-text-shimmer">
                 {badgeSnark}
               </p>
             ) : badgeLoading ? (
@@ -516,7 +522,7 @@ function LoggedInBanner({ user }) {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-3 mt-auto pt-4 border-t border-outline-variant/8">
+          <div className="flex items-center gap-3 pt-4 border-t border-outline-variant/8">
             <span className="text-[10px] text-outline/20 font-label uppercase tracking-widest flex items-center gap-1.5">
               <span className="material-symbols-outlined text-sm">360</span>
               {t('lobby.flipBack', 'Click to flip back')}
