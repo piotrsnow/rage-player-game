@@ -264,7 +264,12 @@
     "loadingWorldHint": "Preparing your adventure, please wait",
     "campaignNotFound": "Campaign not found. It may have been deleted.",
     "recentCampaigns": "Recent Campaigns",
-    "showAllCampaigns": "All Campaigns"
+    "showAllCampaigns": "All Campaigns",
+    "snarkTitle": "Your Mischief",
+    "snarkEmpty": "Nothing to mock... yet.",
+    "snarkTtsError": "Failed to play narration.",
+    "playSnark": "Listen",
+    "stopSnark": "Stop"
   },
   "creator": {
     "title": "Forge a New Campaign",
