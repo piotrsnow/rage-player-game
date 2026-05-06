@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useChatScrollSync } from '../../hooks/useChatScrollSync';
 import { useChatAutoNarration } from '../../hooks/useChatAutoNarration';
@@ -33,6 +34,7 @@ export default function ChatPanel({
   sessionSeconds = 0,
   totalPlayTime = 0,
   narrationTime = 0,
+  chatGate = false,
 }) {
   const { t } = useTranslation();
   const { bottomRef, containerRef } = useChatScrollSync({
@@ -42,6 +44,21 @@ export default function ChatPanel({
     onScrollTargetHandled,
   });
   useChatAutoNarration({ messages, narrator, autoPlay });
+
+  // Boundary fixed at the moment chatGate switches false→true: hide everything
+  // added while the typewriter overlay is up (stream preview + new DM).
+  const gateBoundaryId = useMemo(() => {
+    if (!chatGate) return null;
+    return messages.length > 0 ? messages[messages.length - 1].id : '__none__';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatGate]);
+
+  const visibleMessages = useMemo(() => {
+    if (!chatGate || gateBoundaryId === null) return messages;
+    if (gateBoundaryId === '__none__') return [];
+    const idx = messages.findIndex((m) => m.id === gateBoundaryId);
+    return idx >= 0 ? messages.slice(0, idx + 1) : messages;
+  }, [chatGate, gateBoundaryId, messages]);
 
   return (
     <div className="flex flex-col h-full">
@@ -116,7 +133,7 @@ export default function ChatPanel({
             </p>
           </div>
         )}
-        {messages.map((msg) => {
+        {visibleMessages.map((msg) => {
           let inner;
           let px = 'px-2';
           if (msg.role === 'dm') inner = <DmMessage message={msg} narrator={narrator} />;
@@ -126,8 +143,9 @@ export default function ChatPanel({
           else inner = <SystemMessage message={msg} />;
           return <div key={msg.id} data-testid="chat-message" data-message-id={msg.id} className={px}>{inner}</div>;
         })}
-        {/* Streaming narrative — shown while AI generates */}
-        {streamingNarrative && (
+        {/* Streaming narrative — shown while AI generates (suppressed while
+            a typewriter overlay is up so the chat stays quiet until it closes). */}
+        {!chatGate && streamingNarrative && (
           <div className="px-2 animate-fade-in">
             <div className="flex flex-col gap-2">
               <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
