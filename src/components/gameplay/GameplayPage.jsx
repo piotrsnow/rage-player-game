@@ -128,7 +128,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     narratorState: narrator.playbackState,
     narratorPause: narrator.pause,
   });
-  const { openSettings, openGmModal } = useModals();
+  const { openSettings, openGmModal, setPlayerActionHandler } = useModals();
   const dictCtx = useDictationContext();
   const mp = useMultiplayer();
   const {
@@ -383,6 +383,11 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const handleActionRef = useRef(handleAction);
   handleActionRef.current = handleAction;
   const stableHandleAction = useCallback((...args) => handleActionRef.current(...args), []);
+
+  useEffect(() => {
+    setPlayerActionHandler(stableHandleAction);
+    return () => setPlayerActionHandler(null);
+  }, [stableHandleAction, setPlayerActionHandler]);
 
   const autoPlayer = useAutoPlayer(
     isMultiplayer ? null : stableHandleAction,

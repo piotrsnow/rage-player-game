@@ -5,6 +5,7 @@ import StatsGrid from './StatsGrid';
 import Inventory from './Inventory';
 import ItemDetailBox from './inventory/ItemDetailBox';
 import CrystalUseModal from './inventory/CrystalUseModal';
+import UseItemModal from './inventory/UseItemModal';
 import { getEquippableSlots, getEquippedSlot } from './inventory/constants';
 import StatusBar from '../ui/StatusBar';
 import PortraitGenerator from './PortraitGenerator';
@@ -240,6 +241,8 @@ export default function CharacterPanel({
   onPortraitChange,
   campaign,
   scenes,
+  onItemAction,
+  npcsInScene,
 }) {
   const allVoices = [
     ...((maleVoices || []).map((v) => ({ ...v, gender: 'male' }))),
@@ -252,6 +255,7 @@ export default function CharacterPanel({
   const equipped = character.equipped || {};
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [crystalItemId, setCrystalItemId] = useState(null);
+  const [useItemModalItem, setUseItemModalItem] = useState(null);
   const [regeneratingItemId, setRegeneratingItemId] = useState(null);
   const selectedItem = inventoryItems.find((i) => i.id === selectedItemId) || null;
 
@@ -468,6 +472,7 @@ export default function CharacterPanel({
                 onEquipItem={handleEquipItem}
                 onUnequipItem={handleUnequipItem}
                 onUseManaCrystal={(itemId) => setCrystalItemId(itemId)}
+                onUseItem={onItemAction ? (itemId) => setUseItemModalItem(inventoryItems.find((i) => i.id === itemId) || null) : undefined}
                 onRegenerateImage={canRegenerateItemImage ? handleRegenerateItemImage : null}
                 isRegenerating={regeneratingItemId === selectedItem.id}
               />
@@ -545,6 +550,21 @@ export default function CharacterPanel({
             handleUseManaCrystal(crystalItemId, choice);
             setCrystalItemId(null);
             setSelectedItemId(null);
+          }}
+        />
+      )}
+
+      {useItemModalItem && (
+        <UseItemModal
+          item={useItemModalItem}
+          character={character}
+          npcs={npcsInScene || []}
+          items={inventoryItems.filter((i) => i.id !== useItemModalItem.id)}
+          onClose={() => setUseItemModalItem(null)}
+          onSubmit={(actionText) => {
+            setUseItemModalItem(null);
+            setSelectedItemId(null);
+            if (onItemAction) onItemAction(actionText);
           }}
         />
       )}

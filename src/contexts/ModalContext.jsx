@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useRef } from 'react';
 
 const ModalContext = (import.meta.hot?.data?.ModalContext) || createContext(null);
 if (import.meta.hot) import.meta.hot.data.ModalContext = ModalContext;
@@ -48,6 +48,11 @@ export function ModalProvider({ children }) {
   const openNpcSheet = useCallback((name) => setNpcSheetName(name || null), []);
   const closeNpcSheet = useCallback(() => setNpcSheetName(null), []);
 
+  const playerActionHandlerRef = useRef(null);
+  const setPlayerActionHandler = useCallback((fn) => {
+    playerActionHandlerRef.current = fn || null;
+  }, []);
+
   return (
     <ModalContext.Provider
       value={{
@@ -90,6 +95,8 @@ export function ModalProvider({ children }) {
         closePrivacy,
         openNpcSheet,
         closeNpcSheet,
+        playerActionHandlerRef,
+        setPlayerActionHandler,
       }}
     >
       {children}

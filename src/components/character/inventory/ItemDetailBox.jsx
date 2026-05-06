@@ -160,6 +160,7 @@ export default function ItemDetailBox({
   onEquipItem,
   onUnequipItem,
   onUseManaCrystal,
+  onUseItem,
   onRegenerateImage,
   isRegenerating = false,
 }) {
@@ -368,36 +369,44 @@ export default function ItemDetailBox({
       )}
 
       <div className="border-t border-outline-variant/10 pt-3 mt-3">
-        {isCrystal ? (
-          <button
-            onClick={() => onUseManaCrystal?.(item.id)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-tertiary/15 text-tertiary border border-tertiary/30 rounded-sm hover:bg-tertiary/25 transition-colors shadow-[0_0_10px_rgba(197,154,255,0.2)]"
-          >
-            <span className="material-symbols-outlined text-sm">auto_awesome</span>
-            {t('inventory.useCrystal', 'Użyj kryształu')}
-          </button>
-        ) : equippedSlot ? (
-          <button
-            onClick={() => onUnequipItem(equippedSlot)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20 rounded-sm hover:bg-error/20 transition-colors"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-            {t('inventory.unequip', 'Unequip')}
-          </button>
-        ) : equippableSlots.length > 0 ? (
-          <div className="flex gap-2 flex-wrap">
-            {equippableSlots.map((slot) => (
-              <button
-                key={slot}
-                onClick={() => onEquipItem(item.id, slot)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
-              >
-                <span className="material-symbols-outlined text-sm">{SLOT_CONFIG[slot].icon}</span>
-                {t(SLOT_CONFIG[slot].label, SLOT_CONFIG[slot].fallback)}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="flex gap-2 flex-wrap">
+          {isCrystal ? (
+            <button
+              onClick={() => onUseManaCrystal?.(item.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-tertiary/15 text-tertiary border border-tertiary/30 rounded-sm hover:bg-tertiary/25 transition-colors shadow-[0_0_10px_rgba(197,154,255,0.2)]"
+            >
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              {t('inventory.useCrystal', 'Użyj kryształu')}
+            </button>
+          ) : equippedSlot ? (
+            <button
+              onClick={() => onUnequipItem(equippedSlot)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-error/10 text-error border border-error/20 rounded-sm hover:bg-error/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+              {t('inventory.unequip', 'Unequip')}
+            </button>
+          ) : null}
+          {!isCrystal && !equippedSlot && equippableSlots.length > 0 && equippableSlots.map((slot) => (
+            <button
+              key={slot}
+              onClick={() => onEquipItem(item.id, slot)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm hover:bg-primary/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">{SLOT_CONFIG[slot].icon}</span>
+              {t(SLOT_CONFIG[slot].label, SLOT_CONFIG[slot].fallback)}
+            </button>
+          ))}
+          {onUseItem && !isCrystal && (
+            <button
+              onClick={() => onUseItem(item.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider bg-tertiary/10 text-tertiary border border-tertiary/20 rounded-sm hover:bg-tertiary/20 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">back_hand</span>
+              {t('inventory.use', 'Użyj')}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
