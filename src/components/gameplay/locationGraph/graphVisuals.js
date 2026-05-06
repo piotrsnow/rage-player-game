@@ -32,12 +32,23 @@ export const DISCOVERY_VISUALS = {
   hidden:   { opacity: 0,   border: 'none',   render: false, gmRender: true, gmBorder: '#ef4444' },
 };
 
-export function getNodeVisual(type) {
-  return NODE_VISUALS[type] || NODE_VISUALS.generic;
+export function getNodeVisual(type, overrides) {
+  const base = NODE_VISUALS[type] || NODE_VISUALS.generic;
+  if (!overrides) return base;
+  return {
+    ...base,
+    ...(overrides.shape ? { shape: overrides.shape } : {}),
+    ...(overrides.icon ? { icon: overrides.icon } : {}),
+  };
 }
 
-export function getEdgeVisual(category) {
-  return EDGE_VISUALS[category] || EDGE_VISUALS.movement;
+export function getEdgeVisual(category, metadata) {
+  const base = EDGE_VISUALS[category] || EDGE_VISUALS.movement;
+  const tc = metadata?.traversalCount;
+  if (typeof tc !== 'number' || tc < 1 || category !== 'movement') return base;
+  const extraWidth = Math.min(tc * 0.4, 3);
+  const extraOpacity = Math.min(tc * 0.05, 0.3);
+  return { ...base, width: base.width + extraWidth, opacity: 0.7 + extraOpacity };
 }
 
 export function getNodeRadius(scale) {

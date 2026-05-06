@@ -93,6 +93,7 @@ const NpcChangeSchema = z.object({
   creatureKind: z.string().trim().max(60).nullable().optional(),
   level: z.number().int().min(1).max(30).optional(),
   keyNpc: z.boolean().optional(),
+  joinParty: z.boolean().optional(),
   statsOverride: z.object({
     attributes: z.record(z.number()).optional(),
     skills: z.record(z.number()).optional(),

@@ -4,6 +4,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { imageService } from '../services/imageGen';
 import { generateNpcPortrait } from '../services/npcPortraitGen';
 import { calculateCost } from '../services/costTracker';
+import { storage } from '../services/storage';
 import { shortId } from '../utils/ids';
 
 const ITEM_IMAGE_RETRY_COOLDOWN_MS = 60000;
@@ -224,6 +225,8 @@ export function useImageGeneration() {
         if (!options.skipAutoSave) {
           autoSave();
         }
+        const idx = state.scenes.findIndex((s) => s.id === sceneId);
+        if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
         return { url: imageUrl, fullImagePrompt };
       } catch (imgErr) {
         console.warn('Image generation failed:', imgErr.message);

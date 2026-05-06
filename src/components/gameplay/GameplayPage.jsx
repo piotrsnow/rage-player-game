@@ -67,6 +67,7 @@ import { useGameplayDerivedState } from '../../hooks/useGameplayDerivedState';
 import { useGameplayOverlays } from '../../hooks/useGameplayOverlays';
 import { useGameplayActions } from '../../hooks/useGameplayActions';
 import { useUltrawideBonus } from '../../hooks/useUltrawideBonus';
+import { useFavoriteScenes } from '../../hooks/useFavoriteScenes';
 import MainQuestCompleteModal from './MainQuestCompleteModal';
 
 function hashCode(str) {
@@ -153,6 +154,8 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     isGeneratingImage, combat, error, mpErrorCode, reconnectState,
     isMpReconnecting, showMpConnectionBanner, aiCosts, currentScene, tensionScore,
   } = derived;
+
+  const favoriteScenesHook = useFavoriteScenes(readOnly ? null : character?.backendId);
 
   useDocumentTitle(campaign?.name);
 
@@ -586,6 +589,9 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
           onOpenWorldModal={() => setWorldModalOpen(true)}
           videoPanelOpen={videoPanelOpen}
           setVideoPanelOpen={setVideoPanelOpen}
+          favoriteSceneIds={favoriteScenesHook.favoriteIds}
+          onToggleFavoriteScene={favoriteScenesHook.toggle}
+          campaignBackendId={campaign?.backendId}
         />
 
         {!readOnly && (
@@ -897,7 +903,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
       {/* Right Sidebar: Chat Panel */}
       <aside
-        className="w-full lg:w-[442px] bg-surface-container-low/50 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0"
+        className="gameplay-right-aside-torn-edge w-full lg:w-[442px] bg-surface-container-low/30 backdrop-blur-md border-l border-outline-variant/15 flex flex-col h-[400px] lg:h-full shrink-0"
         style={uwBonus.chat > 0 ? { width: 442 + uwBonus.chat } : undefined}
       >
         <ChatPanel

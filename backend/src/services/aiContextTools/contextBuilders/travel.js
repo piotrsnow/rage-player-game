@@ -2,6 +2,7 @@ import { resolveLocationByName } from '../../livingWorld/worldStateService.js';
 import { loadCampaignFog, markLocationHeardAbout } from '../../livingWorld/userDiscoveryService.js';
 import { LOCATION_KIND_WORLD, unpackWorldBounds } from '../../locationRefs.js';
 import { scanPath } from '../../livingWorld/pathScan.js';
+import { lookupEdgeFamiliarity } from '../../locationGraph/graphService.js';
 import { applyMovementVector } from '../../../../../shared/domain/movementIntent.js';
 import { WORLD_BARRIERS } from '../../../../../shared/domain/worldBarriers.js';
 
@@ -115,6 +116,18 @@ export async function buildTravelBlock({
     }
   }
 
+  let routeFamiliarity = null;
+  if (targetName && startLocation.kind && startLocation.id) {
+    const targetRef2 = await resolveLocationByName(resolvedTargetName || targetName, { campaignId }).catch(() => null);
+    if (targetRef2?.row?.id) {
+      routeFamiliarity = await lookupEdgeFamiliarity(
+        startLocation.kind, startLocation.id,
+        targetRef2.kind, targetRef2.row.id,
+        { campaignId },
+      ).catch(() => null);
+    }
+  }
+
   return {
     kind,
     fromName,
@@ -131,5 +144,6 @@ export async function buildTravelBlock({
     poisAlongPath: scan?.poisAlongPath || [],
     poisAtDestination: scan?.poisAtDestination || [],
     barrierHit,
+    routeFamiliarity,
   };
 }

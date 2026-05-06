@@ -1,5 +1,7 @@
 import { shortId } from '../../../utils/ids';
 import { mergeUnique } from '../../../../shared/domain/arrays';
+import { npcToCompanion } from '../../../services/partyRecruitment';
+import { MAX_COMPANIONS } from '../partyHandlers';
 
 /**
  * Introduce or update NPCs in `draft.world.npcs`. Introduce adds a fresh row
@@ -12,13 +14,15 @@ export function applyNpcs(draft, changes) {
   if (!changes.npcs?.length) return;
   if (!draft.world.npcs) draft.world.npcs = [];
 
+  const pendingRecruits = [];
+
   for (const incoming of changes.npcs) {
     const idx = draft.world.npcs.findIndex(
       (n) => n.name?.toLowerCase() === incoming.name?.toLowerCase(),
     );
 
     if (incoming.action === 'introduce' && idx < 0) {
-      draft.world.npcs.push({
+      const npcEntry = {
         id: `npc_${Date.now()}_${shortId(5)}`,
         name: incoming.name,
         gender: incoming.gender || 'unknown',
@@ -28,21 +32,19 @@ export function applyNpcs(draft, changes) {
         lastLocation: incoming.location || '',
         alive: true,
         notes: incoming.notes || '',
-        disposition: 0,
+        disposition: typeof incoming.disposition === 'number' ? incoming.disposition : 0,
         portraitUrl: null,
         factionId: incoming.factionId || null,
         relatedQuestIds: incoming.relatedQuestIds || [],
         relationships: incoming.relationships || [],
         canTrain: Array.isArray(incoming.canTrain) ? incoming.canTrain : [],
-        // Character card — race/creatureKind/level/stats are authoritative
-        // from backend on the next full-state load, but we seed optimistic
-        // values here so the chat hover card and combat fallback have
-        // something to read right away.
         race: typeof incoming.race === 'string' ? incoming.race : null,
         creatureKind: typeof incoming.creatureKind === 'string' ? incoming.creatureKind : null,
         level: typeof incoming.level === 'number' ? incoming.level : 1,
         stats: incoming.stats && typeof incoming.stats === 'object' ? incoming.stats : {},
-      });
+      };
+      draft.world.npcs.push(npcEntry);
+      if (incoming.joinParty === true) pendingRecruits.push(npcEntry);
       continue;
     }
     if (idx < 0) continue;
@@ -86,5 +88,22 @@ export function applyNpcs(draft, changes) {
       if (incoming.relatedQuestIds?.length > 0) npc.relatedQuestIds = incoming.relatedQuestIds;
       if (incoming.relationships?.length > 0) npc.relationships = incoming.relationships;
     }
+
+    if (incoming.joinParty === true) pendingRecruits.push(npc);
+  }
+
+  if (pendingRecruits.length === 0) return;
+
+  if (!draft.party) draft.party = [];
+  const partyNpcIds = new Set(
+    draft.party.map((m) => m?.recruitedFromNpcId || m?.id).filter(Boolean),
+  );
+
+  for (const npc of pendingRecruits) {
+    if (draft.party.length >= MAX_COMPANIONS) break;
+    if (partyNpcIds.has(npc.id)) continue;
+    draft.party.push(npcToCompanion(npc));
+    npc.inParty = true;
+    partyNpcIds.add(npc.id);
   }
 }

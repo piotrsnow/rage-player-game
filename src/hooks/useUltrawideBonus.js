@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 const HD_RATIO = 16 / 9;
 const LG_BREAKPOINT = 1024;
 const RATIO_STEP = 0.05;
-const SIDEBAR_PX_PER_STEP = 6;
-const CHAT_PX_PER_STEP = 16;
+const SIDEBAR_PX_PER_STEP = 1;
+const CHAT_PX_PER_STEP = 5;
 
 const ZERO = { sidebar: 0, chat: 0 };
 

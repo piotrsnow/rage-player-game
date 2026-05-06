@@ -131,11 +131,23 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   body {
     @apply bg-surface-dim text-on-surface font-body;
     font-size: calc(1rem * var(--font-body-size));
     text-shadow: var(--font-body-shadow);
     -webkit-text-stroke: var(--font-body-outline);
+  }
+
+  /* Native <select> dropdown rendering: <option> ignores Tailwind classes on the parent
+     and falls back to OS colors. Force theme-matching values so the open list stays
+     readable on dark backgrounds. */
+  option {
+    background-color: #313035; /* surface-container-highest */
+    color: #fffbfe; /* on-surface */
   }
 
   input:-webkit-autofill,
@@ -317,6 +329,7 @@
 .sidebar-ambient::before {
   content: '';
   position: absolute;
+  z-index: 0;
   top: 4rem;
   left: 0;
   right: 0;
@@ -327,6 +340,7 @@
 }
 
 .sidebar-torn-edge {
+  isolation: isolate;
   clip-path: polygon(
     0 0,
     100% 0%,
@@ -372,7 +386,88 @@
     100% 100%,
     0 100%
   );
-  filter: drop-shadow(6px 0 24px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(6px 0 24px rgba(0, 0, 0, 0.58)) drop-shadow(1px 0 0 #f1baff38);
+}
+
+.sidebar-torn-edge::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: -50px;
+  right: -50px;
+  bottom: 0;
+  background: linear-gradient(to left, rgba(48, 16, 38, 0.28), rgba(168, 82, 190, 0.16) 34%, rgba(96, 55, 132, 0.08) 68%, transparent 100%);
+  pointer-events: none;
+}
+
+.sidebar-torn-edge > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (min-width: 1024px) {
+  .gameplay-right-aside-torn-edge {
+    position: relative;
+    clip-path: polygon(
+      6px 0,
+      100% 0,
+      100% 100%,
+      4px 100%,
+      0 97.5%,
+      5px 95%,
+      2px 92.5%,
+      6px 90%,
+      1px 87.5%,
+      4px 85%,
+      0 82.5%,
+      5px 80%,
+      3px 77.5%,
+      0 75%,
+      6px 72.5%,
+      2px 70%,
+      5px 67.5%,
+      0 65%,
+      4px 62.5%,
+      1px 60%,
+      6px 57.5%,
+      2px 55%,
+      5px 52.5%,
+      0 50%,
+      3px 47.5%,
+      6px 45%,
+      2px 42.5%,
+      5px 40%,
+      0 37.5%,
+      4px 35%,
+      1px 32.5%,
+      6px 30%,
+      3px 27.5%,
+      0 25%,
+      5px 22.5%,
+      2px 20%,
+      6px 17.5%,
+      0 15%,
+      4px 12.5%,
+      1px 10%,
+      5px 7.5%,
+      0 5%,
+      3px 2.5%,
+      6px 0
+    );
+    filter: drop-shadow(-6px 0 24px rgba(0, 0, 0, 0.58)) drop-shadow(-1px 0 0 rgba(168, 82, 190, 0.26));
+  }
+
+  .gameplay-right-aside-torn-edge::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 14px;
+    background: linear-gradient(to right, rgba(168, 82, 190, 0.24), rgba(96, 55, 132, 0.14) 45%, transparent 100%);
+    pointer-events: none;
+  }
 }
 
 .material-symbols-outlined {

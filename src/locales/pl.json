@@ -145,7 +145,9 @@
     "saving": "Zapisywanie...",
     "campaignSaved": "Zapisano!",
     "profile": "Profil",
-    "audioConfig": "Dźwięk"
+    "audioConfig": "Dźwięk",
+    "zoomIn": "Powiększ",
+    "zoomOut": "Pomniejsz"
   },
   "profile": {
     "title": "Profil Użytkownika"
@@ -401,6 +403,8 @@
     "replayNarration": "Odtwórz narrację",
     "sceneReview": "Przegląd sceny",
     "firstScene": "Pierwsza scena",
+    "favoriteAdd": "Dodaj do ulubionych",
+    "favoriteRemove": "Usuń z ulubionych",
     "autoPlayScenes": "Odtwarzaj wszystkie sceny",
     "stopAutoPlay": "Zatrzymaj odtwarzanie",
     "skipSegment": "Przeskocz do następnego akapitu",
@@ -531,7 +535,9 @@
     "historyLastAction": "Ostatnia akcja",
     "historyTimeline": "Oś czasu",
     "historyScene": "Scena {{index}}",
-    "historySummary": "Podsumowanie"
+    "historySummary": "Podsumowanie",
+    "favoriteScenes": "Ulubione sceny",
+    "favoriteScenesEmpty": "Brak ulubionych scen. Oznacz scenę serduszkiem podczas gry."
   },
   "codex": {
     "title": "Kodeks",

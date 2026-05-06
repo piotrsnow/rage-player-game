@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import { forceDirectedLayout } from '../../../services/graphLayout.js';
 import { getNodeVisual, getEdgeVisual, getNodeRadius } from './graphVisuals.js';
+import { SHAPE_PATHS } from './nodeShapes.js';
 
 const LAYOUT_W = 800;
 const LAYOUT_H = 600;
@@ -187,9 +188,10 @@ export default function GraphCanvas({
           const fromPos = getNodePos(edge.fromId);
           const toPos = getNodePos(edge.toId);
           if (!fromPos || !toPos) return null;
-          const vis = getEdgeVisual(edge.category);
+          const vis = getEdgeVisual(edge.category, edge.metadata);
           const isSelected = selected?.type === 'edge' && selected.id === edge.id;
           const isBlocked = edge.edgeType === 'blocked_path_to';
+          const edgeOpacity = vis.opacity ?? 0.7;
 
           return (
             <g key={edge.id}>
@@ -199,7 +201,7 @@ export default function GraphCanvas({
                 stroke={isBlocked ? '#ef4444' : vis.color}
                 strokeWidth={isSelected ? vis.width + 1.5 : vis.width}
                 strokeDasharray={isBlocked ? '6,3' : vis.dash}
-                opacity={0.7}
+                opacity={edgeOpacity}
                 style={{ cursor: 'pointer' }}
                 onClick={(e) => { e.stopPropagation(); onSelect({ type: 'edge', id: edge.id }); }}
               />
@@ -222,11 +224,17 @@ export default function GraphCanvas({
         {nodes.map((node) => {
           const pos = getNodePos(node.id);
           if (!pos) return null;
-          const vis = getNodeVisual(node.type);
+          const vis = getNodeVisual(node.type, {
+            shape: node.nodeShape,
+            icon: node.nodeIcon,
+          });
           const r = getNodeRadius(node.scale ?? 5);
           const isSelected = selected?.type === 'node' && selected.id === node.id;
           const locOccupants = occupantsByLocation.get(node.id) || [];
           const nodeCursor = addingEdge ? 'crosshair' : addingNode ? 'crosshair' : 'move';
+          const shapeName = vis.shape || 'circle';
+          const shapeGen = SHAPE_PATHS[shapeName];
+          const useCircle = !shapeGen;
 
           return (
             <g
@@ -250,13 +258,23 @@ export default function GraphCanvas({
                   <animate attributeName="r" values={`${r + 3};${r + 6};${r + 3}`} dur="1.5s" repeatCount="indefinite" />
                 </circle>
               )}
-              <circle
-                r={r}
-                fill={vis.color}
-                stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
-                strokeWidth={isSelected ? 2 : 1}
-                opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
-              />
+              {useCircle ? (
+                <circle
+                  r={r}
+                  fill={vis.color}
+                  stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
+                  strokeWidth={isSelected ? 2 : 1}
+                  opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                />
+              ) : (
+                <path
+                  d={shapeGen(r)}
+                  fill={vis.color}
+                  stroke={isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)'}
+                  strokeWidth={isSelected ? 2 : 1}
+                  opacity={node.discoveryState === 'rumored' ? 0.4 : 1}
+                />
+              )}
               <text
                 y={r + 14}
                 textAnchor="middle"

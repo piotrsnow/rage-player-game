@@ -170,23 +170,47 @@ export async function markLocationHeardAbout({
 /**
  * Mark LocationEdge rows between two locations as 'visited' when the player
  * traverses them. Bidirectional edges get both directions marked.
+ * Also increments `metadata.traversalCount` and sets `metadata.lastTraversedSceneIndex`
+ * for edge familiarity tracking (travel narration compression).
  */
-export async function markLocationEdgeTraversed({ fromKind, fromId, toKind, toId }) {
+export async function markLocationEdgeTraversed({ fromKind, fromId, toKind, toId, sceneIndex = null, campaignId = null }) {
   if (!fromKind || !fromId || !toKind || !toId) return;
   try {
-    await prisma.locationEdge.updateMany({
-      where: {
-        isActive: true,
-        category: 'movement',
-        OR: [
-          { fromKind, fromId, toKind, toId },
-          { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
-        ],
-      },
-      data: { discoveryState: 'visited' },
+    const where = {
+      isActive: true,
+      category: 'movement',
+      OR: [
+        { fromKind, fromId, toKind, toId },
+        { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
+      ],
+    };
+    if (campaignId) {
+      where.AND = [{ OR: [{ campaignId: null }, { campaignId }] }];
+    }
+
+    const edges = await prisma.locationEdge.findMany({
+      where,
+      select: { id: true, metadata: true },
     });
+    if (edges.length === 0) return;
+
+    await Promise.all(edges.map((edge) => {
+      const prev = (edge.metadata && typeof edge.metadata === 'object') ? edge.metadata : {};
+      const count = (typeof prev.traversalCount === 'number' ? prev.traversalCount : 0) + 1;
+      return prisma.locationEdge.update({
+        where: { id: edge.id },
+        data: {
+          discoveryState: 'visited',
+          metadata: {
+            ...prev,
+            traversalCount: count,
+            ...(typeof sceneIndex === 'number' ? { lastTraversedSceneIndex: sceneIndex } : {}),
+          },
+        },
+      });
+    }));
   } catch (err) {
-    log.warn({ err: err?.message, fromKind, fromId, toKind, toId }, 'markLocationEdgeTraversed failed');
+    log.warn({ err: err?.message, fromKind, fromId, toKind, toId, campaignId }, 'markLocationEdgeTraversed failed');
   }
 }
 

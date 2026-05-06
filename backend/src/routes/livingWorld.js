@@ -28,6 +28,7 @@ import {
   deactivateEdge,
 } from '../services/locationGraph/graphService.js';
 import { EDGE_TYPES } from '../../../shared/domain/locationGraph.js';
+import { slugifyLocationName } from '../services/locationRefs.js';
 
 const log = childLogger({ module: 'livingWorldRoutes' });
 
@@ -300,6 +301,7 @@ export async function livingWorldRoutes(fastify) {
     });
 
     const nodeList = [];
+    const seenNodeIds = new Set();
     for (const [key, node] of nodes) {
       nodeList.push({
         id: node.id,
@@ -312,6 +314,37 @@ export async function livingWorldRoutes(fastify) {
         dangerLevel: node.dangerLevel || 'safe',
         regionX: node.regionX ?? 0,
         regionY: node.regionY ?? 0,
+        nodeShape: node.nodeShape || null,
+        nodeIcon: node.nodeIcon || null,
+      });
+      seenNodeIds.add(node.id);
+    }
+
+    // Surface CampaignLocations that aren't reached by the focused subgraph
+    // traversal — newly-created nodes have no edges yet, so without this they
+    // would be invisible in the modal even though they exist in DB.
+    const orphanCampaignLocs = await prisma.campaignLocation.findMany({
+      where: { campaignId: request.params.id, id: { notIn: [...seenNodeIds] } },
+      select: {
+        id: true, name: true, locationType: true, scale: true, tags: true,
+        atmosphere: true, dangerLevel: true, regionX: true, regionY: true,
+        nodeShape: true, nodeIcon: true,
+      },
+    });
+    for (const node of orphanCampaignLocs) {
+      nodeList.push({
+        id: node.id,
+        kind: 'campaign',
+        name: node.name,
+        type: node.locationType || 'generic',
+        scale: node.scale ?? 5,
+        tags: node.tags || [],
+        atmosphere: node.atmosphere || null,
+        dangerLevel: node.dangerLevel || 'safe',
+        regionX: node.regionX ?? 0,
+        regionY: node.regionY ?? 0,
+        nodeShape: node.nodeShape || null,
+        nodeIcon: node.nodeIcon || null,
       });
     }
 
@@ -347,10 +380,14 @@ export async function livingWorldRoutes(fastify) {
 
     // Occupants overlay — NPCs + player characters positioned at graph nodes
     const campaignId = request.params.id;
-    const [campaignNpcs, campaignFull] = await Promise.all([
+    const [campaignNpcs, campaignFull, latestScene] = await Promise.all([
       prisma.campaignNPC.findMany({
         where: { campaignId, lastLocationKind: { not: null }, lastLocationId: { not: null } },
-        select: { id: true, name: true, role: true, category: true, lastLocationKind: true, lastLocationId: true },
+        select: {
+          id: true, name: true, role: true, category: true,
+          lastLocationKind: true, lastLocationId: true,
+          lastInteractionSceneIndex: true,
+        },
       }),
       prisma.campaign.findUnique({
         where: { id: campaignId },
@@ -362,18 +399,40 @@ export async function livingWorldRoutes(fastify) {
           },
         },
       }),
+      prisma.campaignScene.findFirst({
+        where: { campaignId },
+        orderBy: { sceneIndex: 'desc' },
+        select: { sceneIndex: true },
+      }),
     ]);
+
+    const latestSceneIndex = latestScene?.sceneIndex ?? null;
+    const campLocKind = campaignFull?.currentLocationKind;
+    const campLocId = campaignFull?.currentLocationId;
 
     const occupants = [];
     for (const npc of campaignNpcs) {
+      // Self-healing display fallback: NPCs who participated in the latest
+      // scene but whose FK pair still points elsewhere get projected onto
+      // the campaign's current location. Underlying DB row stays untouched —
+      // next scene with this NPC will permanently relocate them via
+      // processNpcChanges.
+      let locKind = npc.lastLocationKind;
+      let locId = npc.lastLocationId;
+      if (latestSceneIndex != null && campLocKind && campLocId
+          && npc.lastInteractionSceneIndex === latestSceneIndex
+          && (locKind !== campLocKind || locId !== campLocId)) {
+        locKind = campLocKind;
+        locId = campLocId;
+      }
       occupants.push({
         id: npc.id,
         name: npc.name,
         type: 'npc',
         role: npc.role,
         category: npc.category,
-        locationKind: npc.lastLocationKind,
-        locationId: npc.lastLocationId,
+        locationKind: locKind,
+        locationId: locId,
       });
     }
     if (campaignFull?.currentLocationKind && campaignFull?.currentLocationId) {
@@ -418,6 +477,8 @@ export async function livingWorldRoutes(fastify) {
           dangerLevel: { type: 'string', maxLength: 20 },
           parentKind: { type: 'string', enum: ['world', 'campaign'] },
           parentId: { type: 'string', format: 'uuid' },
+          shape: { type: ['string', 'null'], maxLength: 40 },
+          icon: { type: ['string', 'null'], maxLength: 60 },
         },
       },
     },
@@ -425,21 +486,61 @@ export async function livingWorldRoutes(fastify) {
     const campaign = await assertCampaignOwnership(request, reply, request.params.id);
     if (!campaign) return;
     const b = request.body;
-    const node = await prisma.campaignLocation.create({
-      data: {
-        campaignId: request.params.id,
-        name: b.name,
-        canonicalSlug: b.name.toLowerCase().trim().replace(/\s+/g, '_'),
-        description: b.description || '',
-        locationType: b.type || 'generic',
-        tags: b.tags || [],
-        scale: b.scale ?? 5,
-        atmosphere: b.atmosphere || null,
-        dangerLevel: b.dangerLevel || 'safe',
-        parentLocationKind: b.parentKind || null,
-        parentLocationId: b.parentId || null,
-      },
-    });
+    let node;
+    try {
+      node = await prisma.campaignLocation.create({
+        data: {
+          campaignId: request.params.id,
+          name: b.name,
+          canonicalSlug: slugifyLocationName(b.name),
+          description: b.description || '',
+          locationType: b.type || 'generic',
+          tags: b.tags || [],
+          scale: b.scale ?? 5,
+          atmosphere: b.atmosphere || null,
+          dangerLevel: b.dangerLevel || 'safe',
+          parentLocationKind: b.parentKind || null,
+          parentLocationId: b.parentId || null,
+          nodeShape: b.shape || null,
+          nodeIcon: b.icon || null,
+        },
+      });
+    } catch (err) {
+      if (err?.code === 'P2002') {
+        return reply.code(409).send({
+          error: 'duplicate_name',
+          message: `Lokacja o nazwie "${b.name}" już istnieje w tej kampanii. Wybierz inną nazwę.`,
+        });
+      }
+      throw err;
+    }
+
+    // Auto-link to parent in the graph so the new node shows up in the
+    // hierarchy tree (HierarchyTree filters strictly on edgeType='contains').
+    // Works for both canonical (world) and sandbox (campaign) parents.
+    if (b.parentKind && b.parentId) {
+      try {
+        await createEdge({
+          fromKind: b.parentKind,
+          fromId: b.parentId,
+          toKind: 'campaign',
+          toId: node.id,
+          edgeType: 'contains',
+          category: 'structural',
+          bidirectional: false,
+          weight: 1.0,
+          metadata: {},
+          discoveryState: 'known',
+          campaignId: request.params.id,
+          createdBy: 'admin',
+        });
+      } catch (edgeErr) {
+        // Non-fatal — node exists; user can wire the edge manually if needed.
+        log.warn({ err: edgeErr, nodeId: node.id, parentKind: b.parentKind, parentId: b.parentId },
+          'Failed to auto-create contains edge for new node');
+      }
+    }
+
     return reply.code(201).send({ node: { id: node.id, kind: 'campaign', name: node.name } });
   });
 
@@ -464,6 +565,8 @@ export async function livingWorldRoutes(fastify) {
           atmosphere: { type: 'string', maxLength: 200 },
           dangerLevel: { type: 'string', maxLength: 20 },
           scale: { type: 'integer', minimum: 0, maximum: 7 },
+          shape: { type: ['string', 'null'], maxLength: 40 },
+          icon: { type: ['string', 'null'], maxLength: 60 },
         },
       },
     },
@@ -480,12 +583,14 @@ export async function livingWorldRoutes(fastify) {
     });
     if (campaignLoc) {
       const data = {};
-      if (b.name !== undefined) { data.name = b.name; data.canonicalSlug = b.name.toLowerCase().trim().replace(/\s+/g, '_'); }
+      if (b.name !== undefined) { data.name = b.name; data.canonicalSlug = slugifyLocationName(b.name); }
       if (b.description !== undefined) data.description = b.description;
       if (b.tags !== undefined) data.tags = b.tags;
       if (b.atmosphere !== undefined) data.atmosphere = b.atmosphere;
       if (b.dangerLevel !== undefined) data.dangerLevel = b.dangerLevel;
       if (b.scale !== undefined) data.scale = b.scale;
+      if (b.shape !== undefined) data.nodeShape = b.shape || null;
+      if (b.icon !== undefined) data.nodeIcon = b.icon || null;
       if (Object.keys(data).length > 0) {
         updated = await prisma.campaignLocation.update({ where: { id: nodeId }, data });
       }

@@ -119,6 +119,9 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
         if (e.metadata?.requiresItem) annotations.push(`wymaga: ${e.metadata.requiresItem}`);
         if (e.metadata?.requiresPayment) annotations.push(`wymaga: opłata ${e.metadata.requiresPayment.cost}`);
         if (e.metadata?.requiresFactionStatus) annotations.push(`wymaga: status frakcji ${e.metadata.requiresFactionStatus.factionId}`);
+        const tc = typeof e.metadata?.traversalCount === 'number' ? e.metadata.traversalCount : 0;
+        if (tc >= 3) annotations.push(`familiar (${tc}x)`);
+        else if (tc === 0) annotations.push('first time');
         const suffix = annotations.length > 0 ? ` [${annotations.join(', ')}]` : '';
         lines.push(`  - ${e.edgeType} → ${targetName}${suffix}`);
       }
@@ -203,7 +206,7 @@ export async function buildExtractionContext(locationId, locationKind, campaignI
     lines.push('### Edge Type Reference');
     lines.push('Movement: path_to, road_to, door_to, stairs_to, tunnel_to, bridge_to, portal_to, secret_path_to, one_way_to, dangerous_path_to, blocked_path_to, climb_to, swim_to, ferry_to');
     lines.push('Perception: visible_from, audible_from, smell_from');
-    lines.push('Structural: contains, part_of, above, below');
+    lines.push('Structural: contains, overlaps, above, below');
     lines.push('Spatial: adjacent_to, near, across_from');
     lines.push('Social: controlled_by, patrolled_by, inhabited_by');
     lines.push('Narrative: quest_related_to, home_of, workplace_of, rumor_about');

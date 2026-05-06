@@ -6,6 +6,7 @@ import { useGameSlice } from '../../stores/gameSelectors';
 import CostBadge from '../ui/CostBadge';
 import LocationChip from '../ui/LocationChip';
 import Tooltip from '../ui/Tooltip';
+import FavoriteToggle from './FavoriteToggle';
 
 export default function GameplayHeader({
   readOnly,
@@ -47,6 +48,10 @@ export default function GameplayHeader({
   // video
   videoPanelOpen,
   setVideoPanelOpen,
+  // favorites
+  favoriteSceneIds,
+  onToggleFavoriteScene,
+  campaignBackendId,
 }) {
   const { t } = useTranslation();
 
@@ -153,6 +158,14 @@ export default function GameplayHeader({
             >
               play_circle
             </button>
+          )}
+          {!readOnly && viewedScene?.id && onToggleFavoriteScene && (
+            <FavoriteToggle
+              sceneId={viewedScene.id}
+              campaignId={campaignBackendId}
+              isFavorite={favoriteSceneIds?.has(viewedScene.id) || false}
+              onToggle={onToggleFavoriteScene}
+            />
           )}
           {narrator.isNarratorReady && narrator.playbackState === narrator.STATES.PLAYING && (
             <button

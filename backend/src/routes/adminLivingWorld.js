@@ -1356,12 +1356,12 @@ export async function adminLivingWorldRoutes(fastify) {
     }
     if (typesToQuery.includes('CampaignQuest')) {
       const where = {};
-      if (searchFilter) where.questName = searchFilter;
+      if (searchFilter) where.name = searchFilter;
       if (campaignId) where.campaignId = campaignId;
       queries.CampaignQuest = prisma.campaignQuest.findMany({
         where, take: limit, skip, orderBy: { updatedAt: 'desc' },
         select: {
-          id: true, questName: true, questType: true, status: true, campaignId: true,
+          id: true, name: true, type: true, status: true, campaignId: true,
           campaign: { select: { name: true } },
           updatedAt: true,
         },
@@ -1380,17 +1380,50 @@ export async function adminLivingWorldRoutes(fastify) {
       });
     }
 
-    const keys = Object.keys(queries);
-    const results = await Promise.all(Object.values(queries));
-    const resultByType = {};
-    keys.forEach((k, i) => { resultByType[k] = results[i]; });
+    // Sidebar counts must NOT depend on the active `type` filter — otherwise
+    // clicking a type zeros out every other counter. They DO honor scope
+    // filters (search + campaignId) so the sidebar tracks the search results.
+    const countWhere = {
+      WorldNPC: searchFilter ? { name: searchFilter } : {},
+      WorldLocation: searchFilter ? { canonicalName: searchFilter } : {},
+      Road: {},
+      CampaignNPC: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      CampaignLocation: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      CampaignEdge: campaignId ? { campaignId } : {},
+      CampaignQuest: {
+        ...(searchFilter ? { name: searchFilter } : {}),
+        ...(campaignId ? { campaignId } : {}),
+      },
+      Character: searchFilter ? { name: searchFilter } : {},
+    };
 
-    // Normalize into unified shape
-    const entities = [];
+    const countQueries = ENTITY_TYPES.map((t) =>
+      prisma[prismaModelName(t)].count({ where: countWhere[t] }),
+    );
+
+    const queryKeys = Object.keys(queries);
+    const queryValues = Object.values(queries);
+
+    const [countsArr, ...rowResults] = await Promise.all([
+      Promise.all(countQueries),
+      ...queryValues,
+    ]);
+
     const counts = {};
+    ENTITY_TYPES.forEach((t, i) => { counts[t] = countsArr[i]; });
+
+    const resultByType = {};
+    queryKeys.forEach((k, i) => { resultByType[k] = rowResults[i]; });
+
+    const entities = [];
     for (const t of ENTITY_TYPES) {
       const rows = resultByType[t] || [];
-      counts[t] = rows.length;
       for (const row of rows) {
         entities.push(normalizeEntity(t, row));
       }
@@ -1582,7 +1615,7 @@ function normalizeEntity(type, row) {
     case 'CampaignEdge':
       return { id: row.id, type, name: `${row.fromKind}:${row.fromId} ↔ ${row.toKind}:${row.toId}`, status: row.relationType, details: row.distance ? `${row.distance} km` : row.visibility, source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'CampaignQuest':
-      return { id: row.id, type, name: row.questName, status: row.status, details: row.questType || '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
+      return { id: row.id, type, name: row.name, status: row.status, details: row.type || '', source: 'campaign', campaignId: row.campaignId, campaignName: row.campaign?.name || null };
     case 'Character':
       return { id: row.id, type, name: row.name, status: `Lv.${row.characterLevel || 1}`, details: row.species || '', source: 'world', campaignName: row.lockedCampaignName || null };
     default:

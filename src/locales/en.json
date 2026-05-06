@@ -408,6 +408,8 @@
     "replayNarration": "Replay narration",
     "sceneReview": "Scene review",
     "firstScene": "First scene",
+    "favoriteAdd": "Add to favorites",
+    "favoriteRemove": "Remove from favorites",
     "autoPlayScenes": "Auto-play all scenes",
     "stopAutoPlay": "Stop auto-play",
     "skipSegment": "Skip to next segment",
@@ -538,7 +540,9 @@
     "historyLastAction": "Last Action",
     "historyTimeline": "Timeline",
     "historyScene": "Scene {{index}}",
-    "historySummary": "Summary"
+    "historySummary": "Summary",
+    "favoriteScenes": "Favorite Scenes",
+    "favoriteScenesEmpty": "No favorite scenes yet. Tap the heart on a scene to bookmark it."
   },
   "codex": {
     "title": "Codex",

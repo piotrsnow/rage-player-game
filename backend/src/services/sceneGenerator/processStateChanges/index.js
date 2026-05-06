@@ -205,6 +205,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                   fromKind: currentRef.kind, fromId: currentRef.id,
                   toKind: updates.currentLocationKind, toId: updates.currentLocationId,
                   category: 'movement', isActive: true,
+                  OR: [{ campaignId: null }, { campaignId }],
                 },
               });
               if (!existing) {
@@ -229,6 +230,8 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                 fromId: currentRef.id,
                 toKind: updates.currentLocationKind,
                 toId: updates.currentLocationId,
+                sceneIndex,
+                campaignId,
               });
             } catch (edgeErr) {
               log.debug({ err: edgeErr?.message, campaignId }, 'Auto-edge creation failed (non-fatal)');
@@ -273,6 +276,44 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
           { campaignId, name: retryResolved.name, kind: retryResolved.kind },
           'currentLocation resolved on retry (sublocation created by newLocations in same scene)',
         );
+        if (currentRef) {
+          const fromKey = `${currentRef.kind}:${currentRef.id}`;
+          const toKey = `${retryResolved.kind}:${retryResolved.id}`;
+          if (fromKey !== toKey) {
+            const existing = await prisma.locationEdge.findFirst({
+              where: {
+                fromKind: currentRef.kind, fromId: currentRef.id,
+                toKind: retryResolved.kind, toId: retryResolved.id,
+                category: 'movement', isActive: true,
+                OR: [{ campaignId: null }, { campaignId }],
+              },
+            });
+            if (!existing) {
+              await createEdge({
+                fromKind: currentRef.kind,
+                fromId: currentRef.id,
+                toKind: retryResolved.kind,
+                toId: retryResolved.id,
+                edgeType: 'path_to',
+                category: 'movement',
+                bidirectional: true,
+                weight: 1.0,
+                metadata: { autoCreated: true },
+                discoveryState: 'visited',
+                campaignId,
+                createdBy: 'system',
+              });
+            }
+            await markLocationEdgeTraversed({
+              fromKind: currentRef.kind,
+              fromId: currentRef.id,
+              toKind: retryResolved.kind,
+              toId: retryResolved.id,
+              sceneIndex,
+              campaignId,
+            });
+          }
+        }
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, aiName }, 'currentLocation retry-resolve failed (non-fatal)');
@@ -329,6 +370,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                 fromKind: currentRef.kind, fromId: currentRef.id,
                 toKind: created.kind, toId: created.row.id,
                 category: 'movement', isActive: true,
+                OR: [{ campaignId: null }, { campaignId }],
               },
             });
             if (!existing) {
@@ -347,6 +389,14 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
                 createdBy: 'system',
               });
             }
+            await markLocationEdgeTraversed({
+              fromKind: currentRef.kind,
+              fromId: currentRef.id,
+              toKind: created.kind,
+              toId: created.row.id,
+              sceneIndex,
+              campaignId,
+            });
           }
         }
       }

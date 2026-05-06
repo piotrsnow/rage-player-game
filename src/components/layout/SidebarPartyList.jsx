@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import PartyMemberPortrait from '../party/PartyMemberPortrait';
 import PartyMemberModal from '../party/PartyMemberModal';
@@ -84,14 +85,15 @@ export default function SidebarPartyList({ party = [], activeCharacterId, isMult
         />
       )}
 
-      {recruitOpen && (
+      {recruitOpen && createPortal(
         <RecruitModal
           scenes={scenes}
           world={world}
           party={storeParty}
           dispatch={dispatch}
           onClose={() => setRecruitOpen(false)}
-        />
+        />,
+        document.body,
       )}
     </div>
   );

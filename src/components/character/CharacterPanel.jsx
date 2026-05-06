@@ -13,6 +13,7 @@ import CustomSelect from '../ui/CustomSelect';
 import { translateSkill, translateAttribute } from '../../utils/rpgTranslate';
 import { SKILLS, DIFFICULTY_THRESHOLDS } from '../../data/rpgSystem';
 import SkillGainHistory from './SkillGainHistory';
+import FavoriteScenesList from './FavoriteScenesList';
 
 const SKILL_ICONS = {
   'Walka wrecz': 'sports_martial_arts',
@@ -527,6 +528,12 @@ export default function CharacterPanel({
       {scenes && (
         <div className="mt-8 animate-fade-in">
           <CharacterHistoryPanel scenes={scenes} t={t} />
+        </div>
+      )}
+
+      {(character?.backendId || character?.id) && (
+        <div className="mt-8 animate-fade-in">
+          <FavoriteScenesList characterId={character.backendId || character.id} />
         </div>
       )}
 

@@ -225,3 +225,12 @@ export const SCENE_BULK_SCHEMA = {
   required: ['scenes'],
 };
 
+export const SCENE_IMAGE_PATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    imageUrl: { type: ['string', 'null'], maxLength: 4000 },
+    fullImagePrompt: { type: ['string', 'null'], maxLength: 8000 },
+  },
+};
+

@@ -188,6 +188,7 @@ model Character {
   characterSkills CharacterSkill[]
   skillGains      CharacterSkillGain[]
   materials       CharacterMaterial[]
+  favoriteScenes  FavoriteScene[]
 
   @@index([userId])
   @@index([lockedCampaignId])
@@ -336,6 +337,7 @@ model Campaign {
   campaignLocations           CampaignLocation[]
   locationEdges               LocationEdge[]
   campaignEdges               CampaignEdge[]
+  favoriteScenes              FavoriteScene[]
 
   @@index([userId])
   @@index([isPublic])
@@ -379,9 +381,27 @@ model CampaignScene {
   embedding        Unsupported("vector(1536)")?
   createdAt        DateTime                     @default(now()) @db.Timestamptz
 
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign       Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  favoritedBy    FavoriteScene[]
 
   @@index([campaignId, sceneIndex])
+}
+
+// Per-character bookmarked scenes. Heart toggle in gameplay UI; surfaced as a
+// list in the character panel alongside skill gain history.
+model FavoriteScene {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  characterId String   @db.Uuid
+  sceneId     String   @db.Uuid
+  campaignId  String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  character Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  scene     CampaignScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  campaign  Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([characterId, sceneId])
+  @@index([characterId, createdAt(sort: Desc)])
 }
 
 model CampaignKnowledge {
@@ -554,6 +574,7 @@ model CampaignLocationSummary {
   summary         String
   keyNpcs         Json     @default("[]")
   unresolvedHooks Json     @default("[]")
+  sceneDigests    Json     @default("[]")
   sceneCount      Int      @default(0)
   lastVisitScene  Int      @default(0)
   createdAt       DateTime @default(now()) @db.Timestamptz
@@ -652,6 +673,8 @@ model WorldLocation {
   atmosphere     String?
   narrativeRoles Json    @default("[]")
   scale          Int     @default(5)
+  nodeShape      String?
+  nodeIcon       String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?
@@ -791,6 +814,8 @@ model CampaignLocation {
   atmosphere         String?
   narrativeRoles     Json         @default("[]")
   scale              Int          @default(5)
+  nodeShape          String?
+  nodeIcon           String?
 
   embeddingText String?
   embedding     Unsupported("vector(1536)")?

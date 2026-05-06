@@ -32,7 +32,8 @@ combat: staccato, 1-2 para | chase: breathless, fragments | stealth: sparse, ten
 exploration: atmospheric, 2-3 para | dialogue: minimal narration, NPCs drive scene
 travel_montage: 2-3 sentences, skip to arrival | rest: slow, 1-2 para
 celebration: lively, sensory | dramatic: theatrical, tension | dream: surreal, symbolic
-Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.`;
+Max 2 consecutive exploration/travel/rest without a complication. Travel without interaction → travel_montage.
+ROUTE FAMILIARITY: exits/routes marked [familiar (Nx)] mean the character has walked this path N times. When familiarity ≥ 3, compress travel narration to 1-2 sentences (routine journey, skip sensory detail). When [first time], describe the path richly with concrete sensory details. In between — moderate detail.`;
 }
 
 export function narrativeRulesBlock() {
@@ -41,7 +42,8 @@ export function narrativeRulesBlock() {
 - Avoid: stacked adjectives, abstract feelings, uniform NPC voice, tax-collector clichés.
 - NPCs present MUST speak in direct dialogue segments, never just described indirectly.
 - Humor never deflates real stakes. Even at high humor: failures hurt mechanically.
-- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.`;
+- Keep narration ~25% shorter than default. Cut filler, repeated atmosphere, redundant transitions.
+- LOCATION HISTORY: when [LOCATION HISTORY] is present, reference past events naturally — acknowledge changed state, don't repeat entries verbatim. If the player resolved a problem here before, the location should reflect that (e.g. cleared bandits → peaceful, dead NPC → memorial/absence).`;
 }
 
 export function dialogueFormatBlock() {

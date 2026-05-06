@@ -21,7 +21,7 @@ const EMPTY_BACKEND_KEYS = {
   xtts: { configured: false },
 };
 
-const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend'];
+const LOCAL_ONLY_KEYS = ['backendUrl', 'useBackend', 'appZoom'];
 
 function inferWeight(filename) {
   const lower = filename.toLowerCase();
@@ -110,6 +110,7 @@ function shouldCheckBackendSession(settings) {
 }
 
 const defaultSettings = {
+  appZoom: 100,
   aiProvider: 'openai',
   sceneVisualization: 'image',
   imageProvider: 'dalle',
@@ -202,14 +203,15 @@ export function SettingsProvider({ children }) {
   // the file, so we forward through a ref to dodge the temporal-dead-zone.
   const loadFromAccountRef = useRef(null);
 
-  // Mirror only the server-coordinates locally so a refresh remembers which
-  // backend to talk to. Everything else is account-scoped.
+  // Mirror only the server-coordinates + device-local prefs so a refresh
+  // remembers which backend to talk to and the UI zoom level.
   useEffect(() => {
     storage.writeLocalOnlySettings({
       backendUrl: settings.backendUrl,
       useBackend: settings.useBackend,
+      appZoom: settings.appZoom,
     });
-  }, [settings.backendUrl, settings.useBackend]);
+  }, [settings.backendUrl, settings.useBackend, settings.appZoom]);
 
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -429,6 +431,11 @@ export function SettingsProvider({ children }) {
     }
     document.documentElement.lang = settings.language || 'en';
   }, [settings.language, i18n]);
+
+  useEffect(() => {
+    const zoom = settings.appZoom ?? 100;
+    document.documentElement.style.zoom = `${zoom}%`;
+  }, [settings.appZoom]);
 
   const loadBackendUser = useCallback(async () => {
     if (!apiClient.isConnected()) {

@@ -20,7 +20,7 @@ const HEADER_CHROME_STYLE = {
 export default function Header() {
   const location = useLocation();
   const { t } = useTranslation();
-  const { settings, backendUser } = useSettings();
+  const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
   const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal } = useModals();
   const { dictation } = useDictationContext() ?? {};
@@ -300,6 +300,30 @@ export default function Header() {
                 </Tooltip>
               </>
             )}
+            <div className="flex items-center gap-0.5">
+              <Tooltip content={t('nav.zoomOut')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ appZoom: Math.max(80, (settings.appZoom ?? 100) - 10) })}
+                  disabled={(settings.appZoom ?? 100) <= 80}
+                  aria-label={t('nav.zoomOut')}
+                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 disabled:text-outline/30 disabled:cursor-default"
+                >
+                  zoom_out
+                </button>
+              </Tooltip>
+              <Tooltip content={t('nav.zoomIn')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={() => updateSettings({ appZoom: Math.min(140, (settings.appZoom ?? 100) + 10) })}
+                  disabled={(settings.appZoom ?? 100) >= 140}
+                  aria-label={t('nav.zoomIn')}
+                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 disabled:text-outline/30 disabled:cursor-default"
+                >
+                  zoom_in
+                </button>
+              </Tooltip>
+            </div>
             <Tooltip content={t('nav.settings')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"

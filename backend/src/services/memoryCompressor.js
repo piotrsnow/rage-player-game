@@ -444,13 +444,14 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     }, 'compressSceneToSummary DONE');
 
     // Return extracted state for further processing (knowledge, codex,
-    // hearsay flips) by postSceneWork's phase 2 fan-out.
+    // hearsay flips, location digest) by postSceneWork's phase 2 fan-out.
     return {
       knowledgeUpdates: (knowledgeEventsList.length || knowledgeDecisionsList.length)
         ? { events: knowledgeEventsList, decisions: knowledgeDecisionsList }
         : null,
       codexUpdates: codexFragmentsList,
       mentionedLocations,
+      _majorMemoryText: majorMemory?.text?.trim() || null,
     };
   } catch (err) {
     log.error({ err }, 'Memory compression failed');
@@ -482,7 +483,7 @@ async function findExistingLocationRecord(campaignId, locationName) {
 
   const all = await prisma.campaignLocationSummary.findMany({
     where: { campaignId },
-    select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneCount: true, lastVisitScene: true },
+    select: { id: true, locationName: true, summary: true, keyNpcs: true, unresolvedHooks: true, sceneDigests: true, sceneCount: true, lastVisitScene: true },
   });
 
   let partialMatch = null;
@@ -609,6 +610,58 @@ export async function getLocationSummary(campaignId, locationName) {
   if (hooks.length > 0) lines.push(`Unresolved: ${hooks.join('; ')}`);
 
   return lines.join('\n');
+}
+
+// ── LOCATION SCENE DIGESTS (ring buffer) ──
+
+const SCENE_DIGEST_MAX = 10;
+
+/**
+ * Append a one-line digest to the current location's CampaignLocationSummary.
+ * FIFO-capped at SCENE_DIGEST_MAX entries. Creates the summary row if it
+ * doesn't exist yet (location visited for the first time).
+ */
+export async function appendSceneDigest(campaignId, locationName, sceneIndex, digestText) {
+  if (!locationName || !digestText) return;
+  try {
+    const existing = await findExistingLocationRecord(campaignId, locationName);
+    const entry = { sceneNum: sceneIndex, text: digestText };
+
+    if (existing) {
+      const digests = Array.isArray(existing.sceneDigests) ? existing.sceneDigests : [];
+      digests.push(entry);
+      if (digests.length > SCENE_DIGEST_MAX) digests.splice(0, digests.length - SCENE_DIGEST_MAX);
+      await prisma.campaignLocationSummary.update({
+        where: { id: existing.id },
+        data: { sceneDigests: digests, lastVisitScene: sceneIndex },
+      });
+    } else {
+      await prisma.campaignLocationSummary.create({
+        data: {
+          campaignId,
+          locationName,
+          summary: '',
+          sceneDigests: [entry],
+          sceneCount: 1,
+          lastVisitScene: sceneIndex,
+        },
+      });
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, campaignId, locationName }, 'appendSceneDigest failed (non-fatal)');
+  }
+}
+
+/**
+ * Fetch the scene digest ring buffer for a location. Returns an array of
+ * `{ sceneNum, text }` entries (most recent last), or null if none.
+ */
+export async function getLocationDigests(campaignId, locationName) {
+  if (!locationName) return null;
+  const rec = await findExistingLocationRecord(campaignId, locationName);
+  if (!rec) return null;
+  const digests = Array.isArray(rec.sceneDigests) ? rec.sceneDigests : [];
+  return digests.length > 0 ? digests : null;
 }
 
 // ── QUEST OBJECTIVE PROGRESS CHECK ──

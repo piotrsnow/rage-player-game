@@ -41,7 +41,7 @@ export default function CampaignCreatorPage() {
   const { state } = useGame();
   const mp = useMultiplayer();
   const { openSettings } = useModals();
-  const { setSuppressLobbyMusicForIntroVideo } = useGlobalMusic();
+  const { setPendingCampaignGenre } = useGlobalMusic();
 
   const [mode, setMode] = useState(mp.state.isMultiplayer ? 'multiplayer' : 'solo');
   const isMultiplayer = mode === 'multiplayer';
@@ -97,9 +97,9 @@ export default function CampaignCreatorPage() {
 
   useLayoutEffect(() => {
     if (!isGenerating) return undefined;
-    setSuppressLobbyMusicForIntroVideo(true);
-    return () => setSuppressLobbyMusicForIntroVideo(false);
-  }, [isGenerating, setSuppressLobbyMusicForIntroVideo]);
+    setPendingCampaignGenre(form.genre);
+    return () => setPendingCampaignGenre(null);
+  }, [isGenerating, form.genre, setPendingCampaignGenre]);
 
   const [showTopicHistory, setShowTopicHistory] = useState(false);
   const [topicHistory, setTopicHistory] = useState([]);

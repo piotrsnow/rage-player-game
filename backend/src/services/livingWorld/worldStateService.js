@@ -268,6 +268,25 @@ export async function findOrCreateCampaignLocation(rawName, {
 // ──────────────────────────────────────────────────────────────────────
 
 /**
+ * Pure LOOKUP — find an existing canonical WorldNPC by exact case-insensitive
+ * name match, alive only. Returns `null` when zero or multiple alive NPCs
+ * share the name (ambiguity → caller falls through to ephemeral creation).
+ *
+ * `take: 2` detects ambiguity cheaply — if two or more share the name we
+ * never link to the wrong person. Never creates.
+ */
+export async function findCanonicalWorldNpcByName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const matches = await prisma.worldNPC.findMany({
+    where: { name: { equals: trimmed, mode: 'insensitive' }, alive: true },
+    take: 2,
+  });
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
  * Find (name-dedupe) or create a WorldNPC. Matches by case-insensitive name
  * + role, preferring alive entries. Loose enough to avoid proliferation on
  * name variants, strict enough to keep distinct NPCs separate.

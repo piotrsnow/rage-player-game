@@ -38,6 +38,21 @@ export function buildContextSection(contextBlocks) {
     parts.push(`[Location]\n${contextBlocks.location}`);
   }
 
+  // Location History Digest — scene-level ring buffer. Tells premium what
+  // happened here in previous visits so it can acknowledge the changed state.
+  if (Array.isArray(contextBlocks.locationDigests) && contextBlocks.locationDigests.length > 0) {
+    const digestLines = contextBlocks.locationDigests.map(
+      (d) => `- Scene ${d.sceneNum}: ${d.text}`,
+    );
+    parts.push(
+      `[LOCATION HISTORY]\n` +
+      `What happened here before (most recent last):\n` +
+      `${digestLines.join('\n')}\n` +
+      `Reference these naturally — acknowledge the changed state, don't repeat verbatim.\n` +
+      `[/LOCATION HISTORY]`,
+    );
+  }
+
   // Location Graph — lean spatial context (exits, NPCs, perception hints)
   if (contextBlocks.locationGraph) {
     parts.push(`[LOCATION CONTEXT]\n${contextBlocks.locationGraph}\n[/LOCATION CONTEXT]`);
@@ -347,10 +362,13 @@ export function buildContextSection(contextBlocks) {
         const km = (t.distanceKm ?? 0).toFixed(2);
         const fromB = t.fromBiome ? (t.fromBiome.name || t.fromBiome.biome) : '?';
         const toB = t.toBiome ? (t.toBiome.name || t.toBiome.biome) : '?';
+        const hasRouteFamiliarity = t.kind === 'travel' && t.routeFamiliarity;
+        const tc = hasRouteFamiliarity ? (t.routeFamiliarity.traversalCount ?? 0) : null;
+        const familiarTag = tc >= 3 ? ` [familiar (${tc}x) — compress travel]` : tc === 0 ? ' [first time — describe richly]' : '';
         if (t.kind === 'travel') {
-          lines.push(`Trasa: ${t.fromName} (${fromB}) → ${t.targetName} (${toB}), ${km} km.`);
+          lines.push(`Trasa: ${t.fromName} (${fromB}) → ${t.targetName} (${toB}), ${km} km.${familiarTag}`);
         } else {
-          lines.push(`Trasa: ${t.fromName} (${fromB}) → punkt (${t.toX.toFixed(2)}, ${t.toY.toFixed(2)}) (${toB}), ${km} km.`);
+          lines.push(`Trasa: ${t.fromName} (${fromB}) → punkt (${t.toX.toFixed(2)}, ${t.toY.toFixed(2)}) (${toB}), ${km} km.${familiarTag}`);
         }
 
         if (t.biomeTransitions?.length) {

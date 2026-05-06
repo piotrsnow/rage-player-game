@@ -45,38 +45,80 @@ export function useLocationGraph(campaignId) {
   useEffect(() => { fetchGraph({ hops: 3 }); }, [fetchGraph]);
 
   const createNode = useCallback(async (body) => {
-    const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes`, { method: 'POST', body });
-    await fetchGraph({ hops: 3 });
-    return data.node;
+    setError(null);
+    try {
+      const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes`, { method: 'POST', body });
+      await fetchGraph({ hops: 3 });
+      return data.node;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId, fetchGraph]);
 
   const updateNode = useCallback(async (nodeId, body) => {
-    await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'PUT', body });
-    setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, ...body } : n));
+    setError(null);
+    try {
+      await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'PUT', body });
+      setNodes((prev) => prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        const patch = { ...body };
+        if ('shape' in patch) { patch.nodeShape = patch.shape || null; delete patch.shape; }
+        if ('icon' in patch) { patch.nodeIcon = patch.icon || null; delete patch.icon; }
+        return { ...n, ...patch };
+      }));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId]);
 
   const deleteNode = useCallback(async (nodeId) => {
-    await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'DELETE' });
-    setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setEdges((prev) => prev.filter((e) => e.fromId !== nodeId && e.toId !== nodeId));
-    if (selected?.id === nodeId) setSelected(null);
+    setError(null);
+    try {
+      await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'DELETE' });
+      setNodes((prev) => prev.filter((n) => n.id !== nodeId));
+      setEdges((prev) => prev.filter((e) => e.fromId !== nodeId && e.toId !== nodeId));
+      if (selected?.id === nodeId) setSelected(null);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId, selected]);
 
   const createEdge = useCallback(async (body) => {
-    const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges`, { method: 'POST', body });
-    await fetchGraph({ hops: 3 });
-    return data.edge;
+    setError(null);
+    try {
+      const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges`, { method: 'POST', body });
+      await fetchGraph({ hops: 3 });
+      return data.edge;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId, fetchGraph]);
 
   const updateEdge = useCallback(async (edgeId, body) => {
-    await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
-    setEdges((prev) => prev.map((e) => e.id === edgeId ? { ...e, ...body } : e));
+    setError(null);
+    try {
+      await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
+      setEdges((prev) => prev.map((e) => e.id === edgeId ? { ...e, ...body } : e));
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId]);
 
   const deleteEdge = useCallback(async (edgeId) => {
-    await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'DELETE' });
-    setEdges((prev) => prev.filter((e) => e.id !== edgeId));
-    if (selected?.id === edgeId) setSelected(null);
+    setError(null);
+    try {
+      await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'DELETE' });
+      setEdges((prev) => prev.filter((e) => e.id !== edgeId));
+      if (selected?.id === edgeId) setSelected(null);
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
   }, [campaignId, selected]);
 
   const moveNpc = useCallback(async (npcId, toKind, toId) => {

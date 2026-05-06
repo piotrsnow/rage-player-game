@@ -1,7 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { childLogger } from '../lib/logger.js';
 import { generateSceneEmbedding, processStateChanges } from './sceneGenerator/processStateChanges.js';
-import { compressSceneToSummary, generateLocationSummary } from './memoryCompressor.js';
+import { compressSceneToSummary, generateLocationSummary, appendSceneDigest } from './memoryCompressor.js';
 import { pauseNpcsAtLocation, resumeNpcsAtLocation } from './livingWorld/npcLifecycle.js';
 import { applyCompanionTravel } from './livingWorld/companionService.js';
 import { handleNpcKills } from './livingWorld/reputationHook.js';
@@ -343,6 +343,27 @@ export async function handlePostSceneWork({
       );
     }
   }
+  // Location History Digest — append a one-line digest to the current
+  // location's ring buffer so return-to-location scenes get grounded context.
+  // Uses the first major memory entry from the compress result as the digest
+  // text; falls back to the player action if compress was skipped/failed.
+  const digestLocationName = newLoc || prevLoc;
+  if (digestLocationName) {
+    let digestText = playerAction || '';
+    if (compressResult?.status === 'fulfilled' && compressResult.value) {
+      const nano = compressResult.value;
+      const majorFact = nano._majorMemoryText;
+      if (majorFact) digestText = majorFact;
+    }
+    if (digestText) {
+      try {
+        await appendSceneDigest(campaignId, digestLocationName, scene.sceneIndex, digestText);
+      } catch (err) {
+        log.warn({ err: err?.message, campaignId }, 'Scene digest append failed (non-fatal)');
+      }
+    }
+  }
+
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
     log.error(

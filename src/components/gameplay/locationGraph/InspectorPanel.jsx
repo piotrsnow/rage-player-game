@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EDGE_TYPES } from '../../../../shared/domain/locationGraph.js';
 import { getNodeVisual, getEdgeVisual } from './graphVisuals.js';
+import { SHAPE_PATHS, AVAILABLE_SHAPES, AVAILABLE_ICONS } from './nodeShapes.js';
 
 const NODE_TYPE_OPTIONS = [
   'world', 'region', 'area', 'settlement', 'district',
@@ -126,6 +127,21 @@ function NodeInspector({ node, occupants = [], onUpdate, onDelete, mode, t }) {
         <span className="text-xs text-outline">{node.scale ?? 5}</span>
       </Field>
 
+      <Field label={t('locationGraph.inspector.shape', { defaultValue: 'Kształt' })}>
+        <ShapePicker
+          value={node.nodeShape || null}
+          onChange={(v) => handleField('shape', v)}
+          color={vis.color}
+        />
+      </Field>
+
+      <Field label={t('locationGraph.inspector.icon', { defaultValue: 'Ikona' })}>
+        <IconPicker
+          value={node.nodeIcon || null}
+          onChange={(v) => handleField('icon', v)}
+        />
+      </Field>
+
       {occupants.length > 0 && (
         <div className="space-y-1.5 pt-1 border-t border-outline-variant/10">
           <span className="text-xs font-label uppercase tracking-widest text-outline">
@@ -226,6 +242,20 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
         </select>
       </Field>
 
+      {edge.category === 'movement' && typeof edge.metadata?.traversalCount === 'number' && edge.metadata.traversalCount > 0 && (
+        <Field label={t('locationGraph.inspector.familiarity', { defaultValue: 'Znajomość trasy' })}>
+          <div className="flex items-center gap-2 text-on-surface-variant">
+            <span className="material-symbols-outlined text-sm">
+              {edge.metadata.traversalCount >= 3 ? 'explore' : 'explore_off'}
+            </span>
+            <span>
+              {edge.metadata.traversalCount}x
+              {edge.metadata.traversalCount >= 3 ? ` — ${t('locationGraph.inspector.familiarRoute', { defaultValue: 'znana trasa' })}` : ''}
+            </span>
+          </div>
+        </Field>
+      )}
+
       {mode === 'gm' && (
         <button
           onClick={() => onDelete(edge.id)}
@@ -233,6 +263,88 @@ function EdgeInspector({ edge, allNodes, onUpdate, onDelete, mode, t }) {
         >
           <span className="material-symbols-outlined text-base">delete</span>
           {t('locationGraph.inspector.deleteEdge')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ShapePicker({ value, onChange, color }) {
+  const thumbR = 10;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <button
+        onClick={() => onChange(null)}
+        className={`w-7 h-7 rounded-sm border flex items-center justify-center transition-colors ${
+          !value ? 'border-primary bg-primary/20' : 'border-outline-variant/20 bg-white/5 hover:bg-white/10'
+        }`}
+        title="Domyślny"
+      >
+        <svg width={20} height={20} viewBox="-12 -12 24 24">
+          <circle r={thumbR} fill={color} opacity={0.8} />
+        </svg>
+      </button>
+      {AVAILABLE_SHAPES.filter((s) => s !== 'circle').map((shape) => {
+        const gen = SHAPE_PATHS[shape];
+        if (!gen) return null;
+        const active = value === shape;
+        return (
+          <button
+            key={shape}
+            onClick={() => onChange(shape)}
+            className={`w-7 h-7 rounded-sm border flex items-center justify-center transition-colors ${
+              active ? 'border-primary bg-primary/20' : 'border-outline-variant/20 bg-white/5 hover:bg-white/10'
+            }`}
+            title={shape}
+          >
+            <svg width={20} height={20} viewBox="-12 -12 24 24">
+              <path d={gen(thumbR)} fill={color} opacity={0.8} />
+            </svg>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function IconPicker({ value, onChange }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleIcons = expanded ? AVAILABLE_ICONS : AVAILABLE_ICONS.slice(0, 12);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-1">
+        <button
+          onClick={() => onChange(null)}
+          className={`w-7 h-7 rounded-sm border flex items-center justify-center text-xs transition-colors ${
+            !value ? 'border-primary bg-primary/20 text-primary' : 'border-outline-variant/20 bg-white/5 hover:bg-white/10 text-outline'
+          }`}
+          title="Domyślny"
+        >
+          <span className="material-symbols-outlined text-sm">close</span>
+        </button>
+        {visibleIcons.map((icon) => {
+          const active = value === icon;
+          return (
+            <button
+              key={icon}
+              onClick={() => onChange(icon)}
+              className={`w-7 h-7 rounded-sm border flex items-center justify-center transition-colors ${
+                active ? 'border-primary bg-primary/20 text-primary' : 'border-outline-variant/20 bg-white/5 hover:bg-white/10 text-on-surface-variant'
+              }`}
+              title={icon}
+            >
+              <span className="material-symbols-outlined text-sm">{icon}</span>
+            </button>
+          );
+        })}
+      </div>
+      {AVAILABLE_ICONS.length > 12 && (
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="text-[10px] text-primary/70 hover:text-primary transition-colors"
+        >
+          {expanded ? 'Mniej ▲' : `Więcej (${AVAILABLE_ICONS.length}) ▼`}
         </button>
       )}
     </div>

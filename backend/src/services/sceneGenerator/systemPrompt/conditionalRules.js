@@ -12,6 +12,7 @@ const BESTIARY_RACES_STR = BESTIARY_RACES.join(', ');
 const COMBAT_INTENTS = new Set(['combat', 'stealth', 'freeform', 'idle', 'first_scene']);
 const LORE_INTENTS = new Set(['talk', 'search', 'persuade', 'freeform', 'first_scene']);
 const MAGICAL_LOC_RE = /jaskini|dungeon|ruin|wież|tower|crypt|temple|świątyni|portal|magiczn|arcane|nekromant|podziemn/;
+const RECRUITMENT_INTENTS = new Set(['talk', 'persuade', 'freeform', 'first_scene']);
 
 // Location types where AI MAY emit a new sublocation entry. Settlements +
 // canonical sublocations of settlements (interior/dungeon as parents are
@@ -72,6 +73,21 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
     rules.push(
       `canTrain: in npcs stateChange, 1-3 skill names NPC can teach. ` +
       `Only experienced, friendly NPCs. Not merchants/peasants/hostile.`,
+    );
+  }
+
+  if (RECRUITMENT_INTENTS.has(intent)) {
+    rules.push(
+      `RECRUITMENT / TAMING:\n` +
+      `When the player explicitly attempts to tame, call, befriend, or recruit a creature or NPC (e.g. "wołam psa", "próbuję oswoić wilka", "przekonuję strażnika żeby poszedł ze mną"), resolve a skill check using a pre-rolled d50:\n` +
+      `- Animal/beast/monster: use Przetrwanie or Wiedza o naturze (whichever is higher). Recruitment threshold: margin ≥ 25.\n` +
+      `- Humanoid NPC: use Perswazja. Recruitment threshold: margin ≥ 50.\n` +
+      `If the check meets the threshold:\n` +
+      `  1. Narrate the creature/NPC responding positively and joining the party.\n` +
+      `  2. In stateChanges.npcs[], emit the NPC with: action:"introduce", attitude:"friendly", disposition:10, joinParty:true, plus appropriate race/creatureKind/role/personality. If the player named the creature in their action, use that name. Otherwise pick a fitting name.\n` +
+      `If the check succeeds (margin ≥ 0) but below the recruitment threshold: narrate a friendly reaction — the creature is not hostile but does NOT join. No joinParty.\n` +
+      `If the check fails: the creature ignores or flees. No joinParty.\n` +
+      `Limit: max 3 companions in party. If context shows 3+ companions already travelling with the player, recruitment auto-fails narratively ("twoja drużyna jest już zbyt liczna").`,
     );
   }
 

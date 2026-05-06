@@ -16,7 +16,6 @@ export const EDGE_CATEGORIES = {
 export const EDGE_TYPES = {
   // Structural
   contains: { category: 'structural', bidirectional: false },
-  part_of: { category: 'structural', bidirectional: false },
   overlaps: { category: 'structural', bidirectional: true },
   above: { category: 'structural', bidirectional: false },
   below: { category: 'structural', bidirectional: false },

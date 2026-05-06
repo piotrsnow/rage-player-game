@@ -141,6 +141,40 @@ export async function updateEdge(edgeId, data) {
 }
 
 /**
+ * Look up the traversalCount from the movement edge between two locations.
+ * Returns `{ traversalCount, lastTraversedSceneIndex }` or null.
+ */
+export async function lookupEdgeFamiliarity(fromKind, fromId, toKind, toId, { campaignId = null } = {}) {
+  if (!fromKind || !fromId || !toKind || !toId) return null;
+  const where = {
+    isActive: true,
+    category: 'movement',
+    OR: [
+      { fromKind, fromId, toKind, toId },
+      { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
+    ],
+  };
+  if (campaignId) {
+    where.AND = [{ OR: [{ campaignId: null }, { campaignId }] }];
+  }
+
+  const edges = await prisma.locationEdge.findMany({
+    where,
+    orderBy: { updatedAt: 'desc' },
+    select: { campaignId: true, metadata: true },
+  });
+  const edge = campaignId
+    ? edges.find((candidate) => candidate.campaignId === campaignId) || edges[0]
+    : edges[0];
+  if (!edge?.metadata) return null;
+  const m = typeof edge.metadata === 'object' ? edge.metadata : {};
+  return {
+    traversalCount: typeof m.traversalCount === 'number' ? m.traversalCount : 0,
+    lastTraversedSceneIndex: typeof m.lastTraversedSceneIndex === 'number' ? m.lastTraversedSceneIndex : null,
+  };
+}
+
+/**
  * Find NPCs at a specific location (CampaignNPC).
  */
 export async function getNpcsAtLocation(locationKind, locationId, campaignId) {

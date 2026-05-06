@@ -246,6 +246,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             if (imageUrl) {
               dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId: capturedSceneId, image: imageUrl } });
               autoSave();
+              const idx = state.scenes.findIndex((s) => s.id === capturedSceneId);
+              if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl });
             }
             dispatch({ type: 'SET_GENERATING_IMAGE', payload: false });
           });
@@ -322,6 +324,8 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });
             autoSave();
+            const idx = state.scenes.findIndex((s) => s.id === sceneId);
+            if (idx >= 0) storage.saveSceneImageUpdate(state.campaign?.backendId, idx, { imageUrl, fullImagePrompt });
           } catch (imgErr) {
             console.warn('Image generation failed:', imgErr.message);
           } finally {

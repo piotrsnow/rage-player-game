@@ -4,6 +4,8 @@ import { buildNPCEmbeddingText, embedText } from '../../embeddingService.js';
 import { writeEmbedding } from '../../embeddingWrite.js';
 import { updateLoyalty } from '../../livingWorld/companionService.js';
 import { appendEvent } from '../../livingWorld/worldEventLog.js';
+import { resolveLocationByName, findCanonicalWorldNpcByName } from '../../livingWorld/worldStateService.js';
+import { getOrCloneCampaignNpc } from '../../livingWorld/campaignSandbox.js';
 import { coerceGender, normalizeGender } from '../../../../../shared/domain/npcGender.js';
 import { NPC_RACES } from '../../../../../shared/domain/npcRaces.js';
 import { generateNpcSheet, mergeSheetOverride } from '../../npcs/npcCharacterSheet.js';
@@ -88,6 +90,16 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
     return _campaignLocRef;
   }
 
+  // Per-scene cache — identical free-text location strings across multiple
+  // NPCs in the same scene resolve once. npcs[] capped at 30.
+  const locationResolveCache = new Map();
+  async function resolveLocationCached(rawName) {
+    if (locationResolveCache.has(rawName)) return locationResolveCache.get(rawName);
+    const result = await resolveLocationByName(rawName, { campaignId });
+    locationResolveCache.set(rawName, result);
+    return result;
+  }
+
   for (const npcChange of npcs) {
     if (!npcChange.name) continue;
 
@@ -104,6 +116,33 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         if (npcChange.disposition != null) contentUpdate.disposition = npcChange.disposition;
         if (npcChange.alive != null) contentUpdate.alive = npcChange.alive;
         if (npcChange.lastLocation) contentUpdate.lastLocation = npcChange.lastLocation;
+
+        // Refresh lastLocationKind/Id so the location-graph inspector tracks
+        // NPC movement. Skip when NPC is being killed/removed.
+        if (npcChange.alive !== false) {
+          let resolvedLocRef = null;
+          if (npcChange.lastLocation) {
+            const resolved = await resolveLocationCached(npcChange.lastLocation);
+            if (resolved) resolvedLocRef = { kind: resolved.kind, id: resolved.row.id };
+          }
+          if (!resolvedLocRef) {
+            const campRef = await getCampaignLocationRef();
+            if (campRef) resolvedLocRef = campRef;
+          }
+          if (resolvedLocRef &&
+              (resolvedLocRef.kind !== existing.lastLocationKind || resolvedLocRef.id !== existing.lastLocationId)) {
+            contentUpdate.lastLocationKind = resolvedLocRef.kind;
+            contentUpdate.lastLocationId = resolvedLocRef.id;
+          }
+        }
+
+        // Opportunistically link orphaned ephemeral shadows to their
+        // canonical WorldNPC so post-campaign promotion dedup works.
+        if (!existing.worldNpcId) {
+          const canonical = await findCanonicalWorldNpcByName(npcChange.name);
+          if (canonical) contentUpdate.worldNpcId = canonical.id;
+        }
+
         if (npcChange.acknowledgedFame === true) contentUpdate.hasAcknowledgedFame = true;
         // Backfill gender on existing NPCs: either the LLM just sent a valid
         // value (upgrade path) or the row was persisted earlier with
@@ -192,28 +231,58 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         const stats = npcChange.statsOverride ? mergeSheetOverride(baseline, npcChange.statsOverride) : baseline;
 
         try {
-          // NPC location enforcement: default to campaign's current location
-          // when the AI doesn't specify where the NPC is.
           const locRef = await getCampaignLocationRef();
-          const created = await prisma.campaignNPC.create({
-            data: {
-              campaignId,
-              npcId,
-              name: npcChange.name,
-              gender: coerceGender(npcChange.gender, npcChange.name),
-              role: npcChange.role || null,
-              personality: npcChange.personality || null,
-              attitude: npcChange.attitude || 'neutral',
-              disposition: npcChange.disposition ?? 0,
-              race: stats.race,
-              creatureKind: stats.creatureKind,
-              level: stats.level,
-              stats,
-              lastLocationKind: locRef?.kind || null,
-              lastLocationId: locRef?.id || null,
-              ...initialInteractionFields(sceneIndex),
-            },
-          });
+
+          // Check if the LLM is mentioning a canonical WorldNPC the player
+          // hasn't physically met yet. If so, route through the sandbox
+          // cloner to get a properly-linked shadow instead of an ephemeral.
+          const canonicalMatch = await findCanonicalWorldNpcByName(npcChange.name);
+          let created;
+          if (canonicalMatch) {
+            const cloned = await getOrCloneCampaignNpc(campaignId, canonicalMatch.id);
+            if (cloned) {
+              created = await prisma.campaignNPC.update({
+                where: { id: cloned.id },
+                data: {
+                  gender: coerceGender(npcChange.gender, npcChange.name),
+                  role: npcChange.role || cloned.role || null,
+                  personality: npcChange.personality || cloned.personality || null,
+                  attitude: npcChange.attitude || cloned.attitude || 'neutral',
+                  disposition: npcChange.disposition ?? cloned.disposition ?? 0,
+                  race: stats.race,
+                  creatureKind: stats.creatureKind,
+                  level: stats.level,
+                  stats,
+                  lastLocationKind: locRef?.kind || cloned.lastLocationKind || null,
+                  lastLocationId: locRef?.id || cloned.lastLocationId || null,
+                  ...initialInteractionFields(sceneIndex),
+                },
+              });
+            }
+          }
+
+          if (!created) {
+            created = await prisma.campaignNPC.create({
+              data: {
+                campaignId,
+                npcId,
+                name: npcChange.name,
+                gender: coerceGender(npcChange.gender, npcChange.name),
+                role: npcChange.role || null,
+                personality: npcChange.personality || null,
+                attitude: npcChange.attitude || 'neutral',
+                disposition: npcChange.disposition ?? 0,
+                race: stats.race,
+                creatureKind: stats.creatureKind,
+                level: stats.level,
+                stats,
+                lastLocationKind: locRef?.kind || null,
+                lastLocationId: locRef?.id || null,
+                ...initialInteractionFields(sceneIndex),
+              },
+            });
+          }
+
           if (Array.isArray(npcChange.relationships) && npcChange.relationships.length > 0) {
             await replaceNpcRelationships(created.id, npcChange.relationships);
           }

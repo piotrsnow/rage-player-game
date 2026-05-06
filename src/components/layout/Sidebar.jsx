@@ -19,7 +19,11 @@ import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
 
 const SIDEBAR_PLAY_SURFACE_STYLE = {
-  background: 'rgba(12, 10, 18, 0.88)',
+  background: `
+    radial-gradient(circle at 32% 18%, rgba(228, 78, 176, 0.08), transparent 34%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 10px),
+    rgba(20, 15, 29, 0.9)
+  `,
 };
 
 export default function Sidebar() {

@@ -8,7 +8,7 @@ import {
 import { toCanonicalStoragePath } from '../services/urlCanonical.js';
 import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
 import { loadUserApiKeys } from '../services/apiKeyService.js';
-import { SCENE_CLIENT_SELECT } from '../services/campaignSerialize.js';
+import { SCENE_CLIENT_SELECT, normalizeSceneAssetUrls } from '../services/campaignSerialize.js';
 
 async function aggregateDiceStats(prisma, campaignIds) {
   const empty = { totalRolls: 0, successes: 0, failures: 0, critSuccesses: 0, critFailures: 0, avgRoll: 0, bestSkill: null, worstSkill: null };
@@ -363,6 +363,120 @@ export async function characterRoutes(fastify) {
     ]);
 
     return { gains, total };
+  });
+
+  // ── Favorite scenes ────────────────────────────────────────────────────
+  // Heart toggle in the gameplay UI bookmarks scenes for a character. The
+  // list is surfaced in the character panel alongside skill gain history.
+
+  fastify.get('/:id/favorite-scenes', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const rows = await prisma.favoriteScene.findMany({
+      where: { characterId: character.id },
+      orderBy: { createdAt: 'desc' },
+      take: request.query.limit,
+      skip: request.query.offset,
+      select: {
+        id: true,
+        sceneId: true,
+        campaignId: true,
+        createdAt: true,
+        scene: {
+          select: {
+            sceneIndex: true,
+            narrative: true,
+            chosenAction: true,
+            imageUrl: true,
+            scenePacing: true,
+            createdAt: true,
+          },
+        },
+        campaign: { select: { name: true } },
+      },
+    });
+
+    const favorites = rows.map((row) => {
+      const scene = row.scene ? normalizeSceneAssetUrls(row.scene) : null;
+      return {
+        id: row.id,
+        sceneId: row.sceneId,
+        campaignId: row.campaignId,
+        campaignName: row.campaign?.name || '',
+        createdAt: row.createdAt,
+        sceneIndex: scene?.sceneIndex ?? null,
+        narrative: scene?.narrative || '',
+        chosenAction: scene?.chosenAction || null,
+        imageUrl: scene?.imageUrl || null,
+        scenePacing: scene?.scenePacing || null,
+        sceneCreatedAt: scene?.createdAt || null,
+      };
+    });
+
+    return { favorites };
+  });
+
+  fastify.post('/:id/favorite-scenes', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['sceneId', 'campaignId'],
+        additionalProperties: false,
+        properties: {
+          sceneId: { type: 'string', format: 'uuid' },
+          campaignId: { type: 'string', format: 'uuid' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const { sceneId, campaignId } = request.body;
+    const scene = await prisma.campaignScene.findFirst({
+      where: { id: sceneId, campaignId },
+      select: { id: true, campaignId: true },
+    });
+    if (!scene) return reply.code(404).send({ error: 'Scene not found' });
+
+    const favorite = await prisma.favoriteScene.upsert({
+      where: { characterId_sceneId: { characterId: character.id, sceneId } },
+      create: { characterId: character.id, sceneId, campaignId },
+      update: {},
+      select: { id: true, sceneId: true, campaignId: true, createdAt: true },
+    });
+    return reply.code(201).send(favorite);
+  });
+
+  fastify.delete('/:id/favorite-scenes/:sceneId', async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const result = await prisma.favoriteScene.deleteMany({
+      where: { characterId: character.id, sceneId: request.params.sceneId },
+    });
+    if (result.count === 0) return reply.code(404).send({ error: 'Favorite not found' });
+    return reply.code(204).send();
   });
 
   fastify.post('/:id/badge', async (request, reply) => {
