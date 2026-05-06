@@ -152,6 +152,15 @@
   "imageConfig": {
     "title": "Konfiguracja Obrazów",
     "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów.",
+    "promptLlm": {
+      "title": "Generowanie promptu przez AI",
+      "desc": "Mniejszy model LLM układa prompt do generowania obrazu na podstawie sceny",
+      "modelLabel": "Model do promptu",
+      "modelDefault": "Domyślny (nano)",
+      "customStyleLabel": "Własny styl promptu",
+      "customStyleDesc": "Opisz jak mają wyglądać generowane prompty",
+      "customStylePlaceholder": "np. prompty do stable diffusion mają być dokładne i proste, 8-12 tagów oddzielonych przecinkami, bez zdań. Negatywny prompt krótki i konkretny — tylko najważniejsze rzeczy do unikania."
+    },
     "playground": {
       "title": "Playground",
       "subtitle": "Testuj generowanie obrazów: wpisz słowa kluczowe i użyj różdżki, aby AI zbudowało pełny prompt z Twoich ustawień, albo wpisz prompt ręcznie.",
@@ -243,7 +252,9 @@
     "libraryNewerHintNoDate": "W bibliotece jest nowsza wersja (Poziom {{level}})",
     "loadingWorld": "Wczytywanie świata...",
     "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
-    "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
+    "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta.",
+    "recentCampaigns": "Ostatnie kampanie",
+    "showAllCampaigns": "Wszystkie kampanie"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",

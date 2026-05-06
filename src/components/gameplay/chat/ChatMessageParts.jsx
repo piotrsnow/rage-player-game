@@ -20,7 +20,7 @@ import {
 } from '../../../utils/readAloudExclusive';
 
 export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
   const { state: gameState, dispatch } = useGame();
   const campaignId = useGameSlice((s) => s.campaign?.backendId) || null;
   const [state, setState] = useState('idle');
@@ -66,16 +66,16 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
     const provider = settings.ttsProvider || 'elevenlabs';
     const voiceId = seg
       ? resolveSegmentVoice(seg, {
-          defaultVoiceId: settings.narratorVoiceId,
-          narratorVoiceId: settings.narratorVoiceId,
-          maleVoices: settings.maleVoices,
-          femaleVoices: settings.femaleVoices,
+          defaultVoiceId: voicePools.narratorVoiceId,
+          narratorVoiceId: voicePools.narratorVoiceId,
+          maleVoices: voicePools.maleVoices,
+          femaleVoices: voicePools.femaleVoices,
           characterVoiceMap: gameState.characterVoiceMap,
           ttsProvider: provider,
           viewerMode: false,
           dispatch,
         }).voiceId
-      : settings.narratorVoiceId;
+      : voicePools.narratorVoiceId;
     const hasTts = voiceId && hasApiKey(provider);
 
     if (!hasTts) {
@@ -264,8 +264,8 @@ export function NarrativeWithLoading({ narrator, messageId, segmentIndex, childr
 
 function TtsLoadingOverlay() {
   return (
-    <div className="absolute inset-0 rounded border border-primary/30 bg-surface/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10">
-      <span className="material-symbols-outlined text-primary/70 text-sm animate-pulse">volume_up</span>
+    <div className="absolute -inset-0.5 rounded-lg border-2 border-pink-200/40 bg-surface/30 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10 animate-pulse">
+      <span className="material-symbols-outlined text-pink-200/70 text-base animate-spin">progress_activity</span>
     </div>
   );
 }

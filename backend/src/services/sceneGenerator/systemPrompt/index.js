@@ -120,7 +120,7 @@ export function buildLeanSystemPrompt(coreState, recentScenes, language = 'pl', 
   // ═══════════════════════════════════════════════════════════════
   const dynamicSections = [];
 
-  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase });
+  const conditionalRules = buildConditionalRules({ intent, coreState: cs, scenePhase, livingWorldEnabled });
   if (conditionalRules.length > 0) {
     dynamicSections.push(`Conditional rules:\n${conditionalRules.join('\n')}`);
   }

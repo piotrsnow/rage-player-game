@@ -474,6 +474,70 @@ export function buildContextSection(contextBlocks) {
     }
   }
 
+  // ── Graph system — LOCATION GRAPH context block ────────────────────
+  // Injected when assembleContext provides `locationGraph` data. Shows the
+  // AI what edges exist from the player's current location, grouped by
+  // category (movement, perception, social). Split into player-visible
+  // and GM-only sections so the AI knows what it can and cannot reveal.
+  if (contextBlocks.locationGraph) {
+    const lg = contextBlocks.locationGraph;
+    const graphLines = [];
+
+    if (lg.playerVisible) {
+      graphLines.push('[LOCATION GRAPH — PLAYER VISIBLE]');
+      if (lg.playerVisible.current) {
+        graphLines.push(`Current: ${lg.playerVisible.current}`);
+      }
+      if (lg.playerVisible.hierarchy) {
+        graphLines.push(`Hierarchy: ${lg.playerVisible.hierarchy}`);
+      }
+      if (lg.playerVisible.contained?.length) {
+        graphLines.push(`Contained: ${lg.playerVisible.contained.join(', ')}`);
+      }
+      if (lg.playerVisible.movement?.length) {
+        graphLines.push('Movement from here:');
+        for (const m of lg.playerVisible.movement) {
+          const reqTag = m.requirementsMet === false ? ` [REQUIRES: ${m.requirements || '?'}]` : '';
+          const riskTag = m.risk && m.risk !== 'none' ? ` (${m.risk} risk)` : '';
+          const timeTag = m.travelTime ? `, ${m.travelTime} min` : '';
+          graphLines.push(`  → ${m.target} (${m.relationType}${timeTag}${riskTag})${reqTag}`);
+        }
+      }
+      if (lg.playerVisible.perception?.length) {
+        graphLines.push('Perception:');
+        for (const p of lg.playerVisible.perception) {
+          const typeLabel = p.perceptionType?.toUpperCase() || 'SENSE';
+          graphLines.push(`  - ${typeLabel}: ${p.target} — ${p.detail || ''}`);
+        }
+      }
+      if (lg.playerVisible.nearby?.length) {
+        graphLines.push(`Nearby: ${lg.playerVisible.nearby.join(', ')}`);
+      }
+    }
+
+    if (lg.gmOnly) {
+      graphLines.push('');
+      graphLines.push('[LOCATION GRAPH — GM ONLY — DO NOT REVEAL TO PLAYER]');
+      if (lg.gmOnly.hiddenEdges?.length) {
+        graphLines.push('Hidden edges:');
+        for (const e of lg.gmOnly.hiddenEdges) {
+          const dc = e.discoverDC ? ` (DC ${e.discoverDC} ${e.discoverSkill || 'Perception'})` : '';
+          graphLines.push(`  → ${e.from} --${e.relationType}--> ${e.to}${dc}`);
+        }
+      }
+      if (lg.gmOnly.secretInfo?.length) {
+        graphLines.push('Secret info:');
+        for (const s of lg.gmOnly.secretInfo) {
+          graphLines.push(`  - ${s}`);
+        }
+      }
+    }
+
+    if (graphLines.length > 1) {
+      parts.push(graphLines.join('\n'));
+    }
+  }
+
   if (parts.length === 0) return '';
   return `\n── EXPANDED CONTEXT (use in your response) ──\n${parts.join('\n\n')}`;
 }

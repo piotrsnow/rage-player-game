@@ -15,7 +15,19 @@
     />
   </head>
   <body class="bg-surface-dim text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
-    <div id="root"></div>
+    <div id="root">
+      <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0e0e10;">
+        <div style="padding:2.5rem 3rem;border-radius:1rem;background:rgba(34,34,38,0.7);backdrop-filter:blur(12px);border:1px solid rgba(197,154,255,0.15);animation:splash-pulse 2s ease-in-out infinite;">
+          <img src="/nikczemnu_logo.png" alt="Nikczemny Krzemuch" style="height:12rem;width:auto;filter:drop-shadow(0 4px 24px rgba(197,154,255,0.25));" />
+        </div>
+      </div>
+      <style>
+        @keyframes splash-pulse {
+          0%,100% { opacity:1; }
+          50% { opacity:0.85; }
+        }
+      </style>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

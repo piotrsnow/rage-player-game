@@ -38,6 +38,7 @@ import { adminUserRoutes } from './routes/adminUsers.js';
 import { creditsRoutes, creditsWebhookRoute } from './routes/credits.js';
 import { playgroundRoutes } from './routes/playground.js';
 import { topicHistoryRoutes } from './routes/topicHistory.js';
+import { voiceSettingsRoutes } from './routes/voiceSettings.js';
 import { mapStudioRoutes } from './routes/mapStudio/index.js';
 import { seedWorld } from './scripts/seedWorld.js';
 import {
@@ -188,6 +189,14 @@ await fastify.register(async function topicHistoryScope(app) {
   });
   app.register(topicHistoryRoutes);
 }, { prefix: '/v1/topic-history' });
+
+// Voice settings — global voice pool config. GET is auth-only, PUT is admin-only.
+await fastify.register(async function voiceSettingsScope(app) {
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = { ...routeOptions.config, rateLimit: { max: 30, timeWindow: '1 minute' } };
+  });
+  app.register(voiceSettingsRoutes);
+}, { prefix: '/v1/voice-settings' });
 
 // Living World (Phase 2) — companion CAS, C2 dialog. Auth-gated, rate-limited like data routes.
 await fastify.register(async function livingWorldScope(app) {

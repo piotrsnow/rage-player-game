@@ -53,7 +53,7 @@ function ModalLayer() {
   const dispatch = useGameDispatch();
   const autoSave = useGameAutoSave();
   const mp = useMultiplayer();
-  const { settings } = useSettings();
+  const { settings, voicePools } = useSettings();
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
 
   return (
@@ -64,8 +64,8 @@ function ModalLayer() {
           world={isMultiplayer ? mp.state.gameState?.world : soloWorld}
           quests={isMultiplayer ? mp.state.gameState?.quests : soloQuests}
           characterVoiceMap={characterVoiceMap}
-          maleVoices={settings.maleVoices}
-          femaleVoices={settings.femaleVoices}
+          maleVoices={voicePools.maleVoices}
+          femaleVoices={voicePools.femaleVoices}
           ttsProvider={settings.ttsProvider || 'elevenlabs'}
           dispatch={dispatch}
           autoSave={autoSave}

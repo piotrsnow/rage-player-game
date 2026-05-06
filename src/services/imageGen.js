@@ -179,18 +179,26 @@ export const imageService = {
   async generateSceneImage(narrative, genre, tone, _apiKeyIgnored, provider = 'dalle', imagePrompt = null, campaignId = null, imageStyle = 'painting', darkPalette = false, characterAge = null, characterGender = null, options = {}, seriousness = null, portraitUrl = null) {
     const hasPortrait = provider === 'gpt-image' && !!portraitUrl;
     const sdModel = provider === 'sd-webui' ? (options?.sdModel || null) : null;
-    // Translate the user-content fragments to English before they get
-    // embedded into the English template. Image models perform best on
-    // English prompts; PL characters bleed in from LLM slip-ups and from
-    // the narrative fallback when the model omitted `imagePrompt`.
-    const [enImagePrompt, enNarrative] = await Promise.all([
-      ensureEnglish(imagePrompt),
-      imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
-    ]);
-    const prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
+
+    let prompt;
+    if (options?.preBuiltPrompt) {
+      prompt = options.preBuiltPrompt;
+    } else {
+      // Translate the user-content fragments to English before they get
+      // embedded into the English template. Image models perform best on
+      // English prompts; PL characters bleed in from LLM slip-ups and from
+      // the narrative fallback when the model omitted `imagePrompt`.
+      const [enImagePrompt, enNarrative] = await Promise.all([
+        ensureEnglish(imagePrompt),
+        imagePrompt ? Promise.resolve(narrative || '') : ensureEnglish((narrative || '').substring(0, 300)),
+      ]);
+      prompt = buildImagePrompt(enNarrative, genre, tone, enImagePrompt, provider, imageStyle, darkPalette, characterAge, characterGender, seriousness, hasPortrait, sdModel);
+    }
+
     const url = await generateSceneViaProxy(prompt, provider, campaignId, {
       ...options,
       portraitUrl: hasPortrait ? portraitUrl : null,
+      negativePrompt: options?.preBuiltNegativePrompt || options?.negativePrompt || null,
     });
     return { url, prompt };
   },

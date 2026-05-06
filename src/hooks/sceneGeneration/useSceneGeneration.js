@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useGame } from '../../contexts/GameContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { imageService } from '../../services/imageGen';
+import { aiService } from '../../services/ai';
 import { apiClient } from '../../services/apiClient';
 import { createSceneId } from '../../services/gameState';
 import { storage } from '../../services/storage';
@@ -27,7 +28,7 @@ const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
 
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
@@ -217,7 +218,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         // Dialogue repair
         const { finalSegments, stateChanges: mergedStateChanges } = processSceneDialogue(
           result, state, settings, dispatch,
-          { isFirstScene, playerAction, isPassiveSceneAction }
+          { isFirstScene, playerAction, isPassiveSceneAction, voicePools }
         );
         result.stateChanges = mergedStateChanges;
 
@@ -283,10 +284,40 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         if (!earlyImagePromise && imageGenEnabled && hasImageKey) {
           dispatch({ type: 'SET_GENERATING_IMAGE', payload: true });
           try {
+            let llmPromptOpts = {};
+            if (settings.imagePromptLlmEnabled) {
+              try {
+                const llmResult = await aiService.generateImagePrompt({
+                  imagePromptTags: result.imagePrompt || '',
+                  narrative: (result.narrative || '').substring(0, 600),
+                  imageProvider,
+                  imageStyle,
+                  darkPalette,
+                  seriousness: imageSeriousness,
+                  genre: state.campaign?.genre || 'Fantasy',
+                  tone: state.campaign?.tone || 'Epic',
+                  characterAge: state.character?.age || null,
+                  characterGender: state.character?.gender || null,
+                  customStyleEnabled: settings.imagePromptCustomStyleEnabled || false,
+                  customStyle: settings.imagePromptCustomStyle || '',
+                  provider: settings.imagePromptLlmProvider || 'openai',
+                  model: settings.imagePromptLlmModel || null,
+                });
+                if (llmResult.prompt) {
+                  llmPromptOpts.preBuiltPrompt = llmResult.prompt;
+                  if (llmResult.negativePrompt) {
+                    llmPromptOpts.preBuiltNegativePrompt = llmResult.negativePrompt;
+                  }
+                }
+              } catch (llmErr) {
+                console.warn('LLM image prompt generation failed, falling back to template:', llmErr.message);
+              }
+            }
+
             const { url: imageUrl, prompt: fullImagePrompt } = await imageService.generateSceneImage(
               result.narrative, state.campaign?.genre, state.campaign?.tone, imageApiKey, imageProvider,
               result.imagePrompt, state.campaign?.backendId, imageStyle, darkPalette,
-              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null }, imageSeriousness,
+              state.character?.age, state.character?.gender, { sdModel: sdWebuiModel, sdSeed: Number.isInteger(sdWebuiSeed) ? sdWebuiSeed : null, ...llmPromptOpts }, imageSeriousness,
               state.character?.portraitUrl || null
             );
             dispatch({ type: 'UPDATE_SCENE_IMAGE', payload: { sceneId, image: imageUrl, fullImagePrompt } });

@@ -3,6 +3,7 @@ import { loadUserApiKeys } from '../../services/apiKeyService.js';
 import { generateStoryPrompt } from '../../services/storyPromptGenerator.js';
 import { generateCharacterLegend } from '../../services/characterLegendGenerator.js';
 import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
+import { generateImagePrompt } from '../../services/imagePromptGenerator.js';
 import { translateImagePromptToEnglish } from '../../services/translateImagePrompt.js';
 import { generateCombatCommentary } from '../../services/combatCommentary.js';
 import { verifyObjective } from '../../services/objectiveVerifier.js';
@@ -11,6 +12,7 @@ import {
   STORY_PROMPT_SCHEMA,
   CHARACTER_LEGEND_SCHEMA,
   ENHANCE_IMAGE_PROMPT_SCHEMA,
+  GENERATE_IMAGE_PROMPT_SCHEMA,
   TRANSLATE_IMAGE_PROMPT_SCHEMA,
   COMBAT_COMMENTARY_SCHEMA,
   VERIFY_OBJECTIVE_SCHEMA,
@@ -77,6 +79,52 @@ export async function singleShotRoutes(fastify) {
         genre,
         tone,
         language,
+        provider,
+        model,
+        userApiKeys,
+      });
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
+  });
+
+  /**
+   * POST /ai/generate-image-prompt — use a smaller LLM to compose the final
+   * image-generation prompt from scene tags + config + optional custom style.
+   */
+  fastify.post('/generate-image-prompt', { schema: { body: GENERATE_IMAGE_PROMPT_SCHEMA } }, async (request, reply) => {
+    const {
+      imagePromptTags,
+      narrative,
+      imageProvider,
+      imageStyle,
+      darkPalette,
+      seriousness,
+      genre,
+      tone,
+      characterAge,
+      characterGender,
+      customStyleEnabled,
+      customStyle,
+      provider,
+      model,
+    } = request.body || {};
+    const userApiKeys = await loadUserApiKeys(prisma, request.user?.id);
+    try {
+      return await generateImagePrompt({
+        imagePromptTags,
+        narrative,
+        imageProvider,
+        imageStyle,
+        darkPalette,
+        seriousness,
+        genre,
+        tone,
+        characterAge,
+        characterGender,
+        customStyleEnabled,
+        customStyle,
         provider,
         model,
         userApiKeys,

@@ -289,6 +289,7 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
     await processLocationMentions(campaignId, stateChanges.locationMentioned);
   }
 
+
   // Phase 7 — dungeon room state flags. `prevLoc` is the room the player
   // was IN when premium wrote the flags; currentLocation may already point
   // to the next room (movement). Flags apply to prevLoc.

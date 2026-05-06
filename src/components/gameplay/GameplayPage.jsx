@@ -110,7 +110,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
   const sAlchemy = useGameSlice((s) => s.alchemy);
   const sMomentumBonus = useGameSlice((s) => s.momentumBonus);
   const sNarrationTime = useGameSlice((s) => s.narrationTime);
-  const { settings, updateSettings, updateDMSettings } = useSettings();
+  const { settings, updateSettings, updateDMSettings, voicePools } = useSettings();
   const viewerBackendUrl = readOnly ? (apiClient.getBaseUrl() || settings.backendUrl || '') : null;
   // useNarrator is declared above useDictation so the dictation hook can react
   // to TTS playback state (auto-mute mic while the narrator speaks).
@@ -239,6 +239,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
 
   const recap = useSummary({
     settings,
+    voicePools,
     narrator,
     openSettings,
     t,
@@ -921,6 +922,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
         isMultiplayer={isMultiplayer}
         mpGameState={mpGameState}
         settings={settings}
+        voicePools={voicePools}
         dispatch={dispatch}
         autoSave={autoSave}
         narrator={narrator}

@@ -39,7 +39,7 @@ export default function IntroOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-[200] bg-black"
+      className="fixed inset-0 z-0 pointer-events-none"
       style={{
         opacity: fading ? 0 : 1,
         transition: 'opacity 0.8s ease-out',
@@ -48,17 +48,20 @@ export default function IntroOverlay() {
     >
       <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full object-contain"
+        className="absolute inset-0 h-full w-full object-cover"
         src="/video/krzemuch_intro.mp4"
         autoPlay
+        muted
         playsInline
         onEnded={dismiss}
       />
 
+      <div className="absolute inset-0 bg-black/60" />
+
       <button
         type="button"
         onClick={dismiss}
-        className={`absolute bottom-8 right-8 px-4 py-2 rounded-sm text-sm font-label uppercase tracking-wider text-white/70 hover:text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/10 transition-all duration-300 ${skipVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
+        className={`pointer-events-auto absolute bottom-8 right-8 px-4 py-2 rounded-sm text-sm font-label uppercase tracking-wider text-white/70 hover:text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/10 transition-all duration-300 z-10 ${skipVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'}`}
       >
         Pomiń
       </button>

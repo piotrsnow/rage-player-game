@@ -3,6 +3,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import ImageProviderSection from './keys/ImageProviderSection';
 import SceneVisualizationSection from './sections/SceneVisualizationSection';
+import ImagePromptLlmSection from './sections/ImagePromptLlmSection';
 import ImagePlaygroundSection from './sections/ImagePlaygroundSection';
 import EffectIntensitySection from './sections/EffectIntensitySection';
 
@@ -61,6 +62,13 @@ export default function ImageConfigModal({ onClose }) {
                   settings={settings}
                   updateSettings={updateSettings}
                   backendKeys={backendKeys}
+                />
+              )}
+
+              {showImageProvider && (
+                <ImagePromptLlmSection
+                  settings={settings}
+                  updateSettings={updateSettings}
                 />
               )}
 

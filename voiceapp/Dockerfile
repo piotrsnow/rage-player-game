@@ -11,13 +11,18 @@ COPY src/ src/
 COPY --from=context shared/ui-theme/ /context/shared/ui-theme/
 RUN npm run build
 
-# Stage 2: Python XTTS server + static frontend
-FROM python:3.11-slim
-WORKDIR /app
+# Stage 2: Python XTTS server + CUDA runtime + static frontend
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3-pip \
     ffmpeg libsndfile1 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
+WORKDIR /app
 
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

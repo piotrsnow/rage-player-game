@@ -18,7 +18,7 @@ import {
 } from '../../utils/readAloudExclusive';
 
 function ReadAloudButton({ text, lang = 'pl' }) {
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
   const [state, setState] = useState('idle');
   const audioRef = useRef(null);
   const mountedRef = useRef(true);
@@ -59,7 +59,7 @@ function ReadAloudButton({ text, lang = 'pl' }) {
     lastAttemptRef.current = attemptId;
 
     const provider = settings.ttsProvider || 'elevenlabs';
-    const voiceId = settings.narratorVoiceId;
+    const voiceId = voicePools.narratorVoiceId;
     const hasTts = voiceId && hasApiKey(provider);
 
     if (!hasTts) {

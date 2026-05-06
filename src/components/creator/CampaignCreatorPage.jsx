@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAI } from '../../hooks/useAI';
@@ -28,6 +28,7 @@ import ModeToggle from './ModeToggle';
 import CharacterPicker from './CharacterPicker';
 import StoryPromptSection from './StoryPromptSection';
 import LivingWorldModal from './LivingWorldModal';
+import { useGlobalMusic } from '../../contexts/MusicContext';
 
 export default function CampaignCreatorPage() {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export default function CampaignCreatorPage() {
   const { state } = useGame();
   const mp = useMultiplayer();
   const { openSettings } = useModals();
+  const { setSuppressLobbyMusicForIntroVideo } = useGlobalMusic();
 
   const [mode, setMode] = useState(mp.state.isMultiplayer ? 'multiplayer' : 'solo');
   const isMultiplayer = mode === 'multiplayer';
@@ -71,6 +73,26 @@ export default function CampaignCreatorPage() {
   const [createdCharacter, setCreatedCharacter] = useState(null);
   const [editingSelectedPortrait, setEditingSelectedPortrait] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isGenerating = state.isLoading || mp.state.isGenerating || isSubmitting;
+  const [genVideoFading, setGenVideoFading] = useState(false);
+  const [genVideoVisible, setGenVideoVisible] = useState(false);
+
+  useEffect(() => {
+    if (isGenerating) {
+      setGenVideoVisible(true);
+      setGenVideoFading(false);
+    } else {
+      setGenVideoVisible(false);
+    }
+  }, [isGenerating]);
+
+  useLayoutEffect(() => {
+    if (!isGenerating) return undefined;
+    setSuppressLobbyMusicForIntroVideo(true);
+    return () => setSuppressLobbyMusicForIntroVideo(false);
+  }, [isGenerating, setSuppressLobbyMusicForIntroVideo]);
+
   const [showTopicHistory, setShowTopicHistory] = useState(false);
   const [topicHistory, setTopicHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -308,12 +330,34 @@ export default function CampaignCreatorPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
-      {(state.isLoading || mp.state.isGenerating || isSubmitting) ? (
-        <div className="flex flex-col items-center justify-center py-32 animate-fade-in">
-          <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
-          <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">
-            {t('creator.loadingDescription')}
-          </p>
+      {isGenerating ? (
+        <div className="relative flex flex-col items-center justify-center py-32 animate-fade-in overflow-hidden rounded-xl">
+          {genVideoVisible && (
+            <div
+              className="absolute inset-0 z-0"
+              style={{
+                opacity: genVideoFading ? 0 : 1,
+                transition: 'opacity 0.8s ease-out',
+              }}
+              onTransitionEnd={() => { if (genVideoFading) setGenVideoVisible(false); }}
+            >
+              <video
+                className="h-full w-full object-cover"
+                src="/video/krzemuch_intro.mp4"
+                autoPlay
+                muted
+                playsInline
+                onEnded={() => setGenVideoFading(true)}
+              />
+              <div className="absolute inset-0 bg-black/60" />
+            </div>
+          )}
+          <div className="relative z-10">
+            <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
+            <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">
+              {t('creator.loadingDescription')}
+            </p>
+          </div>
         </div>
       ) : (
         <div className="space-y-8 animate-fade-in">

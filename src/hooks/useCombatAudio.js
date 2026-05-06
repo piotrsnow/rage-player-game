@@ -24,7 +24,7 @@ function getVolume(level) {
 }
 
 export function useCombatAudio(combat) {
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
   const campaign = useGameCampaign();
   const character = useGameCharacter();
   const party = useGameParty();
@@ -164,7 +164,7 @@ export function useCombatAudio(combat) {
   }, [character, characterVoiceMap, party, npcs]);
 
   const resolveCombatantVoiceId = useCallback((combatant) => {
-    if (!combatant?.name) return settings.narratorVoiceId || null;
+    if (!combatant?.name) return voicePools.narratorVoiceId || null;
 
     const mappedVoice = characterVoiceMap?.[combatant.name]?.voiceId;
     if (mappedVoice) return mappedVoice;
@@ -175,21 +175,21 @@ export function useCombatAudio(combat) {
       gender,
       characterVoiceMap || {},
       {
-        maleVoices: settings.maleVoices || [],
-        femaleVoices: settings.femaleVoices || [],
-        narratorVoiceId: settings.narratorVoiceId || null,
+        maleVoices: voicePools.maleVoices || [],
+        femaleVoices: voicePools.femaleVoices || [],
+        narratorVoiceId: voicePools.narratorVoiceId || null,
         ttsProvider: settings.ttsProvider || 'elevenlabs',
       },
       dispatch
     );
 
-    return resolved || settings.narratorVoiceId || null;
+    return resolved || voicePools.narratorVoiceId || null;
   }, [
     dispatch,
     getCombatantGender,
-    settings.maleVoices,
-    settings.femaleVoices,
-    settings.narratorVoiceId,
+    voicePools.maleVoices,
+    voicePools.femaleVoices,
+    voicePools.narratorVoiceId,
     characterVoiceMap,
   ]);
 
@@ -242,9 +242,9 @@ export function useCombatAudio(combat) {
           gender,
           characterVoiceMap || {},
           {
-            maleVoices: settings.maleVoices || [],
-            femaleVoices: settings.femaleVoices || [],
-            narratorVoiceId: settings.narratorVoiceId || null,
+            maleVoices: voicePools.maleVoices || [],
+            femaleVoices: voicePools.femaleVoices || [],
+            narratorVoiceId: voicePools.narratorVoiceId || null,
             ttsProvider: settings.ttsProvider || 'elevenlabs',
           },
           dispatch
@@ -272,10 +272,10 @@ export function useCombatAudio(combat) {
     getCombatantGender,
     playUrl,
     resolveCombatantVoiceId,
-    settings.femaleVoices,
+    voicePools.femaleVoices,
     settings.language,
-    settings.maleVoices,
-    settings.narratorVoiceId,
+    voicePools.maleVoices,
+    voicePools.narratorVoiceId,
     settings.ttsProvider,
     ttsEnabled,
   ]);

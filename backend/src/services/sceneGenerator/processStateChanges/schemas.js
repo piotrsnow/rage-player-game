@@ -136,6 +136,37 @@ function safeParse(schema, input) {
   return { ok: false, error: result.error };
 }
 
+// ── Graph system — AI-emitted graph updates ─────────────────────────
+// Each entry describes a single mutation to the location graph: discovering
+// an edge, creating a new campaign edge, updating metadata, or revealing a
+// perception link. Max 10 per scene — keeps the post-scene pipeline bounded.
+
+const GraphUpdateActionSchema = z.object({
+  action: z.enum([
+    'discover_location',    // player learns about a location
+    'discover_edge',        // player discovers an existing edge
+    'create_edge',          // AI creates a new campaign edge (narrative → graph)
+    'update_edge',          // modify metadata on an existing edge
+    'remove_edge',          // edge destroyed (bridge collapsed, path blocked)
+    'add_perception',       // new perception relation (visible/audible/smell)
+    'update_discovery',     // change a location's discoveryState
+  ]),
+  locationName: z.string().trim().max(200).optional(),
+  fromLocation: z.string().trim().max(200).optional(),
+  toLocation: z.string().trim().max(200).optional(),
+  relationType: z.string().trim().max(60).optional(),
+  bidirectional: z.boolean().optional(),
+  metadata: z.record(z.unknown()).optional(),
+  description: z.string().trim().max(300).optional(),
+  visibility: z.enum(['visible', 'hidden', 'secret']).optional(),
+  discoveryState: z.enum(['rumored', 'heard_about', 'visited', 'mapped']).optional(),
+  distance: z.number().nonnegative().optional(),
+  difficulty: z.enum(['safe', 'moderate', 'dangerous', 'deadly']).optional(),
+  risk: z.enum(['none', 'low', 'moderate', 'high', 'extreme']).optional(),
+}).passthrough();
+
+export const GraphUpdatesSchema = z.array(GraphUpdateActionSchema).max(10);
+
 export const parseLocationMentions = (input) => safeParse(LocationMentionsSchema, input);
 export const parseCampaignComplete = (input) => safeParse(CampaignCompleteSchema, input);
 export const parseDungeonComplete = (input) => safeParse(DungeonCompleteSchema, input);
@@ -143,3 +174,4 @@ export const parseWorldImpactFlags = (input) => safeParse(WorldImpactFlagsSchema
 export const parseDungeonRoomFlags = (input) => safeParse(DungeonRoomFlagsSchema, input);
 export const parseNpcMemoryUpdates = (input) => safeParse(NpcMemoryUpdatesSchema, input);
 export const parseNpcChanges = (input) => safeParse(NpcChangesSchema, input);
+export const parseGraphUpdates = (input) => safeParse(GraphUpdatesSchema, input);

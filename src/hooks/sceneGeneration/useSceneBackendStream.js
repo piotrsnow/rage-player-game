@@ -7,7 +7,7 @@ import { resolveVoiceForCharacter } from '../../services/characterVoiceResolver'
 
 export function useSceneBackendStream() {
   const { state, dispatch } = useGame();
-  const { settings } = useSettings();
+  const { settings, voicePools } = useSettings();
 
   const earlyDiceRollEmittedRef = useRef(false);
   const streamedDiceRollCountRef = useRef(0);
@@ -134,9 +134,9 @@ export function useSceneBackendStream() {
                   npc.gender === 'male' || npc.gender === 'female' ? npc.gender : null,
                   state.characterVoiceMap || {},
                   {
-                    maleVoices: settings.maleVoices || [],
-                    femaleVoices: settings.femaleVoices || [],
-                    narratorVoiceId: settings.narratorVoiceId || null,
+                    maleVoices: voicePools.maleVoices || [],
+                    femaleVoices: voicePools.femaleVoices || [],
+                    narratorVoiceId: voicePools.narratorVoiceId || null,
                     ttsProvider: settings.ttsProvider || 'elevenlabs',
                   },
                   dispatch
