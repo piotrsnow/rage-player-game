@@ -10,7 +10,8 @@ import EffectIntensitySection from './sections/EffectIntensitySection';
 export default function ImageConfigModal({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, updateDMSettings, backendKeys } = useSettings();
+  const { settings, updateSettings, updateDMSettings, backendKeys, backendUser } = useSettings();
+  const isAdmin = !!backendUser?.isAdmin;
 
   const showImageProvider = (settings.sceneVisualization || 'image') === 'image';
 
@@ -57,12 +58,18 @@ export default function ImageConfigModal({ onClose }) {
                 updateDMSettings={updateDMSettings}
               />
 
-              {showImageProvider && (
-                <ImageProviderSection
-                  settings={settings}
-                  updateSettings={updateSettings}
-                  backendKeys={backendKeys}
-                />
+              {showImageProvider && isAdmin && (
+                <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
+                  <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest">
+                    <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                    Admin
+                  </div>
+                  <ImageProviderSection
+                    settings={settings}
+                    updateSettings={updateSettings}
+                    backendKeys={backendKeys}
+                  />
+                </div>
               )}
 
               {showImageProvider && (
@@ -72,7 +79,15 @@ export default function ImageConfigModal({ onClose }) {
                 />
               )}
 
-              {showImageProvider && <ImagePlaygroundSection />}
+              {showImageProvider && isAdmin && (
+                <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
+                  <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest">
+                    <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                    Admin
+                  </div>
+                  <ImagePlaygroundSection />
+                </div>
+              )}
 
               <EffectIntensitySection settings={settings} updateSettings={updateSettings} />
             </div>

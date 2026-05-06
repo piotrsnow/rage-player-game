@@ -10,8 +10,9 @@
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
-    -webkit-text-fill-color: inherit !important;
+    -webkit-box-shadow: 0 0 0 1000px rgba(126, 41, 223, 0.15) inset !important;
+    -webkit-text-fill-color: #e0d0f0 !important;
+    caret-color: #e0d0f0;
     transition: background-color 5000s ease-in-out 0s;
   }
 }

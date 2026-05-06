@@ -114,7 +114,7 @@ export default function AudioConfigModal({ onClose }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
         ref={modalRef}
-        className="relative w-full max-w-3xl max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in"
+        className={`relative w-full max-h-[90vh] bg-surface-container-highest/80 backdrop-blur-2xl border border-outline-variant/15 rounded-sm flex flex-col shadow-2xl animate-fade-in ${isAdmin ? 'max-w-6xl' : 'max-w-3xl'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-outline-variant/15 shrink-0">
@@ -132,70 +132,88 @@ export default function AudioConfigModal({ onClose }) {
         </div>
 
         <div className="overflow-y-auto custom-scrollbar flex-1">
-          <div className="max-w-3xl mx-auto px-6 lg:px-10 py-8">
+          <div className={`mx-auto px-6 lg:px-10 py-8 ${isAdmin ? 'max-w-6xl' : 'max-w-3xl'}`}>
             <header className="mb-8 animate-fade-in">
               <p className="text-on-surface-variant max-w-2xl font-body leading-relaxed">
                 {t('settings.audioSubtitle')}
               </p>
             </header>
 
-            <section className="space-y-6 animate-fade-in">
-              {isAdmin && (
-                <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm border-l border-tertiary/20">
-                  <p className="font-headline text-tertiary mb-3">{t('settings.ttsProvider')}</p>
-                  <div className="flex gap-2">
-                    {TTS_PROVIDERS.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => handleSwitchProvider(p.id)}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border transition-all ${
-                          ttsProvider === p.id
-                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-sm">{p.icon}</span>
-                        <span className="font-headline text-xs">{p.label}</span>
-                      </button>
-                    ))}
+            {isAdmin ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+                <div className="space-y-6">
+                  <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest">
+                      <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                      Admin
+                    </div>
+                    <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm">
+                      <p className="font-headline text-tertiary mb-3">{t('settings.ttsProvider')}</p>
+                      <div className="flex gap-2">
+                        {TTS_PROVIDERS.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => handleSwitchProvider(p.id)}
+                            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border transition-all ${
+                              ttsProvider === p.id
+                                ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                                : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-sm">{p.icon}</span>
+                            <span className="font-headline text-xs">{p.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest z-10">
+                      <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                      Admin
+                    </div>
+                    {ttsProvider === 'elevenlabs' && (
+                      <NarratorVoicesSection
+                        settings={voiceSettingsForSection}
+                        updateSettings={updateSettings}
+                        backendUser={backendUser}
+                        hasApiKey={hasApiKey}
+                        voices={el.voices}
+                        loadingVoices={el.loadingVoices}
+                        voiceError={el.voiceError}
+                        testingVoice={el.testingVoice}
+                        onLoadVoices={() => hasApiKey('elevenlabs') && el.loadVoices()}
+                        onSelectNarratorVoice={handleSelectNarratorVoice}
+                        onToggleGenderPool={handleToggleGenderPool}
+                        onTestVoice={handleTestVoice}
+                      />
+                    )}
+                    {ttsProvider === 'xtts' && (
+                      <XttsVoicesSection
+                        settings={voiceSettingsForSection}
+                        updateSettings={updateSettings}
+                        hasApiKey={hasApiKey}
+                        voices={xt.voices}
+                        loadingVoices={xt.loadingVoices}
+                        voiceError={xt.voiceError}
+                        testingVoice={xt.testingVoice}
+                        onLoadVoices={() => hasApiKey('xtts') && xt.loadVoices()}
+                        onSelectNarratorVoice={handleSelectNarratorVoice}
+                        onToggleGenderPool={handleToggleGenderPool}
+                        onTestVoice={handleXttsTestVoice}
+                      />
+                    )}
                   </div>
                 </div>
-              )}
 
-              {isAdmin && ttsProvider === 'elevenlabs' && (
-                <NarratorVoicesSection
-                  settings={voiceSettingsForSection}
-                  updateSettings={updateSettings}
-                  backendUser={backendUser}
-                  hasApiKey={hasApiKey}
-                  voices={el.voices}
-                  loadingVoices={el.loadingVoices}
-                  voiceError={el.voiceError}
-                  testingVoice={el.testingVoice}
-                  onLoadVoices={() => hasApiKey('elevenlabs') && el.loadVoices()}
-                  onSelectNarratorVoice={handleSelectNarratorVoice}
-                  onToggleGenderPool={handleToggleGenderPool}
-                  onTestVoice={handleTestVoice}
-                />
-              )}
-
-              {isAdmin && ttsProvider === 'xtts' && (
-                <XttsVoicesSection
-                  settings={voiceSettingsForSection}
-                  updateSettings={updateSettings}
-                  hasApiKey={hasApiKey}
-                  voices={xt.voices}
-                  loadingVoices={xt.loadingVoices}
-                  voiceError={xt.voiceError}
-                  testingVoice={xt.testingVoice}
-                  onLoadVoices={() => hasApiKey('xtts') && xt.loadVoices()}
-                  onSelectNarratorVoice={handleSelectNarratorVoice}
-                  onToggleGenderPool={handleToggleGenderPool}
-                  onTestVoice={handleXttsTestVoice}
-                />
-              )}
-
-              {!isAdmin && (
+                <div className="space-y-6">
+                  <SfxSection settings={settings} updateSettings={updateSettings} />
+                  <MusicSection settings={settings} updateSettings={updateSettings} />
+                </div>
+              </div>
+            ) : (
+              <section className="space-y-6 animate-fade-in">
                 <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
                   <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary-dim">record_voice_over</span>
@@ -223,12 +241,11 @@ export default function AudioConfigModal({ onClose }) {
                     </div>
                   </div>
                 </div>
-              )}
 
-              <SfxSection settings={settings} updateSettings={updateSettings} />
-
-              <MusicSection settings={settings} updateSettings={updateSettings} />
-            </section>
+                <SfxSection settings={settings} updateSettings={updateSettings} />
+                <MusicSection settings={settings} updateSettings={updateSettings} />
+              </section>
+            )}
           </div>
         </div>
       </div>
