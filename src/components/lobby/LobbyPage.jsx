@@ -17,6 +17,7 @@ import CampaignCard from './CampaignCard';
 import AuthPanel from './AuthPanel';
 import IntroOverlay from './IntroOverlay';
 import VideoBackground from '../ui/VideoBackground';
+import { INTRO_SEEN_SESSION_KEY, RESUME_PLAY_CAMPAIGN_SESSION_KEY } from '../../constants/sessionIntro';
 
 function FloatingRune({ delay, className }) {
   return (
@@ -152,6 +153,31 @@ export default function LobbyPage() {
       navigate('/', { replace: true, state: {} });
     }
   }, [location.state, navigate]);
+
+  useEffect(() => {
+    const resume = location.state?.resumePlayCampaignId;
+    if (!resume) return;
+    try {
+      sessionStorage.setItem(RESUME_PLAY_CAMPAIGN_SESSION_KEY, resume);
+    } catch {
+      /* ignore quota / private mode */
+    }
+    navigate('/', { replace: true, state: {} });
+  }, [location.state, navigate]);
+
+  useEffect(() => {
+    const tryResumePlay = () => {
+      if (typeof sessionStorage === 'undefined') return;
+      if (!sessionStorage.getItem(INTRO_SEEN_SESSION_KEY)) return;
+      const id = sessionStorage.getItem(RESUME_PLAY_CAMPAIGN_SESSION_KEY);
+      if (!id) return;
+      sessionStorage.removeItem(RESUME_PLAY_CAMPAIGN_SESSION_KEY);
+      navigate(`/play/${id}`, { replace: true });
+    };
+    tryResumePlay();
+    window.addEventListener('rpgon:intro-seen', tryResumePlay);
+    return () => window.removeEventListener('rpgon:intro-seen', tryResumePlay);
+  }, [navigate]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -343,7 +369,7 @@ export default function LobbyPage() {
 
   const [showAllCampaigns, setShowAllCampaigns] = useState(false);
   const [logoVisible, setLogoVisible] = useState(
-    () => !!sessionStorage.getItem('rpgon_intro_seen')
+    () => !!sessionStorage.getItem(INTRO_SEEN_SESSION_KEY)
   );
   const handleVideoEnded = useCallback(() => setLogoVisible(true), []);
 

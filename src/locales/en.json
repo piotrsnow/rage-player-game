@@ -3,6 +3,7 @@
     "appName": "Dungeons & Sillicons",
     "tagline": "Realms of dice & chaos",
     "logoPath": "/nikczemnu_logo_en.png",
+    "logoPathCampaign": "/nikczemny_logo_chain_2.png",
     "level": "Level",
     "lvl": "Lv.",
     "tier": "Tier",
@@ -151,7 +152,9 @@
     "saving": "Saving...",
     "campaignSaved": "Saved!",
     "profile": "Profile",
-    "audioConfig": "Audio"
+    "audioConfig": "Audio",
+    "appZoomTooltip": "{{percent}}%",
+    "appZoomAria": "Interface zoom {{percent}} percent. Left click to zoom in, right click to zoom out."
   },
   "profile": {
     "title": "User Profile"
@@ -270,7 +273,8 @@
     "snarkEmpty": "Nothing to mock... yet.",
     "snarkTtsError": "Failed to play narration.",
     "playSnark": "Listen",
-    "stopSnark": "Stop"
+    "stopSnark": "Stop",
+    "introTapForSound": "Tap the screen to turn sound on"
   },
   "creator": {
     "title": "Forge a New Campaign",
@@ -375,6 +379,24 @@
     "musicSkip": "Next track",
     "searchForQuests": "Search for quests",
     "searchForQuestsAction": "I look around for available work, quests, or tasks — I ask locals, check notice boards, and listen for rumors",
+    "incidentButton": "Report incident",
+    "incidentDescription": "Report an issue with recent scene — AI will judge if you're right",
+    "incidentModalTitle": "Report Incident",
+    "incidentPlaceholder": "Describe what went wrong — e.g. location didn't change despite traveling, NPC acted inconsistently, equipment wasn't added...",
+    "incidentSubmit": "Submit report",
+    "incidentSubmitting": "Analyzing...",
+    "incidentVerdictTitle": "AI Verdict",
+    "incidentPlayerRight": "AI agrees with you",
+    "incidentPlayerWrong": "AI disagrees with the complaint",
+    "incidentHistoryTitle": "Incident History",
+    "incidentHistoryEmpty": "No incidents reported",
+    "incidentHistoryButton": "History",
+    "incidentScene": "Scene",
+    "incidentClose": "Close",
+    "incidentNewReport": "New report",
+    "incidentTechnicalDetails": "Technical details",
+    "incidentCorrected": "Game state has been corrected",
+    "incidentSlipWarning": "Next scene might be... a bit slippery",
     "forceRoll": {
       "button": "Force roll",
       "descriptionOff": "Force a dice roll on this action. Left click: enable. Double click: favorable (+30). Right click: unfavorable (−30).",
@@ -1049,6 +1071,7 @@
       "wounds": "Wounds",
       "currentLocation": "Current Location",
       "modifications": "Modifications",
+      "locationHistory": "Location History",
       "reputation": "Reputation",
       "questType": "Type",
       "objectives": "Objectives",

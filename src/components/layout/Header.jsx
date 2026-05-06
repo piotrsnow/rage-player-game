@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -10,6 +11,62 @@ import { getGameState } from '../../stores/gameStore';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { storage } from '../../services/storage';
 import Tooltip from '../ui/Tooltip';
+import { APP_VERSION } from '../../version';
+
+function HeaderVersionPopover({ wrapperClassName = '', wrapperStyle }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [open]);
+
+  return (
+    <div
+      ref={ref}
+      className={`relative flex items-center shrink-0 justify-center ${wrapperClassName}`.trim()}
+      style={wrapperStyle}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        className="text-on-surface-variant font-body text-[15px] hover:text-tertiary transition-colors px-1 tabular-nums"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+      >
+        v{APP_VERSION}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 min-w-[200px] z-[60] bg-surface-container border border-outline-variant/20 rounded-sm shadow-xl p-4 animate-fade-in">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="material-symbols-outlined text-primary text-base">info</span>
+            <span className="text-xs font-bold text-on-surface tracking-wide">{t('common.appName')}</span>
+          </div>
+          <div className="space-y-1.5 text-[11px] text-on-surface-variant">
+            <div className="flex justify-between">
+              <span className="opacity-60">Wersja</span>
+              <span className="font-mono font-bold text-primary">{APP_VERSION}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="opacity-60">Stack</span>
+              <span>React + Fastify</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="opacity-60">System</span>
+              <span>WFRP 4e</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Flat “control rail” look — no hatch; aside keeps diagonal stripes. */
 const HEADER_CHROME_STYLE = {
@@ -22,7 +79,7 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings, updateSettings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph, openGmModal, openPrivacy } = useModals();
   const { dictation } = useDictationContext() ?? {};
   const campaign = useGameCampaign();
   const mp = useMultiplayer();
@@ -37,6 +94,31 @@ export default function Header() {
     : 'text-primary border-primary/30';
 
   const isMultiplayer = mp.state.isMultiplayer && mp.state.phase === 'playing';
+  const campaignLogoSrc = t('common.logoPathCampaign', '/nikczemny_logo_chain_2.png');
+  const campaignLogoMaskStyle = {
+    WebkitMaskImage: `url(${campaignLogoSrc})`,
+    maskImage: `url(${campaignLogoSrc})`,
+    WebkitMaskSize: 'contain',
+    maskSize: 'contain',
+    WebkitMaskRepeat: 'no-repeat',
+    maskRepeat: 'no-repeat',
+    WebkitMaskPosition: 'bottom',
+    maskPosition: 'bottom',
+  };
+  const headerRef = useRef(null);
+  const playLogoLinkRef = useRef(null);
+  const [campaignLogoCenterX, setCampaignLogoCenterX] = useState(null);
+  const [logoHoverVignette, setLogoHoverVignette] = useState(null);
+  const updatePlayLogoVignette = useCallback(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    const el = playLogoLinkRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setLogoHoverVignette({ cx: r.left + r.width / 2, cy: r.top + r.height / 2 });
+  }, []);
+  const clearPlayLogoVignette = useCallback(() => setLogoHoverVignette(null), []);
   const [volumeOpen, setVolumeOpen] = useState(false);
   const volumeRef = useRef(null);
   const [saveStatus, setSaveStatus] = useState('idle');
@@ -75,21 +157,152 @@ export default function Header() {
   ].filter(Boolean);
 
   const vol = settings.musicVolume ?? 40;
+  const isPlayRoute = location.pathname.startsWith('/play');
+
+  useEffect(() => {
+    if (!isPlayRoute) setLogoHoverVignette(null);
+  }, [isPlayRoute]);
+
+  const updateCampaignLogoCenter = useCallback(() => {
+    if (!isPlayRoute) {
+      setCampaignLogoCenterX(null);
+      return;
+    }
+    const linkEl = playLogoLinkRef.current;
+    const headerEl = headerRef.current;
+    if (!linkEl || !headerEl) return;
+    const lr = linkEl.getBoundingClientRect();
+    const hr = headerEl.getBoundingClientRect();
+    const cx = lr.left - hr.left + lr.width / 2;
+    setCampaignLogoCenterX(cx);
+  }, [isPlayRoute]);
+
+  useLayoutEffect(() => {
+    updateCampaignLogoCenter();
+  }, [updateCampaignLogoCenter, campaignLogoSrc]);
+
+  useEffect(() => {
+    if (!isPlayRoute) return;
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => updateCampaignLogoCenter()) : null;
+    const linkEl = playLogoLinkRef.current;
+    if (ro && linkEl) ro.observe(linkEl);
+    window.addEventListener('resize', updateCampaignLogoCenter);
+    return () => {
+      window.removeEventListener('resize', updateCampaignLogoCenter);
+      if (ro && linkEl) ro.unobserve(linkEl);
+    };
+  }, [isPlayRoute, updateCampaignLogoCenter]);
+
+  const appZoom = settings.appZoom ?? 100;
+  const canZoomIn = appZoom < 140;
+  const canZoomOut = appZoom > 80;
+
+  const handleAppZoomClick = useCallback(() => {
+    if (!canZoomIn) return;
+    updateSettings({ appZoom: Math.min(140, appZoom + 10) });
+  }, [appZoom, canZoomIn, updateSettings]);
+
+  const handleAppZoomContextMenu = useCallback(
+    (e) => {
+      e.preventDefault();
+      if (!canZoomOut) return;
+      updateSettings({ appZoom: Math.max(80, appZoom - 10) });
+    },
+    [appZoom, canZoomOut, updateSettings]
+  );
 
   return (
     <header
-      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12]"
+      ref={headerRef}
+      className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 backdrop-blur-md border-b border-primary/[0.12] relative overflow-visible"
       style={HEADER_CHROME_STYLE}
     >
-      <div className="flex items-center gap-4">
-        {location.pathname.startsWith('/play') && (
+      {isPlayRoute && (
+        <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
+          <Link
+            ref={playLogoLinkRef}
+            to="/"
+            onMouseEnter={updatePlayLogoVignette}
+            onMouseLeave={clearPlayLogoVignette}
+            onFocus={updatePlayLogoVignette}
+            onBlur={clearPlayLogoVignette}
+            className="absolute left-6 bottom-0 z-[51] block leading-none translate-x-[10px] translate-y-[120px] transition-opacity duration-300"
+          >
+            <span className="relative inline-block origin-top leading-none motion-reduce:animate-none animate-campaign-logo-float will-change-transform">
+              <img
+                src={campaignLogoSrc}
+                alt={t('common.appName')}
+                onLoad={updateCampaignLogoCenter}
+                className="relative z-0 block h-[12rem] w-auto max-w-[min(62vw,44rem)] object-contain object-bottom select-none pointer-events-auto brightness-[0.9] contrast-[1.22]"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-[1] motion-reduce:animate-none animate-campaign-logo-holo bg-[length:400%_400%] opacity-[0.92] mix-blend-color"
+                style={{
+                  ...campaignLogoMaskStyle,
+                  willChange: 'filter, background-position',
+                  backgroundImage:
+                    'linear-gradient(128deg, #12081f 0%, #2a0a28 10%, #1a0f3d 22%, #351848 34%, #0f2438 46%, #2a1548 58%, #3a1030 70%, #1a1530 82%, #22102a 100%)',
+                }}
+              />
+            </span>
+          </Link>
+        </Tooltip>
+      )}
+      {logoHoverVignette &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            aria-hidden
+            className="fixed inset-0 z-[49] pointer-events-none motion-reduce:hidden bg-transparent transition-opacity duration-300 ease-out"
+            style={{
+              background: `radial-gradient(ellipse min(52vmin, 64vw) min(44vmin, 56vh) at ${logoHoverVignette.cx}px ${logoHoverVignette.cy}px,
+                rgba(0,0,0,0.88) 0%,
+                rgba(0,0,0,0.72) 18%,
+                rgba(0,0,0,0.42) 38%,
+                rgba(0,0,0,0.16) 58%,
+                rgba(0,0,0,0) 78%,
+                rgba(0,0,0,0) 100%)`,
+            }}
+          />,
+          document.body,
+        )}
+      {isPlayRoute && campaignLogoCenterX != null && (
+        <HeaderVersionPopover
+          wrapperClassName="absolute top-0 z-[52] h-16 pointer-events-auto -translate-x-1/2"
+          wrapperStyle={{ left: `${campaignLogoCenterX - 26}px` }}
+        />
+      )}
+      <div
+        className={`flex gap-2 min-w-0 items-center min-h-16 ${
+          isPlayRoute ? 'pl-[max(13rem,min(34rem,calc(46vw+7rem)))] ml-3 md:ml-5' : ''
+        }`}
+      >
+        {!isPlayRoute && (
           <Tooltip content={t('nav.lobby')} placement="bottom" variant="compact" asChild>
             <Link
               to="/"
               className="flex items-center gap-2 transition-all duration-300 hover:drop-shadow-[0_0_12px_rgba(197,154,255,0.5)]"
             >
-              <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('common.appName')} className="h-[6.5rem] w-auto relative top-2 left-2" />
+              <img
+                src={t('common.logoPath', '/nikczemnu_logo.png')}
+                alt={t('common.appName')}
+                className="h-10 w-auto"
+              />
             </Link>
+          </Tooltip>
+        )}
+        {!isPlayRoute && <HeaderVersionPopover />}
+        {!backendUser && (
+          <Tooltip content={t('privacy.linkLabel')} placement="bottom" variant="compact" asChild>
+            <button
+              type="button"
+              onClick={openPrivacy}
+              aria-label={t('privacy.linkLabel')}
+              className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+            >
+              privacy_tip
+            </button>
           </Tooltip>
         )}
       </div>
@@ -300,30 +513,17 @@ export default function Header() {
                 </Tooltip>
               </>
             )}
-            <div className="flex items-center gap-0.5">
-              <Tooltip content={t('nav.zoomOut')} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
-                  onClick={() => updateSettings({ appZoom: Math.max(80, (settings.appZoom ?? 100) - 10) })}
-                  disabled={(settings.appZoom ?? 100) <= 80}
-                  aria-label={t('nav.zoomOut')}
-                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 disabled:text-outline/30 disabled:cursor-default"
-                >
-                  zoom_out
-                </button>
-              </Tooltip>
-              <Tooltip content={t('nav.zoomIn')} placement="bottom" variant="compact" asChild>
-                <button
-                  type="button"
-                  onClick={() => updateSettings({ appZoom: Math.min(140, (settings.appZoom ?? 100) + 10) })}
-                  disabled={(settings.appZoom ?? 100) >= 140}
-                  aria-label={t('nav.zoomIn')}
-                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high/40 disabled:text-outline/30 disabled:cursor-default"
-                >
-                  zoom_in
-                </button>
-              </Tooltip>
-            </div>
+            <Tooltip content={t('nav.appZoomTooltip', { percent: appZoom })} placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={handleAppZoomClick}
+                onContextMenu={handleAppZoomContextMenu}
+                aria-label={t('nav.appZoomAria', { percent: appZoom })}
+                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              >
+                search
+              </button>
+            </Tooltip>
             <Tooltip content={t('nav.settings')} placement="bottom" variant="compact" asChild>
               <button
                 type="button"
@@ -332,6 +532,16 @@ export default function Header() {
                 className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
               >
                 settings
+              </button>
+            </Tooltip>
+            <Tooltip content={t('privacy.linkLabel')} placement="bottom" variant="compact" asChild>
+              <button
+                type="button"
+                onClick={openPrivacy}
+                aria-label={t('privacy.linkLabel')}
+                className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+              >
+                privacy_tip
               </button>
             </Tooltip>
             <Tooltip content={(backendUser.credits ?? 0) < 0 ? t('credits.negativeBalance') : t('credits.title', 'Credits')} placement="bottom" variant="compact" asChild>

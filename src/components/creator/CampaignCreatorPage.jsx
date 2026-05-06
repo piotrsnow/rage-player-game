@@ -78,6 +78,7 @@ export default function CampaignCreatorPage() {
   const isGenerating = state.isLoading || mp.state.isGenerating || isSubmitting;
   const [genVideoFading, setGenVideoFading] = useState(false);
   const [genVideoVisible, setGenVideoVisible] = useState(false);
+  const genAmbientVideoRef = useRef(null);
 
   const [bgVideoVisible, setBgVideoVisible] = useState(true);
   const [bgVideoFading, setBgVideoFading] = useState(false);
@@ -100,6 +101,19 @@ export default function CampaignCreatorPage() {
     setPendingCampaignGenre(form.genre);
     return () => setPendingCampaignGenre(null);
   }, [isGenerating, form.genre, setPendingCampaignGenre]);
+
+  useEffect(() => {
+    if (!isGenerating) return undefined;
+    const el = genAmbientVideoRef.current;
+    if (!el) return undefined;
+    el.playbackRate = 0.75;
+    const kick = () => {
+      el.play().catch(() => {});
+    };
+    kick();
+    el.addEventListener('loadeddata', kick);
+    return () => el.removeEventListener('loadeddata', kick);
+  }, [isGenerating]);
 
   const [showTopicHistory, setShowTopicHistory] = useState(false);
   const [topicHistory, setTopicHistory] = useState([]);
@@ -347,10 +361,22 @@ export default function CampaignCreatorPage() {
         </div>
       )}
       {isGenerating ? (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center animate-fade-in overflow-hidden bg-black">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center animate-fade-in overflow-hidden">
+          <div className="absolute inset-0 z-0">
+            <video
+              ref={genAmbientVideoRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              src="/video/bg_video_1.mp4"
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+            <div className="absolute inset-0 bg-black/70" aria-hidden />
+          </div>
           {genVideoVisible && (
             <div
-              className="absolute inset-0 z-0"
+              className="absolute inset-0 z-[5]"
               style={{
                 opacity: genVideoFading ? 0 : 1,
                 transition: 'opacity 0.8s ease-out',
@@ -358,7 +384,7 @@ export default function CampaignCreatorPage() {
               onTransitionEnd={() => { if (genVideoFading) setGenVideoVisible(false); }}
             >
               <video
-                ref={(el) => { if (el) el.playbackRate = 0.5; }}
+                ref={(el) => { if (el) el.playbackRate = 0.75; }}
                 className="h-full w-full object-cover"
                 src="/video/krzemuch_intro.mp4"
                 autoPlay
@@ -369,7 +395,7 @@ export default function CampaignCreatorPage() {
               <div className="absolute inset-0 bg-black/40" />
             </div>
           )}
-          <div className="relative z-10">
+          <div className="relative z-20">
             <CountdownProgress durationSeconds={120} label={t('creator.loadingTitle')} />
             <p className="text-on-surface-variant text-sm mt-6 text-center max-w-md">
               {t('creator.loadingDescription')}

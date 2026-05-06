@@ -15,6 +15,7 @@ import DilemmaPanel from './action/DilemmaPanel';
 import TeammateTypingPanels from './action/TeammateTypingPanels';
 import QuickActionsBar from './action/QuickActionsBar';
 import CustomActionForm from './action/CustomActionForm';
+import IncidentModal from './action/IncidentModal';
 import { useGameSlice } from '../../stores/gameSelectors';
 import {
   getRecentNpcsForRecruitment,
@@ -59,12 +60,14 @@ export default function ActionPanel({
   typingPlayers = {},
   dispatch = null,
   dictation = null,
+  campaignId = null,
 }) {
   const [customAction, setCustomAction] = useState('');
   const [combatPickerOpen, setCombatPickerOpen] = useState(false);
   const [tradePickerOpen, setTradePickerOpen] = useState(false);
   const [trainerPickerOpen, setTrainerPickerOpen] = useState(false);
   const [recruitPickerOpen, setRecruitPickerOpen] = useState(false);
+  const [incidentOpen, setIncidentOpen] = useState(false);
   const [forceRoll, setForceRoll] = useState(FORCE_ROLL_INITIAL);
 
   const scenes = useGameSlice((s) => s.scenes);
@@ -317,7 +320,7 @@ export default function ActionPanel({
   );
 
   return (
-    <div className="space-y-2 min-h-[130px]">
+    <div className="space-y-2 min-h-0">
       {/* Multiplayer: Solo Action Cooldown Indicator */}
       {isMultiplayer && !soloAvailable && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-tertiary/5 border border-tertiary/15 rounded-sm">
@@ -474,6 +477,15 @@ export default function ActionPanel({
         </button>
       )}
 
+      {incidentOpen && campaignId && createPortal(
+        <IncidentModal
+          campaignId={campaignId}
+          dispatch={dispatch}
+          onClose={() => setIncidentOpen(false)}
+        />,
+        document.body
+      )}
+
       {/* Row 2: Utility buttons + Input */}
       {(!hasPendingAction || !isMultiplayer) && (
         <div className="flex items-center gap-2">
@@ -490,6 +502,7 @@ export default function ActionPanel({
             onToggleTradePicker={() => setTradePickerOpen((v) => !v)}
             onToggleTrainerPicker={() => setTrainerPickerOpen((v) => !v)}
             onToggleRecruitPicker={() => setRecruitPickerOpen((v) => !v)}
+            onOpenIncident={campaignId ? () => setIncidentOpen(true) : undefined}
             recruitableCount={recruitableNpcs.length}
             partyHasSlot={partyHasSlot}
             forceRollState={isMultiplayer ? null : forceRoll}

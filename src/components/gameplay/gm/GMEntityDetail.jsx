@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { NODE_COLORS } from '../../../services/gmDataTransformer';
 import { FACTION_DEFINITIONS, getReputationTierData } from '../../../data/rpgFactions';
+import { useLocationDigests } from '../../../hooks/useLocationDigests';
+import { useGameCampaign } from '../../../stores/gameSelectors';
 
 export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelectNode }) {
   const { t } = useTranslation();
@@ -83,6 +85,19 @@ export default function GMEntityDetail({ node, edges, allNodes, onClose, onSelec
   );
 }
 
+function findDigestsForLocation(allDigests, locationName) {
+  if (!allDigests || !locationName) return null;
+  const lower = locationName.toLowerCase();
+  for (const [name, data] of Object.entries(allDigests)) {
+    if (name.toLowerCase() === lower) return data;
+  }
+  for (const [name, data] of Object.entries(allDigests)) {
+    const nameLower = name.toLowerCase();
+    if (nameLower.includes(lower) || lower.includes(nameLower)) return data;
+  }
+  return null;
+}
+
 function NpcDetail({ data, isPC, t }) {
   if (!data) return null;
   return (
@@ -128,7 +143,15 @@ function NpcDetail({ data, isPC, t }) {
 }
 
 function LocationDetail({ data, t }) {
+  const campaign = useGameCampaign();
+  const { data: allDigests } = useLocationDigests(campaign?.backendId);
+
   if (!data) return null;
+
+  const locName = data.name || data.displayName || '';
+  const locData = allDigests ? findDigestsForLocation(allDigests, locName) : null;
+  const digests = locData?.sceneDigests || [];
+
   return (
     <div className="space-y-2 text-sm text-on-surface-variant">
       {data.description && <p>{data.description}</p>}
@@ -146,6 +169,19 @@ function LocationDetail({ data, t }) {
               <span>[{mod.type}] {mod.description}</span>
             </div>
           ))}
+        </div>
+      )}
+      {digests.length > 0 && (
+        <div>
+          <div className="text-xs text-outline mb-1">{t('gmModal.detail.locationHistory')}:</div>
+          <div className="space-y-1">
+            {digests.map((d, i) => (
+              <div key={i} className="text-xs text-outline leading-snug">
+                <span className="text-on-surface-variant font-bold">#{d.sceneIndex}</span>{' '}
+                {d.text}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

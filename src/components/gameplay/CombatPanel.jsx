@@ -67,6 +67,7 @@ export default function CombatPanel({
   const [isAwaitingAiTurn, setIsAwaitingAiTurn] = useState(false);
   const [hoveredCombatantId, setHoveredCombatantId] = useState(null);
   const logEndRef = useRef(null);
+  const logScrollRef = useRef(null);
   const combatAudio = useCombatAudio(combat);
 
   const currentTurn = getCurrentTurnCombatant(combat);
@@ -117,7 +118,8 @@ export default function CombatPanel({
   }, []);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = logScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [combatLog]);
 
   useEffect(() => {
@@ -453,7 +455,10 @@ export default function CombatPanel({
             {t('combat.battleProgress', 'Battle Progress')}
           </div>
           {combatLog.length > 0 && (
-            <div className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+            <div
+              ref={logScrollRef}
+              className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2"
+            >
               {combatLog.map((entry) => (
                 <CombatLogEntry key={entry.id} entry={entry} t={t} />
               ))}
@@ -462,7 +467,10 @@ export default function CombatPanel({
           )}
 
           {combatLog.length === 0 && combat.log.length > 0 && (
-            <div className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2">
+            <div
+              ref={logScrollRef}
+              className="space-y-1 max-h-[480px] overflow-y-auto custom-scrollbar rounded-sm border border-outline-variant/10 bg-surface-container/20 p-2"
+            >
               {combat.log.slice(-5).map((entry, i) => (
                 <div key={`legacy_${i}`} className="text-[11px] text-outline-variant leading-snug px-2 py-1">
                   {entry}

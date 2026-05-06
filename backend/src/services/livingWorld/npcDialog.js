@@ -84,6 +84,8 @@ export async function generate({
       maxTokens: 400,
       temperature: 0.8,
       userApiKeys,
+      taskType: 'npc-dialog',
+      taskLabel: 'NPC dialog',
     });
     parsed = parseJsonOrNull(text);
   } catch (err) {

@@ -263,6 +263,44 @@ export async function livingWorldRoutes(fastify) {
     return reply.send(payload);
   });
 
+  // GET /campaigns/:id/location-digests — per-location scene digests for GM panel
+  fastify.get('/campaigns/:id/location-digests', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string', minLength: 1 } },
+      },
+    },
+  }, async (request, reply) => {
+    const campaignId = request.params.id;
+    const campaign = await assertCampaignOwnership(request, reply, campaignId);
+    if (!campaign) return;
+
+    const rows = await prisma.campaignLocationSummary.findMany({
+      where: { campaignId },
+      select: {
+        locationName: true,
+        sceneDigests: true,
+        summary: true,
+        sceneCount: true,
+        keyNpcs: true,
+      },
+    });
+
+    const digests = {};
+    for (const row of rows) {
+      digests[row.locationName] = {
+        sceneDigests: Array.isArray(row.sceneDigests) ? row.sceneDigests : [],
+        summary: row.summary,
+        sceneCount: row.sceneCount,
+        keyNpcs: Array.isArray(row.keyNpcs) ? row.keyNpcs : [],
+      };
+    }
+
+    return reply.send({ digests });
+  });
+
   // GET /campaigns/:id/location-graph — graph view for the frontend modal
   fastify.get('/campaigns/:id/location-graph', {
     schema: {

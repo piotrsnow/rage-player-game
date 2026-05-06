@@ -26,6 +26,7 @@ export function buildUserPrompt(playerAction, {
   sceneCount = 0,
   creativityEligible = false,
   forceRoll = null,
+  pendingSlip = null,
 } = {}) {
   if (isFirstScene) {
     return `Generate the opening scene. Set the stage with an atmospheric description. Introduce the setting, hint at adventure hooks, and include at least one NPC who speaks in direct dialogue. This is scene 1 — keep it concise (1-2 short paragraphs).
@@ -40,6 +41,11 @@ Include stateChanges: timeAdvance, currentLocation, npcs (introduce at least 1),
   parts.push(creativityEligible
     ? 'player_input_kind=custom — gracz wpisał WŁASNĄ akcję. Oceń kreatywność i zwróć creativityBonus 0-10 zgodnie z regułami w CORE RULES.'
     : 'player_input_kind=suggested_or_auto — gracz NIE wpisał własnej akcji (clicked suggested / autoplayer / akcja systemowa). creativityBonus MUSI być 0.');
+
+  // Incident system — humorous penalty for unfounded complaint
+  if (pendingSlip) {
+    parts.push(`MANDATORY NARRATIVE EVENT: The character slips, stumbles, or trips on something in this scene. Weave it naturally into the narrative as a minor comedic moment — e.g. steps on a slippery fish, trips over a loose cobblestone, stumbles on a tree root. This is NOT a combat event, no damage, just a brief humorous moment. Reason (internal, do not reveal to player): ${pendingSlip}`);
+  }
 
   // Needs crisis reminder
   if (needsSystemEnabled && characterNeeds) {

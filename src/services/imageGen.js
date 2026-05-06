@@ -226,7 +226,12 @@ export const imageService = {
     } else if (provider === 'sd-webui') {
       url = await generatePortraitViaSdWebuiProxy(imageBlob, prompt, strength, sdModel, sdSeed);
     } else {
-      url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
+      if (imageBlob) {
+        url = await generatePortraitViaStabilityProxy(imageBlob, prompt, strength);
+      } else {
+        const data = await apiClient.post('/proxy/stability/generate', { prompt, aspectRatio: '1:1' });
+        url = canonicalUrl(data.url);
+      }
     }
     return { url, prompt };
   },

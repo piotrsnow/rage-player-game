@@ -58,6 +58,9 @@ export async function auditQuestWorldImpact(quest, ctx = {}) {
       timeoutMs: ctx.timeoutMs || 6000,
       maxTokens: 120,
       reasoning: false,
+      taskCategory: 'auxiliary',
+      taskType: 'quest-audit',
+      taskLabel: 'Quest audit',
     });
     if (!parsed || typeof parsed !== 'object') return null;
     return {

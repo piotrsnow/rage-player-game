@@ -494,6 +494,44 @@ export default function CharacterPanel({
               </div>
             </div>
           )}
+
+          {character.skillBadges?.length > 0 && (
+            <div className="bg-surface-container-low p-6 border border-amber-500/15 rounded-sm">
+              <h3 className="text-amber-400 font-headline mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">military_tech</span>
+                {t('character.skillBadges', 'Odznaki')}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {character.skillBadges.map((badge, idx) => (
+                  <span
+                    key={`${badge.name}-${idx}`}
+                    className={`group relative inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-sm border transition-all ${
+                      badge.redeemed
+                        ? 'bg-surface-container-high/40 text-on-surface-variant/40 border-outline-variant/10 line-through'
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:border-amber-500/40 cursor-pointer'
+                    }`}
+                    onClick={() => {
+                      if (!badge.redeemed) {
+                        dispatch({ type: 'REDEEM_SKILL_BADGE', payload: { index: idx } });
+                        if (autoSave) autoSave();
+                      }
+                    }}
+                    title={badge.redeemed
+                      ? t('character.badgeRedeemed', 'Odznaka wymieniona na punkt atrybutu')
+                      : t('character.badgeRedeem', 'Kliknij aby wymienić na 1 punkt atrybutu')}
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {badge.redeemed ? 'check_circle' : 'emoji_events'}
+                    </span>
+                    {badge.name}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-3 text-[10px] text-on-surface-variant/50">
+                {t('character.badgesHint', 'Każda odznaka może być wymieniona na 1 punkt atrybutu.')}
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-4 space-y-6 animate-fade-in">

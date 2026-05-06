@@ -383,5 +383,6 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
     clearEarlyDiceRoll: stream.clearEarlyDiceRoll,
     streamingNarrative: stream.streamingNarrative,
     streamingSegments: stream.streamingSegments,
+    streamComplete: stream.streamComplete,
   };
 }

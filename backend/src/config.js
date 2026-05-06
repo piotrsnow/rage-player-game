@@ -50,9 +50,9 @@ export const config = {
   // SD_WEBUI_CFG=7, SD_WEBUI_SAMPLER="DPM++ 2M Karras". Using the Turbo
   // defaults on a non-Turbo model will produce undercooked noisy output.
   //
-  // Scene dimensions default to 1344x768 — an SDXL-native 16:9 bucket that
-  // matches the cinematic composition hint in buildImagePrompt. 1024x1024
-  // squashes scene framing and loses the widescreen feel.
+  // Scene dimensions default to 1344x512 — SDXL-friendly (multiples of 64),
+  // compact vertical resolution for smaller files / faster SD. 1024x1024
+  // squashes scene framing.
   //
   // Hires fix is opt-in (SD_WEBUI_HIRES_FIX=1). It roughly doubles scene
   // generation time but fixes blurry faces at standard resolutions.
@@ -62,7 +62,7 @@ export const config = {
     steps: parseInt(process.env.SD_WEBUI_STEPS || '6', 10),
     cfg: parseFloat(process.env.SD_WEBUI_CFG || '2.0'),
     sceneWidth: parseInt(process.env.SD_WEBUI_SCENE_WIDTH || '1344', 10),
-    sceneHeight: parseInt(process.env.SD_WEBUI_SCENE_HEIGHT || '768', 10),
+    sceneHeight: parseInt(process.env.SD_WEBUI_SCENE_HEIGHT || '512', 10),
     hiresFix: process.env.SD_WEBUI_HIRES_FIX === '1',
   },
 

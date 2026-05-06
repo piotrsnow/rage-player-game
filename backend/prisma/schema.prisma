@@ -88,6 +88,8 @@ model User {
   worldKnowledge      UserWorldKnowledge?
   refreshTokens       RefreshToken[]
   topicHistory        TopicHistory[]
+  llmCallLogs         LlmCallLog[]
+  incidents           CampaignIncident[]
 }
 
 model RefreshToken {
@@ -174,6 +176,7 @@ model Character {
   fame          Int    @default(0)
   infamy        Int    @default(0)
   knownTitles   Json   @default("[]")
+  skillBadges   Json   @default("[]")
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -314,6 +317,10 @@ model Campaign {
   currentX Float?
   currentY Float?
 
+  // One-shot narrative injection from incident system. Scene gen reads it,
+  // injects into user prompt, then clears it after generation.
+  pendingSlip     String?
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
@@ -338,6 +345,7 @@ model Campaign {
   locationEdges               LocationEdge[]
   campaignEdges               CampaignEdge[]
   favoriteScenes              FavoriteScene[]
+  incidents                   CampaignIncident[]
 
   @@index([userId])
   @@index([isPublic])
@@ -402,6 +410,26 @@ model FavoriteScene {
 
   @@unique([characterId, sceneId])
   @@index([characterId, createdAt(sort: Desc)])
+}
+
+model CampaignIncident {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  campaignId      String   @db.Uuid
+  userId          String   @db.Uuid
+  sceneIndex      Int
+  playerComplaint  String   @db.Text
+  aiVerdict        String   @db.Text
+  isPlayerRight    Boolean
+  technicalDetails String?  @db.Text
+  corrections      Json?
+  narrativeComment String?  @db.Text
+  createdAt        DateTime @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, sceneIndex])
+  @@index([userId])
 }
 
 model CampaignKnowledge {
@@ -1539,4 +1567,29 @@ model ServerSettings {
   fontConfig       Json     @default("{}")
   billingEnabled   Boolean  @default(false)
   updatedAt        DateTime @updatedAt @db.Timestamptz
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LLM call log — every backend AI call is recorded here for the sidebar
+// observability panel. Capped per user via periodic cleanup.
+// ═══════════════════════════════════════════════════════════════════════
+
+model LlmCallLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @db.Uuid
+  type       String
+  label      String   @default("")
+  provider   String?
+  model      String?
+  status     String   @default("pending")
+  durationMs Int?
+  error      String?
+  request    Json?
+  response   Json?
+  startedAt  DateTime @default(now()) @db.Timestamptz
+  finishedAt DateTime? @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt(sort: Desc)])
 }

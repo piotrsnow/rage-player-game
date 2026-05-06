@@ -8,7 +8,7 @@ import { rememberStartSpawn, attachInitialLocations } from './livingWorld/startS
 export async function generateCampaignStream(settings, { provider = 'openai', model = null, language = 'en', userApiKeys = null, userId = null } = {}, onEvent) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(resolvedProvider, userApiKeys, resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI');
-  const resolvedModel = model || await resolveModelForTask('campaignGeneration', resolvedProvider) || config.aiModels.premium[resolvedProvider];
+  const resolvedModel = await resolveModelForTask('campaignGeneration', resolvedProvider) || model || config.aiModels.premium[resolvedProvider];
 
   // Round B (Phase 3) — pick a canonical start-spawn trio BEFORE prompt
   // assembly. The picker returns null when no canonical world is seeded

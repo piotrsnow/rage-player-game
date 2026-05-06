@@ -43,6 +43,8 @@ export async function verifyObjective({
     maxTokens: 500,
     temperature: 0.3,
     userApiKeys,
+    taskType: 'verify-objective',
+    taskLabel: `Verify: ${(objectiveDescription || questName || '').slice(0, 60)}`,
   });
 
   const parsed = parseJsonOrNull(text);

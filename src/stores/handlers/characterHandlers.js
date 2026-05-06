@@ -106,6 +106,16 @@ export const characterHandlers = {
     char.wounds = Math.min(char.wounds, newMaxWounds);
   },
 
+  REDEEM_SKILL_BADGE: (draft, action) => {
+    const { index } = action.payload;
+    const char = draft.character;
+    if (!char || !Array.isArray(char.skillBadges)) return;
+    const badge = char.skillBadges[index];
+    if (!badge || badge.redeemed) return;
+    badge.redeemed = true;
+    char.attributePoints = (char.attributePoints || 0) + 1;
+  },
+
   SET_CHARACTER_LOCAL_ID: (draft, action) => {
     if (draft.character) draft.character.localId = action.payload;
   },

@@ -2,6 +2,7 @@ import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
 import { resolveModelForTask } from './serverConfig.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
 
 // Small helper for non-streaming, single-shot AI JSON calls. Used by the
 // "simple" AI endpoints (combat commentary, verify objective, recap stages)
@@ -20,6 +21,9 @@ export async function callAIJson({
   maxTokens = 1000,
   temperature = 0.7,
   userApiKeys = null,
+  userId = null,
+  taskType = null,
+  taskLabel = null,
 }) {
   const resolvedProvider = provider === 'anthropic' ? 'anthropic' : 'openai';
   const apiKey = requireServerApiKey(
@@ -27,18 +31,37 @@ export async function callAIJson({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  let resolvedModel = model;
-  if (!resolvedModel && taskCategory) {
+  let resolvedModel = null;
+  if (taskCategory) {
     resolvedModel = await resolveModelForTask(taskCategory, resolvedProvider);
   }
   if (!resolvedModel) {
-    resolvedModel = config.aiModels[modelTier]?.[resolvedProvider] || config.aiModels.premium[resolvedProvider];
+    resolvedModel = model || config.aiModels[modelTier]?.[resolvedProvider] || config.aiModels.premium[resolvedProvider];
   }
 
-  if (resolvedProvider === 'openai') {
-    return callOpenAI({ apiKey, model: resolvedModel, systemPrompt, userPrompt, maxTokens, temperature });
+  const logType = taskType || taskCategory || 'ai-json';
+  const logLabel = taskLabel || logType;
+  const logUserId = userId || getLlmCallUserId();
+  const logId = await logLlmCallStart({
+    userId: logUserId,
+    type: logType,
+    label: logLabel,
+    provider: resolvedProvider,
+    model: resolvedModel,
+    request: { userPrompt },
+  });
+  const t0 = Date.now();
+
+  try {
+    const result = resolvedProvider === 'openai'
+      ? await callOpenAI({ apiKey, model: resolvedModel, systemPrompt, userPrompt, maxTokens, temperature })
+      : await callAnthropic({ apiKey, model: resolvedModel, systemPrompt, userPrompt, maxTokens, temperature });
+    await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: { text: result.text } });
+    return result;
+  } catch (err) {
+    await logLlmCallFail(logId, err);
+    throw err;
   }
-  return callAnthropic({ apiKey, model: resolvedModel, systemPrompt, userPrompt, maxTokens, temperature });
 }
 
 async function callOpenAI({ apiKey, model, systemPrompt, userPrompt, maxTokens, temperature }) {

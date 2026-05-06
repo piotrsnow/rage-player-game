@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SceneGenerationProgress from './SceneGenerationProgress';
 
-const CHAR_INTERVAL_MS = 35;
+const CHAR_INTERVAL_MS = 18;
 const TYPING_SFX_COUNT = 3;
 
 function pickRandomTypingSfx() {
@@ -21,6 +21,8 @@ export default function TypewriterActionOverlay({
   loaderEstimatedMs,
   fastFinish = false,
   canManuallySkip = false,
+  waitForDice = false,
+  onSkipDice,
 }) {
   const [displayedChars, setDisplayedChars] = useState(0);
   const [phase, setPhase] = useState('typing');
@@ -43,6 +45,8 @@ export default function TypewriterActionOverlay({
   // effectiveFastFinish (auto: first TTS audio playing; manual: user click
   // after LLM responded): snap text, kill audio, skip hold, fade out fast.
   // Reduces total dismiss time from ~2100ms to ~250ms.
+  // When waitForDice is true, snap text but stay in 'holding' — the overlay
+  // remains visible until the dice roll finishes (waitForDice flips false).
   useEffect(() => {
     if (!effectiveFastFinish) return;
     setDisplayedChars(text.length);
@@ -51,8 +55,20 @@ export default function TypewriterActionOverlay({
       audioRef.current.currentTime = 0;
     }
     fireTypingComplete();
-    setPhase('fading');
-  }, [effectiveFastFinish, text.length]);
+    if (!waitForDice) {
+      setPhase('fading');
+    } else {
+      setPhase((prev) => (prev === 'typing' ? 'holding' : prev));
+    }
+  }, [effectiveFastFinish, text.length, waitForDice]);
+
+  // When waitForDice drops (dice finished) while holding, release to fading.
+  useEffect(() => {
+    if (!waitForDice && phase === 'holding' && effectiveFastFinish) {
+      setPhase('fading');
+    }
+  }, [waitForDice, phase, effectiveFastFinish]);
+
   const charHighlightKinds = useMemo(() => {
     const marks = new Uint8Array(text.length); // 0 normal, 1 dialogue, 2 speaker label
     const lines = text.split('\n');
@@ -130,7 +146,7 @@ export default function TypewriterActionOverlay({
 
   useEffect(() => {
     if (phase === 'holding') {
-      if (holdOpen) return undefined;
+      if (holdOpen || waitForDice) return undefined;
       const hold = effectiveFastFinish ? 0 : Math.max(0, holdingDurationMs);
       const timer = setTimeout(() => setPhase('fading'), hold);
       return () => clearTimeout(timer);
@@ -141,7 +157,7 @@ export default function TypewriterActionOverlay({
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [phase, holdOpen, holdingDurationMs, effectiveFastFinish]);
+  }, [phase, holdOpen, waitForDice, holdingDurationMs, effectiveFastFinish]);
 
   const progress = text.length > 0 ? displayedChars / text.length : 0;
 
@@ -159,7 +175,9 @@ export default function TypewriterActionOverlay({
       onClick={() => {
         if (canManuallySkip) {
           setManualFastFinish(true);
+          onSkipDice?.();
         } else if (phase === 'holding') {
+          onSkipDice?.();
           setPhase('fading');
         }
       }}

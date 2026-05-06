@@ -19,14 +19,6 @@ import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
 import SidebarAiCallLog from './SidebarAiCallLog';
 
-const SIDEBAR_PLAY_SURFACE_STYLE = {
-  background: `
-    radial-gradient(circle at 32% 18%, rgba(228, 78, 176, 0.08), transparent 34%),
-    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 10px),
-    rgba(20, 15, 29, 0.9)
-  `,
-};
-
 export default function Sidebar() {
   const location = useLocation();
   const { t } = useTranslation();
@@ -108,12 +100,12 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
 
   return (
     <aside
-      className="hidden lg:flex flex-col h-screen w-[294px] fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge pt-16"
-      style={{ ...SIDEBAR_PLAY_SURFACE_STYLE, ...(uwBonus.sidebar > 0 && { width: 294 + uwBonus.sidebar }) }}
+      className="hidden lg:flex flex-col h-screen w-[320px] fixed left-0 top-0 z-40 backdrop-blur-xl sidebar-ambient sidebar-torn-edge sidebar-play-metallic pt-16 overflow-x-hidden overflow-y-auto custom-scrollbar overscroll-y-contain"
+      style={uwBonus.sidebar > 0 ? { width: 320 + uwBonus.sidebar } : undefined}
     >
       <div className="px-6 mb-8">
         {character.portraitUrl && (
-          <div className="mt-[80px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+          <div className="mt-[140px] mb-4 aspect-[3/4] overflow-hidden rounded-sm border border-outline-variant/20 bg-surface-container-high shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
             <img
               src={apiClient.resolveMediaUrl(character.portraitUrl)}
               alt={character.name}

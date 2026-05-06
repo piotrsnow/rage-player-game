@@ -169,6 +169,9 @@ async function proposeAction({ npc, recentEvents = [], provider = 'openai', time
     const parsed = await callNano(SYSTEM_PROMPT, userPrompt, provider, {
       timeoutMs,
       maxTokens: 220,
+      taskCategory: 'auxiliary',
+      taskType: 'npc-tick',
+      taskLabel: 'NPC agent tick',
     });
     return parsed || null;
   } catch (err) {

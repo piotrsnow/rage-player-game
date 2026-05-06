@@ -107,9 +107,10 @@ window.DICE = (function() {
         this.container = container;
 
         this.renderer = window.WebGLRenderingContext
-            ? new THREE.WebGLRenderer({ antialias: true, alpha: true })
+            ? new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
             : new THREE.CanvasRenderer({ antialias: true, alpha: true });
         container.appendChild(this.renderer.domElement);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         this.renderer.shadowMap.enabled = vars.use_shadows;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.setClearColor(0xffffff, 0); //color, alpha
@@ -122,7 +123,7 @@ window.DICE = (function() {
 
         this.world.gravity.set(0, 0, -9.8 * 800);
         this.world.broadphase = new CANNON.NaiveBroadphase();
-        this.world.solver.iterations = 16;
+        this.world.solver.iterations = 8;
 
         var ambientLight = new THREE.AmbientLight(vars.ambient_light_color);
         ambientLight.intensity = vars.ambient_light_intensity;
@@ -176,7 +177,7 @@ window.DICE = (function() {
         vars.scale = Math.sqrt(this.w * this.w + this.h * this.h) / 8 * (this.scaleMultiplier || 1);
         //console.log('scale = ' + vars.scale);
 
-        this.renderer.setSize(this.cw * 2, this.ch * 2);
+        this.renderer.setSize(this.cw * 2, this.ch * 2, true);
 
         this.wh = this.ch / this.aspect / Math.tan(10 * Math.PI / 180);
         if (this.camera) this.scene.remove(this.camera);
@@ -378,15 +379,29 @@ window.DICE = (function() {
     }
 
     that.dice_box.prototype.emulate_throw = function() {
-        while (!this.check_if_throw_finished()) {
-            ++this.iteration;
-            this.world.step(vars.frame_rate);
-        }
-        return get_dice_values(this.dices);
+        // Chunked simulation — yield to the main thread every ~4 ms to avoid
+        // blocking the UI. Returns a Promise that resolves with dice values.
+        var self = this;
+        return new Promise(function(resolve) {
+            var CHUNK_BUDGET_MS = 4;
+            function chunk() {
+                var start = performance.now();
+                while (!self.check_if_throw_finished()) {
+                    ++self.iteration;
+                    self.world.step(vars.frame_rate);
+                    if (performance.now() - start > CHUNK_BUDGET_MS) {
+                        setTimeout(chunk, 0);
+                        return;
+                    }
+                }
+                resolve(get_dice_values(self.dices));
+            }
+            chunk();
+        });
     }
 
     that.dice_box.prototype.__animate = function(threadid) {
-        var time = (new Date()).getTime();
+        var time = performance.now();
         var time_diff = (time - this.last_time) / 1000;
         if (time_diff > 3) time_diff = vars.frame_rate;
         var dmul = this.durationMultiplier && this.durationMultiplier > 0 ? this.durationMultiplier : 1;
@@ -402,15 +417,16 @@ window.DICE = (function() {
         else {
             this.world.step(vars.frame_rate);
         }
-        for (var i in this.scene.children) {
-            var interact = this.scene.children[i];
+        var children = this.scene.children;
+        for (var i = 0, len = children.length; i < len; ++i) {
+            var interact = children[i];
             if (interact.body != undefined) {
                 interact.position.copy(interact.body.position);
                 interact.quaternion.copy(interact.body.quaternion);
             }
         }
         this.renderer.render(this.scene, this.camera);
-        this.last_time = this.last_time ? time : (new Date()).getTime();
+        this.last_time = this.last_time ? time : performance.now();
         if (this.running == threadid && this.check_if_throw_finished()) {
             this.running = false;
             if (this.callback) this.callback.call(this, get_dice_values(this.dices));
@@ -435,8 +451,6 @@ window.DICE = (function() {
         }
         if (this.pane) this.scene.remove(this.pane);
         this.renderer.render(this.scene, this.camera);
-        var box = this;
-        setTimeout(function() { box.renderer.render(box.scene, box.camera); }, 100);
     }
 
     that.dice_box.prototype.prepare_dices_for_roll = function(vectors) {
@@ -449,18 +463,25 @@ window.DICE = (function() {
     }
 
     that.dice_box.prototype.roll = function(vectors, values, callback) {
-        this.prepare_dices_for_roll(vectors);
+        var box = this;
+        box.prepare_dices_for_roll(vectors);
         if (values != undefined && values.length) {
             vars.use_adapvite_timestep = false;
-            var res = this.emulate_throw();
-            this.prepare_dices_for_roll(vectors);
-            for (var i in res)
-                shift_dice_faces(this.dices[i], values[i], res[i]);
+            box.emulate_throw().then(function(res) {
+                box.prepare_dices_for_roll(vectors);
+                for (var i in res)
+                    shift_dice_faces(box.dices[i], values[i], res[i]);
+                box.callback = callback;
+                box.running = performance.now();
+                box.last_time = 0;
+                box.__animate(box.running);
+            });
+        } else {
+            box.callback = callback;
+            box.running = performance.now();
+            box.last_time = 0;
+            box.__animate(box.running);
         }
-        this.callback = callback;
-        this.running = (new Date()).getTime();
-        this.last_time = 0;
-        this.__animate(this.running);
     }
 
     that.dice_box.prototype.search_dice_by_mouse = function(ev) {

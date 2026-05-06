@@ -344,9 +344,7 @@ seedWorld().catch((err) => {
 //   2. Persist every active room to DB (so players can reconnect after deploy)
 //   3. Close WebSocket sockets cleanly so clients see a graceful close frame
 //   4. Let Fastify drain in-flight HTTP requests via fastify.close()
-//   5. Disconnect Prisma
-// prisma.js also registers SIGTERM/SIGINT handlers for disconnect, but those
-// run independently — double-disconnect is a no-op.
+//   5. Disconnect Prisma (after drain — see prisma.$disconnect below)
 
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
 let shuttingDown = false;
@@ -384,6 +382,13 @@ async function gracefulShutdown(signal) {
     fastify.log.info('[shutdown] fastify closed');
   } catch (err) {
     fastify.log.error({ err }, '[shutdown] fastify close failed');
+  }
+
+  try {
+    await prisma.$disconnect();
+    fastify.log.info('[shutdown] prisma disconnected');
+  } catch (err) {
+    fastify.log.warn({ err }, '[shutdown] prisma disconnect failed');
   }
 
   clearTimeout(forceExit);

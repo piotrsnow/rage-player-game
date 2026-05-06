@@ -15,6 +15,7 @@ import { markEdgeDiscovered } from './livingWorld/travelGraph.js';
 import { listLocationsForCampaign } from './livingWorld/locationQueries.js';
 import { LOCATION_KIND_WORLD } from './locationRefs.js';
 import { extractGraphUpdate, validateGraphUpdate, applyGraphUpdate } from './locationGraph/index.js';
+import { setLlmCallUserId } from './llmCallLogger.js';
 
 const log = childLogger({ module: 'postSceneWork' });
 
@@ -42,6 +43,7 @@ export async function handlePostSceneWork({
     log.warn({ sceneId }, 'Scene not found — skipping post-scene work');
     return;
   }
+  if (campaign?.userId) setLlmCallUserId(campaign.userId);
 
   const stateChanges = scene.stateChanges || null;
 

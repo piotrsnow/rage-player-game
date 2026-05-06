@@ -7,7 +7,7 @@ import { resolveVoiceForCharacter } from '../../services/characterVoiceResolver'
 
 export function useSceneBackendStream() {
   const { state, dispatch } = useGame();
-  const { settings, voicePools, loadBackendUser } = useSettings();
+  const { settings, voicePools, loadBackendUser, resolveTaskModel } = useSettings();
 
   const earlyDiceRollEmittedRef = useRef(false);
   const streamedDiceRollCountRef = useRef(0);
@@ -18,6 +18,7 @@ export function useSceneBackendStream() {
   const [earlyDiceRoll, setEarlyDiceRoll] = useState(null);
   const [streamingNarrative, setStreamingNarrative] = useState(null);
   const [streamingSegments, setStreamingSegments] = useState(null);
+  const [streamComplete, setStreamComplete] = useState(false);
 
   const resetStreamState = useCallback(() => {
     setEarlyDiceRoll(null);
@@ -27,11 +28,13 @@ export function useSceneBackendStream() {
     dispatchedRollSkillsRef.current = new Set();
     rollMessageCounterRef.current = 0;
     setStreamingSegments(null);
+    setStreamComplete(false);
   }, []);
 
   const clearStreamingOutput = useCallback(() => {
     setStreamingNarrative(null);
     setStreamingSegments(null);
+    setStreamComplete(false);
   }, []);
 
   const clearEarlyDiceRoll = useCallback(() => setEarlyDiceRoll(null), []);
@@ -68,7 +71,7 @@ export function useSceneBackendStream() {
 
     const backendResult = await aiService.generateSceneViaBackendStream(backendCampaignId, playerAction, {
       provider: settings.aiProvider,
-      model: settings.aiModel || null,
+      model: resolveTaskModel('sceneGeneration'),
       language: settings.language,
       dmSettings: settings.dmSettings,
       resolvedMechanics: resolved,
@@ -97,11 +100,14 @@ export function useSceneBackendStream() {
           streamedNpcsIntroducedCountRef.current = 0;
           setStreamingNarrative(null);
           setStreamingSegments(null);
+          setStreamComplete(false);
         } else if (event.type === 'dice_early' && event.data?.diceRoll) {
           const roll = event.data.diceRoll;
           setEarlyDiceRoll(roll);
           earlyDiceRollEmittedRef.current = true;
           dispatchDiceRollMessage(roll);
+        } else if (event.type === 'complete') {
+          setStreamComplete(true);
         } else if (event.type === 'chunk' && event.text) {
           rawAccumulated += event.text;
           const parsed = parsePartialJson(rawAccumulated);
@@ -165,7 +171,7 @@ export function useSceneBackendStream() {
     loadBackendUser().catch(() => {});
 
     return backendResult;
-  }, [state, settings, dispatch, dispatchDiceRollMessage, loadBackendUser]);
+  }, [state, settings, dispatch, dispatchDiceRollMessage, loadBackendUser, resolveTaskModel]);
 
   const processServerDiceRolls = useCallback((result, resolved) => {
     const serverDiceRolls = Array.isArray(result.diceRolls) ? result.diceRolls
@@ -196,5 +202,6 @@ export function useSceneBackendStream() {
     clearEarlyDiceRoll,
     streamingNarrative,
     streamingSegments,
+    streamComplete,
   };
 }

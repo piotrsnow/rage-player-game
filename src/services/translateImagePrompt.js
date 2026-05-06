@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { aiCallLog } from '../stores/aiCallLogStore';
 
 // Cheap client-side detector for Polish text. False-positives are impossible
 // (these characters only exist in PL/Lithuanian script), false-negatives only
@@ -39,12 +40,20 @@ export async function ensureEnglish(text) {
   const cached = cacheGet(trimmed);
   if (cached !== undefined) return cached;
 
+  const logId = aiCallLog.start({
+    type: 'translate-prompt',
+    label: `Translate: ${trimmed.slice(0, 60)}`,
+    provider: null,
+    model: null,
+  });
   try {
     const { english } = await apiClient.post('/ai/translate-image-prompt', { text: trimmed });
     const out = typeof english === 'string' && english.trim() ? english.trim() : text;
     cacheSet(trimmed, out);
+    aiCallLog.finish(logId, { original: trimmed, translated: out });
     return out;
-  } catch {
+  } catch (e) {
+    aiCallLog.fail(logId, e);
     return text;
   }
 }

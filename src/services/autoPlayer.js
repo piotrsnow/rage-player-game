@@ -1,6 +1,7 @@
 import { resolveModel } from './ai';
 import { apiClient } from './apiClient';
 import { safeParseJSON } from './aiResponse';
+import { aiCallLog } from '../stores/aiCallLogStore';
 
 const STYLE_PROMPTS = {
   cautious: 'You are cautious and careful. Prefer safe options, avoid unnecessary risks, gather information before acting, and retreat from danger when wounded.',
@@ -247,28 +248,42 @@ function buildAutoPlayerPrompt(gameState, autoPlayerSettings, language, recentAu
 
 async function callAutoPlayerAI(provider, _apiKey, systemPrompt, userPrompt, model) {
   if (apiClient.isConnected()) {
-    if (provider === 'anthropic') {
-      const data = await apiClient.post('/proxy/anthropic/chat', {
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt + '\n\nRespond with ONLY valid JSON, no other text.' }],
-        max_tokens: 300,
-        model,
-      });
-      const content = data.content[0]?.text;
-      return safeParseJSON(content);
-    }
-    const data = await apiClient.post('/proxy/openai/chat', {
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
+    const logId = aiCallLog.start({
+      type: 'auto-player',
+      label: 'Auto-player decision',
+      provider,
       model,
-      temperature: 0.9,
-      max_completion_tokens: 300,
-      response_format: { type: 'json_object' },
     });
-    const content = data.choices[0]?.message?.content;
-    return safeParseJSON(content);
+    try {
+      let content;
+      if (provider === 'anthropic') {
+        const data = await apiClient.post('/proxy/anthropic/chat', {
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt + '\n\nRespond with ONLY valid JSON, no other text.' }],
+          max_tokens: 300,
+          model,
+        });
+        content = data.content[0]?.text;
+      } else {
+        const data = await apiClient.post('/proxy/openai/chat', {
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          model,
+          temperature: 0.9,
+          max_completion_tokens: 300,
+          response_format: { type: 'json_object' },
+        });
+        content = data.choices[0]?.message?.content;
+      }
+      const result = safeParseJSON(content);
+      aiCallLog.finish(logId, result);
+      return result;
+    } catch (e) {
+      aiCallLog.fail(logId, e);
+      throw e;
+    }
   }
   throw new Error('Auto-player requires backend connection with server AI keys configured in environment variables.');
 }

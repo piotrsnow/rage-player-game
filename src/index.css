@@ -334,9 +334,11 @@
   left: 0;
   right: 0;
   height: 280px;
-  background: radial-gradient(ellipse at 50% 0%, rgba(197,154,255,0.06) 0%, transparent 70%);
+  background:
+    radial-gradient(ellipse at 28% 8%, rgba(120, 220, 255, 0.07) 0%, transparent 52%),
+    radial-gradient(ellipse at 78% 18%, rgba(197, 154, 255, 0.06) 0%, transparent 55%);
   pointer-events: none;
-  animation: sidebarBreath 8s ease-in-out infinite;
+  opacity: 0.75;
 }
 
 .sidebar-torn-edge {
@@ -386,7 +388,7 @@
     100% 100%,
     0 100%
   );
-  filter: drop-shadow(6px 0 24px rgba(0, 0, 0, 0.58)) drop-shadow(1px 0 0 #f1baff38);
+  filter: drop-shadow(6px 0 24px rgba(0, 0, 0, 0.58)) drop-shadow(1px 0 0 rgba(160, 210, 255, 0.22));
 }
 
 .sidebar-torn-edge::after {
@@ -397,8 +399,45 @@
   left: -50px;
   right: -50px;
   bottom: 0;
-  background: linear-gradient(to left, rgba(48, 16, 38, 0.28), rgba(168, 82, 190, 0.16) 34%, rgba(96, 55, 132, 0.08) 68%, transparent 100%);
+  background: linear-gradient(
+    to left,
+    rgba(10, 18, 32, 0.34) 0%,
+    rgba(36, 22, 58, 0.14) 32%,
+    rgba(120, 200, 255, 0.05) 58%,
+    transparent 100%
+  );
   pointer-events: none;
+  opacity: 0.58;
+}
+
+/* Play-mode left aside: holo-card–toned base + static conic sheen (no motion) */
+.sidebar-play-metallic {
+  background:
+    conic-gradient(
+      from 220deg,
+      rgba(197, 154, 255, 0.05) 0%,
+      rgba(255, 200, 120, 0.03) 15%,
+      rgba(120, 220, 255, 0.045) 30%,
+      rgba(197, 154, 255, 0.05) 45%,
+      transparent 55%,
+      transparent 100%
+    ),
+    linear-gradient(
+      135deg,
+      rgba(16, 14, 20, 0.93) 0%,
+      rgba(26, 18, 40, 0.88) 50%,
+      rgba(16, 14, 22, 0.93) 100%
+    ),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.022) 0 1px,
+      transparent 1px 10px
+    );
+  background-color: rgba(14, 11, 22, 0.94);
+  box-shadow:
+    0 0 12px rgba(120, 220, 255, 0.05),
+    0 0 5px rgba(197, 154, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .sidebar-torn-edge > * {
@@ -543,11 +582,6 @@
 @keyframes scaleIn {
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
-}
-
-@keyframes sidebarBreath {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
 }
 
 @keyframes combatGlyphPop {

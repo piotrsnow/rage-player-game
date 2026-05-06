@@ -91,6 +91,8 @@ Extract graph updates as JSON.`;
       maxTokens: 1500,
       temperature: 0.3,
       userApiKeys,
+      taskType: 'graph-extraction',
+      taskLabel: 'Location graph extraction',
     });
 
     stats.totalExtractions++;

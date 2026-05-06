@@ -27,6 +27,7 @@ export async function loadCampaignState(campaignId) {
         currentLocationName: true,
         currentLocationKind: true,
         currentLocationId: true,
+        pendingSlip: true,
       },
     }),
     prisma.campaignNPC.findMany({
@@ -172,5 +173,6 @@ export async function loadCampaignState(campaignId) {
     currentRef: campaign.currentLocationKind && campaign.currentLocationId
       ? { kind: campaign.currentLocationKind, id: campaign.currentLocationId, name: campaign.currentLocationName || null }
       : null,
+    pendingSlip: campaign.pendingSlip || null,
   };
 }

@@ -146,6 +146,8 @@ export async function generateRecap({
       maxTokens: RECAP_MAX_TOKENS,
       temperature: 0.7,
       userApiKeys,
+      taskType: 'recap',
+      taskLabel: `Recap (${sceneChunk.length} scenes)`,
     });
     const parsed = parseJsonOrNull(text);
     const recap = parsed && typeof parsed.recap === 'string'
@@ -208,6 +210,8 @@ export async function generateRecap({
     maxTokens: RECAP_MAX_TOKENS,
     temperature: 0.7,
     userApiKeys,
+    taskType: 'recap-merge',
+    taskLabel: 'Recap merge',
   });
   combinedUsage = mergeUsage(combinedUsage, usage);
 

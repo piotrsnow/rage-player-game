@@ -554,6 +554,8 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         maxTokens: 1000,
         temperature: 0.9,
         userApiKeys,
+        taskType: 'character-badge',
+        taskLabel: 'Character badge generation',
       });
 
       const parsed = parseJsonOrNull(text);

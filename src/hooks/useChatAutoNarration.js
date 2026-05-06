@@ -1,19 +1,21 @@
 import { useEffect, useRef } from 'react';
+import { useSettings } from '../contexts/SettingsContext';
 
 /**
  * Auto-play narrator reaction to new chat messages.
  *
  * Tracks the latest spoken message (DM / combat-commentary) by id rather than
- * by count, so that messages arriving while the narrator is busy or autoplay
- * is temporarily suppressed (e.g. the player-action typewriter overlay is
- * showing) are NOT lost — they get narrated as soon as conditions allow.
+ * by count, so that messages arriving while autoplay is temporarily suppressed
+ * (e.g. the player-action typewriter overlay is showing) are NOT lost — they
+ * get narrated as soon as conditions allow.
  *
- * Coordinates with other narration sources (streaming narrator,
- * `handlePlayerActionOverlayComplete`) via `narrator.currentMessageId` and
- * `narrator.isStreaming` to avoid double-narrating the same scene.
+ * Uses backend TTS when `narrator.isNarratorReady`; otherwise falls back to
+ * browser `speechSynthesis` (same contract as manual play / viewer mode in
+ * GameplayPage `playSceneNarration`). Without this, users with narrator on but
+ * `sceneTtsTier === 'none'` or missing keys never heard auto-play at all.
  */
 export function useChatAutoNarration({ messages, narrator, autoPlay }) {
-  // `undefined` = first run (snapshot), null = nothing yet, string = id
+  const { settings } = useSettings();
   const lastHandledIdRef = useRef(undefined);
 
   useEffect(() => {
@@ -22,7 +24,6 @@ export function useChatAutoNarration({ messages, narrator, autoPlay }) {
       .find((m) => m.role === 'dm' || m.subtype === 'combat_commentary');
     const latestId = latestSpoken?.id ?? null;
 
-    // First mount: snapshot what's already there so we don't replay history.
     if (lastHandledIdRef.current === undefined) {
       lastHandledIdRef.current = latestId;
       return;
@@ -30,34 +31,56 @@ export function useChatAutoNarration({ messages, narrator, autoPlay }) {
 
     if (!latestSpoken || latestId === lastHandledIdRef.current) return;
 
-    // If another narration source already grabbed this exact message
-    // (handlePlayerActionOverlayComplete just called speakSingle, or the
-    // streaming narrator is currently reading the live scene), claim it as
-    // handled so we don't double-narrate later.
-    if (
-      narrator?.currentMessageId === latestId
-      || narrator?.isStreaming
-    ) {
+    const S = narrator?.STATES;
+    const busyWithThisMessage = narrator?.currentMessageId === latestId
+      && S
+      && narrator.playbackState !== S.IDLE;
+
+    if (busyWithThisMessage || narrator?.isStreaming) {
       lastHandledIdRef.current = latestId;
       return;
     }
 
-    if (!narrator || !autoPlay || !narrator.isNarratorReady) {
-      // Don't claim — we want to narrate this message later when conditions
-      // become favorable (overlay closes / narrator becomes ready).
-      return;
-    }
+    if (!autoPlay || !narrator) return;
 
     const alreadyActive =
       narrator.playbackState === narrator.STATES?.PLAYING
-      || narrator.playbackState === narrator.STATES?.LOADING;
-    if (alreadyActive) {
-      // Don't claim — re-evaluate when narrator goes back to idle and
-      // GameplayPage re-renders with the new narrator object.
+      || narrator.playbackState === narrator.STATES?.LOADING
+      || narrator.playbackState === narrator.STATES?.PAUSED;
+    if (alreadyActive) return;
+
+    const speakBrowser = () => {
+      try {
+        const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+        if (!synth || typeof window.SpeechSynthesisUtterance === 'undefined') return false;
+        const raw = latestSpoken.content ?? latestSpoken.narrative ?? '';
+        const text = typeof raw === 'string' ? raw : '';
+        if (!text.trim()) return false;
+        synth.cancel();
+        const utter = new window.SpeechSynthesisUtterance(text);
+        utter.lang = settings.language || 'pl';
+        utter.rate = Math.max(0.7, Math.min(1.2, (settings.dialogueSpeed || 100) / 100));
+        synth.speak(utter);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (narrator.isNarratorReady && typeof narrator.speakSingle === 'function') {
+      narrator.speakSingle(latestSpoken, latestSpoken.id);
+      lastHandledIdRef.current = latestId;
       return;
     }
 
-    narrator.speakSingle(latestSpoken, latestSpoken.id);
-    lastHandledIdRef.current = latestId;
-  }, [messages, narrator, autoPlay]);
+    if (speakBrowser()) {
+      lastHandledIdRef.current = latestId;
+    }
+  }, [
+    messages,
+    narrator,
+    autoPlay,
+    settings.language,
+    settings.dialogueSpeed,
+  ]);
 }

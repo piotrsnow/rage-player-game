@@ -99,7 +99,7 @@ function NpcCard({ npc, partySize, onAttempt, lastResult, isGenerating }) {
 
         {recruitable && (
           <div className="text-xs text-on-surface-variant mt-1">
-            {t('party.recruitChance', 'Szansa werbunku')}: <span className="tabular-nums text-tertiary font-bold">{calculateRecruitChance(npc.disposition || 0)}%</span>
+            <span className="tabular-nums text-tertiary font-bold">{t('party.recruitChance', { chance: calculateRecruitChance(npc.disposition || 0) })}</span>
           </div>
         )}
 

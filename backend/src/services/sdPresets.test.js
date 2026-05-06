@@ -51,4 +51,11 @@ describe('getModelPreset', () => {
       expect(preset.portraitHeight).toBe(1216);
     }
   });
+
+  it('uses the shared widescreen scene bucket (1344x512) for every preset', () => {
+    for (const preset of Object.values(SD_MODEL_PRESETS)) {
+      expect(preset.width).toBe(1344);
+      expect(preset.height).toBe(512);
+    }
+  });
 });

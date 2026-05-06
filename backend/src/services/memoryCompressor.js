@@ -11,6 +11,7 @@ import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
 import { resolveModelForTask } from './serverConfig.js';
+import { logLlmCallStart, logLlmCallFinish, logLlmCallFail, getLlmCallUserId } from './llmCallLogger.js';
 
 const log = childLogger({ module: 'memoryCompressor' });
 
@@ -20,41 +21,58 @@ const log = childLogger({ module: 'memoryCompressor' });
 // where importance judgment matters and async latency is free — memory/location
 // compression. `reasoning: false` routes to the fast nano tier (gpt-4.1-nano)
 // for classification-shaped tasks on the critical path — quest objective check.
-export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false } = {}) {
+export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, maxTokens = 200, reasoning = false, taskCategory = 'memoryExtraction', userId = null, taskType = null, taskLabel = null } = {}) {
   const controller = timeoutMs ? new AbortController() : null;
   const timeoutHandle = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   timeoutHandle?.unref?.();
   const signal = controller?.signal;
 
   const tier = reasoning ? 'nanoReasoning' : 'nano';
-  const overrideOpenai = await resolveModelForTask('memoryExtraction', 'openai');
-  const overrideAnthropic = await resolveModelForTask('memoryExtraction', 'anthropic');
+  const overrideOpenai = await resolveModelForTask(taskCategory, 'openai');
+  const overrideAnthropic = await resolveModelForTask(taskCategory, 'anthropic');
   const openaiModel = overrideOpenai || config.aiModels[tier].openai;
   const anthropicModel = overrideAnthropic || config.aiModels[tier].anthropic;
 
-  try {
-    // Match nano provider to the main scene provider so that choosing Chat (OpenAI)
-    // never triggers Claude Haiku calls and vice versa. If the preferred provider
-    // has no key configured, fall back to whichever key is available.
+  function pickProviderAndModel() {
     if (provider === 'anthropic') {
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
-      return null;
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
+    } else if (provider === 'openai') {
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+    } else {
+      if (config.apiKeys.anthropic) return { p: 'anthropic', m: anthropicModel };
+      if (config.apiKeys.openai) return { p: 'openai', m: openaiModel };
     }
-    if (provider === 'openai') {
-      if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
-      if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-      return null;
-    }
-    // No explicit preference — keep legacy behavior (Anthropic first)
-    if (config.apiKeys.anthropic) return await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, anthropicModel);
-    if (config.apiKeys.openai) return await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, openaiModel, reasoning);
     return null;
+  }
+
+  const picked = pickProviderAndModel();
+  if (!picked) return null;
+
+  const logId = await logLlmCallStart({
+    userId: userId || getLlmCallUserId(),
+    type: taskType || taskCategory || 'nano',
+    label: taskLabel || taskType || taskCategory || 'nano',
+    provider: picked.p,
+    model: picked.m,
+    request: { userPrompt },
+  });
+  const t0 = Date.now();
+
+  try {
+    const result = picked.p === 'anthropic'
+      ? await callNanoAnthropic(systemPrompt, userPrompt, signal, maxTokens, picked.m)
+      : await callNanoOpenAI(systemPrompt, userPrompt, signal, maxTokens, picked.m, reasoning);
+    await logLlmCallFinish(logId, { durationMs: Date.now() - t0, response: result });
+    return result;
   } catch (err) {
     if (err?.name === 'AbortError') {
       log.warn({ timeoutMs }, 'Nano memory call timed out');
+      await logLlmCallFail(logId, 'Timeout');
       return null;
     }
+    await logLlmCallFail(logId, err);
     throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -306,7 +324,7 @@ ${currentSummary.map((f, i) => `${i + 1}. ${factText(f)}`).join('\n') || '(empty
     // before JSON output AND we now emit more fields (memory + gmNotes +
     // hooks + world/codex/knowledge/needs). 1800 leaves headroom against
     // mid-JSON truncation.
-    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true });
+    const result = await callNano(RUNNING_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 1800, reasoning: true, taskType: 'memory-compression', taskLabel: 'Scene memory compression' });
     if (!result) {
       log.warn({ campaignId, sceneIndex }, 'compressSceneToSummary: nano returned null');
       return null;
@@ -557,7 +575,7 @@ ${scenesAtLocation.join('\n\n')}`;
 
     // Reasoning tier — location summary is synthesis + unresolved-thread
     // detection; async, no latency concern.
-    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true });
+    const result = await callNano(LOCATION_SUMMARY_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 500, reasoning: true, taskType: 'location-summary', taskLabel: 'Location summary' });
     if (!result?.summary) return;
 
     const data = {
@@ -776,7 +794,7 @@ ${objectiveLines}`;
     // Fast nano tier — quest check is semi-blocking (200-500ms budget before
     // final SSE event). Classification-shaped task; non-reasoner is the right
     // trade-off. Pre-filter (narrativeMentionsAnyQuest) guards against false positives.
-    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false });
+    const result = await callNano(QUEST_CHECK_SYSTEM, userPrompt, provider, { timeoutMs, maxTokens: 300, reasoning: false, taskType: 'quest-check', taskLabel: 'Quest objective check' });
     if (!result?.updates?.length) return [];
 
     // Validate and normalize updates — only return valid ones matching known objectives

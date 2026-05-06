@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+function scrollContainerToBottom(container) {
+  if (!container) return;
+  container.scrollTop = container.scrollHeight;
+}
+
+/** Scroll only the chat pane — never `scrollIntoView` (it scrolls window ancestors too). */
+function scrollContainerToCenterElement(container, element) {
+  if (!container || !element) return;
+  const cr = container.getBoundingClientRect();
+  const er = element.getBoundingClientRect();
+  const dy = er.top - cr.top - container.clientHeight / 2 + er.height / 2;
+  container.scrollTop += dy;
+}
+
 /**
  * Chat viewport scroll orchestration.
  *
@@ -49,12 +63,12 @@ export function useChatScrollSync({
     prevMessageCountRef.current = messageCount;
     if (!hasNewMessages || explicitScrollInProgressRef.current || scrollToMessageId) return;
     if (!shouldStickToBottomRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    scrollContainerToBottom(containerRef.current);
   }, [messageCount, scrollToMessageId]);
 
   useEffect(() => {
     if (!streamingNarrative || !shouldStickToBottomRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    scrollContainerToBottom(containerRef.current);
   }, [streamingNarrative]);
 
   useEffect(() => {
@@ -67,7 +81,7 @@ export function useChatScrollSync({
     const tryScroll = () => {
       const targetEl = containerRef.current?.querySelector(`[data-message-id="${scrollToMessageId}"]`);
       if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollContainerToCenterElement(containerRef.current, targetEl);
         shouldStickToBottomRef.current = false;
         explicitScrollInProgressRef.current = false;
         onScrollTargetHandled?.(scrollToMessageId);

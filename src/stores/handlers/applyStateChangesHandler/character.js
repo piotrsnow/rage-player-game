@@ -18,6 +18,7 @@ export function applyCharacterMutations(draft, changes) {
   applyRemovals(draft, changes);
   applyMoneyChange(draft, changes);
   applyStatuses(draft, changes);
+  applySkillBadges(draft, changes);
 }
 
 function applyVitals(draft, changes) {
@@ -196,5 +197,13 @@ function applyMoneyChange(draft, changes) {
 function applyStatuses(draft, changes) {
   if (changes.statuses && draft.character) {
     draft.character.statuses = changes.statuses;
+  }
+}
+
+function applySkillBadges(draft, changes) {
+  if (!Array.isArray(changes.skillBadges) || !changes.skillBadges.length || !draft.character) return;
+  if (!Array.isArray(draft.character.skillBadges)) draft.character.skillBadges = [];
+  for (const badge of changes.skillBadges) {
+    draft.character.skillBadges.push(badge);
   }
 }

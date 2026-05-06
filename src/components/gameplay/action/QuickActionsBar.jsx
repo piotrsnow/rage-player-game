@@ -18,6 +18,7 @@ export default function QuickActionsBar({
   onToggleTradePicker,
   onToggleTrainerPicker,
   onToggleRecruitPicker,
+  onOpenIncident,
   recruitableCount = 0,
   partyHasSlot = true,
   forceRollState = null,
@@ -139,6 +140,16 @@ export default function QuickActionsBar({
           onClick={() => onSuggestedAction(t('gameplay.restAction'))}
           disabled={disabled || hasPendingAction}
           tone="indigo"
+        />
+      )}
+      {onOpenIncident && (
+        <QuickActionButton
+          icon="warning"
+          label={t('gameplay.incidentButton')}
+          description={t('gameplay.incidentDescription')}
+          onClick={onOpenIncident}
+          disabled={disabled || hasPendingAction}
+          tone="danger"
         />
       )}
     </div>

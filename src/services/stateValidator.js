@@ -117,10 +117,11 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
   if (validated.skillProgress && typeof validated.skillProgress === 'object') {
     const maxSkillXpPerScene = 500; // max for a single boss kill
     const rebuilt = {};
+    const badges = [];
     for (const [skillName, xpVal] of Object.entries(validated.skillProgress)) {
       const canon = normalizeSkillName(skillName);
       if (!canon) {
-        warnings.push(`Unknown skill: "${skillName}"`);
+        badges.push({ name: skillName, earnedAt: new Date().toISOString(), redeemed: false });
         continue;
       }
       if (typeof xpVal !== 'number' || xpVal <= 0) {
@@ -136,6 +137,9 @@ export function validateStateChanges(stateChanges, currentState, config = {}) {
       rebuilt[canon] = (rebuilt[canon] || 0) + finalXp;
     }
     validated.skillProgress = rebuilt;
+    if (badges.length > 0) {
+      validated.skillBadges = [...(validated.skillBadges || []), ...badges];
+    }
   }
 
   if (validated.removeItems && Array.isArray(validated.removeItems) && character?.inventory) {

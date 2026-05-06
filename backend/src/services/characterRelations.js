@@ -49,7 +49,7 @@ const SCALAR_FIELDS = [
 
 const JSON_FIELDS = [
   'attributes', 'mana', 'spells', 'money', 'statuses', 'needs',
-  'customAttackPresets', 'knownTitles', 'activeDungeonState',
+  'customAttackPresets', 'knownTitles', 'activeDungeonState', 'skillBadges',
 ];
 
 // ── Shape conversion ──

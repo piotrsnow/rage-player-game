@@ -3,6 +3,7 @@
     "appName": "Nikczemny Krzemuch",
     "tagline": "Krainy kości i chaosu",
     "logoPath": "/nikczemnu_logo.png",
+    "logoPathCampaign": "/nikczemny_logo_chain_2.png",
     "level": "Poziom",
     "lvl": "Poz.",
     "species": "Rasa",
@@ -147,7 +148,9 @@
     "profile": "Profil",
     "audioConfig": "Dźwięk",
     "zoomIn": "Powiększ",
-    "zoomOut": "Pomniejsz"
+    "zoomOut": "Pomniejsz",
+    "appZoomTooltip": "{{percent}}%",
+    "appZoomAria": "Powiększenie interfejsu {{percent}} procent. Lewy przycisk powiększa, prawy pomniejsza."
   },
   "profile": {
     "title": "Profil Użytkownika"
@@ -266,7 +269,8 @@
     "snarkEmpty": "Brak materiału do drwin... na razie.",
     "snarkTtsError": "Nie udało się odtworzyć narracji.",
     "playSnark": "Posłuchaj",
-    "stopSnark": "Zatrzymaj"
+    "stopSnark": "Zatrzymaj",
+    "introTapForSound": "Dotknij ekranu, by włączyć dźwięk"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",
@@ -370,6 +374,24 @@
     "musicSkip": "Następny utwór",
     "searchForQuests": "Szukaj zadań",
     "searchForQuestsAction": "Rozglądam się za dostępnymi zleceniami, zadaniami lub pracą — pytam okolicznych mieszkańców, sprawdzam tablice ogłoszeń i nasłuchuję plotek",
+    "incidentButton": "Zgłoś incydent",
+    "incidentDescription": "Zgłoś problem z ostatnią sceną — AI oceni, czy masz rację",
+    "incidentModalTitle": "Zgłoś incydent",
+    "incidentPlaceholder": "Opisz, co poszło nie tak — np. lokalizacja się nie zmieniła mimo podróży, NPC zachował się niespójnie, ekwipunek nie został dodany...",
+    "incidentSubmit": "Wyślij zgłoszenie",
+    "incidentSubmitting": "Analizuję...",
+    "incidentVerdictTitle": "Werdykt AI",
+    "incidentPlayerRight": "AI przyznaje Ci rację",
+    "incidentPlayerWrong": "AI nie zgadza się z zarzutem",
+    "incidentHistoryTitle": "Historia incydentów",
+    "incidentHistoryEmpty": "Brak zgłoszonych incydentów",
+    "incidentHistoryButton": "Historia",
+    "incidentScene": "Scena",
+    "incidentClose": "Zamknij",
+    "incidentNewReport": "Nowe zgłoszenie",
+    "incidentTechnicalDetails": "Szczegóły techniczne",
+    "incidentCorrected": "Stan gry został skorygowany",
+    "incidentSlipWarning": "Następna scena może być... nieco śliska",
     "forceRoll": {
       "button": "Wymuś rzut",
       "descriptionOff": "Wymusza rzut na tej akcji. Lewy klik: włącz. Dwuklik: sprzyjające okoliczności (+30). Prawy klik: niesprzyjające (−30).",
@@ -1043,6 +1065,7 @@
       "wounds": "Rany",
       "currentLocation": "Obecna Lokacja",
       "modifications": "Modyfikacje",
+      "locationHistory": "Historia lokacji",
       "reputation": "Reputacja",
       "questType": "Typ",
       "objectives": "Cele",

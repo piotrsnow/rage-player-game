@@ -1,5 +1,7 @@
 import { prisma } from '../../lib/prisma.js';
 import { loadUserApiKeys } from '../../services/apiKeyService.js';
+import { config } from '../../config.js';
+import { getModelOverrides, TASK_CATEGORIES } from '../../services/serverConfig.js';
 import { generateStoryPrompt } from '../../services/storyPromptGenerator.js';
 import { generateCharacterLegend } from '../../services/characterLegendGenerator.js';
 import { enhanceImagePrompt } from '../../services/imagePromptEnhancer.js';
@@ -24,6 +26,22 @@ import {
  * that wraps one single-shot LLM call and returns JSON synchronously.
  */
 export async function singleShotRoutes(fastify) {
+  /**
+   * GET /ai/model-config — resolved model per task category + provider.
+   * Available to all authenticated users so the FE can send explicit models.
+   */
+  fastify.get('/model-config', async () => {
+    const overrides = await getModelOverrides();
+    const resolved = {};
+    for (const cat of TASK_CATEGORIES) {
+      resolved[cat] = {
+        openai: overrides[cat]?.openai || null,
+        anthropic: overrides[cat]?.anthropic || null,
+      };
+    }
+    return { models: resolved, defaults: config.aiModels };
+  });
+
   /**
    * POST /ai/generate-story-prompt — random story premise for campaign creator.
    */

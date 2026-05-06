@@ -193,6 +193,7 @@ export function SettingsProvider({ children }) {
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
   const [sceneModelConfig, setSceneModelConfig] = useState({});
+  const [taskModelConfig, setTaskModelConfig] = useState({ models: {}, defaults: {} });
   const [fontConfig, setFontConfig] = useState(null);
   const [backendUser, setBackendUser] = useState(null);
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
@@ -334,6 +335,35 @@ export function SettingsProvider({ children }) {
     return result;
   }, []);
 
+  const fetchTaskModelConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setTaskModelConfig({ models: {}, defaults: {} });
+      return;
+    }
+    try {
+      const config = await apiClient.get('/ai/model-config');
+      setTaskModelConfig(config || { models: {}, defaults: {} });
+    } catch {
+      setTaskModelConfig({ models: {}, defaults: {} });
+    }
+  }, []);
+
+  const resolveTaskModel = useCallback((taskCategory) => {
+    const provider = settings.aiProvider || 'openai';
+    const override = taskModelConfig.models?.[taskCategory]?.[provider];
+    if (override) return override;
+    const tierMap = {
+      sceneGeneration: 'premium',
+      campaignGeneration: 'premium',
+      intentClassification: 'nano',
+      memoryExtraction: 'nanoReasoning',
+      imagePrompt: 'nano',
+      auxiliary: 'standard',
+    };
+    const tier = tierMap[taskCategory] || 'premium';
+    return taskModelConfig.defaults?.[tier]?.[provider] || null;
+  }, [settings.aiProvider, taskModelConfig]);
+
   const fetchFontConfig = useCallback(async () => {
     if (!apiClient.isConnected()) return;
     try {
@@ -415,6 +445,7 @@ export function SettingsProvider({ children }) {
       fetchBackendKeys();
       fetchGlobalVoiceConfig();
       fetchSceneModelConfig();
+      fetchTaskModelConfig();
       fetchFontConfig();
       // Hydrate account settings whenever a user lands on this provider — on
       // cookie-bootstrap, login, and register. backendLogin/Register also
@@ -423,7 +454,7 @@ export function SettingsProvider({ children }) {
       loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig, fetchFontConfig]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig, fetchTaskModelConfig, fetchFontConfig]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -584,6 +615,8 @@ export function SettingsProvider({ children }) {
     sceneModelConfig,
     fetchSceneModelConfig,
     updateSceneModelConfig,
+    resolveTaskModel,
+    fetchTaskModelConfig,
     fontConfig,
     fetchFontConfig,
     loadFromAccount,
