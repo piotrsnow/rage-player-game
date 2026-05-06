@@ -189,11 +189,13 @@ export function applyCharacterStateChanges(character, changes) {
   if (changes.skillProgress) {
     const skills = { ...(next.skills || {}) };
     let charXpGained = 0;
+    const skillGains = [];
 
     for (const [skillName, xpGain] of Object.entries(changes.skillProgress)) {
       const current = skills[skillName] || { level: 0, xp: 0, cap: SKILL_CAPS.basic };
+      const oldLevel = current.level || 0;
       let newXp = (current.xp ?? current.progress ?? 0) + xpGain;
-      let newLevel = current.level || 0;
+      let newLevel = oldLevel;
       const cap = current.cap || SKILL_CAPS.basic;
 
       while (newLevel < cap) {
@@ -205,9 +207,11 @@ export function applyCharacterStateChanges(character, changes) {
       }
 
       skills[skillName] = { ...current, level: newLevel, xp: newXp, cap };
+      skillGains.push({ skillName, xpGained: xpGain, oldLevel, newLevel });
     }
 
     next.skills = skills;
+    next._skillGains = skillGains;
 
     if (charXpGained > 0) {
       let charXp = (next.characterXp || 0) + charXpGained;

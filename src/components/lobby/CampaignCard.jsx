@@ -21,12 +21,23 @@ const genreGlowColors = {
 
 export default function CampaignCard({ campaign, onLoad, onDelete, loading, disabled }) {
   const { t, i18n } = useTranslation();
+  const [deleteState, setDeleteState] = useState('idle'); // idle | confirming | deleting
   const lastPlayed = new Date(campaign.lastSaved).toLocaleDateString(i18n.language === 'pl' ? 'pl-PL' : undefined, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  const handleConfirmDelete = async (e) => {
+    e.stopPropagation();
+    setDeleteState('deleting');
+    try {
+      await onDelete();
+    } finally {
+      setDeleteState('idle');
+    }
+  };
 
   const genre = campaign.genre || 'Fantasy';
   const borderColor = genreBorderColors[genre] || 'border-l-primary-dim';
@@ -91,18 +102,47 @@ export default function CampaignCard({ campaign, onLoad, onDelete, loading, disa
             <span className="text-[10px] text-on-surface-variant">{lastPlayed}</span>
           </div>
           {!loading && (
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!disabled) onDelete();
-                }}
-                aria-label={t('common.delete', 'Delete')}
-                className="p-1 rounded-sm text-outline hover:text-error hover:bg-error/10 transition-colors flex items-center justify-center"
-              >
-                <span className="material-symbols-outlined text-sm">delete</span>
-              </button>
+            <div className={`flex items-center gap-1 transition-all duration-300 ${
+              deleteState === 'idle'
+                ? 'opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0'
+                : 'opacity-100 translate-x-0'
+            }`}>
+              {deleteState === 'idle' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!disabled) setDeleteState('confirming');
+                  }}
+                  aria-label={t('common.delete', 'Delete')}
+                  className="p-1 rounded-sm text-outline hover:text-error hover:bg-error/10 transition-colors flex items-center justify-center"
+                >
+                  <span className="material-symbols-outlined text-sm">delete</span>
+                </button>
+              )}
+              {deleteState === 'confirming' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    aria-label={t('common.confirm', 'Confirm')}
+                    className="p-1 rounded-sm text-error hover:bg-error/10 transition-colors flex items-center justify-center"
+                  >
+                    <span className="material-symbols-outlined text-sm">check</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setDeleteState('idle'); }}
+                    aria-label={t('common.cancel', 'Cancel')}
+                    className="p-1 rounded-sm text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors flex items-center justify-center"
+                  >
+                    <span className="material-symbols-outlined text-sm">close</span>
+                  </button>
+                </>
+              )}
+              {deleteState === 'deleting' && (
+                <span className="material-symbols-outlined text-sm text-error animate-spin p-1">progress_activity</span>
+              )}
             </div>
           )}
         </div>

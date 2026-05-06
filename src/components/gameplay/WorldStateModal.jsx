@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import QuestsTab from './world/QuestsTab';
@@ -9,16 +9,13 @@ import EffectsTab from './world/EffectsTab';
 import JournalTab from './world/JournalTab';
 import FactionsTab from './world/FactionsTab';
 
-const LocationGraphModal = lazy(() => import('./locationGraph/LocationGraphModal'));
-
-const TABS = ['npcs', 'map', 'graph', 'quests', 'factions', 'time', 'effects', 'journal'];
-const TAB_ICONS = { npcs: 'group', map: 'map', graph: 'hub', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
+const TABS = ['npcs', 'map', 'quests', 'factions', 'time', 'effects', 'journal'];
+const TAB_ICONS = { npcs: 'group', map: 'map', quests: 'assignment', factions: 'groups', time: 'schedule', effects: 'auto_fix_high', journal: 'menu_book' };
 
 export default function WorldStateModal({ world, quests, characterVoiceMap, maleVoices, femaleVoices, ttsProvider, dispatch, autoSave, campaignId, currentSceneId, onTravel, onEnterSub, onClose }) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('npcs');
   const [highlightId, setHighlightId] = useState(null);
-  const [showGraphModal, setShowGraphModal] = useState(false);
   const contentRef = useRef(null);
   const modalRef = useModalA11y(onClose);
 
@@ -107,26 +104,8 @@ export default function WorldStateModal({ world, quests, characterVoiceMap, male
           {activeTab === 'journal' && (
             <JournalTab eventHistory={eventHistory} compressedHistory={compressedHistory} t={t} />
           )}
-          {activeTab === 'graph' && (
-            <div className="flex flex-col items-center justify-center py-8 gap-3">
-              <span className="material-symbols-outlined text-3xl text-primary">hub</span>
-              <p className="text-[11px] text-on-surface-variant">{t('locationGraph.openFullEditor')}</p>
-              <button
-                onClick={() => setShowGraphModal(true)}
-                className="px-4 py-2 bg-primary/20 text-primary rounded-sm hover:bg-primary/30 transition-colors text-xs uppercase tracking-widest font-bold"
-              >
-                {t('locationGraph.openEditor')}
-              </button>
-            </div>
-          )}
         </div>
       </div>
-
-      {showGraphModal && (
-        <Suspense fallback={null}>
-          <LocationGraphModal campaignId={campaignId} onClose={() => setShowGraphModal(false)} />
-        </Suspense>
-      )}
     </div>
   );
 }

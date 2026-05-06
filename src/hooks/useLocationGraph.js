@@ -30,9 +30,7 @@ export function useLocationGraph(campaignId) {
       if (focusId) qs.set('focusId', focusId);
       if (hops) qs.set('hops', String(hops));
       const suffix = qs.toString() ? `?${qs}` : '';
-      const res = await apiClient.request(`${BASE}/${campaignId}/location-graph${suffix}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiClient.request(`${BASE}/${campaignId}/location-graph${suffix}`);
       setNodes(data.nodes || []);
       setEdges(data.edges || []);
     } catch (err) {
@@ -45,62 +43,51 @@ export function useLocationGraph(campaignId) {
   useEffect(() => { fetchGraph({ hops: 3 }); }, [fetchGraph]);
 
   const createNode = useCallback(async (body) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes`, { method: 'POST', body });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes`, { method: 'POST', body });
     await fetchGraph({ hops: 3 });
     return data.node;
   }, [campaignId, fetchGraph]);
 
   const updateNode = useCallback(async (nodeId, body) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'PUT', body });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'PUT', body });
     setNodes((prev) => prev.map((n) => n.id === nodeId ? { ...n, ...body } : n));
   }, [campaignId]);
 
   const deleteNode = useCallback(async (nodeId) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await apiClient.request(`${BASE}/${campaignId}/location-graph/nodes/${nodeId}`, { method: 'DELETE' });
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
     setEdges((prev) => prev.filter((e) => e.fromId !== nodeId && e.toId !== nodeId));
     if (selected?.id === nodeId) setSelected(null);
   }, [campaignId, selected]);
 
   const createEdge = useCallback(async (body) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges`, { method: 'POST', body });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges`, { method: 'POST', body });
     await fetchGraph({ hops: 3 });
     return data.edge;
   }, [campaignId, fetchGraph]);
 
   const updateEdge = useCallback(async (edgeId, body) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'PUT', body });
     setEdges((prev) => prev.map((e) => e.id === edgeId ? { ...e, ...body } : e));
   }, [campaignId]);
 
   const deleteEdge = useCallback(async (edgeId) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await apiClient.request(`${BASE}/${campaignId}/location-graph/edges/${edgeId}`, { method: 'DELETE' });
     setEdges((prev) => prev.filter((e) => e.id !== edgeId));
     if (selected?.id === edgeId) setSelected(null);
   }, [campaignId, selected]);
 
   const moveNpc = useCallback(async (npcId, toKind, toId) => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/move-npc`, {
+    await apiClient.request(`${BASE}/${campaignId}/location-graph/move-npc`, {
       method: 'POST', body: { npcId, toKind, toId },
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }, [campaignId]);
 
   const search = useCallback(async (q) => {
     setSearchQuery(q);
     if (!q || q.length < 2) { setSearchResults([]); return; }
     try {
-      const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/search?q=${encodeURIComponent(q)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiClient.request(`${BASE}/${campaignId}/location-graph/search?q=${encodeURIComponent(q)}`);
       setSearchResults(data.results || []);
     } catch {
       setSearchResults([]);
@@ -108,9 +95,7 @@ export function useLocationGraph(campaignId) {
   }, [campaignId]);
 
   const validate = useCallback(async () => {
-    const res = await apiClient.request(`${BASE}/${campaignId}/location-graph/validate`, { method: 'POST' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    return apiClient.request(`${BASE}/${campaignId}/location-graph/validate`, { method: 'POST' });
   }, [campaignId]);
 
   const selectedNode = selected?.type === 'node' ? nodes.find((n) => n.id === selected.id) : null;

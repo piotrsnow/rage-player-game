@@ -230,5 +230,19 @@ export function applySceneStateChanges({
     if (ach.grantsTitle && state.character) {
       dispatch({ type: 'ADD_TITLE', payload: { ...ach.grantsTitle, sourceAchievementId: ach.id } });
     }
+    const xpPart = ach.xpReward ? ` — +${ach.xpReward} XP` : '';
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: {
+        id: `msg_${Date.now()}_ach_${shortId(3)}`,
+        role: 'system',
+        subtype: 'achievement_unlock',
+        content: `${ach.name}${xpPart}`,
+        achievementIcon: ach.icon || 'emoji_events',
+        achievementRarity: ach.rarity || 'common',
+        achievementDescription: ach.description || '',
+        timestamp: Date.now(),
+      },
+    });
   }
 }

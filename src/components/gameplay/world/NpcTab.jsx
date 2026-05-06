@@ -162,7 +162,7 @@ export default function NpcTab({ npcs, quests, characterVoiceMap, maleVoices, fe
       )}
       {npcs.map((npc) => (
         <NpcRow
-          key={npc.id}
+          key={npc.id ?? npc.name}
           npc={npc}
           quests={quests}
           characterVoiceMap={characterVoiceMap}

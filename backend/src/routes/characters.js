@@ -260,6 +260,53 @@ export async function characterRoutes(fastify) {
     return { success: true };
   });
 
+  fastify.get('/:id/skill-gains', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          skillName: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const character = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+      select: { id: true },
+    });
+    if (!character) return reply.code(404).send({ error: 'Character not found' });
+
+    const where = { characterId: character.id };
+    if (request.query.skillName) where.skillName = request.query.skillName;
+
+    const [gains, total] = await Promise.all([
+      prisma.characterSkillGain.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: request.query.limit,
+        skip: request.query.offset,
+        select: {
+          id: true,
+          skillName: true,
+          xpGained: true,
+          oldLevel: true,
+          newLevel: true,
+          playerAction: true,
+          narrative: true,
+          diceRollInfo: true,
+          sceneIndex: true,
+          campaignId: true,
+          createdAt: true,
+        },
+      }),
+      prisma.characterSkillGain.count({ where }),
+    ]);
+
+    return { gains, total };
+  });
+
   fastify.post('/:id/badge', async (request, reply) => {
     const force = request.body?.force === true;
     const char = await prisma.character.findFirst({

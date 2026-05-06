@@ -186,6 +186,7 @@ model Character {
   clearedDungeons CharacterClearedDungeon[]
   inventoryItems  CharacterInventoryItem[]
   characterSkills CharacterSkill[]
+  skillGains      CharacterSkillGain[]
   materials       CharacterMaterial[]
 
   @@index([userId])
@@ -204,6 +205,26 @@ model CharacterSkill {
 
   @@id([characterId, skillName])
   @@index([characterId, level])
+}
+
+model CharacterSkillGain {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  characterId  String    @db.Uuid
+  skillName    String
+  xpGained     Int
+  oldLevel     Int
+  newLevel     Int
+  playerAction String?   @db.Text
+  narrative    String?   @db.Text
+  diceRollInfo Json?
+  sceneIndex   Int?
+  campaignId   String?   @db.Uuid
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+
+  character    Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([characterId, skillName, createdAt])
+  @@index([characterId])
 }
 
 // F4 — inventory keyed by slugify(name). Items with the same name stack

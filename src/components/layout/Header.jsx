@@ -21,7 +21,7 @@ export default function Header() {
   const { t } = useTranslation();
   const { settings, backendUser } = useSettings();
   const music = useGlobalMusic();
-  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers } = useModals();
+  const { openCharacterSheet, openTasksInfo, openSettings, openKeys, openImageConfig, openAudioConfig, openProfile, openAdminUsers, openLocationGraph } = useModals();
   const campaign = useGameCampaign();
   const mp = useMultiplayer();
   const hasActiveGame = !!campaign || (mp.state.isMultiplayer && mp.state.phase === 'playing');
@@ -195,6 +195,18 @@ export default function Header() {
                   <span className={`material-symbols-outlined text-lg ${saveStatus === 'saving' ? 'animate-spin' : ''}`}>
                     {saveStatus === 'saving' ? 'progress_activity' : saveStatus === 'saved' ? 'check_circle' : 'save'}
                   </span>
+                </button>
+              </Tooltip>
+            )}
+            {hasActiveGame && (
+              <Tooltip content={t('nav.locationGraph')} placement="bottom" variant="compact" asChild>
+                <button
+                  type="button"
+                  onClick={openLocationGraph}
+                  aria-label={t('nav.locationGraph')}
+                  className="material-symbols-outlined text-on-surface-variant hover:text-tertiary transition-all active:scale-95 duration-200 cursor-pointer w-9 h-9 flex items-center justify-center rounded-full hover:bg-surface-container-high/40"
+                >
+                  hub
                 </button>
               </Tooltip>
             )}

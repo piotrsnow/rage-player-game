@@ -17,10 +17,13 @@ export function ModalProvider({ children }) {
   // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
+  const [locationGraphOpen, setLocationGraphOpen] = useState(false);
   const [npcSheetName, setNpcSheetName] = useState(null);
 
   const openCharacterSheet = useCallback(() => setCharacterSheetOpen(true), []);
   const closeCharacterSheet = useCallback(() => setCharacterSheetOpen(false), []);
+  const openLocationGraph = useCallback(() => setLocationGraphOpen(true), []);
+  const closeLocationGraph = useCallback(() => setLocationGraphOpen(false), []);
   const openWorldState = useCallback(() => setWorldStateOpen(true), []);
   const closeWorldState = useCallback(() => setWorldStateOpen(false), []);
   const openTasksInfo = useCallback(() => setTasksInfoOpen(true), []);
@@ -46,6 +49,7 @@ export function ModalProvider({ children }) {
     <ModalContext.Provider
       value={{
         characterSheetOpen,
+        locationGraphOpen,
         worldStateOpen,
         tasksInfoOpen,
         settingsOpen,
@@ -58,6 +62,8 @@ export function ModalProvider({ children }) {
         npcSheetName,
         openCharacterSheet,
         closeCharacterSheet,
+        openLocationGraph,
+        closeLocationGraph,
         openWorldState,
         closeWorldState,
         openTasksInfo,

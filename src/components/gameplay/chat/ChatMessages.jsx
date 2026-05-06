@@ -202,6 +202,7 @@ const SUBTYPE_STYLES = {
   skill_levelup:    { icon: 'workspace_premium', color: 'text-violet-300', line: 'to-violet-400/40' },
   char_xp:          { icon: 'auto_awesome', color: 'text-sky-400',     line: 'to-sky-400/35' },
   character_levelup: { icon: 'stars',      color: 'text-amber-300',   line: 'to-amber-400/45' },
+  achievement_unlock: { icon: 'emoji_events', color: 'text-amber-400', line: 'to-amber-400/40' },
 };
 
 /** Rich inline colors for skill / character XP system lines (matches `stateChangeMessages` shapes). */
@@ -282,6 +283,19 @@ function styledSystemLineContent(subtype, content) {
     }
   }
 
+  if (subtype === 'achievement_unlock') {
+    const m = content.match(/^(.+?)(?:\s*—\s*\+(\d+)\s*XP)?$/);
+    if (m) {
+      const [, name, xp] = m;
+      return (
+        <>
+          <span className="text-amber-300 font-black">{name}</span>
+          {xp && <span className="text-yellow-200"> — +{xp} XP</span>}
+        </>
+      );
+    }
+  }
+
   return null;
 }
 
@@ -291,7 +305,8 @@ export const SystemMessage = memo(function SystemMessage({ message }) {
   if (style) {
     const isLevelUp = message.subtype === 'level_up'
       || message.subtype === 'skill_levelup'
-      || message.subtype === 'character_levelup';
+      || message.subtype === 'character_levelup'
+      || message.subtype === 'achievement_unlock';
     const hasCombatBadge = Boolean(message.combatBadgeText);
     const richLine = styledSystemLineContent(message.subtype, message.content);
     const useRichLine = Boolean(richLine);

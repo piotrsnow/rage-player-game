@@ -130,6 +130,7 @@
   },
   "nav": {
     "lobby": "Lobby",
+    "locationGraph": "Graf Lokacji",
     "grimoire": "Grimuar",
     "armory": "Zbrojownia",
     "characterSheet": "Karta postaci",
@@ -1264,7 +1265,13 @@
     "attributePointsAvailable": "{{count}} punktów atrybutów do wydania!",
     "maxed": "MAX",
     "skill": "Umiejętność",
-    "trainingCooldown": "Trening możliwy raz na {{scenes}} scen"
+    "trainingCooldown": "Trening możliwy raz na {{scenes}} scen",
+    "trainingHint": "Podniesienie limitu ponad 10 wymaga nauki od NPC-trenera napotkanego w świecie.",
+    "skillHistory": "Historia rozwoju",
+    "noSkillHistory": "Brak historii rozwoju tej umiejętności.",
+    "action": "Akcja",
+    "margin": "margines",
+    "scene": "Scena"
   },
   "charCreator": {
     "title": "Tworzenie Postaci",

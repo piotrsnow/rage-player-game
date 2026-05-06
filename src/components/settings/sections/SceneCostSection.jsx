@@ -19,11 +19,13 @@ function fmt(v) {
   return v.toFixed(2);
 }
 
+function isAdminEnabled(provider, category, sceneModelConfig) {
+  return !!sceneModelConfig?.[category]?.[provider.id]?.enabled;
+}
+
 function isProviderUsable(provider, category, sceneModelConfig, backendKeys) {
   const keyConfigured = !!backendKeys?.[provider.keyId]?.configured;
-  const entry = sceneModelConfig?.[category]?.[provider.id];
-  const adminEnabled = !!entry?.enabled;
-  return keyConfigured && adminEnabled;
+  return keyConfigured && isAdminEnabled(provider, category, sceneModelConfig);
 }
 
 function getProviderPrice(providerId, category, sceneModelConfig) {
@@ -67,8 +69,12 @@ function ProviderButton({ provider, category, selected, onSelect, sceneModelConf
 export default function SceneCostSection({ settings, updateSettings, sceneModelConfig, backendKeys }) {
   const { t } = useTranslation();
 
-  const ttsTier = settings.sceneTtsTier || 'none';
-  const imageTier = settings.sceneImageTier || 'none';
+  const rawTtsTier = settings.sceneTtsTier || 'none';
+  const rawImageTier = settings.sceneImageTier || 'none';
+  const ttsProvider = TTS_PROVIDERS.find((p) => p.id === rawTtsTier);
+  const imageProvider = IMAGE_PROVIDERS.find((p) => p.id === rawImageTier);
+  const ttsTier = ttsProvider && isAdminEnabled(ttsProvider, 'tts', sceneModelConfig) ? rawTtsTier : 'none';
+  const imageTier = imageProvider && isAdminEnabled(imageProvider, 'image', sceneModelConfig) ? rawImageTier : 'none';
 
   const ttsCost = ttsTier !== 'none' ? getProviderPrice(ttsTier, 'tts', sceneModelConfig) : 0;
   const imageCost = imageTier !== 'none' ? getProviderPrice(imageTier, 'image', sceneModelConfig) : 0;
@@ -100,7 +106,7 @@ export default function SceneCostSection({ settings, updateSettings, sceneModelC
             <span className="material-symbols-outlined text-sm">volume_off</span>
             <span className="font-headline text-xs">{t('sceneCost.tts.none')}</span>
           </button>
-          {TTS_PROVIDERS.map((p) => (
+          {TTS_PROVIDERS.filter((p) => isAdminEnabled(p, 'tts', sceneModelConfig)).map((p) => (
             <ProviderButton
               key={p.id}
               provider={p}
@@ -129,7 +135,7 @@ export default function SceneCostSection({ settings, updateSettings, sceneModelC
             <span className="material-symbols-outlined text-sm">visibility_off</span>
             <span className="font-headline text-xs">{t('sceneCost.image.none')}</span>
           </button>
-          {IMAGE_PROVIDERS.map((p) => (
+          {IMAGE_PROVIDERS.filter((p) => isAdminEnabled(p, 'image', sceneModelConfig)).map((p) => (
             <ProviderButton
               key={p.id}
               provider={p}

@@ -134,7 +134,7 @@ export default function LobbyPage() {
   const { backendUser, hasApiKey } = useSettings();
   const mp = useMultiplayer();
   const [campaigns, setCampaigns] = useState([]);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+
   const [syncing, setSyncing] = useState(false);
   const [rejoinInfo, setRejoinInfo] = useState(null);
   const [rejoining, setRejoining] = useState(false);
@@ -278,7 +278,6 @@ export default function LobbyPage() {
     try {
       setCampaigns(await storage.getCampaigns());
     } catch { setCampaigns([]); }
-    setShowDeleteConfirm(null);
   };
 
   const handleContinue = async () => {
@@ -495,11 +494,7 @@ export default function LobbyPage() {
                   loading={loadingCampaignId === c.id}
                   disabled={!!loadingCampaignId}
                   onLoad={() => { handleLoad(c); setShowAllCampaigns(false); }}
-                  onDelete={() =>
-                    showDeleteConfirm === c.id
-                      ? handleDelete(c.id)
-                      : setShowDeleteConfirm(c.id)
-                  }
+                  onDelete={() => handleDelete(c.id)}
                 />
               ))}
             </div>

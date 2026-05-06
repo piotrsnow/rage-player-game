@@ -136,6 +136,7 @@
   },
   "nav": {
     "lobby": "Lobby",
+    "locationGraph": "Location Graph",
     "grimoire": "Grimoire",
     "armory": "Armory",
     "characterSheet": "Character Sheet",
@@ -1290,7 +1291,13 @@
     "nextLevel": "Next level",
     "attrPoints": "attr pts",
     "attributePointsAvailable": "{{count}} attribute points to spend!",
-    "trainingCooldown": "Training available every {{scenes}} scenes"
+    "trainingCooldown": "Training available every {{scenes}} scenes",
+    "trainingHint": "Raising the cap above 10 requires training from an NPC trainer encountered in the world.",
+    "skillHistory": "Training history",
+    "noSkillHistory": "No training history for this skill yet.",
+    "action": "Action",
+    "margin": "margin",
+    "scene": "Scene"
   },
   "charCreator": {
     "title": "Create Character",

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { apiClient } from '../../../../services/apiClient';
-import { AI_MODELS } from '../../../../services/ai/models';
+import { apiClient } from '../../../services/apiClient';
+import { AI_MODELS } from '../../../services/ai/models';
 
 const TASK_CATEGORIES = [
   {
@@ -71,8 +71,7 @@ const TASK_CATEGORIES = [
 const openaiModels = AI_MODELS.filter((m) => m.provider === 'openai');
 const anthropicModels = AI_MODELS.filter((m) => m.provider === 'anthropic');
 
-export default function ModelOverridesTab() {
-  const { t } = useTranslation();
+export default function ModelOverridesSection() {
   const [overrides, setOverrides] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,9 +109,9 @@ export default function ModelOverridesTab() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-on-surface-variant py-8">
-        <span className="material-symbols-outlined animate-spin">progress_activity</span>
-        Ładowanie…
+      <div className="flex items-center gap-2 text-on-surface-variant py-4">
+        <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+        <span className="text-xs">Ładowanie konfiguracji modeli…</span>
       </div>
     );
   }
@@ -120,10 +119,16 @@ export default function ModelOverridesTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-on-surface-variant/60">
-          Wybierz model per-dostawca dla każdej kategorii zapytań.
-          Puste pole = domyślny model z tieru.
-        </p>
+        <div>
+          <h3 className="font-headline text-sm text-tertiary flex items-center gap-2">
+            <span className="material-symbols-outlined text-sm">tune</span>
+            Przypisanie modeli do zadań
+          </h3>
+          <p className="text-[10px] text-on-surface-variant/60 mt-1">
+            Wybierz model per-dostawca dla każdej kategorii zapytań AI.
+            Puste pole = domyślny model z tieru.
+          </p>
+        </div>
         <button
           type="button"
           onClick={handleSave}
@@ -144,7 +149,7 @@ export default function ModelOverridesTab() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {TASK_CATEGORIES.map((cat) => (
           <CategoryCard
             key={cat.key}
@@ -160,24 +165,24 @@ export default function ModelOverridesTab() {
 
 function CategoryCard({ category, value, onChange }) {
   return (
-    <div className="rounded-md border border-outline-variant/15 bg-surface-container-lowest/30 p-4 space-y-3">
+    <div className="rounded-md border border-outline-variant/15 bg-surface-container-lowest/30 p-3 space-y-2">
       <div>
-        <h4 className="text-sm font-headline text-on-surface flex items-center gap-2">
+        <h4 className="text-xs font-headline text-on-surface flex items-center gap-2">
           {category.label}
-          <span className="text-[10px] text-outline/50 font-label px-1.5 py-0.5 rounded-sm bg-outline/5 border border-outline/10">
+          <span className="text-[9px] text-outline/50 font-label px-1 py-0.5 rounded-sm bg-outline/5 border border-outline/10">
             {category.defaultTier}
           </span>
         </h4>
-        <ul className="mt-1.5 space-y-0.5">
+        <ul className="mt-1 space-y-0.5">
           {category.calls.map((call) => (
-            <li key={call} className="text-[10px] text-on-surface-variant/50 pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-primary/30">
+            <li key={call} className="text-[9px] text-on-surface-variant/50 pl-2.5 relative before:content-['•'] before:absolute before:left-0 before:text-primary/30">
               {call}
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         <ModelSelect
           label="OpenAI"
           models={openaiModels}
@@ -198,13 +203,13 @@ function CategoryCard({ category, value, onChange }) {
 function ModelSelect({ label, models, value, onChange }) {
   return (
     <div>
-      <label className="block text-[10px] text-outline/50 font-label uppercase tracking-wider mb-1">
+      <label className="block text-[9px] text-outline/50 font-label uppercase tracking-wider mb-0.5">
         {label}
       </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-xs bg-surface-container-lowest border border-outline-variant/15 rounded-sm px-2 py-1.5 text-on-surface focus:border-primary/40 focus:ring-0 focus:outline-none"
+        className="w-full text-[11px] bg-surface-container-lowest border border-outline-variant/15 rounded-sm px-2 py-1 text-on-surface focus:border-primary/40 focus:ring-0 focus:outline-none"
       >
         <option value="">— domyślny (tier) —</option>
         {models.map((m) => (

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Header from './Header';
 import Sidebar from './Sidebar';
@@ -11,6 +11,7 @@ import {
   useGameSlice,
   useGameDispatch,
   useGameAutoSave,
+  useGameCampaign,
 } from '../../stores/gameSelectors';
 import { useMultiplayer } from '../../contexts/MultiplayerContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -26,6 +27,8 @@ import UserManagementModal from '../admin/UserManagementModal';
 import PrivacyPolicyModal from '../settings/PrivacyPolicyModal';
 import WorldStateModal from '../gameplay/WorldStateModal';
 import TasksInfoModal from '../gameplay/TasksInfoModal';
+
+const LocationGraphModal = lazy(() => import('../gameplay/locationGraph/LocationGraphModal'));
 
 function ModalLayer() {
   const {
@@ -47,9 +50,12 @@ function ModalLayer() {
     closeProfile,
     adminUsersOpen,
     closeAdminUsers,
+    locationGraphOpen,
+    closeLocationGraph,
     privacyOpen,
     closePrivacy,
   } = useModals();
+  const campaign = useGameCampaign();
   const soloWorld = useGameWorld();
   const soloQuests = useGameQuests();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
@@ -92,6 +98,11 @@ function ModalLayer() {
       {profileOpen && <UserProfileModal onClose={closeProfile} />}
       {adminUsersOpen && <UserManagementModal onClose={closeAdminUsers} />}
       {privacyOpen && <PrivacyPolicyModal onClose={closePrivacy} />}
+      {locationGraphOpen && campaign?.backendId && (
+        <Suspense fallback={null}>
+          <LocationGraphModal campaignId={campaign.backendId} onClose={closeLocationGraph} />
+        </Suspense>
+      )}
     </>
   );
 }
