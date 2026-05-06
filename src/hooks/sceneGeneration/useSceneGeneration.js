@@ -28,7 +28,7 @@ const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
 
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
@@ -218,7 +218,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
         // Dialogue repair
         const { finalSegments, stateChanges: mergedStateChanges } = processSceneDialogue(
           result, state, settings, dispatch,
-          { isFirstScene, playerAction, isPassiveSceneAction }
+          { isFirstScene, playerAction, isPassiveSceneAction, voicePools }
         );
         result.stateChanges = mergedStateChanges;
 

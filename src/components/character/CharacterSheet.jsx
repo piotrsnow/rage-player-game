@@ -29,7 +29,7 @@ export default function CharacterSheet({ onClose }) {
   const soloCampaign = useGameCampaign();
   const soloScenes = useGameScenes();
   const characterVoiceMap = useGameSlice((s) => s.characterVoiceMap);
-  const { settings } = useSettings();
+  const { settings, voicePools } = useSettings();
   const mp = useMultiplayer();
   const { ensureMissingInventoryImages } = useAI();
 
@@ -253,8 +253,8 @@ export default function CharacterSheet({ onClose }) {
                 settings={settings}
                 t={t}
                 characterVoiceMap={characterVoiceMap}
-                maleVoices={settings.maleVoices}
-                femaleVoices={settings.femaleVoices}
+                maleVoices={voicePools.maleVoices}
+                femaleVoices={voicePools.femaleVoices}
                 showAdvancement={showAdvancement}
                 setShowAdvancement={setShowAdvancement}
                 dispatch={dispatch}
@@ -267,7 +267,7 @@ export default function CharacterSheet({ onClose }) {
                   autoSave();
                 }}
                 onVoiceChange={(charName, voiceId, gender) => {
-                  const pool = [...(settings.maleVoices || []), ...(settings.femaleVoices || [])];
+                  const pool = [...(voicePools.maleVoices || []), ...(voicePools.femaleVoices || [])];
                   const voice = pool.find((v) => v.voiceId === voiceId);
                   dispatch({
                     type: 'MAP_CHARACTER_VOICE',

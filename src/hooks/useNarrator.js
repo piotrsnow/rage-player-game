@@ -162,7 +162,7 @@ function splitTextIntoUtterances(text, maxChars = MAX_UTTERANCE_CHARS) {
 }
 
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
   const { state, dispatch } = useGame();
   const [playbackState, setPlaybackState] = useState(STATES.IDLE);
   const [currentMessageId, setCurrentMessageId] = useState(null);
@@ -404,20 +404,19 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       if (!isVoiceNotFoundError(err) || !segCtx) throw err;
       if (segCtx.type === 'narration' || !segCtx.characterName) throw err;
 
-      const { maleVoices = [], femaleVoices = [], narratorVoiceId } = settings;
       const newVoiceId = reassignVoiceOnError(
         segCtx.characterName,
         voiceId,
         segCtx.gender || null,
         state.characterVoiceMap || {},
-        { maleVoices, femaleVoices, narratorVoiceId, ttsProvider: settings.ttsProvider || 'elevenlabs' },
+        { maleVoices: voicePools.maleVoices, femaleVoices: voicePools.femaleVoices, narratorVoiceId: voicePools.narratorVoiceId, ttsProvider: settings.ttsProvider || 'elevenlabs' },
         dispatch
       );
       if (!newVoiceId) throw err;
       if (segCtx.onVoiceReassigned) segCtx.onVoiceReassigned(newVoiceId);
       return await fetchTts(newVoiceId, chunk, campaignId, pacing);
     }
-  }, [fetchTts, settings, state.characterVoiceMap, dispatch]);
+  }, [fetchTts, settings, voicePools, state.characterVoiceMap, dispatch]);
 
   const playChunkPipeline = useCallback(async (chunks, voiceId, apiKey, logicalSegmentIndex, messageId, dialogueSpeed, fullText, campaignId, generation, scenePacing, initialWordOffset = 0, initialSegmentWordOffset = 0, segCtx = null) => {
     let prefetchPromise = null;
@@ -518,7 +517,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     setCurrentMessageId(messageId);
     setPlaybackState(STATES.LOADING);
 
-      const { narratorVoiceId, maleVoices, femaleVoices, dialogueSpeed } = settings;
+      const { dialogueSpeed } = settings;
+      const narratorVoiceId = voicePools.narratorVoiceId;
+      const maleVoices = voicePools.maleVoices;
+      const femaleVoices = voicePools.femaleVoices;
       const allProviderVoiceIds = new Set([
         ...(maleVoices || []).map((v) => v.voiceId),
         ...(femaleVoices || []).map((v) => v.voiceId),
@@ -789,7 +791,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       queueRef.current.shift();
       processQueue();
     }
-  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, playChunkPipeline, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading]);
+  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, playChunkPipeline, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading]);
 
   const speakScene = useCallback((message, messageId) => {
     queueRef.current.push({
@@ -912,7 +914,10 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
 
     const myGeneration = generationRef.current;
 
-    const { narratorVoiceId, maleVoices, femaleVoices, dialogueSpeed } = settings;
+    const { dialogueSpeed } = settings;
+    const narratorVoiceId = voicePools.narratorVoiceId;
+    const maleVoices = voicePools.maleVoices;
+    const femaleVoices = voicePools.femaleVoices;
     const allProviderVoiceIds = new Set([
       ...(maleVoices || []).map((v) => v.voiceId),
       ...(femaleVoices || []).map((v) => v.voiceId),
@@ -1084,7 +1089,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       setHighlightInfo(null);
       setCurrentChunk(null);
     }
-  }, [settings, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, startHighlightLoop, stopHighlightLoop, fetchTts, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading]);
+  }, [settings, voicePools, state.characterVoiceMap, state.character, state.party, state.campaign, state.narratorVoiceId, viewerMode, dispatch, cleanup, startHighlightLoop, stopHighlightLoop, fetchTts, fetchTtsWithRecovery, hasApiKey, reportNarratorError, markSegmentLoading, unmarkSegmentLoading]);
 
   processStreamingQueueRef.current = processStreamingQueue;
 
@@ -1136,14 +1141,14 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     loadingSegmentIndices,
     isNarratorReady: viewerMode
       ? !!(
-          (state.narratorVoiceId || settings.narratorVoiceId)
+          (state.narratorVoiceId || voicePools.narratorVoiceId)
           && backendUrl
           && shareToken
         )
       : !!(
           settings.narratorEnabled
           && hasApiKey(settings.ttsProvider || 'elevenlabs')
-          && settings.narratorVoiceId
+          && voicePools.narratorVoiceId
         ),
     speak,
     speakScene,

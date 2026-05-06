@@ -2,7 +2,7 @@ import { repairDialogueSegments, ensurePlayerDialogue } from '../../services/aiR
 import { downgradeLowConfidenceDialogueSegments, hardRemoveNarrationDialogueRepeats } from '../../services/textSanitizer';
 import { demoteAnonymousDialogueSegments, normalizeIncomingDialogueSegments, enrichDialogueSpeakers, mergeNpcHintsFromDialogue } from '../../services/dialogueProcessor';
 
-export function processSceneDialogue(result, state, settings, dispatch, { isFirstScene, playerAction, isPassiveSceneAction }) {
+export function processSceneDialogue(result, state, settings, dispatch, { isFirstScene, playerAction, isPassiveSceneAction, voicePools: voicePoolsArg }) {
   const incomingDialogueSegments = normalizeIncomingDialogueSegments(result.dialogueSegments || []);
 
   const activeChar = state.party?.find(c => c.id === state.activeCharacterId) || state.character;
@@ -38,9 +38,9 @@ export function processSceneDialogue(result, state, settings, dispatch, { isFirs
     worldNpcs: state.world?.npcs || [],
     characterVoiceMap: state.characterVoiceMap || {},
     voicePools: {
-      maleVoices: settings.maleVoices || [],
-      femaleVoices: settings.femaleVoices || [],
-      narratorVoiceId: settings.narratorVoiceId || null,
+      maleVoices: voicePoolsArg?.maleVoices || [],
+      femaleVoices: voicePoolsArg?.femaleVoices || [],
+      narratorVoiceId: voicePoolsArg?.narratorVoiceId || null,
       ttsProvider: settings.ttsProvider || 'elevenlabs',
     },
     playerNames,

@@ -20,6 +20,7 @@ export default function GameplayModals({
   isMultiplayer,
   mpGameState,
   settings,
+  voicePools,
   dispatch,
   autoSave,
   narrator,
@@ -78,8 +79,8 @@ export default function GameplayModals({
           world={isMultiplayer ? mpGameState?.world : soloWorld}
           quests={isMultiplayer ? mpGameState?.quests : soloQuests}
           characterVoiceMap={characterVoiceMap}
-          maleVoices={settings.maleVoices}
-          femaleVoices={settings.femaleVoices}
+          maleVoices={voicePools.maleVoices}
+          femaleVoices={voicePools.femaleVoices}
           ttsProvider={settings.ttsProvider || 'elevenlabs'}
           dispatch={dispatch}
           autoSave={autoSave}

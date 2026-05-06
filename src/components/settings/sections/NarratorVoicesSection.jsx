@@ -2,6 +2,9 @@ import { useTranslation } from 'react-i18next';
 import Slider from '../../ui/Slider';
 import Toggle from '../../ui/Toggle';
 
+const tagBase =
+  'inline-flex items-center gap-1 max-w-full px-2.5 py-1 rounded-full text-xs font-medium border transition-colors shrink-0';
+
 export default function NarratorVoicesSection({
   settings,
   updateSettings,
@@ -90,37 +93,35 @@ export default function NarratorVoicesSection({
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {t('settings.narratorVoice', 'Narrator')}
             </label>
-            <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+            <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto custom-scrollbar pr-1 pb-0.5">
               {voices.map((voice) => {
                 const isNarrator = isNarratorVoice(voice.voiceId);
                 return (
-                  <div
-                    key={voice.voiceId}
-                    className={`w-full rounded-sm border flex items-center justify-between transition-all ${
-                      isNarrator
-                        ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                    }`}
-                  >
+                  <span key={voice.voiceId} className="inline-flex items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => onSelectNarratorVoice(voice)}
-                      className="flex-1 p-2 text-left font-headline text-sm"
+                      title={voice.name}
+                      className={`${tagBase} min-w-0 truncate ${
+                        isNarrator
+                          ? 'border-primary/35 bg-primary/10 text-primary shadow-[0_0_12px_rgba(197,154,255,0.12)]'
+                          : 'border-outline-variant/25 bg-surface-container-high/50 text-on-surface-variant hover:border-primary/25 hover:text-tertiary'
+                      }`}
                     >
-                      {voice.name}
+                      <span className="truncate">{voice.name}</span>
                     </button>
                     {isNarrator && (
                       <button
                         type="button"
                         onClick={() => onTestVoice(voice.voiceId)}
                         disabled={testingVoice}
-                        className="flex items-center gap-1 px-2 py-1 mr-1 text-[10px] font-bold uppercase text-primary hover:text-tertiary disabled:opacity-50"
+                        title={t('settings.testVoice')}
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40"
                       >
-                        <span className="material-symbols-outlined text-sm">play_arrow</span>
-                        {t('settings.testVoice')}
+                        <span className="material-symbols-outlined text-base leading-none">play_arrow</span>
                       </button>
                     )}
-                  </div>
+                  </span>
                 );
               })}
             </div>
@@ -130,21 +131,28 @@ export default function NarratorVoicesSection({
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {t('settings.maleVoices', 'Male NPC voices')} ({(settings.maleVoices || []).length})
             </label>
-            <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+            <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto custom-scrollbar pr-1 pb-0.5">
               {voices.map((voice) => {
                 const checked = isInPool(voice.voiceId, 'male');
                 return (
                   <button
                     key={voice.voiceId}
+                    type="button"
                     onClick={() => onToggleGenderPool(voice, 'male')}
-                    className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                    title={voice.name}
+                    className={`${tagBase} ${
                       checked
-                        ? 'bg-blue-500/10 border-blue-400/40 text-blue-200'
-                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-blue-400/30'
+                        ? 'border-blue-400/45 bg-blue-500/15 text-blue-100 ring-1 ring-blue-400/20'
+                        : 'border-outline-variant/25 bg-surface-container-high/50 text-on-surface-variant hover:border-blue-400/35'
                     }`}
                   >
-                    <span className="font-headline text-sm">♂ {voice.name}</span>
-                    {checked && <span className="material-symbols-outlined text-sm">check</span>}
+                    <span className="shrink-0 opacity-70">♂</span>
+                    <span className="truncate max-w-[11rem]">{voice.name}</span>
+                    {checked && (
+                      <span className="material-symbols-outlined text-[14px] shrink-0 leading-none text-blue-300">
+                        check
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -155,21 +163,28 @@ export default function NarratorVoicesSection({
             <label className="block text-[10px] text-on-surface-variant font-label uppercase tracking-widest mb-3">
               {t('settings.femaleVoices', 'Female NPC voices')} ({(settings.femaleVoices || []).length})
             </label>
-            <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+            <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto custom-scrollbar pr-1 pb-0.5">
               {voices.map((voice) => {
                 const checked = isInPool(voice.voiceId, 'female');
                 return (
                   <button
                     key={voice.voiceId}
+                    type="button"
                     onClick={() => onToggleGenderPool(voice, 'female')}
-                    className={`w-full p-2 rounded-sm border text-left flex items-center justify-between transition-all ${
+                    title={voice.name}
+                    className={`${tagBase} ${
                       checked
-                        ? 'bg-pink-500/10 border-pink-400/40 text-pink-200'
-                        : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-pink-400/30'
+                        ? 'border-pink-400/45 bg-pink-500/15 text-pink-100 ring-1 ring-pink-400/20'
+                        : 'border-outline-variant/25 bg-surface-container-high/50 text-on-surface-variant hover:border-pink-400/35'
                     }`}
                   >
-                    <span className="font-headline text-sm">♀ {voice.name}</span>
-                    {checked && <span className="material-symbols-outlined text-sm">check</span>}
+                    <span className="shrink-0 opacity-70">♀</span>
+                    <span className="truncate max-w-[11rem]">{voice.name}</span>
+                    {checked && (
+                      <span className="material-symbols-outlined text-[14px] shrink-0 leading-none text-pink-300">
+                        check
+                      </span>
+                    )}
                   </button>
                 );
               })}

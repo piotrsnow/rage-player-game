@@ -20,7 +20,7 @@ import {
 } from '../../../utils/readAloudExclusive';
 
 export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
-  const { settings, hasApiKey } = useSettings();
+  const { settings, hasApiKey, voicePools } = useSettings();
   const { state: gameState, dispatch } = useGame();
   const campaignId = useGameSlice((s) => s.campaign?.backendId) || null;
   const [state, setState] = useState('idle');
@@ -66,16 +66,16 @@ export function ReadAloudButton({ text, seg = null, scenePacing = null }) {
     const provider = settings.ttsProvider || 'elevenlabs';
     const voiceId = seg
       ? resolveSegmentVoice(seg, {
-          defaultVoiceId: settings.narratorVoiceId,
-          narratorVoiceId: settings.narratorVoiceId,
-          maleVoices: settings.maleVoices,
-          femaleVoices: settings.femaleVoices,
+          defaultVoiceId: voicePools.narratorVoiceId,
+          narratorVoiceId: voicePools.narratorVoiceId,
+          maleVoices: voicePools.maleVoices,
+          femaleVoices: voicePools.femaleVoices,
           characterVoiceMap: gameState.characterVoiceMap,
           ttsProvider: provider,
           viewerMode: false,
           dispatch,
         }).voiceId
-      : settings.narratorVoiceId;
+      : voicePools.narratorVoiceId;
     const hasTts = voiceId && hasApiKey(provider);
 
     if (!hasTts) {

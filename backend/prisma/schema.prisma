@@ -1431,3 +1431,14 @@ model TopicHistory {
 
   @@index([userId, createdAt(sort: Desc)])
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Server Settings — singleton row for global configuration (admin-only).
+// voiceConfig stores per-provider voice pools (ElevenLabs + XTTS).
+// ═══════════════════════════════════════════════════════════════════════
+
+model ServerSettings {
+  id          String   @id @default("singleton")
+  voiceConfig Json     @default("{}")
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+}

@@ -8,6 +8,7 @@ import { useXttsVoices } from '../../hooks/useXttsVoices';
 import NarratorVoicesSection from './sections/NarratorVoicesSection';
 import XttsVoicesSection from './sections/XttsVoicesSection';
 import { SfxSection, MusicSection } from './sections/AudioSections';
+import Toggle from '../ui/Toggle';
 
 const TTS_PROVIDERS = [
   { id: 'elevenlabs', icon: 'cloud', label: 'ElevenLabs' },
@@ -17,24 +18,28 @@ const TTS_PROVIDERS = [
 export default function AudioConfigModal({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
-  const { settings, updateSettings, hasApiKey, backendUser } = useSettings();
+  const {
+    settings, updateSettings, hasApiKey, backendUser,
+    globalVoiceConfig, updateGlobalVoiceConfig,
+  } = useSettings();
   const dispatch = useGameDispatch();
 
   const ttsProvider = settings.ttsProvider || 'elevenlabs';
+  const isAdmin = !!backendUser?.isAdmin;
+
+  const providerVoices = globalVoiceConfig[ttsProvider] || {};
 
   const handleSwitchProvider = (newProvider) => {
     if (newProvider === ttsProvider) return;
-    const oldProvider = ttsProvider;
-    const newPools = settings.voicesByProvider?.[newProvider] || {};
     updateSettings({ ttsProvider: newProvider });
     dispatch({
       type: 'SWITCH_CHARACTER_VOICE_PROVIDER',
       payload: {
-        oldProvider,
+        oldProvider: ttsProvider,
         newProvider,
-        maleVoices: newPools.maleVoices || [],
-        femaleVoices: newPools.femaleVoices || [],
-        narratorVoiceId: newPools.narratorVoiceId || null,
+        maleVoices: globalVoiceConfig[newProvider]?.maleVoices || [],
+        femaleVoices: globalVoiceConfig[newProvider]?.femaleVoices || [],
+        narratorVoiceId: globalVoiceConfig[newProvider]?.narratorVoiceId || null,
       },
     });
   };
@@ -43,69 +48,59 @@ export default function AudioConfigModal({ onClose }) {
   const xt = useXttsVoices({ language: settings.language });
 
   useEffect(() => {
+    if (!isAdmin) return;
     if (ttsProvider === 'elevenlabs' && hasApiKey('elevenlabs') && el.voices.length === 0 && !el.loadingVoices) {
       el.loadVoices();
     } else if (ttsProvider === 'xtts' && hasApiKey('xtts') && xt.voices.length === 0 && !xt.loadingVoices) {
       xt.loadVoices();
     }
-  }, [ttsProvider]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleLoadVoices = () => {
-    if (!hasApiKey('elevenlabs')) return;
-    return el.loadVoices();
-  };
+  }, [ttsProvider, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectNarratorVoice = (voice) => {
-    updateSettings({
+    updateGlobalVoiceConfig(ttsProvider, {
       narratorVoiceId: voice.voiceId,
       narratorVoiceName: voice.name,
+      maleVoices: providerVoices.maleVoices || [],
+      femaleVoices: providerVoices.femaleVoices || [],
     });
   };
 
   const handleToggleGenderPool = (voice, gender) => {
     const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
-    const current = settings[key] || [];
+    const current = providerVoices[key] || [];
     const exists = current.some((v) => v.voiceId === voice.voiceId);
-    if (exists) {
-      updateSettings({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
-    } else {
-      updateSettings({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
-    }
+    const updated = exists
+      ? current.filter((v) => v.voiceId !== voice.voiceId)
+      : [...current, { voiceId: voice.voiceId, voiceName: voice.name }];
+
+    updateGlobalVoiceConfig(ttsProvider, {
+      narratorVoiceId: providerVoices.narratorVoiceId || '',
+      narratorVoiceName: providerVoices.narratorVoiceName || '',
+      maleVoices: gender === 'male' ? updated : (providerVoices.maleVoices || []),
+      femaleVoices: gender === 'female' ? updated : (providerVoices.femaleVoices || []),
+    });
   };
 
   const handleTestVoice = (voiceIdOverride) => {
-    const voiceId = voiceIdOverride || settings.narratorVoiceId;
+    const voiceId = voiceIdOverride || providerVoices.narratorVoiceId;
     if (!voiceId || !hasApiKey('elevenlabs')) return;
     el.testVoice(voiceId);
   };
 
-  const handleLoadXttsVoices = () => {
-    if (!hasApiKey('xtts')) return;
-    return xt.loadVoices();
-  };
-
-  const handleXttsSelectNarrator = (voice) => {
-    updateSettings({
-      narratorVoiceId: voice.voiceId,
-      narratorVoiceName: voice.name,
-    });
-  };
-
-  const handleXttsToggleGenderPool = (voice, gender) => {
-    const key = gender === 'female' ? 'femaleVoices' : 'maleVoices';
-    const current = settings[key] || [];
-    const exists = current.some((v) => v.voiceId === voice.voiceId);
-    if (exists) {
-      updateSettings({ [key]: current.filter((v) => v.voiceId !== voice.voiceId) });
-    } else {
-      updateSettings({ [key]: [...current, { voiceId: voice.voiceId, voiceName: voice.name }] });
-    }
-  };
-
   const handleXttsTestVoice = (voiceIdOverride) => {
-    const voiceId = voiceIdOverride || settings.narratorVoiceId;
+    const voiceId = voiceIdOverride || providerVoices.narratorVoiceId;
     if (!voiceId || !hasApiKey('xtts')) return;
     xt.testVoice(voiceId);
+  };
+
+  const voiceSettingsForSection = {
+    narratorVoiceId: providerVoices.narratorVoiceId || '',
+    narratorVoiceName: providerVoices.narratorVoiceName || '',
+    maleVoices: providerVoices.maleVoices || [],
+    femaleVoices: providerVoices.femaleVoices || [],
+    narratorEnabled: settings.narratorEnabled,
+    narratorAutoPlay: settings.narratorAutoPlay,
+    dialogueSpeed: settings.dialogueSpeed,
   };
 
   return (
@@ -145,29 +140,31 @@ export default function AudioConfigModal({ onClose }) {
             </header>
 
             <section className="space-y-6 animate-fade-in">
-              <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm border-l border-tertiary/20">
-                <p className="font-headline text-tertiary mb-3">{t('settings.ttsProvider')}</p>
-                <div className="flex gap-2">
-                  {TTS_PROVIDERS.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleSwitchProvider(p.id)}
-                      className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border transition-all ${
-                        ttsProvider === p.id
-                          ? 'bg-surface-tint/10 border-primary/30 text-primary'
-                          : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-sm">{p.icon}</span>
-                      <span className="font-headline text-xs">{p.label}</span>
-                    </button>
-                  ))}
+              {isAdmin && (
+                <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm border-l border-tertiary/20">
+                  <p className="font-headline text-tertiary mb-3">{t('settings.ttsProvider')}</p>
+                  <div className="flex gap-2">
+                    {TTS_PROVIDERS.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleSwitchProvider(p.id)}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-sm border transition-all ${
+                          ttsProvider === p.id
+                            ? 'bg-surface-tint/10 border-primary/30 text-primary'
+                            : 'bg-surface-container-high/40 border-outline-variant/15 text-on-surface-variant hover:border-primary/20'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">{p.icon}</span>
+                        <span className="font-headline text-xs">{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {ttsProvider === 'elevenlabs' && (
+              {isAdmin && ttsProvider === 'elevenlabs' && (
                 <NarratorVoicesSection
-                  settings={settings}
+                  settings={voiceSettingsForSection}
                   updateSettings={updateSettings}
                   backendUser={backendUser}
                   hasApiKey={hasApiKey}
@@ -175,27 +172,57 @@ export default function AudioConfigModal({ onClose }) {
                   loadingVoices={el.loadingVoices}
                   voiceError={el.voiceError}
                   testingVoice={el.testingVoice}
-                  onLoadVoices={handleLoadVoices}
+                  onLoadVoices={() => hasApiKey('elevenlabs') && el.loadVoices()}
                   onSelectNarratorVoice={handleSelectNarratorVoice}
                   onToggleGenderPool={handleToggleGenderPool}
                   onTestVoice={handleTestVoice}
                 />
               )}
 
-              {ttsProvider === 'xtts' && (
+              {isAdmin && ttsProvider === 'xtts' && (
                 <XttsVoicesSection
-                  settings={settings}
+                  settings={voiceSettingsForSection}
                   updateSettings={updateSettings}
                   hasApiKey={hasApiKey}
                   voices={xt.voices}
                   loadingVoices={xt.loadingVoices}
                   voiceError={xt.voiceError}
                   testingVoice={xt.testingVoice}
-                  onLoadVoices={handleLoadXttsVoices}
-                  onSelectNarratorVoice={handleXttsSelectNarrator}
-                  onToggleGenderPool={handleXttsToggleGenderPool}
+                  onLoadVoices={() => hasApiKey('xtts') && xt.loadVoices()}
+                  onSelectNarratorVoice={handleSelectNarratorVoice}
+                  onToggleGenderPool={handleToggleGenderPool}
                   onTestVoice={handleXttsTestVoice}
                 />
+              )}
+
+              {!isAdmin && (
+                <div className="bg-surface-container-high/60 backdrop-blur-xl p-8 rounded-sm border-l border-tertiary/20">
+                  <h2 className="font-headline text-xl text-tertiary mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary-dim">record_voice_over</span>
+                    {t('settings.narrator')}
+                  </h2>
+                  <div className="space-y-4 mt-4">
+                    <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+                      <p className="font-headline text-tertiary text-sm">{t('settings.narratorEnabled')}</p>
+                      <Toggle
+                        checked={!!settings.narratorEnabled}
+                        onClick={() => updateSettings({ narratorEnabled: !settings.narratorEnabled })}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-surface-container-high/40 rounded-sm border-b border-outline-variant/15">
+                      <div>
+                        <p className="font-headline text-tertiary text-sm">{t('settings.narratorAutoPlay')}</p>
+                        <p className="text-[10px] text-on-surface-variant font-label uppercase tracking-widest mt-1">
+                          {t('settings.narratorAutoPlayDesc')}
+                        </p>
+                      </div>
+                      <Toggle
+                        checked={!!settings.narratorAutoPlay}
+                        onClick={() => updateSettings({ narratorAutoPlay: !settings.narratorAutoPlay })}
+                      />
+                    </div>
+                  </div>
+                </div>
               )}
 
               <SfxSection settings={settings} updateSettings={updateSettings} />

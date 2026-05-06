@@ -47,6 +47,7 @@ function speakBrowserTts(text, { language, dialogueSpeed }) {
  */
 export function useSummary({
   settings,
+  voicePools,
   narrator,
   openSettings,
   t,
@@ -255,10 +256,10 @@ export function useSummary({
       return [{ type: 'narration', text: normalized }];
     }
 
-    const fallbackVoiceId = settings.narratorVoiceId || null;
+    const fallbackVoiceId = voicePools?.narratorVoiceId || null;
     const voicePool = [
-      ...(settings.maleVoices || []),
-      ...(settings.femaleVoices || []),
+      ...(voicePools?.maleVoices || []),
+      ...(voicePools?.femaleVoices || []),
     ].map((voice) => voice?.voiceId).filter(Boolean);
     const shuffledVoices = shuffleArray(voicePool);
     const speakerVoiceMap = new Map();
@@ -293,7 +294,7 @@ export function useSummary({
         voiceId: assignVoice(parsed.speaker),
       };
     });
-  }, [settings.maleVoices, settings.femaleVoices, settings.narratorVoiceId]);
+  }, [voicePools?.maleVoices, voicePools?.femaleVoices, voicePools?.narratorVoiceId]);
 
   const speakSummary = useCallback((textToRead = summaryText, wordOffset = 0) => {
     const normalizedText = typeof textToRead === 'string' ? textToRead.trim() : '';

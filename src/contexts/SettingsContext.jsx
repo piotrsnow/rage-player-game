@@ -69,6 +69,12 @@ function mergeSettingsWithDefaults(source) {
   delete merged.geminiApiKey;
   delete merged.meshyApiKey;
   delete merged.imageGenEnabled;
+  // Voice pools moved to global ServerSettings — strip per-user leftovers.
+  delete merged.narratorVoiceId;
+  delete merged.narratorVoiceName;
+  delete merged.maleVoices;
+  delete merged.femaleVoices;
+  delete merged.voicesByProvider;
   return merged;
 }
 
@@ -92,10 +98,6 @@ const defaultSettings = {
   imagePromptCustomStyleEnabled: false,
   imagePromptCustomStyle: '',
   language: 'pl',
-  narratorVoiceId: '',
-  narratorVoiceName: '',
-  maleVoices: [],
-  femaleVoices: [],
   narratorEnabled: false,
   narratorAutoPlay: true,
   dialogueSpeed: 100,
@@ -117,7 +119,6 @@ const defaultSettings = {
   aiModel: '',
   meshyEnabled: false,
   ttsProvider: 'elevenlabs',
-  voicesByProvider: {},
   sceneTtsTier: 'none',
   sceneImageTier: 'none',
   autoPlayer: {
@@ -164,6 +165,7 @@ export function SettingsProvider({ children }) {
   });
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
+  const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
   const [backendUser, setBackendUser] = useState(null);
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
@@ -265,9 +267,29 @@ export function SettingsProvider({ children }) {
     }
   }, []);
 
+  const fetchGlobalVoiceConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setGlobalVoiceConfig({});
+      return;
+    }
+    try {
+      const config = await apiClient.get('/voice-settings');
+      setGlobalVoiceConfig(config || {});
+    } catch {
+      setGlobalVoiceConfig({});
+    }
+  }, []);
+
+  const updateGlobalVoiceConfig = useCallback(async (provider, data) => {
+    const result = await apiClient.put('/voice-settings', { provider, ...data });
+    setGlobalVoiceConfig(result || {});
+    return result;
+  }, []);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && backendUser) {
       fetchBackendKeys();
+      fetchGlobalVoiceConfig();
       // Hydrate account settings whenever a user lands on this provider — on
       // cookie-bootstrap, login, and register. backendLogin/Register also
       // call this directly (after legacy migration); the duplicate is cheap
@@ -275,7 +297,7 @@ export function SettingsProvider({ children }) {
       loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -336,33 +358,7 @@ export function SettingsProvider({ children }) {
   }, [loadFromAccount]);
 
   const updateSettings = useCallback((updates) => {
-    setSettings((prev) => {
-      if (updates.ttsProvider && updates.ttsProvider !== prev.ttsProvider) {
-        const oldProvider = prev.ttsProvider || 'elevenlabs';
-        const newProvider = updates.ttsProvider;
-        const savedByProvider = { ...(prev.voicesByProvider || {}) };
-
-        savedByProvider[oldProvider] = {
-          narratorVoiceId: prev.narratorVoiceId,
-          narratorVoiceName: prev.narratorVoiceName,
-          maleVoices: prev.maleVoices,
-          femaleVoices: prev.femaleVoices,
-        };
-
-        const restored = savedByProvider[newProvider] || {};
-
-        return {
-          ...prev,
-          ...updates,
-          voicesByProvider: savedByProvider,
-          narratorVoiceId: restored.narratorVoiceId || '',
-          narratorVoiceName: restored.narratorVoiceName || '',
-          maleVoices: restored.maleVoices || [],
-          femaleVoices: restored.femaleVoices || [],
-        };
-      }
-      return { ...prev, ...updates };
-    });
+    setSettings((prev) => ({ ...prev, ...updates }));
   }, []);
 
   const updateDMSettings = useCallback((updates) => {
@@ -426,8 +422,18 @@ export function SettingsProvider({ children }) {
     setBackendAuthChecking(false);
   }, []);
 
+  const activeProvider = settings.ttsProvider || 'elevenlabs';
+  const activeVoices = globalVoiceConfig[activeProvider] || {};
+  const voicePools = {
+    narratorVoiceId: activeVoices.narratorVoiceId || '',
+    narratorVoiceName: activeVoices.narratorVoiceName || '',
+    maleVoices: activeVoices.maleVoices || [],
+    femaleVoices: activeVoices.femaleVoices || [],
+  };
+
   const value = {
     settings,
+    voicePools,
     updateSettings,
     updateDMSettings,
     updateAutoPlayerSettings,
@@ -437,6 +443,9 @@ export function SettingsProvider({ children }) {
     hasApiKey,
     backendKeys,
     fetchBackendKeys,
+    globalVoiceConfig,
+    fetchGlobalVoiceConfig,
+    updateGlobalVoiceConfig,
     loadFromAccount,
     backendUser,
     backendAuthChecking,
