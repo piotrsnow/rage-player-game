@@ -169,6 +169,7 @@ model Character {
 
   badgeSummary   String?
   badgeLegend    String?
+  badgeSnark     String?
   badgeUpdatedAt DateTime? @db.Timestamptz
   fame          Int    @default(0)
   infamy        Int    @default(0)

@@ -1191,7 +1191,10 @@
     "amountRange": "Amount must be between $1 and $100",
     "checkoutFailed": "Checkout failed",
     "success": "Top-up completed successfully!",
-    "footer": "Payments processed by Stripe. Amounts in USD."
+    "footer": "Payments processed by Stripe. Amounts in USD.",
+    "billingPortal": "Invoices & payment history",
+    "billingPortalHint": "Opens a secure Stripe page",
+    "billingPortalFailed": "Could not open billing portal"
   },
   "sceneCost": {
     "title": "Scene cost",

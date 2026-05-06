@@ -105,6 +105,7 @@ export async function creditsRoutes(fastify) {
         },
         quantity: 1,
       }],
+      invoice_creation: { enabled: true },
       metadata: { userId: user.id, amountCents: String(amountCents) },
       success_url: `${origin}/?credits=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?credits=cancel`,
@@ -151,6 +152,28 @@ export async function creditsRoutes(fastify) {
     });
 
     return { credits: user?.credits ?? 0, credited };
+  });
+
+  // Requires Customer Portal enabled in Stripe Dashboard:
+  // Settings → Customer portal → enable + check "Invoice history".
+  fastify.post('/billing-portal', async (request, reply) => {
+    const stripe = getStripe();
+
+    const user = await prisma.user.findUnique({
+      where: { id: request.user.id },
+      select: { id: true, email: true, stripeCustomerId: true },
+    });
+    if (!user) return reply.code(404).send({ error: 'User not found' });
+
+    const customerId = await getOrCreateStripeCustomer(stripe, user);
+    const origin = request.headers.origin || request.headers.referer?.replace(/\/+$/, '') || config.corsOrigin;
+
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: origin,
+    });
+
+    return { url: portalSession.url };
   });
 }
 

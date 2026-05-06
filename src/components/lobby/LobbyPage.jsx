@@ -435,16 +435,7 @@ export default function LobbyPage() {
         {/* Logged in — single column: badge, then buttons */}
         {isLoggedIn && (
           <div className="w-full max-w-2xl flex flex-col items-center gap-5">
-            <AuthPanel
-              campaigns={campaigns}
-              onLoadCampaign={handleLoad}
-              loadingCampaignId={loadingCampaignId}
-              showDeleteConfirm={showDeleteConfirm}
-              onDeleteCampaign={(id) =>
-                showDeleteConfirm === id ? handleDelete(id) : setShowDeleteConfirm(id)
-              }
-              onShowAllCampaigns={() => setShowAllCampaigns(true)}
-            />
+            <AuthPanel />
 
             {!hasServerAi && (
               <div
