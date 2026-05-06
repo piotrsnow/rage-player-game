@@ -17,6 +17,7 @@ import { apiClient } from '../../services/apiClient';
 import StatusBar from '../ui/StatusBar';
 import NeedsPanel from '../gameplay/NeedsPanel';
 import SidebarPartyList from './SidebarPartyList';
+import SidebarAiCallLog from './SidebarAiCallLog';
 
 const SIDEBAR_PLAY_SURFACE_STYLE = {
   background: `
@@ -148,6 +149,7 @@ Opisz bardzo konkretne konsekwencje tej decyzji dla fabuły: relacji, zasobów, 
           />
         </div>
         <SidebarPartyList party={party} activeCharacterId={activeId} isMultiplayer={isMultiplayer} />
+        <SidebarAiCallLog />
       </div>
     </aside>
   );
