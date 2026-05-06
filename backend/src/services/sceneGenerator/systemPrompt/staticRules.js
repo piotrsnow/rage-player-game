@@ -66,6 +66,8 @@ Before emitting stateChanges, mentally run this checklist against the narrative 
   3. NPCs — disposition shift, introduction, or location change for any NPC named in the scene?
   4. Items / Money — did the narrative describe ANY transfer? stateChanges MUST match.
   5. Location — did the player move?
+  6. Wounds — did any healing or non-combat damage happen? Emit woundsChange (positive=healing, negative=damage). Potion/herb → +3-5, rest/sleep → +2-4, magical healing/ritual → +5-10. If a consumable was used, ALSO emit removeItems.
+  7. Mana — was a spell cast or mana restored? Casting → manaChange NEGATIVE (spell cost 1-5). Rest/meditation/potion → manaChange POSITIVE (short rest +2-3, full rest = full pool, mana potion +3-5). Also emit spellUsage:{"SpellName":1} for each spell cast.
 Emit stateChanges reflecting ALL of the above. Empty fields are OK only when the answer is genuinely "no".
 
 - timeAdvance: ALWAYS include {hoursElapsed: decimal}. Quick=0.25, action/combat=0.5, exploration=0.75-1, rest=2-4, sleep=6-8.
@@ -158,6 +160,9 @@ export function responseFormatBlock(language) {
     "removeItems": [],
     "rewards": [{"type":"","rarity":"","quantity":"","context":""}],
     "moneyChange": null,
+    "woundsChange": null,
+    "manaChange": null,
+    "spellUsage": null,
     "skillsUsed": [],
     "actionDifficulty": "easy|medium|hard|veryHard|extreme",
     "learnSpell": null,

@@ -75,6 +75,17 @@ export function buildConditionalRules({ intent, coreState, scenePhase = null, li
     );
   }
 
+  const mana = character.mana || { current: 0, max: 0 };
+  if (mana.max > 0) {
+    rules.push(
+      `MANA RULES:\n` +
+      `- Spell cost: emit manaChange with NEGATIVE delta (−1 cantrip, −2 basic, −3 advanced, −5 powerful).\n` +
+      `- If mana.current (${mana.current}) < spell cost, narrate failure — insufficient mana. Do NOT emit the spell effect.\n` +
+      `- Mana restore: rest/meditation/potion → manaChange POSITIVE. Short rest +2-3, full rest = full pool, mana potion +3-5.\n` +
+      `- spellUsage: {"SpellName": 1} for every spell cast — tracks progression.`,
+    );
+  }
+
   // Location-policy slots — added ONLY when the player is somewhere a slot
   // makes sense. Settlement / canonical-subloc → sublocation creation. Inside
   // a dungeon_room → currentLocation reassignment to the next room. Anywhere
