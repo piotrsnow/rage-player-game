@@ -191,3 +191,131 @@ function mapNodeType(type) {
   if (lower === 'area' || lower === 'region') return 'wilderness';
   return 'generic';
 }
+
+// ── Campaign graph consistency report ────────────────────────────────
+//
+// Returns { errors: [], warnings: [], info: [] } with structured entries.
+
+/**
+ * Run a full consistency check for a campaign's location graph.
+ * Returns { errors: [{msg, type, data}], warnings: [...], info: [...] }.
+ */
+export async function runGraphConsistencyCheck(campaignId) {
+  const report = { errors: [], warnings: [], info: [] };
+
+  const [edges, npcs, worldLocs, campaignLocs] = await Promise.all([
+    prisma.locationEdge.findMany({
+      where: { isActive: true, OR: [{ campaignId: null }, { campaignId }] },
+      select: { id: true, fromKind: true, fromId: true, toKind: true, toId: true, edgeType: true, category: true, bidirectional: true },
+    }),
+    prisma.campaignNPC.findMany({
+      where: { campaignId },
+      select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
+    }),
+    prisma.worldLocation.findMany({ select: { id: true } }),
+    prisma.campaignLocation.findMany({ where: { campaignId }, select: { id: true } }),
+  ]);
+
+  const validNodes = new Set();
+  for (const r of worldLocs) validNodes.add(`${LOCATION_KIND_WORLD}:${r.id}`);
+  for (const r of campaignLocs) validNodes.add(`${LOCATION_KIND_CAMPAIGN}:${r.id}`);
+
+  // Check: NPCs at non-existent/deactivated locations
+  for (const npc of npcs) {
+    if (!npc.lastLocationKind || !npc.lastLocationId) continue;
+    const key = `${npc.lastLocationKind}:${npc.lastLocationId}`;
+    if (!validNodes.has(key)) {
+      report.errors.push({
+        type: 'npc_orphan_location',
+        msg: `NPC "${npc.name}" points to non-existent location ${key}`,
+        data: { npcId: npc.id, npcName: npc.name, locationKey: key },
+      });
+    }
+  }
+
+  // Check: orphan nodes (no edges at all)
+  const connectedNodes = new Set();
+  for (const e of edges) {
+    connectedNodes.add(`${e.fromKind}:${e.fromId}`);
+    connectedNodes.add(`${e.toKind}:${e.toId}`);
+  }
+  for (const key of validNodes) {
+    if (!connectedNodes.has(key)) {
+      report.info.push({
+        type: 'orphan_node',
+        msg: `Location ${key} has no edges`,
+        data: { locationKey: key },
+      });
+    }
+  }
+
+  // Check: one-directional movement edges that should likely be bidirectional
+  const movementEdgeKeys = new Map();
+  for (const e of edges) {
+    if (e.category !== 'movement') continue;
+    const fwd = `${e.fromKind}:${e.fromId}→${e.toKind}:${e.toId}`;
+    const rev = `${e.toKind}:${e.toId}→${e.fromKind}:${e.fromId}`;
+    movementEdgeKeys.set(fwd, e);
+    if (!e.bidirectional) {
+      const reverseExists = edges.some(
+        (o) => o.category === 'movement' && o.fromKind === e.toKind && o.fromId === e.toId
+          && o.toKind === e.fromKind && o.toId === e.fromId,
+      );
+      const shouldBeBidi = ['path_to', 'road_to', 'door_to', 'stairs_to', 'tunnel_to', 'bridge_to', 'ferry_to', 'dangerous_path_to'];
+      if (!reverseExists && shouldBeBidi.includes(e.edgeType)) {
+        report.warnings.push({
+          type: 'unidirectional_movement',
+          msg: `Movement edge ${e.edgeType} (${fwd}) is one-way but type suggests bidirectional`,
+          data: { edgeId: e.id, edgeType: e.edgeType, from: `${e.fromKind}:${e.fromId}`, to: `${e.toKind}:${e.toId}` },
+        });
+      }
+    }
+  }
+
+  // Check: containment hierarchy loops (A contains B contains A)
+  const containsEdges = edges.filter((e) => e.edgeType === 'contains');
+  const parentMap = new Map();
+  for (const e of containsEdges) {
+    const childKey = `${e.toKind}:${e.toId}`;
+    parentMap.set(childKey, `${e.fromKind}:${e.fromId}`);
+  }
+  for (const [child, parent] of parentMap) {
+    const visited = new Set([child]);
+    let cur = parent;
+    let loopDetected = false;
+    while (cur) {
+      if (visited.has(cur)) { loopDetected = true; break; }
+      visited.add(cur);
+      cur = parentMap.get(cur) || null;
+    }
+    if (loopDetected) {
+      report.errors.push({
+        type: 'containment_loop',
+        msg: `Containment loop detected involving ${child}`,
+        data: { startNode: child },
+      });
+    }
+  }
+
+  // Check: edges pointing to non-existent nodes
+  for (const e of edges) {
+    const fromKey = `${e.fromKind}:${e.fromId}`;
+    const toKey = `${e.toKind}:${e.toId}`;
+    if (!validNodes.has(fromKey)) {
+      report.warnings.push({
+        type: 'edge_dangling_from',
+        msg: `Edge ${e.id} from-node ${fromKey} does not exist`,
+        data: { edgeId: e.id, nodeKey: fromKey },
+      });
+    }
+    if (!validNodes.has(toKey)) {
+      report.warnings.push({
+        type: 'edge_dangling_to',
+        msg: `Edge ${e.id} to-node ${toKey} does not exist`,
+        data: { edgeId: e.id, nodeKey: toKey },
+      });
+    }
+  }
+
+  return report;
+}

@@ -96,6 +96,9 @@ async function applyCampaignLocationState(campaignId, locationKind, locationId, 
  *  - `world` (default for back-compat): account-level UserDiscoveredLocation.
  *  - `campaign`: per-campaign CampaignDiscoveredLocation.
  *
+ * Also promotes discoveryState of outgoing edges FROM this location to 'known'
+ * (if they were 'unknown'), so the player learns about potential exits.
+ *
  * Idempotent — silent on failure (discovery must never block scene flow).
  */
 export async function markLocationDiscovered({
@@ -108,10 +111,21 @@ export async function markLocationDiscovered({
   try {
     if (locationKind === LOCATION_KIND_WORLD) {
       await applyUserLocationState(userId, locationId, 'visited');
-      return;
+    } else {
+      if (!campaignId) return;
+      await applyCampaignLocationState(campaignId, locationKind, locationId, 'visited');
     }
-    if (!campaignId) return;
-    await applyCampaignLocationState(campaignId, locationKind, locationId, 'visited');
+
+    // Promote outgoing edges from this location: unknown → known
+    await prisma.locationEdge.updateMany({
+      where: {
+        fromKind: locationKind,
+        fromId: locationId,
+        discoveryState: 'unknown',
+        isActive: true,
+      },
+      data: { discoveryState: 'known' },
+    }).catch(() => {});
   } catch (err) {
     log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationDiscovered failed');
   }
@@ -138,6 +152,29 @@ export async function markLocationHeardAbout({
     await applyCampaignLocationState(campaignId, locationKind, locationId, 'heard_about');
   } catch (err) {
     log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationHeardAbout failed');
+  }
+}
+
+/**
+ * Mark LocationEdge rows between two locations as 'visited' when the player
+ * traverses them. Bidirectional edges get both directions marked.
+ */
+export async function markLocationEdgeTraversed({ fromKind, fromId, toKind, toId }) {
+  if (!fromKind || !fromId || !toKind || !toId) return;
+  try {
+    await prisma.locationEdge.updateMany({
+      where: {
+        isActive: true,
+        category: 'movement',
+        OR: [
+          { fromKind, fromId, toKind, toId },
+          { fromKind: toKind, fromId: toId, toKind: fromKind, toId: fromId, bidirectional: true },
+        ],
+      },
+      data: { discoveryState: 'visited' },
+    });
+  } catch (err) {
+    log.warn({ err: err?.message, fromKind, fromId, toKind, toId }, 'markLocationEdgeTraversed failed');
   }
 }
 

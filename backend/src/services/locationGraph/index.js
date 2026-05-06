@@ -11,5 +11,6 @@ export {
 
 export { buildNarrativeContext, buildExtractionContext } from './graphContextBuilder.js';
 export { extractGraphUpdate } from './graphExtractor.js';
-export { validateGraphUpdate, applyGraphUpdate } from './graphValidator.js';
+export { validateGraphUpdate, applyGraphUpdate, runGraphConsistencyCheck } from './graphValidator.js';
 export { seedEdgesFromExistingData } from './seedEdges.js';
+export { migrateExistingCampaignGraph } from './migrateExistingCampaign.js';

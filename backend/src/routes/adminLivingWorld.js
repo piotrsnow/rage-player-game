@@ -19,6 +19,7 @@ import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampa
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
+import { migrateExistingCampaignGraph, runGraphConsistencyCheck } from '../services/locationGraph/index.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -1025,6 +1026,43 @@ export async function adminLivingWorldRoutes(fastify) {
       return { ok: true, campaign, result };
     } catch (err) {
       log.error({ err, campaignId: id }, 'run-writeback failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Location Graph migration + validation ────────────────────────────
+
+  fastify.post('/campaigns/:id/migrate-graph', guard({
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+      const result = await migrateExistingCampaignGraph(id);
+      log.info({ campaignId: id, triggeredBy: request.user?.email || request.user?.id }, 'Admin-triggered graph migration');
+      return { ok: true, campaign, result };
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'migrate-graph failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.get('/campaigns/:id/graph-health', guard(), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+      const report = await runGraphConsistencyCheck(id);
+      return { ok: true, campaign, report };
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'graph-health failed');
       return reply.code(500).send({ error: err.message });
     }
   });

@@ -8,8 +8,11 @@ const log = childLogger({ module: 'graphContextBuilder' });
  * Build a lean ~400 token context block for the premium narrative model.
  * Gives the LLM spatial awareness (exits, NPCs, perception hints) without
  * the burden of graph update rules or taxonomy.
+ *
+ * @param {object} options
+ * @param {boolean} options.gmMode  If true, show all edges regardless of discovery state.
  */
-export async function buildNarrativeContext(locationId, locationKind, campaignId) {
+export async function buildNarrativeContext(locationId, locationKind, campaignId, { gmMode = false } = {}) {
   try {
     const { nodes, edges } = await loadSubgraph(locationKind, locationId, { campaignId, hops: 1 });
     const currentNode = nodes.get(`${locationKind}:${locationId}`);
@@ -21,9 +24,13 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
 
     const myKey = `${locationKind}:${locationId}`;
 
+    // Filter: only show edges the character knows about (at least 'known')
+    const isVisible = (e) => gmMode || !e.discoveryState || e.discoveryState !== 'unknown';
+
     // Movement exits
     const movementEdges = edges.filter(
-      (e) => e.category === 'movement' && (keyOf(e, 'from') === myKey || (e.bidirectional && keyOf(e, 'to') === myKey)),
+      (e) => e.category === 'movement' && isVisible(e)
+        && (keyOf(e, 'from') === myKey || (e.bidirectional && keyOf(e, 'to') === myKey)),
     );
     if (movementEdges.length > 0) {
       lines.push('Exits:');
@@ -37,18 +44,23 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
       }
     }
 
-    // Perception hints
+    // Perception subsection — natural Polish formatting
     const perceptionEdges = edges.filter(
-      (e) => e.category === 'perception' && keyOf(e, 'from') === myKey,
+      (e) => e.category === 'perception' && isVisible(e)
+        && (keyOf(e, 'from') === myKey || keyOf(e, 'to') === myKey),
     );
     if (perceptionEdges.length > 0) {
-      lines.push('Perception:');
-      for (const e of perceptionEdges.slice(0, 4)) {
-        const targetKey = keyOf(e, 'to');
+      const hints = [];
+      for (const e of perceptionEdges.slice(0, 6)) {
+        const targetKey = keyOf(e, 'from') === myKey ? keyOf(e, 'to') : keyOf(e, 'from');
         const target = nodes.get(targetKey);
         const targetName = target?.canonicalName || target?.displayName || target?.name || targetKey;
-        const detail = e.metadata?.loudness || e.metadata?.clarity || '';
-        lines.push(`  - ${e.edgeType}: ${targetName}${detail ? ` (${detail})` : ''}`);
+        const verb = PERCEPTION_VERBS[e.edgeType] || e.edgeType;
+        const detail = e.metadata?.detail || e.metadata?.loudness || e.metadata?.clarity || '';
+        hints.push(`${verb} ${targetName}${detail ? ` (${detail})` : ''}`);
+      }
+      if (hints.length > 0) {
+        lines.push(`Perception (z tego miejsca): ${hints.join('; ')}.`);
       }
     }
 
@@ -65,6 +77,12 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
     return null;
   }
 }
+
+const PERCEPTION_VERBS = {
+  visible_from: 'widać',
+  audible_from: 'słychać',
+  smell_from: 'czuć zapach',
+};
 
 /**
  * Build a broad ~2-4k token context block for the graph extraction model.

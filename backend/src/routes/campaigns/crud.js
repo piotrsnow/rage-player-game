@@ -25,6 +25,7 @@ import { resolveLocationByName } from '../../services/livingWorld/worldStateServ
 import { consumeStartSpawn, peekStartSpawn } from '../../services/livingWorld/startSpawnCache.js';
 import { applyInitialLocations } from '../../services/livingWorld/initialLocationsResolver.js';
 import { unpackWorldBounds } from '../../services/locationRefs.js';
+import { seedEdgesFromExistingData } from '../../services/locationGraph/index.js';
 import { CAMPAIGN_WRITE_SCHEMA } from './schemas.js';
 
 const log = childLogger({ module: 'campaigns' });
@@ -217,6 +218,11 @@ export async function crudCampaignRoutes(app) {
       } catch (err) {
         log.error({ err: err?.message, campaignId: campaign.id }, 'seedInitialWorld failed');
       }
+
+      // Seed location graph edges from existing Roads + parent hierarchy
+      seedEdgesFromExistingData().catch((err) =>
+        log.warn({ err: err?.message, campaignId: campaign.id }, 'seedEdgesFromExistingData failed (non-fatal)'),
+      );
     }
 
     // Round B+ — apply AI-emitted initialLocations into the campaign sandbox

@@ -21,6 +21,8 @@ import {
   processWorldImpactEvent,
   processCampaignComplete,
 } from './livingWorld.js';
+import { createEdge } from '../../locationGraph/graphService.js';
+import { markLocationEdgeTraversed } from '../../livingWorld/userDiscoveryService.js';
 
 // Re-exported so existing test file processStateChanges.test.js keeps
 // working via `import { shouldPromoteToGlobal } from './processStateChanges.js'`.
@@ -189,6 +191,48 @@ export async function processStateChanges(campaignId, stateChanges, { prevLoc = 
       }
       if (updates) {
         await prisma.campaign.update({ where: { id: campaignId }, data: updates });
+
+        // Auto-create movement edge between old and new location (if both resolved).
+        if (updates.currentLocationKind && updates.currentLocationId && currentRef?.kind && currentRef?.id) {
+          const fromKey = `${currentRef.kind}:${currentRef.id}`;
+          const toKey = `${updates.currentLocationKind}:${updates.currentLocationId}`;
+          if (fromKey !== toKey) {
+            try {
+              const existing = await prisma.locationEdge.findFirst({
+                where: {
+                  fromKind: currentRef.kind, fromId: currentRef.id,
+                  toKind: updates.currentLocationKind, toId: updates.currentLocationId,
+                  category: 'movement', isActive: true,
+                },
+              });
+              if (!existing) {
+                await createEdge({
+                  fromKind: currentRef.kind,
+                  fromId: currentRef.id,
+                  toKind: updates.currentLocationKind,
+                  toId: updates.currentLocationId,
+                  edgeType: 'path_to',
+                  category: 'movement',
+                  bidirectional: true,
+                  weight: 1.0,
+                  metadata: { autoCreated: true },
+                  discoveryState: 'visited',
+                  campaignId,
+                  createdBy: 'system',
+                });
+              }
+              // Mark traversed edges as 'visited' in discoveryState
+              await markLocationEdgeTraversed({
+                fromKind: currentRef.kind,
+                fromId: currentRef.id,
+                toKind: updates.currentLocationKind,
+                toId: updates.currentLocationId,
+              });
+            } catch (edgeErr) {
+              log.debug({ err: edgeErr?.message, campaignId }, 'Auto-edge creation failed (non-fatal)');
+            }
+          }
+        }
       }
     } catch (err) {
       log.warn({ err: err?.message, campaignId, aiName, aiX, aiY }, 'currentLocation resolve/update failed');

@@ -74,6 +74,20 @@ async function replaceNpcRelationships(campaignNpcId, relationships, prismaClien
 export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled = false, sceneIndex = null } = {}) {
   const affectedNpcIds = [];
 
+  // Lazy-loaded campaign location ref for NPC location enforcement.
+  let _campaignLocRef = undefined;
+  async function getCampaignLocationRef() {
+    if (_campaignLocRef !== undefined) return _campaignLocRef;
+    const row = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { currentLocationKind: true, currentLocationId: true },
+    });
+    _campaignLocRef = (row?.currentLocationKind && row?.currentLocationId)
+      ? { kind: row.currentLocationKind, id: row.currentLocationId }
+      : null;
+    return _campaignLocRef;
+  }
+
   for (const npcChange of npcs) {
     if (!npcChange.name) continue;
 
@@ -178,6 +192,9 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
         const stats = npcChange.statsOverride ? mergeSheetOverride(baseline, npcChange.statsOverride) : baseline;
 
         try {
+          // NPC location enforcement: default to campaign's current location
+          // when the AI doesn't specify where the NPC is.
+          const locRef = await getCampaignLocationRef();
           const created = await prisma.campaignNPC.create({
             data: {
               campaignId,
@@ -192,6 +209,8 @@ export async function processNpcChanges(campaignId, npcs, { livingWorldEnabled =
               creatureKind: stats.creatureKind,
               level: stats.level,
               stats,
+              lastLocationKind: locRef?.kind || null,
+              lastLocationId: locRef?.id || null,
               ...initialInteractionFields(sceneIndex),
             },
           });
