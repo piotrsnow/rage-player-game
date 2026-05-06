@@ -150,6 +150,55 @@
   animation: sidebarBreath 8s ease-in-out infinite;
 }
 
+.sidebar-torn-edge {
+  clip-path: polygon(
+    0 0,
+    100% 0%,
+    calc(100% - 3px) 2.5%,
+    100% 5%,
+    calc(100% - 5px) 7.5%,
+    calc(100% - 1px) 10%,
+    calc(100% - 4px) 12.5%,
+    100% 15%,
+    calc(100% - 6px) 17.5%,
+    calc(100% - 2px) 20%,
+    calc(100% - 5px) 22.5%,
+    100% 25%,
+    calc(100% - 3px) 27.5%,
+    calc(100% - 6px) 30%,
+    calc(100% - 1px) 32.5%,
+    calc(100% - 4px) 35%,
+    100% 37.5%,
+    calc(100% - 5px) 40%,
+    calc(100% - 2px) 42.5%,
+    calc(100% - 6px) 45%,
+    100% 47.5%,
+    calc(100% - 3px) 50%,
+    calc(100% - 5px) 52.5%,
+    100% 55%,
+    calc(100% - 4px) 57.5%,
+    calc(100% - 1px) 60%,
+    calc(100% - 6px) 62.5%,
+    calc(100% - 2px) 65%,
+    100% 67.5%,
+    calc(100% - 5px) 70%,
+    calc(100% - 3px) 72.5%,
+    100% 75%,
+    calc(100% - 6px) 77.5%,
+    calc(100% - 4px) 80%,
+    calc(100% - 1px) 82.5%,
+    100% 85%,
+    calc(100% - 5px) 87.5%,
+    calc(100% - 2px) 90%,
+    calc(100% - 6px) 92.5%,
+    100% 95%,
+    calc(100% - 3px) 97.5%,
+    100% 100%,
+    0 100%
+  );
+  filter: drop-shadow(6px 0 24px rgba(0, 0, 0, 0.5));
+}
+
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
