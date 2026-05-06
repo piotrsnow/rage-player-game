@@ -58,7 +58,7 @@ function ReadAloudButton({ text, lang = 'pl' }) {
     const attemptId = claimExclusiveReadAloud();
     lastAttemptRef.current = attemptId;
 
-    const provider = settings.ttsProvider || 'elevenlabs';
+    const provider = ['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs');
     const voiceId = voicePools.narratorVoiceId;
     const hasTts = voiceId && hasApiKey(provider);
 

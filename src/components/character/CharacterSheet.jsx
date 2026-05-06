@@ -271,7 +271,7 @@ export default function CharacterSheet({ onClose }) {
                   const voice = pool.find((v) => v.voiceId === voiceId);
                   dispatch({
                     type: 'MAP_CHARACTER_VOICE',
-                    payload: { characterName: charName, voiceId, gender, voiceName: voice?.voiceName || null, ttsProvider: settings.ttsProvider || 'elevenlabs' },
+                    payload: { characterName: charName, voiceId, gender, voiceName: voice?.voiceName || null, ttsProvider: ['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs') },
                   });
                   autoSave();
                 }}

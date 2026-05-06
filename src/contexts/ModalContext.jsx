@@ -13,6 +13,7 @@ export function ModalProvider({ children }) {
   const [audioConfigOpen, setAudioConfigOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [adminUsersOpen, setAdminUsersOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   // NPC sheet modal triggered from chat speaker labels. Stores the NPC name
   // rather than a reference so the latest world.npcs entry is always read
   // fresh (disposition / stats can change between open and close).
@@ -36,6 +37,8 @@ export function ModalProvider({ children }) {
   const closeProfile = useCallback(() => setProfileOpen(false), []);
   const openAdminUsers = useCallback(() => setAdminUsersOpen(true), []);
   const closeAdminUsers = useCallback(() => setAdminUsersOpen(false), []);
+  const openPrivacy = useCallback(() => setPrivacyOpen(true), []);
+  const closePrivacy = useCallback(() => setPrivacyOpen(false), []);
   const openNpcSheet = useCallback((name) => setNpcSheetName(name || null), []);
   const closeNpcSheet = useCallback(() => setNpcSheetName(null), []);
 
@@ -51,6 +54,7 @@ export function ModalProvider({ children }) {
         audioConfigOpen,
         profileOpen,
         adminUsersOpen,
+        privacyOpen,
         npcSheetName,
         openCharacterSheet,
         closeCharacterSheet,
@@ -70,6 +74,8 @@ export function ModalProvider({ children }) {
         closeProfile,
         openAdminUsers,
         closeAdminUsers,
+        openPrivacy,
+        closePrivacy,
         openNpcSheet,
         closeNpcSheet,
       }}

@@ -161,9 +161,17 @@ function splitTextIntoUtterances(text, maxChars = MAX_UTTERANCE_CHARS) {
   return utterances;
 }
 
+const KNOWN_TTS_PROVIDERS = ['elevenlabs', 'xtts'];
+
 export function useNarrator({ viewerMode = false, shareToken = null, backendUrl = null } = {}) {
   const { settings, hasApiKey, voicePools } = useSettings();
   const { state, dispatch } = useGame();
+
+  // sceneTtsTier is the user's provider pick from "Koszt sceny".
+  // Fall back to legacy ttsProvider for backward compat.
+  const activeTtsProvider = KNOWN_TTS_PROVIDERS.includes(settings.sceneTtsTier)
+    ? settings.sceneTtsTier
+    : (settings.ttsProvider || 'elevenlabs');
   const [playbackState, setPlaybackState] = useState(STATES.IDLE);
   const [currentMessageId, setCurrentMessageId] = useState(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(-1);
@@ -390,12 +398,12 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
     if (viewerMode && backendUrl && shareToken) {
       return elevenlabsService.textToSpeechFromCache(backendUrl, shareToken, voiceId, chunk, undefined, campaignId);
     }
-    if (settings.ttsProvider === 'xtts') {
+    if (activeTtsProvider === 'xtts') {
       const speed = (settings.dialogueSpeed || 100) / 100;
       return xttsService.textToSpeech(voiceId, chunk, settings.language || 'pl', campaignId, speed);
     }
     return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId, pacing);
-  }, [viewerMode, backendUrl, shareToken, settings.ttsProvider, settings.language, settings.dialogueSpeed]);
+  }, [viewerMode, backendUrl, shareToken, activeTtsProvider, settings.language, settings.dialogueSpeed]);
 
   const fetchTtsWithRecovery = useCallback(async (voiceId, chunk, campaignId, pacing, segCtx) => {
     try {
@@ -409,7 +417,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         voiceId,
         segCtx.gender || null,
         state.characterVoiceMap || {},
-        { maleVoices: voicePools.maleVoices, femaleVoices: voicePools.femaleVoices, narratorVoiceId: voicePools.narratorVoiceId, ttsProvider: settings.ttsProvider || 'elevenlabs' },
+        { maleVoices: voicePools.maleVoices, femaleVoices: voicePools.femaleVoices, narratorVoiceId: voicePools.narratorVoiceId, ttsProvider: activeTtsProvider },
         dispatch
       );
       if (!newVoiceId) throw err;
@@ -532,9 +540,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         ? ((stateNarratorValid && state.narratorVoiceId) || narratorVoiceId)
         : (narratorVoiceId || (stateNarratorValid && state.narratorVoiceId));
 
-      const activeProvider = settings.ttsProvider || 'elevenlabs';
-      if (!defaultVoiceId || (!viewerMode && !hasApiKey(activeProvider))) {
-        reportNarratorError(`Narrator unavailable: configure a voice and ${activeProvider} backend key in Settings.`);
+      if (!defaultVoiceId || (!viewerMode && !hasApiKey(activeTtsProvider))) {
+        reportNarratorError(`Narrator unavailable: configure a voice and ${activeTtsProvider} backend key in Settings.`);
         queueRef.current.shift();
         setPlaybackState(STATES.IDLE);
         setCurrentMessageId(null);
@@ -656,7 +663,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
           maleVoices,
           femaleVoices,
           characterVoiceMap: localVoiceMap,
-          ttsProvider: settings.ttsProvider || 'elevenlabs',
+          ttsProvider: activeTtsProvider,
           viewerMode,
           dispatch,
         });
@@ -929,9 +936,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       ? ((stateNarratorValid && state.narratorVoiceId) || narratorVoiceId)
       : (narratorVoiceId || (stateNarratorValid && state.narratorVoiceId));
 
-    const activeProvider = settings.ttsProvider || 'elevenlabs';
-    if (!defaultVoiceId || (!viewerMode && !hasApiKey(activeProvider))) {
-      reportNarratorError(`Narrator unavailable: configure a voice and ${activeProvider} backend key in Settings.`);
+    if (!defaultVoiceId || (!viewerMode && !hasApiKey(activeTtsProvider))) {
+      reportNarratorError(`Narrator unavailable: configure a voice and ${activeTtsProvider} backend key in Settings.`);
       streamingRef.current = null;
       return;
     }
@@ -961,7 +967,7 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         maleVoices,
         femaleVoices,
         characterVoiceMap: localVoiceMap,
-        ttsProvider: settings.ttsProvider || 'elevenlabs',
+        ttsProvider: activeTtsProvider,
         viewerMode,
         dispatch,
       });
@@ -1147,7 +1153,8 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
         )
       : !!(
           settings.narratorEnabled
-          && hasApiKey(settings.ttsProvider || 'elevenlabs')
+          && settings.sceneTtsTier !== 'none'
+          && hasApiKey(activeTtsProvider)
           && voicePools.narratorVoiceId
         ),
     speak,

@@ -37,6 +37,7 @@ export async function verifyObjective({
     provider,
     model,
     modelTier,
+    taskCategory: 'auxiliary',
     systemPrompt: prompts.system,
     userPrompt: prompts.user,
     maxTokens: 500,

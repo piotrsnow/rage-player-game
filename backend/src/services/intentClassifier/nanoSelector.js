@@ -9,6 +9,7 @@
 
 import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
+import { resolveModelForTask } from '../serverConfig.js';
 import { NANO_SYSTEM_PROMPT } from './nanoPrompt.js';
 
 const log = childLogger({ module: 'intentClassifier' });
@@ -123,6 +124,7 @@ async function callNanoOpenAI(userPrompt, signal) {
   const apiKey = config.apiKeys.openai;
   if (!apiKey) throw new Error('No OpenAI API key for nano model');
 
+  const overrideModel = await resolveModelForTask('intentClassification', 'openai');
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -130,7 +132,7 @@ async function callNanoOpenAI(userPrompt, signal) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: config.aiModels.nano.openai,
+      model: overrideModel || config.aiModels.nano.openai,
       messages: [
         { role: 'system', content: NANO_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -159,6 +161,7 @@ async function callNanoAnthropic(userPrompt, signal) {
   const apiKey = config.apiKeys.anthropic;
   if (!apiKey) throw new Error('No Anthropic API key for nano model');
 
+  const overrideModel = await resolveModelForTask('intentClassification', 'anthropic');
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -167,7 +170,7 @@ async function callNanoAnthropic(userPrompt, signal) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: config.aiModels.nano.anthropic,
+      model: overrideModel || config.aiModels.nano.anthropic,
       max_tokens: 250,
       system: NANO_SYSTEM_PROMPT,
       messages: [

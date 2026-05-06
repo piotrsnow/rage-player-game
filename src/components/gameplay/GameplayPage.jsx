@@ -471,7 +471,7 @@ export default function GameplayPage({ readOnly = false, shareToken = null, onRe
     isMultiplayer,
     players: mp.state.players,
     characterVoiceMap: sCharacterVoiceMap,
-    ttsProvider: settings.ttsProvider || 'elevenlabs',
+    ttsProvider: ['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs'),
     dispatch,
   });
 

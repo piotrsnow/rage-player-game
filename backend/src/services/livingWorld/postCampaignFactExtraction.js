@@ -177,6 +177,7 @@ export async function extractWorldFacts({
     response = await callAIJson({
       provider,
       modelTier,
+      taskCategory: 'memoryExtraction',
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       maxTokens,

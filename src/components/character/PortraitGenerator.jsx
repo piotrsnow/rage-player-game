@@ -96,7 +96,9 @@ export default function PortraitGenerator({ species, age, gender, careerName, ge
   const { t } = useTranslation();
   const { settings, hasApiKey } = useSettings();
 
-  const provider = settings.imageProvider || 'dalle';
+  const provider = ['dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'].includes(settings.sceneImageTier)
+    ? settings.sceneImageTier
+    : (settings.imageProvider || 'dalle');
   const isDalle = provider === 'dalle';
   const isGptImage = provider === 'gpt-image';
   const isGemini = provider === 'gemini';

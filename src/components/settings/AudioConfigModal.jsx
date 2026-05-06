@@ -11,16 +11,17 @@ import { SfxSection, MusicSection } from './sections/AudioSections';
 import Toggle from '../ui/Toggle';
 
 const TTS_PROVIDERS = [
-  { id: 'elevenlabs', icon: 'cloud', label: 'ElevenLabs' },
-  { id: 'xtts', icon: 'computer', label: 'XTTS (local)' },
+  { id: 'elevenlabs', icon: 'cloud', label: 'ElevenLabs', keyId: 'elevenlabs' },
+  { id: 'xtts', icon: 'computer', label: 'XTTS (local)', keyId: 'xtts' },
 ];
 
 export default function AudioConfigModal({ onClose }) {
   const { t } = useTranslation();
   const modalRef = useModalA11y(onClose);
   const {
-    settings, updateSettings, hasApiKey, backendUser,
+    settings, updateSettings, hasApiKey, backendUser, backendKeys,
     globalVoiceConfig, updateGlobalVoiceConfig,
+    sceneModelConfig, updateSceneModelConfig,
   } = useSettings();
   const dispatch = useGameDispatch();
 
@@ -142,8 +143,8 @@ export default function AudioConfigModal({ onClose }) {
             {isAdmin ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
                 <div className="space-y-6">
-                  <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
-                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest">
+                  <div className="relative bg-[#1a0c1e]/80 rounded-sm ring-1 ring-[#4a1838]/40">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-[#c59aff]/50 font-label uppercase tracking-widest">
                       <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
                       Admin
                     </div>
@@ -168,8 +169,8 @@ export default function AudioConfigModal({ onClose }) {
                     </div>
                   </div>
 
-                  <div className="relative bg-surface-container-highest/50 rounded-sm ring-1 ring-outline-variant/10">
-                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-on-surface-variant/60 font-label uppercase tracking-widest z-10">
+                  <div className="relative bg-[#1a0c1e]/80 rounded-sm ring-1 ring-[#4a1838]/40">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-[#c59aff]/50 font-label uppercase tracking-widest z-10">
                       <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
                       Admin
                     </div>
@@ -208,6 +209,55 @@ export default function AudioConfigModal({ onClose }) {
                 </div>
 
                 <div className="space-y-6">
+                  <div className="relative bg-[#1a0c1e]/80 rounded-sm ring-1 ring-[#4a1838]/40">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 text-[9px] text-[#c59aff]/50 font-label uppercase tracking-widest">
+                      <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                      Admin
+                    </div>
+                    <div className="bg-surface-container-high/60 backdrop-blur-xl p-6 rounded-sm">
+                      <p className="font-headline text-tertiary mb-4">{t('sceneModelConfig.ttsTitle')}</p>
+                      <div className="space-y-3">
+                        {TTS_PROVIDERS.map((p) => {
+                          const entry = sceneModelConfig?.tts?.[p.id] || {};
+                          const keyAvailable = !!backendKeys?.[p.keyId]?.configured;
+                          return (
+                            <div key={p.id} className={`flex items-center gap-3 p-3 rounded-sm border border-outline-variant/15 ${!keyAvailable ? 'opacity-50' : ''}`}>
+                              <span className="material-symbols-outlined text-sm text-on-surface-variant">{p.icon}</span>
+                              <span className="font-headline text-xs text-on-surface-variant flex-shrink-0 w-24">{p.label}</span>
+                              {keyAvailable ? (
+                                <>
+                                  <Toggle
+                                    checked={!!entry.enabled}
+                                    onClick={() => updateSceneModelConfig({ tts: { [p.id]: { enabled: !entry.enabled } } })}
+                                  />
+                                  <div className="flex items-center gap-1 ml-auto">
+                                    <span className="text-[10px] text-on-surface-variant font-mono">$</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={entry.pricePerScene ?? ''}
+                                      onChange={(e) => {
+                                        const val = parseFloat(e.target.value);
+                                        if (Number.isFinite(val) && val >= 0) {
+                                          updateSceneModelConfig({ tts: { [p.id]: { pricePerScene: val } } });
+                                        }
+                                      }}
+                                      placeholder="0.00"
+                                      className="w-20 bg-surface-container-high/80 border border-outline-variant/20 rounded-sm px-2 py-1 text-xs font-mono text-on-surface focus:border-primary/40 focus:outline-none"
+                                    />
+                                  </div>
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-error/70 ml-auto">{t('sceneModelConfig.noKeyHint')}</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
                   <SfxSection settings={settings} updateSettings={updateSettings} />
                   <MusicSection settings={settings} updateSettings={updateSettings} />
                 </div>

@@ -28,7 +28,7 @@ const SPECULATIVE_EARLY_IMAGE_ENABLED = false;
 export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissingNpcPortraits, imageGenEnabled, imageApiKey, imageProvider, imageStyle, darkPalette, imageSeriousness, imgKeyProvider }) {
   const { t } = useTranslation();
   const { state, dispatch, autoSave } = useGame();
-  const { settings, hasApiKey, voicePools } = useSettings();
+  const { settings, hasApiKey, voicePools, sceneModelConfig } = useSettings();
 
   const degradeStatsRef = useRef({ total: 0, truncated: 0, schema: 0, lastWarnAt: 0 });
   const sceneGenStartRef = useRef(null);
@@ -155,7 +155,7 @@ export function useSceneGeneration({ ensureMissingInventoryImages, ensureMissing
           resolved, isFirstScene, isCustomAction, fromAutoPlayer, combatResult, forceRoll,
         });
         const result = backendResult.result;
-        dispatch({ type: 'ADD_AI_COST', payload: calculateSceneCost(settings) });
+        dispatch({ type: 'ADD_AI_COST', payload: calculateSceneCost(settings, sceneModelConfig) });
         const authoritativeCharacterSnapshot = backendResult.character || null;
         const newlyUnlockedAchievements = Array.isArray(backendResult.newlyUnlockedAchievements)
           ? backendResult.newlyUnlockedAchievements

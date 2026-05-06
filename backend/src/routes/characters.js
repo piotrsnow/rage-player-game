@@ -6,6 +6,9 @@ import {
   createCharacterWithRelations,
 } from '../services/characterRelations.js';
 import { toCanonicalStoragePath } from '../services/urlCanonical.js';
+import { callAIJson, parseJsonOrNull } from '../services/aiJsonCall.js';
+import { loadUserApiKeys } from '../services/apiKeyService.js';
+import { SCENE_CLIENT_SELECT } from '../services/campaignSerialize.js';
 
 function normalizeCharacterAge(age) {
   const parsed = Number(age);
@@ -255,5 +258,93 @@ export async function characterRoutes(fastify) {
 
     await prisma.character.delete({ where: { id: request.params.id } });
     return { success: true };
+  });
+
+  fastify.post('/:id/badge', async (request, reply) => {
+    const force = request.body?.force === true;
+    const char = await prisma.character.findFirst({
+      where: { id: request.params.id, userId: request.user.id },
+    });
+    if (!char) return reply.code(404).send({ error: 'Character not found' });
+
+    if (!force && char.badgeSummary && char.badgeUpdatedAt) {
+      return {
+        summary: char.badgeSummary,
+        legend: char.badgeLegend,
+        updatedAt: char.badgeUpdatedAt,
+        cached: true,
+      };
+    }
+
+    const campaigns = await prisma.campaignParticipant.findMany({
+      where: { characterId: char.id },
+      select: { campaignId: true },
+    });
+    const campaignIds = campaigns.map((c) => c.campaignId);
+
+    let scenes = [];
+    if (campaignIds.length > 0) {
+      scenes = await prisma.campaignScene.findMany({
+        where: { campaignId: { in: campaignIds } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: SCENE_CLIENT_SELECT,
+      });
+    }
+
+    const sceneTexts = scenes
+      .slice(0, 5)
+      .map((s, i) => `Scene ${s.sceneIndex ?? i + 1}: ${(s.narrative || '').slice(0, 300)}`)
+      .join('\n');
+
+    const attrs = typeof char.attributes === 'object' ? char.attributes : {};
+    const charContext = [
+      `Name: ${char.name}`,
+      `Species: ${char.species}`,
+      `Level: ${char.characterLevel}`,
+      `Backstory: ${(char.backstory || '').slice(0, 300)}`,
+      `Attributes: ${JSON.stringify(attrs)}`,
+    ].join('\n');
+
+    const language = request.body?.language || 'pl';
+    const provider = request.body?.provider || 'openai';
+
+    let userApiKeys = null;
+    try { userApiKeys = await loadUserApiKeys(prisma, request.user.id); } catch {}
+
+    const systemPrompt = `You are a fantasy RPG narrator. Generate a player badge card for the character described below.
+Return JSON with exactly two fields:
+- "legend": A short (2-3 sentences) dramatic character description capturing their personality, reputation, and defining traits based on their attributes and recent actions. Written in ${language === 'pl' ? 'Polish' : 'English'}.
+- "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory. Written in ${language === 'pl' ? 'Polish' : 'English'}.`;
+
+    const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
+
+    try {
+      const { text } = await callAIJson({
+        provider,
+        modelTier: 'nano',
+        taskCategory: 'auxiliary',
+        systemPrompt,
+        userPrompt,
+        maxTokens: 600,
+        temperature: 0.8,
+        userApiKeys,
+      });
+
+      const parsed = parseJsonOrNull(text);
+      const legend = parsed?.legend || '';
+      const summary = JSON.stringify(Array.isArray(parsed?.summary) ? parsed.summary : []);
+      const now = new Date();
+
+      await prisma.character.update({
+        where: { id: char.id },
+        data: { badgeSummary: summary, badgeLegend: legend, badgeUpdatedAt: now },
+      });
+
+      return { summary, legend, updatedAt: now, cached: false };
+    } catch (err) {
+      const status = err.statusCode || 502;
+      return reply.code(status).send({ error: err.message, code: err.code || 'AI_REQUEST_FAILED' });
+    }
   });
 }

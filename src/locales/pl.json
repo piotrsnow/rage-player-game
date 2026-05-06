@@ -149,6 +149,10 @@
   "profile": {
     "title": "Profil Użytkownika"
   },
+  "privacy": {
+    "title": "Polityka Prywatności",
+    "linkLabel": "Prywatność"
+  },
   "imageConfig": {
     "title": "Konfiguracja Obrazów",
     "subtitle": "Ustaw sposób wyświetlania scen, styl grafiki oraz dostawcę generowania obrazów.",
@@ -1188,17 +1192,30 @@
     "ttsLabel": "Czytanie tekstu",
     "tts": {
       "none": "Brak",
-      "local": "Local (XTTS)",
-      "best": "Best (ElevenLabs)"
+      "elevenlabs": "ElevenLabs",
+      "xtts": "XTTS (local)"
     },
     "imageLabel": "Generowanie obrazu",
     "image": {
       "none": "Brak",
-      "good": "Good (GPT-image)",
-      "local": "Local (Stable Diffusion)"
+      "dalle": "DALL-E 3",
+      "gpt-image": "GPT Image",
+      "stability": "Stability AI",
+      "gemini": "Gemini",
+      "sd-webui": "Stable Diffusion (local)"
     },
     "base": "Baza",
-    "perScene": "Za scenę"
+    "perScene": "Za scenę",
+    "providerDisabled": "Wyłączony przez administratora",
+    "providerNoKey": "Brak klucza API"
+  },
+  "sceneModelConfig": {
+    "title": "Cennik modeli",
+    "enabledLabel": "Aktywny",
+    "priceLabel": "Cena za scenę ($)",
+    "ttsTitle": "Cennik — czytanie tekstu",
+    "imageTitle": "Cennik — generowanie obrazów",
+    "noKeyHint": "Brak klucza"
   },
   "locationChip": {
     "wandering": "W drodze"

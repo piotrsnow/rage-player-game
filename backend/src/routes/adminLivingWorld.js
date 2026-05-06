@@ -19,6 +19,7 @@ import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampa
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
+import { getModelOverrides, setModelOverrides, TASK_CATEGORIES } from '../services/serverConfig.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -1027,6 +1028,37 @@ export async function adminLivingWorldRoutes(fastify) {
       log.error({ err, campaignId: id }, 'run-writeback failed');
       return reply.code(500).send({ error: err.message });
     }
+  });
+
+  // ── Model overrides (global admin config) ──
+
+  fastify.get('/model-overrides', guard(), async () => {
+    return getModelOverrides();
+  });
+
+  fastify.put('/model-overrides', guard({
+    schema: {
+      body: {
+        type: 'object',
+        additionalProperties: {
+          type: 'object',
+          properties: {
+            openai: { type: 'string' },
+            anthropic: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const overrides = request.body;
+    const keys = Object.keys(overrides);
+    const invalid = keys.filter((k) => !TASK_CATEGORIES.includes(k));
+    if (invalid.length) {
+      return reply.code(400).send({ error: `Invalid task categories: ${invalid.join(', ')}` });
+    }
+    await setModelOverrides(overrides);
+    return { ok: true, overrides };
   });
 }
 

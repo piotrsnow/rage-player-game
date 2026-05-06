@@ -10,6 +10,7 @@
 import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { childLogger } from '../lib/logger.js';
+import { resolveModelForTask } from './serverConfig.js';
 
 const log = childLogger({ module: 'memoryCompressor' });
 
@@ -26,8 +27,10 @@ export async function callNano(systemPrompt, userPrompt, provider, { timeoutMs, 
   const signal = controller?.signal;
 
   const tier = reasoning ? 'nanoReasoning' : 'nano';
-  const openaiModel = config.aiModels[tier].openai;
-  const anthropicModel = config.aiModels[tier].anthropic;
+  const overrideOpenai = await resolveModelForTask('memoryExtraction', 'openai');
+  const overrideAnthropic = await resolveModelForTask('memoryExtraction', 'anthropic');
+  const openaiModel = overrideOpenai || config.aiModels[tier].openai;
+  const anthropicModel = overrideAnthropic || config.aiModels[tier].anthropic;
 
   try {
     // Match nano provider to the main scene provider so that choosing Chat (OpenAI)

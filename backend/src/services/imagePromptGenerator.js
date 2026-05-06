@@ -1,6 +1,7 @@
 import { requireServerApiKey } from './apiKeyService.js';
 import { parseProviderError } from './aiErrors.js';
 import { config } from '../config.js';
+import { resolveModelForTask } from './serverConfig.js';
 
 const MAX_TAGS_LENGTH = 1000;
 const MAX_NARRATIVE_LENGTH = 600;
@@ -76,7 +77,8 @@ export async function generateImagePrompt({
     userApiKeys,
     resolvedProvider === 'anthropic' ? 'Anthropic' : 'OpenAI',
   );
-  const resolvedModel = model || config.aiModels.nano[resolvedProvider];
+  const overrideModel = await resolveModelForTask('imagePrompt', resolvedProvider);
+  const resolvedModel = model || overrideModel || config.aiModels.nano[resolvedProvider];
 
   const systemPrompt = buildSystemPrompt({
     imageProvider,

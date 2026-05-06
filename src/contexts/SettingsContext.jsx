@@ -75,6 +75,18 @@ function mergeSettingsWithDefaults(source) {
   delete merged.maleVoices;
   delete merged.femaleVoices;
   delete merged.voicesByProvider;
+
+  // Migrate old abstract tier IDs to 'none'. The new SceneCost uses actual
+  // provider IDs ('elevenlabs', 'xtts', 'dalle', 'gpt-image', etc.).
+  const KNOWN_TTS = ['none', 'elevenlabs', 'xtts'];
+  const KNOWN_IMG = ['none', 'dalle', 'gpt-image', 'stability', 'gemini', 'sd-webui'];
+  if (merged.sceneTtsTier && !KNOWN_TTS.includes(merged.sceneTtsTier)) {
+    merged.sceneTtsTier = 'none';
+  }
+  if (merged.sceneImageTier && !KNOWN_IMG.includes(merged.sceneImageTier)) {
+    merged.sceneImageTier = 'none';
+  }
+
   return merged;
 }
 
@@ -166,6 +178,7 @@ export function SettingsProvider({ children }) {
 
   const [backendKeys, setBackendKeys] = useState(EMPTY_BACKEND_KEYS);
   const [globalVoiceConfig, setGlobalVoiceConfig] = useState({});
+  const [sceneModelConfig, setSceneModelConfig] = useState({});
   const [backendUser, setBackendUser] = useState(null);
   const [backendAuthChecking, setBackendAuthChecking] = useState(() => shouldCheckBackendSession(settings));
   const syncingFromBackendRef = useRef(false);
@@ -286,10 +299,30 @@ export function SettingsProvider({ children }) {
     return result;
   }, []);
 
+  const fetchSceneModelConfig = useCallback(async () => {
+    if (!apiClient.isConnected()) {
+      setSceneModelConfig({});
+      return;
+    }
+    try {
+      const config = await apiClient.get('/scene-model-config');
+      setSceneModelConfig(config || {});
+    } catch {
+      setSceneModelConfig({});
+    }
+  }, []);
+
+  const updateSceneModelConfig = useCallback(async (patch) => {
+    const result = await apiClient.put('/scene-model-config', patch);
+    setSceneModelConfig(result || {});
+    return result;
+  }, []);
+
   useEffect(() => {
     if (settings.backendUrl && settings.useBackend && backendUser) {
       fetchBackendKeys();
       fetchGlobalVoiceConfig();
+      fetchSceneModelConfig();
       // Hydrate account settings whenever a user lands on this provider — on
       // cookie-bootstrap, login, and register. backendLogin/Register also
       // call this directly (after legacy migration); the duplicate is cheap
@@ -297,7 +330,7 @@ export function SettingsProvider({ children }) {
       loadFromAccountRef.current?.();
       gameData.loadAll().catch((err) => console.warn('[settings] Game data preload failed:', err.message));
     }
-  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig]);
+  }, [settings.backendUrl, settings.useBackend, backendUser, fetchBackendKeys, fetchGlobalVoiceConfig, fetchSceneModelConfig]);
 
   useEffect(() => {
     if (settings.language && i18n.language !== settings.language) {
@@ -422,7 +455,11 @@ export function SettingsProvider({ children }) {
     setBackendAuthChecking(false);
   }, []);
 
-  const activeProvider = settings.ttsProvider || 'elevenlabs';
+  // Derive the active TTS provider from sceneTtsTier (user's SceneCost pick).
+  // Fall back to ttsProvider for backward compat / admin voice-config context.
+  const KNOWN_TTS_PROVIDERS = ['elevenlabs', 'xtts'];
+  const ttsFromTier = KNOWN_TTS_PROVIDERS.includes(settings.sceneTtsTier) ? settings.sceneTtsTier : null;
+  const activeProvider = ttsFromTier || settings.ttsProvider || 'elevenlabs';
   const activeVoices = globalVoiceConfig[activeProvider] || {};
   const voicePools = {
     narratorVoiceId: activeVoices.narratorVoiceId || '',
@@ -446,6 +483,9 @@ export function SettingsProvider({ children }) {
     globalVoiceConfig,
     fetchGlobalVoiceConfig,
     updateGlobalVoiceConfig,
+    sceneModelConfig,
+    fetchSceneModelConfig,
+    updateSceneModelConfig,
     loadFromAccount,
     backendUser,
     backendAuthChecking,

@@ -81,7 +81,7 @@ export default function GameplayModals({
           characterVoiceMap={characterVoiceMap}
           maleVoices={voicePools.maleVoices}
           femaleVoices={voicePools.femaleVoices}
-          ttsProvider={settings.ttsProvider || 'elevenlabs'}
+          ttsProvider={['elevenlabs', 'xtts'].includes(settings.sceneTtsTier) ? settings.sceneTtsTier : (settings.ttsProvider || 'elevenlabs')}
           dispatch={dispatch}
           autoSave={autoSave}
           campaignId={campaignId}

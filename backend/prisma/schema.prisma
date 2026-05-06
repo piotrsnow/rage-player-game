@@ -166,6 +166,10 @@ model Character {
   voiceId       String @default("")
   voiceName     String @default("")
   campaignCount Int    @default(0)
+
+  badgeSummary   String?
+  badgeLegend    String?
+  badgeUpdatedAt DateTime? @db.Timestamptz
   fame          Int    @default(0)
   infamy        Int    @default(0)
   knownTitles   Json   @default("[]")
@@ -1435,10 +1439,14 @@ model TopicHistory {
 // ═══════════════════════════════════════════════════════════════════════
 // Server Settings — singleton row for global configuration (admin-only).
 // voiceConfig stores per-provider voice pools (ElevenLabs + XTTS).
+// sceneModelConfig stores admin-set enablement + per-scene pricing for
+// TTS and image providers, surfaced to users in the "Koszt sceny" UI.
 // ═══════════════════════════════════════════════════════════════════════
 
 model ServerSettings {
-  id          String   @id @default("singleton")
-  voiceConfig Json     @default("{}")
-  updatedAt   DateTime @updatedAt @db.Timestamptz
+  id               String   @id @default("singleton")
+  voiceConfig      Json     @default("{}")
+  modelOverrides   Json     @default("{}")
+  sceneModelConfig Json     @default("{}")
+  updatedAt        DateTime @updatedAt @db.Timestamptz
 }
