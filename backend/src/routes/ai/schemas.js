@@ -63,6 +63,28 @@ export const ENHANCE_IMAGE_PROMPT_SCHEMA = {
   required: ['keywords'],
 };
 
+export const GENERATE_IMAGE_PROMPT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    imagePromptTags: { type: 'string', maxLength: 1000 },
+    narrative: { type: 'string', maxLength: 1000 },
+    imageProvider: { type: 'string', maxLength: 40 },
+    imageStyle: { type: 'string', maxLength: 50 },
+    darkPalette: { type: 'boolean' },
+    seriousness: { type: ['number', 'null'] },
+    genre: { type: 'string', maxLength: 100 },
+    tone: { type: 'string', maxLength: 100 },
+    characterAge: { type: ['number', 'string', 'null'] },
+    characterGender: { type: ['string', 'null'], maxLength: 20 },
+    customStyleEnabled: { type: 'boolean' },
+    customStyle: { type: 'string', maxLength: 1200 },
+    provider: PROVIDER_SCHEMA,
+    model: MODEL_SCHEMA,
+  },
+  required: ['imagePromptTags'],
+};
+
 export const TRANSLATE_IMAGE_PROMPT_SCHEMA = {
   type: 'object',
   additionalProperties: false,

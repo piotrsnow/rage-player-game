@@ -86,6 +86,11 @@ const defaultSettings = {
   // null = random seed per request; number = fixed (reproducible, cacheable).
   // Toggled from SdWebuiModelPicker via double-click on the seed field.
   sdWebuiSeed: null,
+  imagePromptLlmEnabled: false,
+  imagePromptLlmProvider: 'openai',
+  imagePromptLlmModel: '',
+  imagePromptCustomStyleEnabled: false,
+  imagePromptCustomStyle: '',
   language: 'pl',
   narratorVoiceId: '',
   narratorVoiceName: '',

@@ -397,6 +397,41 @@ export const aiService = {
     return { description: data?.description || '' };
   },
 
+  async generateImagePrompt({
+    imagePromptTags,
+    narrative,
+    imageProvider = 'dalle',
+    imageStyle = 'painting',
+    darkPalette = false,
+    seriousness = null,
+    genre = 'Fantasy',
+    tone = 'Epic',
+    characterAge = null,
+    characterGender = null,
+    customStyleEnabled = false,
+    customStyle = '',
+    provider = 'openai',
+    model = null,
+  } = {}) {
+    const data = await apiClient.post('/ai/generate-image-prompt', {
+      imagePromptTags,
+      narrative,
+      imageProvider,
+      imageStyle,
+      darkPalette,
+      seriousness,
+      genre,
+      tone,
+      characterAge,
+      characterGender,
+      customStyleEnabled,
+      customStyle,
+      provider,
+      model,
+    });
+    return { prompt: data?.prompt || '', negativePrompt: data?.negativePrompt || '' };
+  },
+
   async generateCombatCommentary(gameState, combatSnapshot, provider, _apiKeyIgnored, language = 'en', modelTier = 'premium', { explicitModel = null } = {}) {
     const data = await apiClient.post('/ai/combat-commentary', {
       gameState,

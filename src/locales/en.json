@@ -158,6 +158,15 @@
   "imageConfig": {
     "title": "Image Configuration",
     "subtitle": "Configure how scenes are displayed, the art style and the image generation provider.",
+    "promptLlm": {
+      "title": "AI Prompt Generation",
+      "desc": "A smaller LLM composes the image prompt based on the scene",
+      "modelLabel": "Prompt model",
+      "modelDefault": "Default (nano)",
+      "customStyleLabel": "Custom prompt style",
+      "customStyleDesc": "Describe how generated prompts should look",
+      "customStylePlaceholder": "e.g. prompts for stable diffusion should be precise and simple, 8-12 comma-separated tags, no sentences. Negative prompt short and specific — only the most important things to avoid."
+    },
     "playground": {
       "title": "Playground",
       "subtitle": "Test image generation: type keywords and use the wand to let AI build a full prompt from your settings, or write the prompt manually.",
