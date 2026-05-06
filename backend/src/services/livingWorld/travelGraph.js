@@ -15,8 +15,12 @@
 import { prisma } from '../../lib/prisma.js';
 import { childLogger } from '../../lib/logger.js';
 import { euclidean } from './positionCalculator.js';
+import { getMovementRelationTypesArray } from './edgeRelations.js';
 
 const log = childLogger({ module: 'travelGraph' });
+
+/** Movement-only relation types for Dijkstra filtering. */
+const MOVEMENT_TYPES = getMovementRelationTypesArray();
 
 export const DETOUR_DIRECT = 1.3;     // path_length / straight_line below this = direct enough
 export const DETOUR_SENSIBLE = 2.0;   // 1.3-2.0 = sensible detour; > 2.0 = long detour (shortcut territory)
@@ -36,11 +40,22 @@ export async function upsertEdge({
   gated = false,
   gateHint = null,
   discoveredByCampaignId = null,
+  // Graph system — new fields
+  relationType = 'road',
+  bidirectional = true,
+  metadata = {},
+  visibility = 'visible',
+  risk = null,
+  travelTime = null,
+  weight = null,
+  edgeDescription = null,
+  confidence = null,
 }) {
   if (!fromLocationId || !toLocationId || fromLocationId === toLocationId) return null;
 
+  // Unique constraint is now (fromLocationId, toLocationId, relationType)
   const existing = await prisma.road.findFirst({
-    where: { fromLocationId, toLocationId },
+    where: { fromLocationId, toLocationId, relationType },
     select: { id: true },
   });
 
@@ -56,6 +71,15 @@ export async function upsertEdge({
           direction,
           gated,
           gateHint,
+          relationType,
+          bidirectional,
+          metadata,
+          visibility,
+          risk,
+          travelTime,
+          weight,
+          edgeDescription,
+          confidence,
         },
       });
 
@@ -100,16 +124,21 @@ async function markDirection({ fromLocationId, toLocationId, campaignId }) {
  * fromId → [{ toId, distance, difficulty, terrainType, direction }].
  */
 export async function loadCampaignGraph(campaignId) {
+  // Graph system: Dijkstra only walks movement edges. Non-movement relation
+  // types (perception, social, narrative, temporal) are excluded.
   if (!campaignId) {
     const edges = await prisma.road.findMany({
+      where: { relationType: { in: MOVEMENT_TYPES } },
       select: {
         fromLocationId: true, toLocationId: true,
         distance: true, difficulty: true, terrainType: true, direction: true,
+        relationType: true, bidirectional: true, weight: true,
       },
     });
     return buildAdjacency(edges);
   }
-  // Visible edges = those with a CampaignEdgeDiscovery row for this campaign.
+  // Visible edges = those with a CampaignEdgeDiscovery row for this campaign,
+  // filtered to movement relation types only.
   const discoveries = await prisma.campaignEdgeDiscovery.findMany({
     where: { campaignId },
     select: {
@@ -117,27 +146,55 @@ export async function loadCampaignGraph(campaignId) {
         select: {
           fromLocationId: true, toLocationId: true,
           distance: true, difficulty: true, terrainType: true, direction: true,
+          relationType: true, bidirectional: true, weight: true,
         },
       },
     },
   });
-  return buildAdjacency(discoveries.map((d) => d.edge).filter(Boolean));
+  const movementEdges = discoveries
+    .map((d) => d.edge)
+    .filter((e) => e && MOVEMENT_TYPES.includes(e.relationType));
+  return buildAdjacency(movementEdges);
 }
 
 function buildAdjacency(edges) {
   const adj = new Map();
   for (const e of edges) {
-    const list = adj.get(e.fromLocationId) || [];
-    list.push({
+    const cost = e.weight ?? e.distance;
+    const entry = {
       toId: e.toLocationId,
       distance: e.distance,
       difficulty: e.difficulty,
       terrainType: e.terrainType,
       direction: e.direction,
-    });
-    adj.set(e.fromLocationId, list);
+      relationType: e.relationType ?? 'road',
+      cost,
+    };
+    // Forward direction: from → to
+    const fList = adj.get(e.fromLocationId) || [];
+    fList.push(entry);
+    adj.set(e.fromLocationId, fList);
+
+    // Reverse direction: to → from (only for bidirectional edges)
+    if (e.bidirectional !== false) {
+      const rList = adj.get(e.toLocationId) || [];
+      rList.push({
+        ...entry,
+        toId: e.fromLocationId,
+        direction: e.direction ? reverseDirection(e.direction) : null,
+      });
+      adj.set(e.toLocationId, rList);
+    }
   }
   return adj;
+}
+
+/** Reverse a cardinal direction string (e.g. 'north' → 'south'). */
+function reverseDirection(dir) {
+  const map = { north: 'south', south: 'north', east: 'west', west: 'east',
+    northeast: 'southwest', southwest: 'northeast', northwest: 'southeast', southeast: 'northwest',
+    up: 'down', down: 'up' };
+  return map[dir?.toLowerCase()] ?? dir;
 }
 
 /**
@@ -171,7 +228,7 @@ export function dijkstra(adj, startId, endId) {
     const neighbors = adj.get(curId) || [];
     for (const n of neighbors) {
       if (visited.has(n.toId)) continue;
-      const alt = curDist + n.distance;
+      const alt = curDist + (n.cost ?? n.distance);
       const known = dist.get(n.toId);
       if (known === undefined || alt < known) {
         dist.set(n.toId, alt);

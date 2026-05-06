@@ -249,7 +249,9 @@
     "libraryNewerHintNoDate": "Newer library version available (Level {{level}})",
     "loadingWorld": "Loading world...",
     "loadingWorldHint": "Preparing your adventure, please wait",
-    "campaignNotFound": "Campaign not found. It may have been deleted."
+    "campaignNotFound": "Campaign not found. It may have been deleted.",
+    "recentCampaigns": "Recent Campaigns",
+    "showAllCampaigns": "All Campaigns"
   },
   "creator": {
     "title": "Forge a New Campaign",

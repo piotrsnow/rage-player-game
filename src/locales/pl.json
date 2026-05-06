@@ -243,7 +243,9 @@
     "libraryNewerHintNoDate": "W bibliotece jest nowsza wersja (Poziom {{level}})",
     "loadingWorld": "Wczytywanie świata...",
     "loadingWorldHint": "Przygotowuję twoją przygodę, proszę o cierpliwość",
-    "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta."
+    "campaignNotFound": "Nie znaleziono kampanii. Mogła zostać usunięta.",
+    "recentCampaigns": "Ostatnie kampanie",
+    "showAllCampaigns": "Wszystkie kampanie"
   },
   "creator": {
     "title": "Wykuj Nową Kampanię",

@@ -28,19 +28,19 @@ function SceneGameErrorOverlay({
 
   return (
     <div
-      className="pointer-events-auto absolute left-2 right-2 bottom-2 z-[25] max-h-[min(40%,12rem)] overflow-y-auto custom-scrollbar rounded-sm border border-error/35 bg-error-container/95 px-3 py-2.5 shadow-[0_4px_24px_rgba(0,0,0,0.65)] backdrop-blur-sm animate-fade-in"
+      className="pointer-events-auto absolute left-2 right-2 bottom-2 z-[25] max-h-[min(40%,12rem)] overflow-y-auto custom-scrollbar rounded border border-red-900/40 bg-black/75 px-4 py-3 shadow-[0_4px_24px_rgba(0,0,0,0.65)] backdrop-blur-md animate-fade-in"
       role="alert"
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-error text-xs leading-snug flex items-start gap-2 min-w-0">
-          <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-red-200 text-xs leading-snug flex items-start gap-2 min-w-0">
+          <span className="material-symbols-outlined text-base shrink-0 mt-0.5 text-red-400">error</span>
           <span className="min-w-0 break-words">{error}</span>
         </p>
         <button
           type="button"
           onClick={() => onDismiss?.()}
           aria-label={t('common.close')}
-          className="text-error/60 hover:text-error transition-colors shrink-0"
+          className="text-red-400/60 hover:text-red-300 transition-colors shrink-0"
         >
           <span className="material-symbols-outlined text-lg leading-none">close</span>
         </button>

@@ -339,14 +339,20 @@ export default function LobbyPage() {
     setRejoinInfo(null);
   };
 
+  const [showAllCampaigns, setShowAllCampaigns] = useState(false);
+
   const hasServerAi = hasApiKey('openai') || hasApiKey('anthropic');
   const isLoggedIn = !!backendUser;
   const hasCampaigns = campaigns.length > 0;
 
+  const RECENT_COUNT = 3;
+  const recentCampaigns = campaigns.slice(0, RECENT_COUNT);
+  const hasMoreCampaigns = campaigns.length > RECENT_COUNT;
+
   return (
     <>
     <IntroOverlay />
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] px-6 py-12 relative overflow-hidden">
+    <div className="flex flex-col items-center min-h-[calc(100vh-4rem)] px-6 py-6 relative z-10 overflow-hidden">
       {campaignNotFound && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-lg bg-error/15 border border-error/30 text-error text-sm font-label shadow-lg backdrop-blur-sm animate-slide-up">
           <span className="material-symbols-outlined text-base">error</span>
@@ -366,129 +372,185 @@ export default function LobbyPage() {
       <FloatingRune delay={1.5} className="text-4xl top-[20%] right-[12%] animate-float" />
       <FloatingRune delay={0.8} className="text-5xl bottom-[25%] left-[8%] animate-float-slow" />
       <FloatingRune delay={2} className="text-3xl bottom-[30%] right-[15%] animate-float" />
-      <FloatingRune delay={1} className="text-7xl top-[40%] right-[6%] animate-float-slow" />
 
-      {/* Hero Section */}
-      <div className="text-center mb-16 max-w-2xl animate-slide-up relative z-10">
-        <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('lobby.title')} className="h-56 md:h-80 w-auto mx-auto mb-6 drop-shadow-2xl" />
-
-        {/* Ornamental divider */}
-        <div className="flex items-center justify-center gap-3 mb-6">
-          <div className="h-px w-16 bg-gradient-to-r from-transparent to-primary/40" />
-          <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
-          <div className="h-px w-16 bg-gradient-to-l from-transparent to-primary/40" />
-        </div>
-
-        <p className="text-on-surface-variant font-body text-lg max-w-lg mx-auto leading-relaxed">
-          {t('lobby.subtitle')}
-        </p>
-      </div>
-
-      {/* Auth Panel */}
-      <div className="mb-12 w-full flex justify-center animate-slide-up relative z-10" style={{ animationDelay: '0.12s' }}>
-        <AuthPanel />
-      </div>
-
-      {/* Action Buttons */}
-      {isLoggedIn && (
-        <div className="flex flex-col sm:flex-row gap-6 items-center mb-16 animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
-          <Button size="lg" onClick={() => navigate('/create')}>
-            {t('lobby.newCampaign')}
-          </Button>
-          {hasCampaigns && (
-            <>
-              <span className="text-xs text-outline uppercase tracking-widest hidden sm:block">{t('common.or', 'or')}</span>
-              <Button size="lg" variant="secondary" onClick={handleContinue}>
-                {t('lobby.continueCampaign')}
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Multiplayer Rejoin Banner */}
+      {/* Multiplayer Rejoin Banner — full width above columns */}
       {rejoinInfo && (
-        <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.2s' }}>
-          <GlassCard elevated className="p-6 border-l-2 border-primary" data-testid="rejoin-banner">
-            <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-primary mt-0.5">wifi_off</span>
+        <div className="mb-4 max-w-5xl w-full animate-slide-up relative z-10">
+          <GlassCard elevated className="p-4 border-l-2 border-primary" data-testid="rejoin-banner">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-primary">wifi_off</span>
               <div className="flex-1 min-w-0">
-                <p className="font-headline text-primary text-sm mb-1">
+                <p className="font-headline text-primary text-sm">
                   {t('lobby.activeMultiplayerSession', 'Active Multiplayer Session')}
-                </p>
-                <p className="text-on-surface-variant text-xs mb-3">
-                  {t('lobby.rejoinDescription', 'You were disconnected from a multiplayer game. Rejoin to continue playing.')}
                   {rejoinInfo.campaignName && (
-                    <span className="block mt-1 text-on-surface/70 font-medium">
+                    <span className="text-on-surface/70 font-body text-xs ml-2">
                       {rejoinInfo.campaignName} &middot; {rejoinInfo.roomCode}
                     </span>
                   )}
                   {!rejoinInfo.campaignName && (
-                    <span className="block mt-1 text-on-surface/70 font-medium">
-                      {t('multiplayer.room', 'Room')}: {rejoinInfo.roomCode}
+                    <span className="text-on-surface/70 font-body text-xs ml-2">
+                      {rejoinInfo.roomCode}
                     </span>
                   )}
                 </p>
-                <div className="flex gap-3">
-                  <Button size="sm" onClick={handleRejoin} disabled={rejoining}>
-                    {rejoining
-                      ? t('lobby.rejoining', 'Rejoining...')
-                      : t('lobby.rejoinSession', 'Rejoin Game')}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={handleDismissRejoin} disabled={rejoining}>
-                    {t('lobby.dismissSession', 'Dismiss')}
-                  </Button>
-                </div>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button size="sm" onClick={handleRejoin} disabled={rejoining}>
+                  {rejoining
+                    ? t('lobby.rejoining', 'Rejoining...')
+                    : t('lobby.rejoinSession', 'Rejoin Game')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={handleDismissRejoin} disabled={rejoining}>
+                  {t('lobby.dismissSession', 'Dismiss')}
+                </Button>
               </div>
             </div>
           </GlassCard>
         </div>
       )}
 
-      {/* API Key Warning */}
-      {isLoggedIn && !hasServerAi && (
-        <div className="mb-8 max-w-md w-full animate-slide-up relative z-10" style={{ animationDelay: '0.25s' }}>
-          <div
-            onClick={openSettings}
-            data-testid="api-key-warning"
-            className="glass-panel-elevated p-6 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
-          >
-            <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-tertiary mt-0.5">key</span>
-              <div>
-                <p className="font-headline text-tertiary text-sm mb-1">{t('lobby.apiKeyRequired', 'Server AI configuration required')}</p>
-                <p className="text-on-surface-variant text-xs">
-                  {t('lobby.apiKeyDescription', 'Connect backend and configure provider API keys in backend environment variables.')}
-                </p>
+      {/* Two-column layout */}
+      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start relative z-10 animate-slide-up my-auto">
+
+        {/* Left column — branding + actions */}
+        <div className="flex flex-col items-center lg:items-start gap-6">
+          <img src={t('common.logoPath', '/nikczemnu_logo.png')} alt={t('lobby.title')} className="h-40 md:h-56 w-auto drop-shadow-2xl" />
+
+          <div className="flex items-center gap-3">
+            <div className="h-px w-12 bg-gradient-to-r from-transparent to-primary/40" />
+            <span className="material-symbols-outlined text-primary/40 text-sm">diamond</span>
+            <div className="h-px w-12 bg-gradient-to-l from-transparent to-primary/40" />
+          </div>
+
+          <p className="text-on-surface-variant font-body text-base max-w-sm leading-relaxed text-center lg:text-left">
+            {t('lobby.subtitle')}
+          </p>
+
+          {/* Auth Panel */}
+          <div className="w-full max-w-sm">
+            <AuthPanel />
+          </div>
+
+          {/* Action Buttons */}
+          {isLoggedIn && (
+            <div className="flex flex-row gap-4 items-center">
+              <Button size="lg" onClick={() => navigate('/create')}>
+                {t('lobby.newCampaign')}
+              </Button>
+              {hasCampaigns && (
+                <Button size="lg" variant="secondary" onClick={handleContinue}>
+                  {t('lobby.continueCampaign')}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* API Key Warning */}
+          {isLoggedIn && !hasServerAi && (
+            <div
+              onClick={openSettings}
+              data-testid="api-key-warning"
+              className="w-full max-w-sm glass-panel-elevated p-4 rounded-sm border-l-2 border-tertiary cursor-pointer hover:border-tertiary/80 transition-all hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
+            >
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-tertiary mt-0.5">key</span>
+                <div>
+                  <p className="font-headline text-tertiary text-sm mb-1">{t('lobby.apiKeyRequired', 'Server AI configuration required')}</p>
+                  <p className="text-on-surface-variant text-xs">
+                    {t('lobby.apiKeyDescription', 'Connect backend and configure provider API keys in backend environment variables.')}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Saved Campaigns */}
-      {isLoggedIn && hasCampaigns && (
-        <div className="w-full max-w-2xl animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
-          <GlassCard elevated className="p-8" data-testid="saved-campaigns">
-            <h3 className="font-headline text-tertiary text-xl mb-6 flex items-center gap-3">
-              <span className="material-symbols-outlined text-primary-dim">save</span>
-              {t('lobby.savedCampaigns')}
-              {syncing && (
-                <span className="text-xs text-outline font-label flex items-center gap-1">
-                  <span className="material-symbols-outlined text-sm animate-spin">sync</span>
-                  {t('lobby.syncing', 'Syncing...')}
-                </span>
+          {/* Empty State */}
+          {isLoggedIn && !hasCampaigns && hasServerAi && (
+            <div className="text-center lg:text-left text-on-surface-variant">
+              <span className="material-symbols-outlined text-4xl text-outline/20 mb-2 block animate-float-slow">
+                auto_stories
+              </span>
+              <p className="text-sm mb-1">{t('lobby.noCampaigns')}</p>
+              <p className="text-xs text-outline">{t('lobby.noCampaignsHint', 'Create your first adventure above')}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Right column — recent campaigns */}
+        {isLoggedIn && hasCampaigns && (
+          <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
+            <GlassCard elevated className="p-6" data-testid="saved-campaigns">
+              <h3 className="font-headline text-tertiary text-lg mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary-dim text-xl">save</span>
+                {t('lobby.recentCampaigns', 'Ostatnie kampanie')}
+                {syncing && (
+                  <span className="text-xs text-outline font-label flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                    {t('lobby.syncing', 'Syncing...')}
+                  </span>
+                )}
+                <span className="ml-auto text-xs text-outline font-label">{campaigns.length}</span>
+              </h3>
+              <div className="space-y-1">
+                {recentCampaigns.map((c, i) => (
+                  <CampaignCard
+                    key={c.id || i}
+                    campaign={c}
+                    loading={loadingCampaignId === c.id}
+                    disabled={!!loadingCampaignId}
+                    onLoad={() => handleLoad(c)}
+                    onDelete={() =>
+                      showDeleteConfirm === c.id
+                        ? handleDelete(c.id)
+                        : setShowDeleteConfirm(c.id)
+                    }
+                  />
+                ))}
+              </div>
+              {hasMoreCampaigns && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllCampaigns(true)}
+                  className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 text-sm text-primary hover:text-tertiary font-label uppercase tracking-wider transition-colors hover:bg-primary/5 rounded-sm"
+                >
+                  <span className="material-symbols-outlined text-base">expand_more</span>
+                  {t('lobby.showAllCampaigns', 'Wszystkie kampanie')} ({campaigns.length})
+                </button>
               )}
-              <span className="ml-auto text-xs text-outline font-label">{campaigns.length}</span>
-            </h3>
-            <div className="space-y-1">
+            </GlassCard>
+          </div>
+        )}
+      </div>
+
+      {/* All Campaigns Modal */}
+      {showAllCampaigns && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setShowAllCampaigns(false)}>
+          <div
+            className="relative bg-surface-container border border-outline-variant/20 rounded-sm shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-outline-variant/10">
+              <h3 className="font-headline text-tertiary text-lg flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary-dim">save</span>
+                {t('lobby.savedCampaigns')}
+                <span className="text-xs text-outline font-label ml-1">{campaigns.length}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAllCampaigns(false)}
+                className="p-1 rounded-sm text-outline hover:text-on-surface hover:bg-surface-container-high transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6 pt-4 space-y-1">
               {campaigns.map((c, i) => (
                 <CampaignCard
                   key={c.id || i}
                   campaign={c}
                   loading={loadingCampaignId === c.id}
                   disabled={!!loadingCampaignId}
-                  onLoad={() => handleLoad(c)}
+                  onLoad={() => { handleLoad(c); setShowAllCampaigns(false); }}
                   onDelete={() =>
                     showDeleteConfirm === c.id
                       ? handleDelete(c.id)
@@ -497,18 +559,7 @@ export default function LobbyPage() {
                 />
               ))}
             </div>
-          </GlassCard>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {isLoggedIn && !hasCampaigns && hasServerAi && (
-        <div className="text-center text-on-surface-variant animate-slide-up relative z-10" style={{ animationDelay: '0.3s' }}>
-          <span className="material-symbols-outlined text-6xl text-outline/20 mb-4 block animate-float-slow">
-            auto_stories
-          </span>
-          <p className="text-sm mb-2">{t('lobby.noCampaigns')}</p>
-          <p className="text-xs text-outline">{t('lobby.noCampaignsHint', 'Create your first adventure above')}</p>
+          </div>
         </div>
       )}
 

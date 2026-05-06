@@ -16,10 +16,11 @@ export const xttsService = {
     return apiClient.get('/proxy/xtts/health');
   },
 
-  async textToSpeech(voiceId, text, language = 'pl', campaignId = null) {
+  async textToSpeech(voiceId, text, language = 'pl', campaignId = null, speed = 1.0) {
     if (!apiClient.isConnected()) throw new Error('XTTS requires backend connection');
     const body = { voiceId, text, language };
     if (campaignId) body.campaignId = campaignId;
+    if (speed != null && speed !== 1.0) body.speed = speed;
     const data = await apiClient.post('/proxy/xtts/tts', body);
     const audioUrl = canonicalAudioUrl(data.url);
     return { audioUrl, words: [] };

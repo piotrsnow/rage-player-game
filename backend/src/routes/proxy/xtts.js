@@ -15,6 +15,7 @@ const TTS_BODY_SCHEMA = {
     text: { type: 'string', maxLength: 8000 },
     language: { type: 'string', maxLength: 8 },
     campaignId: { type: 'string', pattern: UUID_PATTERN },
+    speed: { type: 'number', minimum: 0.5, maximum: 2.0 },
   },
 };
 
@@ -43,9 +44,9 @@ export async function xttsProxyRoutes(fastify) {
 
   fastify.post('/tts', { schema: { body: TTS_BODY_SCHEMA } }, async (request, reply) => {
     const base = getXttsUrl();
-    const { voiceId, text, language = 'pl', campaignId } = request.body;
+    const { voiceId, text, language = 'pl', campaignId, speed } = request.body;
 
-    const cacheParams = { voiceId, text, language, provider: 'xtts' };
+    const cacheParams = { voiceId, text, language, provider: 'xtts', ...(speed && speed !== 1.0 ? { speed } : {}) };
     const cacheKey = generateKey('tts', cacheParams, campaignId);
 
     const existing = await prisma.mediaAsset.findUnique({ where: { key: cacheKey } });
@@ -54,10 +55,15 @@ export async function xttsProxyRoutes(fastify) {
       return { cached: true, url, key: cacheKey };
     }
 
+    const ttsBody = { voice_id: voiceId, text, language };
+    if (speed && speed !== 1.0) {
+      ttsBody.params = { speed };
+    }
+
     const res = await fetch(`${base}/api/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ voice_id: voiceId, text, language }),
+      body: JSON.stringify(ttsBody),
     });
 
     if (!res.ok) {

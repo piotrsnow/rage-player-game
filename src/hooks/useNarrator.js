@@ -391,10 +391,11 @@ export function useNarrator({ viewerMode = false, shareToken = null, backendUrl 
       return elevenlabsService.textToSpeechFromCache(backendUrl, shareToken, voiceId, chunk, undefined, campaignId);
     }
     if (settings.ttsProvider === 'xtts') {
-      return xttsService.textToSpeech(voiceId, chunk, settings.language || 'pl', campaignId);
+      const speed = (settings.dialogueSpeed || 100) / 100;
+      return xttsService.textToSpeech(voiceId, chunk, settings.language || 'pl', campaignId, speed);
     }
     return elevenlabsService.textToSpeechWithTimestamps(undefined, voiceId, chunk, undefined, campaignId, pacing);
-  }, [viewerMode, backendUrl, shareToken, settings.ttsProvider, settings.language]);
+  }, [viewerMode, backendUrl, shareToken, settings.ttsProvider, settings.language, settings.dialogueSpeed]);
 
   const fetchTtsWithRecovery = useCallback(async (voiceId, chunk, campaignId, pacing, segCtx) => {
     try {

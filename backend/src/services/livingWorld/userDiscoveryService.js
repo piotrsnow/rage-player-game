@@ -24,15 +24,27 @@ import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../locationRefs.js'
 const log = childLogger({ module: 'userDiscoveryService' });
 
 /**
+ * Ordered discovery progression. State can only advance (never demote).
+ * Graph system: added `rumored` (before heard_about) and `mapped` (after visited).
+ */
+const DISCOVERY_ORDER = ['rumored', 'heard_about', 'visited', 'mapped'];
+
+/**
  * Pure — given the currently-stored discovery state (or null) and the new
  * state we want to record, decide whether to insert, update, or no-op.
- * Encodes the "never demote visited → heard_about" rule.
+ * Encodes the "never demote" rule: rumored < heard_about < visited < mapped.
  */
 export function planLocationFogMutation(currentState, newState) {
-  if (newState !== 'heard_about' && newState !== 'visited') return { kind: 'noop' };
+  const validStates = new Set(DISCOVERY_ORDER);
+  if (!validStates.has(newState)) return { kind: 'noop' };
   if (!currentState) return { kind: 'insert' };
   if (currentState === newState) return { kind: 'noop' };
-  if (currentState === 'visited' && newState === 'heard_about') return { kind: 'noop' };
+
+  const currentIdx = DISCOVERY_ORDER.indexOf(currentState);
+  const newIdx = DISCOVERY_ORDER.indexOf(newState);
+
+  // Never demote — only advance
+  if (currentIdx >= 0 && newIdx <= currentIdx) return { kind: 'noop' };
   return { kind: 'update' };
 }
 
@@ -138,6 +150,54 @@ export async function markLocationHeardAbout({
     await applyCampaignLocationState(campaignId, locationKind, locationId, 'heard_about');
   } catch (err) {
     log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationHeardAbout failed');
+  }
+}
+
+/**
+ * Graph system — mark a location as "rumored" (weakest discovery state).
+ * Player has only vaguely heard about this place (legends, drunk sailors).
+ * Never demotes a stronger state (heard_about/visited/mapped).
+ */
+export async function markLocationRumored({
+  userId,
+  locationId,
+  locationKind = LOCATION_KIND_WORLD,
+  campaignId = null,
+}) {
+  if (!userId || !locationId) return;
+  try {
+    if (locationKind === LOCATION_KIND_WORLD) {
+      await applyUserLocationState(userId, locationId, 'rumored');
+      return;
+    }
+    if (!campaignId) return;
+    await applyCampaignLocationState(campaignId, locationKind, locationId, 'rumored');
+  } catch (err) {
+    log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationRumored failed');
+  }
+}
+
+/**
+ * Graph system — mark a location as "mapped" (strongest discovery state).
+ * Player has fully explored this location and discovered all edges from it.
+ * Never demotes — but always upgrades from rumored/heard_about/visited.
+ */
+export async function markLocationMapped({
+  userId,
+  locationId,
+  locationKind = LOCATION_KIND_WORLD,
+  campaignId = null,
+}) {
+  if (!userId || !locationId) return;
+  try {
+    if (locationKind === LOCATION_KIND_WORLD) {
+      await applyUserLocationState(userId, locationId, 'mapped');
+      return;
+    }
+    if (!campaignId) return;
+    await applyCampaignLocationState(campaignId, locationKind, locationId, 'mapped');
+  } catch (err) {
+    log.warn({ err: err?.message, userId, locationKind, locationId, campaignId }, 'markLocationMapped failed');
   }
 }
 
@@ -325,12 +385,16 @@ export async function loadCampaignFog({ userId, campaignId }) {
   for (const r of worldParents) parentById.set(r.id, r.parentLocationId);
   for (const r of campaignParents) parentById.set(r.id, r.parentLocationId);
 
+  // Graph system: `rumored` locations go into heardAbout (same dashed-outline
+  // rendering for now — UI can differentiate later). `mapped` locations go into
+  // visited (full color). This keeps backward compat with the existing MapTab
+  // rendering which only knows visited vs heardAbout.
   for (const row of campaignRows) {
     const isSubLocation = !!parentById.get(row.locationId);
-    if (row.state === 'visited') {
+    if (row.state === 'visited' || row.state === 'mapped') {
       if (isSubLocation) subLocs.add(row.locationId);
       else visited.add(row.locationId);
-    } else if (row.state === 'heard_about') {
+    } else if (row.state === 'heard_about' || row.state === 'rumored') {
       heardAbout.add(row.locationId);
     }
   }

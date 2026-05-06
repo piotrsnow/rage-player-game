@@ -39,11 +39,21 @@ enum LocationType {
   interior
   dungeon_room
   campaignPlace
+  // Graph system — finer-grained location scales
+  region
+  area
+  district
+  site
+  room
+  point
+  abstract
 }
 
 enum DiscoveryState {
+  rumored
   heard_about
   visited
+  mapped
 }
 
 enum ReviewStatus {
@@ -298,6 +308,7 @@ model Campaign {
   discoveredLocations         CampaignDiscoveredLocation[]
   edgeDiscoveries             CampaignEdgeDiscovery[]
   campaignLocations           CampaignLocation[]
+  campaignEdges               CampaignEdge[]
 
   @@index([userId])
   @@index([isPublic])
@@ -637,6 +648,13 @@ model WorldLocation {
 // F5b — renamed from WorldLocationEdge. Roads connect two CANONICAL WorldLocations
 // only; campaign-created CampaignLocation rows are off-graph (no auto-Road on
 // creation). Travel graph (Dijkstra in travelGraph.js) walks Road edges only.
+//
+// Graph system: `relationType` discriminates edge semantics (road, path, door,
+// stairs, tunnel, bridge, portal, secret_path, visible_from, audible_from,
+// controlled_by, etc.). Dijkstra filters on MOVEMENT_RELATION_TYPES only.
+// `metadata` holds per-type structured data (requirements, perception range,
+// faction info, narrative hooks). Legacy `gated`/`gateHint` kept for backward
+// compat; new edges use `metadata.requirements` instead.
 model Road {
   id             String      @id @default(uuid(7)) @db.Uuid
   fromLocationId String      @db.Uuid
@@ -647,6 +665,18 @@ model Road {
   direction      String?
   gated          Boolean     @default(false)
   gateHint       String?
+
+  // Graph system — rich relation taxonomy
+  relationType   String      @default("road")
+  bidirectional  Boolean     @default(true)
+  metadata       Json        @default("{}")
+  visibility     String      @default("visible") // visible | hidden | secret | legendary
+  risk           String?                          // none | low | moderate | high | extreme
+  travelTime     Float?                           // minutes (optional, derived from distance/terrain if absent)
+  weight         Float?                           // Dijkstra cost override (default = distance)
+  edgeDescription String?    @map("description")  // "Wąska ścieżka wzdłuż klifu"
+  confidence     Float?                           // 0-1, for rumor-based edges
+
   createdAt      DateTime    @default(now()) @db.Timestamptz
 
   from                WorldLocation           @relation("fromLoc", fields: [fromLocationId], references: [id], onDelete: Cascade)
@@ -654,9 +684,44 @@ model Road {
   campaignDiscoveries CampaignEdgeDiscovery[]
   userDiscoveries     UserDiscoveredEdge[]
 
-  @@unique([fromLocationId, toLocationId])
+  @@unique([fromLocationId, toLocationId, relationType])
   @@index([fromLocationId])
   @@index([toLocationId])
+  @@index([relationType])
+}
+
+// Graph system — per-campaign sandbox edges. CampaignLocation rows are off the
+// canonical Road graph by design; CampaignEdge provides rich edges between ANY
+// combination of WorldLocation and CampaignLocation nodes within a campaign.
+// Uses the same polymorphic kind+id pattern as CampaignDiscoveredLocation.
+// Cascades with the campaign. relationType uses the same taxonomy as Road
+// (validated app-side via RELATION_TYPES in edgeRelations.js).
+model CampaignEdge {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  campaignId    String       @db.Uuid
+  fromKind      String                              // "world" | "campaign"
+  fromId        String       @db.Uuid
+  toKind        String                              // "world" | "campaign"
+  toId          String       @db.Uuid
+  relationType  String       @default("path")
+  bidirectional Boolean      @default(true)
+  distance      Float?
+  difficulty    DangerLevel?
+  metadata      Json         @default("{}")
+  visibility    String       @default("visible")    // visible | hidden | secret
+  risk          String?                              // none | low | moderate | high | extreme
+  travelTime    Float?                               // minutes
+  edgeDescription String?    @map("description")
+  confidence    Float?                               // 0-1 for rumor-based edges
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, fromKind, fromId, toKind, toId, relationType])
+  @@index([campaignId])
+  @@index([fromKind, fromId])
+  @@index([toKind, toId])
+  @@index([relationType])
 }
 
 // F5b — per-campaign sandbox location. AI-emitted locations during play go
