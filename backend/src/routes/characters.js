@@ -316,8 +316,8 @@ export async function characterRoutes(fastify) {
     const isPolish = language === 'pl';
     const systemPrompt = `You are a fantasy RPG narrator. Generate a player badge card for the character described below.
 Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'English'}:
-- "legend": ONE epic, reverent, hero-chronicle line. HARD LIMIT: maximum 15 words. No more. Make every word count. Grounded in attributes / level / backstory.
-- "snark": A SHARP, mocking, tongue-in-cheek roast of this character's exploits and choices — Pratchett-style tavern shame. 2 to 4 short sentences. Be cutting but witty. Lean into pathetic attributes, stupid decisions, embarrassing scenes. If the character is heroic, mock their pretensions instead. NEVER kind, NEVER neutral.
+- "legend": ONE epic, reverent, hero-chronicle line. HARD LIMIT: maximum 30 words. Make every word count. Grounded in attributes / level / backstory. Poetic, evocative, worthy of a chronicle.
+- "snark": A SHARP, mocking, tongue-in-cheek roast of this character's exploits and choices — Pratchett-style tavern shame. 3 to 5 short sentences. Be cutting but witty. Lean into pathetic attributes, stupid decisions, embarrassing scenes. If the character is heroic, mock their pretensions instead. NEVER kind, NEVER neutral.
 - "summary": An array of exactly 5 strings, each a one-sentence summary of a recent scene/event. If fewer scenes are available, invent plausible ones fitting the character's backstory.`;
 
     const userPrompt = `CHARACTER:\n${charContext}\n\nRECENT SCENES:\n${sceneTexts || 'No scenes yet — invent brief backstory events.'}`;
@@ -329,7 +329,7 @@ Return JSON with exactly three fields, all written in ${isPolish ? 'Polish' : 'E
         taskCategory: 'auxiliary',
         systemPrompt,
         userPrompt,
-        maxTokens: 800,
+        maxTokens: 1000,
         temperature: 0.9,
         userApiKeys,
       });
