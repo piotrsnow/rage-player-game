@@ -19,7 +19,9 @@ import { runPostCampaignWorldWriteback } from '../services/livingWorld/postCampa
 import { applyApprovedPendingChange } from '../services/livingWorld/postCampaignWorldChanges.js';
 import { promoteCampaignNpcToWorld } from '../services/livingWorld/postCampaignPromotion.js';
 import { promoteWorldLocationToCanonical } from '../services/livingWorld/postCampaignLocationPromotion.js';
-import { migrateExistingCampaignGraph, runGraphConsistencyCheck } from '../services/locationGraph/index.js';
+import { migrateExistingCampaignGraph, runGraphConsistencyCheck, loadCampaignGraph, createEdge } from '../services/locationGraph/index.js';
+import { getExtractionStats } from '../services/locationGraph/graphExtractor.js';
+import { LOCATION_KIND_WORLD, LOCATION_KIND_CAMPAIGN } from '../services/locationRefs.js';
 
 const log = childLogger({ module: 'adminLivingWorld' });
 
@@ -1060,9 +1062,191 @@ export async function adminLivingWorldRoutes(fastify) {
       });
       if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
       const report = await runGraphConsistencyCheck(id);
-      return { ok: true, campaign, report };
+      const extractionStats = getExtractionStats();
+      return { ok: true, campaign, report, extractionStats };
     } catch (err) {
       log.error({ err, campaignId: id }, 'graph-health failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  // ── Graph Export/Import ─────────────────────────────────────────────
+
+  fastify.get('/campaigns/:id/export-graph', guard(), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true, name: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+
+      const { nodes, edges } = await loadCampaignGraph(id);
+      const npcs = await prisma.campaignNPC.findMany({
+        where: { campaignId: id },
+        select: { id: true, name: true, lastLocationKind: true, lastLocationId: true },
+      });
+
+      const nodeList = [];
+      for (const [key, node] of nodes) {
+        nodeList.push({
+          id: node.id,
+          kind: node._kind,
+          name: node.canonicalName || node.displayName || node.name,
+          type: node.locationType || 'generic',
+          scale: node.scale ?? 5,
+          tags: node.tags || [],
+          atmosphere: node.atmosphere || null,
+          regionX: node.regionX ?? 0,
+          regionY: node.regionY ?? 0,
+        });
+      }
+
+      const edgeList = edges.map((e) => ({
+        id: e.id,
+        fromKind: e.fromKind,
+        fromId: e.fromId,
+        toKind: e.toKind,
+        toId: e.toId,
+        edgeType: e.edgeType,
+        category: e.category,
+        bidirectional: e.bidirectional,
+        weight: e.weight,
+        metadata: e.metadata,
+        discoveryState: e.discoveryState,
+        createdBy: e.createdBy,
+        campaignId: e.campaignId,
+      }));
+
+      return reply.send({
+        exportedAt: new Date().toISOString(),
+        campaignId: id,
+        campaignName: campaign.name,
+        nodes: nodeList,
+        edges: edgeList,
+        npcPositions: npcs.map((n) => ({
+          npcId: n.id,
+          npcName: n.name,
+          locationKind: n.lastLocationKind,
+          locationId: n.lastLocationId,
+        })),
+      });
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'export-graph failed');
+      return reply.code(500).send({ error: err.message });
+    }
+  });
+
+  fastify.post('/campaigns/:id/import-graph', guard({
+    schema: {
+      body: {
+        type: 'object',
+        required: ['edges'],
+        properties: {
+          nodes: { type: 'array', maxItems: 500 },
+          edges: { type: 'array', maxItems: 2000 },
+          npcPositions: { type: 'array', maxItems: 200 },
+        },
+      },
+    },
+  }), async (request, reply) => {
+    const { id } = request.params;
+    try {
+      const campaign = await prisma.campaign.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!campaign) return reply.code(404).send({ error: 'campaign not found' });
+
+      const { nodes = [], edges = [], npcPositions = [] } = request.body;
+      const result = { nodesCreated: 0, edgesCreated: 0, npcsMoved: 0, errors: [] };
+
+      // Upsert nodes as CampaignLocation
+      const nameToId = new Map();
+      for (const node of nodes) {
+        if (node.kind === 'world') {
+          nameToId.set(node.id, { kind: LOCATION_KIND_WORLD, id: node.id });
+          continue;
+        }
+        try {
+          const existing = await prisma.campaignLocation.findFirst({
+            where: { campaignId: id, name: node.name },
+          });
+          if (existing) {
+            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: existing.id });
+          } else {
+            const row = await prisma.campaignLocation.create({
+              data: {
+                campaignId: id,
+                name: node.name,
+                description: '',
+                locationType: node.type || 'generic',
+                tags: node.tags || [],
+                scale: node.scale ?? 5,
+                regionX: node.regionX ?? 0,
+                regionY: node.regionY ?? 0,
+              },
+            });
+            nameToId.set(node.id, { kind: LOCATION_KIND_CAMPAIGN, id: row.id });
+            result.nodesCreated++;
+          }
+        } catch (err) {
+          result.errors.push(`Node "${node.name}": ${err.message}`);
+        }
+      }
+
+      // Create edges
+      for (const edge of edges) {
+        const from = nameToId.get(edge.fromId) || { kind: edge.fromKind, id: edge.fromId };
+        const to = nameToId.get(edge.toId) || { kind: edge.toKind, id: edge.toId };
+        if (!from.id || !to.id) { result.errors.push(`Edge missing endpoint`); continue; }
+
+        try {
+          const exists = await prisma.locationEdge.findFirst({
+            where: {
+              fromKind: from.kind, fromId: from.id,
+              toKind: to.kind, toId: to.id,
+              edgeType: edge.edgeType, isActive: true,
+            },
+          });
+          if (!exists) {
+            await createEdge({
+              fromKind: from.kind, fromId: from.id,
+              toKind: to.kind, toId: to.id,
+              edgeType: edge.edgeType,
+              category: edge.category || 'movement',
+              bidirectional: edge.bidirectional ?? true,
+              weight: edge.weight ?? 1.0,
+              metadata: edge.metadata || {},
+              discoveryState: edge.discoveryState || 'known',
+              campaignId: id,
+              createdBy: 'admin',
+            });
+            result.edgesCreated++;
+          }
+        } catch (err) {
+          result.errors.push(`Edge ${edge.edgeType}: ${err.message}`);
+        }
+      }
+
+      // Move NPCs
+      for (const pos of npcPositions) {
+        if (!pos.npcId || !pos.locationId) continue;
+        try {
+          await prisma.campaignNPC.updateMany({
+            where: { id: pos.npcId, campaignId: id },
+            data: { lastLocationKind: pos.locationKind || LOCATION_KIND_WORLD, lastLocationId: pos.locationId },
+          });
+          result.npcsMoved++;
+        } catch (err) {
+          result.errors.push(`NPC ${pos.npcId}: ${err.message}`);
+        }
+      }
+
+      log.info({ campaignId: id, ...result, errors: result.errors.length }, 'Graph imported');
+      return reply.send({ ok: true, result });
+    } catch (err) {
+      log.error({ err, campaignId: id }, 'import-graph failed');
       return reply.code(500).send({ error: err.message });
     }
   });

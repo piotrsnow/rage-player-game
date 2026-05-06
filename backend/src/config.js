@@ -89,6 +89,10 @@ export const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
   },
 
+  // Graph extraction model — used for the post-scene location graph extraction
+  // call. Defaults to the nano tier. Override for quality experiments.
+  graphExtractionModel: process.env.GRAPH_EXTRACTION_MODEL || '',
+
   // Model tiering — premium for scene/campaign generation, standard for
   // compression/recaps/combat commentary, nano for intent classification +
   // fact extraction. Override via env vars for staging/dev without editing

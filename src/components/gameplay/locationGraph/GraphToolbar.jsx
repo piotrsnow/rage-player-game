@@ -12,6 +12,7 @@ export default function GraphToolbar({
   mode, onModeChange,
   onSearch, searchQuery,
   onValidate,
+  searchInputRef,
 }) {
   const { t } = useTranslation();
 
@@ -56,6 +57,7 @@ export default function GraphToolbar({
       <div className="flex items-center gap-1 bg-white/5 rounded-sm px-2 py-0.5 border border-outline-variant/10">
         <span className="material-symbols-outlined text-xs text-outline">search</span>
         <input
+          ref={searchInputRef}
           className="bg-transparent outline-none text-on-surface w-20 placeholder:text-outline/50"
           placeholder={t('locationGraph.toolbar.search')}
           value={searchQuery}

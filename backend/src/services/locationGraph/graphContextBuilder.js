@@ -27,7 +27,7 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
     // Filter: only show edges the character knows about (at least 'known')
     const isVisible = (e) => gmMode || !e.discoveryState || e.discoveryState !== 'unknown';
 
-    // Movement exits
+    // Movement exits with access-control annotation
     const movementEdges = edges.filter(
       (e) => e.category === 'movement' && isVisible(e)
         && (keyOf(e, 'from') === myKey || (e.bidirectional && keyOf(e, 'to') === myKey)),
@@ -38,9 +38,16 @@ export async function buildNarrativeContext(locationId, locationKind, campaignId
         const targetKey = keyOf(e, 'from') === myKey ? keyOf(e, 'to') : keyOf(e, 'from');
         const target = nodes.get(targetKey);
         const targetName = target?.canonicalName || target?.displayName || target?.name || targetKey;
-        const blocked = e.edgeType === 'blocked_path_to' ? ' [BLOCKED]' : '';
-        const secret = e.edgeType === 'secret_path_to' ? ' [SECRET]' : '';
-        lines.push(`  - ${e.edgeType} → ${targetName}${blocked}${secret}`);
+        const annotations = [];
+        if (e.edgeType === 'blocked_path_to') annotations.push('BLOCKED');
+        if (e.edgeType === 'secret_path_to') annotations.push('SECRET');
+        if (e.metadata?.locked) annotations.push(`zamknięte — wymaga: ${e.metadata.keyName || 'klucz'}`);
+        if (e.metadata?.requiresSkillCheck) annotations.push(`wymaga: test ${e.metadata.requiresSkillCheck.skill}`);
+        if (e.metadata?.requiresItem) annotations.push(`wymaga: ${e.metadata.requiresItem}`);
+        if (e.metadata?.requiresPayment) annotations.push(`wymaga: opłata ${e.metadata.requiresPayment.cost}`);
+        if (e.metadata?.requiresFactionStatus) annotations.push(`wymaga: status frakcji ${e.metadata.requiresFactionStatus.factionId}`);
+        const suffix = annotations.length > 0 ? ` [${annotations.join(', ')}]` : '';
+        lines.push(`  - ${e.edgeType} → ${targetName}${suffix}`);
       }
     }
 

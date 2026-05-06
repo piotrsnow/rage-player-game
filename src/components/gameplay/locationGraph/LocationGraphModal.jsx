@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useModalA11y } from '../../../hooks/useModalA11y.js';
 import { useLocationGraph } from '../../../hooks/useLocationGraph.js';
+import { useGraphShortcuts } from '../../../hooks/useGraphShortcuts.js';
 import GraphCanvas from './GraphCanvas.jsx';
 import HierarchyTree from './HierarchyTree.jsx';
 import InspectorPanel from './InspectorPanel.jsx';
@@ -20,6 +21,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
   const [showNodeForm, setShowNodeForm] = useState(null); // { x, y } or null
   const [validationResult, setValidationResult] = useState(null);
   const [renaming, setRenaming] = useState(null);
+  const searchInputRef = useRef(null);
 
   const handleAddNodeToggle = useCallback(() => {
     setAddingNode((v) => !v);
@@ -77,6 +79,24 @@ export default function LocationGraphModal({ campaignId, onClose }) {
     if (!confirm(t('locationGraph.confirmDeleteEdge'))) return;
     try { await graph.deleteEdge(edgeId); } catch (err) { console.error(err); }
   }, [graph, t]);
+
+  useGraphShortcuts({
+    onDelete: () => {
+      if (graph.selectedNode) handleDeleteNode(graph.selectedNode.id);
+      else if (graph.selectedEdge) handleDeleteEdge(graph.selectedEdge.id);
+    },
+    onEscape: () => {
+      setAddingNode(false);
+      setAddingEdge(false);
+      setEdgeSource(null);
+      setShowNodeForm(null);
+      graph.setSelected(null);
+    },
+    onFocusSearch: () => searchInputRef.current?.focus(),
+    onToggleAddNode: handleAddNodeToggle,
+    onToggleAddEdge: handleAddEdgeToggle,
+    onCycleFocus: () => {},
+  });
 
   const handleDoubleClickNode = useCallback((node) => {
     if (graph.mode !== 'gm') return;
@@ -204,6 +224,7 @@ export default function LocationGraphModal({ campaignId, onClose }) {
               searchQuery={graph.searchQuery}
               onSearch={graph.search}
               onValidate={handleValidate}
+              searchInputRef={searchInputRef}
             />
           </div>
 

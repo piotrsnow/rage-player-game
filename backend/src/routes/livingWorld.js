@@ -330,7 +330,22 @@ export async function livingWorldRoutes(fastify) {
       createdBy: e.createdBy,
     }));
 
-    return reply.send({ nodes: nodeList, edges: edgeList });
+    // Faction overlay — extract from social edges (controlled_by, patrolled_by, contested_between)
+    const FACTION_EDGE_TYPES = new Set(['controlled_by', 'patrolled_by', 'contested_between']);
+    const factionOverlay = edges
+      .filter((e) => e.category === 'social' && FACTION_EDGE_TYPES.has(e.edgeType))
+      .map((e) => ({
+        locationId: e.fromId,
+        locationKind: e.fromKind,
+        factionId: e.metadata?.factionId || null,
+        factionName: e.metadata?.factionName || e.metadata?.factionId || null,
+        strength: e.metadata?.strength ?? 50,
+        type: e.edgeType,
+        color: e.metadata?.color || null,
+      }))
+      .filter((f) => f.factionId);
+
+    return reply.send({ nodes: nodeList, edges: edgeList, factionOverlay });
   });
 
   // ── Location Graph CRUD (Phase 2) ──────────────────────────────────

@@ -1,9 +1,15 @@
 import { callAIJson } from '../aiJsonCall.js';
 import { buildExtractionContext } from './graphContextBuilder.js';
 import { GraphUpdateSchema } from '../../../../shared/domain/locationGraph.js';
+import { config } from '../../config.js';
 import { childLogger } from '../../lib/logger.js';
 
 const log = childLogger({ module: 'graphExtractor' });
+
+// In-memory quality tracking counters
+const stats = { totalExtractions: 0, validationFailures: 0, emptyExtractions: 0 };
+export function getExtractionStats() { return { ...stats }; }
+export function resetExtractionStats() { stats.totalExtractions = 0; stats.validationFailures = 0; stats.emptyExtractions = 0; }
 
 const SYSTEM_PROMPT = `You are a Location Graph Analyst for an RPG world. Analyze the scene below and extract all spatial/structural information that should be added to or updated in the location graph.
 
@@ -72,10 +78,14 @@ ${appliedChanges}
 
 Extract graph updates as JSON.`;
 
+  const modelOverride = config.graphExtractionModel || undefined;
+  const startMs = Date.now();
+
   try {
     const { text } = await callAIJson({
       provider,
       modelTier: 'nano',
+      model: modelOverride,
       systemPrompt: SYSTEM_PROMPT,
       userPrompt,
       maxTokens: 1500,
@@ -83,15 +93,29 @@ Extract graph updates as JSON.`;
       userApiKeys,
     });
 
+    stats.totalExtractions++;
+    const elapsed = Date.now() - startMs;
+
     const parsed = JSON.parse(text);
     const result = GraphUpdateSchema.safeParse(parsed);
     if (!result.success) {
-      log.warn({ errors: result.error?.issues, campaignId }, 'Graph extraction output failed validation');
+      stats.validationFailures++;
+      log.warn({ errors: result.error?.issues, campaignId, elapsed, model: modelOverride || 'nano' }, 'Graph extraction output failed validation');
       return null;
     }
+
+    const itemCount = (result.data.newNodes?.length || 0) + (result.data.newEdges?.length || 0)
+      + (result.data.updatedEdges?.length || 0) + (result.data.npcMoves?.length || 0)
+      + (result.data.discoveryChanges?.length || 0);
+
+    if (itemCount === 0) stats.emptyExtractions++;
+
+    log.info({ campaignId, elapsed, model: modelOverride || 'nano', items: itemCount }, 'Graph extraction complete');
     return result.data;
   } catch (err) {
-    log.warn({ err: err?.message, campaignId }, 'Graph extraction call failed');
+    stats.totalExtractions++;
+    stats.validationFailures++;
+    log.warn({ err: err?.message, campaignId, elapsed: Date.now() - startMs }, 'Graph extraction call failed');
     return null;
   }
 }

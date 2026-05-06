@@ -1,3 +1,12 @@
+// DEPRECATION NOTE: The following world-state fields are DEPRECATED as
+// independent mutable state — reads are proxied from the location graph API:
+//   - world.mapState         → graph nodes query
+//   - world.mapConnections   → graph movement edges
+//   - world.exploredLocations → DiscoveryState = visited on graph nodes
+// They remain populated for backward-compat reads but are no longer the
+// source of truth. The LocationEdge table + graphExtractor pipeline owns
+// spatial connectivity. See backend/src/services/locationGraph/.
+
 import { calculateMaxWounds } from '../../services/gameState';
 import { DEFAULT_CHARACTER_AGE, normalizeCharacterAge } from '../../services/characterAge';
 import { createStartingSkills } from '../../data/rpgSystem';

@@ -2,9 +2,13 @@ import { shortId } from '../../../utils/ids';
 
 /**
  * Location mutations from AI: `mapChanges` (per-location descriptive mods),
- * and `currentLocation` (teleport/walk target). currentLocation also seeds
- * the explored-set, the mapConnections edge list, and a mapState entry for
- * any previously-unseen location so the FE map has a node to render.
+ * and `currentLocation` (teleport/walk target).
+ *
+ * DEPRECATION: mapState, mapConnections, and exploredLocations are DEPRECATED
+ * as independent state — the Location Graph (LocationEdge table) is now the
+ * source of truth for spatial relationships. These fields are kept for backward
+ * compatibility reads only. New mapConnections entries are NO LONGER created;
+ * the graph edges are the canonical connectivity data.
  */
 export function applyMapChanges(draft, changes) {
   if (!changes.mapChanges?.length) return;
@@ -41,32 +45,9 @@ export function applyCurrentLocation(draft, changes) {
   explored.add(changes.currentLocation);
   draft.world.exploredLocations = [...explored];
 
-  const prevLoc = draft.world.currentLocation;
-  const newLoc = changes.currentLocation;
+  // DEPRECATED: mapConnections writes removed — the LocationEdge graph is the
+  // source of truth for location connectivity. Graph edges are maintained by
+  // the post-scene graph extractor (postSceneWork → extractGraphUpdate).
 
-  if (prevLoc && newLoc && prevLoc.toLowerCase() !== newLoc.toLowerCase()) {
-    if (!draft.world.mapConnections) draft.world.mapConnections = [];
-    const already = draft.world.mapConnections.some(
-      (c) =>
-        (c.from.toLowerCase() === prevLoc.toLowerCase() && c.to.toLowerCase() === newLoc.toLowerCase())
-        || (c.from.toLowerCase() === newLoc.toLowerCase() && c.to.toLowerCase() === prevLoc.toLowerCase()),
-    );
-    if (!already) {
-      draft.world.mapConnections.push({ from: prevLoc, to: newLoc });
-    }
-
-    if (!draft.world.mapState) draft.world.mapState = [];
-    for (const locName of [prevLoc, newLoc]) {
-      if (!draft.world.mapState.some((m) => m.name?.toLowerCase() === locName.toLowerCase())) {
-        draft.world.mapState.push({
-          id: `loc_${Date.now()}_${shortId(5)}`,
-          name: locName,
-          description: '',
-          modifications: [],
-        });
-      }
-    }
-  }
-
-  draft.world.currentLocation = newLoc;
+  draft.world.currentLocation = changes.currentLocation;
 }

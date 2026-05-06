@@ -34,6 +34,7 @@ import { upsertEdge } from '../services/livingWorld/travelGraph.js';
 import { getTemplate } from '../services/livingWorld/settlementTemplates.js';
 import { batchBackfillMissing } from '../services/livingWorld/ragService.js';
 import { buildNPCEmbeddingText, buildLocationEmbeddingText } from '../services/embeddingService.js';
+import { seedCanonicalEdges } from './seedWorldEdges.js';
 
 const log = childLogger({ module: 'seedWorld' });
 
@@ -1187,6 +1188,9 @@ export async function seedWorld() {
       if (result) roadsUpserted += 1;
     }
 
+    // Seed canonical LocationEdge rows (adjacent, visible, audible, etc.)
+    const edgeStats = await seedCanonicalEdges(locationByName);
+
     const loreSection = await upsertMainLoreSection();
 
     // Round E Phase 9 — index canonical NPCs + locations into the RAG store.
@@ -1206,6 +1210,7 @@ export async function seedWorld() {
         wildLocations: WILD_LOCATIONS.length,
         npcKnowledgeUpdated,
         roads: roadsUpserted,
+        graphEdges: edgeStats.edgesCreated,
         loreSectionId: loreSection.id,
         rag: ragStats,
       },
@@ -1220,6 +1225,7 @@ export async function seedWorld() {
       wildLocationIds: wildRows.map((w) => w.id),
       npcKnowledgeUpdated,
       roadsUpserted,
+      graphEdges: edgeStats.edgesCreated,
       rag: ragStats,
     };
   } catch (err) {
